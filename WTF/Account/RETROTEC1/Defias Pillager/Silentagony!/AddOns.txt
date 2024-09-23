@@ -1,2 +1,0 @@
-Blizzard_CompactRaidFrames: enabled
-ActionCamPlus: disabled

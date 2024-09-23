@@ -1,2 +1,0 @@
-
-UIConfig = nil

@@ -1,7 +1,0 @@
-Blizzard_CompactRaidFrames: enabled
-Blizzard_CombatText: enabled
-Prat-3.0: disabled
-ActionCamPlus: disabled
-BagBrother: disabled
-Bagnon: disabled
-Bagnon_Config: disabled

@@ -1,2 +1,0 @@
-
-CommanderInventoryCharDB = nil

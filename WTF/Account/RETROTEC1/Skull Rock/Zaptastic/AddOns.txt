@@ -1,5 +1,0 @@
-DropTheCheapestThing: enabled
-MyClassicAddon: enabled
-Prat-3.0: disabled
-RXPGuides: enabled
-SexyMap: enabled
