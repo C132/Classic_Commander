@@ -1,0 +1,6 @@
+VER 3 0000000001000001 " " "134400"
+#showtooltip Judgement
+/cast Judgement
+/cast Seal of Righteousness
+/startattack
+END

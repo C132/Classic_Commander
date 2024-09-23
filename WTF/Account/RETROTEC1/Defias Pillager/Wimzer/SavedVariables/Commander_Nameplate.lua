@@ -1,0 +1,2 @@
+
+CommanderNameplateCharDB = nil

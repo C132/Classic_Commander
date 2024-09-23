@@ -1,0 +1,19 @@
+VER 3 0000000001000001 " " "134400"
+#showtooltip
+/cast [@mouseover, harm][] Curse of Agony
+END
+VER 3 0000000001000002 " " "134400"
+#showtooltip
+/cast [@mouseover, harm][] Corruption
+END
+VER 3 0000000001000003 " " "134400"
+#showtooltip
+/stopcasting
+/stopattack
+/cast Shadowburn
+/startattack
+END
+VER 3 0000000001000004 " " "134400"
+#showtooltip
+/cast [mod] Curse of Tongues; Curse of Weakness
+END

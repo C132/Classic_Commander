@@ -1,0 +1,36 @@
+
+PartyPlannerSettings = {
+["useAbreviation"] = true,
+["channelSettings"] = {
+["LookingForGroup"] = {
+["id"] = 4,
+["name"] = "LookingForGroup",
+["disabled"] = true,
+},
+["lfg"] = {
+["id"] = 5,
+["name"] = "lfg",
+["disabled"] = true,
+},
+["General"] = {
+["id"] = 1,
+["name"] = "General",
+["disabled"] = true,
+},
+["Trade"] = {
+["id"] = 2,
+["name"] = "Trade",
+["disabled"] = true,
+},
+},
+["LFGmessage"] = " %l %c %r LFG %i",
+["useRoleAll"] = false,
+["miniMapIcon"] = {
+["iconName"] = "PartyPlanner",
+["minimapPos"] = 213.7,
+["hide"] = false,
+},
+["LFMmessage"] = "LF%nM %i need %r",
+["useGroupSizeMin"] = false,
+["groupSizeMin"] = 3,
+}

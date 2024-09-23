@@ -1,0 +1,10 @@
+VER 3 0000000001000001 " " "134400"
+#showtooltip
+/cast [mod] Conjure Food
+/use [nomod] Conjured Muffin
+END
+VER 3 0000000001000002 " " "134400"
+#showtooltip
+/cast [mod] Conjure Water
+/use [nomod] Conjured Water
+END

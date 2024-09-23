@@ -1,0 +1,14 @@
+## Interface: 11503
+
+## Title: Leatrix Sounds
+## Notes: Massive collection of game sound kits.
+
+## Version: 1.15.48
+## Author: Leatrix
+## SavedVariables: LeaSoundsDB
+
+## X-Curse-Project-ID: 323023
+
+Leatrix_Sounds_Locale.lua
+Leatrix_Sounds_Files.lua
+Leatrix_Sounds.lua

@@ -1,0 +1,182 @@
+
+Bagnon_Sets = {
+["tackleColor"] = {
+},
+["fridgeColor"] = {
+},
+["engineerColor"] = {
+},
+["herbColor"] = {
+},
+["inscribeColor"] = {
+},
+["soulColor"] = {
+},
+["quiverColor"] = {
+},
+["reagentColor"] = {
+},
+["gemColor"] = {
+},
+["enchantColor"] = {
+},
+["keyColor"] = {
+},
+["normalColor"] = {
+},
+["profiles"] = {
+},
+["mineColor"] = {
+},
+["display"] = {
+},
+["global"] = {
+["inventory"] = {
+["rules"] = {
+"all",
+"all/normal",
+"all/trade",
+"all/reagent",
+"all/keys",
+"all/quiver",
+"equip",
+"equip/armor",
+"equip/weapon",
+"equip/trinket",
+"use",
+"use/consume",
+"use/enhance",
+"trade",
+"trade/goods",
+"trade/gem",
+"trade/glyph",
+"trade/recipe",
+"quest",
+"misc",
+"all/souls",
+"equip/ammo",
+"contain",
+},
+["point"] = "BOTTOMRIGHT",
+["lockedSlots"] = {
+},
+["color"] = {
+},
+["sort"] = true,
+["skin"] = "Dialog",
+["bagToggle"] = false,
+["brokerObject"] = "Leatrix_Maps",
+["columns"] = 7,
+["money"] = true,
+["y"] = 72.62915802001953,
+["x"] = -337.2083740234375,
+["search"] = false,
+["broker"] = false,
+["borderColor"] = {
+},
+["hiddenBags"] = {
+},
+["options"] = true,
+},
+["vault"] = {
+["rules"] = {
+"all",
+"all/normal",
+"all/trade",
+"all/reagent",
+"all/keys",
+"all/quiver",
+"equip",
+"equip/armor",
+"equip/weapon",
+"equip/trinket",
+"use",
+"use/consume",
+"use/enhance",
+"trade",
+"trade/goods",
+"trade/gem",
+"trade/glyph",
+"trade/recipe",
+"quest",
+"misc",
+},
+["hiddenBags"] = {
+},
+["color"] = {
+},
+["lockedSlots"] = {
+},
+["borderColor"] = {
+},
+},
+["guild"] = {
+["rules"] = {
+"all",
+"all/normal",
+"all/trade",
+"all/reagent",
+"all/keys",
+"all/quiver",
+"equip",
+"equip/armor",
+"equip/weapon",
+"equip/trinket",
+"use",
+"use/consume",
+"use/enhance",
+"trade",
+"trade/goods",
+"trade/gem",
+"trade/glyph",
+"trade/recipe",
+"quest",
+"misc",
+},
+["hiddenBags"] = {
+},
+["color"] = {
+},
+["lockedSlots"] = {
+},
+["borderColor"] = {
+},
+},
+["bank"] = {
+["rules"] = {
+"all",
+"all/normal",
+"all/trade",
+"all/reagent",
+"all/keys",
+"all/quiver",
+"equip",
+"equip/armor",
+"equip/weapon",
+"equip/trinket",
+"use",
+"use/consume",
+"use/enhance",
+"trade",
+"trade/goods",
+"trade/gem",
+"trade/glyph",
+"trade/recipe",
+"quest",
+"misc",
+},
+["hiddenBags"] = {
+},
+["color"] = {
+},
+["lockedSlots"] = {
+},
+["borderColor"] = {
+},
+},
+},
+["leatherColor"] = {
+},
+["latest"] = {
+},
+}

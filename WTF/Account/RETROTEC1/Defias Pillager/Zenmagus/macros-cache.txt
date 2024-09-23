@@ -1,0 +1,26 @@
+VER 3 0000000001000001 " " "134400"
+#showtooltip
+/castsequence reset=target Fireball, Frostbolt
+END
+VER 3 0000000001000002 " " "134400"
+#showtooltip
+/cast [mod] Frostbolt(Rank 1); Frostbolt
+END
+VER 3 0000000001000003 " " "134400"
+#showtooltip
+/cast [mod] Fireball(Rank 1); Fireball
+END
+VER 3 0000000001000004 " " "134400"
+#showtooltip
+/cast [mod] Arcane Explosion; Fire Blast
+END
+VER 3 0000000001000005 " " "134400"
+#showtooltip
+/cast [mod] Frost Armor; Arcane Intellect
+END
+VER 3 0000000001000006 " " "134400"
+#showtooltip [mod] Conjured Bread; Conjured Fresh Water
+/cast [button:3] Conjure Water; [button:2] Conjure Food
+/use [mod] Conjured Bread
+/use Conjured Fresh Water
+END

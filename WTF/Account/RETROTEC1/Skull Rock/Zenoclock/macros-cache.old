@@ -1,0 +1,8 @@
+VER 3 0000000001000001 " " "134400"
+#showtooltip
+/cleartarget
+/targetenemy [noexists][dead][help]
+/cast Heroic Strike
+/targetlasttarget
+/startattack
+END

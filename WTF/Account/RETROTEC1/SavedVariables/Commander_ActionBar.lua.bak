@@ -1,0 +1,2 @@
+
+CAB_Config = nil
