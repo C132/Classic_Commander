@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../MyClassicAddon_UI"
+		},
+		{
+			"path": "../AddonUsage"
+		},
+		{
+			"path": "../Commander_ActionBar"
+		},
+		{
+			"path": "../Commander_Nameplate"
+		},
+		{
+			"path": "../Commander_Inventory"
+		}
+	],
+	"settings": {}
+}

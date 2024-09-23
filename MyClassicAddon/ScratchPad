@@ -1,0 +1,7 @@
+    -- Make the button draggable
+    customButton:SetMovable(true)
+    customButton:RegisterForDrag("LeftButton")
+    customButton:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    customButton:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+
+    

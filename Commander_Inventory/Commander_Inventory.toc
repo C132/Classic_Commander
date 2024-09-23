@@ -1,0 +1,10 @@
+## Interface: 11400
+## Title: Commander_Inventory
+## Author: Devin
+## Version: 1.0
+## SavedVariables: CommanderInventoryDB
+## SavedVariablesPerCharacter: CommanderInventoryCharDB
+## DefaultState: enabled
+## LoadOnDemand: 0
+Commander_Inventory_Settings.lua
+Commander_Inventory.lua

@@ -1,0 +1,8 @@
+## Interface: 11400
+## Title: Commander_Nameplate
+## Author: Devin
+## Version: 1.0
+## SavedVariables: CommanderNameplateDB
+## SavedVariablesPerCharacter: CommanderNameplateCharDB
+
+Commander_Nameplate.lua
