@@ -19,7 +19,12 @@ local function LoadBagPosition(bagID)
     if bagFrame and Config.BagPositions and Config.BagPositions[bagID] then
         local pos = Config.BagPositions[bagID]
         bagFrame:ClearAllPoints()
-        bagFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+        if pos.point and pos.relativePoint and pos.xOfs and pos.yOfs then
+            bagFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+        else
+            -- Set a default position if saved position is incomplete
+            bagFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        end
     end
 end
 
