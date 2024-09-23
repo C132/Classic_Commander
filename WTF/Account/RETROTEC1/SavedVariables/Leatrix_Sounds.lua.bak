@@ -1,0 +1,10 @@
+
+LeaSoundsDB = {
+["MainPanelA"] = "CENTER",
+["SoundUnknown"] = "Off",
+["MainPanelX"] = 0,
+["MainPanelR"] = "CENTER",
+["MainPanelY"] = 0,
+["SoundMusic"] = "On",
+["SoundSFX"] = "Off",
+}

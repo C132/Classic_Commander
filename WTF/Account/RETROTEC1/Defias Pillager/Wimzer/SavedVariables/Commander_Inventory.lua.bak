@@ -1,0 +1,2 @@
+
+CommanderInventoryCharDB = nil

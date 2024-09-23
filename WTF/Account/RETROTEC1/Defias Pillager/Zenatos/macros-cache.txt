@@ -1,0 +1,53 @@
+VER 3 000000000100000A " " "134400"
+#showtooltip
+/castsequence [nocombat, nomod] Find Herbs, Find Minerals
+/cast [combat][mod] Flash of Light
+END
+VER 3 0000000001000002 " " "134400"
+#showtooltip Seal of the Crusader
+/cast Judgement
+/cast [nomod] Seal of the Crusader
+/startattack
+END
+VER 3 0000000001000003 " " "134400"
+#showtooltip
+/cast [mod] !Devotion Aura; [@mouseover,harm][] Hammer of Justice
+/startattack
+END
+VER 3 0000000001000004 " " "132110"
+#showtooltip
+/equip Blessed Claymore
+/equip Cruel Barb
+/equip Lambent Scale Shield
+END
+VER 3 0000000001000005 " " "134400"
+#showtooltip
+/cast [mod] Blessing of Wisdom; Blessing of Might
+END
+VER 3 0000000001000006 " " "134400"
+#showtooltip Seal of Command
+/cast Judgement
+/cast [nomod] Seal of Command
+/startattack
+END
+VER 3 0000000001000007 " " "134400"
+#showtooltip
+/cast [mod] !Retribution Aura; Consecration
+END
+VER 3 0000000001000008 " " "134400"
+#showtooltip Seal of Justice
+/cast [mod] Judgement
+/cast Seal of Justice
+/cast Judgement
+/startattack
+END
+VER 3 0000000001000001 " " "134400"
+#showtooltip
+/cast Judgement
+/cast [nomod] Seal of Righteousness
+/startattack
+END
+VER 3 0000000001000009 "  " "134400"
+#showtooltip
+/cast [mod] Concentration Aura; Holy Light
+END

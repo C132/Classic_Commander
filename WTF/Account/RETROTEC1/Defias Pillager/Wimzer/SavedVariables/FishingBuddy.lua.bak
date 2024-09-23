@@ -1,0 +1,37 @@
+
+FishingBuddy_Player = {
+["MinimapData"] = {
+["minimapPos"] = 318.3962877145804,
+["hide"] = false,
+},
+["Settings"] = {
+["SpecialBobbers"] = -1,
+["OutfitManager"] = "OutfitDisplayFrame",
+["TotalTimeFishing"] = 19805.43199999999,
+["WatchFishies"] = false,
+["WatchCurrentOnly"] = true,
+["WatchCurrentZone"] = true,
+["GroupByLocation"] = false,
+},
+["WasWearing"] = {
+},
+["WatcherLocation"] = {
+["grp_point"] = "CENTER",
+["solo_y"] = -3.0517578125e-05,
+["solo_x"] = 9.1552734375e-05,
+["solo_point"] = "CENTER",
+["grp_x"] = 9.1552734375e-05,
+["solo_scale"] = 1,
+["raid_point"] = "CENTER",
+["raid_scale"] = 1,
+["grp_scale"] = 1,
+["grp_y"] = -3.0517578125e-05,
+["raid_y"] = -3.0517578125e-05,
+["raid_x"] = 9.1552734375e-05,
+},
+["Version"] = 1190400,
+}
+FBODF_PlayerInfo = {
+["Outfit"] = {
+},
+}

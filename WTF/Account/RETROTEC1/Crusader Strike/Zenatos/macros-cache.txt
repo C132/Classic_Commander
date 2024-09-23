@@ -1,0 +1,50 @@
+VER 3 000000000100000B " " "134400"
+#showtooltip
+/cast [@mouseover,help][] Flash of Light
+END
+VER 3 0000000001000002 " " "134400"
+#showtooltip Seal of the Crusader
+/cast Judgement
+/cast Seal of the Crusader
+END
+VER 3 0000000001000003 " " "134400"
+#showtooltip
+/cast [mod] Devotion Aura; [@mouseover,harm][] Hammer of Justice
+/startattack
+END
+VER 3 0000000001000004 " " "134400"
+#showtooltip
+/cast [@mouseover, help][@targetstarget, help][help][] Purify
+END
+VER 3 0000000001000006 " " "134400"
+#showtooltip
+/cast [mod] Blessing of Wisdom; Blessing of Might
+END
+VER 3 0000000001000007 " " "132110"
+/equip Verigan's Fist
+/equip Thief's Blade
+/equip Bastion of Stormwind
+END
+VER 3 0000000001000008 " " "134400"
+#showtooltip
+/cast [mod] Retribution Aura; Consecration
+END
+VER 3 0000000001000009 " " "134400"
+#showtooltip
+/cast [mod] Concentration Aura; Holy Light
+END
+VER 3 000000000100000A "Justice" "135959"
+/cast judgement
+/cast Seal of Justice
+/startattack
+END
+VER 3 0000000001000005 "Martyrdom" "135959"
+/cast judgement
+/cast Seal of Martyrdom
+/startattack
+END
+VER 3 0000000001000001 "Righteousness" "135959"
+/cast judgement
+/cast Seal of Righteousness
+/startattack
+END

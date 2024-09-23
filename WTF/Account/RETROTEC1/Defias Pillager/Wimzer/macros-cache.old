@@ -1,0 +1,34 @@
+VER 3 0000000001000001 " " "133952"
+#showtooltip
+/cast [mod] Conjure Food
+/use [nomod] Conjured Muffin
+/use [nomod] Conjured Bread
+END
+VER 3 0000000001000002 " " "132793"
+#showtooltip
+/cast [mod] Conjure Water
+/use [nomod] Conjured Fresh Water
+/use [nomod] Conjured Water
+END
+VER 3 0000000001000003 " " "134400"
+#showtooltip Arcane Missiles
+/stopcasting [nochanneling:Arcane Missiles]
+/cast [nochanneling] Arcane Missiles
+END
+VER 3 0000000001000004 " " "134400"
+#showtooltip
+/cast Fire Blast
+/cast [mod] !Shoot
+END
+VER 3 0000000001000005 " " "134400"
+#showtooltip Frostbolt
+/cast [mod] Frostbolt(Rank 1); [nochanneling] Frostbolt
+END
+VER 3 0000000001000006 " " "134400"
+#showtooltip
+/cast [mod] Amplify Magic; Dampen Magic
+END
+VER 3 0000000001000007 " " "134400"
+#showtooltip
+/cast [mod] Remove Lesser Curse; [harm] Detect Magic; Remove Lesser Curse
+END
