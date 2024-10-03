@@ -7,7 +7,7 @@
 ## SavedVariables: Bagnon_Sets
 ## Dependencies: BagBrother
 ## Interface: 30403
-## Version: 11.0.20
+## Version: 11.0.21
 
 src\main.xml
 legacy\legacy.xml

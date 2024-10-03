@@ -230,7 +230,7 @@ local CreateScrollFrames = function(parent, name)
 	---@class SettingsCategoryPanelScrollChild: ResizeLayoutFrame
 	local scrollChild = CreateFrame('Frame', name..'ScrollChild', scrollBox, 'ResizeLayoutFrame')
 	scrollChild.scrollable = true
-	scrollChild:SetFixedWidth(InterfaceOptionsFramePanelContainer:GetWidth() - scrollBar:GetWidth() - 8)
+	scrollChild:SetFixedWidth(SettingsPanel.Container.SettingsCanvas:GetWidth() - scrollBar:GetWidth() - 8)
 	scrollChild:SetHeight(100) -- initial arbitrary height
 	scrollChild.ScrollBox = scrollBox;
 	scrollChild.ScrollBar = scrollBar;
@@ -756,13 +756,8 @@ function Options.AddSpacerToPanel(factor)
 	Options.NextRelativY=Options.NextRelativY-20*(factor or 1)
 end
 
----@param panel number? Unused. Defaults to panel 1 (main addons panel)
-function Options.OpenCategoryPanel(panel)
-	Settings.OpenToCategory(Options.CategoryPanels[1].name)
-	-- if panel > 1 then
-	-- 	-- there is currently no way to open to a specific subcategory without tainting the ui
-	-- 	-- see https://github.com/Stanzilla/WoWUIBugs/issues/285 for more info
-	-- 	SettingsPanel:SelectCategory(categoriesByName[Options.CategoryPanels[panel].name]) 
-	-- end
+---@param panelID number? defaults to panel `1` (main addon's panel)
+function Options.OpenCategoryPanel(panelID)
+	Settings.OpenToCategory(Options.CategoryPanels[panelID or 1].name)
 end
 

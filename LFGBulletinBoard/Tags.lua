@@ -121,6 +121,13 @@ local dungeonTags = {
 		zhTW = nil,
 		zhCN = nil,
 	},
+	CRY = { -- Crystal vale
+		enGB = "crystal vale thunderan thunderaan",
+		ruRU = nil,  
+		frFR = nil,  
+		zhTW = nil,
+		zhCN = nil,
+	},
 	AZN = { -- Azjol-Nerub
 		enGB = "azn an nerub",
 		deDE = nil,
@@ -262,8 +269,8 @@ local dungeonTags = {
 	NULL = { -- Fall of Deathwing
 
 	},
-	NULL = { -- Firelands
-
+	FL = { -- Firelands
+		enGB = "firelands fl ragnaros"
 	},
 	GNO = { -- Gnomeregan
 		enGB = "gnomer gno gnomeregan gnomeragan gnome gnomregan gnomragan gnom gnomergan",

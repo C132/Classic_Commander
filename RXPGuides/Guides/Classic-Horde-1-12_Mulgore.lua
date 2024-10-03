@@ -111,7 +111,7 @@ step << Shaman
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<1.9
     .target Marjak
-step << Rogue
+step << Shaman
     #completewith RitesoftheEarthmother
     +Equip the |T135139:0|t[Short Staff]
     .use 2132
@@ -397,6 +397,7 @@ step << Druid
     .aura 408828 >>|cRXP_WARN_Kill 6 mobs with|r |T136096:0|t[Moonfire] |cRXP_WARN_to unlock the Idol|r
     .isOnQuest 77648
 step
+    #season 2
     #completewith DirtyMap
     #requires FuryofStormrageRune
     .train 414799 >>|cRXP_WARN_Use the|r |T134903:0|t[|cRXP_FRIENDLY_Lunar Idol|r] |cRXP_WARN_to train|r |T237472:0|t[Fury of Stormrage]
@@ -777,21 +778,33 @@ step << Hunter
     .itemcount 2509,1
     .itemStat 18,QUALITY,<7
     .itemStat 18,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<3.0
-step
+step << Tauren
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Maur|r, |cRXP_FRIENDLY_Zarlman|r, |cRXP_FRIENDLY_Harken|r and |cRXP_FRIENDLY_Mull|r
     .accept 766 >>Accept Mazzranache
+    .target +Maur Raincaller
     .goto Mulgore,46.97,57.07
     .turnin 767 >>Turn in Rite of Vision
     .accept 771 >>Accept Rite of Vision
+    .target +Zarlman Two-Moons
     .goto Mulgore,47.76,57.53
     .accept 761 >>Accept Swoop Hunting
+    .target +Harken Windtotem
     .goto Mulgore,48.71,59.32
     .accept 748 >>Accept Poison Water
+    .target +Mull Thunderhorn
     .goto Mulgore,48.53,60.40
-    .target Maur Raincaller
-    .target Zarlman Two-Moons
-    .target Harken Windtotem
-    .target Mull Thunderhorn
+step << !Tauren
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Maur|r, |cRXP_FRIENDLY_Zarlman|r and |cRXP_FRIENDLY_Harken|r
+    .accept 766 >>Accept Mazzranache
+    .target +Maur Raincaller
+    .goto Mulgore,46.97,57.07
+    .turnin 767 >>Turn in Rite of Vision
+    .accept 771 >>Accept Rite of Vision
+    .target +Zarlman Two-Moons
+    .goto Mulgore,47.76,57.53
+    .accept 761 >>Accept Swoop Hunting
+    .target +Harken Windtotem
+    .goto Mulgore,48.71,59.32
 step
     #sticky
     #completewith Well
@@ -800,7 +813,7 @@ step
     .complete 766,2 --Flatland Cougar Femur (1)
     .complete 766,3 --Plainstrider Scale (1)
     .complete 766,4 --Swoop Gizzard (1)
-step
+step << Tauren
     #completewith Ambercorns
     >>Kill |cRXP_ENEMY_Prairie Wolves|r and |cRXP_ENEMY_Adult Plainstriders|r. Loot them for their |cRXP_LOOT_Paws|r and |cRXP_LOOT_Talons|r
     .complete 748,1 --Prairie Wolf Paw (6)
@@ -836,7 +849,7 @@ step
     .complete 761,1 --Trophy Swoop Quill (8)
     .mob Wiry Swoop
     .mob Swoop
-step
+step << Tauren
 #loop
 	.line Mulgore,50.82,66.66,51.06,63.63,52.79,62.06,53.98,61.68,55.67,62.77,56.46,64.93,56.02,67.78,55.02,69.65,52.33,70.07,50.40,70.24,48.60,69.43,45.98,69.70,48.58,67.37
 	.goto Mulgore,50.82,66.66,25,0
@@ -863,11 +876,11 @@ step << Tauren
     .turnin 748 >>Turn in Poison Water
     .accept 754 >>Accept Winterhoof Cleansing
     .target Mull Thunderhorn
-step
+step << Tauren
     #completewith next
     >>Collect the |cRXP_PICK_Well Stones|r around the Well
     .complete 771,1 --Well Stone (2)
-step
+step << Tauren
     #label Well
     .goto Mulgore,53.68,66.28
     >>|cRXP_WARN_Use the|r |T135139:0|t[Winterhoof Cleansing Totem] |cRXP_WARN_at the Well|r
@@ -941,6 +954,11 @@ step << Tauren
     .turnin 745 >>Turn in Sharing the Land
     .goto Mulgore,47.51,60.16
     .target Mull Thunderhorn
+    .target Baine Bloodhoof
+step << !Tauren
+    .goto Mulgore,47.51,60.16
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Mull|r and |cRXP_FRIENDLY_Baine|r
+    .turnin 745 >>Turn in Sharing the Land
     .target Baine Bloodhoof
 step << Warrior
     .goto Mulgore,46.80,60.85
@@ -1062,14 +1080,8 @@ step
     .complete 766,2 --Flatland Cougar Femur (1)
     .complete 766,3 --Plainstrider Scale (1)
     .complete 766,4 --Swoop Gizzard (1)
-step
-	#completewith Clawsx
-	>>Kill |cRXP_ENEMY_Swoops|r throughout Mulgore. Loot them for their |cRXP_LOOT_Quills|r
-    .complete 761,1 --Trophy Swoop Quill (8)
-    .mob Wiry Swoop
-    .mob Swoop
-step
-    #completewith next
+step << Tauren
+    #completewith RavagedCaravan1
     >>Kill |cRXP_ENEMY_Stalkers|r and |cRXP_ENEMY_Cougars|r. Loot them for their |cRXP_LOOT_Claws|r
     .complete 756,1 --Stalker Claws (6)
     .complete 756,2 --Cougar Claws (6)
@@ -1077,12 +1089,18 @@ step
     .mob Prairie Wolf Alpha
     .mob Flatland Cougar
 step
+	#completewith Clawsx
+	>>Kill |cRXP_ENEMY_Swoops|r throughout Mulgore. Loot them for their |cRXP_LOOT_Quills|r
+    .complete 761,1 --Trophy Swoop Quill (8)
+    .mob Wiry Swoop
+    .mob Swoop
+step
+    #label RavagedCaravan1
     .goto Mulgore,53.74,48.17
     >>Click the |cRXP_PICK_Sealed Supply Crate|r
     .turnin 749 >>Turn in The Ravaged Caravan
     .accept 751 >>Accept The Ravaged Caravan
-step
-	#label Clawsx
+step << Tauren
     .goto Mulgore,58.1,48.6,60,0
     .goto Mulgore,54.5,40.1,60,0
     .goto Mulgore,46.4,50.7,60,0
@@ -1093,6 +1111,9 @@ step
     .mob Prairie Wolf
     .mob Prairie Wolf Alpha
     .mob Flatland Cougar
+step
+    #optional
+    #label Clawsx
 step
     #softcore
 	#completewith Thunderhorn
@@ -1124,7 +1145,7 @@ step << Shaman/Druid
 step << Shaman/Druid
     .goto Mulgore,45.66,58.60
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Mahnott|r|cRXP_BUY_. Buy a|r |T135145:0|t[Walking Stick] |cRXP_BUY_from him|r
-    .collect 2495,1,758,1 --Collect Walking Stick (1)
+    .collect 2495,1,743,1 --Collect Walking Stick (1)
     .money <0.0504
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<4.2
@@ -1138,7 +1159,7 @@ step << Warrior
 step << Warrior
     .goto Mulgore,45.66,58.60
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Mahnott|r|cRXP_BUY_. Buy a|r |T133053:0|t[Wooden Mallet] |cRXP_BUY_from him|r
-    .collect 2493,1,758,1 --Collect Wooden Mallet (1)
+    .collect 2493,1,743,1 --Collect Wooden Mallet (1)
     .money <0.0701
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<4.9
@@ -1152,14 +1173,14 @@ step << Hunter
 step << Hunter
     .goto Mulgore,45.50,58.47
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Kennah|r|cRXP_BUY_. Buy a|r |T135611:0|t[Ornate Blunderbuss] |cRXP_BUY_from him|r
-    .collect 2509,1,758,1 --Collect Ornate Blunderbuss (1)
+    .collect 2509,1,743,1 --Collect Ornate Blunderbuss (1)
     .money <0.0414
     .itemStat 18,QUALITY,<7
     .itemStat 18,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<3.0
 step << Hunter
     .goto Mulgore,45.86,57.67
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Loorat|r
-    .collect 2516,1000,818,1 << Hunter --Light Shot (1000)
+    .collect 2516,1000,743,1 << Hunter --Light Shot (1000)
     .target Moorat Longstride
     .itemcount 2512,<800 << Hunter
 step << Shaman/Druid
@@ -1190,22 +1211,20 @@ step
     .vendor >> Vendor trash and repair
     .target Harant Ironbrace
 step
-    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Mull|r and |cRXP_FRIENDLY_Harken|r
-    .turnin 756 >>Turn in Thunderhorn Totem
-    .accept 758 >>Accept Thunderhorn Cleansing
-    .goto Mulgore,48.53,60.40
-    .turnin 761 >>Turn in Swoop Hunting
     .goto Mulgore,48.71,59.32
-    .target Mull Thunderhorn
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Harken|r
+    .turnin 761 >>Turn in Swoop Hunting
     .target Harken Windtotem
     .isQuestComplete 761
-step
-    #label Thunderhorn
+step << Tauren
     .goto Mulgore,48.53,60.40
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Mull|r
     .turnin 756 >>Turn in Thunderhorn Totem
     .accept 758 >>Accept Thunderhorn Cleansing
     .target Mull Thunderhorn
+step
+    #optional
+    #label Thunderhorn
 step << Shaman
     .goto Mulgore,48.38,59.15
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Narm|r
@@ -1733,6 +1752,7 @@ step
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Innkeeper Kauth|r
     .vendor >> Vendor trash
     .target Innkeeper Kauth
+    .isQuestAvailable 870
 step
     .goto Mulgore,46.75,60.24
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Skorn|r
@@ -1759,35 +1779,58 @@ step << Warrior
     .train 403475 >>Use the |T134419:0|t[|cRXP_FRIENDLY_Rune of Devastate|r]
     .use 204703
     .itemcount 204703,1
-step
+step << Tauren
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r, |cRXP_FRIENDLY_Ruul|r, |cRXP_FRIENDLY_Mull|r and |cRXP_FRIENDLY_Harken|r
     .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
     .goto Mulgore,47.51,60.16
     .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
     .goto Mulgore,47.35,62.02
     .turnin 758 >>Turn in Thunderhorn Cleansing
     .accept 759 >>Accept Wildmane Totem
+    .target +Mull Thunderhorn
     .goto Mulgore,48.54,60.38
     .turnin 761 >>Turn in Swoop Hunting
+    .target +Harken Windtotem
     .goto Mulgore,48.71,59.32
-    .target Baine Bloodhoof
-    .target Ruul Eagletalon
-    .target Mull Thunderhorn
-    .target Harken Windtotem
     .isQuestComplete 761
-step
+step << Tauren
     #label Bloodhoofturnins1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r, |cRXP_FRIENDLY_Ruul|r, and |cRXP_FRIENDLY_Mull|r
     .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
     .goto Mulgore,47.51,60.16
     .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
     .goto Mulgore,47.35,62.02
     .turnin 758 >>Turn in Thunderhorn Cleansing
     .accept 759 >>Accept Wildmane Totem
+    .target +Mull Thunderhorn
     .goto Mulgore,48.54,60.38
-    .target Baine Bloodhoof
-    .target Ruul Eagletalon
-    .target Mull Thunderhorn
+step << !Tauren
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r, |cRXP_FRIENDLY_Ruul|r and |cRXP_FRIENDLY_Harken|r
+    .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
+    .goto Mulgore,47.51,60.16
+    .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
+    .goto Mulgore,47.35,62.02
+    .turnin 761 >>Turn in Swoop Hunting
+    .target +Harken Windtotem
+    .goto Mulgore,48.71,59.32
+    .isQuestComplete 761
+step << !Tauren
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r and |cRXP_FRIENDLY_Ruul|r
+    .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
+    .goto Mulgore,47.51,60.16
+    .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
+    .goto Mulgore,47.35,62.02
+step
+    #optional
+    #label Bloodhoofturnins1
 step
     #completewith AlphaTeeth
     .destroy 4702 >> You can delete |T134707:0|t[Prospector's Picks] from your bags, as they're no longer needed
@@ -1914,7 +1957,7 @@ step << Hunter
     .cast 1515 >>Tame a |cRXP_ENEMY_Prairie Wolf Alpha|r
     >>|cRXP_WARN_This will allow you to train|r |T132140:0|t[Claw Rank 2]
     .mob Prairie Wolf Alpha
-step
+step << Tauren
     #label AlphaTeeth
     .goto Mulgore,67.19,63.78,50,0
     .goto Mulgore,66.34,67.01,50,0
@@ -1928,15 +1971,15 @@ step
     >>Kill |cRXP_ENEMY_Prairie Wolf Alphas|r in the area. Loot them for their |cRXP_LOOT_Teeth|r
     .complete 759,1 --Prairie Alpha Tooth (8)
     .mob Prairie Wolf Alpha
-step
+step << Tauren
     #softcore
 	#completewith Thunderhorn2
     .deathskip >> Die and respawn at the |cRXP_FRIENDLY_Spirit Healer|r
-step
+step << Tauren
     #hardcore
     #completewith Thunderhorn2
     .goto Mulgore,46.5,55.5,150 >> Travel back to Bloodhoof Village
-step
+step << Tauren
     #label Thunderhorn2
     .goto Mulgore,48.53,60.40
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Mull|r
@@ -1944,6 +1987,7 @@ step
     .accept 760 >>Accept Wildmane Cleansing
     .target Mull Thunderhorn
 step
+    #completewith CampTFP
     .goto Mulgore,69.6,60.4,100,0
     .zone The Barrens >> Travel to The Barrens
 step << !Druid
@@ -1957,6 +2001,9 @@ step << Druid
     .fp Camp Taurajo >> Get the Camp Taurajo flight path
     .fly Thunder Bluff >>Fly to Thunder Bluff
     .target Omusa Thunderhorn
+step
+    #optional
+    #label CampTFP
 step << Druid
     .goto Thunder Bluff,45.83,64.74
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Innkeeper Pala|r
@@ -2116,7 +2163,6 @@ step
     #optional
     .goto The Barrens,52.26,31.93
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Tonga|r
-    .turnin 870 >>Turn in The Forgotten Pools
     .accept 877 >>Accept The Stagnant Oasis
     .target Tonga Runetotem
     .isQuestTurnedIn 877
@@ -2148,7 +2194,6 @@ step
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Devrak|r
     .turnin 6361 >>Turn in A Bundle of Hides
     .accept 6362 >>Accept Ride to Thunder Bluff
-    .fly Thunder Bluff >>Fly to Thunder Bluff
     .target Devrak
 step
     #completewith RideToTB
@@ -2420,11 +2465,12 @@ step
 step << Shaman
     #season 2
     #completewith next
-    >>Kill |cRXP_ENEMY_Windfury Harpies|r. Loot them for their |cRXP_LOOT_Feathers|r
+    >>Kill |cRXP_ENEMY_Windfury Sorceresses|r. Loot them for their |cRXP_LOOT_Azure Feather|r
+    >>Kill |cRXP_ENEMY_Windfury Matriarchs|r. Loot them for their |cRXP_LOOT_Bronze Feathers|r
     .complete 744,1 --Azure Feather (6)
+    .mob +Windfury Sorceress
     .complete 744,2 --Bronze Feather (6)
-    .mob Windfury Matriarch
-    .mob Windfury Sorceress
+    .mob +Windfury Matriarch
     .train 410104,1
 step << Shaman
     #season 2
@@ -2446,17 +2492,20 @@ step << Shaman
     .collect 206170,8,76160,1 --Windfury Cone (8)
     .train 410104,1
 step
-    .goto Mulgore,31.7,28.2,90,0
-    .goto Mulgore,30.2,19.5,90,0
-    .goto Mulgore,31.7,28.2
-    >>Kill |cRXP_ENEMY_Windfury Harpies|r. Loot them for their |cRXP_LOOT_Feathers|r
+    #loop
+    .goto Mulgore,31.7,28.2,0
+    .goto Mulgore,30.2,19.5,0
+    .goto Mulgore,31.7,28.2,40,0
+    .goto Mulgore,30.2,19.5,40,0
+    >>Kill |cRXP_ENEMY_Windfury Sorceresses|r. Loot them for their |cRXP_LOOT_Azure Feather|r
+    >>Kill |cRXP_ENEMY_Windfury Matriarchs|r. Loot them for their |cRXP_LOOT_Bronze Feathers|r
     .complete 744,1 --Azure Feather (6)
+    .mob +Windfury Sorceress
     .complete 744,2 --Bronze Feather (6)
-    .mob Windfury Matriarch
-    .mob Windfury Sorceress
-step
+    .mob +Windfury Matriarch
+step << Tauren
     .goto Mulgore,42.5,13.8
-    >>|cRXP_WARN_Use the|r |T135139:0|t[Wildmane Cleansing Totem] |cRXP_WARN_at the Well|r
+    .use 5416 >>|cRXP_WARN_Use the|r |T135139:0|t[Wildmane Cleansing Totem] |cRXP_WARN_at the Well|r
     .complete 760,1 --Cleanse the Wildmane Well (1)
 step << Warrior/Hunter
     season 2
@@ -2471,7 +2520,7 @@ step << Warrior/Hunter
     >>Kill |cRXP_ENEMY_Arra'Chea|r (Big black kodo). Kill and loot him for his |cRXP_LOOT_Horn|r << !Warrior !Hunter
     >>Kill |cRXP_ENEMY_Arra'Chea|r (Big black kodo). Kill and loot him for his |cRXP_LOOT_Horn|r and |T134419:0|t[|cRXP_FRIENDLY_Rune of Furious Thunder|r] << Warrior
     >>Kill |cRXP_ENEMY_Arra'Chea|r (Big black kodo). Kill and loot him for his |cRXP_LOOT_Horn|r and |T134419:0|t[|cRXP_FRIENDLY_Rune of Explosive Shot|r] << Hunter
-     >>|cRXP_WARN_He patrols clockwise around Northern Mulgore|r
+    >>|cRXP_WARN_He patrols clockwise around Northern Mulgore|r
     .complete 776,1 --Horn of Arra'chea (1)
     .collect 204809,1 << Warrior --Rune of Furious Thunder(1)
     .collect 206169,1 << Hunter --Rune of Explosive Shot (1)
@@ -2682,8 +2731,7 @@ step
     .turnin 770 >>Turn in The Demon Scarred Cloak
     .target Skorn Whitecloud
     .isOnQuest 770
-step
-    #label WildManeTurnIn
+step << Tauren
     .goto Mulgore,48.53,60.40
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Mull|r
     .turnin 760 >>Turn in Wildmane Cleansing
@@ -2712,6 +2760,9 @@ step << Hunter
     .train 14281 >> Train your class spells
     .target Yaw Sharpmane
     .xp <12,1
+step
+    #optional
+    #label WildManeTurnIn
 step
     #completewith Fizsprocket
     .goto Mulgore,61.51,47.29,20 >> Travel to The Venture Co. Mine
@@ -2901,6 +2952,7 @@ step << Warrior
     .complete 1498,1 --Singed Scale (5)
     .mob Lightning Hide
 step << Warrior
+    .goto The Barrens,61.4,21.1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Uzzek||r
     .turnin 1498 >>Turn in Path of Defense
     .accept 1502 >>Accept Thun'grim Firegaze
@@ -3021,7 +3073,7 @@ step << Shaman
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<1.9
     .target Marjak
-step << Rogue
+step << Shaman
     #completewith RitesoftheEarthmother
     +Equip the |T135139:0|t[Short Staff]
     .use 2132
@@ -3283,6 +3335,7 @@ step << Druid
     .aura 408828 >>|cRXP_WARN_Kill 6 mobs with|r |T136096:0|t[Moonfire] |cRXP_WARN_to unlock the Idol|r
     .isOnQuest 77648
 step
+    #season 2
     #completewith DirtyMap
     #requires FuryofStormrageRune
     .train 414799 >>|cRXP_WARN_Use the|r |T134903:0|t[|cRXP_FRIENDLY_Lunar Idol|r] |cRXP_WARN_to train|r |T237472:0|t[Fury of Stormrage]
@@ -3645,21 +3698,33 @@ step << Hunter
     .itemcount 2509,1
     .itemStat 18,QUALITY,<7
     .itemStat 18,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<3.0
-step
+step << Tauren
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Maur|r, |cRXP_FRIENDLY_Zarlman|r, |cRXP_FRIENDLY_Harken|r and |cRXP_FRIENDLY_Mull|r
     .accept 766 >>Accept Mazzranache
+    .target +Maur Raincaller
     .goto Mulgore,46.97,57.07
     .turnin 767 >>Turn in Rite of Vision
     .accept 771 >>Accept Rite of Vision
+    .target +Zarlman Two-Moons
     .goto Mulgore,47.76,57.53
     .accept 761 >>Accept Swoop Hunting
+    .target +Harken Windtotem
     .goto Mulgore,48.71,59.32
     .accept 748 >>Accept Poison Water
+    .target +Mull Thunderhorn
     .goto Mulgore,48.53,60.40
-    .target Maur Raincaller
-    .target Zarlman Two-Moons
-    .target Harken Windtotem
-    .target Mull Thunderhorn
+step << !Tauren
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Maur|r, |cRXP_FRIENDLY_Zarlman|r and |cRXP_FRIENDLY_Harken|r
+    .accept 766 >>Accept Mazzranache
+    .target +Maur Raincaller
+    .goto Mulgore,46.97,57.07
+    .turnin 767 >>Turn in Rite of Vision
+    .accept 771 >>Accept Rite of Vision
+    .target +Zarlman Two-Moons
+    .goto Mulgore,47.76,57.53
+    .accept 761 >>Accept Swoop Hunting
+    .target +Harken Windtotem
+    .goto Mulgore,48.71,59.32
 step
     #sticky
     #completewith Well
@@ -3668,7 +3733,7 @@ step
     .complete 766,2 --Flatland Cougar Femur (1)
     .complete 766,3 --Plainstrider Scale (1)
     .complete 766,4 --Swoop Gizzard (1)
-step
+step << Tauren
     #completewith Ambercorns
     >>Kill |cRXP_ENEMY_Prairie Wolves|r and |cRXP_ENEMY_Adult Plainstriders|r. Loot them for their |cRXP_LOOT_Paws|r and |cRXP_LOOT_Talons|r
     .complete 748,1 --Prairie Wolf Paw (6)
@@ -3704,7 +3769,7 @@ step
     .complete 761,1 --Trophy Swoop Quill (8)
     .mob Wiry Swoop
     .mob Swoop
-step
+step << Tauren
 #loop
 	.line Mulgore,50.82,66.66,51.06,63.63,52.79,62.06,53.98,61.68,55.67,62.77,56.46,64.93,56.02,67.78,55.02,69.65,52.33,70.07,50.40,70.24,48.60,69.43,45.98,69.70,48.58,67.37
 	.goto Mulgore,50.82,66.66,25,0
@@ -3731,11 +3796,11 @@ step << Tauren
     .turnin 748 >>Turn in Poison Water
     .accept 754 >>Accept Winterhoof Cleansing
     .target Mull Thunderhorn
-step
+step << Tauren
     #completewith next
     >>Collect the |cRXP_PICK_Well Stones|r around the Well
     .complete 771,1 --Well Stone (2)
-step
+step << Tauren
     #label Well
     .goto Mulgore,53.68,66.28
     >>|cRXP_WARN_Use the|r |T135139:0|t[Winterhoof Cleansing Totem] |cRXP_WARN_at the Well|r
@@ -3813,6 +3878,12 @@ step << Tauren
     .turnin 745 >>Turn in Sharing the Land
     .goto Mulgore,47.51,60.16
     .target Mull Thunderhorn
+    .target Baine Bloodhoof
+step << !Tauren
+    #xprate <2.1
+    .goto Mulgore,47.51,60.16
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Mull|r and |cRXP_FRIENDLY_Baine|r
+    .turnin 745 >>Turn in Sharing the Land
     .target Baine Bloodhoof
 step << Tauren
     #xprate >2.09
@@ -3953,7 +4024,7 @@ step
     .complete 761,1 --Trophy Swoop Quill (8)
     .mob Wiry Swoop
     .mob Swoop
-step
+step << Tauren
     #xprate <2.1
     #completewith next
     >>Kill |cRXP_ENEMY_Stalkers|r and |cRXP_ENEMY_Cougars|r. Loot them for their |cRXP_LOOT_Claws|r
@@ -3968,7 +4039,7 @@ step
     >>Click the |cRXP_PICK_Sealed Supply Crate|r
     .turnin 749 >>Turn in The Ravaged Caravan
     .accept 751 >>Accept The Ravaged Caravan
-step
+step << Tauren
     #xprate <2.1
 	#label Clawsx
     .goto Mulgore,58.1,48.6,60,0
@@ -4018,7 +4089,7 @@ step << Shaman/Druid
     #xprate <2.1
     .goto Mulgore,45.66,58.60
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Mahnott|r|cRXP_BUY_. Buy a|r |T135145:0|t[Walking Stick] |cRXP_BUY_from him|r
-    .collect 2495,1,758,1 --Collect Walking Stick (1)
+    .collect 2495,1,743,1 --Collect Walking Stick (1)
     .money <0.0504
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<4.2
@@ -4034,7 +4105,7 @@ step << Warrior
     #xprate <2.1
     .goto Mulgore,45.66,58.60
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Mahnott|r|cRXP_BUY_. Buy a|r |T133053:0|t[Wooden Mallet] |cRXP_BUY_from him|r
-    .collect 2493,1,758,1 --Collect Wooden Mallet (1)
+    .collect 2493,1,743,1 --Collect Wooden Mallet (1)
     .money <0.0701
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<4.9
@@ -4050,7 +4121,7 @@ step << Hunter
     #xprate <2.1
     .goto Mulgore,45.50,58.47
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Kennah|r|cRXP_BUY_. Buy a|r |T135611:0|t[Ornate Blunderbuss] |cRXP_BUY_from him|r
-    .collect 2509,1,758,1 --Collect Ornate Blunderbuss (1)
+    .collect 2509,1,743,1 --Collect Ornate Blunderbuss (1)
     .money <0.0414
     .itemStat 18,QUALITY,<7
     .itemStat 18,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<3.0
@@ -4058,7 +4129,7 @@ step << Hunter
     #xprate <2.1
     .goto Mulgore,45.86,57.67
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Loorat|r
-    .collect 2516,1000,818,1 << Hunter --Light Shot (1000)
+    .collect 2516,1000,743,1 << Hunter --Light Shot (1000)
     .target Moorat Longstride
     .itemcount 2512,<800 << Hunter
 step << Shaman/Druid
@@ -4094,23 +4165,21 @@ step
     .target Harant Ironbrace
 step
     #xprate <2.1
-    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Mull|r and |cRXP_FRIENDLY_Harken|r
-    .turnin 756 >>Turn in Thunderhorn Totem
-    .accept 758 >>Accept Thunderhorn Cleansing
-    .goto Mulgore,48.53,60.40
-    .turnin 761 >>Turn in Swoop Hunting
     .goto Mulgore,48.71,59.32
-    .target Mull Thunderhorn
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Harken|r
+    .turnin 761 >>Turn in Swoop Hunting
     .target Harken Windtotem
     .isQuestComplete 761
-step
+step << Tauren
     #xprate <2.1
-    #label Thunderhorn
     .goto Mulgore,48.53,60.40
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Mull|r
     .turnin 756 >>Turn in Thunderhorn Totem
     .accept 758 >>Accept Thunderhorn Cleansing
     .target Mull Thunderhorn
+step
+    #optional
+    #label Thunderhorn
 step << Shaman
     .goto Mulgore,48.38,59.15
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Narm|r
@@ -4723,60 +4792,83 @@ step << Warrior
     .train 403475 >>Use the |T134419:0|t[|cRXP_FRIENDLY_Rune of Devastate|r]
     .use 204703
     .itemcount 204703,1
-step
+step << Tauren
     #xprate <2.1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r, |cRXP_FRIENDLY_Ruul|r, |cRXP_FRIENDLY_Mull|r and |cRXP_FRIENDLY_Harken|r
     .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
     .goto Mulgore,47.51,60.16
     .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
     .goto Mulgore,47.35,62.02
     .turnin 758 >>Turn in Thunderhorn Cleansing
     --.accept 759 >>Accept Wildmane Totem
+    .target +Mull Thunderhorn
     .goto Mulgore,48.54,60.38
     .turnin 761 >>Turn in Swoop Hunting
+    .target +Harken Windtotem
     .goto Mulgore,48.71,59.32
-    .target Baine Bloodhoof
-    .target Ruul Eagletalon
-    .target Mull Thunderhorn
-    .target Harken Windtotem
     .isQuestComplete 761
-step
+step << !Tauren
     #xprate <2.1
-    #label Bloodhoofturnins1
-    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r, |cRXP_FRIENDLY_Ruul|r, and |cRXP_FRIENDLY_Mull|r
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r, |cRXP_FRIENDLY_Ruul|r and |cRXP_FRIENDLY_Harken|r
     .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
     .goto Mulgore,47.51,60.16
     .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
+    .goto Mulgore,47.35,62.02
+    .turnin 761 >>Turn in Swoop Hunting
+    .target +Harken Windtotem
+    .goto Mulgore,48.71,59.32
+    .isQuestComplete 761
+step << Tauren
+    #xprate <2.1
+    #label Bloodhoofturnins1
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r and |cRXP_FRIENDLY_Ruul|r
+    .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
+    .goto Mulgore,47.51,60.16
+    .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
     .goto Mulgore,47.35,62.02
     .turnin 758 >>Turn in Thunderhorn Cleansing
     --.accept 759 >>Accept Wildmane Totem
+    .target +Mull Thunderhorn
     .goto Mulgore,48.54,60.38
-    .target Baine Bloodhoof
-    .target Ruul Eagletalon
-    .target Mull Thunderhorn
+step << !Tauren
+    #xprate <2.1
+    #label Bloodhoofturnins1
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r and |cRXP_FRIENDLY_Ruul|r
+    .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
+    .goto Mulgore,47.51,60.16
+    .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
+    .goto Mulgore,47.35,62.02
 step
     #xprate >2.09
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r, |cRXP_FRIENDLY_Ruul|r and |cRXP_FRIENDLY_Harken|r
     .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
     .goto Mulgore,47.51,60.16
     .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
     .goto Mulgore,47.35,62.02
     .turnin 761 >>Turn in Swoop Hunting
+    .target +Harken Windtotem
     .goto Mulgore,48.71,59.32
-    .target Baine Bloodhoof
-    .target Ruul Eagletalon
-    .target Harken Windtotem
     .isQuestComplete 761
 step
     #xprate >2.09
     #label Bloodhoofturnins1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Baine|r and |cRXP_FRIENDLY_Ruul|r
     .turnin 746 >>Turn in Dwarven Digging
+    .target +Baine Bloodhoof
     .goto Mulgore,47.51,60.16
     .turnin 743 >>Turn in Dangers of the Windfury
+    .target +Ruul Eagletalon
     .goto Mulgore,47.35,62.02
-    .target Baine Bloodhoof
-    .target Ruul Eagletalon
 step
     #completewith AlphaTeeth
     .destroy 4702 >> You can delete |T134707:0|t[Prospector's Picks] from your bags, as they're no longer needed
@@ -5503,11 +5595,12 @@ step << Hunter
 step << Shaman
     #season 2
     #completewith next
-    >>Kill |cRXP_ENEMY_Windfury Harpies|r. Loot them for their |cRXP_LOOT_Feathers|r
+    >>Kill |cRXP_ENEMY_Windfury Sorceresses|r. Loot them for their |cRXP_LOOT_Azure Feather|r
+    >>Kill |cRXP_ENEMY_Windfury Matriarchs|r. Loot them for their |cRXP_LOOT_Bronze Feathers|r
     .complete 744,1 --Azure Feather (6)
+    .mob +Windfury Sorceress
     .complete 744,2 --Bronze Feather (6)
-    .mob Windfury Matriarch
-    .mob Windfury Sorceress
+    .mob +Windfury Matriarch
     .train 410104,1
 step << Shaman
     #season 2
@@ -5530,14 +5623,17 @@ step << Shaman
     .train 410104,1
 step << Shaman
     #season 2
-    .goto Mulgore,31.7,28.2,90,0
-    .goto Mulgore,30.2,19.5,90,0
-    .goto Mulgore,31.7,28.2
-    >>Kill |cRXP_ENEMY_Windfury Harpies|r. Loot them for their |cRXP_LOOT_Feathers|r
+    #loop
+    .goto Mulgore,31.7,28.2,0
+    .goto Mulgore,30.2,19.5,0
+    .goto Mulgore,31.7,28.2,40,0
+    .goto Mulgore,30.2,19.5,40,0
+    >>Kill |cRXP_ENEMY_Windfury Sorceresses|r. Loot them for their |cRXP_LOOT_Azure Feather|r
+    >>Kill |cRXP_ENEMY_Windfury Matriarchs|r. Loot them for their |cRXP_LOOT_Bronze Feathers|r
     .complete 744,1 --Azure Feather (6)
+    .mob +Windfury Sorceress
     .complete 744,2 --Bronze Feather (6)
-    .mob Windfury Matriarch
-    .mob Windfury Sorceress
+    .mob +Windfury Matriarch
 step << Shaman
     #season 2
     #completewith next
@@ -5788,6 +5884,7 @@ step << Warrior
     .complete 1498,1 --Singed Scale (5)
     .mob Lightning Hide
 step << Warrior
+    .goto The Barrens,61.4,21.1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Uzzek|r
     .turnin 1498 >>Turn in Path of Defense
     .accept 1502 >>Accept Thun'grim Firegaze

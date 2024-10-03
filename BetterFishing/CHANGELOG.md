@@ -1,3 +1,6 @@
+### 1.1.28
+- Version Update
+
 ### 1.1.27
 - Added Slider to change double click detection speed rather than it being hardcoded to 0.2
 

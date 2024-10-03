@@ -1,8 +1,8 @@
-## Interface: 11503, 40400, 110002
+## Interface: 11504, 40400, 110002
 ## Title: |cffEEE4AEBetter Fishing|r
 ## Notes: |cff58C6FASingle Keybind Fishing and Enhanced Sound while fishing|r|n|n|cffFFC700Slash command: /bf, /betterfishing|r
 ## Author: Yuyuli
-## Version: 1.1.27
+## Version: 1.1.28
 ## SavedVariables: BetterFishingDB
 ## IconTexture: 4675629
 

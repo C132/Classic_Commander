@@ -1,6 +1,6 @@
-## Interface: 11503
+## Interface: 11504
 ## Title: VendorPricePlus
-## Version: 1.0.5
+## Version: 1.0.6
 ## Author: StormtrooperTK421 (Ketho, Icesythe7)
 ## Notes: Displays the sale price and unit price of items when not at a vendor
 ## DefaultState: enabled

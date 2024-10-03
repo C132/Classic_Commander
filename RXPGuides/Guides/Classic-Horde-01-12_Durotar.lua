@@ -424,6 +424,7 @@ step << Warlock
     .money >0.01
 step << Warlock
     #season 2
+    #label Nartok2
     .goto Durotar,40.65,68.52
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Nartok|r
     .turnin 3090 >>Turn in Tainted Parchment
@@ -432,6 +433,7 @@ step << Warlock
     .target Nartok
 step << Warlock
     #season 0
+    #label Nartok2
     .goto Durotar,40.65,68.52
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Nartok|r
     .turnin 3090 >>Turn in Tainted Parchment
@@ -1152,13 +1154,6 @@ step << Priest
     #season 0
     .goto Durotar,42.36,68.81
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Ken'jai|r
-    .train 589 >> Train your class spells
-    .money <0.021
-    .target Ken'jai
-step << Priest
-    #season 0
-    .goto Durotar,42.36,68.81
-    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Ken'jai|r
     .train 1243 >> Train |T135987:0|t[Power Word: Fortitude]
     .train 589 >> Train |T136207:0|t[Shadow Word: Pain]
     .money <0.011
@@ -1269,20 +1264,8 @@ step
     .mob Vile Familiar
     .isOnQuest 4402
 step
-    .goto Durotar,44.67,64.92,25,0
-    .goto Durotar,43.45,62.96,25,0
-    .goto Durotar,43.82,62.72,25,0
-    .goto Durotar,44.85,61.54,25,0
-    .goto Durotar,44.88,59.66,25,0
-    .goto Durotar,44.61,58.20,25,0
-    .goto Durotar,45.46,58.49,25,0
-    .goto Durotar,45.93,60.62,25,0
-    .goto Durotar,46.87,60.36,25,0
-    .goto Durotar,47.28,62.80,25,0
-    .goto Durotar,46.08,62.98,25,0
-#loop
-	.line Durotar,44.67,64.92,43.45,62.96,43.82,62.72,44.85,61.54,44.88,59.66,44.61,58.20,45.46,58.49,45.93,60.62,46.87,60.36,47.28,62.80,46.08,62.98,44.67,64.92
-	.goto Durotar,44.67,64.92,25,0
+    #loop
+	.goto Durotar,44.67,64.92,0
 	.goto Durotar,43.45,62.96,25,0
 	.goto Durotar,43.82,62.72,25,0
 	.goto Durotar,44.85,61.54,25,0
@@ -1521,7 +1504,7 @@ step
     #softcore
     #completewith next
     .goto Durotar,44.70,52.47
-    .deathskip >> |cRXP_WARN_Alternatively, die and respawn at the |cRXP_FRIENDLY_Spirit Healer|r near the arrow|r
+    .deathskip >> |cRXP_WARN_Die and respawn at the |cRXP_FRIENDLY_Spirit Healer|r near the arrow|r
     .target Spirit Healer
     .subzoneskip 362
 step
@@ -1576,7 +1559,7 @@ step << Warrior/Rogue
     .goto Durotar,51.90,41.14
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Wuark|r
     >>|cRXP_BUY_Buy a|r |T134708:0|t[Mining Pick] |cRXP_BUY_from|r |cRXP_FRIENDLY_him|r
-    .collect 2901,1,9144,1 --Mining Pick (1)
+    .collect 2901,1,784,1 --Mining Pick (1)
     .target Wuark
 step << Warrior/Rogue
     #softcore
@@ -1742,7 +1725,7 @@ step << Warlock
     .turnin 77586 >>Turn in Stolen Power
     .target Nartok
 step << Warlock
-    #season
+    #season 0
     .goto Durotar,40.65,68.52
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Nartok|r
     .train 695 >> Train |T136197:0|t[Shadow Bolt]
@@ -1750,7 +1733,7 @@ step << Warlock
     .target Nartok
     .money <0.02
 step << Warlock
-    #season
+    #season 0
     .goto Durotar,40.65,68.52
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Nartok|r
     .train 695 >> Train |T136197:0|t[Shadow Bolt]
@@ -2005,7 +1988,8 @@ step
     .goto Durotar,57.73,77.91,40,0
     .goto Durotar,55.72,79.62,40,0
     .goto Durotar,54.23,82.26,40,0
-    .goto Durotar,52.20,83.00,40,0 >>Run down the beach. Kill |cRXP_ENEMY_Crawlers|r and |cRXP_ENEMY_Makruras|r. Loot them for their |cRXP_LOOT_Mucus|r and |cRXP_LOOT_Eyes|r. You do not have to finish this step here.
+    .goto Durotar,52.20,83.00,40,0
+    >>Run down the beach. Kill |cRXP_ENEMY_Crawlers|r and |cRXP_ENEMY_Makruras|r. Loot them for their |cRXP_LOOT_Mucus|r and |cRXP_LOOT_Eyes|r. You do not have to finish this step here.
     .complete 818,2,4 --Crawler Mucus (8)
     .mob +Pygmy Surf Crawler
     .mob +Surf Crawler
@@ -2022,7 +2006,8 @@ step
     .goto Durotar,57.73,77.91,40,0
     .goto Durotar,55.72,79.62,40,0
     .goto Durotar,54.23,82.26,40,0
-    .goto Durotar,52.20,83.00,40,0 >>Run down the beach. Kill |cRXP_ENEMY_Crawlers|r and |cRXP_ENEMY_Makruras|r. Loot them for their |cRXP_LOOT_Mucus|r and |cRXP_LOOT_Eyes|r. You do not have to finish this step here.
+    .goto Durotar,52.20,83.00,40,0
+    >>Run down the beach. Kill |cRXP_ENEMY_Crawlers|r and |cRXP_ENEMY_Makruras|r. Loot them for their |cRXP_LOOT_Mucus|r and |cRXP_LOOT_Eyes|r. You do not have to finish this step here.
     .complete 818,2 --Crawler Mucus (8)
     .mob +Pygmy Surf Crawler
     .mob +Surf Crawler
@@ -2366,7 +2351,7 @@ step << Warrior/Rogue
     .goto Durotar,51.90,41.14
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Wuark|r
     >>|cRXP_BUY_Buy a|r |T134708:0|t[Mining Pick] |cRXP_BUY_from|r |cRXP_FRIENDLY_him|r
-    .collect 2901,1,9144,1 --Mining Pick (1)
+    .collect 2901,1,784,1 --Mining Pick (1)
     .target Wuark
 step << Warrior/Rogue
     #hardcore
@@ -2604,7 +2589,7 @@ step << Warrior/Rogue
     .goto Durotar,51.90,41.14
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Wuark|r
     >>|cRXP_BUY_Buy a|r |T134708:0|t[Mining Pick] |cRXP_BUY_from|r |cRXP_FRIENDLY_Wuark|r
-    .collect 2901,1,9144,1 --Mining Pick (1)
+    .collect 2901,1,825,1 --Mining Pick (1)
     .target Wuark
 step << Warrior/Rogue
     .goto Durotar,52.05,40.73
@@ -2622,7 +2607,7 @@ step << Shaman
 step << Shaman
     .goto Durotar,52.02,40.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Uhgar|r|cRXP_BUY_. Buy a|r |T135145:0|t[Walking Stick] |cRXP_BUY_from him|r
-    .collect 2495,1,818,1 --Collect Walking Stick (1)
+    .collect 2495,1,825,1 --Collect Walking Stick (1)
     .money <0.0504
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<4.2
@@ -2636,7 +2621,7 @@ step << Rogue
 step << Rogue
     .goto Durotar,52.02,40.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Uhgar|r|cRXP_BUY_. Buy a|r |T135641:0|t[Stiletto] |cRXP_BUY_from him|r
-    .collect 2494,1,818,1 --Collect Stiletto (1)
+    .collect 2494,1,825,1 --Collect Stiletto (1)
     .money <0.0401
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<3.3
@@ -2650,7 +2635,7 @@ step << Orc Warrior
 step << Orc Warrior
     .goto Durotar,52.02,40.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Uhgar|r|cRXP_BUY_. Buy a|r |T132401:0|t[large Axe] |cRXP_BUY_from him|r
-    .collect 2491,1,818,1 --Collect Large Axe (1)
+    .collect 2491,1,825,1 --Collect Large Axe (1)
     .money <0.0484
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<4.2
@@ -2664,7 +2649,7 @@ step << Troll Warrior
 step << Troll Warrior
     .goto Durotar,52.02,40.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Uhgar|r|cRXP_BUY_. Buy a|r |T135421:0|t[Tomahawk] |cRXP_BUY_from him|r
-    .collect 2490,1,818,1 --Collect Tomahawk (1)
+    .collect 2490,1,825,1 --Collect Tomahawk (1)
     .money <0.0540
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<3.8
@@ -2727,7 +2712,7 @@ step << Hunter
 step << Hunter
     .goto Durotar,52.97,41.04
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to |cRXP_FRIENDLY_Ghrawt|r. Buy|r |T132382:0|t[Rough Arrows] |cRXP_BUY_from him|r
-    .collect 2512,1000,818,1 << Hunter --Rough Arrow (1000)
+    .collect 2512,1000,825,1 << Hunter --Rough Arrow (1000)
     .target Ghrawt
     .itemcount 2512,<600 << Hunter
 step
@@ -2738,9 +2723,9 @@ step
     .vendor >> Vendor Trash
     .home >> Set your Hearthstone to Razor Hill
     .turnin 2161 >>Turn in A Peon's Burden
-    .collect 1179,10,818,1 << Warlock/Priest/Shaman --Ice Cold Milk (10)
-    .collect 1179,20,818,1 << Mage --Ice Cold Milk (20)
-    .collect 2287,10,818,1 << Rogue/Warrior --Haunch of Meat (10)
+    .collect 1179,10,825,1 << Warlock/Priest/Shaman --Ice Cold Milk (10)
+    .collect 1179,20,825,1 << Mage --Ice Cold Milk (20)
+    .collect 2287,10,825,1 << Rogue/Warrior --Haunch of Meat (10)
     .target Innkeeper Grosk
     .money <0.065 << Rogue/Warrior/Shaman/Warlock --to ensure user still has 4 silver left for class spells
     .money <0.045 << Priest --to ensure user still has 2 silver left for class spells
@@ -2767,10 +2752,15 @@ step << Shaman
     .train 8044 >> Train your class spells
     .target Swart
 step << Warlock
+    .goto Durotar,54.37,41.20
+    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Dhugru|r
+    .train 1120 >> Train your class spells
+    .target Dhugru Gorelust
+step << Warlock
     #completewith next
     .goto Durotar,54.70,41.49
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Kitha|r and buy |T133738:0|t[Firebolt Rank 2]
-    .collect 16302,1,818,1 --Grimoire of Firebolt (Rank 2) (1)
+    .collect 16302,1,825,1 --Grimoire of Firebolt (Rank 2) (1)
     .target Kitha
     .money <0.01
 step << Warlock
@@ -2815,7 +2805,7 @@ step
     .goto Durotar,54.39,42.18
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Jark|r
     >>|cRXP_BUY_Buy a|r |T133634:0|t[Small Brown Pouch] |cRXP_BUY_from|r |cRXP_FRIENDLY_him|r
-    .collect 4496,1,818,1 --Small Brown Pouch (1)
+    .collect 4496,1,825,1 --Small Brown Pouch (1)
     .target Jark
     .money <0.05
 step
@@ -3200,7 +3190,7 @@ step << Shaman
     #xprate >1.49
     .goto Durotar,54.42,42.59
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Swart|r
-    .train 8050 >> Train your class spells
+    .train 8050 >>Train your class spells
     .accept 2983 >>Accept Call of Fire
     .target Swart
     .isNotOnQuest 1522
@@ -3209,13 +3199,13 @@ step << Warrior
     .goto Durotar,54.18,42.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Tarshaw|r
     .accept 1505 >>Accept Veteran Uzzek
-    .trainer >> Train your class spells
+    .trainer >>Train your class spells
     .target Tarshaw Jaggedscar
 step << Warlock
     #xprate >1.49
     .goto Durotar,54.37,41.20
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Dhugru|r
-    .train 1120 >> Train your class spells
+    .train 1120 >>Train your class spells
     .target Dhugru Gorelust
 step << Warlock
     #xprate >1.49
@@ -3917,6 +3907,7 @@ step << Warrior
     .target Uzzek
 step << Warrior
     #xprate >1.49
+    .goto The Barrens,61.4,21.1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Uzzek|r
     .turnin 1498 >>Turn in Path of Defense
     .accept 1502 >>Accept Thun'grim Firegaze
@@ -4567,11 +4558,12 @@ step << Shaman
 step << Shaman
     #season 2
     #completewith next
-    >>Kill |cRXP_ENEMY_Windfury Harpies|r. Loot them for their |cRXP_LOOT_Feathers|r
+    >>Kill |cRXP_ENEMY_Windfury Sorceresses|r. Loot them for their |cRXP_LOOT_Azure Feather|r
+    >>Kill |cRXP_ENEMY_Windfury Matriarchs|r. Loot them for their |cRXP_LOOT_Bronze Feathers|r
     .complete 744,1 --Azure Feather (6)
+    .mob +Windfury Sorceress
     .complete 744,2 --Bronze Feather (6)
-    .mob Windfury Matriarch
-    .mob Windfury Sorceress
+    .mob +Windfury Matriarch
     .train 410104,1
 step << Shaman
     #season 2
@@ -4587,14 +4579,17 @@ step << Shaman
     .xp <4,1
 step << Shaman
     #season 2
-    .goto Mulgore,31.7,28.2,90,0
-    .goto Mulgore,30.2,19.5,90,0
-    .goto Mulgore,31.7,28.2
-    >>Kill |cRXP_ENEMY_Windfury Harpies|r. Loot them for their |cRXP_LOOT_Feathers|r
+    #loop
+    .goto Mulgore,31.7,28.2,0
+    .goto Mulgore,30.2,19.5,0
+    .goto Mulgore,31.7,28.2,40,0
+    .goto Mulgore,30.2,19.5,40,0
+    >>Kill |cRXP_ENEMY_Windfury Sorceresses|r. Loot them for their |cRXP_LOOT_Azure Feather|r
+    >>Kill |cRXP_ENEMY_Windfury Matriarchs|r. Loot them for their |cRXP_LOOT_Bronze Feathers|r
     .complete 744,1 --Azure Feather (6)
+    .mob +Windfury Sorceress
     .complete 744,2 --Bronze Feather (6)
-    .mob Windfury Matriarch
-    .mob Windfury Sorceress
+    .mob +Windfury Matriarch
     .train 410104,1
 step << Shaman
     #season 2
@@ -5221,7 +5216,7 @@ step << Warrior/Shaman/Hunter
     .turnin 926 >>Turn in Flawed Power Stone
     .isOnQuest 924
 step << Warrior
-    #xprate <1.5 << !Hunter
+    .goto The Barrens,61.4,21.1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Uzzek|r
     .turnin 1498 >>Turn in Path of Defense
     .accept 1502 >>Accept Thun'grim Firegaze
@@ -7448,6 +7443,7 @@ step << Warlock
     .money >0.01
 step << Warlock
     #season 2
+    #label Nartok2
     .goto Durotar,40.65,68.52
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Nartok|r
     .turnin 3090 >>Turn in Tainted Parchment
@@ -7456,6 +7452,7 @@ step << Warlock
     .target Nartok
 step << Warlock
     #season 0
+    #label Nartok2
     .goto Durotar,40.65,68.52
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Nartok|r
     .turnin 3090 >>Turn in Tainted Parchment
@@ -8413,7 +8410,7 @@ step
     #softcore
     #completewith next
     .goto Durotar,44.70,52.47
-    .deathskip >> |cRXP_WARN_Alternatively, die and respawn at the |cRXP_FRIENDLY_Spirit Healer|r near the arrow|r
+    .deathskip >> |cRXP_WARN_Die and respawn at the |cRXP_FRIENDLY_Spirit Healer|r near the arrow|r
     .target Spirit Healer
     .subzoneskip 362
 step
@@ -8468,7 +8465,7 @@ step << Warrior/Rogue
     .goto Durotar,51.90,41.14
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Wuark|r
     >>|cRXP_BUY_Buy a|r |T134708:0|t[Mining Pick] |cRXP_BUY_from|r |cRXP_FRIENDLY_him|r
-    .collect 2901,1,9144,1 --Mining Pick (1)
+    .collect 2901,1,784,1 --Mining Pick (1)
     .target Wuark
 step << Warrior/Rogue
     #softcore
@@ -8635,7 +8632,7 @@ step << Warlock
     .turnin 77586 >>Turn in Stolen Power
     .target Nartok
 step << Warlock
-    #season
+    #season 0
     .goto Durotar,40.65,68.52
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Nartok|r
     .train 695 >> Train |T136197:0|t[Shadow Bolt]
@@ -8643,7 +8640,7 @@ step << Warlock
     .target Nartok
     .money <0.02
 step << Warlock
-    #season
+    #season 0
     .goto Durotar,40.65,68.52
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Nartok|r
     .train 695 >> Train |T136197:0|t[Shadow Bolt]
@@ -8899,7 +8896,8 @@ step
     .goto Durotar,57.73,77.91,40,0
     .goto Durotar,55.72,79.62,40,0
     .goto Durotar,54.23,82.26,40,0
-    .goto Durotar,52.20,83.00,40,0 >>Run down the beach. Kill |cRXP_ENEMY_Crawlers|r and |cRXP_ENEMY_Makruras|r. Loot them for their |cRXP_LOOT_Mucus|r and |cRXP_LOOT_Eyes|r. You do not have to finish this step here.
+    .goto Durotar,52.20,83.00,40,0
+    >>Run down the beach. Kill |cRXP_ENEMY_Crawlers|r and |cRXP_ENEMY_Makruras|r. Loot them for their |cRXP_LOOT_Mucus|r and |cRXP_LOOT_Eyes|r. You do not have to finish this step here.
     .complete 818,2,4 --Crawler Mucus (8)
     .mob +Pygmy Surf Crawler
     .mob +Surf Crawler
@@ -8916,7 +8914,8 @@ step
     .goto Durotar,57.73,77.91,40,0
     .goto Durotar,55.72,79.62,40,0
     .goto Durotar,54.23,82.26,40,0
-    .goto Durotar,52.20,83.00,40,0 >>Run down the beach. Kill |cRXP_ENEMY_Crawlers|r and |cRXP_ENEMY_Makruras|r. Loot them for their |cRXP_LOOT_Mucus|r and |cRXP_LOOT_Eyes|r. You do not have to finish this step here.
+    .goto Durotar,52.20,83.00,40,0
+    >>Run down the beach. Kill |cRXP_ENEMY_Crawlers|r and |cRXP_ENEMY_Makruras|r. Loot them for their |cRXP_LOOT_Mucus|r and |cRXP_LOOT_Eyes|r. You do not have to finish this step here.
     .complete 818,2 --Crawler Mucus (8)
     .mob +Pygmy Surf Crawler
     .mob +Surf Crawler
@@ -9268,7 +9267,7 @@ step << Warrior/Rogue
     .goto Durotar,51.90,41.14
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Wuark|r
     >>|cRXP_BUY_Buy a|r |T134708:0|t[Mining Pick] |cRXP_BUY_from|r |cRXP_FRIENDLY_him|r
-    .collect 2901,1,9144,1 --Mining Pick (1)
+    .collect 2901,1,784,1 --Mining Pick (1)
     .target Wuark
 step << Warrior/Rogue
     #hardcore
@@ -9494,7 +9493,7 @@ step << Warrior/Rogue
     .goto Durotar,51.90,41.14
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Wuark|r
     >>|cRXP_BUY_Buy a|r |T134708:0|t[Mining Pick] |cRXP_BUY_from|r |cRXP_FRIENDLY_Wuark|r
-    .collect 2901,1,9144,1 --Mining Pick (1)
+    .collect 2901,1,825,1 --Mining Pick (1)
     .target Wuark
 step << Warrior/Rogue
     .goto Durotar,52.05,40.73
@@ -9512,7 +9511,7 @@ step << Shaman
 step << Shaman
     .goto Durotar,52.02,40.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Uhgar|r|cRXP_BUY_. Buy a|r |T135145:0|t[Walking Stick] |cRXP_BUY_from him|r
-    .collect 2495,1,818,1 --Collect Walking Stick (1)
+    .collect 2495,1,825,1 --Collect Walking Stick (1)
     .money <0.0504
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<4.2
@@ -9526,7 +9525,7 @@ step << Rogue
 step << Rogue
     .goto Durotar,52.02,40.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Uhgar|r|cRXP_BUY_. Buy a|r |T135641:0|t[Stiletto] |cRXP_BUY_from him|r
-    .collect 2494,1,818,1 --Collect Stiletto (1)
+    .collect 2494,1,825,1 --Collect Stiletto (1)
     .money <0.0401
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<3.3
@@ -9540,7 +9539,7 @@ step << Orc Warrior
 step << Orc Warrior
     .goto Durotar,52.02,40.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Uhgar|r|cRXP_BUY_. Buy a|r |T132401:0|t[large Axe] |cRXP_BUY_from him|r
-    .collect 2491,1,818,1 --Collect Large Axe (1)
+    .collect 2491,1,825,1 --Collect Large Axe (1)
     .money <0.0484
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<4.2
@@ -9554,7 +9553,7 @@ step << Troll Warrior
 step << Troll Warrior
     .goto Durotar,52.02,40.46
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to|r |cRXP_FRIENDLY_Uhgar|r|cRXP_BUY_. Buy a|r |T135421:0|t[Tomahawk] |cRXP_BUY_from him|r
-    .collect 2490,1,818,1 --Collect Tomahawk (1)
+    .collect 2490,1,825,1 --Collect Tomahawk (1)
     .money <0.0540
     .itemStat 16,QUALITY,<7
     .itemStat 16,ITEM_MOD_DAMAGE_PER_SECOND_SHORT,<3.8
@@ -9617,7 +9616,7 @@ step << Hunter
 step << Hunter
     .goto Durotar,52.97,41.04
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|t|cRXP_BUY_Talk to |cRXP_FRIENDLY_Ghrawt|r. Buy|r |T132382:0|t[Rough Arrows] |cRXP_BUY_from him|r
-    .collect 2512,1000,818,1 << Hunter --Rough Arrow (1000)
+    .collect 2512,1000,825,1 << Hunter --Rough Arrow (1000)
     .target Ghrawt
     .itemcount 2512,<600 << Hunter
 step
@@ -9628,9 +9627,9 @@ step
     .vendor >> Vendor Trash
     .home >> Set your Hearthstone to Razor Hill
     .turnin 2161 >>Turn in A Peon's Burden
-    .collect 1179,10,818,1 << Warlock/Priest/Shaman --Ice Cold Milk (10)
-    .collect 1179,20,818,1 << Mage --Ice Cold Milk (20)
-    .collect 2287,10,818,1 << Rogue/Warrior --Haunch of Meat (10)
+    .collect 1179,10,825,1 << Warlock/Priest/Shaman --Ice Cold Milk (10)
+    .collect 1179,20,825,1 << Mage --Ice Cold Milk (20)
+    .collect 2287,10,825,1 << Rogue/Warrior --Haunch of Meat (10)
     .target Innkeeper Grosk
     .money <0.065 << Rogue/Warrior/Shaman/Warlock --to ensure user still has 4 silver left for class spells
     .money <0.045 << Priest --to ensure user still has 2 silver left for class spells
@@ -9660,7 +9659,7 @@ step << Warlock
     #completewith next
     .goto Durotar,54.70,41.49
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Kitha|r and buy |T133738:0|t[Firebolt Rank 2]
-    .collect 16302,1,818,1 --Grimoire of Firebolt (Rank 2) (1)
+    .collect 16302,1,825,1 --Grimoire of Firebolt (Rank 2) (1)
     .target Kitha
     .money <0.01
 step << Warlock
@@ -9705,7 +9704,7 @@ step
     .goto Durotar,54.39,42.18
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Jark|r
     >>|cRXP_BUY_Buy a|r |T133634:0|t[Small Brown Pouch] |cRXP_BUY_from|r |cRXP_FRIENDLY_him|r
-    .collect 4496,1,818,1 --Small Brown Pouch (1)
+    .collect 4496,1,825,1 --Small Brown Pouch (1)
     .target Jark
     .money <0.05
 step
@@ -10459,6 +10458,7 @@ step << Warrior/Shaman
     .zoneskip The Barrens
 step << Warrior
     #xprate >2.09
+    .goto The Barrens,61.4,21.1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Uzzek|r
     .turnin 1498 >>Turn in Path of Defense
     .accept 1502 >>Accept Thun'grim Firegaze
@@ -10984,6 +10984,7 @@ step
     .target Kargal Battlescar
 step << Warrior
     #xprate <2.1
+    .goto The Barrens,61.4,21.1
     >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_Uzzek|r
     .turnin 1498 >>Turn in Path of Defense
     .accept 1502 >>Accept Thun'grim Firegaze

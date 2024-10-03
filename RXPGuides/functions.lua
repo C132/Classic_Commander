@@ -6,12 +6,12 @@ local fmt, tinsert = string.format,tinsert
 local LoadAddOn = C_AddOns and C_AddOns.LoadAddOn or _G.LoadAddOn
 local IsAddOnLoaded = C_AddOns and C_AddOns.IsAddOnLoaded or _G.IsAddOnLoaded
 local GetItemInfo = C_Item and C_Item.GetItemInfo or _G.GetItemInfo
-local GetSpellInfo = C_Spell and C_Spell.GetSpellInfo or _G.GetSpellInfo
 local GetSpellTexture = C_Spell and C_Spell.GetSpellTexture or _G.GetSpellTexture
 local GetSpellSubtext = C_Spell and C_Spell.GetSpellSubtext or _G.GetSpellSubtext
 local IsCurrentSpell = C_Spell and C_Spell.IsCurrentSpell or _G.IsCurrentSpell
 local IsSpellKnown = C_Spell and C_Spell.IsSpellKnown or _G.IsSpellKnown
 local IsPlayerSpell = C_Spell and C_Spell.IsPlayerSpell or _G.IsPlayerSpell
+local GetSpellInfo = C_Spell and C_Spell.GetSpellInfo and addon.GetSpellInfo or _G.GetSpellInfo
 
 -- start, duration, enabled, modRate = GetSpellCooldown(spell)
 local GetSpellCooldown = _G.GetSpellCooldown or function(spellIdentifier)
@@ -76,10 +76,10 @@ events.destroy = events.collect
 events.buy = events.collect
 events.accept = {"QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_REMOVED"}
 events.turnin = "QUEST_TURNED_IN"
-if addon.game == "CLASSIC" then
-    events.complete = {"QUEST_LOG_UPDATE", "CINEMATIC_STOP"}
-else
+if C_EventUtils and C_EventUtils.IsEventValid("STOP_MOVIE") then
     events.complete = {"QUEST_LOG_UPDATE", "CINEMATIC_STOP", "STOP_MOVIE"}
+else
+    events.complete = {"QUEST_LOG_UPDATE", "CINEMATIC_STOP"}
 end
 events.fp = {"UI_INFO_MESSAGE", "UI_ERROR_MESSAGE", "TAXIMAP_OPENED", "GOSSIP_SHOW", "TAXIMAP_CLOSED"}
 events.hs = "UNIT_SPELLCAST_SUCCEEDED"
@@ -99,14 +99,14 @@ events.train = {
 }
 events.istrained = events.train
 events.spellmissing = events.train
-events.zone = "ZONE_CHANGED_NEW_AREA"
-events.zoneskip = "ZONE_CHANGED_NEW_AREA"
+local zoneEvents = {"ZONE_CHANGED_NEW_AREA","ZONE_CHANGED","NEW_WMO_CHUNK","PLAYER_ENTERING_WORLD"}
+events.zone = zoneEvents
+events.zoneskip = zoneEvents
+events.subzone = zoneEvents
+events.subzoneskip = zoneEvents
+
 if C_EventUtils and C_EventUtils.IsEventValid("ZONE_CHANGED_INDOORS") then
-    events.subzone = {"ZONE_CHANGED","ZONE_CHANGED_INDOORS"}
-    events.subzoneskip = events.subzone
-else
-    events.subzone = "ZONE_CHANGED"
-    events.subzoneskip = "ZONE_CHANGED"
+   tinsert(zoneEvents,"ZONE_CHANGED_INDOORS")
 end
 events.bankdeposit = {"BANKFRAME_OPENED", "BAG_UPDATE_DELAYED"}
 events.skipgossip = {"GOSSIP_SHOW", "GOSSIP_CLOSED", "GOSSIP_CONFIRM_CANCEL", "GOSSIP_CONFIRM"}
@@ -232,6 +232,22 @@ local GetItemCooldown = addon.GetItemCooldown
 
 addon.recentTurnIn = {}
 
+function addon.ExpandQuestHeaders()
+    for i = 1, GetNumQuests() do
+        local isCollapsed
+        if GetQuestLogTitle then
+            _, _, _, _, isCollapsed = GetQuestLogTitle(i)
+        else
+            local qInfo = C_QuestLog.GetInfo(i)
+            isCollapsed = qInfo and qInfo.isCollapsed
+        end
+        if isCollapsed then
+            _G.ExpandQuestHeader(0)
+            return
+        end
+    end
+end
+
 if C_GossipInfo and C_GossipInfo.SelectOptionByIndex then
     GossipSelectOption = function(index)
         local gossipOptions = C_GossipInfo.GetOptions()
@@ -273,6 +289,7 @@ function addon.IsQuestComplete(id)
     if C_QuestLog.IsComplete then
         return C_QuestLog.IsComplete(id)
     else
+        addon.ExpandQuestHeaders()
         for i = 1, GetNumQuests() do
             local _, _, _, _, _,
                   isComplete, _, questID = GetQuestLogTitle(i);
@@ -290,6 +307,7 @@ local function GetLogIndexForQuestID(questID)
     if C_QuestLog.GetLogIndexForQuestID then
         return C_QuestLog.GetLogIndexForQuestID(questID),C_QuestLog.IsPushableQuest(questID)
     else
+        addon.ExpandQuestHeaders()
         for i = 1, GetNumQuests() do
             local _, _, _, _, _, _, _, id = GetQuestLogTitle(i);
             if questID == id then
@@ -335,6 +353,9 @@ if _G.QuestieLoader then db = _G.QuestieLoader:ImportModule("QuestieDB") end
 addon.questieDB = db
 
 function addon.FormatNumber(number, precision)
+    if type(number) ~= "number" then
+        return "-1"
+    end
     precision = precision or 0
     local integer = math.floor(number)
     local decimal = math.floor((number - integer) * 10 ^ precision + 0.5)
@@ -397,7 +418,8 @@ local function CacheQuest(id,data,remove)
     local questObjectivesCache = RXPCData.questObjectivesCache
     if not id or id == 0 then
         return
-    elseif not (remove or questObjectivesCache[id]) then
+    elseif data and not (remove or questObjectivesCache[id]) then
+        data.finished = false
         questObjectivesCache[0] = questObjectivesCache[0] + 1
         questObjectivesCache[id] = data
     elseif remove and questObjectivesCache[id] then
@@ -488,6 +510,7 @@ function addon.GetQuestName(id)
 
     if IsOnQuest(id) then
         if GetQuestLogTitle then
+            addon.ExpandQuestHeaders()
             for i = 1, GetNumQuests() do
                 local questLogTitleText, _, _, _, _, _, _, questID =
                     GetQuestLogTitle(i);
@@ -556,6 +579,7 @@ function addon.GetQuestObjectives(id, step, useCache)
     if IsOnQuest(id) then
         local questInfo = {}
         local questFound
+        addon.ExpandQuestHeaders()
         for i = 1, GetNumQuests() do
             local isComplete, questID
             if GetQuestLogTitle then
@@ -626,19 +650,7 @@ function addon.GetQuestObjectives(id, step, useCache)
             end
         end
         if not questFound then
-            for i = 1, GetNumQuests() do
-                local isCollapsed
-                if GetQuestLogTitle then
-                    _, _, _, _, isCollapsed = GetQuestLogTitle(i)
-                else
-                    local qInfo = C_QuestLog.GetInfo(i) or {}
-                    isCollapsed = qInfo.isCollapsed
-                end
-                if isCollapsed then
-                    ExpandQuestHeader(0)
-                    break
-                end
-            end
+            addon.ExpandQuestHeaders()
         end
     elseif (stepdiff > 4 or useCache) and questObjectivesCache[id] then
         return questObjectivesCache[id]
@@ -1485,7 +1497,7 @@ function addon.functions.complete(self, ...)
         local text, id, obj, objMax, flags = ...
 
         flags = tonumber(flags) or 0
-        id = tonumber(id)
+        id = GetQuestId(tonumber(id))
         obj = tonumber(obj)
         if not (id and obj) then
             addon.error(L("Error parsing guide") .. " " .. addon.currentGuideName ..
@@ -3332,7 +3344,7 @@ function addon.functions.abandon(self, ...)
         local element = {}
         -- element.tag = "abandon"
         local text, id = ...
-        id = tonumber(id)
+        id = GetQuestId(tonumber(id))
         if not id then
             return addon.error(
                         L("Error parsing guide") .. " "  .. addon.currentGuideName ..
@@ -3507,9 +3519,10 @@ function addon.functions.questcount(self, text, count, ...)
     local event = text
     if not step.active then return end
     count = 0
-    for _,id in pairs(element.ids) do
+    for _,quest in pairs(element.ids) do
+        local id = GetQuestId(quest)
         addon.questAccept[id] = element
-        if IsOnQuest(id) then
+        if IsOnQuest(id) or IsQuestTurnedIn(id) then
             count = count + 1
         end
     end
@@ -3889,7 +3902,7 @@ function addon.functions.link(self, ...)
                            ": Invalid text/url\n" .. self)
         end
         element.textOnly = true
-        element.url = url
+        element.url = url:gsub("\\?\\%-","-")
         element.hideTooltip = true
         element.tooltip = L("Click to view the link")
         element.text = text
@@ -5536,11 +5549,42 @@ function addon.functions.dmf(self, ...)
         local text = ...
         if text and text ~= "" then element.text = text end
         element.textOnly = true
+        element.eventName = _G.CALENDAR_FILTER_DARKMOON
+        return element
+    end
+    return addon.functions.holiday(self, ...)
+end
+
+function addon.functions.nodmf(self, ...)
+    if type(self) == "string" then
+        local element = {}
+        local text = ...
+        element.reverse = true
+        element.eventName = _G.CALENDAR_FILTER_DARKMOON
+        if text and text ~= "" then element.text = text end
+        element.textOnly = true
+        return element
+    end
+    return addon.functions.holiday(self, ...)
+end
+
+function addon.functions.holiday(self, text, eventId, reverse)
+    if type(self) == "string" then
+        local element = {}
+        if text and text ~= "" then element.text = text end
+        element.eventId = tonumber(eventId)
+        if not eventId then
+            return addon.error(
+                        L("Error parsing guide") .. " "  .. addon.currentGuideName ..
+                           ': Invalid event ID\n' .. self)
+        end
+        element.reverse = reverse
+        element.textOnly = true
         return element
     end
 
     local element = self.element
-    local isDmfInTown = false
+    local eventFound = false
     local step = element.step
 
     local event
@@ -5559,29 +5603,18 @@ function addon.functions.dmf(self, ...)
     for i = 1, GetNumDayEvents(0, monthDay) do
         event = GetDayEvent(0, monthDay, i)
 
-        if event and event.title == _G.CALENDAR_FILTER_DARKMOON then
-            isDmfInTown = true
+        if event and (element.eventId and element.eventId == event.eventID or (event.title == element.eventName)) then
+            eventFound = true
             break
         end
     end
     --print('dmf',isDmfInTown,element.reverse)
-    if (not isDmfInTown == not element.reverse) and not addon.isHidden then
+    if (not eventFound == not element.reverse) and not addon.isHidden then
         step.completed = true
         addon.updateSteps = true
     end
 end
 
-function addon.functions.nodmf(self, ...)
-    if type(self) == "string" then
-        local element = {}
-        local text = ...
-        element.reverse = true
-        if text and text ~= "" then element.text = text end
-        element.textOnly = true
-        return element
-    end
-    return addon.functions.dmf(self, ...)
-end
 
 events.pvp = "WAR_MODE_STATUS_UPDATE"
 events.pve = events.pvp

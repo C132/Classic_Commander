@@ -9,7 +9,21 @@ addon = LibStub("AceAddon-3.0"):NewAddon(addon, addonName, "AceEvent-3.0")
 local RegisterMessage_OLD = addon.RegisterMessage
 local rand, tinsert, select = math.random, table.insert, _G.select
 local IsAddOnLoadOnDemand = C_AddOns and C_AddOns.IsAddOnLoadOnDemand or _G.IsAddOnLoadOnDemand
-local GetSpellInfo = C_Spell and C_Spell.GetSpellInfo or _G.GetSpellInfo
+local GetSpellInfo
+if C_Spell and C_Spell.GetSpellInfo then
+    addon.GetSpellInfo = function(...)
+        local id = ...
+        if not id then return end
+        local t = C_Spell.GetSpellInfo(...)
+        --local rank = C_Spell.GetSpellSubtext(...)
+        if t then
+            return t.name, t.rank, t.iconID, t.castTime, t.minRange, t.maxRange, t.spellID, t.originalIconID
+        end
+    end
+    GetSpellInfo = addon.GetSpellInfo
+else
+    GetSpellInfo = _G.GetSpellInfo
+end
 local GetSpellTexture = C_Spell and C_Spell.GetSpellTexture or _G.GetSpellTexture
 local GetSpellSubtext = C_Spell and C_Spell.GetSpellSubtext or _G.GetSpellSubtext
 local IsCurrentSpell = C_Spell and C_Spell.IsCurrentSpell or _G.IsCurrentSpell
@@ -319,7 +333,7 @@ end
 
 local GetContainerNumSlots = C_Container and C_Container.GetContainerNumSlots or _G.GetContainerNumSlots
 local GetContainerItemID = C_Container and C_Container.GetContainerItemID or _G.GetContainerItemID
---local GetItemSpell = C_Container and C_Container.GetItemSpell or _G.GetItemSpell
+local GetItemSpell = C_Item and C_Item.GetItemSpell or _G.GetItemSpell
 
 function addon.GetSkillLevel(skill, useMaxValue)
     addon.UpdateSkillData()
@@ -341,7 +355,7 @@ function addon.GetSkillLevel(skill, useMaxValue)
         for bag = BACKPACK_CONTAINER, NUM_BAG_FRAMES do
             for slot = 1,GetContainerNumSlots(bag) do
                 local id = GetContainerItemID(bag, slot)
-                local _,spellId = GetItemSpell(id)
+                local _,spellId = GetItemSpell(id or 0)
                 level = math.max(level,finditem(spellId))
             end
         end

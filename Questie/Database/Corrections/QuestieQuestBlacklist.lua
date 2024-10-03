@@ -1806,11 +1806,15 @@ function QuestieQuestBlacklist:Load()
         [1173] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1219] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1220] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [1239] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [1240] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1251] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1252] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1253] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1259] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1260] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [1261] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [1262] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1268] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1269] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [1273] = QuestieCorrections.CATA_HIDE, -- Replaced by 27261
@@ -2124,6 +2128,7 @@ function QuestieQuestBlacklist:Load()
         [3181] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3261] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3281] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [3341] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3376] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3383] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3384] = QuestieCorrections.CATA_HIDE, -- Removed with cata
@@ -2153,6 +2158,7 @@ function QuestieQuestBlacklist:Load()
         [3623] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3624] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3631] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [3636] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3681] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3763] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [3783] = QuestieCorrections.CATA_HIDE, -- Removed with cata
@@ -2394,6 +2400,7 @@ function QuestieQuestBlacklist:Load()
         [6547] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [6561] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [6562] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [6563] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [6564] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [6565] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [6609] = QuestieCorrections.CATA_HIDE, -- Removed with cata
@@ -2413,6 +2420,7 @@ function QuestieQuestBlacklist:Load()
         [6841] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [6842] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [6921] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [6922] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [6981] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [7069] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [7181] = QuestieCorrections.CATA_HIDE, -- Removed with cata
@@ -3061,6 +3069,7 @@ function QuestieQuestBlacklist:Load()
         [11992] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [12238] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [12765] = QuestieCorrections.CATA_HIDE, -- Removed with cata
+        [13159] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [13204] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [13205] = QuestieCorrections.CATA_HIDE, -- Removed with cata
         [13303] = QuestieCorrections.CATA_HIDE, -- Removed with cata
@@ -3389,16 +3398,20 @@ function QuestieQuestBlacklist:Load()
 
         -- [29129] = true, -- A Legendary Engagement
         -- [29132] = true, -- A Legendary Engagement
-        [29202] = true, -- The Fate of Runetotem
+        --[29202] = true, -- The Fate of Runetotem
+        [29204] = true, -- The Warden's Charge
+        [29209] = true, -- Into the Fiery Depths
+        [29263] = true, -- A Bitter Pill
         [29280] = true, -- Nourishing Waters
         [29282] = true, -- Well Armed
         [29284] = true, -- Aid of the Ancients
+        [29289] = true, -- Mother's Malice
         [29326] = true, -- The Nordrassil Summit
-        [29387] = true, -- Guardians of Hyjal: Firelands Invasion!
-        [29388] = true, -- Guardians of Hyjal: Firelands Invasion!
-        [29389] = true, -- Guardians of Hyjal: Firelands Invasion!
-        [29390] = true, -- Guardians of Hyjal: Call of the Ancients
-        [29391] = true, -- Guardians of Hyjal: Call of the Ancients
+        --[29387] = true, -- Guardians of Hyjal: Firelands Invasion!
+        --[29388] = true, -- Guardians of Hyjal: Firelands Invasion!
+        --[29389] = true, -- Guardians of Hyjal: Firelands Invasion!
+        --[29390] = true, -- Guardians of Hyjal: Call of the Ancients
+        --[29391] = true, -- Guardians of Hyjal: Call of the Ancients
         [29437] = true, -- The Fallen Guardian
         [29439] = true, -- The Call of the World-Shaman
         [29440] = true, -- The Call of the World-Shaman

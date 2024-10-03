@@ -85,6 +85,7 @@ pack(C.Spell, 'GetSpellInfo', 'name, rank, iconID, castTime, minRange, maxRange,
 
 C.CurrencyInfo.IsAccountTransferableCurrency = C.CurrencyInfo.IsAccountTransferableCurrency or nop
 C.CurrencyInfo.IsAccountWideCurrency = C.CurrencyInfo.IsAccountWideCurrency or nop
+C.Bank.CanViewBank = C.Bank.CanViewBank or function(v) return v == 0 end
 C.Item.IsDressableItemByID = IsDressableItem
 
 if not C_TooltipInfo then

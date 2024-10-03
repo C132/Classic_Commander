@@ -1471,8 +1471,8 @@ RXPGuides.RegisterGuide([[
 #version 1
 #group RestedXP Heritage Armor
 #subgroup Races
-#name 5) Draenei
-#displayname Draenei
+#name 5) Draenei Heritage Armor
+#displayname Draenei Heritage Armor
 
 << Alliance
 
@@ -1730,7 +1730,7 @@ step
     .goto 106,51.87,75.51
     .target +Chieftain Hatuun
     .turnin 78078 >>Turn in Assessing the Enemy
-    .goto 106,51.92,75.68s
+    .goto 106,51.92,75.68
     .target +Arzaal
     .accept 78079 >>Accept Excision
     .goto 106,52.02,75.59

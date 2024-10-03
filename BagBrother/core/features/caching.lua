@@ -106,8 +106,7 @@ function Cacher:CURRENCY_TRACKED_CHANGED()
 end
 
 function Cacher:BANK_CLOSE()
-	local view = C.Bank.CanViewBank
-	if not view or view(0) then
+	if C.Bank.CanViewBank(0) then
 		for i = FIRST_BANK_SLOT, LAST_BANK_SLOT do
 			self:SaveBag(i)
 		end
@@ -117,8 +116,8 @@ function Cacher:BANK_CLOSE()
 		self:SaveBag(BANK_CONTAINER)
 	end
 
-	if view and view(2) then
-		BrotherBags.account = C_Bank.FetchPurchasedBankTabData(2)
+	if C.Bank.CanViewBank(2) then
+		BrotherBags.account = C.Bank.FetchPurchasedBankTabData(2)
 		for _, bag in pairs(BrotherBags.account) do
 			Mixin(bag, self:ParseBag(bag.ID))
 		end
