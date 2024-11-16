@@ -13,8 +13,6 @@ EVENTS = {
     BAG_BUTTONS_VISIBILITY_CHANGED = "BAG_BUTTONS_VISIBILITY_CHANGED",
     FADE_BAGS_WHILE_MOVING_CHANGED = "FADE_BAGS_WHILE_MOVING_CHANGED",
     ACTIONBAR_COST_MODE_CHANGED = "ACTIONBAR_COST_MODE_CHANGED",
-    MINIMAP_BUTTON_VISIBILITY_CHANGED = "MINIMAP_BUTTON_VISIBILITY_CHANGED",
-    XP_DISPLAY_MODE_CHANGED = "XP_DISPLAY_MODE_CHANGED",
     UNIT_FRAMES_VISIBILITY_CHANGED = "UNIT_FRAMES_VISIBILITY_CHANGED",
 }
 
@@ -29,18 +27,11 @@ local function OnAwake()
     Config.BagPositions = Config.BagPositions or {}
     Config.ActionBarCostMode = Config.ActionBarCostMode or "RAW_COST"
     Config.cachedOutputs = Config.cachedOutputs or {}
-    Config.ShowMinimapButton = Config.ShowMinimapButton or true
-    Config.MinimapButtonPosition = Config.MinimapButtonPosition or 0
-    Config.XPDisplayMode = Config.XPDisplayMode or "PERCENTAGE"
-    Config.lastXPGain = Config.lastXPGain or 0
-    Config.killsToLevel = Config.killsToLevel or 0
-    Config.lastXPSource = Config.lastXPSource or ""
     Config.HideUnitFrames = Config.HideUnitFrames or false
 end
 
 local function OnStart()
     -- Initialize any necessary components or features
-    LoadMinimapButtonPosition()
 end
 
 local function OnDestroy()
@@ -48,7 +39,6 @@ local function OnDestroy()
     for i = 0, 4 do
         SaveBagPosition(i)
     end
-    SaveMinimapButtonPosition()
 end
 
 frame:SetScript("OnEvent", function(self, event, addonName)
@@ -99,16 +89,6 @@ function LoadBagPosition(bagID)
     end
 end
 
-function SaveMinimapButtonPosition()
-    Config.MinimapButtonPosition = MyClassicAddonMinimapButton and MyClassicAddonMinimapButton:GetAngle() or 0
-end
-
-function LoadMinimapButtonPosition()
-    if MyClassicAddonMinimapButton then
-        MyClassicAddonMinimapButton:SetAngle(Config.MinimapButtonPosition)
-    end
-end
-
 function Debug()
     -- Add debug functionality if needed
     print("Config:", Config)
@@ -121,43 +101,6 @@ end
 
 function GetCachedOutputs()
     return Config.cachedOutputs
-end
-
-function ToggleMinimapButton()
-    Config.ShowMinimapButton = not Config.ShowMinimapButton
-    Raise(EVENTS.MINIMAP_BUTTON_VISIBILITY_CHANGED)
-end
-
-function SetXPDisplayMode(mode)
-    Config.XPDisplayMode = mode
-    Raise(EVENTS.XP_DISPLAY_MODE_CHANGED)
-end
-
-function GetXPDisplayMode()
-    return Config.XPDisplayMode
-end
-
-function UpdateLastXPGain(xpGained, source)
-    Config.lastXPGain = xpGained
-    Config.lastXPSource = source
-    UpdateKillsToLevel()
-end
-
-function UpdateKillsToLevel()
-    if Config.lastXPGain > 0 then
-        local currentXP = UnitXP("player")
-        local maxXP = UnitXPMax("player")
-        local xpNeeded = maxXP - currentXP
-        Config.killsToLevel = math.ceil(xpNeeded / Config.lastXPGain)
-    end
-end
-
-function GetKillsToLevel()
-    return Config.killsToLevel
-end
-
-function GetLastXPSource()
-    return Config.lastXPSource
 end
 
 function ToggleUnitFrames()
