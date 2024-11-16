@@ -155,7 +155,7 @@ local function OnAwake()
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" and ... == "MyClassicAddon" then
+    if event == "ADDON_LOADED" and ... == "Commander_Minimap" then
         OnAwake()
     elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
         local message = ...
