@@ -160,7 +160,7 @@ end)
 playerNameplate.Update()
 local settingsPanel = CreateFrame("Frame", "CommanderNameplateSettingsPanel", InterfaceOptionsFramePanelContainer)
 settingsPanel.name = "Commander Nameplate"
-InterfaceOptions_AddCategory(settingsPanel)
+Settings.RegisterCanvasLayoutCategory(optionsPanel, "Commander Nameplate")
 local function CreateCheckbox(name, label, description, onClick)
     local check = CreateFrame("CheckButton", "CommanderNameplate"..name.."CheckButton", settingsPanel, "InterfaceOptionsCheckButtonTemplate")
     check:SetScript("OnClick", function(self) 

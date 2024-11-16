@@ -157,7 +157,7 @@ CommanderInventorySettings:Initialize()
 
 -- Create options panel
 local optionsPanel = CommanderInventorySettings:CreateOptionsPanel()
-InterfaceOptions_AddCategory(optionsPanel)
+Settings.RegisterCanvasLayoutCategory(optionsPanel, "Commander Inventory")
 
 -- Register events for saving and loading settings
 local eventFrame = CreateFrame("Frame")

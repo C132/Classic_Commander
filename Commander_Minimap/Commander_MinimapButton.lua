@@ -28,11 +28,11 @@ local function MicroBarButtons()
 
     local function CalculateKillsToLevel()
         local xpNeeded = UnitXPMax("player") - UnitXP("player")
-        return Config.lastXPGain and Config.lastXPGain > 0 and math.ceil(xpNeeded / Config.lastXPGain) or 0
+        return MinimapConfig.lastXPGain and MinimapConfig.lastXPGain > 0 and math.ceil(xpNeeded / MinimapConfig.lastXPGain) or 0
     end
 
     local function UpdateXPText()
-        xpText:SetText(Config.XPDisplayMode == "KILLS_TO_LEVEL" and CalculateKillsToLevel() or GetXPPercentage() .. "%")
+        xpText:SetText(MinimapConfig.XPDisplayMode == "KILLS_TO_LEVEL" and CalculateKillsToLevel() or GetXPPercentage() .. "%")
     end
 
     local function GetPlayerProfessions()
@@ -101,7 +101,7 @@ local function MicroBarButtons()
             menuList = {
                 {text = "Current XP: " .. GetXPPercentage() .. "%", isTitle = true},
                 {text = "Rested XP: " .. GetRestedXPPercentage() .. "%"},
-                {text = "Last XP Gain: " .. (Config.lastXPGain or 0) .. " (" .. (Config.lastXPSource or "N/A") .. ")"},
+                {text = "Last XP Gain: " .. (MinimapConfig.lastXPGain or 0) .. " (" .. (MinimapConfig.lastXPSource or "N/A") .. ")"},
                 {text = "Kills to Level: " .. CalculateKillsToLevel()},
                 {text = string.format("Gold: %dg %ds %dc", playerMoney / 10000, (playerMoney % 10000) / 100, playerMoney % 100)},
                 {text = string.format("Durability: %.1f%%", durability)},
@@ -148,9 +148,9 @@ local function MicroBarButtons()
 end
 
 local function OnAwake()
-    Config.lastXPGain = Config.lastXPGain or 0
-    Config.lastXPSource = Config.lastXPSource or ""
-    Config.lastKnownXP = UnitXP("player")
+    MinimapConfig.lastXPGain = MinimapConfig.lastXPGain or 0
+    MinimapConfig.lastXPSource = MinimapConfig.lastXPSource or ""
+    MinimapConfig.lastKnownXP = UnitXP("player")
     frame.RenderXPText = MicroBarButtons()
 end
 
@@ -161,11 +161,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
         local message = ...
         local mobName, xpGain = message:match("^(.+) dies, you gain (%d+) experience")
         if mobName then
-            Config.lastXPSource = mobName
+            MinimapConfig.lastXPSource = mobName
             xpGain = tonumber(xpGain)
             if xpGain then
-                Config.lastXPGain = xpGain
-                Config.lastKnownXP = UnitXP("player")
+                MinimapConfig.lastXPGain = xpGain
+                MinimapConfig.lastKnownXP = UnitXP("player")
             end
         end
         if self.RenderXPText then self.RenderXPText() end

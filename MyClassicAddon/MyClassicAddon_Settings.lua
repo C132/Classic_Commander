@@ -114,4 +114,4 @@ function OpenSettings()
     InterfaceOptionsFrame_OpenToCategory(SettingsFrame)
 end
 
-InterfaceOptions_AddCategory(SettingsFrame)
+Settings.RegisterCanvasLayoutCategory(SettingsFrame, "My Classic Addon Settings")

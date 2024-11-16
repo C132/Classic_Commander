@@ -8,7 +8,7 @@ frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 EVENTS = {
     CHAT_VISIBILITY_CHANGED = "CHAT_VISIBILITY_CHANGED",
-    ACTIONBAR_UNLOCKED = "ACTIONBAR_UNLOCKED",
+    ACTIONBAR_UNLOCKED = "ACTIONBAR_UNLOCKED", 
     FIVE_SECOND_RULE_CHANGED = "FIVE_SECOND_RULE_CHANGED",
     BAG_BUTTONS_VISIBILITY_CHANGED = "BAG_BUTTONS_VISIBILITY_CHANGED",
     FADE_BAGS_WHILE_MOVING_CHANGED = "FADE_BAGS_WHILE_MOVING_CHANGED",
@@ -52,6 +52,8 @@ frame:SetScript("OnEvent", function(self, event, addonName)
 end)
 
 function AddListener(event, func)
+    if not event then return end -- Guard against nil event
+    print("Adding listener for event: " .. event)
     if not Config.callbacks[event] then
         Config.callbacks[event] = {}
     end
@@ -59,7 +61,7 @@ function AddListener(event, func)
 end
 
 function Raise(event)
-    if Config.callbacks[event] then
+    if event and Config.callbacks[event] then
         for _, func in ipairs(Config.callbacks[event]) do
             func()
         end
