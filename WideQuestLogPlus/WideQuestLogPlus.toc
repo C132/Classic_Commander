@@ -1,9 +1,0 @@
-## Interface: 11504
-## Title: WideQuestLogPlus
-## Version: 1.0.9
-## Author: StormtrooperTK421
-## Notes: Dual-pane quest log with quest level and ID
-## DefaultState: enabled
-## X-Curse-Project-ID: 900131
-
-WideQuestLogPlus.lua
