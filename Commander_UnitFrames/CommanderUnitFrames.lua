@@ -10,25 +10,18 @@ local function OnAwake()
     CommanderUnitFramesDB.showPercentage = CommanderUnitFramesDB.showPercentage or true
 end
 
-local function CreateSettingsWindow() 
-    local window = CreateFrame("Frame", "CommanderUnitFramesSettings", UIParent, "BasicFrameTemplateWithInset")
-    window:SetSize(300, 200)
-    window:SetPoint("CENTER")
-    window:SetMovable(true)
-    window:EnableMouse(true)
-    window:RegisterForDrag("LeftButton")
-    window:SetScript("OnDragStart", window.StartMoving)
-    window:SetScript("OnDragStop", window.StopMovingOrSizing)
-    window:Hide()
-
-    window.title = window:CreateFontString(nil, "OVERLAY")
-    window.title:SetFontObject("GameFontHighlight")
-    window.title:SetPoint("TOP", window.TitleBg, "TOP", 0, -5)
-    window.title:SetText("Unit Frame Settings")
+local function CreateSettingsPanel()
+    local panel = CreateFrame("Frame")
+    panel.name = "Commander Unit Frames"
+    
+    -- Title
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("Commander Unit Frames Settings")
 
     -- Scale slider
-    local scaleSlider = CreateFrame("Slider", "CommanderUnitFramesScaleSlider", window, "OptionsSliderTemplate")
-    scaleSlider:SetPoint("TOP", window, "TOP", 0, -50)
+    local scaleSlider = CreateFrame("Slider", "CommanderUnitFramesScaleSlider", panel, "OptionsSliderTemplate")
+    scaleSlider:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -40)
     scaleSlider:SetWidth(200)
     scaleSlider:SetHeight(20)
     scaleSlider:SetMinMaxValues(0.5, 2.0)
@@ -45,8 +38,8 @@ local function CreateSettingsWindow()
     end)
 
     -- Show percentage checkbox
-    local percentageCheckbox = CreateFrame("CheckButton", "CommanderUnitFramesPercentageCheckbox", window, "UICheckButtonTemplate")
-    percentageCheckbox:SetPoint("TOP", scaleSlider, "BOTTOM", 0, -20)
+    local percentageCheckbox = CreateFrame("CheckButton", "CommanderUnitFramesPercentageCheckbox", panel, "UICheckButtonTemplate")
+    percentageCheckbox:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -20)
     percentageCheckbox.text = percentageCheckbox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     percentageCheckbox.text:SetPoint("LEFT", percentageCheckbox, "RIGHT", 0, 1)
     percentageCheckbox.text:SetText("Show Health/Mana Percentage")
@@ -57,26 +50,20 @@ local function CreateSettingsWindow()
         -- Add percentage display update logic here when unit frame is implemented
     end)
 
-    return window
+    Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+    return panel
 end
 
-local settingsWindow
-
-SLASH_COMMANDERUF1 = "/cuf"
-SlashCmdList["COMMANDERUF"] = function(msg)
-    if not settingsWindow then
-        settingsWindow = CreateSettingsWindow()
-    end
-    
-    if settingsWindow:IsShown() then
-        settingsWindow:Hide()
-    else
-        settingsWindow:Show()
-    end
-end
+local settingsPanel
 
 frame:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_UnitFrames" then
         OnAwake()
+        settingsPanel = CreateSettingsPanel()
     end
 end)
+
+SLASH_COMMANDERUF1 = "/cuf"
+SlashCmdList["COMMANDERUF"] = function(msg)
+    Settings.OpenToCategory(settingsPanel.name)
+end

@@ -4,9 +4,6 @@
             "path": ".git"
         },
         {
-            "path": ".vscode"
-        },
-        {
             "path": "Commander_Console"
         },
         {
@@ -26,7 +23,8 @@
         },
         {
             "path": "MyClassicAddon"
-        }
+        },
+
 	],
 	"settings": {}
 }
