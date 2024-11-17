@@ -53,7 +53,6 @@ end)
 
 function AddListener(event, func)
     if not event then return end -- Guard against nil event
-    print("Adding listener for event: " .. event)
     if not Config.callbacks[event] then
         Config.callbacks[event] = {}
     end
