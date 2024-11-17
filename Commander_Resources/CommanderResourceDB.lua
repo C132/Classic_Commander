@@ -24,7 +24,7 @@ local function OnDestroy()
 end
 
 frame:SetScript("OnEvent", function(self, event, addonName)
-    if event == "ADDON_LOADED" and addonName == "MyClassicAddon" then
+    if event == "ADDON_LOADED" and addonName == "Commander_Resources" then
         OnAwake()
     elseif event == "PLAYER_LOGOUT" then
         OnDestroy()

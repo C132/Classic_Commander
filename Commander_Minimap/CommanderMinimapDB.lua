@@ -66,8 +66,8 @@ function LoadMinimapButtonPosition()
     end
 end
 
+-- Add debug functionality if needed
 function Debug()
-    -- Add debug functionality if needed
     print("CommanderMinimapDB:", CommanderMinimapDB)
 end
 

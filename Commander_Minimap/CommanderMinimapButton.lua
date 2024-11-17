@@ -189,7 +189,7 @@ end
 
 -- XP text creation and configuration 
 local function CreateXPText(centerButton)
-    local xpText = centerButton:CreateFontString(nil, "OVERLAY")
+    local xpText = centerButton:CreateFontString(GetXPPercentage(), "OVERLAY")
     xpText:SetFontObject(GameFontHighlight)
     xpText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     xpText:SetPoint("CENTER", centerButton, "CENTER")
@@ -260,10 +260,17 @@ frame:SetScript("OnEvent", function(self, event, ...)
             if xpGain then
                 CommanderMinimapDB.lastXPGain = xpGain
                 CommanderMinimapDB.lastKnownXP = UnitXP("player")
+                UpdateLastXPGain(xpGain, mobName) -- Call DB update function
             end
         end
-        if self.RenderXPText then self.RenderXPText() end
+        if frame.RenderXPText then 
+            frame.RenderXPText()
+            UpdateKillsToLevel() -- Update kills needed after XP gain
+        end
     elseif event == "PLAYER_XP_UPDATE" then
-        if self.RenderXPText then self.RenderXPText() end
+        if frame.RenderXPText then
+            frame.RenderXPText()
+            UpdateKillsToLevel() -- Update kills needed after any XP change
+        end
     end
 end)
