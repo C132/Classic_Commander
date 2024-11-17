@@ -411,12 +411,12 @@ local function UpdateCustomFrame(frame, unit)
 end
 
 local function HideDefaultFrames()
-    PlayerFrame:Hide()
-    PlayerFrame:UnregisterAllEvents()
-    TargetFrame:Hide()
-    TargetFrame:UnregisterAllEvents()
-    CastingBarFrame:Hide()
-    CastingBarFrame:UnregisterAllEvents()
+--    PlayerFrame:Hide()
+--    PlayerFrame:UnregisterAllEvents()
+--    TargetFrame:Hide()
+--    TargetFrame:UnregisterAllEvents()
+--    CastingBarFrame:Hide()
+--    CastingBarFrame:UnregisterAllEvents()
 end
 
 local customPlayerFrame = CreateCustomFrame("player")
