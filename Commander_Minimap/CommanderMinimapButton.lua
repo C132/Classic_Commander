@@ -164,7 +164,7 @@ local function CreateCenterButton()
     centerButton:SetSize(32, 32)
     centerButton:SetNormalTexture("Interface\\Minimap\\UI-Minimap-Background")
     centerButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    centerButton:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    centerButton:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
     
     -- Make button movable
     centerButton:SetMovable(true)
@@ -189,10 +189,16 @@ end
 
 -- XP text creation and configuration 
 local function CreateXPText(centerButton)
-    local xpText = centerButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    xpText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
-    xpText:SetPoint("CENTER", centerButton, "CENTER", 1, 0)
-    xpText:SetTextColor(GetXPExhaustion() and 0 or 0.64, GetXPExhaustion() and 1 or 0, GetXPExhaustion() and 1 or 0.96)
+    local xpText = centerButton:CreateFontString(nil, "OVERLAY")
+    xpText:SetFontObject(GameFontHighlight)
+    xpText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    xpText:SetPoint("CENTER", centerButton, "CENTER")
+    -- Set color based on rested XP status
+    if GetXPExhaustion() and GetXPExhaustion() > 0 then
+        xpText:SetTextColor(0.6, 0.39, 0.98) -- Purple color for rested XP
+    else
+        xpText:SetTextColor(0.58, 0.0, 0.55) -- Pink/magenta color for normal XP
+    end
     xpText:SetDrawLayer("OVERLAY", 7)
     return xpText
 end
@@ -200,7 +206,9 @@ end
 -- XP text updating
 local function CreateXPTextUpdater(xpText)
     local function UpdateXPText()
-        xpText:SetText(CommanderMinimapDB.XPDisplayMode == "KILLS_TO_LEVEL" and CalculateKillsToLevel() or GetXPPercentage() .. "%")
+        local text = CommanderMinimapDB.XPDisplayMode == "KILLS_TO_LEVEL" and CalculateKillsToLevel() or GetXPPercentage() .. "%"
+        xpText:SetText(text)
+        xpText:Show()
     end
     return UpdateXPText
 end
@@ -226,6 +234,9 @@ local function MicroBarButtons()
     -- Set up XP text updating
     local updateXPText = CreateXPTextUpdater(xpText)
     SetupXPEventHandlers(updateXPText)
+    
+    -- Initial update
+    updateXPText()
     
     return updateXPText
 end
