@@ -1,150 +1,153 @@
 local frame = CreateFrame("FRAME")
 frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_LOGOUT")
+frame:RegisterEvent("PLAYER_LOGOUT") 
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
 frame:RegisterEvent("PLAYER_XP_UPDATE")
 
-local function MicroBarButtons()
-    local centerButton = CreateFrame("Button", "MyCenterButton", Minimap)
-    centerButton:SetSize(32, 32)
-    centerButton:SetNormalTexture("Interface\\Minimap\\UI-Minimap-Background")
-    centerButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    centerButton:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    centerButton:SetMovable(true)
-    centerButton:EnableMouse(true)
-    centerButton:RegisterForDrag("LeftButton")
-    centerButton:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    centerButton:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    centerButton:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("XP Tracker")
-        GameTooltip:AddLine("Left-click and drag to move")
-        GameTooltip:Show()
-    end)
-    centerButton:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
+-- XP calculation functions
+local function GetXPPercentage()
+    return math.floor((UnitXP("player") / UnitXPMax("player")) * 100)
+end
+
+local function GetRestedXPPercentage()
+    return math.min(math.floor(((GetXPExhaustion() or 0) / UnitXPMax("player")) * 100), 150)
+end
+
+local function CalculateKillsToLevel()
+    local xpNeeded = UnitXPMax("player") - UnitXP("player")
+    return CommanderMinimapDB.lastXPGain and CommanderMinimapDB.lastXPGain > 0 and math.ceil(xpNeeded / CommanderMinimapDB.lastXPGain) or 0
+end
+
+local function GetDurability()
+    local durability = 100
+    for i = 1, 18 do
+        local current, maximum = GetInventoryItemDurability(i)
+        if current and maximum then
+            durability = math.min(durability, current / maximum * 100)
+        end
+    end
+    return durability
+end
+
+-- Menu creation functions
+local function CreateLeftClickMenu()
+    return {
+        {text = "Character", func = function() ToggleCharacter("PaperDollFrame") end},
+        {text = "Spellbook", func = function() ToggleSpellBook(BOOKTYPE_SPELL) end},
+        {text = "Talents", func = function() ToggleTalentFrame() end},
+        {text = "Quest Log", func = function() ToggleQuestLog() end},
+        {text = "Social", func = function() ToggleFriendsFrame() end},
+        {text = "World Map", func = function() ToggleWorldMap() end},
+        {text = "Main Menu", func = function() ToggleGameMenu() end},
+        {text = "All Bags", func = function() OpenAllBags() end},
+        {text = "Settings", func = function() OpenSettings() end},
+        {text = "Reload", func = function() ReloadUI() end},
+    }
+end
+
+local function CreateRightClickMenu()
+    local playerMoney = GetMoney()
+    local durability = GetDurability()
     
-    local xpText = centerButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    xpText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
-    xpText:SetPoint("CENTER", centerButton, "CENTER", 1, 0)
-    xpText:SetTextColor(GetXPExhaustion() and 0 or 0.64, GetXPExhaustion() and 1 or 0, GetXPExhaustion() and 1 or 0.96)
-    xpText:SetDrawLayer("OVERLAY", 7)
+    return {
+        {text = "Current XP: " .. GetXPPercentage() .. "%", isTitle = true},
+        {text = "Rested XP: " .. GetRestedXPPercentage() .. "%"},
+        {text = "Last XP Gain: " .. (CommanderMinimapDB.lastXPGain or 0) .. " (" .. (CommanderMinimapDB.lastXPSource or "N/A") .. ")"},
+        {text = "Kills to Level: " .. CalculateKillsToLevel()},
+        {text = string.format("Gold: %dg %ds %dc", playerMoney / 10000, (playerMoney % 10000) / 100, playerMoney % 100)},
+        {text = string.format("Durability: %.1f%%", durability)},
+        {text = "Latency: " .. select(3, GetNetStats()) .. "ms"},
+    }
+end
 
-    local function GetXPPercentage()
-        return math.floor((UnitXP("player") / UnitXPMax("player")) * 100)
+local function CreateSubskillMenu(subSkills)
+    local menuList = {}
+    for _, subSkill in ipairs(subSkills) do
+        table.insert(menuList, {
+            text = subSkill.name .. " (" .. subSkill.skillLevel .. ")",
+            func = function() CastSpellByName(subSkill.name) end
+        })
     end
+    return menuList
+end
 
-    local function GetRestedXPPercentage()
-        return math.min(math.floor(((GetXPExhaustion() or 0) / UnitXPMax("player")) * 100), 150)
-    end
+local function CreateProfessionMenuItem(profession)
+    return {
+        text = profession.name .. " (" .. profession.skillLevel .. ")",
+        hasArrow = #profession.subSkills > 0,
+        menuList = CreateSubskillMenu(profession.subSkills),
+        func = function() CastSpellByName(profession.name) end
+    }
+end
 
-    local function CalculateKillsToLevel()
-        local xpNeeded = UnitXPMax("player") - UnitXP("player")
-        return CommanderMinimapDB.lastXPGain and CommanderMinimapDB.lastXPGain > 0 and math.ceil(xpNeeded / CommanderMinimapDB.lastXPGain) or 0
-    end
-
-    local function UpdateXPText()
-        xpText:SetText(CommanderMinimapDB.XPDisplayMode == "KILLS_TO_LEVEL" and CalculateKillsToLevel() or GetXPPercentage() .. "%")
-    end
-
-    local function GetPlayerProfessions()
-        local professions = {}
-        local validProfessions = {
-            Alchemy = true, Blacksmithing = true, Enchanting = true, Engineering = true,
-            Herbalism = true, Leatherworking = true, Mining = true, Skinning = true,
-            Tailoring = true, Cooking = true, ["First Aid"] = true, Fishing = true
-        }
-        
-        for i = 1, GetNumSkillLines() do
-            local name, isHeader, _, skillLevel = GetSkillLineInfo(i)
-            if not isHeader and name and skillLevel > 0 and validProfessions[name] then
-                local profession = {name = name, skillLevel = skillLevel, subSkills = {}}
-                
-                if name == "Mining" then
-                    for j = i + 1, GetNumSkillLines() do
-                        local subName, subIsHeader, _, subSkillLevel = GetSkillLineInfo(j)
-                        if subIsHeader then break end
-                        if subName == "Smelting" then
-                            table.insert(profession.subSkills, {name = "Smelting", skillLevel = subSkillLevel})
-                            break
-                        end
-                    end
-                    if GetSpellInfo(2580) then
-                        table.insert(profession.subSkills, {name = "Find Minerals", skillLevel = "Learned"})
-                    end
-                elseif name == "Herbalism" and GetSpellInfo(2383) then
-                    table.insert(profession.subSkills, {name = "Find Herbs", skillLevel = "Learned"})
-                end
-                
-                table.insert(professions, profession)
+local function AddProfessionSubskills(profession, index)
+    if profession.name == "Mining" then
+        for j = index + 1, GetNumSkillLines() do
+            local subName, subIsHeader, _, subSkillLevel = GetSkillLineInfo(j)
+            if subIsHeader then break end
+            if subName == "Smelting" then
+                table.insert(profession.subSkills, {name = "Smelting", skillLevel = subSkillLevel})
+                break
             end
         end
-        return professions
+        if GetSpellInfo(2580) then
+            table.insert(profession.subSkills, {name = "Find Minerals", skillLevel = "Learned"})
+        end
+    elseif profession.name == "Herbalism" and GetSpellInfo(2383) then
+        table.insert(profession.subSkills, {name = "Find Herbs", skillLevel = "Learned"})
     end
+end
 
+local function GetPlayerProfessions()
+    local professions = {}
+    local validProfessions = {
+        Alchemy = true, Blacksmithing = true, Enchanting = true, Engineering = true,
+        Herbalism = true, Leatherworking = true, Mining = true, Skinning = true,
+        Tailoring = true, Cooking = true, ["First Aid"] = true, Fishing = true
+    }
+    
+    for i = 1, GetNumSkillLines() do
+        local name, isHeader, _, skillLevel = GetSkillLineInfo(i)
+        if not isHeader and name and skillLevel > 0 and validProfessions[name] then
+            local profession = {name = name, skillLevel = skillLevel, subSkills = {}}
+            AddProfessionSubskills(profession, i)
+            table.insert(professions, profession)
+        end
+    end
+    return professions
+end
+
+local function CreateProfessionMenu()
+    local professions = GetPlayerProfessions()
+    if #professions == 0 then
+        return {{text = "No professions available", disabled = true}}
+    end
+    
+    local menuList = {}
+    for _, profession in ipairs(professions) do
+        table.insert(menuList, CreateProfessionMenuItem(profession))
+    end
+    return menuList
+end
+
+local function GetMenuListForButton(button)
+    if button == "LeftButton" then
+        return CreateLeftClickMenu()
+    elseif button == "RightButton" then
+        return CreateRightClickMenu()
+    elseif button == "MiddleButton" then
+        return CreateProfessionMenu()
+    end
+    return {}
+end
+
+-- Click handler setup
+local function SetupClickHandlers(centerButton)
     centerButton:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     centerButton:SetScript("OnClick", function(self, button)
         local menuFrame = CreateFrame("Frame", "My" .. button .. "ButtonMenu", UIParent, "UIDropDownMenuTemplate")
-        local menuList = {}
-        
-        if button == "LeftButton" then
-            menuList = {
-                {text = "Character", func = function() ToggleCharacter("PaperDollFrame") end},
-                {text = "Spellbook", func = function() ToggleSpellBook(BOOKTYPE_SPELL) end},
-                {text = "Talents", func = function() ToggleTalentFrame() end},
-                {text = "Quest Log", func = function() ToggleQuestLog() end},
-                {text = "Social", func = function() ToggleFriendsFrame() end},
-                {text = "World Map", func = function() ToggleWorldMap() end},
-                {text = "Main Menu", func = function() ToggleGameMenu() end},
-                {text = "All Bags", func = function() OpenAllBags() end},
-                {text = "Settings", func = function() OpenSettings() end},
-                {text = "Reload", func = function() ReloadUI() end},
-            }
-        elseif button == "RightButton" then
-            local playerMoney = GetMoney()
-            local durability = 100
-            for i = 1, 18 do
-                local current, maximum = GetInventoryItemDurability(i)
-                if current and maximum then
-                    durability = math.min(durability, current / maximum * 100)
-                end
-            end
-            
-            menuList = {
-                {text = "Current XP: " .. GetXPPercentage() .. "%", isTitle = true},
-                {text = "Rested XP: " .. GetRestedXPPercentage() .. "%"},
-                {text = "Last XP Gain: " .. (CommanderMinimapDB.lastXPGain or 0) .. " (" .. (CommanderMinimapDB.lastXPSource or "N/A") .. ")"},
-                {text = "Kills to Level: " .. CalculateKillsToLevel()},
-                {text = string.format("Gold: %dg %ds %dc", playerMoney / 10000, (playerMoney % 10000) / 100, playerMoney % 100)},
-                {text = string.format("Durability: %.1f%%", durability)},
-                {text = "Latency: " .. select(3, GetNetStats()) .. "ms"},
-            }
-        elseif button == "MiddleButton" then
-            local professions = GetPlayerProfessions()
-            for _, profession in ipairs(professions) do
-                local menuItem = {
-                    text = profession.name .. " (" .. profession.skillLevel .. ")",
-                    hasArrow = #profession.subSkills > 0,
-                    menuList = {},
-                    func = function() CastSpellByName(profession.name) end
-                }
-                
-                for _, subSkill in ipairs(profession.subSkills) do
-                    table.insert(menuItem.menuList, {
-                        text = subSkill.name .. " (" .. subSkill.skillLevel .. ")",
-                        func = function() CastSpellByName(subSkill.name) end
-                    })
-                end
-                
-                table.insert(menuList, menuItem)
-            end
-            
-            if #menuList == 0 then
-                table.insert(menuList, {text = "No professions available", disabled = true})
-            end
-        end
+        local menuList = GetMenuListForButton(button)
         
         UIDropDownMenu_Initialize(menuFrame, function(self, level)
             for _, item in ipairs(menuList) do
@@ -153,17 +156,78 @@ local function MicroBarButtons()
         end)
         ToggleDropDownMenu(1, nil, menuFrame, "cursor", 0, 0)
     end)
+end
 
-    UpdateXPText()
+-- Button creation and configuration
+local function CreateCenterButton()
+    local centerButton = CreateFrame("Button", "MyCenterButton", Minimap)
+    centerButton:SetSize(32, 32)
+    centerButton:SetNormalTexture("Interface\\Minimap\\UI-Minimap-Background")
+    centerButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    centerButton:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    
+    -- Make button movable
+    centerButton:SetMovable(true)
+    centerButton:EnableMouse(true)
+    centerButton:RegisterForDrag("LeftButton")
+    centerButton:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    centerButton:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    
+    -- Set up tooltip
+    centerButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("XP Tracker")
+        GameTooltip:AddLine("Left-click and drag to move")
+        GameTooltip:Show()
+    end)
+    centerButton:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+    
+    return centerButton
+end
+
+-- XP text creation and configuration 
+local function CreateXPText(centerButton)
+    local xpText = centerButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    xpText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    xpText:SetPoint("CENTER", centerButton, "CENTER", 1, 0)
+    xpText:SetTextColor(GetXPExhaustion() and 0 or 0.64, GetXPExhaustion() and 1 or 0, GetXPExhaustion() and 1 or 0.96)
+    xpText:SetDrawLayer("OVERLAY", 7)
+    return xpText
+end
+
+-- XP text updating
+local function CreateXPTextUpdater(xpText)
+    local function UpdateXPText()
+        xpText:SetText(CommanderMinimapDB.XPDisplayMode == "KILLS_TO_LEVEL" and CalculateKillsToLevel() or GetXPPercentage() .. "%")
+    end
+    return UpdateXPText
+end
+
+local function SetupXPEventHandlers(updateXPText)
     frame:HookScript("OnEvent", function(self, event)
         if event == "CHAT_MSG_COMBAT_XP_GAIN" or event == "PLAYER_XP_UPDATE" then
-            UpdateXPText()
+            updateXPText()
         end
     end)
+    
+    AddListener(EVENTS.XP_DISPLAY_MODE_CHANGED, updateXPText)
+end
 
-    AddListener(EVENTS.XP_DISPLAY_MODE_CHANGED, UpdateXPText)
-
-    return UpdateXPText
+local function MicroBarButtons()
+    -- Create and configure the main button
+    local centerButton = CreateCenterButton()
+    local xpText = CreateXPText(centerButton)
+    
+    -- Set up click handlers
+    SetupClickHandlers(centerButton)
+    
+    -- Set up XP text updating
+    local updateXPText = CreateXPTextUpdater(xpText)
+    SetupXPEventHandlers(updateXPText)
+    
+    return updateXPText
 end
 
 local function OnAwake()
