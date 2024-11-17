@@ -1,0 +1,32 @@
+{
+	"folders": [
+        {
+            "path": ".git"
+        },
+        {
+            "path": ".vscode"
+        },
+        {
+            "path": "Commander_Console"
+        },
+        {
+            "path": "Commander_Inventory"
+        },
+        {
+            "path": "Commander_Minimap"
+        },
+        {
+            "path": "Commander_Nameplate"
+        },
+        {
+            "path": "Commander_Resources"
+        },
+        {
+            "path": "Commander_UnitFrames"
+        },
+        {
+            "path": "MyClassicAddon"
+        }
+	],
+	"settings": {}
+}
