@@ -7,10 +7,24 @@ frame:RegisterEvent("PLAYER_XP_UPDATE")
 
 local function MicroBarButtons()
     local centerButton = CreateFrame("Button", "MyCenterButton", Minimap)
-    centerButton:SetSize(16, 16)
+    centerButton:SetSize(32, 32)
     centerButton:SetNormalTexture("Interface\\Minimap\\UI-Minimap-Background")
     centerButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    centerButton:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", 16, 16)
+    centerButton:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    centerButton:SetMovable(true)
+    centerButton:EnableMouse(true)
+    centerButton:RegisterForDrag("LeftButton")
+    centerButton:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    centerButton:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    centerButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("XP Tracker")
+        GameTooltip:AddLine("Left-click and drag to move")
+        GameTooltip:Show()
+    end)
+    centerButton:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
     
     local xpText = centerButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     xpText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
@@ -132,7 +146,12 @@ local function MicroBarButtons()
             end
         end
         
-        EasyMenu(menuList, menuFrame, "cursor", 0, 0, "MENU")
+        UIDropDownMenu_Initialize(menuFrame, function(self, level)
+            for _, item in ipairs(menuList) do
+                UIDropDownMenu_AddButton(item, level)
+            end
+        end)
+        ToggleDropDownMenu(1, nil, menuFrame, "cursor", 0, 0)
     end)
 
     UpdateXPText()
