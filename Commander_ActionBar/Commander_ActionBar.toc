@@ -1,8 +1,0 @@
-## Interface: 11400
-## Title: Commander_ActionBar
-## Author: Devin
-## Version: 1.0
-## SavedVariables: CAB_Config
-
-Commander_ActionBar.lua
-Commander_ActionBar_Console.lua
