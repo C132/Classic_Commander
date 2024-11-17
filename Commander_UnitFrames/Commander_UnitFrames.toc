@@ -1,0 +1,9 @@
+## Interface: 11400
+## Title: Commander Unit Frames
+## Author: Devin
+## Version: 1.0
+## SavedVariables: CommanderUnitFramesDB
+## SavedVariablesPerCharacter: CommanderUnitFramesCharDB
+
+CommanderUnitFramesDB.lua
+CommanderUnitFrames.lua
