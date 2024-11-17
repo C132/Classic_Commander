@@ -9,7 +9,6 @@ frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 EVENTS = {
     CHAT_VISIBILITY_CHANGED = "CHAT_VISIBILITY_CHANGED",
     ACTIONBAR_UNLOCKED = "ACTIONBAR_UNLOCKED", 
-    FIVE_SECOND_RULE_CHANGED = "FIVE_SECOND_RULE_CHANGED",
     BAG_BUTTONS_VISIBILITY_CHANGED = "BAG_BUTTONS_VISIBILITY_CHANGED",
     FADE_BAGS_WHILE_MOVING_CHANGED = "FADE_BAGS_WHILE_MOVING_CHANGED",
     ACTIONBAR_COST_MODE_CHANGED = "ACTIONBAR_COST_MODE_CHANGED",
@@ -21,7 +20,6 @@ local function OnAwake()
     Config.ShowChatWindow = Config.ShowChatWindow or false
     Config.ActionBarPosition = Config.ActionBarPosition or {}
     Config.UnlockActionBar = Config.UnlockActionBar or false
-    Config.ShowFiveSecondRule = Config.ShowFiveSecondRule or false
     Config.ShowBagButtons = Config.ShowBagButtons or true
     Config.FadeBagsWhileMoving = Config.FadeBagsWhileMoving or false
     Config.BagPositions = Config.BagPositions or {}

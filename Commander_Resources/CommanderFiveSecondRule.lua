@@ -1,4 +1,4 @@
-local fiveSecondRule = CreateFrame("Frame", "MyClassicAddonFiveSecondRule", UIParent)
+local fiveSecondRule = CreateFrame("Frame", "CommanderFiveSecondRule", UIParent)
 fiveSecondRule:SetSize(150, 25)
 fiveSecondRule:SetPoint("CENTER")
 fiveSecondRule:SetMovable(true)
@@ -19,7 +19,7 @@ border:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
 local manaBar = CreateFrame("StatusBar", nil, fiveSecondRule)
 manaBar:SetPoint("TOPLEFT", 2, -2)
 manaBar:SetPoint("BOTTOMRIGHT", -2, 2)
-manaBar:SetStatusBarTexture("Interface\\AddOns\\MyClassicAddon\\BarTexture.png")
+manaBar:SetStatusBarTexture("Interface\\AddOns\\Commander_Resources\\BarTexture.png")
 manaBar:SetMinMaxValues(0, 5)
 manaBar:SetValue(5)
 manaBar:SetStatusBarColor(0.2, 0.7, 1)
@@ -61,8 +61,8 @@ local function OnEvent(self, event, unit, powerType)
 end
 
 function OnFiveSecondRuleChanged()
-    if Config and Config.ShowFiveSecondRule ~= nil then
-        fiveSecondRule:SetShown(Config.ShowFiveSecondRule)
+    if CommanderResourceDB and CommanderResourceDB.ShowFiveSecondRule ~= nil then
+        fiveSecondRule:SetShown(CommanderResourceDB.ShowFiveSecondRule)
     end
 end
 
