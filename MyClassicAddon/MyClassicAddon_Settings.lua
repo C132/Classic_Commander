@@ -110,8 +110,7 @@ SettingsFrame:SetScript("OnEvent", function(self, event, addonName)
 end)
 
 function OpenSettings()
-    InterfaceOptionsFrame_OpenToCategory(SettingsFrame)
-    InterfaceOptionsFrame_OpenToCategory(SettingsFrame)
+    Settings.OpenToCategory("My Classic Addon Settings")
 end
 
 Settings.RegisterCanvasLayoutCategory(SettingsFrame, "My Classic Addon Settings")

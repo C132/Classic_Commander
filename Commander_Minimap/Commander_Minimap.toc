@@ -1,8 +1,10 @@
 ## Interface: 11400
-## Title: Commander_Minimap
+## Title: Commander Minimap
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderMinimapDB
 ## SavedVariablesPerCharacter: CommanderMinimapCharDB
 
-Commander_Minimap.lua
+CommanderMinimapDB.lua
+CommanderMinimap.lua
+CommanderMinimapButton.lua
