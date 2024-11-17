@@ -6,7 +6,6 @@
 
 Config.lua
 GUI.lua
-MyClassicAddon_Minimap.lua
 MyClassicAddon_ActionBar.lua
 MyClassicAddon_Settings.lua
 MyClassicAddon.lua
