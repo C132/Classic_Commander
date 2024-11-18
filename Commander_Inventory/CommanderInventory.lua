@@ -45,7 +45,7 @@ ItemGrid:SetScript("OnDragStop", function(self)
 end)
 ItemGrid:SetShown(CommanderInventoryDB.showFrame)
 
-ItemGrid.TitleText:SetText(L["Commander Inventory"] or "Commander Inventory")
+ItemGrid.TitleText:SetText(L["Inventory"] or "Inventory")
 
 -- Create buttons container
 local ButtonsContainer = CreateFrame("Frame", nil, ItemGrid)
