@@ -28,6 +28,3 @@ function UpdateChatVisibility()
         element[method](element)
     end
 end
-
--- Remove the update frame as it's not necessary
--- UpdateChatVisibility is now called only when needed
