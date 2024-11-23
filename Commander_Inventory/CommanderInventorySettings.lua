@@ -1,6 +1,5 @@
 local CommanderInventorySettings = {}
 
--- Initialize default settings
 local defaultSettings = {
     rows = 3,
     columns = 4,
@@ -15,7 +14,6 @@ local defaultSettings = {
     showFrame = true, -- New setting for frame visibility
 }
 
--- Function to initialize or load settings
 function CommanderInventorySettings:Initialize()
     if not CommanderInventoryDB then
         CommanderInventoryDB = {}
@@ -30,12 +28,10 @@ function CommanderInventorySettings:Initialize()
     self:ApplySettings()
 end
 
--- Function to get a setting
 function CommanderInventorySettings:GetSetting(key)
     return CommanderInventoryDB[key]
 end
 
--- Function to set a setting
 function CommanderInventorySettings:SetSetting(key, value)
     if defaultSettings[key] ~= nil then
         CommanderInventoryDB[key] = value
@@ -171,7 +167,6 @@ eventFrame:SetScript("OnEvent", function(self, event, addonName)
     elseif event == "PLAYER_LOGIN" then
         CommanderInventorySettings:ApplySettings()
     elseif event == "PLAYER_LOGOUT" then
-        -- Settings are automatically saved because we're directly modifying CommanderInventoryDB
     end
 end)
 

@@ -1,7 +1,6 @@
 local addonName, CI = ...
-local L = CI.L or {} -- Use an empty table if L is nil
+local L = CI.L or {}
 
--- Default settings
 local defaults = {
     scale = 1,
     locked = false,
@@ -12,23 +11,20 @@ local defaults = {
     spacing = 2,
     columns = 4,
     rows = 3,
-    prioritizeColumns = true, -- If true, columns take precedence; if false, rows do
-    showFrame = true, -- New setting for frame visibility
+    prioritizeColumns = true,
+    showFrame = true,
 }
 
--- Initialize or load settings
 if not CommanderInventoryDB then
     CommanderInventoryDB = {}
 end
 
--- Merge defaults with saved settings
 for k, v in pairs(defaults) do
     if CommanderInventoryDB[k] == nil then
         CommanderInventoryDB[k] = v
     end
 end
 
--- Create main frame
 local ItemGrid = CreateFrame("Frame", "CIItemGrid", UIParent, "BasicFrameTemplateWithInset")
 ItemGrid:SetPoint("CENTER")
 ItemGrid:SetMovable(true)
@@ -47,12 +43,10 @@ ItemGrid:SetShown(CommanderInventoryDB.showFrame)
 
 ItemGrid.TitleText:SetText(L["Inventory"] or "Inventory")
 
--- Create buttons container
 local ButtonsContainer = CreateFrame("Frame", nil, ItemGrid)
 ButtonsContainer:SetPoint("TOPLEFT", ItemGrid, "TOPLEFT", 7, -25)
 ButtonsContainer:SetPoint("BOTTOMRIGHT", ItemGrid, "BOTTOMRIGHT", -7, 7)
 
--- Create buttons
 local buttons = {}
 local function CreateButton(index)
     local button = CreateFrame("Button", "CIItemButton"..index, ButtonsContainer, "SecureActionButtonTemplate, ActionButtonTemplate")
@@ -71,7 +65,6 @@ local function CreateButton(index)
     return button
 end
 
--- Function to update button cooldowns
 local function UpdateCooldowns()
     for _, button in ipairs(buttons) do
         if button.itemID then
@@ -86,13 +79,11 @@ local function UpdateCooldowns()
     end
 end
 
--- Function to update button contents
 local function UpdateButtons()
     local index = 1
     local itemIDs = {}
     
-    -- Check equipped items
-    for i = 1, 19 do -- 19 equipment slots
+    for i = 1, 19 do
         local itemID = GetInventoryItemID("player", i)
         if itemID and IsUsableItem(itemID) and not itemIDs[itemID] then
             itemIDs[itemID] = true
@@ -121,7 +112,6 @@ local function UpdateButtons()
         end
     end
     
-    -- Check bag items
     for bag = 0, NUM_BAG_FRAMES do
         for slot = 1, C_Container.GetContainerNumSlots(bag) do
             local itemID = C_Container.GetContainerItemID(bag, slot)
@@ -153,12 +143,10 @@ local function UpdateButtons()
         end
     end
     
-    -- Hide unused buttons
     for i = index, #buttons do
         buttons[i]:Hide()
     end
     
-    -- Calculate rows and columns based on settings
     local itemCount = index - 1
     local rows, columns
     if CommanderInventoryDB.prioritizeColumns then
@@ -169,13 +157,11 @@ local function UpdateButtons()
         columns = math.ceil(itemCount / rows)
     end
     
-    -- Update frame size
     local width = columns * (CommanderInventoryDB.buttonSize + CommanderInventoryDB.spacing) + CommanderInventoryDB.spacing
     local height = rows * (CommanderInventoryDB.buttonSize + CommanderInventoryDB.spacing) + CommanderInventoryDB.spacing
     ButtonsContainer:SetSize(width, height)
     ItemGrid:SetSize(width + 14, height + 32)
     
-    -- Reposition buttons
     for i, button in ipairs(buttons) do
         if button:IsShown() then
             local row = math.floor((i-1) / columns)
@@ -189,7 +175,6 @@ local function UpdateButtons()
     UpdateCooldowns()
 end
 
--- Register events
 ItemGrid:RegisterEvent("PLAYER_LOGIN")
 ItemGrid:RegisterEvent("BAG_UPDATE")
 ItemGrid:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
@@ -207,7 +192,6 @@ ItemGrid:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
--- Slash command to toggle frame
 SLASH_CI1 = "/ci"
 SlashCmdList["CI"] = function(msg)
     msg = msg:lower()
@@ -224,7 +208,6 @@ SlashCmdList["CI"] = function(msg)
     end
 end
 
--- Function to apply settings
 local function ApplySettings()
     ItemGrid:SetScale(CommanderInventoryDB.scale)
     ItemGrid:SetShown(CommanderInventoryDB.showFrame)
@@ -250,7 +233,6 @@ local function ApplySettings()
     UpdateButtons()
 end
 
--- Call ApplySettings on PLAYER_LOGIN and whenever settings change
 ItemGrid:RegisterEvent("PLAYER_LOGIN")
 ItemGrid:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
@@ -258,27 +240,22 @@ ItemGrid:SetScript("OnEvent", function(self, event)
     end
 end)
 
--- Expose functions for external use
 CI.ItemGrid = {
     UpdateButtons = UpdateButtons,
     ApplySettings = ApplySettings,
 }
 
--- Function to update a setting
 local function UpdateSetting(key, value)
     CommanderInventoryDB[key] = value
     ApplySettings()
 end
 
--- Expose UpdateSetting function
 CI.UpdateSetting = UpdateSetting
 
--- Register a callback for when settings change
 if CI.Settings and CI.Settings.RegisterCallback then
     CI.Settings.RegisterCallback("SettingsChanged", ApplySettings)
 end
 
--- Create a timer to periodically check for setting changes
 local settingsCheckTimer = C_Timer.NewTicker(1, function()
     for key, value in pairs(CommanderInventoryDB) do
         if defaults[key] ~= nil and value ~= defaults[key] then

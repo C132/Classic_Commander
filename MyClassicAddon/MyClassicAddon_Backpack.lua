@@ -107,10 +107,10 @@ end
 
 -- Fix tooltip anchor
 local function FixTooltipAnchor(self)
-    if GameTooltip:IsOwned(self) then
-        GameTooltip:ClearAllPoints()
-        GameTooltip:SetPoint(UIParent:GetCenter() > self:GetCenter() and "BOTTOMRIGHT" or "BOTTOMLEFT", self, "TOPRIGHT")
-    end
+--    if GameTooltip:IsOwned(self) then
+--        GameTooltip:ClearAllPoints()
+--        GameTooltip:SetPoint(UIParent:GetCenter() > self:GetCenter() and "BOTTOMRIGHT" or "BOTTOMLEFT", self, "TOPRIGHT")
+--    end
 end
 
 hooksecurefunc("ContainerFrameItemButton_OnEnter", FixTooltipAnchor)
