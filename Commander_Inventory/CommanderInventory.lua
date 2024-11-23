@@ -183,7 +183,7 @@ ItemGrid:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
 
 ItemGrid:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
-        UpdateButtons()
+        ApplySettings()
         self:SetShown(CommanderInventoryDB.showFrame)
     elseif event == "BAG_UPDATE" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "ITEM_LOCK_CHANGED" then
         UpdateButtons()
@@ -233,13 +233,6 @@ local function ApplySettings()
     UpdateButtons()
 end
 
-ItemGrid:RegisterEvent("PLAYER_LOGIN")
-ItemGrid:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        ApplySettings()
-    end
-end)
-
 CI.ItemGrid = {
     UpdateButtons = UpdateButtons,
     ApplySettings = ApplySettings,
@@ -255,12 +248,3 @@ CI.UpdateSetting = UpdateSetting
 if CI.Settings and CI.Settings.RegisterCallback then
     CI.Settings.RegisterCallback("SettingsChanged", ApplySettings)
 end
-
-local settingsCheckTimer = C_Timer.NewTicker(1, function()
-    for key, value in pairs(CommanderInventoryDB) do
-        if defaults[key] ~= nil and value ~= defaults[key] then
-            ApplySettings()
-            break
-        end
-    end
-end)

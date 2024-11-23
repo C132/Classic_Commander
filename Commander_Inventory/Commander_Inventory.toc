@@ -7,5 +7,5 @@
 ## DefaultState: enabled
 ## LoadOnDemand: 0
 
-CommanderInventorySettings.lua
+CommanderInventoryDB.lua
 CommanderInventory.lua
