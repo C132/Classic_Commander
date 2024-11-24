@@ -143,9 +143,10 @@ end
 
 frame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
-        local category = Settings.RegisterCanvasLayoutCategory(CreateOptionsPanel(), "Commander Inventory")
-        Settings.RegisterAddOnCategory(category)
+        local panel = CreateOptionsPanel()
+        local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Inventory")
         local categoryID = category:GetID()
+        Settings.RegisterAddOnCategory(category)
         InitializeSlashCommands(categoryID)
         _G.CommanderInventoryDB = CommanderInventoryDB
         AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, OnUpdate)

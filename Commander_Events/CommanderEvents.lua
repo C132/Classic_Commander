@@ -25,3 +25,19 @@ function Notify(event)
         end
     end
 end
+
+function CreateMainPanel()
+    local panel = CreateFrame("Frame")
+    panel.name = "Commander"
+
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("Commander")
+
+    return panel
+end
+
+MainPanel = CreateMainPanel()
+MainCategory = Settings.RegisterCanvasLayoutCategory(MainPanel, "Commander")
+MainCategoryID = MainCategory:GetID()
+Settings.RegisterAddOnCategory(MainCategory)

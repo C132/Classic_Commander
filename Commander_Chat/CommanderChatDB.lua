@@ -90,7 +90,7 @@ end
 
 local function OnAwake()
     local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutCategory(panel, "Commander Chat")
+    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Chat")
     local categoryID = category:GetID()
     Settings.RegisterAddOnCategory(category)
     InitializeSlashCommands(categoryID)
