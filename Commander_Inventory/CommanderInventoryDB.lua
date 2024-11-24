@@ -1,6 +1,14 @@
-CommanderInventoryDB = CommanderInventoryDB or {}
+CommanderInventoryDB = _G.CommanderInventoryDB or {}
+CommanderInventoryDB.listeners = _G.CommanderInventoryDB.listeners or {}
 
-defaultSettings = {
+local frame = CreateFrame("FRAME");
+frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_LOGOUT")
+local loaded = false
+local columnsSlider
+local scaleSlider
+
+local defaultSettings = {
     columns = 4,
     scale = 1,
     locked = false,
@@ -8,40 +16,97 @@ defaultSettings = {
     showFrame = true,
 }
 
-function CommanderInventoryDB:Initialize()
-    if not CommanderInventoryDB then
-        CommanderInventoryDB = defaultSettings
+for key, value in pairs(defaultSettings) do
+    if CommanderInventoryDB[key] == nil then
+        CommanderInventoryDB[key] = value
     end
+end
 
-    for key, value in pairs(defaultSettings) do
-        if CommanderInventoryDB[key] == nil then
-            CommanderInventoryDB[key] = value
+function AddListener(func)
+    if type(func) ~= "function" then
+        return
+    end
+    table.insert(CommanderInventoryDB.listeners, func)
+end
+
+function Notify()
+    if not CommanderInventoryDB.listeners then
+        CommanderInventoryDB.listeners = {}
+        return
+    end
+    
+    for _, func in ipairs(CommanderInventoryDB.listeners) do
+        if type(func) == "function" then
+            func()
         end
     end
 end
 
+function UpdateSlider(slider, newValue)
+    slider:SetValue(newValue)   
+    local valueText = slider.valueText or slider:GetFontString()
+    if valueText then
+        valueText:SetText(tostring(newValue))
+    end
+end
+
+function Reset()
+    for key in pairs(CommanderInventoryDB) do
+        CommanderInventoryDB[key] = nil
+    end
+    CommanderInventoryDB.columns = defaultSettings.columns
+    CommanderInventoryDB.scale = defaultSettings.scale
+    CommanderInventoryDB.locked = defaultSettings.locked
+    CommanderInventoryDB.tooltips = defaultSettings.tooltips
+    CommanderInventoryDB.showFrame = defaultSettings.showFrame
+    if CommanderInventoryColumnsSlider then
+        CommanderInventoryColumnsSlider:SetValue(defaultSettings.columns)
+        CommanderInventoryColumnsSlider.valueText:SetText(defaultSettings.columns)
+    end
+    if CommanderInventoryScaleSlider then
+        CommanderInventoryScaleSlider:SetValue(defaultSettings.scale)
+        CommanderInventoryScaleSlider.valueText:SetText(string.format("%.2f", defaultSettings.scale))
+    end
+    Notify()
+end
+
 function CreateColumnsSlider(panel)
-    local slider = CreateFrame("Slider", "CIColumnsSlider", panel, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", 16, -64)
-    slider:SetMinMaxValues(1, 12)
-    slider:SetValueStep(1)
-    slider:SetObeyStepOnDrag(true)
-    slider:SetValue(CommanderInventoryDB.columns)
+    columnsSlider = CreateFrame("Slider", "CIColumnsSlider", panel, "OptionsSliderTemplate")
+    columnsSlider:SetPoint("TOPLEFT", 16, -64)
+    columnsSlider:SetMinMaxValues(1, 12)
+    columnsSlider:SetValueStep(1)
+    columnsSlider:SetObeyStepOnDrag(true)
     
-    _G["CIColumnsSliderText"]:SetText("Columns")
-    _G["CIColumnsSliderLow"]:SetText("1")
-    _G["CIColumnsSliderHigh"]:SetText("12")
+    local valueText = columnsSlider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    valueText:SetPoint("TOP", columnsSlider, "BOTTOM", 0, 0)
+    columnsSlider.valueText = valueText
     
-    local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
-    valueText:SetText(CommanderInventoryDB.columns)
-    slider.valueText = valueText
-    
-    slider:SetScript("OnValueChanged", function(self, value)
+    columnsSlider:SetScript("OnValueChanged", function(self, value)
         value = math.floor(value)
         CommanderInventoryDB.columns = value
         self.valueText:SetText(value)
-        UpdateButtons()
+        Notify()
+    end) 
+    
+    return columnsSlider
+end
+
+function CreateScaleSlider(panel)
+    local slider = CreateFrame("Slider", "CommanderInventoryScaleSlider", panel, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", 16, -128)
+    slider:SetMinMaxValues(0.5, 2.0)
+    slider:SetValueStep(0.1)
+    slider:SetObeyStepOnDrag(true)
+
+    local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
+    slider.valueText = valueText
+    
+    slider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value * 10) / 10
+        CommanderInventoryDB.scale = value
+        self.valueText:SetText(string.format("%.2f", value))
+        Notify()
     end)
     
     return slider
@@ -53,74 +118,57 @@ function CreateResetButton(panel)
     button:SetPoint("TOPLEFT", 16, -16)
     button:SetText("Reset Settings")
     button:SetScript("OnClick", function()
-        CommanderInventoryDB:Reset()
+        Reset()
     end)
     return button
 end
 
-function CommanderInventoryDB:Reset()
-    for key in pairs(CommanderInventoryDB) do
-        CommanderInventoryDB[key] = nil
-    end
-    CommanderInventoryDB.columns = defaultSettings.columns
-    CommanderInventoryDB.scale = defaultSettings.scale
-    CommanderInventoryDB.locked = defaultSettings.locked
-    CommanderInventoryDB.tooltips = defaultSettings.tooltips
-    CommanderInventoryDB.showFrame = defaultSettings.showFrame
-    UpdateButtons()
-    if CommanderInventoryColumnsSlider then
-        CommanderInventoryColumnsSlider:SetValue(defaultSettings.columns)
-        CommanderInventoryColumnsSlider.valueText:SetText(defaultSettings.columns)
-    end
-    if CommanderInventoryScaleSlider then
-        CommanderInventoryScaleSlider:SetValue(defaultSettings.scale)
-        CommanderInventoryScaleSlider.valueText:SetText(string.format("%.2f", defaultSettings.scale))
-    end
-    print("Commander Inventory settings reset.")
-end
-
-function CreateScaleSlider(panel)
-    local slider = CreateFrame("Slider", "CommanderInventoryScaleSlider", panel, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", 16, -128)
-    slider:SetMinMaxValues(0.5, 2.0)
-    slider:SetValueStep(0.1)
-    slider:SetObeyStepOnDrag(true)
-    slider:SetValue(CommanderInventoryDB.scale)
-    
-    _G["CommanderInventoryScaleSliderText"]:SetText("Scale")
-    _G["CommanderInventoryScaleSliderLow"]:SetText("0.5")
-    _G["CommanderInventoryScaleSliderHigh"]:SetText("2.0")
-    
-    local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
-    valueText:SetText(string.format("%.2f", CommanderInventoryDB.scale))
-    slider.valueText = valueText
-    
-    slider:SetScript("OnValueChanged", function(self, value)
-        value = math.floor(value * 10) / 10
-        CommanderInventoryDB.scale = value
-        self.valueText:SetText(string.format("%.2f", value))
-        ItemGrid:SetScale(value)
-    end)
-    
-    return slider
-end
-
-function CommanderInventoryDB:CreateOptionsPanel()
+function CreateOptionsPanel()
     local panel = CreateFrame("Frame")
     panel.name = "Commander Inventory"
     
     CreateResetButton(panel)
-    CreateColumnsSlider(panel)
-    CreateScaleSlider(panel)
+    columnsSlider = CreateColumnsSlider(panel)
+    scaleSlider = CreateScaleSlider(panel)
     
     return panel
 end
 
-CommanderInventoryDB:Initialize()
+function InitializeSlashCommands(catagory)
+    SLASH_CI1 = "/ci"
+    SlashCmdList["CI"] = function(msg)
+        msg = msg:lower()
+        if msg == "" or msg == "toggle" then
+            Settings.OpenToCategory(catagory)
+        elseif msg == "reset" then
+            Reset()
+        else
+            print("Usage: /ci [toggle|reset]")
+        end
+    end
+end
 
-local category = Settings.RegisterCanvasLayoutCategory(CommanderInventoryDB:CreateOptionsPanel(), "Commander Inventory")
-Settings.RegisterAddOnCategory(category)
+local function OnUpdate()
+    if columnsSlider then
+        UpdateSlider(columnsSlider, CommanderInventoryDB.columns)
+    end
+    if scaleSlider then
+        UpdateSlider(scaleSlider, CommanderInventoryDB.scale)
+    end
+end
 
-_G.CommanderInventoryDB = CommanderInventoryDB
+frame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_LOGIN" then
+        local category = Settings.RegisterCanvasLayoutCategory(CreateOptionsPanel(), "Commander Inventory")
+        Settings.RegisterAddOnCategory(category)
+        InitializeSlashCommands(category)
+        _G.CommanderInventoryDB = CommanderInventoryDB
+        AddListener(OnUpdate)
+        OnUpdate()
+        loaded = true
+    elseif loaded then
+        OnUpdate()
+    end
+end)
+
 return CommanderInventoryDB

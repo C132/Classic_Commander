@@ -1,5 +1,8 @@
-local CommanderInventoryDB = _G.CommanderInventoryDB
-    
+local ItemGrid
+local ButtonsContainer
+local buttons = {}
+
+local frame = CreateFrame("FRAME");
 ItemGrid = CreateFrame("Frame", "CIItemGrid", UIParent, "BasicFrameTemplateWithInset")
 ItemGrid:SetPoint("CENTER")
 ItemGrid:SetMovable(true)
@@ -7,28 +10,42 @@ ItemGrid:SetClampedToScreen(true)
 ItemGrid:EnableMouse(true)
 ItemGrid:RegisterForDrag("LeftButton")
 ItemGrid:SetScript("OnDragStart", function(self)
-    if not CommanderInventoryDB.locked then
+    if not locked then
         self:StartMoving()
     end
 end)
 ItemGrid:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
 end)
-ItemGrid:SetShown(CommanderInventoryDB.showFrame)
 
-ItemGrid.TitleText:SetText("Inventory")
+local showFrame = true
+local scale = 1
+local loaded = false
+local locked = false
+local tooltips = true
+local columns = 10
+frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_LOGOUT")
+frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+frame:RegisterEvent("BAG_UPDATE") 
+frame:RegisterEvent("ITEM_LOCK_CHANGED")
 
-local ButtonsContainer = CreateFrame("Frame", nil, ItemGrid)
-ButtonsContainer:SetPoint("TOPLEFT", ItemGrid, "TOPLEFT", 7, -25)
-ButtonsContainer:SetPoint("BOTTOMRIGHT", ItemGrid, "BOTTOMRIGHT", -7, 7)
+local function CreateItemGrid()    
+    ItemGrid.TitleText:SetText("Inventory")
+    ItemGrid:SetShown(CommanderInventoryDB.showFrame)
+    ItemGrid:SetScale(CommanderInventoryDB.scale)
 
-local buttons = {}
+    ButtonsContainer = CreateFrame("Frame", nil, ItemGrid)
+    ButtonsContainer:SetPoint("TOPLEFT", ItemGrid, "TOPLEFT", 7, -25)
+    ButtonsContainer:SetPoint("BOTTOMRIGHT", ItemGrid, "BOTTOMRIGHT", -7, 7)
+end
+
 local function CreateButton(index)
     local button = CreateFrame("Button", "CIItemButton"..index, ButtonsContainer, "SecureActionButtonTemplate, ActionButtonTemplate")
     button:SetSize(40, 40)
     button:SetAttribute("type", "item")
     button:SetScript("OnEnter", function(self)
-        if CommanderInventoryDB.tooltips then
+        if tooltips then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             if self.itemLink then
                 GameTooltip:SetHyperlink(self.itemLink)
@@ -40,10 +57,9 @@ local function CreateButton(index)
     return button
 end
 
-function UpdateButtons()
+local function UpdateButtons()
     local index = 1
     local itemIDs = {}
-    
     for _, location in ipairs({
         {type = "inventory", start = 1, stop = 19},
         {type = "bags", start = 0, stop = NUM_BAG_FRAMES}
@@ -51,7 +67,7 @@ function UpdateButtons()
         if location.type == "inventory" then
             for i = location.start, location.stop do
                 local itemID = GetInventoryItemID("player", i)
-                if itemID and IsUsableItem(itemID) and not itemIDs[itemID] then
+                if itemID and (IsUsableItem(itemID) or GetItemSpell(itemID)) and not itemIDs[itemID] then
                     itemIDs[itemID] = true
                     if not buttons[index] then
                         buttons[index] = CreateButton(index)
@@ -77,7 +93,7 @@ function UpdateButtons()
             for bag = location.start, location.stop do
                 for slot = 1, C_Container.GetContainerNumSlots(bag) do
                     local itemID = C_Container.GetContainerItemID(bag, slot)
-                    if itemID and IsUsableItem(itemID) and not itemIDs[itemID] then
+                    if itemID and (IsUsableItem(itemID) or GetItemSpell(itemID)) and not itemIDs[itemID] then
                         itemIDs[itemID] = true
                         if not buttons[index] then
                             buttons[index] = CreateButton(index)
@@ -108,7 +124,6 @@ function UpdateButtons()
     end
     
     local itemCount = index - 1
-    local columns = CommanderInventoryDB.columns
     local rows = math.ceil(itemCount / columns)
     
     local spacing = 2
@@ -130,29 +145,30 @@ function UpdateButtons()
     end
 end
 
-ItemGrid:RegisterEvent("PLAYER_LOGIN")
-ItemGrid:RegisterEvent("BAG_UPDATE")
-ItemGrid:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-ItemGrid:RegisterEvent("ITEM_LOCK_CHANGED")
+local function LoadSettings()
+    showFrame = CommanderInventoryDB.showFrame
+    scale = CommanderInventoryDB.scale
+    tooltips = CommanderInventoryDB.tooltips
+    columns = CommanderInventoryDB.columns  
+    locked = CommanderInventoryDB.locked
 
-ItemGrid:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        self:SetShown(CommanderInventoryDB.showFrame)
+    if ItemGrid then
+        ItemGrid:SetShown(CommanderInventoryDB.showFrame)
+        ItemGrid:SetScale(CommanderInventoryDB.scale)
     end
     UpdateButtons()
-end)
-
-SLASH_CI1 = "/ci"
-SlashCmdList["CI"] = function(msg)
-    msg = msg:lower()
-    if msg == "" or msg == "toggle" then
-        Settings.OpenToCategory("Commander Inventory")
-    elseif msg == "reset" then
-        CommanderInventoryDB:Reset()
-        ItemGrid:ClearAllPoints()
-        ItemGrid:SetPoint("CENTER")
-        UpdateButtons()
-    else
-        print("Usage: /ci [toggle|reset]")
-    end
+    print("Commander Inventory Settings Loaded")
 end
+
+frame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_LOGIN" then
+        CreateItemGrid()
+        UpdateButtons()
+        LoadSettings()
+        AddListener(LoadSettings)
+        loaded = true
+        print("Commander Inventory Loaded")
+    elseif loaded then
+        UpdateButtons()
+    end
+end)
