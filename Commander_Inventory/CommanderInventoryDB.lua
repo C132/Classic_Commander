@@ -1,6 +1,6 @@
 CommanderInventoryDB = {}
 
-local defaultSettings = {
+defaultSettings = {
     columns = 4,
     scale = 1,
     locked = false,
@@ -20,24 +20,7 @@ function CommanderInventoryDB:Initialize()
     end
 end
 
-function CommanderInventoryDB:Reset()
-    for k in pairs(CommanderInventoryDB) do
-        CommanderInventoryDB[k] = nil
-    end
-    CommanderInventoryDB.columns = defaultSettings.columns
-    CommanderInventoryDB.scale = defaultSettings.scale
-    CommanderInventoryDB.locked = defaultSettings.locked
-    CommanderInventoryDB.tooltips = defaultSettings.tooltips
-    CommanderInventoryDB.showFrame = defaultSettings.showFrame
-    UpdateButtons()
-    if CIColumnsSlider then
-        CIColumnsSlider:SetValue(defaultSettings.columns)
-        CIColumnsSlider.valueText:SetText(defaultSettings.columns)
-    end
-    print("Commander Inventory settings reset.")
-end
-
-function CommanderInventoryDB:CreateColumnsSlider(panel)
+function CreateColumnsSlider(panel)
     local slider = CreateFrame("Slider", "CIColumnsSlider", panel, "OptionsSliderTemplate")
     slider:SetPoint("TOPLEFT", 16, -64)
     slider:SetMinMaxValues(1, 12)
@@ -64,7 +47,7 @@ function CommanderInventoryDB:CreateColumnsSlider(panel)
     return slider
 end
 
-function CommanderInventoryDB:CreateResetButton(panel)
+function CreateResetButton(panel)
     local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     button:SetSize(120, 22)
     button:SetPoint("TOPLEFT", 16, -16)
@@ -75,12 +58,29 @@ function CommanderInventoryDB:CreateResetButton(panel)
     return button
 end
 
+function CommanderInventoryDB:Reset()
+    for k in pairs(CommanderInventoryDB) do
+        CommanderInventoryDB[k] = nil
+    end
+    CommanderInventoryDB.columns = defaultSettings.columns
+    CommanderInventoryDB.scale = defaultSettings.scale
+    CommanderInventoryDB.locked = defaultSettings.locked
+    CommanderInventoryDB.tooltips = defaultSettings.tooltips
+    CommanderInventoryDB.showFrame = defaultSettings.showFrame
+    CommanderInventoryDB.UpdateButtons()
+    if CIColumnsSlider then
+        CIColumnsSlider:SetValue(defaultSettings.columns)
+        CIColumnsSlider.valueText:SetText(defaultSettings.columns)
+    end
+    print("Commander Inventory settings reset.")
+end
+
 function CommanderInventoryDB:CreateOptionsPanel()
     local panel = CreateFrame("Frame")
     panel.name = "Commander Inventory"
     
-    CommanderInventoryDB:CreateColumnsSlider(panel)
-    CommanderInventoryDB:CreateResetButton(panel)
+    CreateResetButton(panel)
+    CreateColumnsSlider(panel)
     
     return panel
 end
@@ -90,4 +90,5 @@ CommanderInventoryDB:Initialize()
 local category = Settings.RegisterCanvasLayoutCategory(CommanderInventoryDB:CreateOptionsPanel(), "Commander Inventory")
 Settings.RegisterAddOnCategory(category)
 
+_G.CommanderInventoryDB = CommanderInventoryDB
 return CommanderInventoryDB

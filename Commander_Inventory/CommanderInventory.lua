@@ -1,4 +1,4 @@
-CommanderInventoryDB:Initialize()
+CommanderInventoryDB = {}
 
 local ItemGrid = CreateFrame("Frame", "CIItemGrid", UIParent, "BasicFrameTemplateWithInset")
 ItemGrid:SetPoint("CENTER")
@@ -151,7 +151,7 @@ SlashCmdList["CI"] = function(msg)
         CommanderInventoryDB:Reset()
         ItemGrid:ClearAllPoints()
         ItemGrid:SetPoint("CENTER")
-        UpdateButtons()
+        CommanderInventoryDB:UpdateButtons()
     else
         print("Usage: /ci [toggle|reset]")
     end
