@@ -3,6 +3,7 @@
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: Config
+## RequiredDeps: Commander_Events
 
 Config.lua
 GUI.lua

@@ -165,7 +165,7 @@ frame:SetScript("OnEvent", function(self, event)
         CreateItemGrid()
         UpdateButtons()
         LoadSettings()
-        AddListener(LoadSettings)
+        AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, LoadSettings)
         loaded = true
         print("Commander Inventory Loaded")
     elseif loaded then

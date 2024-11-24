@@ -3,7 +3,7 @@
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderResourceDB
-## SavedVariablesPerCharacter: CommanderResourceCharDB
+## RequiredDeps: Commander_Events
 
 CommanderResourceDB.lua
 CommanderFiveSecondRule.lua

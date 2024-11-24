@@ -1,0 +1,8 @@
+## Interface: 11400
+## Title: Commander Chat
+## Author: Devin
+## Version: 1.0
+## SavedVariables: CommanderChatDB
+
+CommanderChatDB.lua
+CommanderChat.lua

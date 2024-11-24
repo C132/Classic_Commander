@@ -6,6 +6,7 @@
 ## SavedVariablesPerCharacter: CommanderInventoryCharDB
 ## DefaultState: enabled
 ## LoadOnDemand: 0
+## RequiredDeps: Commander_Events
 
 CommanderInventoryDB.lua
 CommanderInventory.lua

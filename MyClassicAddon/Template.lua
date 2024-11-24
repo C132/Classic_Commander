@@ -21,6 +21,11 @@ function RemoveListener(func)
 end
 
 function Notify()
+    if not Template.listeners then
+        Template.listeners = {}
+        return
+    end
+
     for _, func in ipairs(Template.listeners) do
         if type(func) == "function" then
             func()

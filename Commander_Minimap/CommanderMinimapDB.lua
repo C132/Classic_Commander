@@ -1,14 +1,13 @@
 CommanderMinimapDB = CommanderMinimapDB or {}
-CommanderMinimapDB.callbacks = {}
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-EVENTS = {
-    MINIMAP_BUTTON_VISIBILITY_CHANGED = "MINIMAP_BUTTON_VISIBILITY_CHANGED",
-    XP_DISPLAY_MODE_CHANGED = "XP_DISPLAY_MODE_CHANGED",
+COMMANDER_MINIMAP_EVENTS = {
+    COMMANDER_MINIMAP_BUTTON_VISIBILITY_CHANGED = "COMMANDER_MINIMAP_BUTTON_VISIBILITY_CHANGED",
+    COMMANDER_MINIMAP_XP_DISPLAY_MODE_CHANGED = "COMMANDER_MINIMAP_XP_DISPLAY_MODE_CHANGED",
 }
 
 local function OnAwake()
@@ -41,21 +40,6 @@ frame:SetScript("OnEvent", function(self, event, addonName)
     end
 end)
 
-function AddListener(event, func)
-    if not CommanderMinimapDB.callbacks[event] then
-        CommanderMinimapDB.callbacks[event] = {}
-    end
-    table.insert(CommanderMinimapDB.callbacks[event], func)
-end
-
-function Raise(event)
-    if CommanderMinimapDB.callbacks[event] then
-        for _, func in ipairs(CommanderMinimapDB.callbacks[event]) do
-            func()
-        end
-    end
-end
-
 function SaveMinimapButtonPosition()
     CommanderMinimapDB.MinimapButtonPosition = CommanderMinimapButton and CommanderMinimapButton:GetAngle() or 0
 end
@@ -66,19 +50,14 @@ function LoadMinimapButtonPosition()
     end
 end
 
--- Add debug functionality if needed
-function Debug()
-    print("CommanderMinimapDB:", CommanderMinimapDB)
-end
-
 function ToggleMinimapButton()
     CommanderMinimapDB.ShowMinimapButton = not CommanderMinimapDB.ShowMinimapButton
-    Raise(EVENTS.MINIMAP_BUTTON_VISIBILITY_CHANGED)
+    Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP_BUTTON_VISIBILITY_CHANGED)
 end
 
 function SetXPDisplayMode(mode)
     CommanderMinimapDB.XPDisplayMode = mode
-    Raise(EVENTS.XP_DISPLAY_MODE_CHANGED)
+    Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP_XP_DISPLAY_MODE_CHANGED)
 end
 
 function GetXPDisplayMode()

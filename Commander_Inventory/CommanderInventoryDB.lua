@@ -1,5 +1,4 @@
 CommanderInventoryDB = _G.CommanderInventoryDB or {}
-CommanderInventoryDB.listeners = _G.CommanderInventoryDB.listeners or {}
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -16,33 +15,17 @@ local defaultSettings = {
     showFrame = true,
 }
 
+COMMANDER_INVENTORY_EVENTS = {
+    COMMANDER_INVENTORY = "COMMANDER_INVENTORY",
+}
+
 for key, value in pairs(defaultSettings) do
     if CommanderInventoryDB[key] == nil then
         CommanderInventoryDB[key] = value
     end
 end
 
-function AddListener(func)
-    if type(func) ~= "function" then
-        return
-    end
-    table.insert(CommanderInventoryDB.listeners, func)
-end
-
-function Notify()
-    if not CommanderInventoryDB.listeners then
-        CommanderInventoryDB.listeners = {}
-        return
-    end
-    
-    for _, func in ipairs(CommanderInventoryDB.listeners) do
-        if type(func) == "function" then
-            func()
-        end
-    end
-end
-
-function UpdateSlider(slider, newValue)
+local function UpdateSlider(slider, newValue)
     slider:SetValue(newValue)   
     local valueText = slider.valueText or slider:GetFontString()
     if valueText then
@@ -50,7 +33,7 @@ function UpdateSlider(slider, newValue)
     end
 end
 
-function Reset()
+local function Reset()
     for key in pairs(CommanderInventoryDB) do
         CommanderInventoryDB[key] = nil
     end
@@ -67,10 +50,10 @@ function Reset()
         CommanderInventoryScaleSlider:SetValue(defaultSettings.scale)
         CommanderInventoryScaleSlider.valueText:SetText(string.format("%.2f", defaultSettings.scale))
     end
-    Notify()
+    Notify(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY)
 end
 
-function CreateColumnsSlider(panel)
+local function CreateColumnsSlider(panel)
     columnsSlider = CreateFrame("Slider", "CIColumnsSlider", panel, "OptionsSliderTemplate")
     columnsSlider:SetPoint("TOPLEFT", 16, -64)
     columnsSlider:SetMinMaxValues(1, 12)
@@ -85,34 +68,35 @@ function CreateColumnsSlider(panel)
         value = math.floor(value)
         CommanderInventoryDB.columns = value
         self.valueText:SetText(value)
-        Notify()
+        Notify(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY)
     end) 
     
     return columnsSlider
 end
 
-function CreateScaleSlider(panel)
-    local slider = CreateFrame("Slider", "CommanderInventoryScaleSlider", panel, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", 16, -128)
-    slider:SetMinMaxValues(0.5, 2.0)
-    slider:SetValueStep(0.1)
-    slider:SetObeyStepOnDrag(true)
+local function CreateScaleSlider(panel)
+    scaleSlider = CreateFrame("Slider", "CommanderInventoryScaleSlider", panel, "OptionsSliderTemplate")
+    scaleSlider:SetPoint("TOPLEFT", 16, -128)
+    scaleSlider:SetMinMaxValues(0.5, 2.0)
+    scaleSlider:SetValueStep(0.1)
+    scaleSlider:SetObeyStepOnDrag(true)
 
-    local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
-    slider.valueText = valueText
+    local valueText = scaleSlider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    valueText:SetPoint("TOP", scaleSlider, "BOTTOM", 0, 0)
+    scaleSlider.valueText = valueText
     
-    slider:SetScript("OnValueChanged", function(self, value)
+    scaleSlider:SetScript("OnValueChanged", function(self, value)
         value = math.floor(value * 10) / 10
         CommanderInventoryDB.scale = value
         self.valueText:SetText(string.format("%.2f", value))
-        Notify()
+        print("Scale: " .. value)
+        Notify(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY)
     end)
     
-    return slider
+    return scaleSlider
 end
 
-function CreateResetButton(panel)
+local function CreateResetButton(panel)
     local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     button:SetSize(120, 22)
     button:SetPoint("TOPLEFT", 16, -16)
@@ -123,7 +107,7 @@ function CreateResetButton(panel)
     return button
 end
 
-function CreateOptionsPanel()
+local function CreateOptionsPanel()
     local panel = CreateFrame("Frame")
     panel.name = "Commander Inventory"
     
@@ -134,7 +118,7 @@ function CreateOptionsPanel()
     return panel
 end
 
-function InitializeSlashCommands(catagory)
+local function InitializeSlashCommands(catagory)
     SLASH_CI1 = "/ci"
     SlashCmdList["CI"] = function(msg)
         msg = msg:lower()
@@ -163,7 +147,7 @@ frame:SetScript("OnEvent", function(self, event)
         Settings.RegisterAddOnCategory(category)
         InitializeSlashCommands(category)
         _G.CommanderInventoryDB = CommanderInventoryDB
-        AddListener(OnUpdate)
+        AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, OnUpdate)
         OnUpdate()
         loaded = true
     elseif loaded then

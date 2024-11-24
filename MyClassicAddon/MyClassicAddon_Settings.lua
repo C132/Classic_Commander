@@ -80,25 +80,25 @@ end
 local function GeneralSettings()
     CreateTitle()
     
-    DrawCheckBox("Show Chat", "ShowChatWindow", EVENTS.CHAT_VISIBILITY_CHANGED)
-    DrawCheckBox("Unlock Action Bar", "UnlockActionBar", EVENTS.ACTIONBAR_UNLOCKED)
-    DrawCheckBox("Show Five Second Rule", "ShowFiveSecondRule", EVENTS.FIVE_SECOND_RULE_CHANGED)
-    DrawCheckBox("Show Bag Buttons", "ShowBagButtons", EVENTS.BAG_BUTTONS_VISIBILITY_CHANGED)
-    DrawCheckBox("Fade Bags While Moving", "FadeBagsWhileMoving", EVENTS.FADE_BAGS_WHILE_MOVING_CHANGED)
-    DrawCheckBox("Show Minimap Button", "ShowMinimapButton", EVENTS.MINIMAP_BUTTON_VISIBILITY_CHANGED)
-    DrawCheckBox("Hide Player and Target Frames", "HideUnitFrames", EVENTS.UNIT_FRAMES_VISIBILITY_CHANGED)
+    DrawCheckBox("Show Chat", "ShowChatWindow", MY_CLASSIC_ADDON_EVENTS.CHAT_VISIBILITY_CHANGED)
+    DrawCheckBox("Unlock Action Bar", "UnlockActionBar", MY_CLASSIC_ADDON_EVENTS.ACTIONBAR_UNLOCKED)
+    DrawCheckBox("Show Five Second Rule", "ShowFiveSecondRule", MY_CLASSIC_ADDON_EVENTS.FIVE_SECOND_RULE_CHANGED)
+    DrawCheckBox("Show Bag Buttons", "ShowBagButtons", MY_CLASSIC_ADDON_EVENTS.BAG_BUTTONS_VISIBILITY_CHANGED)
+    DrawCheckBox("Fade Bags While Moving", "FadeBagsWhileMoving", MY_CLASSIC_ADDON_EVENTS.FADE_BAGS_WHILE_MOVING_CHANGED)
+    DrawCheckBox("Show Minimap Button", "ShowMinimapButton", MY_CLASSIC_ADDON_EVENTS.MINIMAP_BUTTON_VISIBILITY_CHANGED)
+    DrawCheckBox("Hide Player and Target Frames", "HideUnitFrames", MY_CLASSIC_ADDON_EVENTS.UNIT_FRAMES_VISIBILITY_CHANGED)
 
     DrawDropDown("Action Bar Cost Display", "ActionBarCostMode", {
         {text = "Raw Cost", value = "RAW_COST"},
         {text = "Casts Available", value = "CASTS_AVAILABLE"},
         {text = "Efficiency (Damage/Cost)", value = "EFFICIENCY"},
         {text = "Time to OOM", value = "TIME_TO_OOM"}
-    }, EVENTS.ACTIONBAR_COST_MODE_CHANGED)
+    }, MY_CLASSIC_ADDON_EVENTS.ACTIONBAR_COST_MODE_CHANGED)
 
     DrawDropDown("XP Display Mode", "XPDisplayMode", {
         {text = "Percentage", value = "PERCENTAGE"},
         {text = "Kills to Level", value = "KILLS_TO_LEVEL"}
-    }, EVENTS.XP_DISPLAY_MODE_CHANGED)
+    }, MY_CLASSIC_ADDON_EVENTS.XP_DISPLAY_MODE_CHANGED)
 
     CreateReloadButton()
 end

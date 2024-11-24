@@ -220,7 +220,7 @@ local function SetupXPEventHandlers(updateXPText)
         end
     end)
     
-    AddListener(EVENTS.XP_DISPLAY_MODE_CHANGED, updateXPText)
+    AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP_XP_DISPLAY_MODE_CHANGED, updateXPText)
 end
 
 local function MicroBarButtons()

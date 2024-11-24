@@ -3,7 +3,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 local function OnStart()
-    AddListener(EVENTS.CHAT_VISIBILITY_CHANGED, UpdateChatVisibility)
+    AddListener(MY_CLASSIC_ADDON_EVENTS.CHAT_VISIBILITY_CHANGED, UpdateChatVisibility)
     UpdateChatVisibility()
 end
 

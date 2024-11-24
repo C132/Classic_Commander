@@ -1,30 +1,44 @@
 {
 	"folders": [
         {
+            "name": ".git",
             "path": ".git"
         },
         {
+            "name": "Commander_Console",
             "path": "Commander_Console"
         },
         {
+            "name": "Commander_Inventory",
             "path": "Commander_Inventory"
         },
         {
+            "name": "Commander_Minimap",
             "path": "Commander_Minimap"
         },
         {
+            "name": "Commander_Nameplate",
             "path": "Commander_Nameplate"
         },
         {
+            "name": "Commander_Resources",
             "path": "Commander_Resources"
         },
         {
+            "name": "Commander_UnitFrames",
             "path": "Commander_UnitFrames"
         },
         {
+            "name": "Commander_Chat",
+            "path": "Commander_Chat"
+        },
+        {
+            "name": "MyClassicAddon",
             "path": "MyClassicAddon"
         },
-
-	],
+        {
+            "path": "Commander_Events"
+        }
+    ],
 	"settings": {}
 }

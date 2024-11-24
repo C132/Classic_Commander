@@ -6,7 +6,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-EVENTS = {
+COMMANDER_UNIT_FRAMES_EVENTS = {
     SCALE_CHANGED = "SCALE_CHANGED",
     PERCENTAGE_DISPLAY_CHANGED = "PERCENTAGE_DISPLAY_CHANGED"
 }
@@ -34,24 +34,3 @@ frame:SetScript("OnEvent", function(self, event, addonName)
         OnStart()
     end
 end)
-
-function AddListener(event, func)
-    if not event then return end -- Guard against nil event
-    if not CommanderUnitFramesDB.callbacks[event] then
-        CommanderUnitFramesDB.callbacks[event] = {}
-    end
-    table.insert(CommanderUnitFramesDB.callbacks[event], func)
-end
-
-function Raise(event)
-    if event and CommanderUnitFramesDB.callbacks[event] then
-        for _, func in ipairs(CommanderUnitFramesDB.callbacks[event]) do
-            func()
-        end
-    end
-end
-
--- Add debug functionality if needed
-function Debug()
-    print("CommanderUnitFramesDB:", CommanderUnitFramesDB)
-end

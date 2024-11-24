@@ -6,7 +6,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-EVENTS = {
+COMMANDER_RESOURCE_EVENTS = {
     FIVE_SECOND_RULE_CHANGED = "FIVE_SECOND_RULE_CHANGED",
 }
 
@@ -32,22 +32,6 @@ frame:SetScript("OnEvent", function(self, event, addonName)
         OnStart()
     end
 end)
-
-function AddListener(event, func)
-    if not event then return end -- Guard against nil event
-    if not CommanderResourceDB.callbacks[event] then
-        CommanderResourceDB.callbacks[event] = {}
-    end
-    table.insert(CommanderResourceDB.callbacks[event], func)
-end
-
-function Raise(event)
-    if event and CommanderResourceDB.callbacks[event] then
-        for _, func in ipairs(CommanderResourceDB.callbacks[event]) do
-            func()
-        end
-    end
-end
 
 -- Add debug functionality if needed
 function Debug()

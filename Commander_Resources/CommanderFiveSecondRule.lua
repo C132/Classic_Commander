@@ -54,9 +54,7 @@ local function OnEvent(self, event, unit, powerType)
             lastManaPower = currentMana
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
-        if AddListener and EVENTS and EVENTS.FIVE_SECOND_RULE_CHANGED then
-            AddListener(EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
-        end
+        AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
     end
 end
 

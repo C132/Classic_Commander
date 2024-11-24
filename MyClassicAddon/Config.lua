@@ -6,7 +6,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-EVENTS = {
+MY_CLASSIC_ADDON_EVENTS = {
     CHAT_VISIBILITY_CHANGED = "CHAT_VISIBILITY_CHANGED",
     ACTIONBAR_UNLOCKED = "ACTIONBAR_UNLOCKED", 
     BAG_BUTTONS_VISIBILITY_CHANGED = "BAG_BUTTONS_VISIBILITY_CHANGED",
@@ -49,22 +49,6 @@ frame:SetScript("OnEvent", function(self, event, addonName)
     end
 end)
 
-function AddListener(event, func)
-    if not event then return end -- Guard against nil event
-    if not Config.callbacks[event] then
-        Config.callbacks[event] = {}
-    end
-    table.insert(Config.callbacks[event], func)
-end
-
-function Raise(event)
-    if event and Config.callbacks[event] then
-        for _, func in ipairs(Config.callbacks[event]) do
-            func()
-        end
-    end
-end
-
 function SaveBagPosition(bagID)
     local bagFrame = _G["ContainerFrame"..bagID]
     if bagFrame then
@@ -88,12 +72,6 @@ function LoadBagPosition(bagID)
     end
 end
 
-function Debug()
-    -- Add debug functionality if needed
-    print("Config:", Config)
-    print("Cached Outputs:", Config.cachedOutputs)
-end
-
 function UpdateCachedOutputs(newCachedOutputs)
     Config.cachedOutputs = newCachedOutputs
 end
@@ -104,7 +82,7 @@ end
 
 function ToggleUnitFrames()
     Config.HideUnitFrames = not Config.HideUnitFrames
-    Raise(EVENTS.UNIT_FRAMES_VISIBILITY_CHANGED)
+    Notify(MY_CLASSIC_ADDON_EVENTS.UNIT_FRAMES_VISIBILITY_CHANGED)
 end
 
 function GetUnitFramesVisibility()

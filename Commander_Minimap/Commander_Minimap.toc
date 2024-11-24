@@ -3,7 +3,7 @@
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderMinimapDB
-## SavedVariablesPerCharacter: CommanderMinimapCharDB
+## RequiredDeps: Commander_Events
 
 CommanderMinimapDB.lua
 CommanderMinimap.lua

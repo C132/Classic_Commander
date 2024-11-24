@@ -3,6 +3,6 @@
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderNameplateDB
-## SavedVariablesPerCharacter: CommanderNameplateCharDB
+## RequiredDeps: Commander_Events
 
 Commander_Nameplate.lua
