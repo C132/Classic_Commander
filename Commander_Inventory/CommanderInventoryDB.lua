@@ -59,8 +59,8 @@ function CreateResetButton(panel)
 end
 
 function CommanderInventoryDB:Reset()
-    for k in pairs(CommanderInventoryDB) do
-        CommanderInventoryDB[k] = nil
+    for key in pairs(CommanderInventoryDB) do
+        CommanderInventoryDB[key] = nil
     end
     CommanderInventoryDB.columns = defaultSettings.columns
     CommanderInventoryDB.scale = defaultSettings.scale
@@ -68,11 +68,42 @@ function CommanderInventoryDB:Reset()
     CommanderInventoryDB.tooltips = defaultSettings.tooltips
     CommanderInventoryDB.showFrame = defaultSettings.showFrame
     UpdateButtons()
-    if CIColumnsSlider then
-        CIColumnsSlider:SetValue(defaultSettings.columns)
-        CIColumnsSlider.valueText:SetText(defaultSettings.columns)
+    if CommanderInventoryColumnsSlider then
+        CommanderInventoryColumnsSlider:SetValue(defaultSettings.columns)
+        CommanderInventoryColumnsSlider.valueText:SetText(defaultSettings.columns)
+    end
+    if CommanderInventoryScaleSlider then
+        CommanderInventoryScaleSlider:SetValue(defaultSettings.scale)
+        CommanderInventoryScaleSlider.valueText:SetText(string.format("%.2f", defaultSettings.scale))
     end
     print("Commander Inventory settings reset.")
+end
+
+function CreateScaleSlider(panel)
+    local slider = CreateFrame("Slider", "CommanderInventoryScaleSlider", panel, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", 16, -128)
+    slider:SetMinMaxValues(0.5, 2.0)
+    slider:SetValueStep(0.1)
+    slider:SetObeyStepOnDrag(true)
+    slider:SetValue(CommanderInventoryDB.scale)
+    
+    _G["CommanderInventoryScaleSliderText"]:SetText("Scale")
+    _G["CommanderInventoryScaleSliderLow"]:SetText("0.5")
+    _G["CommanderInventoryScaleSliderHigh"]:SetText("2.0")
+    
+    local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
+    valueText:SetText(string.format("%.2f", CommanderInventoryDB.scale))
+    slider.valueText = valueText
+    
+    slider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value * 10) / 10
+        CommanderInventoryDB.scale = value
+        self.valueText:SetText(string.format("%.2f", value))
+        ItemGrid:SetScale(value)
+    end)
+    
+    return slider
 end
 
 function CommanderInventoryDB:CreateOptionsPanel()
@@ -81,6 +112,7 @@ function CommanderInventoryDB:CreateOptionsPanel()
     
     CreateResetButton(panel)
     CreateColumnsSlider(panel)
+    CreateScaleSlider(panel)
     
     return panel
 end

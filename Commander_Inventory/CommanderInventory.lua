@@ -1,6 +1,6 @@
 local CommanderInventoryDB = _G.CommanderInventoryDB
     
-local ItemGrid = CreateFrame("Frame", "CIItemGrid", UIParent, "BasicFrameTemplateWithInset")
+ItemGrid = CreateFrame("Frame", "CIItemGrid", UIParent, "BasicFrameTemplateWithInset")
 ItemGrid:SetPoint("CENTER")
 ItemGrid:SetMovable(true)
 ItemGrid:SetClampedToScreen(true)
