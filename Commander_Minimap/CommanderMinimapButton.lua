@@ -1,9 +1,8 @@
 local frame = CreateFrame("FRAME")
+local centerButton
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
 frame:RegisterEvent("PLAYER_XP_UPDATE")
-
-local centerButton = CreateFrame("Button", "CommanderMinimapButton", Minimap)
 
 local function GetXPPercentage()
     return math.floor((UnitXP("player") / UnitXPMax("player")) * 100)
@@ -140,54 +139,13 @@ local function GetMenuListForButton(button)
     return {}
 end
 
-local function SetupClickHandlers(centerButton)
-    centerButton:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
-    centerButton:SetScript("OnClick", function(self, button)
-        local menuFrame = CreateFrame("Frame", "My" .. button .. "ButtonMenu", UIParent, "UIDropDownMenuTemplate")
-        local menuList = GetMenuListForButton(button)
-        
-        UIDropDownMenu_Initialize(menuFrame, function(self, level)
-            for _, item in ipairs(menuList) do
-                UIDropDownMenu_AddButton(item, level)
-            end
-        end)
-        ToggleDropDownMenu(1, nil, menuFrame, "cursor", 0, 0)
-    end)
-end
-
-local function CreateCenterButton()
-    centerButton:SetSize(32, 32)
-    centerButton:SetNormalTexture("Interface\\Minimap\\UI-Minimap-Background")
-    centerButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    centerButton:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
-    
-    centerButton:SetMovable(true)
-    centerButton:EnableMouse(true)
-    centerButton:SetClampedToScreen(true)
-    centerButton:RegisterForDrag("LeftButton")
-    centerButton:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    centerButton:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    
-    centerButton:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("XP Tracker")
-        GameTooltip:AddLine("Left-click and drag to move")
-        GameTooltip:Show()
-    end)
-    centerButton:SetScript("OnLeave", function(self)
-        GameTooltip:Hide()
-    end)
-    
-    return centerButton
-end
-
-local function CreateXPText(centerButton)
+local function CreateXPText()
     local xpText = centerButton:CreateFontString(GetXPPercentage(), "OVERLAY")
     xpText:SetFontObject(GameFontHighlight)
     xpText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     xpText:SetPoint("CENTER", centerButton, "CENTER")
     if GetXPExhaustion() and GetXPExhaustion() > 0 then
-        xpText:SetTextColor(0.6, 0.39, 0.98)
+        xpText:SetTextColor(0, 1, 1)
     else
         xpText:SetTextColor(0.58, 0.0, 0.55)
     end
@@ -215,27 +173,61 @@ local function SetupXPEventHandlers(updateXPText)
 end
 
 local function MicroBarButtons()
-    local centerButton = CreateCenterButton()
-    local xpText = CreateXPText(centerButton)
-    
-    SetupClickHandlers(centerButton)
-    
+    local xpText = CreateXPText()
     local updateXPText = CreateXPTextUpdater(xpText)
     SetupXPEventHandlers(updateXPText)
     
-    updateXPText()
-    centerButton:SetAlpha(0.77)
-    centerButton:SetScale(1.2)
-    
+    updateXPText()    
     return updateXPText
 end
+
+centerButton = CreateFrame("Button", "CommanderMinimapButton", Minimap)
+centerButton:SetSize(32, 32)
+centerButton:SetAlpha(1)
+centerButton:SetScale(1.1)
+centerButton:SetNormalTexture("Interface\\Minimap\\UI-Minimap-Background")
+centerButton:SetPoint("CENTER")
+centerButton:SetMovable(true)
+centerButton:SetClampedToScreen(true)
+centerButton:EnableMouse(true)
+centerButton:RegisterForDrag("LeftButton")
+centerButton:SetScript("OnDragStart", function(self)
+    if not CommanderMinimapDB.MinimapButtonLocked then
+        self:StartMoving()
+    end
+end)
+centerButton:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+end)
+centerButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("XP Tracker")
+    GameTooltip:AddLine("Left-click and drag to move")
+    GameTooltip:Show()
+end)
+centerButton:SetScript("OnLeave", function(self)
+    GameTooltip:Hide()
+end)
+centerButton:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
+centerButton:SetScript("OnClick", function(self, button)
+    local menuFrame = CreateFrame("Frame", "My" .. button .. "ButtonMenu", UIParent, "UIDropDownMenuTemplate")
+    local menuList = GetMenuListForButton(button)
+    
+    UIDropDownMenu_Initialize(menuFrame, function(self, level)
+        for _, item in ipairs(menuList) do
+            UIDropDownMenu_AddButton(item, level)
+        end
+    end)
+    ToggleDropDownMenu(1, nil, menuFrame, "cursor", 0, 0)
+end)
+
 
 local function OnAwake()
     CommanderMinimapDB.lastXPGain = CommanderMinimapDB.lastXPGain or 0
     CommanderMinimapDB.lastXPSource = CommanderMinimapDB.lastXPSource or ""
     CommanderMinimapDB.lastKnownXP = UnitXP("player")
     frame.RenderXPText = MicroBarButtons()
-end
+end 
 
 local function OnEvent(self, event, ...)
     if event == "PLAYER_LOGIN" then

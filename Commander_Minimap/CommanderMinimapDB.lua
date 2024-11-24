@@ -9,7 +9,7 @@ COMMANDER_MINIMAP_EVENTS = {
 
 local defaultSettings = {
     ShowMinimapButton = true,
-    MinimapButtonPosition = 0,
+    MinimapButtonLocked = false,
     XPDisplayMode = "PERCENTAGE",
 }
 
@@ -22,22 +22,11 @@ end
 local function OnAwake()
     if CommanderMinimapDB == nil then print("No Minimap DB found") end
     CommanderMinimapDB.ShowMinimapButton = CommanderMinimapDB.ShowMinimapButton or true
-    CommanderMinimapDB.MinimapButtonPosition = CommanderMinimapDB.MinimapButtonPosition or 0
     CommanderMinimapDB.XPDisplayMode = CommanderMinimapDB.XPDisplayMode or "PERCENTAGE"
     CommanderMinimapDB.lastXPGain = CommanderMinimapDB.lastXPGain or 0
     CommanderMinimapDB.killsToLevel = CommanderMinimapDB.killsToLevel or 0
     CommanderMinimapDB.lastXPSource = CommanderMinimapDB.lastXPSource or ""
-    LoadMinimapButtonPosition()
-end
-
-function SaveMinimapButtonPosition()
-    CommanderMinimapDB.MinimapButtonPosition = CommanderMinimapButton and CommanderMinimapButton:GetAngle() or 0
-end
-
-function LoadMinimapButtonPosition()
-    if CommanderMinimapButton then
-        CommanderMinimapButton:SetAngle(CommanderMinimapDB.MinimapButtonPosition)
-    end
+    CommanderMinimapDB.MinimapButtonLocked = CommanderMinimapDB.MinimapButtonLocked or false
 end
 
 function ToggleMinimapButton()

@@ -89,7 +89,6 @@ local function CreateScaleSlider(panel)
         value = math.floor(value * 10) / 10
         CommanderInventoryDB.scale = value
         self.valueText:SetText(string.format("%.2f", value))
-        print("Scale: " .. value)
         Notify(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY)
     end)
     

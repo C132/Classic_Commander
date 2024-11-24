@@ -157,7 +157,6 @@ local function LoadSettings()
         ItemGrid:SetScale(CommanderInventoryDB.scale)
     end
     UpdateButtons()
-    print("Commander Inventory Settings Loaded")
 end
 
 frame:SetScript("OnEvent", function(self, event)
@@ -167,7 +166,6 @@ frame:SetScript("OnEvent", function(self, event)
         LoadSettings()
         AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, LoadSettings)
         loaded = true
-        print("Commander Inventory Loaded")
     elseif loaded then
         UpdateButtons()
     end
