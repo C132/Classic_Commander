@@ -2,5 +2,6 @@
 ## Title: Commander Events
 ## Author: Devin
 ## Version: 1.0
+## Notes: Event system for Commander
 
 CommanderEvents.lua
