@@ -6,35 +6,7 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
 
-function AddListener(func)
-    print("Adding Chat Listener: " .. tostring(func))
-    if type(func) ~= "function" then
-        return
-    end
-    table.insert(CommanderChatDB.listeners, func)
-end
-
-function RemoveListener(func)
-    if type(func) ~= "function" then
-        return
-    end
-    CommanderChatDB.listeners = RemoveFromTable(CommanderChatDB.listeners, func)
-end
-
-function Notify()
-    if not CommanderChatDB.listeners then
-        CommanderChatDB.listeners = {}
-        return
-    end
-    
-    for _, func in ipairs(CommanderChatDB.listeners) do
-        if type(func) == "function" then
-            func()
-        end
-    end
-end
-
-function Reset()
+local function Reset()
     print("Resetting Commander Chat")
 end
 
@@ -59,9 +31,9 @@ local function CreateOptionsPanel()
 end
 
 local function OnAwake() 
-    local category = Settings.RegisterCanvasLayoutCategory(CreateOptionsPanel(), "Commander Chat")
+    local category = Settings.RegisterCanvasLayoutCategory(self:CreateOptionsPanel(), "Commander Chat")
     Settings.RegisterAddOnCategory(category)
-    InitializeSlashCommands(category)
+    self:InitializeSlashCommands(category)
 end
 local function OnDestroy() end
 local function OnUpdate() end

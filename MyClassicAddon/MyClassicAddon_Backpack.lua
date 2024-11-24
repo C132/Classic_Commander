@@ -115,7 +115,6 @@ end
 
 hooksecurefunc("ContainerFrameItemButton_OnEnter", FixTooltipAnchor)
 
--- Hook UpdateContainerFrameAnchors to prevent SetPoint errors
 local originalUpdateContainerFrameAnchors = UpdateContainerFrameAnchors
 UpdateContainerFrameAnchors = function(...)
     for i = 1, NUM_CONTAINER_FRAMES do

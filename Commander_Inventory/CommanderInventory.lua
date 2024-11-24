@@ -1,9 +1,14 @@
-local ItemGrid
-local ButtonsContainer
-local buttons = {}
 
 local frame = CreateFrame("FRAME");
-ItemGrid = CreateFrame("Frame", "CIItemGrid", UIParent, "BasicFrameTemplateWithInset")
+local ButtonsContainer
+local buttons = {}
+local showFrame = true
+local scale = 1
+local loaded = false
+local locked = false
+local tooltips = true
+local columns = 10
+local ItemGrid = CreateFrame("Frame", "CIItemGrid", UIParent, "BasicFrameTemplateWithInset")
 ItemGrid:SetPoint("CENTER")
 ItemGrid:SetMovable(true)
 ItemGrid:SetClampedToScreen(true)
@@ -18,12 +23,7 @@ ItemGrid:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
 end)
 
-local showFrame = true
-local scale = 1
-local loaded = false
-local locked = false
-local tooltips = true
-local columns = 10
+
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
