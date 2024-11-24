@@ -49,7 +49,6 @@ function CommanderInventoryDB:CreateColumnsSlider(panel)
     _G["CIColumnsSliderLow"]:SetText("1")
     _G["CIColumnsSliderHigh"]:SetText("12")
     
-    -- Create value text
     local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
     valueText:SetText(CommanderInventoryDB.columns)
@@ -71,22 +70,17 @@ function CommanderInventoryDB:CreateResetButton(panel)
     button:SetPoint("TOPLEFT", 16, -16)
     button:SetText("Reset Settings")
     button:SetScript("OnClick", function()
-        self:OnResetClicked()
+        CommanderInventoryDB:Reset()
     end)
     return button
-end
-
-function CommanderInventoryDB:OnResetClicked()
-    self:Reset()
-    UpdateButtons()
 end
 
 function CommanderInventoryDB:CreateOptionsPanel()
     local panel = CreateFrame("Frame")
     panel.name = "Commander Inventory"
     
-    self:CreateColumnsSlider(panel)
-    self:CreateResetButton(panel)
+    CommanderInventoryDB:CreateColumnsSlider(panel)
+    CommanderInventoryDB:CreateResetButton(panel)
     
     return panel
 end
