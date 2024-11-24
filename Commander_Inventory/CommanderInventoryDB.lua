@@ -1,4 +1,4 @@
-CommanderInventoryDB = {}
+CommanderInventoryDB = CommanderInventoryDB or {}
 
 defaultSettings = {
     columns = 4,
@@ -67,7 +67,7 @@ function CommanderInventoryDB:Reset()
     CommanderInventoryDB.locked = defaultSettings.locked
     CommanderInventoryDB.tooltips = defaultSettings.tooltips
     CommanderInventoryDB.showFrame = defaultSettings.showFrame
-    CommanderInventoryDB.UpdateButtons()
+    UpdateButtons()
     if CIColumnsSlider then
         CIColumnsSlider:SetValue(defaultSettings.columns)
         CIColumnsSlider.valueText:SetText(defaultSettings.columns)
