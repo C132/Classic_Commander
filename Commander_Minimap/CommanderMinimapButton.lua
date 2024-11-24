@@ -1,11 +1,10 @@
 local frame = CreateFrame("FRAME")
-frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_LOGOUT") 
-frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
 frame:RegisterEvent("PLAYER_XP_UPDATE")
 
--- XP calculation functions
+local centerButton = CreateFrame("Button", "CommanderMinimapButton", Minimap)
+
 local function GetXPPercentage()
     return math.floor((UnitXP("player") / UnitXPMax("player")) * 100)
 end
@@ -30,7 +29,6 @@ local function GetDurability()
     return durability
 end
 
--- Menu creation functions
 local function CreateLeftClickMenu()
     return {
         {text = "Character", func = function() ToggleCharacter("PaperDollFrame") end},
@@ -39,7 +37,7 @@ local function CreateLeftClickMenu()
         {text = "Quest Log", func = function() ToggleQuestLog() end},
         {text = "Social", func = function() ToggleFriendsFrame() end},
         {text = "World Map", func = function() ToggleWorldMap() end},
-        {text = "Main Menu", func = function() ToggleGameMenu() end},
+        {text = "System Menu", func = function() GameMenuFrame:Show() end},
         {text = "All Bags", func = function() OpenAllBags() end},
         {text = "Settings", func = function() OpenSettings() end},
         {text = "Reload", func = function() ReloadUI() end},
@@ -142,7 +140,6 @@ local function GetMenuListForButton(button)
     return {}
 end
 
--- Click handler setup
 local function SetupClickHandlers(centerButton)
     centerButton:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     centerButton:SetScript("OnClick", function(self, button)
@@ -158,22 +155,19 @@ local function SetupClickHandlers(centerButton)
     end)
 end
 
--- Button creation and configuration
 local function CreateCenterButton()
-    local centerButton = CreateFrame("Button", "MyCenterButton", Minimap)
     centerButton:SetSize(32, 32)
     centerButton:SetNormalTexture("Interface\\Minimap\\UI-Minimap-Background")
     centerButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     centerButton:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
     
-    -- Make button movable
     centerButton:SetMovable(true)
     centerButton:EnableMouse(true)
+    centerButton:SetClampedToScreen(true)
     centerButton:RegisterForDrag("LeftButton")
     centerButton:SetScript("OnDragStart", function(self) self:StartMoving() end)
     centerButton:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     
-    -- Set up tooltip
     centerButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("XP Tracker")
@@ -187,23 +181,20 @@ local function CreateCenterButton()
     return centerButton
 end
 
--- XP text creation and configuration 
 local function CreateXPText(centerButton)
     local xpText = centerButton:CreateFontString(GetXPPercentage(), "OVERLAY")
     xpText:SetFontObject(GameFontHighlight)
     xpText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     xpText:SetPoint("CENTER", centerButton, "CENTER")
-    -- Set color based on rested XP status
     if GetXPExhaustion() and GetXPExhaustion() > 0 then
-        xpText:SetTextColor(0.6, 0.39, 0.98) -- Purple color for rested XP
+        xpText:SetTextColor(0.6, 0.39, 0.98)
     else
-        xpText:SetTextColor(0.58, 0.0, 0.55) -- Pink/magenta color for normal XP
+        xpText:SetTextColor(0.58, 0.0, 0.55)
     end
     xpText:SetDrawLayer("OVERLAY", 7)
     return xpText
 end
 
--- XP text updating
 local function CreateXPTextUpdater(xpText)
     local function UpdateXPText()
         local text = CommanderMinimapDB.XPDisplayMode == "KILLS_TO_LEVEL" and CalculateKillsToLevel() or GetXPPercentage() .. "%"
@@ -220,23 +211,21 @@ local function SetupXPEventHandlers(updateXPText)
         end
     end)
     
-    AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP_XP_DISPLAY_MODE_CHANGED, updateXPText)
+    AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, updateXPText)
 end
 
 local function MicroBarButtons()
-    -- Create and configure the main button
     local centerButton = CreateCenterButton()
     local xpText = CreateXPText(centerButton)
     
-    -- Set up click handlers
     SetupClickHandlers(centerButton)
     
-    -- Set up XP text updating
     local updateXPText = CreateXPTextUpdater(xpText)
     SetupXPEventHandlers(updateXPText)
     
-    -- Initial update
     updateXPText()
+    centerButton:SetAlpha(0.77)
+    centerButton:SetScale(1.2)
     
     return updateXPText
 end
@@ -248,8 +237,8 @@ local function OnAwake()
     frame.RenderXPText = MicroBarButtons()
 end
 
-frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" and ... == "Commander_Minimap" then
+local function OnEvent(self, event, ...)
+    if event == "PLAYER_LOGIN" then
         OnAwake()
     elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
         local message = ...
@@ -260,17 +249,19 @@ frame:SetScript("OnEvent", function(self, event, ...)
             if xpGain then
                 CommanderMinimapDB.lastXPGain = xpGain
                 CommanderMinimapDB.lastKnownXP = UnitXP("player")
-                UpdateLastXPGain(xpGain, mobName) -- Call DB update function
+                UpdateLastXPGain(xpGain, mobName)
             end
         end
         if frame.RenderXPText then 
             frame.RenderXPText()
-            UpdateKillsToLevel() -- Update kills needed after XP gain
+            UpdateKillsToLevel()
         end
     elseif event == "PLAYER_XP_UPDATE" then
         if frame.RenderXPText then
             frame.RenderXPText()
-            UpdateKillsToLevel() -- Update kills needed after any XP change
+            UpdateKillsToLevel()
         end
     end
-end)
+end
+
+frame:SetScript("OnEvent", OnEvent)

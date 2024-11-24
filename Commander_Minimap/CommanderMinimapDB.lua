@@ -1,14 +1,23 @@
 CommanderMinimapDB = CommanderMinimapDB or {}
 
 local frame = CreateFrame("FRAME");
-frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_LOGOUT")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_LOGIN")
 
 COMMANDER_MINIMAP_EVENTS = {
-    COMMANDER_MINIMAP_BUTTON_VISIBILITY_CHANGED = "COMMANDER_MINIMAP_BUTTON_VISIBILITY_CHANGED",
-    COMMANDER_MINIMAP_XP_DISPLAY_MODE_CHANGED = "COMMANDER_MINIMAP_XP_DISPLAY_MODE_CHANGED",
+    COMMANDER_MINIMAP = "COMMANDER_MINIMAP",
 }
+
+local defaultSettings = {
+    ShowMinimapButton = true,
+    MinimapButtonPosition = 0,
+    XPDisplayMode = "PERCENTAGE",
+}
+
+for key, value in pairs(defaultSettings) do
+    if CommanderMinimapDB[key] == nil then
+        CommanderMinimapDB[key] = value
+    end
+end
 
 local function OnAwake()
     if CommanderMinimapDB == nil then print("No Minimap DB found") end
@@ -18,27 +27,8 @@ local function OnAwake()
     CommanderMinimapDB.lastXPGain = CommanderMinimapDB.lastXPGain or 0
     CommanderMinimapDB.killsToLevel = CommanderMinimapDB.killsToLevel or 0
     CommanderMinimapDB.lastXPSource = CommanderMinimapDB.lastXPSource or ""
-end
-
--- Initialize any necessary components or features
-local function OnStart()
     LoadMinimapButtonPosition()
 end
-
--- Save any necessary data before logout
-local function OnDestroy()
-    SaveMinimapButtonPosition()
-end
-
-frame:SetScript("OnEvent", function(self, event, addonName)
-    if event == "ADDON_LOADED" and addonName == "Commander_Minimap" then
-        OnAwake()
-    elseif event == "PLAYER_LOGOUT" then
-        OnDestroy()
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        OnStart()
-    end
-end)
 
 function SaveMinimapButtonPosition()
     CommanderMinimapDB.MinimapButtonPosition = CommanderMinimapButton and CommanderMinimapButton:GetAngle() or 0
@@ -52,12 +42,12 @@ end
 
 function ToggleMinimapButton()
     CommanderMinimapDB.ShowMinimapButton = not CommanderMinimapDB.ShowMinimapButton
-    Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP_BUTTON_VISIBILITY_CHANGED)
+    Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP)
 end
 
 function SetXPDisplayMode(mode)
     CommanderMinimapDB.XPDisplayMode = mode
-    Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP_XP_DISPLAY_MODE_CHANGED)
+    Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP)
 end
 
 function GetXPDisplayMode()
@@ -86,3 +76,11 @@ end
 function GetLastXPSource()
     return CommanderMinimapDB.lastXPSource
 end
+
+local function OnEvent(self, event, ...)
+    if event == "PLAYER_LOGIN" then
+        OnAwake()
+    end
+end
+
+frame:SetScript("OnEvent", OnEvent)
