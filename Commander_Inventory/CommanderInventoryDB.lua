@@ -118,12 +118,12 @@ local function CreateOptionsPanel()
     return panel
 end
 
-local function InitializeSlashCommands(catagory)
+local function InitializeSlashCommands(categoryID)
     SLASH_CI1 = "/ci"
     SlashCmdList["CI"] = function(msg)
         msg = msg:lower()
         if msg == "" or msg == "toggle" then
-            Settings.OpenToCategory(catagory)
+            Settings.OpenToCategory(categoryID)
         elseif msg == "reset" then
             Reset()
         else
@@ -145,7 +145,8 @@ frame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         local category = Settings.RegisterCanvasLayoutCategory(CreateOptionsPanel(), "Commander Inventory")
         Settings.RegisterAddOnCategory(category)
-        InitializeSlashCommands(category)
+        local categoryID = category:GetID()
+        InitializeSlashCommands(categoryID)
         _G.CommanderInventoryDB = CommanderInventoryDB
         AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, OnUpdate)
         OnUpdate()
