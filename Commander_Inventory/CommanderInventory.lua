@@ -40,7 +40,7 @@ local function CreateButton(index)
     return button
 end
 
-local function UpdateButtons()
+function UpdateButtons()
     local index = 1
     local itemIDs = {}
     

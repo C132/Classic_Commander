@@ -21,9 +21,20 @@ function CommanderInventoryDB:Initialize()
 end
 
 function CommanderInventoryDB:Reset()
-    for key, value in pairs(defaultSettings) do
-        self[key] = value
+    for k in pairs(CommanderInventoryDB) do
+        CommanderInventoryDB[k] = nil
     end
+    CommanderInventoryDB.columns = defaultSettings.columns
+    CommanderInventoryDB.scale = defaultSettings.scale
+    CommanderInventoryDB.locked = defaultSettings.locked
+    CommanderInventoryDB.tooltips = defaultSettings.tooltips
+    CommanderInventoryDB.showFrame = defaultSettings.showFrame
+    UpdateButtons()
+    if CIColumnsSlider then
+        CIColumnsSlider:SetValue(defaultSettings.columns)
+        CIColumnsSlider.valueText:SetText(defaultSettings.columns)
+    end
+    print("Commander Inventory settings reset.")
 end
 
 function CommanderInventoryDB:CreateColumnsSlider(panel)
@@ -48,9 +59,7 @@ function CommanderInventoryDB:CreateColumnsSlider(panel)
         value = math.floor(value)
         CommanderInventoryDB.columns = value
         self.valueText:SetText(value)
-        if CI and CI.ItemGrid and CI.ItemGrid.UpdateButtons then
-            CI.ItemGrid.UpdateButtons()
-        end
+        UpdateButtons()
     end)
     
     return slider
@@ -64,15 +73,12 @@ function CommanderInventoryDB:CreateResetButton(panel)
     button:SetScript("OnClick", function()
         self:OnResetClicked()
     end)
-    
     return button
 end
 
 function CommanderInventoryDB:OnResetClicked()
     self:Reset()
-    if CI and CI.ItemGrid and CI.ItemGrid.ApplySettings then
-        CI.ItemGrid.ApplySettings()
-    end
+    UpdateButtons()
 end
 
 function CommanderInventoryDB:CreateOptionsPanel()
