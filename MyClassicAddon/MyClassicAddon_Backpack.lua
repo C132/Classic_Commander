@@ -133,7 +133,7 @@ UpdateContainerFrameAnchors = function(...)
 end
 
 -- Listen for changes to the FadeBagsWhileMoving setting
-AddListener(EVENTS.FADE_BAGS_WHILE_MOVING_CHANGED, function()
+AddListener(MY_CLASSIC_ADDON_EVENTS.FADE_BAGS_WHILE_MOVING_CHANGED, function()
     if Config.FadeBagsWhileMoving then
         if IsPlayerMoving() then
             FadeBags(true)

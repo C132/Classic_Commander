@@ -135,7 +135,7 @@ end
 local actionBarInfo = ActionBarInfo:New()
 actionBarInfo:Initialize()
 
-AddListener(EVENTS.ACTIONBAR_COST_MODE_CHANGED, function()
+AddListener(MY_CLASSIC_ADDON_EVENTS.ACTIONBAR_COST_MODE_CHANGED, function()
     actionBarInfo.forceUpdate = true
     actionBarInfo:Update()
 end)

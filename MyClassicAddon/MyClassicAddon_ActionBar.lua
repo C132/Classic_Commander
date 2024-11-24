@@ -113,7 +113,7 @@ local function OnStart()
     CreateRTSBackdrop()
     MoveActionButtons()
     frame:SetScript("OnUpdate", OnUpdate)
-    AddListener(EVENTS.ACTIONBAR_UNLOCKED, SetLockState)
+    AddListener(MY_CLASSIC_ADDON_EVENTS.ACTIONBAR_UNLOCKED, SetLockState)
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)
