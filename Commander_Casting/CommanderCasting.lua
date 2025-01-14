@@ -16,7 +16,7 @@ local function UpdateCastingGlow(glow)
         name, text, texture, startTime, endTime, isTradeSkill = UnitChannelInfo("player")
     end
 
-    if name and CommanderCastingDB.enabled then
+    if name and CommanderCastingDB.ShowFullscreenEffect then
         local castDuration = endTime - startTime
         local castElapsed = GetTime() * 1000 - startTime
         local castProgress = castElapsed / castDuration
@@ -71,7 +71,7 @@ local function UpdateCastingGlow(glow)
             r, g, b = 1, 0.3, 1  -- Bright magenta
         end
 
-        local glowIntensity = math.max(0, math.min(1, castProgress)) * CommanderCastingDB.intensity
+        local glowIntensity = math.max(0, math.min(1, castProgress)) * CommanderCastingDB.EffectIntensity
         glow:SetVertexColor(r, g, b)
         glow:SetAlpha(glowIntensity)
     else
@@ -86,16 +86,21 @@ local function OnUpdate()
 end
 
 local function OnAwake()
+    AddListener(COMMANDER_CASTING_EVENTS.UPDATE, OnUpdate)
+    Notify(COMMANDER_CASTING_EVENTS.UPDATE)
     frame:SetScript("OnUpdate", OnUpdate)
+end
+
+local function OnDestroy()
+    print("CommanderCasting: OnDestroy")
 end
 
 local function OnEvent(self, event)
     if event == "PLAYER_LOGIN" then
-        print("CommanderCasting: PLAYER_LOGIN")
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then
-        -- OnDestroy handling if needed
+        OnDestroy()
     elseif loaded then
         OnUpdate()
     end

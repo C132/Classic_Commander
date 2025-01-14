@@ -2,6 +2,7 @@ CommanderCastingDB = _G.CommanderCastingDB or {}
 
 local showFullscreenEffectCheckbox
 local colorBySpellSchoolCheckbox
+local intensitySlider
 
 COMMANDER_CASTING_EVENTS = {
     UPDATE = "COMMANDER_CASTING_UPDATE"
@@ -9,7 +10,8 @@ COMMANDER_CASTING_EVENTS = {
 
 local DefaultSettings = {
     ShowFullscreenEffect = true,
-    ColorBySpellSchool = true
+    ColorBySpellSchool = true,
+    EffectIntensity = 0.5
 }
 
 for key, value in pairs(DefaultSettings) do
@@ -76,6 +78,22 @@ local function CreateOptionsPanel()
         Notify(COMMANDER_CASTING_EVENTS.UPDATE)
     end)
 
+    intensitySlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    intensitySlider:SetPoint("TOPLEFT", colorBySpellSchoolCheckbox, "BOTTOMLEFT", 0, -24)
+    intensitySlider:SetMinMaxValues(0, 1)
+    intensitySlider:SetValue(CommanderCastingDB.EffectIntensity or 0.5)
+    intensitySlider:SetValueStep(0.1)
+    intensitySlider:SetWidth(200)
+    intensitySlider.Text:SetText("Effect Intensity")
+    intensitySlider.Low:SetText("0%")
+    intensitySlider.High:SetText("100%")
+    intensitySlider:SetScript("OnValueChanged", function(self, value)
+        if value then
+            CommanderCastingDB.EffectIntensity = value
+            Notify(COMMANDER_CASTING_EVENTS.UPDATE)
+        end
+    end)
+
     return panel
 end
 
@@ -85,6 +103,9 @@ local function OnUpdate()
     end
     if colorBySpellSchoolCheckbox then
         colorBySpellSchoolCheckbox:SetChecked(CommanderCastingDB.ColorBySpellSchool)
+    end
+    if intensitySlider and CommanderCastingDB.EffectIntensity then
+        intensitySlider:SetValue(CommanderCastingDB.EffectIntensity)
     end
 end
 
@@ -111,4 +132,3 @@ local function OnEvent(self, event)
 end
 
 frame:SetScript("OnEvent", OnEvent)
-
