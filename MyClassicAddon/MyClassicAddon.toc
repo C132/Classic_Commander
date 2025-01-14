@@ -7,7 +7,6 @@
 
 Config.lua
 GUI.lua
-MyClassicAddon_ActionBar.lua
 MyClassicAddon_Settings.lua
 MyClassicAddon_Backpack.lua
 MyClassicAddon_UnitFrame.lua

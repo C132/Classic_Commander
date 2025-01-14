@@ -1,0 +1,9 @@
+## Interface: 11505
+## Title: Commander Action Bar
+## Notes: Action Bar module for Commander
+## Author: Your Name
+## Version: 1.0
+## SavedVariables: CommanderActionBarDB
+
+CommanderActionBarDB.lua
+CommanderActionBar.lua
