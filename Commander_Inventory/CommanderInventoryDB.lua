@@ -76,22 +76,27 @@ end
 
 local function CreateScaleSlider(panel)
     scaleSlider = CreateFrame("Slider", "CommanderInventoryScaleSlider", panel, "OptionsSliderTemplate")
-    scaleSlider:SetPoint("TOPLEFT", 16, -128)
+    scaleSlider:SetPoint("TOPLEFT", 80, -128)
     scaleSlider:SetMinMaxValues(0.5, 2.0)
     scaleSlider:SetValueStep(0.1)
     scaleSlider:SetObeyStepOnDrag(true)
 
+    -- Add a label for the slider
+    local sliderLabel = scaleSlider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    sliderLabel:SetPoint("TOPLEFT", -60, 0)
+    sliderLabel:SetText("Scale:")
+
     local valueText = scaleSlider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     valueText:SetPoint("TOP", scaleSlider, "BOTTOM", 0, 0)
     scaleSlider.valueText = valueText
-    
+
     scaleSlider:SetScript("OnValueChanged", function(self, value)
         value = math.floor(value * 10) / 10
         CommanderInventoryDB.scale = value
         self.valueText:SetText(string.format("%.2f", value))
         Notify(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY)
     end)
-    
+
     return scaleSlider
 end
 

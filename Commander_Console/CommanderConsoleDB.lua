@@ -72,7 +72,6 @@ local function OnUpdate()
 end
 
 local function OnAwake()
-    print("Commander Console Awake")
     local panel = CreateOptionsPanel()
     local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Console")
     local categoryID = category:GetID()
@@ -82,7 +81,6 @@ local function OnAwake()
 end
 
 local function OnDestroy()
-    print("Commander Console Destroy")
 end
 
 local function OnEvent(self, event)

@@ -107,7 +107,6 @@ local function OnUpdate()
 end
 
 local function OnAwake()
-    print("Commander Action Bar DB Awake")
     local panel = CreateOptionsPanel()
     local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Action Bar")
     local categoryID = category:GetID()
@@ -117,7 +116,6 @@ local function OnAwake()
 end
 
 local function OnDestroy()
-    print("Commander Action Bar DB Destroy")
 end
 
 local function OnEvent(self, event)

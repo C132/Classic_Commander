@@ -1,0 +1,9 @@
+## Interface: 11505
+## Title: Commander Casting
+## Notes: Casting module for Commander
+## Author: Devin
+## Version: 1.0
+## SavedVariables: CommanderCastingDB
+
+CommanderCastingDB.lua
+CommanderCasting.lua

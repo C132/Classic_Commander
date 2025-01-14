@@ -72,7 +72,6 @@ local function OnUpdate()
 end
 
 local function OnAwake()
-    print("Commander Nameplate Awake")
     local panel = CreateOptionsPanel()
     local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Nameplate")
     local categoryID = category:GetID()
