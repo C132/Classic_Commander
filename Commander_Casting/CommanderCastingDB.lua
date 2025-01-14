@@ -4,6 +4,8 @@ local showFullscreenEffectCheckbox
 local colorBySpellSchoolCheckbox
 local intensitySlider
 local textureDropdown
+local texturePreview
+local textureHoverPreview
 
 COMMANDER_CASTING_EVENTS = {
     UPDATE = "COMMANDER_CASTING_UPDATE"
@@ -16,6 +18,8 @@ local TEXTURE_FILES = {
     "Glow3.png",
     "Glow4.png",
     "Glow5.png",
+    "Glow6.png",
+    "Glow7.png",
 }
 
 local DefaultSettings = {
@@ -116,9 +120,27 @@ local function CreateOptionsPanel()
     textureDropdown = CreateFrame("Frame", "CommanderCastingTextureDropdown", panel, "UIDropDownMenuTemplate")
     textureDropdown:SetPoint("TOPLEFT", textureLabel, "BOTTOMLEFT", -16, -8)
 
+    -- Create texture preview frame
+    local previewFrame = CreateFrame("Frame", nil, panel)
+    previewFrame:SetSize(64, 64)
+    previewFrame:SetPoint("LEFT", textureDropdown, "RIGHT", 16, 0)
+
+    -- Current texture preview
+    texturePreview = previewFrame:CreateTexture(nil, "ARTWORK")
+    texturePreview:SetAllPoints()
+    texturePreview:SetTexture(CommanderCastingDB.EffectTexture)
+    texturePreview:SetBlendMode("ADD")
+
+    -- Hover preview
+    textureHoverPreview = previewFrame:CreateTexture(nil, "ARTWORK")
+    textureHoverPreview:SetAllPoints()
+    textureHoverPreview:SetBlendMode("ADD")
+    textureHoverPreview:Hide()
+
     local function OnTextureSelect(self, texture)
         CommanderCastingDB.EffectTexture = texture
         UIDropDownMenu_SetSelectedValue(textureDropdown, texture)
+        texturePreview:SetTexture(texture)
         Notify(COMMANDER_CASTING_EVENTS.UPDATE)
     end
 
@@ -131,6 +153,18 @@ local function CreateOptionsPanel()
             info.func = OnTextureSelect
             info.arg1 = fullPath
             info.checked = (CommanderCastingDB.EffectTexture == fullPath)
+            info.tooltipOnButton = true
+            info.tooltipTitle = GetTextureDisplayName(filename)
+            info.tooltipText = " "  -- Need non-empty string for tooltip to show
+            info.mouseOverHandler = function(self)
+                textureHoverPreview:SetTexture(fullPath)
+                textureHoverPreview:Show()
+                texturePreview:Hide()
+            end
+            info.mouseLeaveHandler = function(self)
+                textureHoverPreview:Hide()
+                texturePreview:Show()
+            end
             UIDropDownMenu_AddButton(info)
         end
     end
@@ -166,6 +200,7 @@ local function OnUpdate()
             local fullPath = TEXTURE_PATH .. filename
             if fullPath == CommanderCastingDB.EffectTexture then
                 UIDropDownMenu_SetText(textureDropdown, GetTextureDisplayName(filename))
+                texturePreview:SetTexture(fullPath)
                 break
             end
         end
