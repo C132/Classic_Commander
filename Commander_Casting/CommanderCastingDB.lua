@@ -3,15 +3,26 @@ CommanderCastingDB = _G.CommanderCastingDB or {}
 local showFullscreenEffectCheckbox
 local colorBySpellSchoolCheckbox
 local intensitySlider
+local textureDropdown
 
 COMMANDER_CASTING_EVENTS = {
     UPDATE = "COMMANDER_CASTING_UPDATE"
 }
 
+local TEXTURE_PATH = "Interface\\AddOns\\Commander_Casting\\Textures\\"
+local TEXTURE_FILES = {
+    "Glow1.png",
+    "Glow2.png", 
+    "Glow3.png",
+    "Glow4.png",
+    "Glow5.png",
+}
+
 local DefaultSettings = {
     ShowFullscreenEffect = true,
     ColorBySpellSchool = true,
-    EffectIntensity = 0.5
+    EffectIntensity = 0.5,
+    EffectTexture = TEXTURE_PATH .. TEXTURE_FILES[1]
 }
 
 for key, value in pairs(DefaultSettings) do
@@ -46,6 +57,10 @@ local function InitializeSlashCommands(categoryID)
             print("Usage: /ccast [reset]")
         end
     end
+end
+
+local function GetTextureDisplayName(filename)
+    return filename:gsub("%.png$", "")
 end
 
 local function CreateOptionsPanel()
@@ -94,6 +109,44 @@ local function CreateOptionsPanel()
         end
     end)
 
+    local textureLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    textureLabel:SetPoint("TOPLEFT", intensitySlider, "BOTTOMLEFT", 0, -16)
+    textureLabel:SetText("Effect Texture:")
+
+    textureDropdown = CreateFrame("Frame", "CommanderCastingTextureDropdown", panel, "UIDropDownMenuTemplate")
+    textureDropdown:SetPoint("TOPLEFT", textureLabel, "BOTTOMLEFT", -16, -8)
+
+    local function OnTextureSelect(self, texture)
+        CommanderCastingDB.EffectTexture = texture
+        UIDropDownMenu_SetSelectedValue(textureDropdown, texture)
+        Notify(COMMANDER_CASTING_EVENTS.UPDATE)
+    end
+
+    local function InitializeDropdown(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+        for _, filename in ipairs(TEXTURE_FILES) do
+            local fullPath = TEXTURE_PATH .. filename
+            info.text = GetTextureDisplayName(filename)
+            info.value = fullPath
+            info.func = OnTextureSelect
+            info.arg1 = fullPath
+            info.checked = (CommanderCastingDB.EffectTexture == fullPath)
+            UIDropDownMenu_AddButton(info)
+        end
+    end
+
+    UIDropDownMenu_Initialize(textureDropdown, InitializeDropdown)
+    UIDropDownMenu_SetWidth(textureDropdown, 150)
+    UIDropDownMenu_SetSelectedValue(textureDropdown, CommanderCastingDB.EffectTexture)
+
+    for _, filename in ipairs(TEXTURE_FILES) do
+        local fullPath = TEXTURE_PATH .. filename
+        if fullPath == CommanderCastingDB.EffectTexture then
+            UIDropDownMenu_SetText(textureDropdown, GetTextureDisplayName(filename))
+            break
+        end
+    end
+
     return panel
 end
 
@@ -106,6 +159,16 @@ local function OnUpdate()
     end
     if intensitySlider and CommanderCastingDB.EffectIntensity then
         intensitySlider:SetValue(CommanderCastingDB.EffectIntensity)
+    end
+    if textureDropdown then
+        UIDropDownMenu_SetSelectedValue(textureDropdown, CommanderCastingDB.EffectTexture)
+        for _, filename in ipairs(TEXTURE_FILES) do
+            local fullPath = TEXTURE_PATH .. filename
+            if fullPath == CommanderCastingDB.EffectTexture then
+                UIDropDownMenu_SetText(textureDropdown, GetTextureDisplayName(filename))
+                break
+            end
+        end
     end
 end
 

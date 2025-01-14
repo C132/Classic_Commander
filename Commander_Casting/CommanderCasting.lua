@@ -3,7 +3,7 @@ local loaded = false
 
 local function CreateFullScreenGlow()
     local glow = WorldFrame:CreateTexture(nil, "BACKGROUND", nil, -8)  -- -8 is the lowest drawable layer
-    glow:SetTexture("Interface\\AddOns\\Commander_Casting\\Textures\\FullScreenGlow.png")
+    glow:SetTexture(CommanderCastingDB.EffectTexture)
     glow:SetAllPoints(WorldFrame)
     glow:SetBlendMode("ADD")
     glow:SetAlpha(0)
@@ -11,6 +11,11 @@ local function CreateFullScreenGlow()
 end
 
 local function UpdateCastingGlow(glow)
+    -- Update texture if it changed in DB
+    if glow:GetTexture() ~= CommanderCastingDB.EffectTexture then
+        glow:SetTexture(CommanderCastingDB.EffectTexture)
+    end
+
     local name, text, texture, startTime, endTime, isTradeSkill, castID, notInterruptible = UnitCastingInfo("player")
     if not name then
         name, text, texture, startTime, endTime, isTradeSkill = UnitChannelInfo("player")
