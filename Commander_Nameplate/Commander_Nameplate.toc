@@ -5,4 +5,5 @@
 ## SavedVariables: CommanderNameplateDB
 ## RequiredDeps: Commander_Events
 
+Commander_NameplateDB.lua
 Commander_Nameplate.lua

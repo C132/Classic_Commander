@@ -2,6 +2,7 @@
 ## Title: Commander Console
 ## Author: Devin
 ## Version: 1.0
-## SavedVariables: CAB_Config
+## SavedVariables: CommanderConsoleDB
 
 CommanderConsole.lua
+CommanderConsoleDB.lua

@@ -43,14 +43,12 @@ local function UpdateChatVisibility()
     ChatFrame1Tab:SetShown(isVisible)
     ChatFrame1Tab:SetAlpha(isVisible and 1 or 0)
     
-    -- Handle chat frame tabs visibility
     local chatFrame = _G["ChatFrame1"]
     if chatFrame and chatFrame.Tab then
         chatFrame.Tab:SetShown(isVisible)
         chatFrame.Tab:SetAlpha(isVisible and 1 or 0)
     end
     
-    -- Handle any additional chat frame tabs
     for i = 2, NUM_CHAT_WINDOWS do
         local tab = _G["ChatFrame" .. i .. "Tab"]
         if tab and tab:IsShown() then

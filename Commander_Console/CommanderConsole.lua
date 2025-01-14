@@ -6,7 +6,7 @@ local function CreateConsoleBackdrop()
     
     local texture = backdrop:CreateTexture(nil, "BACKGROUND")
     texture:SetAllPoints(backdrop)  -- Set texture to fill the backdrop
-    texture:SetTexture("Interface\\AddOns\\Commander_Console\\Textures\\Console2.png")
+    texture:SetTexture("Interface\\AddOns\\Commander_Console\\Textures\\Console3.png")
     texture:SetTexCoord(0, 1, 0, 1)
     texture:SetAlpha(1)
     
