@@ -1,4 +1,4 @@
-## Interface: 11400
+## Interface: 11505
 ## Title: Commander Chat
 ## Author: Devin
 ## Version: 1.0

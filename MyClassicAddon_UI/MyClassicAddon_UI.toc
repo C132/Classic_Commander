@@ -1,7 +1,0 @@
-## Interface: 11400
-## Title: MyClassicAddon_UI
-## Author: Devin
-## Version: 1.0
-## SavedVariables: UIConfig
-
- 
