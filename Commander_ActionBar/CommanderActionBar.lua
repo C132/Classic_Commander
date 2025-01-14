@@ -7,7 +7,6 @@ frame:RegisterEvent("PLAYER_STARTED_MOVING")
 frame:RegisterEvent("PLAYER_STOPPED_MOVING")
 
 local backdrop
-local savedPosition = {}
 
 local function HideDefaults()
     local elementsToHide = {
@@ -120,7 +119,6 @@ local function OnUpdate()
 end
 
 local function OnAwake()
-    print("Commander Action Bar Awake!!")
     CreateRTSBackdrop()
     MoveActionButtons()
     frame:SetScript("OnUpdate", OnUpdate)
