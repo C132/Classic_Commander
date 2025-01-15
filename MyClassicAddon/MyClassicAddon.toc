@@ -9,4 +9,3 @@ Config.lua
 GUI.lua
 MyClassicAddon_Settings.lua
 MyClassicAddon_Backpack.lua
-MyClassicAddon_Tooltip.lua
