@@ -1,5 +1,5 @@
 ## Interface: 11505
-## Title: Commander_Nameplate
+## Title: Commander Nameplate
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderNameplateDB
