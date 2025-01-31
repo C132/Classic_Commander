@@ -7,6 +7,9 @@ frame:RegisterEvent("BAG_OPEN")
 frame:RegisterEvent("ITEM_LOCK_CHANGED")
 frame:RegisterEvent("BANKFRAME_OPENED")
 frame:RegisterEvent("BANKFRAME_CLOSED")
+frame:RegisterEvent("MERCHANT_SHOW")
+frame:RegisterEvent("MERCHANT_CLOSED")
+frame:RegisterEvent("MERCHANT_UPDATE")
 
 local loaded = false
 local updateTimer = nil
@@ -80,8 +83,8 @@ local function UpdateItemColors()
                                 button.IconBorder:SetVertexColor(1, 0.8, 0, 1) -- Bright yellow
                                 button.IconBorder:SetAlpha(1)
                             elseif rarity == 0 then -- Poor (Gray)
-                                button.IconBorder:SetVertexColor(1, 0, 0, 1) -- Bright red
-                                button.IconBorder:SetAlpha(1)
+                                button.IconBorder:SetVertexColor(1, 0.1, 0.1, 1) -- Even brighter, more saturated red
+                                button.IconBorder:SetAlpha(1) -- Keep alpha at 1 (maximum allowed value)
                             elseif rarity == 1 then -- Common (White)
                                 button.IconBorder:Hide() -- Hide border for common items
                             else
@@ -124,17 +127,48 @@ end
 
 local function OnDestroy() end
 
+-- Hook MerchantFrame functions
+local function HookMerchantFrame()
+    if MerchantFrame then
+        if not MerchantFrame:GetScript("OnShow") then
+            MerchantFrame:SetScript("OnShow", function()
+                if loaded then
+                    C_Timer.After(0.1, function()
+                        UpdateItemColors()
+                    end)
+                end
+            end)
+        else
+            local originalOnShow = MerchantFrame:GetScript("OnShow")
+            MerchantFrame:SetScript("OnShow", function(...)
+                originalOnShow(...)
+                if loaded then
+                    C_Timer.After(0.1, function()
+                        UpdateItemColors()
+                    end)
+                end
+            end)
+        end
+    end
+end
+
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         OnAwake()
         loaded = true
         ScheduleUpdate()
+        HookMerchantFrame()
     elseif event == "PLAYER_LOGOUT" then
         OnDestroy()
     elseif loaded then
         if event == "BAG_OPEN" then
             -- Add a slightly longer delay for bag opening
             C_Timer.After(0.2, function()
+                UpdateItemColors()
+            end)
+        elseif event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
+            -- Add a delay for merchant interactions
+            C_Timer.After(0.1, function()
                 UpdateItemColors()
             end)
         else
