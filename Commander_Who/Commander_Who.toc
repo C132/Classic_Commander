@@ -1,0 +1,8 @@
+## Interface: 11506
+## Title: Commander Who
+## Author: Devin
+## Version: 1.0
+## SavedVariables: CommanderWhoDB
+
+CommanderWhoDB.lua
+CommanderWho.lua
