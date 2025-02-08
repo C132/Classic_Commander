@@ -7,7 +7,9 @@ COMMANDER_BAGS_EVENTS = {
 }
 
 local DefaultSettings = {
-    ColorCodeItems = true
+    ColorCodeItems = true,
+    BagPositions = {},
+    FadeBagsWhileMoving = true
 }
 
 for key, value in pairs(DefaultSettings) do
@@ -26,6 +28,17 @@ local function Reset()
     for key, value in pairs(DefaultSettings) do
         CommanderBagsDB[key] = value
     end
+    
+    -- Reset bag positions
+    for i = 1, NUM_BAG_FRAMES do
+        local frame = _G["ContainerFrame"..i]
+        if frame then
+            frame:ClearAllPoints()
+            frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -50, 100)
+        end
+    end
+    
+    CommanderBagsDB.BagPositions = {}
     Notify(COMMANDER_BAGS_EVENTS.UPDATE)
 end
 
@@ -66,6 +79,27 @@ local function CreateOptionsPanel()
         Notify(COMMANDER_BAGS_EVENTS.UPDATE)
     end)
 
+    -- Add Reset Position Button
+    local resetPositionButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetPositionButton:SetSize(140, 22)
+    resetPositionButton:SetPoint("TOPLEFT", colorCodeItemsCheckbox, "BOTTOMLEFT", 0, -16)
+    resetPositionButton:SetText("Reset Bag Positions")
+    resetPositionButton:SetScript("OnClick", function()
+        Reset()
+        print("Bag positions have been reset")
+    end)
+
+    -- Add Fade Bags While Moving checkbox
+    local fadeBagsCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    fadeBagsCheckbox:SetPoint("TOPLEFT", resetPositionButton, "BOTTOMLEFT", 0, -8)
+    fadeBagsCheckbox.Text:SetText("Fade Bags While Moving")
+    fadeBagsCheckbox:SetChecked(CommanderBagsDB.FadeBagsWhileMoving)
+    fadeBagsCheckbox:SetScript("OnClick", function(self)
+        CommanderBagsDB.FadeBagsWhileMoving = self:GetChecked()
+        print("Fade bags while moving setting changed to:", self:GetChecked())
+        Notify(COMMANDER_BAGS_EVENTS.UPDATE)
+    end)
+
     return panel
 end
 
@@ -76,6 +110,11 @@ local function OnUpdate()
 end
 
 local function OnAwake()
+    -- Initialize BagPositions if it doesn't exist
+    if CommanderBagsDB.BagPositions == nil then
+        CommanderBagsDB.BagPositions = {}
+    end
+    
     local panel = CreateOptionsPanel()
     local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Bags")
     local categoryID = category:GetID()
