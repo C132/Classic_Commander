@@ -147,7 +147,7 @@ local function UpdateItemColors()
                             elseif rarity == 1 then -- Common (White)
                                 button.IconBorder:Hide() -- Hide border for common items
                             else
-                                local r, g, b = GetItemQualityColor(rarity)
+                                local r, g, b = C_Item.GetItemQualityColor(rarity)
                                 button.IconBorder:SetVertexColor(r, g, b, 1)
                                 button.IconBorder:SetAlpha(1)
                             end
