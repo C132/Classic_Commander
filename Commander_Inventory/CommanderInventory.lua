@@ -1,4 +1,3 @@
-
 local frame = CreateFrame("FRAME");
 local ButtonsContainer
 local buttons = {}
@@ -9,6 +8,8 @@ local locked = false
 local tooltips = true
 local columns = 10
 local ItemGrid = CreateFrame("Frame", "CIItemGrid", UIParent, "BasicFrameTemplateWithInset")
+_G.CIItemGrid = ItemGrid  -- Make ItemGrid accessible globally
+_G.CIButtons = buttons  -- Make buttons accessible globally
 ItemGrid:SetPoint("CENTER")
 ItemGrid:SetMovable(true)
 ItemGrid:SetClampedToScreen(true)
@@ -23,12 +24,15 @@ ItemGrid:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
 end)
 
+-- Add after local frame declaration
+local debugFrame
 
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("BAG_UPDATE") 
 frame:RegisterEvent("ITEM_LOCK_CHANGED")
+frame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
 
 local function CreateItemGrid()    
     ItemGrid.TitleText:SetText("Inventory")
@@ -44,6 +48,13 @@ local function CreateButton(index)
     local button = CreateFrame("Button", "CIItemButton"..index, ButtonsContainer, "SecureActionButtonTemplate, ActionButtonTemplate")
     button:SetSize(40, 40)
     button:SetAttribute("type", "item")
+    
+    -- Create cooldown frame
+    button.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+    button.cooldown:SetAllPoints()
+    button.cooldown:SetDrawEdge(true)
+    button.cooldown:SetDrawSwipe(true)
+    
     button:SetScript("OnEnter", function(self)
         if tooltips then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -57,44 +68,72 @@ local function CreateButton(index)
     return button
 end
 
+local function UpdateButtonCooldown(button)
+    if button.itemID then
+        local start, duration, enabled = C_Container.GetItemCooldown(button.itemID)
+        if enabled and duration > 0 then
+            button.cooldown:SetCooldown(start, duration)
+        else
+            button.cooldown:Clear()
+        end
+    end
+end
+
 local function UpdateButtons()
     local index = 1
     local itemIDs = {}
-    for _, location in ipairs({
-        {type = "inventory", start = 1, stop = 19},
-        {type = "bags", start = 0, stop = NUM_BAG_FRAMES}
-    }) do
-        if location.type == "inventory" then
-            for i = location.start, location.stop do
-                local itemID = GetInventoryItemID("player", i)
-                if itemID and (IsUsableItem(itemID) or GetItemSpell(itemID)) and not itemIDs[itemID] then
-                    itemIDs[itemID] = true
-                    if not buttons[index] then
-                        buttons[index] = CreateButton(index)
-                    end
-                    
-                    local button = buttons[index]
-                    button.icon:SetTexture(GetInventoryItemTexture("player", i))
-                    button.itemLink = GetInventoryItemLink("player", i)
-                    button.itemID = itemID
-                    button:SetAttribute("item", "item:"..itemID)
-                    
-                    local count = GetItemCount(itemID)
-                    button.Count:SetShown(count > 1)
-                    if count > 1 then
-                        button.Count:SetText(count)
-                    end
-                    
-                    button:Show()
-                    index = index + 1
+    local errors = {}
+    local seenItems = {} -- Track items we've already added
+    
+    -- First pass: Get equipped items
+    for i = 1, 19 do
+        local success, itemID = pcall(GetInventoryItemID, "player", i)
+        if not success then
+            table.insert(errors, "Failed to get inventory item " .. i)
+        elseif itemID and not seenItems[itemID] then -- Check if we haven't seen this item yet
+            -- Check if item is usable before creating button
+            local isUsable = IsUsableItem(itemID)
+            local hasSpell = GetItemSpell(itemID)
+            if (isUsable or hasSpell) then
+                seenItems[itemID] = true -- Mark this item as seen
+                if not buttons[index] then
+                    buttons[index] = CreateButton(index)
                 end
+                
+                local button = buttons[index]
+                button.icon:SetTexture(GetInventoryItemTexture("player", i))
+                button.itemLink = GetInventoryItemLink("player", i)
+                button.itemID = itemID
+                button:SetAttribute("item", "item:"..itemID)
+                
+                local count = GetItemCount(itemID)
+                button.Count:SetShown(count > 1)
+                if count > 1 then
+                    button.Count:SetText(count)
+                end
+                
+                button:Show()
+                index = index + 1
             end
+        end
+    end
+    
+    -- Second pass: Get bag items
+    for bag = 0, NUM_BAG_FRAMES do
+        local success, slots = pcall(C_Container.GetContainerNumSlots, bag)
+        if not success then
+            table.insert(errors, "Failed to get slots for bag " .. bag)
         else
-            for bag = location.start, location.stop do
-                for slot = 1, C_Container.GetContainerNumSlots(bag) do
-                    local itemID = C_Container.GetContainerItemID(bag, slot)
-                    if itemID and (IsUsableItem(itemID) or GetItemSpell(itemID)) and not itemIDs[itemID] then
-                        itemIDs[itemID] = true
+            for slot = 1, slots do
+                local success, itemID = pcall(C_Container.GetContainerItemID, bag, slot)
+                if not success then
+                    table.insert(errors, string.format("Failed to get item in bag %d slot %d", bag, slot))
+                elseif itemID and not seenItems[itemID] then -- Check if we haven't seen this item yet
+                    -- Check if item is usable before creating button
+                    local isUsable = IsUsableItem(itemID)
+                    local hasSpell = GetItemSpell(itemID)
+                    if (isUsable or hasSpell) then
+                        seenItems[itemID] = true -- Mark this item as seen
                         if not buttons[index] then
                             buttons[index] = CreateButton(index)
                         end
@@ -119,10 +158,26 @@ local function UpdateButtons()
         end
     end
 
+    if #errors > 0 then
+        print("Commander Inventory Errors:")
+        for _, err in ipairs(errors) do
+            print(" - " .. err)
+        end
+    end
+
+    -- Update cooldowns for all visible buttons
+    for i = 1, index - 1 do
+        if buttons[i]:IsShown() then
+            UpdateButtonCooldown(buttons[i])
+        end
+    end
+
+    -- Hide remaining buttons
     for i = index, #buttons do
         buttons[i]:Hide()
     end
     
+    -- Update grid layout
     local itemCount = index - 1
     local rows = math.ceil(itemCount / columns)
     
@@ -134,10 +189,12 @@ local function UpdateButtons()
     ButtonsContainer:SetSize(width, height)
     ItemGrid:SetSize(width + 14, height + 32)
     
+    -- Position all buttons
     for i, button in ipairs(buttons) do
         if button:IsShown() then
             local row = math.floor((i-1) / columns)
             local col = (i-1) % columns
+            button:ClearAllPoints()
             button:SetPoint("TOPLEFT", ButtonsContainer, "TOPLEFT",
                 spacing + col * (buttonSize + spacing),
                 -spacing - row * (buttonSize + spacing))
@@ -160,12 +217,24 @@ local function LoadSettings()
 end
 
 frame:SetScript("OnEvent", function(self, event)
+    if debugFrame then
+        debugFrame.LogEvent(event)
+    end
+    
     if event == "PLAYER_LOGIN" then
         CreateItemGrid()
         UpdateButtons()
         LoadSettings()
         AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, LoadSettings)
+        debugFrame = _G.CIDebugFrame -- Get reference to debug frame
         loaded = true
+    elseif event == "ACTIONBAR_UPDATE_COOLDOWN" and loaded then
+        -- Only update cooldowns without rebuilding the entire grid
+        for _, button in ipairs(buttons) do
+            if button:IsShown() then
+                UpdateButtonCooldown(button)
+            end
+        end
     elseif loaded then
         UpdateButtons()
     end
