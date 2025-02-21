@@ -1,10 +1,12 @@
-﻿## Interface: 11505
-## Version: 109.92
+﻿## Interface: 100200
 ## Title: Quest Completist
-## Notes: Enables you to see what quests you have completed, and what ones you have left to do.
-## SavedVariables: qcSettings qcWorkingDB qcWorkingLog
-## SavedVariablesPerCharacter: qcCompletedQuests
+## Notes: Helps you find and complete quests you're missing
+## Author: Your Name
+## Version: 1.0
+## SavedVariables: qcCompletedQuests
 
+globals.lua
+qcAPI.lua
 Localization.enUS.lua
 Localization.ptBR.lua
 Localization.frFR.lua

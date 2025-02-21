@@ -1,0 +1,18 @@
+-- Initialize global variables
+qcCompletedQuests = {}
+qcCurrentCategoryID = 0
+qcCurrentCategoryQuestCount = 0
+qcCategoryQuests = {}
+
+-- Icon coordinate constants
+QC_ICON_COORDS_NORMAL = {0, 0.125, 0, 0.25}
+QC_ICON_COORDS_REPEATABLE = {0.125, 0.25, 0.25, 0.5}
+QC_ICON_COORDS_DAILY = {0, 0.125, 0.25, 0.5}
+QC_ICON_COORDS_SPECIAL = {0, 0.125, 0, 0.25}
+QC_ICON_COORDS_PROFESSION = {0.625, 0.75, 0, 0.25}
+QC_ICON_COORDS_SEASONAL = {0, 0.125, 0.5, 0.75}
+QC_ICON_COORDS_WORLD = {0, 0.125, 0.25, 0.5}
+QC_ICON_COORDS_PROGRESS = {0.25, 0.375, 0.25, 0.5}
+QC_ICON_COORDS_READY = {0.125, 0.25, 0, 0.25}
+QC_ICON_COORDS_COMPLETE = {0.125, 0.25, 0.5, 0.75}
+QC_ICON_COORDS_UNATTAINABLE = {0.25, 0.375, 0.5, 0.75} 
