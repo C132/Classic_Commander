@@ -12,10 +12,40 @@ local isDragging = false
 local function CreateMoveableAnchor(name, parent)
     local anchor = CreateFrame("Button", name, parent)
     anchor:SetSize(20, 20)
-    anchor:SetNormalTexture("Interface\\BUTTONS\\UI-Panel-SmallerButton-Up")
-    anchor:SetPushedTexture("Interface\\BUTTONS\\UI-Panel-SmallerButton-Down")
-    anchor:SetHighlightTexture("Interface\\BUTTONS\\UI-Panel-MinimizeButton-Highlight")
+    anchor:SetNormalTexture("Interface\\Buttons\\WHITE8X8")
+    anchor:SetPushedTexture("Interface\\Buttons\\WHITE8X8")
+    anchor:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
     anchor:Hide()
+    
+    -- Make the dot gray and semi-transparent
+    local normal = anchor:GetNormalTexture()
+    normal:SetVertexColor(0.6, 0.6, 0.6, 0.7)
+    local pushed = anchor:GetPushedTexture()
+    pushed:SetVertexColor(0.5, 0.5, 0.5, 0.8)
+    local highlight = anchor:GetHighlightTexture()
+    highlight:SetVertexColor(0.8, 0.8, 0.8, 0.5)
+
+    -- Create settings button next to the anchor
+    local settingsButton = CreateFrame("Button", name.."Settings", parent)
+    settingsButton:SetSize(20, 20)
+    settingsButton:SetNormalTexture("Interface\\BUTTONS\\UI-OptionsButton")
+    settingsButton:SetPushedTexture("Interface\\BUTTONS\\UI-OptionsButton")
+    settingsButton:SetHighlightTexture("Interface\\BUTTONS\\UI-Panel-MinimizeButton-Highlight")
+    settingsButton:SetPoint("RIGHT", anchor, "LEFT", -2, 0)
+    settingsButton:Hide()
+
+    -- Settings button click handler
+    settingsButton:SetScript("OnClick", function()
+        -- Open settings to the correct category
+        Settings.OpenToCategory(Settings.INTERFACE_CATEGORY_ID)
+        local categories = Settings.GetCategories()
+        for i, category in ipairs(categories) do
+            if category:GetName() == "Commander Buffs" then
+                Settings.OpenToCategory(category:GetID())
+                break
+            end
+        end
+    end)
 
     anchor:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
@@ -39,6 +69,8 @@ local function CreateMoveableAnchor(name, parent)
         end
     end)
 
+    -- Store settings button reference in anchor for visibility control
+    anchor.settingsButton = settingsButton
     return anchor
 end
 
@@ -80,6 +112,7 @@ local function UpdateBuffFrame()
     
     if buffAnchor then
         buffAnchor:SetShown(showAnchor)
+        buffAnchor.settingsButton:SetShown(showAnchor)
     end
 
     -- Update buffs per row
