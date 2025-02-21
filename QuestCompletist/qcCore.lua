@@ -521,7 +521,7 @@ function qcUpdateQuestList(categoryId, startIndex, searchText) -- *
 				questRecord.QuestIcon:SetTexCoord(unpack(QC_ICON_COORDS_NORMAL))
 				questRecord.QuestName:SetTextColor(0.9372549019607843, 0.1490196078431373, 0.0627450980392157, 1.0)
 			end
-		end
+	 end
 	
 			if (qcCompletedQuests[questId]) then
 				if not ((questType == 2) or (questType == 4) or (questType == 128)) then
@@ -1477,31 +1477,66 @@ local function qcGetPin()
                 qcMapTooltip:SetOwner(self, "ANCHOR_CURSOR")
                 qcMapTooltip:ClearLines()
 
-                -- Add NPC name if available
+                -- Add NPC name as header in yellow
                 if qcPins[pinIndex][4] then
-                    qcMapTooltip:AddLine(qcPins[pinIndex][4])
-                    qcMapTooltip:AddLine(" ")
+                    qcMapTooltip:AddLine(string.format("|cFFFFD100%s|r", qcPins[pinIndex][4]))
                 end
 
-                -- Add each quest with its level
+                -- Add each quest in a compact format
                 for _, questId in ipairs(qcPins[pinIndex][7]) do
                     if qcQuestDatabase[questId] then
-                        local questName = qcColouredQuestName(questId)
-                        local questLevel = tonumber(qcQuestDatabase[questId][3]) or 0  -- Ensure it's a number
+                        local questName = qcQuestDatabase[questId][2]
+                        local questLevel = tonumber(qcQuestDatabase[questId][3]) or 0
                         
-                        -- Format the level display
-                        local levelText = string.format("[%d]", questLevel)
-
-                        -- Add the quest with its level to the tooltip
+                        -- Color the quest name based on type/status
+                        local coloredQuestName = qcColouredQuestName(questId)
+                        
+                        -- Add quest with level and ID on the same line
                         qcMapTooltip:AddDoubleLine(
-                            questName,
-                            string.format("|cffffd100%s|r", levelText),
-                            nil, nil, nil, true
+                            string.format("%s", coloredQuestName),
+                            string.format("|cFFFFD100[%d]|r |cFF69CCF0%d|r", questLevel, questId)
                         )
 
-                        -- Add quest initiator info if available
-                        if qcPins[pinIndex][8] then
-                            qcMapTooltip:AddLine(string.format("|cffabd473%s|r", qcPins[pinIndex][8]), nil, nil, nil, true)
+                        -- Check for quest requirements
+                        local prereqQuestId = qcQuestDatabase[questId][14]
+                        if prereqQuestId and prereqQuestId ~= 0 then
+                            local prereqQuestInfo = qcQuestDatabase[prereqQuestId]
+                            if prereqQuestInfo then
+                                local prereqStatus = C_QuestLog.IsQuestFlaggedCompleted(prereqQuestId) and 
+                                    "|cFF00FF00Completed|r" or "|cFFFF0000Not Completed|r"
+                                qcMapTooltip:AddLine(string.format("  Required: %s - %s", prereqQuestInfo[2], prereqStatus), 0.8, 0.8, 0.8)
+                            end
+                        end
+
+                        -- Add storyline info if available
+                        local storylineId = qcQuestDatabase[questId][13]
+                        if storylineId and qcQuestLines[storylineId] then
+                            qcMapTooltip:AddLine(string.format("  Part of: %s%s", COLOUR_HUNTER, qcQuestLines[storylineId]), 0.8, 0.8, 0.8)
+                        end
+
+                        -- Add faction requirements if any
+                        local factionValue = qcQuestDatabase[questId][16]
+                        if factionValue and qcFactions[factionValue] then
+                            qcMapTooltip:AddLine(string.format("  Requires: %s%s", COLOUR_DRUID, qcFactions[factionValue]), 0.8, 0.8, 0.8)
+                        end
+
+                        -- Add reputation requirements if any
+                        local reputationEntries = qcQuestDatabase[questId][17]
+                        if reputationEntries then
+                            if type(reputationEntries) == "table" then
+                                for repIndex, repValue in pairs(reputationEntries) do
+                                    if repValue ~= 0 and qcFactions[repIndex] then
+                                        qcMapTooltip:AddLine(string.format("  Rep: %s - %s%d", qcFactions[repIndex], COLOUR_DRUID, repValue), 0.8, 0.8, 0.8)
+                                    end
+                                end
+                            elseif type(reputationEntries) == "number" and reputationEntries ~= 0 then
+                                qcMapTooltip:AddLine(string.format("  Rep Required: %s%d", COLOUR_DRUID, reputationEntries), 0.8, 0.8, 0.8)
+                            end
+                        end
+
+                        -- Add a small space between quests
+                        if _ < #qcPins[pinIndex][7] then
+                            qcMapTooltip:AddLine(" ")
                         end
                     end
                 end
