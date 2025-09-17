@@ -12,7 +12,7 @@ local CLOCK_OFFSET_Y = 14 -- Vertical offset for clock position
 local ZONE_TEXT_OFFSET_Y = -2 -- Vertical offset for zone text
 
 -- Hide default minimap art and elements
-MinimapBackdrop:Hide()
+--MinimapBackdrop:Hide()
 MinimapBorderTop:Hide()
 MinimapZoomOut:Hide()
 MinimapZoomIn:Hide()
@@ -35,7 +35,7 @@ frame:SetScript("OnEvent", function(self, event, addonName)
         
         -- Update zone text
         zoneText:SetText(GetMinimapZoneText())
-        
+    
         -- Position clock like SC2 style - top right corner of minimap
         if TimeManagerClockButton then
             TimeManagerClockButton:SetParent(UIParent)
@@ -85,4 +85,10 @@ end)
 -- Update zone text when zone changes
 Minimap:SetScript("OnUpdate", function()
     zoneText:SetText(GetMinimapZoneText())
+
+    if LFGMinimapFrame then
+        LFGMinimapFrame:ClearAllPoints()
+        LFGMinimapFrame:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", 36, -6)
+        --MinimapBackdrop:Hide()
+    end
 end)
