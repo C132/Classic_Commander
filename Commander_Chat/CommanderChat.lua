@@ -58,6 +58,35 @@ local function UpdateChatVisibility()
     end
 end
 
+local function PlaySoundPing(soundType)
+    local soundKit, channel
+    
+    if soundType == "whisper" and CommanderChatDB.SoundPingWhisper then
+        soundKit = SOUNDKIT[CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB"]
+        channel = CommanderChatDB.SoundChannel or "Master"
+    elseif soundType == "party" and CommanderChatDB.SoundPingParty then
+        soundKit = SOUNDKIT[CommanderChatDB.PartySound or "IG_CHARACTER_INFO_TAB"]
+        channel = CommanderChatDB.SoundChannel or "Master"
+    end
+    
+    if soundKit and channel then
+        -- Play the sound directly - volume is controlled by the game's sound settings
+        PlaySound(soundKit, channel)
+        
+        -- For louder sounds, we can play multiple times or use a different approach
+        local volume = CommanderChatDB.SoundVolume or 1.0
+        if volume > 1.0 then
+            -- Play additional sounds for higher volume effect
+            local extraPlays = math.floor(volume)
+            for i = 1, extraPlays - 1 do
+                C_Timer.After(i * 0.1, function()
+                    PlaySound(soundKit, channel)
+                end)
+            end
+        end
+    end
+end
+
 local function OnDestroy() end
 
 local function OnUpdate()
@@ -69,13 +98,17 @@ local function OnAwake()
     Notify(COMMANDER_CHAT_EVENTS.UPDATE)
 end
 
-frame:SetScript("OnEvent", function(self, event)
+frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         OnAwake()
         loaded = true
         OnUpdate()
     elseif event == "PLAYER_LOGOUT" then
         OnDestroy()
+    elseif event == "CHAT_MSG_WHISPER" then
+        PlaySoundPing("whisper")
+    elseif event == "CHAT_MSG_PARTY" then
+        PlaySoundPing("party")
     elseif loaded and CommanderChatDB.ShowChatWindow == false then
         OnUpdate()
     end
