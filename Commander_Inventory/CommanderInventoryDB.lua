@@ -83,6 +83,269 @@ local function ResetPosition()
     end
 end
 
+local function ResetBagFrames()
+    print("Resetting ALL bag and inventory frames to default positions...")
+    
+    -- Reset standard WoW container frames
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local frame = _G["ContainerFrame" .. i]
+        if frame then
+            frame:ClearAllPoints()
+            frame:SetScale(1.0)
+            frame:SetMovable(false)
+            frame:SetUserPlaced(false)
+            
+            if i == 1 then
+                frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -10, 100)
+            else
+                local prevFrame = _G["ContainerFrame" .. (i - 1)]
+                if prevFrame then
+                    frame:SetPoint("RIGHT", prevFrame, "LEFT", -5, 0)
+                else
+                    frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -10, 100)
+                end
+            end
+        end
+    end
+    
+    -- Reset backpack button
+    if MainMenuBarBackpackButton then
+        MainMenuBarBackpackButton:ClearAllPoints()
+        MainMenuBarBackpackButton:SetPoint("BOTTOMRIGHT", MainMenuBar, "BOTTOMRIGHT", -4, 2)
+    end
+    
+    -- Reset individual bag slot buttons
+    for i = 0, 3 do
+        local bagButton = _G["CharacterBag" .. i .. "Slot"]
+        if bagButton then
+            bagButton:ClearAllPoints()
+            bagButton:SetPoint("BOTTOMRIGHT", MainMenuBarBackpackButton, "BOTTOMLEFT", -2, 0)
+        end
+    end
+    
+    -- Reset any custom inventory addon frames (like the ones in your screenshot)
+    local customFrames = {
+        -- Common custom inventory frame names
+        "CharacterFrame",
+        "PaperDollFrame", 
+        "InventoryFrame",
+        "BagFrame",
+        "ContainerFrame",
+        "ItemFrame",
+        "InventoryGrid",
+        "BagGrid",
+        -- Add more as needed
+    }
+    
+    for _, frameName in ipairs(customFrames) do
+        local frame = _G[frameName]
+        if frame and frame:IsShown() then
+            print("Resetting custom frame: " .. frameName)
+            frame:ClearAllPoints()
+            frame:SetScale(1.0)
+            frame:SetMovable(false)
+            frame:SetUserPlaced(false)
+            frame:SetPoint("CENTER", UIParent, "CENTER")
+        end
+    end
+    
+    -- Reset any frames with "Bag" in the name
+    for i = 1, 20 do
+        local frame = _G["BagFrame" .. i] or _G["InventoryFrame" .. i] or _G["ContainerFrame" .. i]
+        if frame then
+            frame:ClearAllPoints()
+            frame:SetScale(1.0)
+            frame:SetMovable(false)
+            frame:SetUserPlaced(false)
+            frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        end
+    end
+    
+    -- Hide all bag frames first, then show them in default positions
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local frame = _G["ContainerFrame" .. i]
+        if frame then
+            frame:Hide()
+        end
+    end
+    
+    -- Force a UI reload to ensure all changes take effect
+    C_Timer.After(0.5, function()
+        print("All bag frames reset! Reloading UI to ensure changes take effect...")
+        ReloadUI()
+    end)
+end
+
+local function ResetBagFramesImmediate()
+    print("Resetting bag frames to default positions (immediate)...")
+    
+    -- Reset all container frames to their default positions
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local frame = _G["ContainerFrame" .. i]
+        if frame then
+            -- Clear all points first to avoid anchor family connection errors
+            frame:ClearAllPoints()
+            
+            -- Set default position - bags are typically anchored to the right side of screen
+            -- ContainerFrame1 (main bag) is usually at the bottom right
+            if i == 1 then
+                frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -10, 100)
+            else
+                -- Additional bags stack to the left of the main bag
+                local prevFrame = _G["ContainerFrame" .. (i - 1)]
+                if prevFrame then
+                    frame:SetPoint("RIGHT", prevFrame, "LEFT", -5, 0)
+                else
+                    frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -10, 100)
+                end
+            end
+            
+            -- Reset scale to default
+            frame:SetScale(1.0)
+            
+            -- Make sure frame is not movable (default state)
+            frame:SetMovable(false)
+            frame:SetUserPlaced(false)
+        end
+    end
+    
+    -- Also reset the backpack button position if it exists
+    if MainMenuBarBackpackButton then
+        MainMenuBarBackpackButton:ClearAllPoints()
+        MainMenuBarBackpackButton:SetPoint("BOTTOMRIGHT", MainMenuBar, "BOTTOMRIGHT", -4, 2)
+    end
+    
+    -- Reset individual bag slot buttons
+    for i = 0, 3 do
+        local bagButton = _G["CharacterBag" .. i .. "Slot"]
+        if bagButton then
+            bagButton:ClearAllPoints()
+            bagButton:SetPoint("BOTTOMRIGHT", MainMenuBarBackpackButton, "BOTTOMLEFT", -2, 0)
+        end
+    end
+    
+    print("Bag frames reset to default positions!")
+end
+
+local function NuclearBagReset()
+    print("NUCLEAR BAG RESET - Closing all bags and resetting everything...")
+    
+    -- Close all bag windows first
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local frame = _G["ContainerFrame" .. i]
+        if frame then
+            frame:Hide()
+        end
+    end
+    
+    -- Close character frame if open
+    if CharacterFrame and CharacterFrame:IsShown() then
+        CharacterFrame:Hide()
+    end
+    
+    -- Close any other inventory-related frames
+    local framesToClose = {
+        "PaperDollFrame",
+        "InventoryFrame", 
+        "BagFrame",
+        "ItemFrame",
+        "InventoryGrid",
+        "BagGrid"
+    }
+    
+    for _, frameName in ipairs(framesToClose) do
+        local frame = _G[frameName]
+        if frame and frame:IsShown() then
+            frame:Hide()
+        end
+    end
+    
+    -- Reset all possible bag-related frames
+    for i = 1, 20 do
+        local frameNames = {
+            "ContainerFrame" .. i,
+            "BagFrame" .. i,
+            "InventoryFrame" .. i,
+            "ItemFrame" .. i
+        }
+        
+        for _, frameName in ipairs(frameNames) do
+            local frame = _G[frameName]
+            if frame then
+                frame:ClearAllPoints()
+                frame:SetScale(1.0)
+                frame:SetMovable(false)
+                frame:SetUserPlaced(false)
+                frame:Hide()
+            end
+        end
+    end
+    
+    -- Reset backpack button
+    if MainMenuBarBackpackButton then
+        MainMenuBarBackpackButton:ClearAllPoints()
+        MainMenuBarBackpackButton:SetPoint("BOTTOMRIGHT", MainMenuBar, "BOTTOMRIGHT", -4, 2)
+    end
+    
+    -- Reset individual bag slot buttons
+    for i = 0, 3 do
+        local bagButton = _G["CharacterBag" .. i .. "Slot"]
+        if bagButton then
+            bagButton:ClearAllPoints()
+            bagButton:SetPoint("BOTTOMRIGHT", MainMenuBarBackpackButton, "BOTTOMLEFT", -2, 0)
+        end
+    end
+    
+    print("Nuclear reset complete! All bags closed and reset. Use /reload to see changes.")
+end
+
+local function DebugBagFrames()
+    print("=== BAG FRAME DEBUG INFO ===")
+    
+    -- Check standard container frames
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local frame = _G["ContainerFrame" .. i]
+        if frame then
+            local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint()
+            print(string.format("ContainerFrame%d: %s, %s, %s, %.1f, %.1f, Visible: %s", 
+                i, tostring(point), tostring(relativeTo), tostring(relativePoint), 
+                xOfs or 0, yOfs or 0, tostring(frame:IsShown())))
+        end
+    end
+    
+    -- Check for custom frames
+    local customFrames = {
+        "CharacterFrame", "PaperDollFrame", "InventoryFrame", "BagFrame", 
+        "ContainerFrame", "ItemFrame", "InventoryGrid", "BagGrid"
+    }
+    
+    for _, frameName in ipairs(customFrames) do
+        local frame = _G[frameName]
+        if frame then
+            local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint()
+            print(string.format("%s: %s, %s, %s, %.1f, %.1f, Visible: %s", 
+                frameName, tostring(point), tostring(relativeTo), tostring(relativePoint), 
+                xOfs or 0, yOfs or 0, tostring(frame:IsShown())))
+        end
+    end
+    
+    -- Check for numbered frames
+    for i = 1, 10 do
+        local frameNames = {"BagFrame" .. i, "InventoryFrame" .. i, "ItemFrame" .. i}
+        for _, frameName in ipairs(frameNames) do
+            local frame = _G[frameName]
+            if frame then
+                local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint()
+                print(string.format("%s: %s, %s, %s, %.1f, %.1f, Visible: %s", 
+                    frameName, tostring(point), tostring(relativeTo), tostring(relativePoint), 
+                    xOfs or 0, yOfs or 0, tostring(frame:IsShown())))
+            end
+        end
+    end
+    
+    print("=== END DEBUG INFO ===")
+end
+
 local function CreateColumnsSlider(panel)
     columnsSlider = CreateFrame("Slider", "CIColumnsSlider", panel, "OptionsSliderTemplate")
     columnsSlider:SetPoint("TOPLEFT", 16, -90)
@@ -333,6 +596,27 @@ local function CreateOptionsPanel()
     resetPosButton:SetText("Reset Position")
     resetPosButton:SetScript("OnClick", ResetPosition)
     
+    -- Add reset bags button
+    local resetBagsButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetBagsButton:SetSize(120, 22)
+    resetBagsButton:SetPoint("TOPLEFT", resetPosButton, "TOPRIGHT", 10, 0)
+    resetBagsButton:SetText("Reset Bags")
+    resetBagsButton:SetScript("OnClick", ResetBagFrames)
+    
+    -- Add immediate reset bags button
+    local resetBagsNowButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetBagsNowButton:SetSize(120, 22)
+    resetBagsNowButton:SetPoint("TOPLEFT", resetBagsButton, "BOTTOMLEFT", 0, -5)
+    resetBagsNowButton:SetText("Reset Bags (No Reload)")
+    resetBagsNowButton:SetScript("OnClick", ResetBagFramesImmediate)
+    
+    -- Add nuclear reset button
+    local nuclearResetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    nuclearResetButton:SetSize(120, 22)
+    nuclearResetButton:SetPoint("TOPLEFT", resetBagsNowButton, "BOTTOMLEFT", 0, -5)
+    nuclearResetButton:SetText("NUCLEAR RESET")
+    nuclearResetButton:SetScript("OnClick", NuclearBagReset)
+    
     -- Adjust columns slider position
     columnsSlider = CreateColumnsSlider(panel)
     columnsSlider:SetPoint("TOPLEFT", 16, -90)
@@ -386,8 +670,16 @@ local function InitializeSlashCommands(categoryID)
             Reset()
         elseif msg == "center" then
             ResetPosition()
+        elseif msg == "resetbags" then
+            ResetBagFrames()
+        elseif msg == "resetbagsnow" then
+            ResetBagFramesImmediate()
+        elseif msg == "nuclear" then
+            NuclearBagReset()
+        elseif msg == "debug" then
+            DebugBagFrames()
         else
-            print("Usage: /ci [toggle|reset|center]")
+            print("Usage: /ci [toggle|reset|center|resetbags|resetbagsnow|nuclear|debug]")
         end
     end
 end
