@@ -1,4 +1,5 @@
 ## Interface: 20505
+## Category: Commander
 ## Title: Commander Bags
 ## Author: Devin
 ## Version: 1.0

@@ -1,4 +1,5 @@
 ## Interface: 20505
+## Category: Commander
 ## Title: Commander Unit Frames
 ## Author: Devin
 ## Version: 1.0

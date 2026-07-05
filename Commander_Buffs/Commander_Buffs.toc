@@ -1,4 +1,5 @@
 ## Interface: 20505
+## Category: Commander
 ## Title: Commander Buffs
 ## Notes: Buff module for Commander
 ## Author: Devin

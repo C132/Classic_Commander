@@ -1,4 +1,5 @@
 ## Interface: 20505
+## Category: Commander
 ## Title: Commander Action Bar
 ## Notes: Action Bar module for Commander
 ## Author: Devin

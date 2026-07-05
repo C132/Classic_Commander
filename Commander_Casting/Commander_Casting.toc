@@ -1,4 +1,5 @@
 ## Interface: 20505
+## Category: Commander
 ## Title: Commander Casting
 ## Notes: Casting module for Commander
 ## Author: Devin
