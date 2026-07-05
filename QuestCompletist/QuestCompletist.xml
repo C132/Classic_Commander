@@ -145,12 +145,16 @@
     <HighlightTexture alphaMode="ADD" file="Interface\BUTTONS\UI-Listbox-Highlight"/>
   </Button>
 
-	<Frame name="qcInterfaceOptions">
-        <Scripts>
-            <OnLoad function="qcInterfaceOptions_OnLoad"/>
-            <OnShow function="qcInterfaceOptions_OnShow"/>
-        </Scripts>
-    </Frame>
+  <Frame name="qcInterfaceOptions">
+    <Scripts>
+      <OnLoad>
+        qcInterfaceOptions_OnLoad(self)
+      </OnLoad>
+      <OnShow>
+        qcInterfaceOptions_OnShow(self)
+      </OnShow>
+    </Scripts>
+  </Frame>
 
   <Frame name="qcToast" toplevel="true" parent="QuestFrame" enableMouse="true" movable="false" hidden="true" frameStrata="MEDIUM">
     <Size x="256" y="64"/>
@@ -604,17 +608,20 @@
           </OnLoad>
         </Scripts>
       </Frame>
-<EditBox name="qcSearchBox" inherits="SearchBoxTemplate" parentKey="qcSearchBox" letters="40">
-    <Size x="160" y="22"/>
-    <Anchors>
-        <Anchor point="TOPLEFT" relativePoint="TOPLEFT" relativeTo="$parent" x="35" y="-363"/>
-    </Anchors>
-    <Scripts>
-        <OnEditFocusGained function="qcSearchBox_OnEditFocusGained"/>
-        <OnEditFocusLost function="qcSearchBox_OnEditFocusLost"/>
-        <OnTextChanged function="qcSearchBox_OnTextChanged"/>
-    </Scripts>
-</EditBox>
+      <EditBox name="qcSearchBox" inherits="SearchBoxTemplate" parentKey="qcSearchBox" letters="40">
+        <Size x ="160" y ="22"/>
+        <Anchors>
+          <Anchor point="TOPLEFT" relativePoint="TOPLEFT" relativeTo="$parent" x ="35" y ="-363"/>
+        </Anchors>
+        <Scripts>
+          <OnTextChanged>
+            qcSearchBox_OnTextChanged(self, userInput)
+          </OnTextChanged>
+          <OnEditFocusLost>
+            qcSearchBox_OnEditFocusLost(self)
+          </OnEditFocusLost>
+        </Scripts>
+      </EditBox>
       <Slider name="qcMenuSlider" orientation="VERTICAL">
         <Size x ="30" y ="236"/>
         <Anchors>
