@@ -5,30 +5,42 @@ frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_STARTED_MOVING")
 frame:RegisterEvent("PLAYER_STOPPED_MOVING")
+local loaded = false
 
 local backdrop
 
+-- Frame names for the 2.5.5 (Anniversary) client; looked up by name so a missing
+-- frame is skipped instead of truncating the list
+local elementsToHide = {
+    "MainMenuBarLeftEndCap", "MainMenuBarRightEndCap",
+    "MainMenuBarTexture0", "MainMenuBarTexture1", "MainMenuBarTexture2", "MainMenuBarTexture3",
+    "MainMenuMaxLevelBar0", "MainMenuMaxLevelBar1", "MainMenuMaxLevelBar2", "MainMenuMaxLevelBar3",
+    "StatusTrackingBarManager",
+    "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton", "QuestLogMicroButton",
+    "GuildMicroButton", "WorldMapMicroButton", "SocialsMicroButton", "MainMenuMicroButton", "HelpMicroButton",
+    "MainMenuBarBackpackButton", "MainMenuBarPerformanceBarFrame", "KeyRingButton",
+    "StanceBar"
+}
+
 local function HideDefaults()
-    local elementsToHide = {
-        MainMenuBarLeftEndCap, MainMenuBarRightEndCap,
-        MainMenuBarTexture0, MainMenuBarTexture1, MainMenuBarTexture2, MainMenuBarTexture3,
-        MainMenuMaxLevelBar0, MainMenuMaxLevelBar1, MainMenuMaxLevelBar2, MainMenuMaxLevelBar3,
-        MainMenuXPBarTexture0, MainMenuXPBarTexture1, MainMenuXPBarTexture2, MainMenuXPBarTexture3,
-        ActionBarUpButton, ActionBarDownButton, MainMenuBarPageNumber,
-        CharacterMicroButton, SpellbookMicroButton, TalentMicroButton, QuestLogMicroButton,
-        GuildMicroButton, WorldMapMicroButton, SocialsMicroButton, MainMenuMicroButton, HelpMicroButton,
-        MainMenuBarBackpackButton, MainMenuBarPerformanceBarFrame, KeyRingButton,
-        StanceBarLeft, StanceBarRight, StanceBarFrame, MainMenuExpBar
-    }
-    for _, element in ipairs(elementsToHide) do
-        element:Hide()
+    for _, name in ipairs(elementsToHide) do
+        local element = _G[name]
+        if element then
+            element:Hide()
+        end
+    end
+    -- Page number and up/down arrows live on MainActionBar now
+    if MainActionBar and MainActionBar.ActionBarPageNumber then
+        MainActionBar.ActionBarPageNumber:Hide()
     end
     for i = 0, 3 do
         local bagButton = _G["CharacterBag" .. i .. "Slot"]
-        bagButton:SetShown(CommanderActionBarDB.showBagButtons)
-        if bagButton:IsShown() then
-            bagButton:ClearAllPoints()
-            bagButton:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -300, 8 + (i * 42))
+        if bagButton then
+            bagButton:SetShown(CommanderActionBarDB.showBagButtons)
+            if bagButton:IsShown() then
+                bagButton:ClearAllPoints()
+                bagButton:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -300, 8 + (i * 42))
+            end
         end
     end
 end
@@ -87,21 +99,23 @@ local function MoveActionButtons()
     local buttonSize, spacing, buttonsPerRow = 32, 10, 6
     for i = 1, 24 do
         local button = i <= 12 and _G["ActionButton" .. i] or _G["MultiBarBottomLeftButton" .. (i - 12)]
-        button:ClearAllPoints()
-        local row, col = math.ceil(i / buttonsPerRow), (i - 1) % buttonsPerRow + 1
-        local xOffset, yOffset = (col - 1) * (buttonSize + spacing) + 13, (row - 1) * (buttonSize + spacing) + 14
-        button:SetPoint("TOPLEFT", backdrop, "TOPLEFT", xOffset, -yOffset)
-        button:Show()
-        local pushedTexture = button:GetPushedTexture()
-        if pushedTexture then pushedTexture:SetColorTexture(0, 1, 1, 0.3) end
+        if button then
+            button:ClearAllPoints()
+            local row, col = math.ceil(i / buttonsPerRow), (i - 1) % buttonsPerRow + 1
+            local xOffset, yOffset = (col - 1) * (buttonSize + spacing) + 13, (row - 1) * (buttonSize + spacing) + 14
+            button:SetPoint("TOPLEFT", backdrop, "TOPLEFT", xOffset, -yOffset)
+            button:Show()
+            local pushedTexture = button:GetPushedTexture()
+            if pushedTexture then pushedTexture:SetColorTexture(0, 1, 1, 0.3) end
+        end
     end
 end
 
 local function MovePetBar()
-    if PetActionBarFrame and PetActionBarFrame:IsShown() then
-        PetActionBarFrame:ClearAllPoints()
-        PetActionBarFrame:SetPoint("BOTTOM", backdrop, "TOP", 10, 5)
-        PetActionBarFrame:SetScale(0.7)
+    if PetActionBar and PetActionBar:IsShown() then
+        PetActionBar:ClearAllPoints()
+        PetActionBar:SetPoint("BOTTOM", backdrop, "TOP", 10, 5)
+        PetActionBar:SetScale(0.7)
     end
 end
 
@@ -118,11 +132,24 @@ local function OnUpdate()
     end
 end
 
+-- Throttle so the hide/reposition work doesn't run every single frame
+local UPDATE_INTERVAL = 0.5
+local timeSinceUpdate = 0
+local function OnUpdateThrottled(self, elapsed)
+    timeSinceUpdate = timeSinceUpdate + elapsed
+    if timeSinceUpdate < UPDATE_INTERVAL then return end
+    timeSinceUpdate = 0
+    OnUpdate()
+end
+
 local function OnAwake()
     CreateRTSBackdrop()
     MoveActionButtons()
-    frame:SetScript("OnUpdate", OnUpdate)
+    frame:SetScript("OnUpdate", OnUpdateThrottled)
     AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, SetLockState)
+end
+
+local function OnDestroy()
 end
 
 local function OnEvent(self, event)

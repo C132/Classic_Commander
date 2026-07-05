@@ -12,6 +12,9 @@ COMMANDER_RESOURCE_EVENTS = {
 
 local function OnAwake()
     if CommanderResourceDB == nil then print("No config found") end
+    -- SavedVariables replace the global after this file runs, so re-ensure the table here
+    CommanderResourceDB = CommanderResourceDB or {}
+    CommanderResourceDB.callbacks = CommanderResourceDB.callbacks or {}
     CommanderResourceDB.ShowFiveSecondRule = CommanderResourceDB.ShowFiveSecondRule or false
 end
 

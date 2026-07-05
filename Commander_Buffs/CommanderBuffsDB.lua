@@ -17,14 +17,18 @@ local DefaultSettings = {
 }
 
 -- Ensure all settings exist with valid values
-for key, value in pairs(DefaultSettings) do
-    if CommanderBuffsDB[key] == nil or 
-       (key == "BuffFramePoint" and type(CommanderBuffsDB[key]) ~= "string") then
-        CommanderBuffsDB[key] = value
+-- (must run at ADDON_LOADED - SavedVariables replace the global after this file executes)
+local function ApplyDefaults()
+    for key, value in pairs(DefaultSettings) do
+        if CommanderBuffsDB[key] == nil or
+           (key == "BuffFramePoint" and type(CommanderBuffsDB[key]) ~= "string") then
+            CommanderBuffsDB[key] = value
+        end
     end
 end
 
 local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
@@ -149,14 +153,19 @@ local function OnAwake()
     local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Buffs")
     local categoryID = category:GetID()
     Settings.RegisterAddOnCategory(category)
+    -- Shared with CommanderBuffs.lua for the anchor settings button
+    CommanderBuffsCategoryID = categoryID
     InitializeSlashCommands(categoryID)
     AddListener(COMMANDER_BUFFS_EVENTS.UPDATE, OnUpdate)
 end
 
 local function OnDestroy() end
 
-local function OnEvent(self, event)
-    if event == "PLAYER_LOGIN" then
+local function OnEvent(self, event, addonName)
+    if event == "ADDON_LOADED" and addonName == "Commander_Buffs" then
+        ApplyDefaults()
+        self:UnregisterEvent("ADDON_LOADED")
+    elseif event == "PLAYER_LOGIN" then
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then

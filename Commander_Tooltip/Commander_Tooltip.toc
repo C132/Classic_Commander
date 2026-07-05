@@ -1,9 +1,11 @@
-## Interface: 11506
+## Interface: 20505
+## Category: Commander
 ## Title: Commander Tooltip
 ## Notes: Tooltip addon for Commander
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderTooltipDB
+## RequiredDeps: Commander_Events
 
 CommanderTooltipDB.lua
 CommanderTooltip.lua

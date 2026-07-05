@@ -30,9 +30,10 @@ local debugFrame
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-frame:RegisterEvent("BAG_UPDATE") 
+frame:RegisterEvent("BAG_UPDATE")
 frame:RegisterEvent("ITEM_LOCK_CHANGED")
 frame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED") -- Refresh buttons after combat (secure attributes are locked in combat)
 
 local function CreateItemGrid()    
     ItemGrid.TitleText:SetText("Inventory")
@@ -48,6 +49,8 @@ local function CreateButton(index)
     local button = CreateFrame("Button", "CIItemButton"..index, ButtonsContainer, "SecureActionButtonTemplate, ActionButtonTemplate")
     button:SetSize(40, 40)
     button:SetAttribute("type", "item")
+    -- 2.5.5 secure buttons act on key-down by default (ActionButtonUseKeyDown), so register both
+    button:RegisterForClicks("AnyUp", "AnyDown")
     
     -- Create cooldown frame
     button.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
@@ -80,11 +83,16 @@ local function UpdateButtonCooldown(button)
 end
 
 local function UpdateButtons()
+    -- Secure attributes and Show/Hide are blocked in combat; PLAYER_REGEN_ENABLED refreshes afterwards
+    if InCombatLockdown() then
+        return
+    end
+
     local index = 1
     local itemIDs = {}
     local errors = {}
     local seenItems = {} -- Track items we've already added
-    
+
     -- First pass: Get equipped items
     for i = 1, 19 do
         local success, itemID = pcall(GetInventoryItemID, "player", i)
@@ -92,8 +100,8 @@ local function UpdateButtons()
             table.insert(errors, "Failed to get inventory item " .. i)
         elseif itemID and not seenItems[itemID] then -- Check if we haven't seen this item yet
             -- Check if item is usable before creating button
-            local isUsable = IsUsableItem(itemID)
-            local hasSpell = GetItemSpell(itemID)
+            local isUsable = C_Item.IsUsableItem(itemID)
+            local hasSpell = C_Item.GetItemSpell(itemID)
             if (isUsable or hasSpell) then
                 seenItems[itemID] = true -- Mark this item as seen
                 if not buttons[index] then
@@ -105,8 +113,8 @@ local function UpdateButtons()
                 button.itemLink = GetInventoryItemLink("player", i)
                 button.itemID = itemID
                 button:SetAttribute("item", "item:"..itemID)
-                
-                local count = GetItemCount(itemID)
+
+                local count = C_Item.GetItemCount(itemID)
                 button.Count:SetShown(count > 1)
                 if count > 1 then
                     button.Count:SetText(count)
@@ -130,8 +138,8 @@ local function UpdateButtons()
                     table.insert(errors, string.format("Failed to get item in bag %d slot %d", bag, slot))
                 elseif itemID and not seenItems[itemID] then -- Check if we haven't seen this item yet
                     -- Check if item is usable before creating button
-                    local isUsable = IsUsableItem(itemID)
-                    local hasSpell = GetItemSpell(itemID)
+                    local isUsable = C_Item.IsUsableItem(itemID)
+                    local hasSpell = C_Item.GetItemSpell(itemID)
                     if (isUsable or hasSpell) then
                         seenItems[itemID] = true -- Mark this item as seen
                         if not buttons[index] then
@@ -139,12 +147,12 @@ local function UpdateButtons()
                         end
                         
                         local button = buttons[index]
-                        button.icon:SetTexture(GetItemIcon(itemID))
+                        button.icon:SetTexture(C_Item.GetItemIconByID(itemID))
                         button.itemLink = C_Container.GetContainerItemLink(bag, slot)
                         button.itemID = itemID
                         button:SetAttribute("item", "item:"..itemID)
-                        
-                        local count = GetItemCount(itemID)
+
+                        local count = C_Item.GetItemCount(itemID)
                         button.Count:SetShown(count > 1)
                         if count > 1 then
                             button.Count:SetText(count)

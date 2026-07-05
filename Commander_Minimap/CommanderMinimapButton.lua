@@ -38,7 +38,7 @@ local function CreateLeftClickMenu()
         {text = "World Map", func = function() ToggleWorldMap() end},
         {text = "System Menu", func = function() GameMenuFrame:Show() end},
         {text = "All Bags", func = function() OpenAllBags() end},
-        {text = "Settings", func = function() OpenSettings() end},
+        {text = "Settings", func = function() SettingsPanel:Open() end}, -- OpenSettings() does not exist on 2.5.5
         {text = "Reload", func = function() ReloadUI() end},
     }
 end
@@ -88,10 +88,12 @@ local function AddProfessionSubskills(profession, index)
                 break
             end
         end
-        if GetSpellInfo(2580) then
+        -- GetSpellInfo returns data for any valid spell ID, learned or not;
+        -- C_SpellBook.IsSpellKnown is the real "is it learned" check
+        if C_SpellBook.IsSpellKnown(2580, Enum.SpellBookSpellBank.Player) then
             table.insert(profession.subSkills, {name = "Find Minerals", skillLevel = "Learned"})
         end
-    elseif profession.name == "Herbalism" and GetSpellInfo(2383) then
+    elseif profession.name == "Herbalism" and C_SpellBook.IsSpellKnown(2383, Enum.SpellBookSpellBank.Player) then
         table.insert(profession.subSkills, {name = "Find Herbs", skillLevel = "Learned"})
     end
 end
@@ -140,7 +142,7 @@ local function GetMenuListForButton(button)
 end
 
 local function CreateXPText()
-    local xpText = centerButton:CreateFontString(GetXPPercentage(), "OVERLAY")
+    local xpText = centerButton:CreateFontString(nil, "OVERLAY")
     xpText:SetFontObject(GameFontHighlight)
     xpText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
     xpText:SetPoint("CENTER", centerButton, "CENTER")
@@ -209,12 +211,18 @@ centerButton:SetScript("OnLeave", function(self)
     GameTooltip:Hide()
 end)
 centerButton:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
+local menuFrames = {} -- reuse one dropdown frame per button instead of leaking a new frame every click
 centerButton:SetScript("OnClick", function(self, button)
-    local menuFrame = CreateFrame("Frame", "My" .. button .. "ButtonMenu", UIParent, "UIDropDownMenuTemplate")
+    local menuFrame = menuFrames[button]
+    if not menuFrame then
+        menuFrame = CreateFrame("Frame", "My" .. button .. "ButtonMenu", UIParent, "UIDropDownMenuTemplate")
+        menuFrames[button] = menuFrame
+    end
     local menuList = GetMenuListForButton(button)
-    
-    UIDropDownMenu_Initialize(menuFrame, function(self, level)
-        for _, item in ipairs(menuList) do
+
+    UIDropDownMenu_Initialize(menuFrame, function(self, level, list)
+        -- list is the submenu's menuList when a nested level opens (e.g. profession subskills)
+        for _, item in ipairs(list or menuList) do
             UIDropDownMenu_AddButton(item, level)
         end
     end)

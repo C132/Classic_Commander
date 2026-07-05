@@ -32,6 +32,7 @@ local lastManaChangeTime, playerIsFull, lastManaPower = 0, true, 0
 local serverTickRate, lastRegenTime, tickOffset = 2, 0, 0
 local wasReady, manaAtFiveSecondStart = true, 0
 local readySound = SOUNDKIT.READY_CHECK
+local OnFiveSecondRuleChanged
 
 local function OnEvent(self, event, unit, powerType)
     if event == "UNIT_POWER_UPDATE" and unit == "player" and powerType == "MANA" then
@@ -44,7 +45,7 @@ local function OnEvent(self, event, unit, powerType)
                 lastManaChangeTime = currentTime
                 manaAtFiveSecondStart = currentMana
             elseif currentMana > lastManaPower then
-                if lastRegenTime > 0 then
+                if lastRegenTime > 0 and currentTime > lastRegenTime then
                     serverTickRate = currentTime - lastRegenTime
                 end
                 lastRegenTime = currentTime
@@ -54,6 +55,8 @@ local function OnEvent(self, event, unit, powerType)
             lastManaPower = currentMana
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Fires on every loading screen; only register the listener once
+        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
         AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
     end
 end
@@ -67,14 +70,13 @@ end
 local function OnUpdate(self, elapsed)
     local currentTime = GetTime()
     local timeSinceLastChange = currentTime - lastManaChangeTime
-    local currentMana = UnitPower("player", Enum.PowerType.Mana)
-    
+
     if playerIsFull then
-        manaBar:SetValue(5)
-        manaText:SetText("Ready")
-        manaBar:SetStatusBarColor(0.2, 0.7, 1)
-        
         if not wasReady then
+            manaBar:SetMinMaxValues(0, 5)
+            manaBar:SetValue(5)
+            manaText:SetText("Ready")
+            manaBar:SetStatusBarColor(0.2, 0.7, 1)
             PlaySound(readySound, "Master")
             wasReady = true
         end
@@ -82,19 +84,20 @@ local function OnUpdate(self, elapsed)
         wasReady = false
         local remainingTime = math.min(5, 5 - timeSinceLastChange)
         if remainingTime > 0 then
-            manaBar:SetValue(remainingTime)
             manaBar:SetMinMaxValues(0, 5)
+            manaBar:SetValue(remainingTime)
             manaText:SetFormattedText("%.1fs", remainingTime)
             manaBar:SetStatusBarColor(1, 0.7, 0.2)
         else
             local timeInCurrentTick = (currentTime - tickOffset) % serverTickRate
             manaBar:SetMinMaxValues(0, serverTickRate)
             manaBar:SetValue(math.min(serverTickRate, math.max(0, timeInCurrentTick)))
-            
+
             local spirit = UnitStat("player", 5)
             local intellect = UnitStat("player", 4)
             local estimatedManaPerTick = (spirit / 5 + 15) * (intellect / 100) * 2
 
+            local currentMana = UnitPower("player", Enum.PowerType.Mana)
             local manaGained = currentMana - manaAtFiveSecondStart
             manaText:SetFormattedText("+%.1f (%d)", estimatedManaPerTick, manaGained)
             manaBar:SetStatusBarColor(0.2, 0.9, 0.2)

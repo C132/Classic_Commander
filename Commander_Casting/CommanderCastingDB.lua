@@ -29,13 +29,18 @@ local DefaultSettings = {
     EffectTexture = TEXTURE_PATH .. TEXTURE_FILES[1]
 }
 
-for key, value in pairs(DefaultSettings) do
-    if CommanderCastingDB[key] == nil then
-        CommanderCastingDB[key] = value
+local function ApplyDefaultSettings()
+    for key, value in pairs(DefaultSettings) do
+        if CommanderCastingDB[key] == nil then
+            CommanderCastingDB[key] = value
+        end
     end
 end
 
+ApplyDefaultSettings()
+
 local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
@@ -218,8 +223,14 @@ end
 
 local function OnDestroy() end
 
-local function OnEvent(self, event)
-    if event == "PLAYER_LOGIN" then
+local function OnEvent(self, event, addonName)
+    if event == "ADDON_LOADED" then
+        -- SavedVariables replace the global table after the file runs, so re-apply defaults here
+        if addonName == "Commander_Casting" then
+            CommanderCastingDB = CommanderCastingDB or {}
+            ApplyDefaultSettings()
+        end
+    elseif event == "PLAYER_LOGIN" then
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then

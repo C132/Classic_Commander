@@ -7,24 +7,17 @@ COMMANDER_CONSOLE_EVENTS = {
 local DefaultSettings = {
 }
 
-for key, value in pairs(DefaultSettings) do
-    if CommanderChatDB[key] == nil then
-        CommanderChatDB[key] = value
-    end
-end
-
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
 
 local function Reset()
-    print("Resetting Commander Chat")
+    print("Resetting Commander Console")
     for key, value in pairs(DefaultSettings) do
-        CommanderChatDB[key] = value
+        CommanderConsoleDB[key] = value
     end
-    Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+    Notify(COMMANDER_CONSOLE_EVENTS.UPDATE)
 end
 
 local function InitializeSlashCommands(categoryID)
@@ -35,7 +28,7 @@ local function InitializeSlashCommands(categoryID)
             Settings.OpenToCategory(categoryID)
         elseif msg == "reset" then
             Reset()
-            print("Commander Chat Reset")
+            print("Commander Console Reset")
         else
             print("Usage: /cc [reset]")
         end
@@ -72,6 +65,12 @@ local function OnUpdate()
 end
 
 local function OnAwake()
+    -- Merge defaults here so SavedVariables are already loaded
+    for key, value in pairs(DefaultSettings) do
+        if CommanderConsoleDB[key] == nil then
+            CommanderConsoleDB[key] = value
+        end
+    end
     local panel = CreateOptionsPanel()
     local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Console")
     local categoryID = category:GetID()

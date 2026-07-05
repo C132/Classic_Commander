@@ -1,0 +1,10 @@
+## Interface: 20505
+## Category: Commander
+## Title: Commander Chat
+## Author: Devin
+## Version: 1.0
+## SavedVariables: CommanderChatDB
+## RequiredDeps: Commander_Events
+
+CommanderChatDB.lua
+CommanderChat.lua

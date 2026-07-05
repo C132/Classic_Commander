@@ -1,4 +1,5 @@
-## Interface: 11506
+## Interface: 20505
+## Category: Commander
 ## Title: Commander Resources
 ## Author: Devin
 ## Version: 1.0

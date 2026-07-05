@@ -1,6 +1,7 @@
 CommanderMinimapDB = CommanderMinimapDB or {}
 
 local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 
 COMMANDER_MINIMAP_EVENTS = {
@@ -13,20 +14,23 @@ local defaultSettings = {
     XPDisplayMode = "PERCENTAGE",
 }
 
-for key, value in pairs(defaultSettings) do
-    if CommanderMinimapDB[key] == nil then
-        CommanderMinimapDB[key] = value
+-- Defaults are applied in ADDON_LOADED: SavedVariables replace the global
+-- after this file runs, so applying them at file scope would be overwritten
+local function ApplyDefaults()
+    for key, value in pairs(defaultSettings) do
+        if CommanderMinimapDB[key] == nil then
+            CommanderMinimapDB[key] = value
+        end
     end
 end
 
 local function OnAwake()
     if CommanderMinimapDB == nil then print("No Minimap DB found") end
-    CommanderMinimapDB.ShowMinimapButton = CommanderMinimapDB.ShowMinimapButton or true
+    -- Booleans are handled by ApplyDefaults (nil checks), so a saved "false" is not clobbered
     CommanderMinimapDB.XPDisplayMode = CommanderMinimapDB.XPDisplayMode or "PERCENTAGE"
     CommanderMinimapDB.lastXPGain = CommanderMinimapDB.lastXPGain or 0
     CommanderMinimapDB.killsToLevel = CommanderMinimapDB.killsToLevel or 0
     CommanderMinimapDB.lastXPSource = CommanderMinimapDB.lastXPSource or ""
-    CommanderMinimapDB.MinimapButtonLocked = CommanderMinimapDB.MinimapButtonLocked or false
 end
 
 function ToggleMinimapButton()
@@ -67,7 +71,12 @@ function GetLastXPSource()
 end
 
 local function OnEvent(self, event, ...)
-    if event == "PLAYER_LOGIN" then
+    if event == "ADDON_LOADED" then
+        local addonName = ...
+        if addonName == "Commander_Minimap" then
+            ApplyDefaults()
+        end
+    elseif event == "PLAYER_LOGIN" then
         OnAwake()
     end
 end

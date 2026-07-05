@@ -1,4 +1,4 @@
-callbacks = {}
+local callbacks = {}
 
 function AddListener(event, func)
     if not event then
@@ -26,7 +26,7 @@ function Notify(event)
     end
 end
 
-function CreateMainPanel()
+local function CreateMainPanel()
     local panel = CreateFrame("Frame")
     panel.name = "Commander"
 

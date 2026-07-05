@@ -7,7 +7,9 @@ local function OnAwake()
         CommanderUnitFramesDB = {}
     end
     CommanderUnitFramesDB.scale = CommanderUnitFramesDB.scale or 1.0
-    CommanderUnitFramesDB.showPercentage = CommanderUnitFramesDB.showPercentage or true
+    if CommanderUnitFramesDB.showPercentage == nil then
+        CommanderUnitFramesDB.showPercentage = true
+    end
 end
 
 local function CreateSettingsPanel()
@@ -50,20 +52,24 @@ local function CreateSettingsPanel()
         -- Add percentage display update logic here when unit frame is implemented
     end)
 
-    Settings.RegisterCanvasLayoutCategory(panel, panel.name)
-    return panel
+    local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+    Settings.RegisterAddOnCategory(category)
+    return panel, category
 end
 
 local settingsPanel
+local settingsCategory
 
 frame:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_UnitFrames" then
         OnAwake()
-        settingsPanel = CreateSettingsPanel()
+        settingsPanel, settingsCategory = CreateSettingsPanel()
     end
 end)
 
 SLASH_COMMANDERUF1 = "/cuf"
 SlashCmdList["COMMANDERUF"] = function(msg)
-    Settings.OpenToCategory(settingsPanel.name)
+    if settingsCategory then
+        Settings.OpenToCategory(settingsCategory:GetID())
+    end
 end
