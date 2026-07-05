@@ -1,9 +1,10 @@
-## Interface: 11506
+## Interface: 20505
 ## Title: Commander Buffs
 ## Notes: Buff module for Commander
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderBuffsDB
+## RequiredDeps: Commander_Events
 
 CommanderBuffsDB.lua
 CommanderBuffs.lua

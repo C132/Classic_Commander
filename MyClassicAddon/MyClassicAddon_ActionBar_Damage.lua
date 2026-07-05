@@ -231,8 +231,8 @@ function ActionBarOutput:UpdateDebugWindow(button)
         if actionType == "spell" and id then
             local spellName = GetSpellInfo(id)
             self:GetSpellOutput(id)
-            
-            local debugText = "Debug Info for " .. spellName .. "\n\n"
+
+            local debugText = "Debug Info for " .. (spellName or "Unknown") .. "\n\n"
             for _, info in ipairs(self.debugInfo or {}) do
                 debugText = debugText .. info .. "\n"
             end

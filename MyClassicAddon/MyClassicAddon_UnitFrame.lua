@@ -102,10 +102,11 @@ local function CreateCustomFrame(unit)
     frame:RegisterForClicks("AnyUp")
     frame:SetScript("OnClick", function(self, button)
         if button == "RightButton" then
+            -- PlayerFrameDropDown/TargetFrameDropDown no longer exist on the 2.5.5 client
             if unit == "player" then
-                ToggleDropDownMenu(1, nil, PlayerFrameDropDown, "cursor", 0, 0)
+                UnitPopup_OpenMenu("SELF", { unit = "player" })
             else
-                ToggleDropDownMenu(1, nil, TargetFrameDropDown, "cursor", 0, 0)
+                UnitPopup_OpenMenu("TARGET", { unit = "target" })
             end
         elseif button == "LeftButton" and unit == "player" then
             TargetUnit("player")
@@ -267,11 +268,17 @@ local function UpdateCustomFrame(frame, unit)
         frame.swingTimer:SetPoint("TOP", frame, "TOP", 0, -51)  -- Reset position
         local mainHandSpeed, offHandSpeed = UnitAttackSpeed(unit)
         local swingTime = mainHandSpeed or 0
-        local currentTime = GetTime()
-        local elapsedTime = currentTime % swingTime
-        frame.swingTimer:SetMinMaxValues(0, swingTime)
-        frame.swingTimer:SetValue(elapsedTime)
-        frame.swingTimer.text:SetText(string.format("%.1f", math.floor(swingTime * 10) / 10))
+        if swingTime > 0 then
+            local currentTime = GetTime()
+            local elapsedTime = currentTime % swingTime
+            frame.swingTimer:SetMinMaxValues(0, swingTime)
+            frame.swingTimer:SetValue(elapsedTime)
+            frame.swingTimer.text:SetText(string.format("%.1f", math.floor(swingTime * 10) / 10))
+        else
+            frame.swingTimer:SetMinMaxValues(0, 1)
+            frame.swingTimer:SetValue(0)
+            frame.swingTimer.text:SetText("")
+        end
 
         -- Hide full screen glow for player when not casting
         if unit == "player" then
@@ -281,7 +288,13 @@ local function UpdateCustomFrame(frame, unit)
 
     -- Update debuffs
     for i = 1, 40 do
-        local name, icon, count, debuffType, duration, expirationTime = UnitDebuff(unit, i)
+        -- UnitDebuff is a deprecation shim on the 2.5.5 client; use C_UnitAuras
+        local aura = C_UnitAuras.GetDebuffDataByIndex(unit, i)
+        local name, icon, count, debuffType, duration, expirationTime
+        if aura then
+            name, icon, count, debuffType, duration, expirationTime =
+                aura.name, aura.icon, aura.applications, aura.dispelName, aura.duration, aura.expirationTime
+        end
         if name then
             local debuffFrame = frame.debuffs[i]
             if not debuffFrame then
@@ -350,7 +363,13 @@ local function UpdateCustomFrame(frame, unit)
 
     -- Update buffs
     for i = 1, 40 do
-        local name, icon, count, buffType, duration, expirationTime = UnitBuff(unit, i)
+        -- UnitBuff is a deprecation shim on the 2.5.5 client; use C_UnitAuras
+        local aura = C_UnitAuras.GetBuffDataByIndex(unit, i)
+        local name, icon, count, buffType, duration, expirationTime
+        if aura then
+            name, icon, count, buffType, duration, expirationTime =
+                aura.name, aura.icon, aura.applications, aura.dispelName, aura.duration, aura.expirationTime
+        end
         if name then
             local buffFrame = frame.buffs[i]
             if not buffFrame then

@@ -19,7 +19,7 @@ local function DrawCheckBox(label, configKey, event)
     checkbox:SetChecked(Config[configKey])
     checkbox:SetScript("OnClick", function(self)
         Config[configKey] = self:GetChecked()
-        Raise(event)
+        Notify(event)
     end)
     lastUI = checkbox
     return checkbox
@@ -56,7 +56,7 @@ local function DrawDropDown(label, configKey, options, event)
                 UIDropDownMenu_SetSelectedValue(dropdown, self.value)
                 UpdateDropDownText(self.value)
                 Config[configKey] = self.value
-                Raise(event)
+                Notify(event)
             end
             UIDropDownMenu_AddButton(info)
         end
@@ -109,8 +109,11 @@ SettingsFrame:SetScript("OnEvent", function(self, event, addonName)
     end
 end)
 
+local category = Settings.RegisterCanvasLayoutCategory(SettingsFrame, "My Classic Addon Settings")
+Settings.RegisterAddOnCategory(category)
+
 function OpenSettings()
-    Settings.OpenToCategory("My Classic Addon Settings")
+    Settings.OpenToCategory(category:GetID())
 end
 
 -- Add slash command
@@ -124,5 +127,3 @@ SlashCmdList["MYCLASSICADDON"] = function(msg)
         print("  /mca or /mca settings - Open MyClassicAddon settings")
     end
 end
-
-Settings.RegisterCanvasLayoutCategory(SettingsFrame, "My Classic Addon Settings")

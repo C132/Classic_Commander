@@ -4,6 +4,9 @@ local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("ZONE_CHANGED")
+frame:RegisterEvent("ZONE_CHANGED_INDOORS")
+frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
 -- Constants
 local MINIMAP_SCALE = 1.37 -- Adjust this value to change minimap size (1.0 is default)
@@ -13,7 +16,7 @@ local ZONE_TEXT_OFFSET_Y = -2 -- Vertical offset for zone text
 
 -- Hide default minimap art and elements
 --MinimapBackdrop:Hide()
-MinimapBorderTop:Hide()
+MinimapCluster.BorderTop:Hide() -- MinimapBorderTop global no longer exists on 2.5.5
 MinimapZoomOut:Hide()
 MinimapZoomIn:Hide()
 MinimapToggleButton:Hide()
@@ -27,6 +30,18 @@ local zoneText = Minimap:CreateFontString(nil, "OVERLAY")
 zoneText:SetFontObject(GameFontNormal)
 zoneText:SetPoint("TOP", Minimap, "TOP", 0, ZONE_TEXT_OFFSET_Y)
 
+local function UpdateZoneText()
+    zoneText:SetText(GetMinimapZoneText())
+end
+
+local function PositionLFGButton()
+    if LFGMinimapFrame then
+        LFGMinimapFrame:ClearAllPoints()
+        LFGMinimapFrame:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", 36, -6)
+        --MinimapBackdrop:Hide()
+    end
+end
+
 frame:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Minimap" then
         print("Commander_Minimap loaded successfully!")
@@ -34,7 +49,7 @@ frame:SetScript("OnEvent", function(self, event, addonName)
         Minimap:SetScale(MINIMAP_SCALE)
         
         -- Update zone text
-        zoneText:SetText(GetMinimapZoneText())
+        UpdateZoneText()
     
         -- Position clock like SC2 style - top right corner of minimap
         if TimeManagerClockButton then
@@ -58,6 +73,10 @@ frame:SetScript("OnEvent", function(self, event, addonName)
             TimeManagerClockButton:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", CLOCK_OFFSET_X, CLOCK_OFFSET_Y)
             TimeManagerClockButton:SetAlpha(0.77)
         end
+        UpdateZoneText()
+        PositionLFGButton()
+    elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "ZONE_CHANGED_NEW_AREA" then
+        UpdateZoneText()
     end
 end)
 
@@ -82,13 +101,5 @@ Minimap:SetScript("OnMouseWheel", function(self, delta)
     end
 end)
 
--- Update zone text when zone changes
-Minimap:SetScript("OnUpdate", function()
-    zoneText:SetText(GetMinimapZoneText())
-
-    if LFGMinimapFrame then
-        LFGMinimapFrame:ClearAllPoints()
-        LFGMinimapFrame:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", 36, -6)
-        --MinimapBackdrop:Hide()
-    end
-end)
+-- Zone text and LFG button updates are event-driven (see OnEvent above)
+-- instead of running every frame in OnUpdate

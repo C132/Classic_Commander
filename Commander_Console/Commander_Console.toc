@@ -1,8 +1,9 @@
-## Interface: 11506
+## Interface: 20505
 ## Title: Commander Console
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderConsoleDB
+## RequiredDeps: Commander_Events
 
 CommanderConsole.lua
 CommanderConsoleDB.lua

@@ -110,11 +110,14 @@ local function OnUpdate()
 end
 
 local function OnAwake()
-    -- Initialize BagPositions if it doesn't exist
-    if CommanderBagsDB.BagPositions == nil then
-        CommanderBagsDB.BagPositions = {}
+    -- Re-apply defaults here: SavedVariables replace the global CommanderBagsDB
+    -- after this file runs, so the top-of-file merge is lost for existing saves
+    for key, value in pairs(DefaultSettings) do
+        if CommanderBagsDB[key] == nil then
+            CommanderBagsDB[key] = value
+        end
     end
-    
+
     local panel = CreateOptionsPanel()
     local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Bags")
     local categoryID = category:GetID()

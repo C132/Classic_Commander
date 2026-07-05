@@ -1,9 +1,10 @@
-## Interface: 11506
+## Interface: 20505
 ## Title: Commander Action Bar
 ## Notes: Action Bar module for Commander
-## Author: Your Name
+## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderActionBarDB
+## RequiredDeps: Commander_Events
 
 CommanderActionBarDB.lua
 CommanderActionBar.lua

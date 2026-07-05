@@ -1,8 +1,9 @@
-## Interface: 11506
+## Interface: 20505
 ## Title: Commander Bags
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderBagsDB
+## RequiredDeps: Commander_Events
 
 CommanderBagsDB.lua
 CommanderBags.lua

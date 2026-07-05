@@ -20,7 +20,7 @@ local function OnAwake()
     Config.ShowChatWindow = Config.ShowChatWindow or false
     Config.ActionBarPosition = Config.ActionBarPosition or {}
     Config.UnlockActionBar = Config.UnlockActionBar or false
-    Config.ShowBagButtons = Config.ShowBagButtons or true
+    if Config.ShowBagButtons == nil then Config.ShowBagButtons = true end
     Config.FadeBagsWhileMoving = Config.FadeBagsWhileMoving or false
     Config.BagPositions = Config.BagPositions or {}
     Config.ActionBarCostMode = Config.ActionBarCostMode or "RAW_COST"

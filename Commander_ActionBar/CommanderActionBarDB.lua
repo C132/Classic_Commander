@@ -15,13 +15,18 @@ local DefaultSettings = {
     }
 }
 
-for key, value in pairs(DefaultSettings) do
-    if CommanderActionBarDB[key] == nil then
-        CommanderActionBarDB[key] = value
+local function ApplyDefaultSettings()
+    for key, value in pairs(DefaultSettings) do
+        if CommanderActionBarDB[key] == nil then
+            CommanderActionBarDB[key] = value
+        end
     end
 end
 
+ApplyDefaultSettings()
+
 local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
@@ -102,7 +107,9 @@ end
 local function OnUpdate()
     for i = 0, 3 do
         local bagButton = _G["CharacterBag" .. i .. "Slot"]
-        bagButton:SetShown(CommanderActionBarDB.showBagButtons)
+        if bagButton then
+            bagButton:SetShown(CommanderActionBarDB.showBagButtons)
+        end
     end
 end
 
@@ -118,8 +125,14 @@ end
 local function OnDestroy()
 end
 
-local function OnEvent(self, event)
-    if event == "PLAYER_LOGIN" then
+local function OnEvent(self, event, addonName)
+    if event == "ADDON_LOADED" then
+        -- SavedVariables replace the global table after the file runs, so re-apply defaults here
+        if addonName == "Commander_ActionBar" then
+            CommanderActionBarDB = CommanderActionBarDB or {}
+            ApplyDefaultSettings()
+        end
+    elseif event == "PLAYER_LOGIN" then
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then

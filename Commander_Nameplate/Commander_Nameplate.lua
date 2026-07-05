@@ -134,16 +134,18 @@ local function CreatePlayerNameplate()
     nameplate:SetScript("OnEvent", function(self, event, unit)
         if unit == "player" or event:match("^PLAYER_") then self.Update() end
     end)
+    nameplate.updateElapsed = 0
     nameplate:SetScript("OnUpdate", function(self, elapsed)
-        if UnitCastingInfo("player") then
-            local name, _, _, startTime, endTime = UnitCastingInfo("player")
-            if name then
-                local castDuration = (endTime - startTime) / 1000
-                local currentProgress = GetTime() - startTime / 1000
-                self.castBar:SetValue(currentProgress)
-            end
+        local name, _, _, startTime = UnitCastingInfo("player")
+        if name then
+            local currentProgress = GetTime() - startTime / 1000
+            self.castBar:SetValue(currentProgress)
         end
-        self.Update()
+        self.updateElapsed = self.updateElapsed + elapsed
+        if self.updateElapsed >= 0.1 then
+            self.updateElapsed = 0
+            self.Update()
+        end
     end)
     return nameplate
 end
@@ -158,14 +160,15 @@ playerNameplate:SetScript("OnDragStop", function(self)
     CommanderNameplateDB.position = {point, "UIParent", relativePoint, xOfs, yOfs}
 end)
 playerNameplate.Update()
-local settingsPanel = CreateFrame("Frame", "CommanderNameplateSettingsPanel", InterfaceOptionsFramePanelContainer)
+local settingsPanel = CreateFrame("Frame", "CommanderNameplateSettingsPanel")
 settingsPanel.name = "Commander Nameplate"
-Settings.RegisterCanvasLayoutCategory(optionsPanel, "Commander Nameplate")
+local settingsCategory = Settings.RegisterCanvasLayoutCategory(settingsPanel, "Commander Nameplate")
+Settings.RegisterAddOnCategory(settingsCategory)
 local function CreateCheckbox(name, label, description, onClick)
     local check = CreateFrame("CheckButton", "CommanderNameplate"..name.."CheckButton", settingsPanel, "InterfaceOptionsCheckButtonTemplate")
-    check:SetScript("OnClick", function(self) 
-        onClick(self, self:GetChecked()) 
+    check:SetScript("OnClick", function(self)
         CommanderNameplateDB[name] = self:GetChecked()
+        onClick(self, self:GetChecked())
     end)
     check.label = _G[check:GetName().."Text"]
     check.label:SetText(label)
@@ -239,7 +242,14 @@ settingsPanel:SetScript("OnEvent", function(self, event, addon)
             alwaysShowMana = false
         }
         for k, v in pairs({showPlayerName = true, fadeWhileMoving = false, fadeIntensity = 0.5, showHealthPercent = false, showManaPercent = false, alwaysShowMana = false}) do
-            CommanderNameplateDB[k] = CommanderNameplateDB[k] ~= nil and CommanderNameplateDB[k] or v
+            if CommanderNameplateDB[k] == nil then
+                CommanderNameplateDB[k] = v
+            end
+        end
+        if CommanderNameplateDB.position then
+            local point, _, relativePoint, xOfs, yOfs = unpack(CommanderNameplateDB.position)
+            playerNameplate:ClearAllPoints()
+            playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
         end
         showPlayerNameCheck:SetChecked(CommanderNameplateDB.showPlayerName)
         fadeWhileMovingCheck:SetChecked(CommanderNameplateDB.fadeWhileMoving)

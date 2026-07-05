@@ -14,11 +14,17 @@ local DefaultSettings = {
     Anchor = "BOTTOMLEFT"
 }
 
-for key, value in pairs(DefaultSettings) do
-    if CommanderTooltipDB[key] == nil then
-        CommanderTooltipDB[key] = value
+local function ApplyDefaultSettings()
+    for key, value in pairs(DefaultSettings) do
+        if CommanderTooltipDB[key] == nil then
+            CommanderTooltipDB[key] = value
+        end
     end
 end
+
+-- Seed defaults now for a fresh install; re-applied at PLAYER_LOGIN because
+-- SavedVariables replace CommanderTooltipDB after this file has run.
+ApplyDefaultSettings()
 
 local frame = CreateFrame("FRAME")
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -194,6 +200,7 @@ end
 
 local function OnEvent(self, event)
     if event == "PLAYER_LOGIN" then
+        ApplyDefaultSettings()
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then

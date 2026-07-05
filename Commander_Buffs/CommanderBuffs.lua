@@ -1,9 +1,12 @@
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
-frame:RegisterEvent("UNIT_AURA")
+frame:RegisterUnitEvent("UNIT_AURA", "player")
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+-- Edit Mode reapplies HUD frame positions on this client; re-apply ours after it does
+frame:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 local loaded = false
 
 local buffAnchor
@@ -36,14 +39,9 @@ local function CreateMoveableAnchor(name, parent)
 
     -- Settings button click handler
     settingsButton:SetScript("OnClick", function()
-        -- Open settings to the correct category
-        Settings.OpenToCategory(Settings.INTERFACE_CATEGORY_ID)
-        local categories = Settings.GetCategories()
-        for i, category in ipairs(categories) do
-            if category:GetName() == "Commander Buffs" then
-                Settings.OpenToCategory(category:GetID())
-                break
-            end
+        -- Open settings to the correct category (ID published by CommanderBuffsDB.lua)
+        if CommanderBuffsCategoryID then
+            Settings.OpenToCategory(CommanderBuffsCategoryID)
         end
     end)
 
@@ -115,8 +113,14 @@ local function UpdateBuffFrame()
         buffAnchor.settingsButton:SetShown(showAnchor)
     end
 
-    -- Update buffs per row
-    BUFF_ACTUAL_DISPLAY = CommanderBuffsDB.BuffsPerRow
+    -- Update buffs per row (BUFF_ACTUAL_DISPLAY is gone; the modern BuffFrame
+    -- lays out via AuraContainer.iconStride, normally driven by Edit Mode)
+    if BuffFrame.AuraContainer then
+        BuffFrame.AuraContainer.iconStride = CommanderBuffsDB.BuffsPerRow
+        if BuffFrame.auraFrames then
+            BuffFrame:UpdateGridLayout()
+        end
+    end
 end
 
 local function OnUpdate()

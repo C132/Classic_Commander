@@ -1,9 +1,10 @@
-## Interface: 11506
+## Interface: 20505
 ## Title: Commander Casting
 ## Notes: Casting module for Commander
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderCastingDB
+## RequiredDeps: Commander_Events
 
 CommanderCastingDB.lua
 CommanderCasting.lua

@@ -229,10 +229,13 @@ massWhisperFrame.sendButton:SetScript("OnClick", function()
     end
 end)
 
+-- Forward declaration so HookWhoScroll can see the function defined below
+local UpdateWhoCheckboxes
+
 -- Hook the scroll frame update to maintain checkboxes
 local function HookWhoScroll()
     -- Wait for WhoFrame components to be available
-    if not WhoFrame or not WhoFrameScrollFrame then
+    if not WhoFrame or not WhoListScrollFrame then
         C_Timer.After(0.1, HookWhoScroll)
         return
     end
@@ -243,21 +246,21 @@ local function HookWhoScroll()
             C_Timer.After(0, UpdateWhoCheckboxes)
         end)
     end
-    
+
     -- Hook the scroll event
-    if WhoFrameScrollFrame then
-        WhoFrameScrollFrame:HookScript("OnVerticalScroll", function(self, offset)
-            FauxScrollFrame_OnVerticalScroll(self, offset, WHOS_TO_DISPLAY, WhoList_Update)
+    if WhoListScrollFrame then
+        WhoListScrollFrame:HookScript("OnVerticalScroll", function(self, offset)
+            FauxScrollFrame_OnVerticalScroll(self, offset, FRIENDS_FRAME_WHO_HEIGHT, WhoList_Update)
         end)
     end
 end
 
 -- Function to create or update checkboxes for each who result
-local function UpdateWhoCheckboxes()
-    if not WhoFrame or not WhoFrameScrollFrame then return end
-    
+function UpdateWhoCheckboxes()
+    if not WhoFrame or not WhoListScrollFrame then return end
+
     local numResults = C_FriendList.GetNumWhoResults()
-    local offset = FauxScrollFrame_GetOffset(WhoFrameScrollFrame)
+    local offset = FauxScrollFrame_GetOffset(WhoListScrollFrame)
     
     -- Hide all existing checkboxes
     for _, checkbox in pairs(checkboxes) do
@@ -327,12 +330,14 @@ selectNoneButton:SetScript("OnClick", function()
     end
 end)
 
+-- Note: FriendsFrameWhoButton does not exist on this client; a nil entry
+-- here would stop ipairs early and skip the buttons after it
 local whoElements = {
     WhoFrameColumnHeader1,
     WhoFrameColumnHeader2,
     WhoFrameColumnHeader3,
     WhoFrameColumnHeader4,
-    FriendsFrameWhoButton,
+    WhoFrameColumnHeader5,
     massWhisperButton,
     selectAllButton,
     selectNoneButton
@@ -379,6 +384,7 @@ end
 -- Update the frame event handler
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
+        loaded = true
         C_Timer.After(0.5, OnAwake)  -- Delay initialization
     elseif event == "PLAYER_LOGOUT" then
         OnDestroy()

@@ -113,11 +113,22 @@ local function UpdateDebugFrame()
     DebugFrame.content:SetHeight(DebugFrame.contentText:GetStringHeight() + 20)
 end
 
+local function GetSpellCost(spellId)
+    -- Global GetSpellPowerCost does not exist on the 2.5.5 client; use C_Spell
+    local costTable = C_Spell.GetSpellPowerCost(spellId)
+    if costTable and #costTable > 0 then
+        return costTable[1].cost
+    end
+    return 0
+end
+
 local function GetOptimalSequence(targetHealth, playerMana)
     local sequence = {}
     local remainingHealth = targetHealth
     local remainingMana = playerMana
     local spells = {}
+    local cachedOutputs = (ActionBarOutput and type(ActionBarOutput.GetCachedOutputs) == "function")
+        and ActionBarOutput:GetCachedOutputs() or {}
 
     -- Get player's spells
     local i = 1
@@ -136,8 +147,8 @@ local function GetOptimalSequence(targetHealth, playerMana)
         local bestDamagePerMana = 0
 
         for _, spell in ipairs(spells) do
-            local damage = ActionBarOutput:GetCachedOutputs()[spell.id] or 0
-            local cost = select(4, GetSpellInfo(spell.id)) or 0
+            local damage = cachedOutputs[spell.id] or 0
+            local cost = GetSpellCost(spell.id)
 
             if cost > 0 and cost <= remainingMana then
                 local damagePerMana = damage / cost
@@ -150,8 +161,8 @@ local function GetOptimalSequence(targetHealth, playerMana)
 
         if bestSpell then
             table.insert(sequence, bestSpell.name .. (bestSpell.rank and " (" .. bestSpell.rank .. ")" or ""))
-            local damage = ActionBarOutput:GetCachedOutputs()[bestSpell.id] or 0
-            local cost = select(4, GetSpellInfo(bestSpell.id)) or 0
+            local damage = cachedOutputs[bestSpell.id] or 0
+            local cost = GetSpellCost(bestSpell.id)
             remainingHealth = remainingHealth - damage
             remainingMana = remainingMana - cost
         else
@@ -180,6 +191,7 @@ local function UpdateActionPlanner()
 end
 
 ActionPlanner:SetScript("OnEvent", function(self, event, ...)
+    if not self:IsShown() then return end  -- Skip recomputing while hidden; Show() refreshes
     if event == "PLAYER_TARGET_CHANGED" or event == "UNIT_HEALTH" or event == "UNIT_POWER_UPDATE" then
         UpdateActionPlanner()
     end

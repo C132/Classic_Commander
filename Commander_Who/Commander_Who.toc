@@ -1,8 +1,9 @@
-## Interface: 11506
+## Interface: 20505
 ## Title: Commander Who
 ## Author: Devin
 ## Version: 1.0
 ## SavedVariables: CommanderWhoDB
+## RequiredDeps: Commander_Events
 
 CommanderWhoDB.lua
 CommanderWho.lua

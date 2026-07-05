@@ -12,9 +12,15 @@ COMMANDER_UNIT_FRAMES_EVENTS = {
 }
 
 local function OnAwake()
-    if CommanderUnitFramesDB == nil then print("No CommanderUnitFramesDB found") end
+    if CommanderUnitFramesDB == nil then
+        print("No CommanderUnitFramesDB found")
+        CommanderUnitFramesDB = {}
+    end
+    CommanderUnitFramesDB.callbacks = CommanderUnitFramesDB.callbacks or {}
     CommanderUnitFramesDB.scale = CommanderUnitFramesDB.scale or 1.0
-    CommanderUnitFramesDB.showPercentage = CommanderUnitFramesDB.showPercentage or true
+    if CommanderUnitFramesDB.showPercentage == nil then
+        CommanderUnitFramesDB.showPercentage = true
+    end
 end
 
 -- Initialize any necessary components or features

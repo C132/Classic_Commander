@@ -31,7 +31,8 @@ function ActionBarInfo:UpdateInfo(button, text)
 
     local cost = self.cachedCosts[id]
     if not cost then
-        local costTable = GetSpellPowerCost(spellName)
+        -- Global GetSpellPowerCost does not exist on the 2.5.5 client; use C_Spell
+        local costTable = C_Spell.GetSpellPowerCost(id)
         if costTable and #costTable > 0 then
             cost = costTable[1].cost
             self.cachedCosts[id] = cost
@@ -58,7 +59,8 @@ function ActionBarInfo:UpdateInfo(button, text)
             displayText = string.format("%.2f", damagePerCost)
         end
     elseif Config.ActionBarCostMode == "TIME_TO_OOM" then
-        local castTime = spellInfo[4] / 1000 or 1.5  -- Convert to seconds, default to 1.5 if instant
+        local castTime = (spellInfo[4] or 0) / 1000  -- Convert to seconds
+        if castTime == 0 then castTime = 1.5 end  -- Default to 1.5 if instant
         local castsUntilOOM = playerMana / cost
         local timeToOOM = castsUntilOOM * castTime
         displayText = string.format("%.0fs", timeToOOM)

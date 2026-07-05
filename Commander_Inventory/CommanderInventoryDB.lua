@@ -53,9 +53,9 @@ local function Reset()
     CommanderInventoryDB.showFrame = defaultSettings.showFrame
     
     -- Reset UI elements
-    if CommanderInventoryColumnsSlider then
-        CommanderInventoryColumnsSlider:SetValue(defaultSettings.columns)
-        CommanderInventoryColumnsSlider.valueText:SetText(defaultSettings.columns)
+    if CIColumnsSlider then
+        CIColumnsSlider:SetValue(defaultSettings.columns)
+        CIColumnsSlider.valueText:SetText(defaultSettings.columns)
     end
     if CommanderInventoryScaleSlider then
         CommanderInventoryScaleSlider:SetValue(defaultSettings.scale)
@@ -76,9 +76,9 @@ local function Reset()
 end
 
 local function ResetPosition()
-    if ItemGrid then
-        ItemGrid:ClearAllPoints()
-        ItemGrid:SetPoint("CENTER", UIParent, "CENTER")
+    if CIItemGrid then
+        CIItemGrid:ClearAllPoints()
+        CIItemGrid:SetPoint("CENTER", UIParent, "CENTER")
         Notify(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY)
     end
 end
@@ -447,19 +447,24 @@ local function CreateDebugInfo(panel)
     end
     
     local function UpdateDebugInfo()
+        -- Skip the full bag scan while the options panel isn't visible
+        if not debugFrame:IsVisible() then
+            return
+        end
+
         local totalItems = 0
         local inventoryItems = 0
         local bagItems = 0
         local itemsList = {}
         local buttons = _G.CIButtons or {}  -- Get buttons safely
-        
+
         -- Count and collect inventory items
         for i = 1, 19 do
             local itemID = GetInventoryItemID("player", i)
             if itemID then
-                local isUsable = IsUsableItem(itemID)
-                local hasSpell = GetItemSpell(itemID)
-                local name = GetItemInfo(itemID)
+                local isUsable = C_Item.IsUsableItem(itemID)
+                local hasSpell = C_Item.GetItemSpell(itemID)
+                local name = C_Item.GetItemInfo(itemID)
                 table.insert(itemsList, string.format("Equipped[%d]: %s (ID: %d, Usable: %s, Spell: %s)",
                     i, name or "unknown", itemID, tostring(isUsable), tostring(hasSpell ~= nil)))
                 if isUsable or hasSpell then
@@ -474,9 +479,9 @@ local function CreateDebugInfo(panel)
             for slot = 1, C_Container.GetContainerNumSlots(bag) do
                 local itemID = C_Container.GetContainerItemID(bag, slot)
                 if itemID then
-                    local isUsable = IsUsableItem(itemID)
-                    local hasSpell = GetItemSpell(itemID)
-                    local name = GetItemInfo(itemID)
+                    local isUsable = C_Item.IsUsableItem(itemID)
+                    local hasSpell = C_Item.GetItemSpell(itemID)
+                    local name = C_Item.GetItemInfo(itemID)
                     table.insert(itemsList, string.format("Bag[%d,%d]: %s (ID: %d, Usable: %s, Spell: %s)",
                         bag, slot, name or "unknown", itemID, tostring(isUsable), tostring(hasSpell ~= nil)))
                     if isUsable or hasSpell then
@@ -522,7 +527,7 @@ local function CreateDebugInfo(panel)
         if #buttons > 0 then
             for i, button in ipairs(buttons) do
                 if button:IsShown() then
-                    local itemName = button.itemLink and GetItemInfo(button.itemLink) or "unknown"
+                    local itemName = button.itemLink and C_Item.GetItemInfo(button.itemLink) or "unknown"
                     table.insert(buttonStatus, string.format(
                         "Button[%d]: ItemID=%s, Name=%s, Visible=%s, Position=[%d,%d]",
                         i, tostring(button.itemID),
@@ -568,11 +573,12 @@ local function CreateDebugInfo(panel)
     
     debugFrame.Update = UpdateDebugInfo
     debugFrame.LogEvent = LogEvent
-    
+
     -- Register for updates
     AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, UpdateDebugInfo)
     C_Timer.NewTicker(1, UpdateDebugInfo)
-    
+    debugFrame:SetScript("OnShow", UpdateDebugInfo)
+
     return debugFrame
 end
 
@@ -655,7 +661,8 @@ local function CreateOptionsPanel()
     
     -- Add debug info after the checkboxes
     local debugFrame = CreateDebugInfo(panel)
-    
+    _G.CIDebugFrame = debugFrame  -- Expose for event logging from CommanderInventory.lua
+
     return panel
 end
 
@@ -695,6 +702,14 @@ end
 
 frame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
+        -- Saved variables replace the table created at file load, so re-apply defaults
+        -- here for any keys missing from the saved data
+        for key, value in pairs(defaultSettings) do
+            if CommanderInventoryDB[key] == nil then
+                CommanderInventoryDB[key] = value
+            end
+        end
+
         local panel = CreateOptionsPanel()
         local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Inventory")
         local categoryID = category:GetID()

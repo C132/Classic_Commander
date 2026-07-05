@@ -1,6 +1,8 @@
 local GUI = {}
 GUI.__index = GUI
 
+local lastUI
+
 function DrawButton(parentFrame, name)
     local this = CreateFrame("Button", nil, parentFrame, "UIPanelButtonTemplate")
     this:SetSize(100, 15)

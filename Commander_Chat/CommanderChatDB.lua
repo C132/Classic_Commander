@@ -33,6 +33,7 @@ for key, value in pairs(DefaultSettings) do
 end
 
 local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
@@ -45,23 +46,23 @@ local function Reset()
     Notify(COMMANDER_CHAT_EVENTS.UPDATE)
 end
 
--- Available sounds for selection
+-- Available sounds for selection (keys verified against the 2.5.5 client's SOUNDKIT table)
 local AvailableSounds = {
     {text = "Character Info Tab", value = "IG_CHARACTER_INFO_TAB"},
-    {text = "Quest Complete", value = "UI_QUEST_COMPLETE"},
-    {text = "Level Up", value = "LEVELUP"},
-    {text = "Achievement", value = "ACHIEVEMENT"},
-    {text = "Loot Window Open", value = "LOOT_WINDOW_OPEN"},
+    {text = "Quest Complete", value = "IG_QUEST_LIST_COMPLETE"},
+    {text = "Whisper Tell", value = "TELL_MESSAGE"},
+    {text = "Raid Boss Emote", value = "RAID_BOSS_EMOTE_WARNING"},
+    {text = "Loot Coins", value = "LOOT_WINDOW_COIN_SOUND"},
     {text = "Raid Warning", value = "RAID_WARNING"},
     {text = "Ready Check", value = "READY_CHECK"},
     {text = "PvP Flag", value = "PVP_THROUGH_QUEUE"},
-    {text = "Error Message", value = "UI_ERROR_MESSAGE"},
-    {text = "Quest Log Open", value = "UI_QUEST_LOG_OPEN"},
-    {text = "Spell Book Open", value = "UI_SPELLBOOK_OPEN"},
-    {text = "Talent Open", value = "UI_TALENT_OPEN"},
-    {text = "Trade Window Open", value = "UI_TRADE_WINDOW_OPEN"},
-    {text = "Guild Bank Open", value = "UI_GUILD_BANK_OPEN"},
-    {text = "Auction House Open", value = "UI_AUCTION_WINDOW_OPEN"},
+    {text = "Player Invite", value = "IG_PLAYER_INVITE"},
+    {text = "Quest Log Open", value = "IG_QUEST_LOG_OPEN"},
+    {text = "Spell Book Open", value = "IG_SPELLBOOK_OPEN"},
+    {text = "Talent Open", value = "TALENT_SCREEN_OPEN"},
+    {text = "Character Info Open", value = "IG_CHARACTER_INFO_OPEN"},
+    {text = "Guild Bank Open", value = "GUILD_BANK_OPEN_BAG"},
+    {text = "Auction House Open", value = "AUCTION_WINDOW_OPEN"},
 }
 
 local AvailableChannels = {
@@ -369,8 +370,18 @@ end
 
 local function OnDestroy() end
 
-local function OnEvent(self, event)
-    if event == "PLAYER_LOGIN" then
+local function OnEvent(self, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 == "Commander_Chat" then
+            -- Saved variables replace the global after this file runs, so re-apply defaults for any missing keys
+            for key, value in pairs(DefaultSettings) do
+                if CommanderChatDB[key] == nil then
+                    CommanderChatDB[key] = value
+                end
+            end
+            self:UnregisterEvent("ADDON_LOADED")
+        end
+    elseif event == "PLAYER_LOGIN" then
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then

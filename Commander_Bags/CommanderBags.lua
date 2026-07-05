@@ -103,7 +103,7 @@ local function UpdateItemColors()
             local bagID = containerFrame:GetID()
             
             -- Update each item button in the container
-            for j = 1, containerFrame.size do
+            for j = 1, containerFrame.size or 0 do
                 local button = _G[containerFrame:GetName().."Item"..j]
                 if button then
                     -- Get the actual bag slot from the button
@@ -111,7 +111,7 @@ local function UpdateItemColors()
                     local itemLink = C_Container.GetContainerItemLink(bagID, slot)
                     
                     if itemLink then
-                        local _, _, rarity, _, _, itemType = GetItemInfo(itemLink)
+                        local _, _, rarity, _, _, itemType = C_Item.GetItemInfo(itemLink)
                         local isQuestItem = false
                         local isConsumable = IsConsumable(bagID, slot)
                         
@@ -146,10 +146,12 @@ local function UpdateItemColors()
                                 button.IconBorder:SetAlpha(1)
                             elseif rarity == 1 then -- Common (White)
                                 button.IconBorder:Hide() -- Hide border for common items
-                            else
+                            elseif rarity then
                                 local r, g, b = C_Item.GetItemQualityColor(rarity)
                                 button.IconBorder:SetVertexColor(r, g, b, 1)
                                 button.IconBorder:SetAlpha(1)
+                            else
+                                button.IconBorder:Hide() -- Item info not cached yet; refresh cycle will retry
                             end
                         end
                     else
@@ -209,6 +211,9 @@ local function OnDestroy() end
 
 -- Modify HookContainerItemButton to prevent default tooltip behavior
 local function HookContainerItemButton(button)
+    if button.isHooked then return end  -- Add flag to prevent double-hooking
+    button.isHooked = true
+
     if not button:GetScript("OnClick") then
         button:SetScript("OnClick", function(self, ...)
             if loaded then
@@ -279,7 +284,7 @@ local function RestoreBagPosition(frame)
     local pos = CommanderBagsDB.BagPositions[frame:GetName()]
     if pos then
         frame:ClearAllPoints()
-        frame:SetPoint(pos.point, _G[pos.relativeTo], pos.relativePoint, pos.xOfs, pos.yOfs)
+        frame:SetPoint(pos.point, _G[pos.relativeTo] or UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
     end
 end
 
@@ -349,7 +354,7 @@ local function HookContainerFrame(frame)
                 StartRefreshWindow()
                 RestoreBagPosition(frame)
                 -- Hook all item buttons in this container
-                for j = 1, frame.size do
+                for j = 1, frame.size or 0 do
                     local button = _G[frame:GetName().."Item"..j]
                     if button then
                         HookContainerItemButton(button)
@@ -365,7 +370,7 @@ local function HookContainerFrame(frame)
                 StartRefreshWindow()
                 RestoreBagPosition(frame)
                 -- Hook all item buttons in this container
-                for j = 1, frame.size do
+                for j = 1, frame.size or 0 do
                     local button = _G[frame:GetName().."Item"..j]
                     if button then
                         HookContainerItemButton(button)
@@ -408,12 +413,7 @@ local function HookAllContainerFrames()
 end
 
 -- Hook all container frames
-for i = 1, NUM_CONTAINER_FRAMES do
-    local frame = _G["ContainerFrame"..i]
-    if frame then
-        HookContainerFrame(frame)
-    end
-end
+HookAllContainerFrames()
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then

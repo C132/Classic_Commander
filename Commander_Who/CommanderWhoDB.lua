@@ -14,13 +14,20 @@ local DefaultSettings = {
     WhisperDelay = 0.5,   -- Delay between whispers in seconds
 }
 
-for key, value in pairs(DefaultSettings) do
-    if CommanderWhoDB[key] == nil then
-        CommanderWhoDB[key] = value
+-- Fill in any missing defaults; re-run on ADDON_LOADED because the
+-- SavedVariables table replaces CommanderWhoDB after this file executes
+local function ApplyDefaults()
+    for key, value in pairs(DefaultSettings) do
+        if CommanderWhoDB[key] == nil then
+            CommanderWhoDB[key] = value
+        end
     end
 end
 
+ApplyDefaults()
+
 local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
@@ -101,8 +108,11 @@ end
 
 local function OnDestroy() end
 
-local function OnEvent(self, event)
-    if event == "PLAYER_LOGIN" then
+local function OnEvent(self, event, addonName)
+    if event == "ADDON_LOADED" and addonName == "Commander_Who" then
+        ApplyDefaults()  -- SavedVariables are available now
+        self:UnregisterEvent("ADDON_LOADED")
+    elseif event == "PLAYER_LOGIN" then
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then

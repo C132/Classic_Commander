@@ -10,16 +10,16 @@ function CommanderTooltip:OnGameTooltipSetItem(tooltip)
     local _, link = tooltip:GetItem()
     if not link then return end
     
-    local itemLevel = GetDetailedItemLevelInfo(link)
+    local itemLevel = C_Item.GetDetailedItemLevelInfo(link)
     if itemLevel then
         tooltip:AddLine("Item Level: " .. itemLevel, 1, 1, 1)
     end
-    
+
     -- Add vendor price directly in OnGameTooltipSetItem
     if CommanderTooltipDB.ShowVendorPrice then
-        local itemID = GetItemInfoInstant(link)
+        local itemID = C_Item.GetItemInfoInstant(link)
         if itemID then
-            local price = select(11, GetItemInfo(itemID))
+            local price = select(11, C_Item.GetItemInfo(itemID))
             if price and price > 0 then
                 SetTooltipMoney(tooltip, price, nil, "Vendor Price:")
             end
@@ -78,22 +78,13 @@ function CommanderTooltip:SetupTooltips()
 end
 
 function CommanderTooltip:OnUpdate()
-    -- Handle ShowItemLevel changes
-    if CommanderTooltipDB.ShowItemLevel then
-        GameTooltip:HookScript("OnTooltipSetItem", function(tooltip, ...) 
-            self:OnGameTooltipSetItem(tooltip, ...) 
-        end)
-    else
-        GameTooltip:SetScript("OnTooltipSetItem", nil)
-    end
+    -- ShowItemLevel and AnchorToCursor changes are handled by the hooks
+    -- installed once in SetupTooltips; the handlers check the settings on
+    -- each call. Re-hooking here would stack duplicate hooks, and clearing
+    -- the scripts would wipe out Blizzard's own tooltip handlers.
 
-    -- Handle AnchorToCursor changes
-    if CommanderTooltipDB.AnchorToCursor then
-        GameTooltip:HookScript("OnUpdate", function(tooltip, ...) 
-            self:UpdateTooltipPosition(tooltip, ...) 
-        end)
-    else
-        GameTooltip:SetScript("OnUpdate", nil)
+    -- Snap the tooltip back to its default corner when cursor anchoring is off
+    if not CommanderTooltipDB.AnchorToCursor then
         GameTooltip:ClearAllPoints()
         GameTooltip:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -CONTAINER_OFFSET_X - 13, CONTAINER_OFFSET_Y)
     end
