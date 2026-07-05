@@ -1,0 +1,11 @@
+## Interface: 11506
+## Title: MyClassicAddon
+## Author: Devin
+## Version: 1.0
+## SavedVariables: Config
+## RequiredDeps: Commander_Events
+
+Config.lua
+GUI.lua
+MyClassicAddon_Settings.lua
+MyClassicAddon_Backpack.lua
