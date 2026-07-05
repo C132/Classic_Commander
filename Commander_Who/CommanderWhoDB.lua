@@ -37,7 +37,7 @@ local function Reset()
     for key, value in pairs(DefaultSettings) do
         CommanderWhoDB[key] = value
     end
-    Notify(COMMANDER_WHO_EVENTS.UPDATE)
+    Commander.Notify(COMMANDER_WHO_EVENTS.UPDATE)
 end
 
 local function InitializeSlashCommands(categoryID)
@@ -73,7 +73,7 @@ local function CreateOptionsPanel()
     showWhoWindowCheckbox:SetChecked(CommanderWhoDB.ShowWhoWindow)
     showWhoWindowCheckbox:SetScript("OnClick", function(self)
         CommanderWhoDB.ShowWhoWindow = self:GetChecked()
-        Notify(COMMANDER_WHO_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_WHO_EVENTS.UPDATE)
     end)
 
     showWhoButtonCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
@@ -82,7 +82,7 @@ local function CreateOptionsPanel()
     showWhoButtonCheckbox:SetChecked(CommanderWhoDB.ShowWhoButton)
     showWhoButtonCheckbox:SetScript("OnClick", function(self)
         CommanderWhoDB.ShowWhoButton = self:GetChecked()
-        Notify(COMMANDER_WHO_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_WHO_EVENTS.UPDATE)
     end)
 
     return panel
@@ -99,11 +99,10 @@ end
 
 local function OnAwake()
     local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Who")
+    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Who")
     local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
     InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_WHO_EVENTS.UPDATE, OnUpdate)
+    Commander.AddListener(COMMANDER_WHO_EVENTS.UPDATE, OnUpdate)
 end
 
 local function OnDestroy() end

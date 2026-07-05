@@ -4,7 +4,6 @@ local showChatWindowCheckbox
 local showChatButtonCheckbox
 local soundPingWhisperCheckbox
 local soundPingPartyCheckbox
-local soundVolumeSlider
 local whisperSoundDropdown
 local partySoundDropdown
 local soundChannelDropdown
@@ -20,7 +19,6 @@ local DefaultSettings = {
     ShowChatButton = true,
     SoundPingWhisper = false,
     SoundPingParty = false,
-    SoundVolume = 1.0,
     WhisperSound = "IG_CHARACTER_INFO_TAB",
     PartySound = "IG_CHARACTER_INFO_TAB",
     SoundChannel = "Master",
@@ -43,7 +41,7 @@ local function Reset()
     for key, value in pairs(DefaultSettings) do
         CommanderChatDB[key] = value
     end
-    Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+    Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
 end
 
 -- Available sounds for selection (keys verified against the 2.5.5 client's SOUNDKIT table)
@@ -86,17 +84,6 @@ local function PlayTestSound(soundType)
     
     if soundKit and channel then
         PlaySound(soundKit, channel)
-        
-        -- For louder sounds, play multiple times based on volume setting
-        local volume = CommanderChatDB.SoundVolume or 1.0
-        if volume > 1.0 then
-            local extraPlays = math.floor(volume)
-            for i = 1, extraPlays - 1 do
-                C_Timer.After(i * 0.1, function()
-                    PlaySound(soundKit, channel)
-                end)
-            end
-        end
     end
 end
 
@@ -178,7 +165,7 @@ local function CreateOptionsPanel()
     showChatWindowCheckbox:SetChecked(CommanderChatDB.ShowChatWindow)
     showChatWindowCheckbox:SetScript("OnClick", function(self)
         CommanderChatDB.ShowChatWindow = self:GetChecked()
-        Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
     end)
 
     showChatButtonCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate") 
@@ -187,7 +174,7 @@ local function CreateOptionsPanel()
     showChatButtonCheckbox:SetChecked(CommanderChatDB.ShowChatButton)
     showChatButtonCheckbox:SetScript("OnClick", function(self)
         CommanderChatDB.ShowChatButton = self:GetChecked()
-        Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
     end)
 
     soundPingWhisperCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
@@ -196,7 +183,7 @@ local function CreateOptionsPanel()
     soundPingWhisperCheckbox:SetChecked(CommanderChatDB.SoundPingWhisper)
     soundPingWhisperCheckbox:SetScript("OnClick", function(self)
         CommanderChatDB.SoundPingWhisper = self:GetChecked()
-        Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
     end)
 
     soundPingPartyCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
@@ -205,43 +192,12 @@ local function CreateOptionsPanel()
     soundPingPartyCheckbox:SetChecked(CommanderChatDB.SoundPingParty)
     soundPingPartyCheckbox:SetScript("OnClick", function(self)
         CommanderChatDB.SoundPingParty = self:GetChecked()
-        Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-    end)
-
-    -- Sound Volume Slider
-    local volumeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    volumeLabel:SetPoint("TOPLEFT", soundPingPartyCheckbox, "BOTTOMLEFT", 0, -16)
-    volumeLabel:SetText("Sound Volume")
-
-    soundVolumeSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
-    soundVolumeSlider:SetPoint("TOPLEFT", volumeLabel, "BOTTOMLEFT", 0, -8)
-    soundVolumeSlider:SetMinMaxValues(0.1, 5.0)
-    soundVolumeSlider:SetValueStep(0.1)
-    soundVolumeSlider:SetObeyStepOnDrag(true)
-    soundVolumeSlider.Low:SetText("0.1")
-    soundVolumeSlider.High:SetText("5.0")
-    
-    -- Ensure we have a valid volume value
-    local volumeValue = CommanderChatDB.SoundVolume or 1.0
-    soundVolumeSlider:SetValue(volumeValue)
-    soundVolumeSlider.Text:SetText(string.format("%.1f", volumeValue))
-    
-    soundVolumeSlider:SetScript("OnValueChanged", function(self, value)
-        CommanderChatDB.SoundVolume = value
-        self.Text:SetText(string.format("%.1f", value))
-        Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-        -- Play test sound when volume changes (with a small delay to avoid spam)
-        if not soundVolumeSlider.testTimer then
-            soundVolumeSlider.testTimer = C_Timer.NewTimer(0.5, function()
-                PlayTestSound("whisper")
-                soundVolumeSlider.testTimer = nil
-            end)
-        end
+        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
     end)
 
     -- Whisper Sound Dropdown
     local whisperSoundLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    whisperSoundLabel:SetPoint("TOPLEFT", soundVolumeSlider, "BOTTOMLEFT", 0, -16)
+    whisperSoundLabel:SetPoint("TOPLEFT", soundPingPartyCheckbox, "BOTTOMLEFT", 0, -16)
     whisperSoundLabel:SetText("Whisper Sound")
 
     whisperSoundDropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
@@ -293,17 +249,17 @@ local function CreateOptionsPanel()
     -- Initialize dropdowns
     InitializeDropdown(whisperSoundDropdown, AvailableSounds, CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB", function(value)
         CommanderChatDB.WhisperSound = value
-        Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
     end, "whisper")
     
     InitializeDropdown(partySoundDropdown, AvailableSounds, CommanderChatDB.PartySound or "IG_CHARACTER_INFO_TAB", function(value)
         CommanderChatDB.PartySound = value
-        Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
     end, "party")
     
     InitializeDropdown(soundChannelDropdown, AvailableChannels, CommanderChatDB.SoundChannel or "Master", function(value)
         CommanderChatDB.SoundChannel = value
-        Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
     end)
 
     return panel
@@ -321,11 +277,6 @@ local function OnUpdate()
     end
     if soundPingPartyCheckbox then
         soundPingPartyCheckbox:SetChecked(CommanderChatDB.SoundPingParty)
-    end
-    if soundVolumeSlider then
-        local volumeValue = CommanderChatDB.SoundVolume or 1.0
-        soundVolumeSlider:SetValue(volumeValue)
-        soundVolumeSlider.Text:SetText(string.format("%.1f", volumeValue))
     end
     if whisperSoundDropdown then
         local whisperSound = CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB"
@@ -361,11 +312,10 @@ end
 
 local function OnAwake()
     local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Chat")
+    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Chat")
     local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
     InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_CHAT_EVENTS.UPDATE, OnUpdate)
+    Commander.AddListener(COMMANDER_CHAT_EVENTS.UPDATE, OnUpdate)
 end
 
 local function OnDestroy() end

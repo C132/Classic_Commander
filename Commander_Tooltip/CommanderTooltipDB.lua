@@ -31,12 +31,18 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
 
+-- Panel widget references, kept so the COMMANDER_TOOLTIP_UPDATE listener can
+-- re-sync the panel from the DB (e.g. after Reset).
+local showItemLevelCheckbox, showVendorPriceCheckbox, anchorToCursorCheckbox
+local anchorDropdown
+local xOffsetSlider, yOffsetSlider, scaleSlider
+
 local function Reset()
     print("Resetting Commander Tooltip")
     for key, value in pairs(DefaultSettings) do
         CommanderTooltipDB[key] = value
     end
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
+    Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
 end
 
 local function InitializeSlashCommands(categoryID)
@@ -67,25 +73,25 @@ local function CreateOptionsPanel()
     resetButton:SetText("Reset")
     resetButton:SetScript("OnClick", function() Reset() end)
 
-    local showItemLevelCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    showItemLevelCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     showItemLevelCheckbox:SetPoint("TOPLEFT", resetButton, "BOTTOMLEFT", 0, -8)
     showItemLevelCheckbox.Text:SetText("Show Item Level")
     showItemLevelCheckbox:SetChecked(CommanderTooltipDB.ShowItemLevel)
-    showItemLevelCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.ShowItemLevel = self:GetChecked() Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
+    showItemLevelCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.ShowItemLevel = self:GetChecked() Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
 
-    local showVendorPriceCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    showVendorPriceCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     showVendorPriceCheckbox:SetPoint("TOPLEFT", showItemLevelCheckbox, "BOTTOMLEFT", 0, -8)
     showVendorPriceCheckbox.Text:SetText("Show Vendor Price")
     showVendorPriceCheckbox:SetChecked(CommanderTooltipDB.ShowVendorPrice)
-    showVendorPriceCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.ShowVendorPrice = self:GetChecked() Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
+    showVendorPriceCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.ShowVendorPrice = self:GetChecked() Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
 
-    local anchorToCursorCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    anchorToCursorCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     anchorToCursorCheckbox:SetPoint("TOPLEFT", showVendorPriceCheckbox, "BOTTOMLEFT", 0, -8)
     anchorToCursorCheckbox.Text:SetText("Anchor to Cursor")
     anchorToCursorCheckbox:SetChecked(CommanderTooltipDB.AnchorToCursor)
-    anchorToCursorCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.AnchorToCursor = self:GetChecked() Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
+    anchorToCursorCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.AnchorToCursor = self:GetChecked() Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
 
-    local anchorDropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
+    anchorDropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
     anchorDropdown:SetPoint("TOPLEFT", anchorToCursorCheckbox, "BOTTOMLEFT", -15, -8)
     UIDropDownMenu_SetWidth(anchorDropdown, 100)
     UIDropDownMenu_SetText(anchorDropdown, CommanderTooltipDB.Anchor)
@@ -95,7 +101,7 @@ local function CreateOptionsPanel()
         info.func = function(self)
             CommanderTooltipDB.Anchor = self.value
             UIDropDownMenu_SetText(anchorDropdown, self.value)
-            Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
+            Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
         end
         
         local anchors = {"TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT"}
@@ -110,7 +116,7 @@ local function CreateOptionsPanel()
     UIDropDownMenu_Initialize(anchorDropdown, AnchorDropdown_Initialize)
 
     -- X Offset Control
-    local xOffsetSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    xOffsetSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
     xOffsetSlider:SetPoint("TOPLEFT", anchorDropdown, "BOTTOMLEFT", 15, -8)
     xOffsetSlider:SetSize(200, 22)
     xOffsetSlider:SetMinMaxValues(-50, 50)
@@ -129,11 +135,11 @@ local function CreateOptionsPanel()
         value = math.floor(value)
         CommanderTooltipDB.xOffset = value
         xOffsetValue:SetText(string.format("Current: %d", value))
-        Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
     end)
 
     -- Y Offset Control
-    local yOffsetSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    yOffsetSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
     yOffsetSlider:SetPoint("TOPLEFT", xOffsetSlider, "BOTTOMLEFT", 0, -24)
     yOffsetSlider:SetSize(200, 22)
     yOffsetSlider:SetMinMaxValues(-50, 50)
@@ -152,11 +158,11 @@ local function CreateOptionsPanel()
         value = math.floor(value)
         CommanderTooltipDB.yOffset = value
         yOffsetValue:SetText(string.format("Current: %d", value))
-        Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
     end)
 
     -- Scale Control
-    local scaleSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    scaleSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
     scaleSlider:SetPoint("TOPLEFT", yOffsetSlider, "BOTTOMLEFT", 0, -24)
     scaleSlider:SetSize(200, 22)
     scaleSlider:SetMinMaxValues(0.5, 2.0)
@@ -175,23 +181,30 @@ local function CreateOptionsPanel()
         value = math.floor(value * 10) / 10 -- Round to 1 decimal place
         CommanderTooltipDB.Scale = value
         scaleValue:SetText(string.format("Current: %.0f%%", value * 100))
-        Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
     end)
 
     return panel
 end
 
 local function OnUpdate()
-    -- Update tooltip settings
+    -- Re-sync the panel widgets from the DB (e.g. after Reset)
+    if not showItemLevelCheckbox then return end
+    showItemLevelCheckbox:SetChecked(CommanderTooltipDB.ShowItemLevel)
+    showVendorPriceCheckbox:SetChecked(CommanderTooltipDB.ShowVendorPrice)
+    anchorToCursorCheckbox:SetChecked(CommanderTooltipDB.AnchorToCursor)
+    UIDropDownMenu_SetText(anchorDropdown, CommanderTooltipDB.Anchor)
+    xOffsetSlider:SetValue(CommanderTooltipDB.xOffset)
+    yOffsetSlider:SetValue(CommanderTooltipDB.yOffset)
+    scaleSlider:SetValue(CommanderTooltipDB.Scale)
 end
 
 local function OnAwake()
     local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Tooltip")
+    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Tooltip")
     local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
     InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_TOOLTIP_EVENTS.UPDATE, OnUpdate)
+    Commander.AddListener(COMMANDER_TOOLTIP_EVENTS.UPDATE, OnUpdate)
 end
 
 local function OnDestroy()

@@ -33,6 +33,7 @@ local serverTickRate, lastRegenTime, tickOffset = 2, 0, 0
 local wasReady, manaAtFiveSecondStart = true, 0
 local readySound = SOUNDKIT.READY_CHECK
 local OnFiveSecondRuleChanged
+local UpdateVisibility
 
 local function OnEvent(self, event, unit, powerType)
     if event == "UNIT_POWER_UPDATE" and unit == "player" and powerType == "MANA" then
@@ -54,17 +55,19 @@ local function OnEvent(self, event, unit, powerType)
             playerIsFull = (currentMana == maxMana)
             lastManaPower = currentMana
         end
+    elseif event == "UNIT_DISPLAYPOWER" then
+        -- Display power changed (e.g. druid shapeshift); re-check the mana-user gate
+        UpdateVisibility()
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Fires on every loading screen; only register the listener once
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-        AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
+        Commander.AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
+        UpdateVisibility()
     end
 end
 
 function OnFiveSecondRuleChanged()
-    if CommanderResourceDB and CommanderResourceDB.ShowFiveSecondRule ~= nil then
-        fiveSecondRule:SetShown(CommanderResourceDB.ShowFiveSecondRule)
-    end
+    UpdateVisibility()
 end
 
 local function OnUpdate(self, elapsed)
@@ -105,12 +108,25 @@ local function OnUpdate(self, elapsed)
     end
 end
 
+-- Only mana users get the five second rule display (and its per-frame OnUpdate cost)
+function UpdateVisibility()
+    local isManaUser = UnitPowerType("player") == Enum.PowerType.Mana
+    if isManaUser and CommanderResourceDB and CommanderResourceDB.ShowFiveSecondRule then
+        fiveSecondRule:SetScript("OnUpdate", OnUpdate)
+        fiveSecondRule:Show()
+    else
+        fiveSecondRule:SetScript("OnUpdate", nil)
+        fiveSecondRule:Hide()
+    end
+end
+
 fiveSecondRule:SetScript("OnEvent", OnEvent)
-fiveSecondRule:SetScript("OnUpdate", OnUpdate)
 fiveSecondRule:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
+fiveSecondRule:RegisterUnitEvent("UNIT_DISPLAYPOWER", "player")
 fiveSecondRule:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-fiveSecondRule:Show()
+-- Hidden until PLAYER_ENTERING_WORLD applies the saved setting and mana-user gate
+fiveSecondRule:Hide()
 
 SLASH_RESETFSR1 = "/resetfsr"
 SlashCmdList["RESETFSR"] = function()

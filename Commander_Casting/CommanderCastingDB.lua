@@ -5,7 +5,6 @@ local colorBySpellSchoolCheckbox
 local intensitySlider
 local textureDropdown
 local texturePreview
-local textureHoverPreview
 
 COMMANDER_CASTING_EVENTS = {
     UPDATE = "COMMANDER_CASTING_UPDATE"
@@ -50,7 +49,7 @@ local function Reset()
     for key, value in pairs(DefaultSettings) do
         CommanderCastingDB[key] = value
     end
-    Notify(COMMANDER_CASTING_EVENTS.UPDATE)
+    Commander.Notify(COMMANDER_CASTING_EVENTS.UPDATE)
 end
 
 local function InitializeSlashCommands(categoryID)
@@ -90,7 +89,7 @@ local function CreateOptionsPanel()
     showFullscreenEffectCheckbox:SetChecked(CommanderCastingDB.ShowFullscreenEffect)
     showFullscreenEffectCheckbox:SetScript("OnClick", function(self)
         CommanderCastingDB.ShowFullscreenEffect = self:GetChecked()
-        Notify(COMMANDER_CASTING_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CASTING_EVENTS.UPDATE)
     end)
 
     colorBySpellSchoolCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
@@ -99,7 +98,7 @@ local function CreateOptionsPanel()
     colorBySpellSchoolCheckbox:SetChecked(CommanderCastingDB.ColorBySpellSchool)
     colorBySpellSchoolCheckbox:SetScript("OnClick", function(self)
         CommanderCastingDB.ColorBySpellSchool = self:GetChecked()
-        Notify(COMMANDER_CASTING_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CASTING_EVENTS.UPDATE)
     end)
 
     intensitySlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
@@ -114,7 +113,7 @@ local function CreateOptionsPanel()
     intensitySlider:SetScript("OnValueChanged", function(self, value)
         if value then
             CommanderCastingDB.EffectIntensity = value
-            Notify(COMMANDER_CASTING_EVENTS.UPDATE)
+            Commander.Notify(COMMANDER_CASTING_EVENTS.UPDATE)
         end
     end)
 
@@ -136,17 +135,11 @@ local function CreateOptionsPanel()
     texturePreview:SetTexture(CommanderCastingDB.EffectTexture)
     texturePreview:SetBlendMode("ADD")
 
-    -- Hover preview
-    textureHoverPreview = previewFrame:CreateTexture(nil, "ARTWORK")
-    textureHoverPreview:SetAllPoints()
-    textureHoverPreview:SetBlendMode("ADD")
-    textureHoverPreview:Hide()
-
     local function OnTextureSelect(self, texture)
         CommanderCastingDB.EffectTexture = texture
         UIDropDownMenu_SetSelectedValue(textureDropdown, texture)
         texturePreview:SetTexture(texture)
-        Notify(COMMANDER_CASTING_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_CASTING_EVENTS.UPDATE)
     end
 
     local function InitializeDropdown(self, level)
@@ -161,15 +154,6 @@ local function CreateOptionsPanel()
             info.tooltipOnButton = true
             info.tooltipTitle = GetTextureDisplayName(filename)
             info.tooltipText = " "  -- Need non-empty string for tooltip to show
-            info.mouseOverHandler = function(self)
-                textureHoverPreview:SetTexture(fullPath)
-                textureHoverPreview:Show()
-                texturePreview:Hide()
-            end
-            info.mouseLeaveHandler = function(self)
-                textureHoverPreview:Hide()
-                texturePreview:Show()
-            end
             UIDropDownMenu_AddButton(info)
         end
     end
@@ -214,11 +198,10 @@ end
 
 local function OnAwake()
     local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Casting")
+    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Casting")
     local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
     InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_CASTING_EVENTS.UPDATE, OnUpdate)
+    Commander.AddListener(COMMANDER_CASTING_EVENTS.UPDATE, OnUpdate)
 end
 
 local function OnDestroy() end

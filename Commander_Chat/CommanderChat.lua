@@ -72,18 +72,6 @@ local function PlaySoundPing(soundType)
     if soundKit and channel then
         -- Play the sound directly - volume is controlled by the game's sound settings
         PlaySound(soundKit, channel)
-        
-        -- For louder sounds, we can play multiple times or use a different approach
-        local volume = CommanderChatDB.SoundVolume or 1.0
-        if volume > 1.0 then
-            -- Play additional sounds for higher volume effect
-            local extraPlays = math.floor(volume)
-            for i = 1, extraPlays - 1 do
-                C_Timer.After(i * 0.1, function()
-                    PlaySound(soundKit, channel)
-                end)
-            end
-        end
     end
 end
 
@@ -93,9 +81,9 @@ local function OnUpdate()
     UpdateChatVisibility()
 end
 
-local function OnAwake() 
-    AddListener(COMMANDER_CHAT_EVENTS.UPDATE, OnUpdate)
-    Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+local function OnAwake()
+    Commander.AddListener(COMMANDER_CHAT_EVENTS.UPDATE, OnUpdate)
+    Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)

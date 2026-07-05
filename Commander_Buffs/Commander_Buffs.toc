@@ -3,7 +3,8 @@
 ## Title: Commander Buffs
 ## Notes: Buff module for Commander
 ## Author: Devin
-## Version: 1.0
+## Version: 2.0.0
+## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderBuffsDB
 ## RequiredDeps: Commander_Events
 

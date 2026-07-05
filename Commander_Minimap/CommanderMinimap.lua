@@ -44,7 +44,6 @@ end
 
 frame:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Minimap" then
-        print("Commander_Minimap loaded successfully!")
         Minimap:SetMaskTexture("Interface\\BUTTONS\\WHITE8X8")
         Minimap:SetScale(MINIMAP_SCALE)
         

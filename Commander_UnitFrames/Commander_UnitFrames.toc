@@ -2,9 +2,11 @@
 ## Category: Commander
 ## Title: Commander Unit Frames
 ## Author: Devin
-## Version: 1.0
+## Version: 2.0.0
+## Notes: Unit frame options for the Commander suite
+## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderUnitFramesDB
-## SavedVariablesPerCharacter: CommanderUnitFramesCharDB
+## RequiredDeps: Commander_Events
 
 CommanderUnitFramesDB.lua
 CommanderUnitFrames.lua

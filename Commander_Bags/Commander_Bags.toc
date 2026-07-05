@@ -2,7 +2,9 @@
 ## Category: Commander
 ## Title: Commander Bags
 ## Author: Devin
-## Version: 1.0
+## Version: 2.0.0
+## Notes: Color-codes bag items by quality, remembers bag positions, and fades bags while moving.
+## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderBagsDB
 ## RequiredDeps: Commander_Events
 

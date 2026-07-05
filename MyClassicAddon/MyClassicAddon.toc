@@ -2,11 +2,12 @@
 ## Category: Commander
 ## Title: MyClassicAddon
 ## Author: Devin
-## Version: 1.0
-## SavedVariables: Config
+## Version: 2.0.0
+## Notes: Quick-access settings panel that mirrors options from the Commander suite.
+## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
+## SavedVariables: MyClassicAddonDB Config
 ## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_ActionBar, Commander_Bags, Commander_Chat, Commander_Minimap, Commander_Resources
 
 Config.lua
-GUI.lua
 MyClassicAddon_Settings.lua
-MyClassicAddon_Backpack.lua

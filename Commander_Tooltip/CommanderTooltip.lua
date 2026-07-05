@@ -96,7 +96,7 @@ end
 
 function CommanderTooltip:OnAwake()
     self:SetupTooltips()
-    AddListener(COMMANDER_TOOLTIP_EVENTS.UPDATE, function() self:OnUpdate() end)
+    Commander.AddListener(COMMANDER_TOOLTIP_EVENTS.UPDATE, function() self:OnUpdate() end)
     self.loaded = true
 end
 
@@ -118,37 +118,6 @@ end
 CommanderTooltip.frame = CreateFrame("Frame")
 CommanderTooltip.frame:RegisterEvent("PLAYER_LOGIN")
 CommanderTooltip.frame:RegisterEvent("PLAYER_LOGOUT")
-CommanderTooltip.frame:SetScript("OnEvent", function(_, event, ...) 
-    CommanderTooltip:OnEvent(event, ...) 
+CommanderTooltip.frame:SetScript("OnEvent", function(_, event, ...)
+    CommanderTooltip:OnEvent(event, ...)
 end)
-
--- Expose functions for settings panel
-function UpdateShowItemLevel(value)
-    CommanderTooltipDB.ShowItemLevel = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateShowVendorPrice(value)
-    CommanderTooltipDB.ShowVendorPrice = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateAnchorToCursor(value)
-    CommanderTooltipDB.AnchorToCursor = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateXOffset(value)
-    CommanderTooltipDB.xOffset = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateYOffset(value)
-    CommanderTooltipDB.yOffset = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateScale(value)
-    CommanderTooltipDB.Scale = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end

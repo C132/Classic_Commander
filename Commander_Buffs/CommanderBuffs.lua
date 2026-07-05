@@ -129,8 +129,8 @@ end
 
 local function OnAwake()
     InitializeFrames()
-    AddListener(COMMANDER_BUFFS_EVENTS.UPDATE, OnUpdate)
-    Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    Commander.AddListener(COMMANDER_BUFFS_EVENTS.UPDATE, OnUpdate)
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 end
 
 local function OnDestroy() end

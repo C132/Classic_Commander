@@ -31,12 +31,16 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
 
+-- Panel widgets kept at file scope so the UPDATE listener can re-sync them
+-- after Reset or cross-addon changes to the DB
+local lockCheckbox
+local bagButtonsCheckbox
+
 local function Reset()
-    print("Resetting Commander Action Bar")
     for key, value in pairs(DefaultSettings) do
         CommanderActionBarDB[key] = value
     end
-    Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
 end
 
 local function InitializeSlashCommands(categoryID)
@@ -47,14 +51,13 @@ local function InitializeSlashCommands(categoryID)
             Settings.OpenToCategory(categoryID)
         elseif msg == "reset" then
             Reset()
-            print("Commander Action Bar Reset")
         elseif msg == "lock" then
             CommanderActionBarDB.locked = true
-            Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+            Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
             print("Commander Action Bar Locked")
         elseif msg == "unlock" then
             CommanderActionBarDB.locked = false
-            Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+            Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
             print("Commander Action Bar Unlocked")
         else
             print("Usage: /cab [reset|lock|unlock]")
@@ -80,25 +83,24 @@ local function CreateOptionsPanel()
     resetButton:SetText("Reset")
     resetButton:SetScript("OnClick", function()
         Reset()
-        print("Commander Action Bar Reset")
     end)
 
-    local lockCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    lockCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     lockCheckbox:SetPoint("TOPLEFT", resetButton, "BOTTOMLEFT", 0, -8)
     lockCheckbox.Text:SetText("Lock Action Bars")
     lockCheckbox:SetChecked(CommanderActionBarDB.locked)
     lockCheckbox:SetScript("OnClick", function(self)
         CommanderActionBarDB.locked = self:GetChecked()
-        Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
     end)
 
-    local bagButtonsCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    bagButtonsCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     bagButtonsCheckbox:SetPoint("TOPLEFT", lockCheckbox, "BOTTOMLEFT", 0, -8)
     bagButtonsCheckbox.Text:SetText("Show Bag Buttons")
     bagButtonsCheckbox:SetChecked(CommanderActionBarDB.showBagButtons)
     bagButtonsCheckbox:SetScript("OnClick", function(self)
         CommanderActionBarDB.showBagButtons = self:GetChecked()
-        Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
     end)
     
     return panel
@@ -111,15 +113,22 @@ local function OnUpdate()
             bagButton:SetShown(CommanderActionBarDB.showBagButtons)
         end
     end
+    -- Re-sync the panel widgets from the DB so Reset (and cross-addon writes,
+    -- e.g. MyClassicAddon's mirror "Show Bag Buttons" toggle) show fresh values
+    if lockCheckbox then
+        lockCheckbox:SetChecked(CommanderActionBarDB.locked)
+    end
+    if bagButtonsCheckbox then
+        bagButtonsCheckbox:SetChecked(CommanderActionBarDB.showBagButtons)
+    end
 end
 
 local function OnAwake()
     local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Action Bar")
+    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Action Bar")
     local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
     InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, OnUpdate)
+    Commander.AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, OnUpdate)
 end
 
 local function OnDestroy()

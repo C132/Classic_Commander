@@ -1,6 +1,6 @@
 CommanderBuffsDB = _G.CommanderBuffsDB or {}
 
-local showBuffFrameCheckbox
+local lockFramesCheckbox, showInCombatCheckbox, scaleSlider, buffsPerRowSlider
 
 COMMANDER_BUFFS_EVENTS = {
     UPDATE = "COMMANDER_BUFFS_UPDATE"
@@ -38,7 +38,7 @@ local function Reset()
     for key, value in pairs(DefaultSettings) do
         CommanderBuffsDB[key] = value
     end
-    Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 end
 
 local function InitializeSlashCommands(categoryID)
@@ -69,27 +69,27 @@ local function CreateOptionsPanel()
     description:SetText("Configure Commander Buffs options below.")
 
     -- Lock/Unlock Frames
-    local lockFramesCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    lockFramesCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     lockFramesCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
     lockFramesCheckbox.Text:SetText("Lock Buff Frame")
     lockFramesCheckbox:SetChecked(CommanderBuffsDB.LockBuffFrames)
     lockFramesCheckbox:SetScript("OnClick", function(self)
         CommanderBuffsDB.LockBuffFrames = self:GetChecked()
-        Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
     end)
 
     -- Show Anchors in Combat
-    local showInCombatCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    showInCombatCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     showInCombatCheckbox:SetPoint("TOPLEFT", lockFramesCheckbox, "BOTTOMLEFT", 0, -8)
     showInCombatCheckbox.Text:SetText("Show Anchors in Combat")
     showInCombatCheckbox:SetChecked(CommanderBuffsDB.ShowAnchorInCombat)
     showInCombatCheckbox:SetScript("OnClick", function(self)
         CommanderBuffsDB.ShowAnchorInCombat = self:GetChecked()
-        Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
     end)
 
     -- Scale Slider
-    local scaleSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    scaleSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
     scaleSlider:SetPoint("TOPLEFT", showInCombatCheckbox, "BOTTOMLEFT", 0, -24)
     scaleSlider:SetWidth(200)
     scaleSlider.Text:SetText("Buff Frame Scale")
@@ -103,12 +103,12 @@ local function CreateOptionsPanel()
     scaleSlider:SetScript("OnValueChanged", function(self, value)
         if value then
             CommanderBuffsDB.BuffScale = value
-            Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+            Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
         end
     end)
 
     -- Buffs Per Row Slider
-    local buffsPerRowSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    buffsPerRowSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
     buffsPerRowSlider:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -24)
     buffsPerRowSlider:SetWidth(200)
     buffsPerRowSlider.Text:SetText("Buffs Per Row")
@@ -122,7 +122,7 @@ local function CreateOptionsPanel()
     buffsPerRowSlider:SetScript("OnValueChanged", function(self, value)
         if value then
             CommanderBuffsDB.BuffsPerRow = math.floor(value)
-            Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+            Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
         end
     end)
 
@@ -136,27 +136,39 @@ local function CreateOptionsPanel()
         CommanderBuffsDB.BuffFrameX = DefaultSettings.BuffFrameX
         CommanderBuffsDB.BuffFrameY = DefaultSettings.BuffFrameY
         CommanderBuffsDB.BuffScale = DefaultSettings.BuffScale
-        Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+        Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
     end)
 
     return panel
 end
 
+-- Re-sync panel widgets from the DB so they never go stale after
+-- /cbuff reset or the Reset Position button
 local function OnUpdate()
-    if showBuffFrameCheckbox then
-        showBuffFrameCheckbox:SetChecked(CommanderBuffsDB.ShowBuffFrame)
+    if lockFramesCheckbox then
+        lockFramesCheckbox:SetChecked(CommanderBuffsDB.LockBuffFrames)
+    end
+    if showInCombatCheckbox then
+        showInCombatCheckbox:SetChecked(CommanderBuffsDB.ShowAnchorInCombat)
+    end
+    -- Only SetValue when the value actually changed; SetValue fires
+    -- OnValueChanged, which would re-Notify this listener
+    if scaleSlider and scaleSlider:GetValue() ~= (CommanderBuffsDB.BuffScale or 1.0) then
+        scaleSlider:SetValue(CommanderBuffsDB.BuffScale or 1.0)
+    end
+    if buffsPerRowSlider and buffsPerRowSlider:GetValue() ~= (CommanderBuffsDB.BuffsPerRow or 8) then
+        buffsPerRowSlider:SetValue(CommanderBuffsDB.BuffsPerRow or 8)
     end
 end
 
 local function OnAwake()
     local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Buffs")
+    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Buffs")
     local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
     -- Shared with CommanderBuffs.lua for the anchor settings button
     CommanderBuffsCategoryID = categoryID
     InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_BUFFS_EVENTS.UPDATE, OnUpdate)
+    Commander.AddListener(COMMANDER_BUFFS_EVENTS.UPDATE, OnUpdate)
 end
 
 local function OnDestroy() end

@@ -22,6 +22,8 @@ local refreshTimer = nil
 local refreshCount = 0
 local MAX_REFRESH_COUNT = 10 -- Will refresh 10 times
 local REFRESH_INTERVAL = 0.1 -- Every 0.1 seconds
+local cursorRefreshTimer = nil
+local CURSOR_REFRESH_DELAY = 0.2 -- Coalesce cursor-driven refreshes into one deferred pass
 local scanningTooltip = CreateFrame("GameTooltip", "CommanderBagsScanningTooltip", nil, "GameTooltipTemplate")
 scanningTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
 
@@ -191,10 +193,23 @@ local function ScheduleUpdate()
     if updateTimer then
         updateTimer:Cancel()
     end
-    
+
     updateTimer = C_Timer.NewTimer(0.1, function()
         StartRefreshWindow()
         updateTimer = nil
+    end)
+end
+
+-- Cursor changes can fire many times per second while items are picked up and
+-- dropped; restart a single short timer instead of running a full refresh burst
+local function ScheduleCursorRefresh()
+    if cursorRefreshTimer then
+        cursorRefreshTimer:Cancel()
+    end
+
+    cursorRefreshTimer = C_Timer.NewTimer(CURSOR_REFRESH_DELAY, function()
+        cursorRefreshTimer = nil
+        UpdateItemColors()
     end)
 end
 
@@ -203,8 +218,8 @@ local function OnUpdate()
 end
 
 local function OnAwake()
-    AddListener(COMMANDER_BAGS_EVENTS.UPDATE, OnUpdate)
-    Notify(COMMANDER_BAGS_EVENTS.UPDATE)
+    Commander.AddListener(COMMANDER_BAGS_EVENTS.UPDATE, OnUpdate)
+    Commander.Notify(COMMANDER_BAGS_EVENTS.UPDATE)
 end
 
 local function OnDestroy() end
@@ -214,22 +229,13 @@ local function HookContainerItemButton(button)
     if button.isHooked then return end  -- Add flag to prevent double-hooking
     button.isHooked = true
 
-    if not button:GetScript("OnClick") then
-        button:SetScript("OnClick", function(self, ...)
-            if loaded then
-                StartRefreshWindow()
-            end
-        end)
-    else
-        local originalOnClick = button:GetScript("OnClick")
-        button:SetScript("OnClick", function(self, ...)
-            originalOnClick(self, ...)
-            if loaded then
-                StartRefreshWindow()
-            end
-        end)
-    end
-    
+    -- Post-hook so Blizzard's secure OnClick runs untainted
+    button:HookScript("OnClick", function(self, ...)
+        if loaded then
+            StartRefreshWindow()
+        end
+    end)
+
     -- Add tooltip fix
     button:HookScript("OnEnter", function(self)
         FixTooltipAnchors(self)
@@ -239,21 +245,12 @@ end
 -- Hook MerchantFrame functions
 local function HookMerchantFrame()
     if MerchantFrame then
-        if not MerchantFrame:GetScript("OnShow") then
-            MerchantFrame:SetScript("OnShow", function()
-                if loaded then
-                    StartRefreshWindow()
-                end
-            end)
-        else
-            local originalOnShow = MerchantFrame:GetScript("OnShow")
-            MerchantFrame:SetScript("OnShow", function(...)
-                originalOnShow(...)
-                if loaded then
-                    StartRefreshWindow()
-                end
-            end)
-        end
+        -- Post-hook so Blizzard's own OnShow runs untainted
+        MerchantFrame:HookScript("OnShow", function()
+            if loaded then
+                StartRefreshWindow()
+            end
+        end)
     end
 end
 
@@ -347,50 +344,24 @@ local function HookContainerFrame(frame)
         end)
     end
 
-    -- Original show handler
-    if not frame:GetScript("OnShow") then
-        frame:SetScript("OnShow", function()
-            if loaded then
-                StartRefreshWindow()
-                RestoreBagPosition(frame)
-                -- Hook all item buttons in this container
-                for j = 1, frame.size or 0 do
-                    local button = _G[frame:GetName().."Item"..j]
-                    if button then
-                        HookContainerItemButton(button)
-                    end
+    -- Post-hook so Blizzard's own OnShow runs untainted
+    frame:HookScript("OnShow", function(self)
+        if loaded then
+            StartRefreshWindow()
+            RestoreBagPosition(self)
+            -- Hook all item buttons in this container
+            for j = 1, self.size or 0 do
+                local button = _G[self:GetName().."Item"..j]
+                if button then
+                    HookContainerItemButton(button)
                 end
             end
-        end)
-    else
-        local originalOnShow = frame:GetScript("OnShow")
-        frame:SetScript("OnShow", function(...)
-            originalOnShow(...)
-            if loaded then
-                StartRefreshWindow()
-                RestoreBagPosition(frame)
-                -- Hook all item buttons in this container
-                for j = 1, frame.size or 0 do
-                    local button = _G[frame:GetName().."Item"..j]
-                    if button then
-                        HookContainerItemButton(button)
-                    end
-                end
-            end
-        end)
-    end
+        end
+    end)
 end
 
--- Hook UpdateContainerFrameAnchors to maintain positions
-local originalUpdateContainerFrameAnchors = UpdateContainerFrameAnchors
-UpdateContainerFrameAnchors = function(...)
-    for i = 1, NUM_CONTAINER_FRAMES do
-        local frame = _G["ContainerFrame"..i]
-        if frame then
-            frame:ClearAllPoints()
-        end
-    end
-    originalUpdateContainerFrameAnchors(...)
+-- Re-apply saved positions after Blizzard's own anchor pass
+hooksecurefunc("UpdateContainerFrameAnchors", function()
     C_Timer.After(0, function()
         for i = 1, NUM_CONTAINER_FRAMES do
             local frame = _G["ContainerFrame"..i]
@@ -399,7 +370,7 @@ UpdateContainerFrameAnchors = function(...)
             end
         end
     end)
-end
+end)
 
 -- Add this new function
 local function HookAllContainerFrames()
@@ -435,17 +406,15 @@ frame:SetScript("OnEvent", function(self, event, ...)
         elseif event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
             StartRefreshWindow()
         elseif event == "CURSOR_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "ITEM_UNLOCKED" then
-            StartRefreshWindow()
+            ScheduleCursorRefresh()
         else
             ScheduleUpdate()
         end
     end
 end)
 
--- Hook ToggleBackpack to ensure positions are maintained
-local originalToggleBackpack = ToggleBackpack
-ToggleBackpack = function()
-    originalToggleBackpack()
+-- Re-apply saved positions after Blizzard toggles the backpack
+hooksecurefunc("ToggleBackpack", function()
     C_Timer.After(0.1, function()
         for i = 1, NUM_CONTAINER_FRAMES do
             local frame = _G["ContainerFrame"..i]
@@ -454,4 +423,4 @@ ToggleBackpack = function()
             end
         end
     end)
-end
+end)

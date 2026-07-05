@@ -1,5 +1,4 @@
 CommanderUnitFramesDB = CommanderUnitFramesDB or {}
-CommanderUnitFramesDB.callbacks = {}
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
@@ -13,10 +12,9 @@ COMMANDER_UNIT_FRAMES_EVENTS = {
 
 local function OnAwake()
     if CommanderUnitFramesDB == nil then
-        print("No CommanderUnitFramesDB found")
         CommanderUnitFramesDB = {}
     end
-    CommanderUnitFramesDB.callbacks = CommanderUnitFramesDB.callbacks or {}
+    CommanderUnitFramesDB.callbacks = nil
     CommanderUnitFramesDB.scale = CommanderUnitFramesDB.scale or 1.0
     if CommanderUnitFramesDB.showPercentage == nil then
         CommanderUnitFramesDB.showPercentage = true

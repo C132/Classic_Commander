@@ -17,6 +17,12 @@ local function CalculateKillsToLevel()
     return CommanderMinimapDB.lastXPGain and CommanderMinimapDB.lastXPGain > 0 and math.ceil(xpNeeded / CommanderMinimapDB.lastXPGain) or 0
 end
 
+local function UpdateKillsToLevel()
+    if CommanderMinimapDB.lastXPGain and CommanderMinimapDB.lastXPGain > 0 then
+        CommanderMinimapDB.killsToLevel = CalculateKillsToLevel()
+    end
+end
+
 local function GetDurability()
     local durability = 100
     for i = 1, 18 do
@@ -58,12 +64,13 @@ local function CreateRightClickMenu()
     }
 end
 
+-- Informational only: CastSpellByName is protected and cannot be called
+-- from an insecure dropdown click
 local function CreateSubskillMenu(subSkills)
     local menuList = {}
     for _, subSkill in ipairs(subSkills) do
         table.insert(menuList, {
             text = subSkill.name .. " (" .. subSkill.skillLevel .. ")",
-            func = function() CastSpellByName(subSkill.name) end
         })
     end
     return menuList
@@ -74,7 +81,6 @@ local function CreateProfessionMenuItem(profession)
         text = profession.name .. " (" .. profession.skillLevel .. ")",
         hasArrow = #profession.subSkills > 0,
         menuList = CreateSubskillMenu(profession.subSkills),
-        func = function() CastSpellByName(profession.name) end
     }
 end
 
@@ -164,14 +170,25 @@ local function CreateXPTextUpdater(xpText)
     return UpdateXPText
 end
 
+local function ApplyButtonVisibility()
+    if CommanderMinimapDB.ShowMinimapButton then
+        centerButton:Show()
+    else
+        centerButton:Hide()
+    end
+end
+
 local function SetupXPEventHandlers(updateXPText)
     frame:HookScript("OnEvent", function(self, event)
         if event == "CHAT_MSG_COMBAT_XP_GAIN" or event == "PLAYER_XP_UPDATE" then
             updateXPText()
         end
     end)
-    
-    AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, updateXPText)
+
+    Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, function()
+        ApplyButtonVisibility()
+        updateXPText()
+    end)
 end
 
 local function MicroBarButtons()
@@ -189,22 +206,11 @@ centerButton:SetAlpha(1)
 centerButton:SetScale(1)
 centerButton:SetNormalTexture("Interface\\Minimap\\UI-Minimap-Background")
 centerButton:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", 36, -32)
---centerButton:SetMovable(true)
 centerButton:SetClampedToScreen(true)
 centerButton:EnableMouse(true)
---centerButton:RegisterForDrag("LeftButton")
-centerButton:SetScript("OnDragStart", function(self)
-    if not CommanderMinimapDB.MinimapButtonLocked then
-        self:StartMoving()
-    end
-end)
-centerButton:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-end)
 centerButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:AddLine("XP Tracker")
-    GameTooltip:AddLine("Left-click and drag to move")
     GameTooltip:Show()
 end)
 centerButton:SetScript("OnLeave", function(self)
@@ -235,7 +241,8 @@ local function OnAwake()
     CommanderMinimapDB.lastXPSource = CommanderMinimapDB.lastXPSource or ""
     CommanderMinimapDB.lastKnownXP = UnitXP("player")
     frame.RenderXPText = MicroBarButtons()
-end 
+    ApplyButtonVisibility()
+end
 
 local function OnEvent(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -249,7 +256,7 @@ local function OnEvent(self, event, ...)
             if xpGain then
                 CommanderMinimapDB.lastXPGain = xpGain
                 CommanderMinimapDB.lastKnownXP = UnitXP("player")
-                UpdateLastXPGain(xpGain, mobName)
+                UpdateKillsToLevel()
             end
         end
         if frame.RenderXPText then 
