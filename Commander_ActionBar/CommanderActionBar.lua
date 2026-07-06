@@ -13,7 +13,9 @@ local backdrop
 local pendingUpdate = false
 
 -- Frame names for the 2.5.5 (Anniversary) client; looked up by name so a missing
--- frame is skipped instead of truncating the list
+-- frame is skipped instead of truncating the list.
+-- NOTE: everything here must be a plain (insecure) frame whose Hide() is the raw
+-- widget method. StanceBar must NOT go in this list -- see SuppressStanceBar below.
 local elementsToHide = {
     "MainMenuBarLeftEndCap", "MainMenuBarRightEndCap",
     "MainMenuBarTexture0", "MainMenuBarTexture1", "MainMenuBarTexture2", "MainMenuBarTexture3",
@@ -21,11 +23,41 @@ local elementsToHide = {
     "StatusTrackingBarManager",
     "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton", "QuestLogMicroButton",
     "GuildMicroButton", "WorldMapMicroButton", "SocialsMicroButton", "MainMenuMicroButton", "HelpMicroButton",
-    "MainMenuBarBackpackButton", "MainMenuBarPerformanceBarFrame", "KeyRingButton",
-    "StanceBar"
+    "MainMenuBarBackpackButton", "MainMenuBarPerformanceBarFrame", "KeyRingButton"
 }
 
+-- StanceBar can't be hidden with Hide(): it inherits EditModeActionBarTemplate, so
+-- Hide() is really EditModeActionBarMixin:HideOverride, which writes
+-- StanceBar.isShownExternal and re-runs UpdateVisibility -> SetShownBase
+-- (Blizzard_ActionBar/Shared/ActionBar.lua). Calling that from addon code taints
+-- isShownExternal; StanceBar's own PLAYER_REGEN_ENABLED/DISABLED handler then reads
+-- it inside UpdateVisibility during combat and trips ADDON_ACTION_BLOCKED
+-- ("StanceBar:SetShownBase()") even when our call happened out of combat. Instead,
+-- park the bar under a permanently hidden holder: SetParent is not overridden by the
+-- Edit Mode mixin and writes no Lua state on the bar, so Blizzard's visibility code
+-- stays untainted and the bar (with its secure stance buttons) renders and clicks
+-- nothing. Trade-off: StanceBar still reports IsShown() per Blizzard's own logic, so
+-- Blizzard layout code may still reserve its (now invisible) space, and the bar
+-- can't be seen in Edit Mode while this addon is enabled.
+local hiddenHolder = CreateFrame("Frame", nil, UIParent)
+hiddenHolder:Hide()
+
+local function SuppressStanceBar()
+    -- SetParent on a bar with protected children is blocked in combat; callers
+    -- (HideDefaults) are combat-gated
+    if StanceBar and StanceBar:GetParent() ~= hiddenHolder then
+        StanceBar:SetParent(hiddenHolder)
+    end
+end
+
 local function HideDefaults()
+    -- StanceBar reparenting is blocked in combat and the bag slots get re-anchored
+    -- below; defer the whole pass to PLAYER_REGEN_ENABLED while in lockdown
+    if InCombatLockdown() then
+        pendingUpdate = true
+        return
+    end
+    SuppressStanceBar()
     for _, name in ipairs(elementsToHide) do
         local element = _G[name]
         if element then

@@ -30,14 +30,17 @@ local function Reset()
     CommanderBagsDB.FadeBagsWhileMoving = DefaultSettings.FadeBagsWhileMoving
     CommanderBagsDB.BagPositions = {}
 
-    -- Reset bag positions
-    for i = 1, NUM_BAG_FRAMES do
+    -- Drop any custom anchors (hidden frames included, so stale points cannot
+    -- combine with Blizzard's later SetPoint), then let Blizzard lay the shown
+    -- bags back out in the stock layout. Container frames are not protected,
+    -- so no combat guard is needed.
+    for i = 1, NUM_CONTAINER_FRAMES do
         local frame = _G["ContainerFrame"..i]
         if frame then
             frame:ClearAllPoints()
-            frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -50, 100)
         end
     end
+    UpdateContainerFrameAnchors()
 
     Commander.Notify(COMMANDER_BAGS_EVENTS.UPDATE)
 end

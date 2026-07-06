@@ -54,7 +54,18 @@ local function DrawCheckBox(label, getDB, key, event)
 end
 
 local function DrawDropDown(label, getDB, key, options, event)
-    local dropdown = CreateFrame("Frame", nil, SettingsFrame, "UIDropDownMenuTemplate")
+    -- The dropdown frame must have a global name: on this client build
+    -- UIDropDownMenu_EnableDropDown/DisableDropDown look up the "Label"
+    -- child region via _G[frame:GetName().."Label"], which errors when
+    -- GetName() returns nil. Derive a unique name from the setting key.
+    local frameName = "MyClassicAddonDropDown" .. key:gsub("%A", "")
+    local suffix = 2
+    while _G[frameName] do
+        frameName = "MyClassicAddonDropDown" .. key:gsub("%A", "") .. suffix
+        suffix = suffix + 1
+    end
+
+    local dropdown = CreateFrame("Frame", frameName, SettingsFrame, "UIDropDownMenuTemplate")
     dropdown:SetPoint("TOPLEFT", lastUI, "BOTTOMLEFT", -15, -10)
 
     local labelText = SettingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")

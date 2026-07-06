@@ -29,23 +29,6 @@ scanningTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
 
 local NUM_CONTAINER_FRAMES = 13 -- Maximum number of container frames
 
-local function FixTooltipAnchors(self)
-    if GameTooltip:IsOwned(self) then
-        GameTooltip:ClearAllPoints()
-        
-        -- Get the center positions
-        local centerX = self:GetCenter()
-        local screenWidth = UIParent:GetWidth()
-        
-        -- Calculate position relative to the screen center
-        if centerX and centerX > (screenWidth / 2) then
-            GameTooltip:SetPoint("TOPRIGHT", self, "TOPLEFT", 0, 0)
-        else
-            GameTooltip:SetPoint("TOPLEFT", self, "TOPRIGHT", 0, 0)
-        end
-    end
-end
-
 local function ResetItemColors()
     for i = 1, NUM_CONTAINER_FRAMES do
         local containerFrame = _G["ContainerFrame"..i]
@@ -224,7 +207,9 @@ end
 
 local function OnDestroy() end
 
--- Modify HookContainerItemButton to prevent default tooltip behavior
+-- Refresh item colors after clicks; tooltip anchoring is left entirely to
+-- Blizzard (ContainerFrameItemButton_CalculateItemTooltipAnchors) and
+-- Commander_Tooltip
 local function HookContainerItemButton(button)
     if button.isHooked then return end  -- Add flag to prevent double-hooking
     button.isHooked = true
@@ -234,11 +219,6 @@ local function HookContainerItemButton(button)
         if loaded then
             StartRefreshWindow()
         end
-    end)
-
-    -- Add tooltip fix
-    button:HookScript("OnEnter", function(self)
-        FixTooltipAnchors(self)
     end)
 end
 
@@ -254,35 +234,69 @@ local function HookMerchantFrame()
     end
 end
 
--- Add this function to save bag positions
+-- Save only UIParent-relative coordinates. Storing frame:GetPoint() captured
+-- Blizzard's container-to-container anchor chain (UpdateContainerFrameAnchors
+-- anchors each bag to the previous one), and replaying it created anchor
+-- cycles that made Blizzard's own SetPoint throw.
 local function SaveBagPosition(frame)
     if not frame or not frame:GetName() then return end
     if not CommanderBagsDB.BagPositions then
         CommanderBagsDB.BagPositions = {}
     end
-    
-    local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint()
-    if point then
+
+    local left, bottom = frame:GetLeft(), frame:GetBottom()
+    if left and bottom then
         CommanderBagsDB.BagPositions[frame:GetName()] = {
-            point = point,
-            relativeTo = relativeTo and relativeTo:GetName() or "UIParent",
-            relativePoint = relativePoint,
-            xOfs = xOfs,
-            yOfs = yOfs
+            left = left,
+            bottom = bottom
         }
     end
 end
 
--- Add this function to restore bag positions
-local function RestoreBagPosition(frame)
+-- Re-anchor one frame with a single point on UIParent; anchor cycles are
+-- impossible when nothing is ever anchored to another container frame
+local function ApplyBagPosition(frame)
     if not frame or not frame:GetName() then return end
     if not CommanderBagsDB.BagPositions then return end
-    
+
     local pos = CommanderBagsDB.BagPositions[frame:GetName()]
-    if pos then
+    if pos and type(pos.left) == "number" and type(pos.bottom) == "number" then
         frame:ClearAllPoints()
-        frame:SetPoint(pos.point, _G[pos.relativeTo] or UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+        frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
     end
+end
+
+-- Re-apply saved positions to every shown container frame; frames without a
+-- saved entry keep Blizzard's default layout
+local function ApplySavedBagPositions()
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local frame = _G["ContainerFrame"..i]
+        if frame and frame:IsShown() then
+            ApplyBagPosition(frame)
+        end
+    end
+end
+
+-- Old saves stored point/relativeTo pairs that replayed Blizzard's
+-- container-to-container anchors; they are poison, so drop anything that is
+-- not the plain left/bottom format
+local function DiscardLegacyBagPositions()
+    if not CommanderBagsDB.BagPositions then return end
+    for name, pos in pairs(CommanderBagsDB.BagPositions) do
+        if type(pos) ~= "table" or type(pos.left) ~= "number" or type(pos.bottom) ~= "number"
+            or pos.point or pos.relativeTo then
+            CommanderBagsDB.BagPositions[name] = nil
+        end
+    end
+end
+
+local function OnBagDragStop(frame)
+    frame:StopMovingOrSizing()
+    -- StartMoving marks movable frames as user-placed; clear that so the
+    -- client's layout cache does not fight the saved position
+    frame:SetUserPlaced(false)
+    SaveBagPosition(frame)
+    ApplyBagPosition(frame)
 end
 
 -- Add function to fade bags
@@ -312,8 +326,7 @@ local function HookContainerFrame(frame)
     end)
     
     frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        SaveBagPosition(self)
+        OnBagDragStop(self)
     end)
 
     -- Make title frame draggable (using ClickableTitleFrame instead of Name)
@@ -321,12 +334,11 @@ local function HookContainerFrame(frame)
     if titleFrame then
         titleFrame:EnableMouse(true)
         titleFrame:RegisterForDrag("LeftButton")
-        titleFrame:SetScript("OnDragStart", function() 
-            frame:StartMoving() 
+        titleFrame:SetScript("OnDragStart", function()
+            frame:StartMoving()
         end)
         titleFrame:SetScript("OnDragStop", function()
-            frame:StopMovingOrSizing()
-            SaveBagPosition(frame)
+            OnBagDragStop(frame)
         end)
     end
 
@@ -335,12 +347,11 @@ local function HookContainerFrame(frame)
     if portraitButton then
         portraitButton:EnableMouse(true)
         portraitButton:RegisterForDrag("LeftButton")
-        portraitButton:SetScript("OnDragStart", function() 
-            frame:StartMoving() 
+        portraitButton:SetScript("OnDragStart", function()
+            frame:StartMoving()
         end)
         portraitButton:SetScript("OnDragStop", function()
-            frame:StopMovingOrSizing()
-            SaveBagPosition(frame)
+            OnBagDragStop(frame)
         end)
     end
 
@@ -348,7 +359,6 @@ local function HookContainerFrame(frame)
     frame:HookScript("OnShow", function(self)
         if loaded then
             StartRefreshWindow()
-            RestoreBagPosition(self)
             -- Hook all item buttons in this container
             for j = 1, self.size or 0 do
                 local button = _G[self:GetName().."Item"..j]
@@ -360,17 +370,10 @@ local function HookContainerFrame(frame)
     end)
 end
 
--- Re-apply saved positions after Blizzard's own anchor pass
-hooksecurefunc("UpdateContainerFrameAnchors", function()
-    C_Timer.After(0, function()
-        for i = 1, NUM_CONTAINER_FRAMES do
-            local frame = _G["ContainerFrame"..i]
-            if frame then
-                RestoreBagPosition(frame)
-            end
-        end
-    end)
-end)
+-- Blizzard re-anchors every shown container frame on each bag open/close and
+-- on resolution changes; running right after that pass keeps saved positions
+-- in charge without fighting the default layout
+hooksecurefunc("UpdateContainerFrameAnchors", ApplySavedBagPositions)
 
 -- Add this new function
 local function HookAllContainerFrames()
@@ -388,6 +391,7 @@ HookAllContainerFrames()
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
+        DiscardLegacyBagPositions()
         OnAwake()
         loaded = true
         StartRefreshWindow()
@@ -411,16 +415,4 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ScheduleUpdate()
         end
     end
-end)
-
--- Re-apply saved positions after Blizzard toggles the backpack
-hooksecurefunc("ToggleBackpack", function()
-    C_Timer.After(0.1, function()
-        for i = 1, NUM_CONTAINER_FRAMES do
-            local frame = _G["ContainerFrame"..i]
-            if frame then
-                RestoreBagPosition(frame)
-            end
-        end
-    end)
 end)
