@@ -85,54 +85,49 @@ local function ResetPosition()
     end
 end
 
+-- Defer the relayout to after combat: container frames are unprotected, so
+-- laying them out is legal even in combat, but skipping the direct (insecure)
+-- UpdateContainerFrameAnchors call during lockdown avoids a gratuitously
+-- tainted layout pass
+local bagRelayoutWatcher = CreateFrame("Frame")
+bagRelayoutWatcher:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        UpdateContainerFrameAnchors()
+    end
+end)
+
+-- Hand bag layout back to Blizzard instead of re-creating it here. The old
+-- version anchored all 13 container frames (hidden ones included) in a
+-- persistent container-to-container chain that lingered and combined with
+-- Blizzard's bare SetPoint into stale multi-point states, killed bag dragging
+-- for the session via SetMovable(false), and insecurely re-anchored the
+-- PROTECTED backpack/bag-slot buttons. Now we only wipe saved positions and
+-- drop custom points; Blizzard's untouched UpdateContainerFrameAnchors owns
+-- the stock layout, and Commander_ActionBar owns the bag button layout.
 local function ResetBagFrames()
     print("Resetting bag frames to default positions...")
-    
-    -- Reset all container frames to their default positions
+
+    -- Wipe Commander_Bags saved positions so its post-hook does not re-apply them
+    if CommanderBagsDB then
+        CommanderBagsDB.BagPositions = {}
+    end
+
+    -- Drop custom anchors on every container frame (hidden ones included) and
+    -- set no points of our own; movability and user-placed flags are left alone
     for i = 1, NUM_CONTAINER_FRAMES do
-        local frame = _G["ContainerFrame" .. i]
-        if frame then
-            -- Clear all points first to avoid anchor family connection errors
-            frame:ClearAllPoints()
-            
-            -- Set default position - bags are typically anchored to the right side of screen
-            -- ContainerFrame1 (main bag) is usually at the bottom right
-            if i == 1 then
-                frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -10, 100)
-            else
-                -- Additional bags stack to the left of the main bag
-                local prevFrame = _G["ContainerFrame" .. (i - 1)]
-                if prevFrame then
-                    frame:SetPoint("RIGHT", prevFrame, "LEFT", -5, 0)
-                else
-                    frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -10, 100)
-                end
-            end
-            
-            -- Reset scale to default
-            frame:SetScale(1.0)
-            
-            -- Make sure frame is not movable (default state)
-            frame:SetMovable(false)
-            frame:SetUserPlaced(false)
+        local containerFrame = _G["ContainerFrame" .. i]
+        if containerFrame then
+            pcall(containerFrame.ClearAllPoints, containerFrame)
         end
     end
-    
-    -- Also reset the backpack button position if it exists
-    if MainMenuBarBackpackButton then
-        MainMenuBarBackpackButton:ClearAllPoints()
-        MainMenuBarBackpackButton:SetPoint("BOTTOMRIGHT", MainMenuBar, "BOTTOMRIGHT", -4, 2)
+
+    if InCombatLockdown() then
+        bagRelayoutWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    else
+        UpdateContainerFrameAnchors()
     end
-    
-    -- Reset individual bag slot buttons
-    for i = 0, 3 do
-        local bagButton = _G["CharacterBag" .. i .. "Slot"]
-        if bagButton then
-            bagButton:ClearAllPoints()
-            bagButton:SetPoint("BOTTOMRIGHT", MainMenuBarBackpackButton, "BOTTOMLEFT", -2, 0)
-        end
-    end
-    
+
     print("Bag frames reset to default positions!")
 end
 

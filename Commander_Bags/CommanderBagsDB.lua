@@ -24,6 +24,26 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 local loaded = false
 
+-- Container frames are unprotected, so relaying them out is legal even in
+-- combat; deferring the direct (insecure) UpdateContainerFrameAnchors call to
+-- after combat just avoids a gratuitously tainted layout pass while the UI is
+-- in lockdown
+local relayoutWatcher = CreateFrame("Frame")
+relayoutWatcher:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        UpdateContainerFrameAnchors()
+    end
+end)
+
+local function RequestContainerRelayout()
+    if InCombatLockdown() then
+        relayoutWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    else
+        UpdateContainerFrameAnchors()
+    end
+end
+
 local function Reset()
     print("Resetting Commander Bags")
     CommanderBagsDB.ColorCodeItems = DefaultSettings.ColorCodeItems
@@ -32,18 +52,20 @@ local function Reset()
 
     -- Drop any custom anchors (hidden frames included, so stale points cannot
     -- combine with Blizzard's later SetPoint), then let Blizzard lay the shown
-    -- bags back out in the stock layout. Container frames are not protected,
-    -- so no combat guard is needed.
+    -- bags back out in the stock layout.
     for i = 1, NUM_CONTAINER_FRAMES do
         local frame = _G["ContainerFrame"..i]
         if frame then
             frame:ClearAllPoints()
         end
     end
-    UpdateContainerFrameAnchors()
+    RequestContainerRelayout()
 
     Commander.Notify(COMMANDER_BAGS_EVENTS.UPDATE)
 end
+
+-- Exposed for the /cbags slash command registered in CommanderBags.lua
+CommanderBags_Reset = Reset
 
 local function InitializeSlashCommands(categoryID)
     SLASH_CB1 = "/cb"

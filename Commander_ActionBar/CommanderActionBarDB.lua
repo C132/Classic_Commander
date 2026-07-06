@@ -106,12 +106,27 @@ local function CreateOptionsPanel()
     return panel
 end
 
-local function OnUpdate()
+-- Set when a bag button update is skipped due to combat lockdown; applied on
+-- PLAYER_REGEN_ENABLED
+local pendingBagButtonUpdate = false
+
+local function ApplyBagButtonVisibility()
     for i = 0, 3 do
         local bagButton = _G["CharacterBag" .. i .. "Slot"]
         if bagButton then
             bagButton:SetShown(CommanderActionBarDB.showBagButtons)
         end
+    end
+end
+
+local function OnUpdate()
+    -- CharacterBag0-3Slot are protected; SetShown on them during combat
+    -- lockdown trips ADDON_ACTION_BLOCKED, so defer until combat ends
+    if InCombatLockdown() then
+        pendingBagButtonUpdate = true
+        frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    else
+        ApplyBagButtonVisibility()
     end
     -- Re-sync the panel widgets from the DB so Reset (and cross-addon writes,
     -- e.g. MyClassicAddon's mirror "Show Bag Buttons" toggle) show fresh values
@@ -146,6 +161,12 @@ local function OnEvent(self, event, addonName)
         loaded = true
     elseif event == "PLAYER_LOGOUT" then
         OnDestroy()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        if pendingBagButtonUpdate then
+            pendingBagButtonUpdate = false
+            ApplyBagButtonVisibility()
+        end
     elseif loaded then
         OnUpdate()
     end

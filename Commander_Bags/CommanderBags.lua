@@ -254,24 +254,27 @@ local function SaveBagPosition(frame)
 end
 
 -- Re-anchor one frame with a single point on UIParent; anchor cycles are
--- impossible when nothing is ever anchored to another container frame
+-- impossible when nothing is ever anchored to another container frame. pcall
+-- so a residual bad anchor state can never wedge the whole repair loop.
 local function ApplyBagPosition(frame)
     if not frame or not frame:GetName() then return end
     if not CommanderBagsDB.BagPositions then return end
 
     local pos = CommanderBagsDB.BagPositions[frame:GetName()]
     if pos and type(pos.left) == "number" and type(pos.bottom) == "number" then
-        frame:ClearAllPoints()
-        frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
+        pcall(frame.ClearAllPoints, frame)
+        pcall(frame.SetPoint, frame, "BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
     end
 end
 
 -- Re-apply saved positions to every shown container frame; frames without a
--- saved entry keep Blizzard's default layout
+-- saved entry keep Blizzard's default layout. Frames being actively dragged
+-- are skipped so this hook cannot yank a bag out from under the cursor when
+-- another bag opens or closes mid-drag.
 local function ApplySavedBagPositions()
     for i = 1, NUM_CONTAINER_FRAMES do
         local frame = _G["ContainerFrame"..i]
-        if frame and frame:IsShown() then
+        if frame and frame:IsShown() and not frame.cbDrag then
             ApplyBagPosition(frame)
         end
     end
@@ -290,13 +293,61 @@ local function DiscardLegacyBagPositions()
     end
 end
 
-local function OnBagDragStop(frame)
-    frame:StopMovingOrSizing()
-    -- StartMoving marks movable frames as user-placed; clear that so the
-    -- client's layout cache does not fight the saved position
-    frame:SetUserPlaced(false)
+-- Manual UIParent-relative dragging. StartMoving/StopMovingOrSizing is never
+-- used: StartMoving re-anchors the frame into the SCREEN's anchor family (and
+-- flags it user-placed), and a screen-rooted container frame makes Blizzard's
+-- own bare SetPoint in UpdateContainerFrameAnchors throw "SetPoint would
+-- result in anchor family connection". Moving the frame ourselves with a
+-- single UIParent point keeps every container frame in UIParent's anchor
+-- family at every instant of the drag, so that error is structurally
+-- impossible. Never call SetUserPlaced here either -- the manual drag must not
+-- involve the client's layout cache at all.
+local function DragTick(frame)
+    local d = frame.cbDrag
+    if not d then return end
+    local cx, cy = GetCursorPosition()
+    local newLeft = d.left0 + (cx / d.scale - d.cx0)
+    local newBottom = d.bottom0 + (cy / d.scale - d.cy0)
+    frame:ClearAllPoints()
+    frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", newLeft, newBottom)
+end
+
+local function BeginBagDrag(frame)
+    local left0, bottom0 = frame:GetLeft(), frame:GetBottom()
+    if not left0 or not bottom0 then return end
+    local scale = frame:GetEffectiveScale()
+    local cx, cy = GetCursorPosition()
+    frame.cbDrag = {
+        scale = scale,
+        cx0 = cx / scale,
+        cy0 = cy / scale,
+        left0 = left0,
+        bottom0 = bottom0
+    }
+    frame:SetScript("OnUpdate", DragTick)
+end
+
+local function EndBagDrag(frame)
+    frame:SetScript("OnUpdate", nil)
+    frame.cbDrag = nil
     SaveBagPosition(frame)
     ApplyBagPosition(frame)
+end
+
+-- Drift-style revert: once the last bag closes, drop every custom point so the
+-- next Blizzard layout pass starts from the pristine point-less state the
+-- container frames have in XML (ContainerFrame1..13 declare no anchors)
+local function MaybeRevertAllBags()
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local f = _G["ContainerFrame"..i]
+        if f and f:IsShown() then return end
+    end
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local f = _G["ContainerFrame"..i]
+        if f then
+            pcall(f.ClearAllPoints, f)
+        end
+    end
 end
 
 -- Add function to fade bags
@@ -322,11 +373,11 @@ local function HookContainerFrame(frame)
     
     -- Set up drag functionality
     frame:SetScript("OnDragStart", function(self)
-        self:StartMoving()
+        BeginBagDrag(self)
     end)
-    
+
     frame:SetScript("OnDragStop", function(self)
-        OnBagDragStop(self)
+        EndBagDrag(self)
     end)
 
     -- Make title frame draggable (using ClickableTitleFrame instead of Name)
@@ -335,10 +386,10 @@ local function HookContainerFrame(frame)
         titleFrame:EnableMouse(true)
         titleFrame:RegisterForDrag("LeftButton")
         titleFrame:SetScript("OnDragStart", function()
-            frame:StartMoving()
+            BeginBagDrag(frame)
         end)
         titleFrame:SetScript("OnDragStop", function()
-            OnBagDragStop(frame)
+            EndBagDrag(frame)
         end)
     end
 
@@ -348,12 +399,25 @@ local function HookContainerFrame(frame)
         portraitButton:EnableMouse(true)
         portraitButton:RegisterForDrag("LeftButton")
         portraitButton:SetScript("OnDragStart", function()
-            frame:StartMoving()
+            BeginBagDrag(frame)
         end)
         portraitButton:SetScript("OnDragStop", function()
-            OnBagDragStop(frame)
+            EndBagDrag(frame)
         end)
     end
+
+    -- Safety net: if the bag (or an ancestor) is hidden mid-drag, OnDragStop
+    -- never fires; finish the drag here so no frame is left with a live drag
+    -- ticker. Then, once the last bag is closed, revert every container frame
+    -- to the pristine point-less state. HookScript, NOT SetScript --
+    -- ContainerFrame_OnHide is Blizzard's template handler and must keep
+    -- running.
+    frame:HookScript("OnHide", function(self)
+        if self.cbDrag then
+            EndBagDrag(self)
+        end
+        MaybeRevertAllBags()
+    end)
 
     -- Post-hook so Blizzard's own OnShow runs untainted
     frame:HookScript("OnShow", function(self)
@@ -389,9 +453,137 @@ end
 -- Hook all container frames
 HookAllContainerFrames()
 
+-- One-time login heal: sessions that ran the old StartMoving-based drag could
+-- leave a container frame anchored to the SCREEN's anchor family and flagged
+-- user-placed; the client's layout cache then re-imposes that poisoned anchor
+-- at every login, and Blizzard's UpdateContainerFrameAnchors throws "anchor
+-- family connection" on its very first SetPoint. Purge the anchor, clear the
+-- user-placed flag so the cache stops saving container positions, and undo any
+-- SetMovable(false) damage from older reset code.
+local function HealContainerAnchors()
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local f = _G["ContainerFrame"..i]
+        if f then
+            pcall(f.ClearAllPoints, f)
+            f:SetUserPlaced(false)
+            f:SetMovable(true)
+            if f.SetDontSavePosition then
+                pcall(f.SetDontSavePosition, f, true)
+            end
+        end
+    end
+end
+
+-- Capture the ground truth of any future anchor-family error so /cbags diag
+-- can show what the frames were anchored to at the moment it fired
+local lastAnchorError
+
+local function SnapshotContainerPoints()
+    local points = {}
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local f = _G["ContainerFrame"..i]
+        if f then
+            local ok, point, relativeTo, relativePoint, x, y = pcall(f.GetPoint, f, 1)
+            if ok and point then
+                local relName
+                if relativeTo then
+                    relName = relativeTo:GetName() or "<unnamed>"
+                else
+                    relName = "<nil=SCREEN -- POISONED>"
+                end
+                points[#points + 1] = string.format("ContainerFrame%d: %s / %s / %s / %.1f / %.1f",
+                    i, point, relName, relativePoint or "?", x or 0, y or 0)
+            end
+        end
+    end
+    return points
+end
+
+-- Chain the existing error handler so BugSack/Bugger keep working
+local function InstallAnchorErrorCapture()
+    local orig = geterrorhandler()
+    seterrorhandler(function(msg, ...)
+        if type(msg) == "string" and msg:find("anchor family connection", 1, true) then
+            lastAnchorError = {
+                msg = msg,
+                at = date("%H:%M:%S"),
+                inCombat = InCombatLockdown(),
+                points = SnapshotContainerPoints()
+            }
+        end
+        return orig(msg, ...)
+    end)
+end
+
+local function PrintBagDiagnostics()
+    print("Commander Bags diagnostics:")
+    for i = 1, NUM_CONTAINER_FRAMES do
+        local f = _G["ContainerFrame"..i]
+        if f and (f:IsShown() or f:GetNumPoints() > 0) then
+            print(string.format("  %s: shown=%s points=%d protected=%s userPlaced=%s movable=%s scale=%.2f dragging=%s",
+                f:GetName(), tostring(f:IsShown()), f:GetNumPoints(), tostring(f:IsProtected()),
+                tostring(f:IsUserPlaced()), tostring(f:IsMovable()), f:GetScale(), tostring(f.cbDrag ~= nil)))
+            for k = 1, f:GetNumPoints() do
+                local ok, point, relativeTo, relativePoint, x, y = pcall(f.GetPoint, f, k)
+                if ok and point then
+                    local relName
+                    if relativeTo then
+                        relName = relativeTo:GetName() or "<unnamed>"
+                    else
+                        relName = "<nil=SCREEN -- POISONED>"
+                    end
+                    print(string.format("    point %d: %s / %s / %s / %.1f / %.1f",
+                        k, point, relName, relativePoint or "?", x or 0, y or 0))
+                else
+                    print(string.format("    point %d: <GetPoint failed: %s>", k, tostring(point)))
+                end
+            end
+        end
+    end
+    print("  InCombatLockdown: " .. tostring(InCombatLockdown()))
+    if CommanderBagsDB.BagPositions and next(CommanderBagsDB.BagPositions) then
+        print("  Saved positions:")
+        for name, pos in pairs(CommanderBagsDB.BagPositions) do
+            print(string.format("    %s: left=%.1f bottom=%.1f",
+                name, tonumber(pos.left) or 0, tonumber(pos.bottom) or 0))
+        end
+    else
+        print("  Saved positions: none")
+    end
+    if lastAnchorError then
+        print(string.format("  Last anchor error (at %s, inCombat=%s):",
+            lastAnchorError.at, tostring(lastAnchorError.inCombat)))
+        print("    " .. lastAnchorError.msg)
+        for _, line in ipairs(lastAnchorError.points or {}) do
+            print("    " .. line)
+        end
+    else
+        print("  No anchor error captured this session")
+    end
+end
+
+SLASH_CBAGSDIAG1 = "/cbags"
+SlashCmdList["CBAGSDIAG"] = function(msg)
+    msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if msg == "diag" then
+        PrintBagDiagnostics()
+    elseif msg == "reset" then
+        -- CommanderBags_Reset is exposed by CommanderBagsDB.lua
+        if CommanderBags_Reset then
+            CommanderBags_Reset()
+        else
+            print("Commander Bags reset is unavailable")
+        end
+    else
+        print("Usage: /cbags [diag|reset]")
+    end
+end
+
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
+        HealContainerAnchors()
         DiscardLegacyBagPositions()
+        InstallAnchorErrorCapture()
         OnAwake()
         loaded = true
         StartRefreshWindow()
