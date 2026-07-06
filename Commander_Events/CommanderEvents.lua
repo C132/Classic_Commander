@@ -49,7 +49,7 @@ local function CreateMainPanel()
     local divider = Commander.UI.BuildPanelHeader(panel, {
         titleText = "Commander",
         addonName = "Commander_Events",
-        description = "A modular interface suite. Each module has its own settings page in the list on the left.",
+        description = "A modular, RTS-inspired interface suite. Each module has its own settings page in the list on the left; open this page any time with /commander.",
     })
     panel.ContentAnchor = divider
 

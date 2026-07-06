@@ -26,7 +26,7 @@ local function CreateOptionsPanel()
         key = "Who",
         title = "Who",
         addonName = "Commander_Who",
-        description = "Adds selection checkboxes and a mass whisper tool to the Who window, so you can message several players from one search.",
+        description = "Turns /who into a recruiting tool: tick the players you want from the search results, type one message, and it whispers each of them with a polite delay between sends.",
         event = COMMANDER_WHO_EVENTS.UPDATE,
         slash = { "/cw" },
     })
@@ -46,7 +46,7 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderWhoDB.ShowWhoWindow end,
     })
 
-    panel:AddSection("Mass Whisper")
+    panel:AddSection("Mass Whisper", "The delay and recipient cap keep you clear of the server's chat throttle.")
     panel:AddSlider({
         label = "Maximum Recipients",
         tooltip = "Safety cap on how many players a single mass whisper can message.",

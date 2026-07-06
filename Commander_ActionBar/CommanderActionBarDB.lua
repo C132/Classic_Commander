@@ -41,7 +41,7 @@ local function CreateOptionsPanel()
         key = "ActionBar",
         title = "Action Bar",
         addonName = "Commander_ActionBar",
-        description = "Replaces the default action bars with a compact, movable RTS-style command card and repositions the bag buttons.",
+        description = "Replaces the sprawling default action bars with a single compact command card: an RTS-style grid of your actions on a movable armored plate, with the stock bar art, micro buttons, and XP bar cleared away.",
         event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
         slash = { "/cab" },
         slashHandlers = {
@@ -50,7 +50,7 @@ local function CreateOptionsPanel()
         },
     })
 
-    panel:AddSection("Action Bar")
+    panel:AddSection("Command Card", "Unlock to drag the card anywhere on screen, then lock it back down to avoid accidental moves.")
     panel:AddCheckbox({
         label = "Lock Action Bar",
         tooltip = "Prevent the command card from being dragged. Uncheck to move it, then lock it again to avoid accidental drags.",
@@ -65,7 +65,7 @@ local function CreateOptionsPanel()
         },
     })
 
-    panel:AddSection("Bag Buttons")
+    panel:AddSection("Bag Buttons", "The four bag slot buttons are re-anchored to the bottom-right corner of the screen.")
     panel:AddCheckbox({
         label = "Show Bag Buttons",
         tooltip = "Show the four bag slot buttons in the bottom-right corner of the screen.",

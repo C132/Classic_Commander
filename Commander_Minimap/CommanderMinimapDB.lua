@@ -37,12 +37,12 @@ local function CreateOptionsPanel()
         key = "Minimap",
         title = "Minimap",
         addonName = "Commander_Minimap",
-        description = "Reshapes the minimap into a square, movable RTS-style map with a repositioned clock, mouse-wheel zoom, and an information button that tracks XP progress.",
+        description = "Reshapes the minimap into a square, movable RTS-style map: scroll to zoom, drag to reposition, clock tucked into the corner, and an information button that answers 'how far to the next level?'",
         event = COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP,
         slash = { "/cmap" },
     })
 
-    panel:AddSection("Minimap")
+    panel:AddSection("Minimap", "Scale applies immediately; drag the map itself to reposition it while unlocked.")
     panel:AddSlider({
         label = "Minimap Scale",
         tooltip = "Overall size of the minimap.",
@@ -58,7 +58,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderMinimapDB.LockMinimap = value end,
     })
 
-    panel:AddSection("Information Button")
+    panel:AddSection("Information Button", "Left-click opens game windows, right-click shows character stats, middle-click lists professions.")
     panel:AddCheckbox({
         label = "Show Information Button",
         tooltip = "Show the button beside the minimap: left-click opens game windows, right-click shows character stats, middle-click lists professions.",

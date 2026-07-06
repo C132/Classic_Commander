@@ -46,12 +46,12 @@ local function CreateOptionsPanel()
         key = "Resources",
         title = "Resources",
         addonName = "Commander_Resources",
-        description = "Tracks the five second rule for mana users: a timer bar counts down until spirit regeneration resumes, then shows your estimated mana gained per tick.",
+        description = "Tracks the five second rule for mana users: after you spend mana, a countdown shows when spirit regeneration resumes, then flips to your estimated mana per tick until you are full again.",
         event = COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED,
         slash = { "/cres" },
     })
 
-    panel:AddSection("Five Second Rule")
+    panel:AddSection("Five Second Rule", "Only shown on characters whose active power type is mana.")
     panel:AddCheckbox({
         label = "Show Five Second Rule Bar",
         tooltip = "Show the regeneration tracker bar. It only appears on characters whose active power type is mana.",

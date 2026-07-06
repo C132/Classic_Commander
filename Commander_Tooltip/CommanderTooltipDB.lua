@@ -40,7 +40,7 @@ local function CreateOptionsPanel()
         key = "Tooltip",
         title = "Tooltip",
         addonName = "Commander_Tooltip",
-        description = "Extends game tooltips with item levels and vendor prices, and controls where the default tooltip appears on screen.",
+        description = "Puts tooltips where you want them and tells you more: item level and vendor price on every item, with the tooltip following your cursor or pinned to a screen corner of your choosing.",
         event = COMMANDER_TOOLTIP_EVENTS.UPDATE,
         slash = { "/ctooltip" },
     })

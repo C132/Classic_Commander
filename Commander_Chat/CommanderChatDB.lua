@@ -87,7 +87,7 @@ local function CreateOptionsPanel()
         key = "Chat",
         title = "Chat",
         addonName = "Commander_Chat",
-        description = "Controls the visibility of the default chat frame and plays a configurable alert sound when you receive whispers or party chat.",
+        description = "Keeps chat on your terms: hide the chat frame entirely for a clean battlefield view, and add distinct alert sounds for whispers and party chat so nothing slips past you.",
         event = COMMANDER_CHAT_EVENTS.UPDATE,
         slash = { "/cchat", "/commanderchat" },
         slashHandlers = {
@@ -110,7 +110,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderChatDB.ShowChatButton = value end,
     })
 
-    panel:AddSection("Sound Alerts")
+    panel:AddSection("Sound Alerts", "Selecting a sound previews it; /cchat test whisper (or test party) prints exactly what plays.")
     panel:AddCheckbox({
         label = "Play Sound on Whisper",
         tooltip = "Play an alert sound whenever you receive a whisper.",
@@ -150,19 +150,6 @@ local function CreateOptionsPanel()
         set = function(value) CommanderChatDB.SoundChannel = value end,
         isEnabled = function() return CommanderChatDB.SoundPingWhisper or CommanderChatDB.SoundPingParty end,
     })
-    panel:AddButtonRow({
-        {
-            label = "Test Whisper Sound",
-            tooltip = "Preview the whisper alert on the selected sound channel.",
-            onClick = function() PlayTestSound("whisper", true) end,
-        },
-        {
-            label = "Test Party Sound",
-            tooltip = "Preview the party alert on the selected sound channel.",
-            onClick = function() PlayTestSound("party", true) end,
-        },
-    })
-
     panel:Finalize({ onDefaults = Reset })
 end
 

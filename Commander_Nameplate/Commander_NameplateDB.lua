@@ -34,12 +34,12 @@ local function CreateOptionsPanel()
         key = "Nameplate",
         title = "Nameplate",
         addonName = "Commander_Nameplate",
-        description = "A personal nameplate above your character with health, mana, and cast bars. It appears when you are in combat or below full resources, and hides itself when you are topped off.",
+        description = "A personal plate floating above your character with health, mana, and cast bars. It appears when something is happening — combat, casting, missing resources — and melts away when you are topped off.",
         event = COMMANDER_NAMEPLATE_EVENTS.UPDATE,
         slash = { "/cnp" },
     })
 
-    panel:AddSection("Display")
+    panel:AddSection("Display", "Percent text and the always-on mana bar are optional extras on top of the base plate.")
     panel:AddCheckbox({
         label = "Show Player Name",
         tooltip = "Show your character's name above the nameplate.",

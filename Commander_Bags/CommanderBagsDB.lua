@@ -63,7 +63,7 @@ local function CreateOptionsPanel()
         key = "Bags",
         title = "Bags",
         addonName = "Commander_Bags",
-        description = "Color-codes bag items by quality and type, makes bag windows freely draggable, and fades them out of the way while you travel.",
+        description = "Your quartermaster: bag items get color-coded borders so loot reads at a glance, bag windows drag freely and remember where you put them, and everything fades out of your way while you travel.",
         event = COMMANDER_BAGS_EVENTS.UPDATE,
         slash = { "/cb", "/cbags" },
         slashHandlers = {
@@ -76,7 +76,7 @@ local function CreateOptionsPanel()
         },
     })
 
-    panel:AddSection("Item Highlighting")
+    panel:AddSection("Item Highlighting", "Quest items glow yellow, consumables cyan, gray junk red, and gear keeps its quality color.")
     panel:AddCheckbox({
         label = "Color Code Item Borders",
         tooltip = "Draw a colored border around bag items: quality colors for gear, yellow for quest items, cyan for consumables, and red for gray junk.",
@@ -84,7 +84,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderBagsDB.ColorCodeItems = value end,
     })
 
-    panel:AddSection("Movement Fade")
+    panel:AddSection("Movement Fade", "Open bags turn translucent while you move and snap back to full opacity when you stop.")
     panel:AddCheckbox({
         label = "Fade Bags While Moving",
         tooltip = "Make open bag windows translucent while your character is moving, so they block less of the world.",
@@ -101,7 +101,7 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderBagsDB.FadeBagsWhileMoving end,
     })
 
-    panel:AddSection("Bag Positions")
+    panel:AddSection("Bag Positions", "Dragged bag windows are remembered per window; resetting returns the stock layout.")
     panel:AddButtonRow({
         {
             label = "Reset Bag Positions",

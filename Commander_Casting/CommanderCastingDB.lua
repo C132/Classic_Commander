@@ -52,12 +52,12 @@ local function CreateOptionsPanel()
         key = "Casting",
         title = "Casting",
         addonName = "Commander_Casting",
-        description = "Adds a fullscreen glow that builds up around the edge of the screen while you cast, so you can track cast progress without watching a cast bar.",
+        description = "Wraps the screen in a rising glow while you cast: the edges of the world brighten as the cast completes, so you can track progress without staring at a cast bar.",
         event = COMMANDER_CASTING_EVENTS.UPDATE,
         slash = { "/ccast" },
     })
 
-    panel:AddSection("Fullscreen Effect")
+    panel:AddSection("Fullscreen Effect", "The glow builds from nothing to full intensity across the length of the cast.")
     panel:AddCheckbox({
         label = "Show Fullscreen Casting Effect",
         tooltip = "Enable the glow effect while casting or channeling.",
@@ -81,7 +81,7 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderCastingDB.ShowFullscreenEffect end,
     })
 
-    panel:AddSection("Effect Texture")
+    panel:AddSection("Effect Texture", "Choose the glow's shape; the preview beside the menu shows the selected texture.")
     local dropdown = panel:AddDropdown({
         label = "Glow Texture",
         tooltip = "The texture used for the fullscreen glow. The preview to the right shows the selected texture.",

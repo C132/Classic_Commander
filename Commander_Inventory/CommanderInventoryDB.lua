@@ -41,7 +41,7 @@ local function CreateOptionsPanel()
         key = "Inventory",
         title = "Inventory",
         addonName = "Commander_Inventory",
-        description = "Collects every usable item you are carrying or wearing into one clickable grid, with live cooldowns and stack counts.",
+        description = "A quick bar that builds itself: every usable item you carry or wear — potions, trinkets, bombs, on-use gear — collected into one clickable grid with live cooldowns and stack counts.",
         event = COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY,
         slash = { "/ci" },
         slashHandlers = {
@@ -53,7 +53,7 @@ local function CreateOptionsPanel()
         },
     })
 
-    panel:AddSection("Item Grid")
+    panel:AddSection("Item Grid", "The grid rebuilds itself automatically as your inventory changes.")
     panel:AddCheckbox({
         label = "Show Item Grid",
         tooltip = "Show the usable-items grid. You can also toggle it with /ci.",

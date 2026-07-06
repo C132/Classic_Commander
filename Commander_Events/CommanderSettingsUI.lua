@@ -142,16 +142,24 @@ function PanelMethods.AddRow(panel, height, spacing)
     return row
 end
 
-function PanelMethods.AddSection(panel, text)
-    local row = panel:AddRow(24, 14)
+function PanelMethods.AddSection(panel, text, subtext)
+    local row = panel:AddRow(subtext and 40 or 24, 14)
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    label:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 4)
+    label:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -4)
     label:SetText(text)
     local line = row:CreateTexture(nil, "ARTWORK")
     line:SetColorTexture(1, 1, 1, 0.15)
     line:SetHeight(1)
-    line:SetPoint("BOTTOMLEFT", label, "BOTTOMRIGHT", 8, 2)
+    line:SetPoint("LEFT", label, "RIGHT", 8, 0)
     line:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    if subtext then
+        local note = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        note:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
+        note:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        note:SetJustifyH("LEFT")
+        note:SetTextColor(0.75, 0.75, 0.75)
+        note:SetText(subtext)
+    end
     return row
 end
 
@@ -190,21 +198,43 @@ end
 
 -- opts: label, tooltip, min, max, step, get, set, format, isEnabled
 function PanelMethods.AddSlider(panel, opts)
-    local row = panel:AddRow(50, 8)
+    local row = panel:AddRow(52, 8)
 
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     label:SetPoint("TOPLEFT", row, "TOPLEFT", 2, 0)
     label:SetText(opts.label)
 
-    local slider = CreateFrame("Slider", nil, row, "OptionsSliderTemplate")
+    -- Hand-rolled slider: the deprecated OptionsSliderTemplate draws its
+    -- track via NineSlice "SliderBar" atlas pieces, which do not render
+    -- reliably on this client. Blizzard's own sanctioned alternative (used
+    -- by its TBC credits screen) is a Slider inheriting BackdropTemplate
+    -- with the BACKDROP_SLIDER_8_8 track, so draw it that way ourselves.
+    local slider = CreateFrame("Slider", nil, row, "BackdropTemplate")
+    slider:SetOrientation("HORIZONTAL")
     slider:SetPoint("TOPLEFT", row, "TOPLEFT", 2, -18)
-    slider:SetWidth(SLIDER_WIDTH)
+    slider:SetSize(SLIDER_WIDTH, 17)
+    slider:SetHitRectInsets(0, 0, -10, -10)
+    slider:SetBackdrop(BACKDROP_SLIDER_8_8 or {
+        bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
+        edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
+        tile = true, tileEdge = true, tileSize = 8, edgeSize = 8,
+        insets = { left = 3, right = 3, top = 6, bottom = 6 },
+    })
+    slider:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+    local thumb = slider:GetThumbTexture()
+    if thumb then
+        thumb:SetSize(32, 32)
+    end
     slider:SetMinMaxValues(opts.min, opts.max)
     slider:SetValueStep(opts.step)
     slider:SetObeyStepOnDrag(true)
-    slider.Text:SetText("")
-    slider.Low:SetText(FormatValue(opts.format, opts.min))
-    slider.High:SetText(FormatValue(opts.format, opts.max))
+
+    local lowText = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    lowText:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 2, -1)
+    lowText:SetText(FormatValue(opts.format, opts.min))
+    local highText = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    highText:SetPoint("TOPRIGHT", slider, "BOTTOMRIGHT", -2, -1)
+    highText:SetText(FormatValue(opts.format, opts.max))
     AttachTooltip(slider, opts.label, opts.tooltip)
 
     local valueText = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -243,6 +273,8 @@ function PanelMethods.AddSlider(panel, opts)
         slider:SetAlpha(alpha)
         label:SetAlpha(alpha)
         valueText:SetAlpha(alpha)
+        lowText:SetAlpha(alpha)
+        highText:SetAlpha(alpha)
     end)
 
     return slider

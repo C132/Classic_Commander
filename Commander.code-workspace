@@ -13,10 +13,6 @@
             "path": "Commander_Bags"
         },
         {
-            "name": "Commander_Buffs",
-            "path": "Commander_Buffs"
-        },
-        {
             "name": "Commander_Casting",
             "path": "Commander_Casting"
         },
@@ -55,10 +51,6 @@
         {
             "name": "Commander_Tooltip",
             "path": "Commander_Tooltip"
-        },
-        {
-            "name": "Commander_UnitFrames",
-            "path": "Commander_UnitFrames"
         },
         {
             "name": "Commander_Who",
