@@ -5,17 +5,19 @@ local CommanderTooltip = {
 }
 
 function CommanderTooltip:OnGameTooltipSetItem(tooltip)
-    if not CommanderTooltipDB.ShowItemLevel then return end
+    -- Item level and vendor price are independent options; neither gates the other
+    if not CommanderTooltipDB.ShowItemLevel and not CommanderTooltipDB.ShowVendorPrice then return end
 
     local _, link = tooltip:GetItem()
     if not link then return end
 
-    local itemLevel = C_Item.GetDetailedItemLevelInfo(link)
-    if itemLevel then
-        tooltip:AddLine("Item Level: " .. itemLevel, 1, 1, 1)
+    if CommanderTooltipDB.ShowItemLevel then
+        local itemLevel = C_Item.GetDetailedItemLevelInfo(link)
+        if itemLevel then
+            tooltip:AddLine("Item Level: " .. itemLevel, 1, 1, 1)
+        end
     end
 
-    -- Add vendor price directly in OnGameTooltipSetItem
     if CommanderTooltipDB.ShowVendorPrice then
         local itemID = C_Item.GetItemInfoInstant(link)
         if itemID then

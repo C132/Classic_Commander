@@ -20,9 +20,9 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Nameplate | Personal nameplate with cast bar |
 | Commander_Resources | Five-second-rule mana tick tracker |
 | Commander_Tooltip | Tooltip anchoring, scale, item level and vendor price |
-| Commander_UnitFrames | Unit frame settings (experimental) |
+| Commander_UnitFrames | Player/target frame scale and status text |
 | Commander_Who | /who window enhancements and mass whisper |
-| MyClassicAddon | Legacy settings panel mirroring common toggles (optional) |
+| Commander_Suite | Suite dashboard on the root settings page: module directory, quick settings access (`/commander`) |
 
 ## Installation
 
@@ -36,6 +36,23 @@ Modules communicate through the global `Commander` namespace defined by Commande
 Commander.AddListener(eventKey, fn) -- register a callback (duplicate-safe)
 Commander.Notify(eventKey, ...)     -- fire a callback event (error-isolated)
 Commander.MainCategory              -- the root settings category
+Commander.GetModules()              -- registered modules (title, version, categoryID, slash)
 ```
 
-Settings panels register as canvas subcategories of `Commander.MainCategory` so every module appears under the single **Commander** group in the options UI.
+Settings panels are built with the shared `Commander.UI` framework (Commander_Events/CommanderSettingsUI.lua):
+
+```lua
+local panel = Commander.UI.NewPanel({
+    key = "Bags", title = "Bags", addonName = "Commander_Bags",
+    description = "...", event = COMMANDER_BAGS_EVENTS.UPDATE,
+    slash = { "/cb" }, slashHandlers = { reset = Reset },
+})
+panel:AddSection("Item Highlighting")
+panel:AddCheckbox({ label = ..., tooltip = ..., get = ..., set = ..., isEnabled = ... })
+panel:AddSlider({ label = ..., min = ..., max = ..., step = ..., format = ..., get = ..., set = ... })
+panel:AddDropdown({ label = ..., options = ..., get = ..., set = ... })
+panel:AddButtonRow({ { label = ..., onClick = ... } })
+panel:Finalize({ onDefaults = Reset })
+```
+
+Widgets read through `get` and write through `set`; after any write the panel fires the module's update event, and every panel re-syncs its widgets whenever that event fires or the panel is shown. `Finalize` registers the canvas subcategory under **Commander**, standard slash commands, and the module registry entry consumed by Commander_Suite's dashboard.

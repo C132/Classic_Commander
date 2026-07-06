@@ -7,3 +7,4 @@
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 
 CommanderEvents.lua
+CommanderSettingsUI.lua

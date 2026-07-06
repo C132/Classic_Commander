@@ -352,11 +352,12 @@ end
 
 -- Add function to fade bags
 local function FadeBags(fade)
+    local fadedAlpha = CommanderBagsDB.FadeOpacity or 0.5
     for i = 1, NUM_CONTAINER_FRAMES do
         local bagFrame = _G["ContainerFrame"..i]
         if bagFrame and bagFrame:IsShown() then
             if fade then
-                bagFrame:SetAlpha(0.5)
+                bagFrame:SetAlpha(fadedAlpha)
             else
                 bagFrame:SetAlpha(1)
             end

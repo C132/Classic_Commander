@@ -1,9 +1,5 @@
 CommanderMinimapDB = CommanderMinimapDB or {}
 
-local frame = CreateFrame("FRAME");
-frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_LOGIN")
-
 COMMANDER_MINIMAP_EVENTS = {
     COMMANDER_MINIMAP = "COMMANDER_MINIMAP",
 }
@@ -11,16 +7,17 @@ COMMANDER_MINIMAP_EVENTS = {
 local defaultSettings = {
     ShowMinimapButton = true,
     XPDisplayMode = "PERCENTAGE",
+    MinimapScale = 1.37,
 }
 
 local XP_DISPLAY_MODES = {
-    {text = "Percentage", value = "PERCENTAGE"},
+    {text = "XP Percentage", value = "PERCENTAGE"},
     {text = "Kills to Level", value = "KILLS_TO_LEVEL"},
 }
 
-local showMinimapButtonCheckbox
-local xpDisplayModeDropdown
-local optionsCategoryID
+local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_LOGIN")
 
 -- Defaults are applied in ADDON_LOADED: SavedVariables replace the global
 -- after this file runs, so applying them at file scope would be overwritten
@@ -32,88 +29,55 @@ local function ApplyDefaults()
     end
 end
 
-local function GetXPDisplayModeText(mode)
-    for _, entry in ipairs(XP_DISPLAY_MODES) do
-        if entry.value == mode then
-            return entry.text
-        end
-    end
-    return XP_DISPLAY_MODES[1].text
-end
-
 local function Reset()
     for key, value in pairs(defaultSettings) do
         CommanderMinimapDB[key] = value
     end
     Commander.Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP)
-end
-
--- Re-sync the panel widgets from the DB (covers Reset and writes from
--- other addons that mirror these settings)
-local function OnUpdate()
-    if showMinimapButtonCheckbox then
-        showMinimapButtonCheckbox:SetChecked(CommanderMinimapDB.ShowMinimapButton)
-    end
-    if xpDisplayModeDropdown then
-        UIDropDownMenu_SetText(xpDisplayModeDropdown, GetXPDisplayModeText(CommanderMinimapDB.XPDisplayMode))
-    end
+    print("Commander Minimap: settings restored to defaults")
 end
 
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Minimap"
+    local panel = Commander.UI.NewPanel({
+        key = "Minimap",
+        title = "Minimap",
+        addonName = "Commander_Minimap",
+        description = "Reshapes the minimap into a square, movable RTS-style map with a repositioned clock, mouse-wheel zoom, and an information button that tracks XP progress.",
+        event = COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP,
+        slash = { "/cmap" },
+        slashHandlers = {
+            reset = Reset,
+        },
+    })
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Minimap Settings")
+    panel:AddSection("Minimap")
+    panel:AddSlider({
+        label = "Minimap Scale",
+        tooltip = "Overall size of the minimap.",
+        min = 0.8, max = 2.0, step = 0.01,
+        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        get = function() return CommanderMinimapDB.MinimapScale end,
+        set = function(value) CommanderMinimapDB.MinimapScale = value end,
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Minimap options below.")
+    panel:AddSection("Information Button")
+    panel:AddCheckbox({
+        label = "Show Information Button",
+        tooltip = "Show the button beside the minimap: left-click opens game windows, right-click shows character stats, middle-click lists professions.",
+        get = function() return CommanderMinimapDB.ShowMinimapButton end,
+        set = function(value) CommanderMinimapDB.ShowMinimapButton = value end,
+    })
+    panel:AddDropdown({
+        label = "Button Text",
+        tooltip = "What the information button displays: your XP progress as a percentage, or an estimate of how many kills you need to level based on your last kill.",
+        options = XP_DISPLAY_MODES,
+        width = 150,
+        get = function() return CommanderMinimapDB.XPDisplayMode end,
+        set = function(value) CommanderMinimapDB.XPDisplayMode = value end,
+        isEnabled = function() return CommanderMinimapDB.ShowMinimapButton end,
+    })
 
-    showMinimapButtonCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    showMinimapButtonCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    showMinimapButtonCheckbox.Text:SetText("Show Minimap Button")
-    showMinimapButtonCheckbox:SetChecked(CommanderMinimapDB.ShowMinimapButton)
-    showMinimapButtonCheckbox:SetScript("OnClick", function(self)
-        CommanderMinimapDB.ShowMinimapButton = self:GetChecked()
-        Commander.Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP)
-    end)
-
-    local xpDisplayModeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    xpDisplayModeLabel:SetPoint("TOPLEFT", showMinimapButtonCheckbox, "BOTTOMLEFT", 0, -16)
-    xpDisplayModeLabel:SetText("XP Display Mode")
-
-    xpDisplayModeDropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
-    xpDisplayModeDropdown:SetPoint("TOPLEFT", xpDisplayModeLabel, "BOTTOMLEFT", -15, -8)
-    UIDropDownMenu_SetWidth(xpDisplayModeDropdown, 120)
-    UIDropDownMenu_SetText(xpDisplayModeDropdown, GetXPDisplayModeText(CommanderMinimapDB.XPDisplayMode))
-
-    local function XPDisplayModeDropdown_Initialize(self, level)
-        local info = UIDropDownMenu_CreateInfo()
-        info.func = function(self)
-            CommanderMinimapDB.XPDisplayMode = self.value
-            UIDropDownMenu_SetText(xpDisplayModeDropdown, GetXPDisplayModeText(self.value))
-            Commander.Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP)
-        end
-
-        for _, entry in ipairs(XP_DISPLAY_MODES) do
-            info.text = entry.text
-            info.value = entry.value
-            info.checked = (CommanderMinimapDB.XPDisplayMode == entry.value)
-            UIDropDownMenu_AddButton(info)
-        end
-    end
-
-    UIDropDownMenu_Initialize(xpDisplayModeDropdown, XPDisplayModeDropdown_Initialize)
-
-    local resetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetButton:SetPoint("TOPLEFT", xpDisplayModeDropdown, "BOTTOMLEFT", 15, -16)
-    resetButton:SetSize(100, 22)
-    resetButton:SetText("Reset")
-    resetButton:SetScript("OnClick", function() Reset() end)
-
-    return panel
+    panel:Finalize({ onDefaults = Reset })
 end
 
 local function OnAwake()
@@ -122,10 +86,7 @@ local function OnAwake()
     CommanderMinimapDB.killsToLevel = CommanderMinimapDB.killsToLevel or 0
     CommanderMinimapDB.lastXPSource = CommanderMinimapDB.lastXPSource or ""
 
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Minimap")
-    optionsCategoryID = category:GetID()
-    Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, OnUpdate)
+    CreateOptionsPanel()
 end
 
 local function OnEvent(self, event, ...)

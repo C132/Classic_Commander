@@ -80,7 +80,9 @@ local function OnUpdate(self, elapsed)
             manaBar:SetValue(5)
             manaText:SetText("Ready")
             manaBar:SetStatusBarColor(0.2, 0.7, 1)
-            PlaySound(readySound, "Master")
+            if not CommanderResourceDB or CommanderResourceDB.PlayReadySound ~= false then
+                PlaySound(readySound, "Master")
+            end
             wasReady = true
         end
     else
@@ -128,9 +130,12 @@ fiveSecondRule:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- Hidden until PLAYER_ENTERING_WORLD applies the saved setting and mana-user gate
 fiveSecondRule:Hide()
 
-SLASH_RESETFSR1 = "/resetfsr"
-SlashCmdList["RESETFSR"] = function()
+-- Shared with the options panel's "Reset Bar Position" button
+function CommanderResources_ResetBarPosition()
     fiveSecondRule:ClearAllPoints()
     fiveSecondRule:SetPoint("CENTER")
-    print("Five Second Rule frame position has been reset.")
+    print("Commander Resources: bar position reset")
 end
+
+SLASH_RESETFSR1 = "/resetfsr"
+SlashCmdList["RESETFSR"] = CommanderResources_ResetBarPosition

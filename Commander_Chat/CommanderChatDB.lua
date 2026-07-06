@@ -1,15 +1,5 @@
 CommanderChatDB = _G.CommanderChatDB or {}
 
-local showChatWindowCheckbox
-local showChatButtonCheckbox
-local soundPingWhisperCheckbox
-local soundPingPartyCheckbox
-local whisperSoundDropdown
-local partySoundDropdown
-local soundChannelDropdown
-local testWhisperButton
-local testPartyButton
-
 COMMANDER_CHAT_EVENTS = {
     UPDATE = "COMMANDER_CHAT_UPDATE"
 }
@@ -24,24 +14,26 @@ local DefaultSettings = {
     SoundChannel = "Master",
 }
 
-for key, value in pairs(DefaultSettings) do
-    if CommanderChatDB[key] == nil then
-        CommanderChatDB[key] = value
+local function ApplyDefaults()
+    for key, value in pairs(DefaultSettings) do
+        if CommanderChatDB[key] == nil then
+            CommanderChatDB[key] = value
+        end
     end
 end
+
+ApplyDefaults()
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_LOGOUT")
-local loaded = false
 
 local function Reset()
-    print("Resetting Commander Chat")
     for key, value in pairs(DefaultSettings) do
         CommanderChatDB[key] = value
     end
     Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
+    print("Commander Chat: settings restored to defaults")
 end
 
 -- Available sounds for selection (keys verified against the 2.5.5 client's SOUNDKIT table)
@@ -72,272 +64,119 @@ local AvailableChannels = {
 }
 
 local function PlayTestSound(soundType)
-    local soundKit, channel
-    
+    local soundName
     if soundType == "whisper" then
-        soundKit = SOUNDKIT[CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB"]
-        channel = CommanderChatDB.SoundChannel or "Master"
-    elseif soundType == "party" then
-        soundKit = SOUNDKIT[CommanderChatDB.PartySound or "IG_CHARACTER_INFO_TAB"]
-        channel = CommanderChatDB.SoundChannel or "Master"
+        soundName = CommanderChatDB.WhisperSound
+    else
+        soundName = CommanderChatDB.PartySound
     end
-    
-    if soundKit and channel then
+
+    local soundKit = SOUNDKIT[soundName or "IG_CHARACTER_INFO_TAB"]
+    local channel = CommanderChatDB.SoundChannel or "Master"
+    if soundKit then
         PlaySound(soundKit, channel)
     end
 end
 
-local function InitializeDropdown(dropdown, items, currentValue, callback, soundType)
-    UIDropDownMenu_Initialize(dropdown, function(self, level)
-        for _, item in ipairs(items) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = item.text
-            info.value = item.value
-            info.func = function()
-                UIDropDownMenu_SetSelectedValue(dropdown, item.value)
-                UIDropDownMenu_SetText(dropdown, item.text)
-                callback(item.value)
-                -- Play test sound when selection changes
-                if soundType then
-                    C_Timer.After(0.1, function()
-                        PlayTestSound(soundType)
-                    end)
-                end
-            end
-            if item.value == currentValue then
-                info.checked = true
-            end
-            UIDropDownMenu_AddButton(info)
-        end
-    end)
-    UIDropDownMenu_SetSelectedValue(dropdown, currentValue)
-end
-
-local function InitializeSlashCommands(categoryID)
-    SLASH_COMMANDERCHAT1 = "/commanderchat"
-    SLASH_COMMANDERCHAT2 = "/cchat"
-    SlashCmdList["COMMANDERCHAT"] = function(msg)
-        msg = msg:lower()
-        if msg == "" then
-            Settings.OpenToCategory(categoryID)
-        elseif msg == "reset" then
-            Reset()
-            print("Commander Chat Reset")
-        elseif msg == "test whisper" then
-            if CommanderChatDB.SoundPingWhisper then
-                local soundKit = SOUNDKIT[CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB"]
-                local channel = CommanderChatDB.SoundChannel or "Master"
-                print("Commander Chat: Testing whisper sound: " .. (CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB") .. " on channel: " .. channel)
-                PlaySound(soundKit, channel)
-            else
-                print("Commander Chat: Whisper sound pings are disabled. Enable them in settings first.")
-            end
-        elseif msg == "test party" then
-            if CommanderChatDB.SoundPingParty then
-                local soundKit = SOUNDKIT[CommanderChatDB.PartySound or "IG_CHARACTER_INFO_TAB"]
-                local channel = CommanderChatDB.SoundChannel or "Master"
-                print("Commander Chat: Testing party sound: " .. (CommanderChatDB.PartySound or "IG_CHARACTER_INFO_TAB") .. " on channel: " .. channel)
-                PlaySound(soundKit, channel)
-            else
-                print("Commander Chat: Party sound pings are disabled. Enable them in settings first.")
-            end
-        else
-            print("Usage: /commanderchat or /cchat [reset|test whisper|test party]")
-        end
-    end
-end
-
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Chat"
+    local panel = Commander.UI.NewPanel({
+        key = "Chat",
+        title = "Chat",
+        addonName = "Commander_Chat",
+        description = "Controls the visibility of the default chat frame and plays a configurable alert sound when you receive whispers or party chat.",
+        event = COMMANDER_CHAT_EVENTS.UPDATE,
+        slash = { "/cchat", "/commanderchat" },
+        slashHandlers = {
+            reset = Reset,
+            ["test whisper"] = function() PlayTestSound("whisper") end,
+            ["test party"] = function() PlayTestSound("party") end,
+        },
+    })
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Chat Settings")
+    panel:AddSection("Chat Frame")
+    panel:AddCheckbox({
+        label = "Show Chat Window",
+        tooltip = "Show the main chat window and its tabs. Uncheck for a fully clean screen.",
+        get = function() return CommanderChatDB.ShowChatWindow end,
+        set = function(value) CommanderChatDB.ShowChatWindow = value end,
+    })
+    panel:AddCheckbox({
+        label = "Show Chat Buttons",
+        tooltip = "Show the chat menu, channel, and social buttons next to the chat window.",
+        get = function() return CommanderChatDB.ShowChatButton end,
+        set = function(value) CommanderChatDB.ShowChatButton = value end,
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Chat options below.")
+    panel:AddSection("Sound Alerts")
+    panel:AddCheckbox({
+        label = "Play Sound on Whisper",
+        tooltip = "Play an alert sound whenever you receive a whisper.",
+        get = function() return CommanderChatDB.SoundPingWhisper end,
+        set = function(value) CommanderChatDB.SoundPingWhisper = value end,
+    })
+    panel:AddDropdown({
+        label = "Whisper Sound",
+        tooltip = "The sound played when a whisper arrives. Selecting a sound previews it.",
+        options = AvailableSounds,
+        get = function() return CommanderChatDB.WhisperSound end,
+        set = function(value) CommanderChatDB.WhisperSound = value end,
+        isEnabled = function() return CommanderChatDB.SoundPingWhisper end,
+        onSelect = function() C_Timer.After(0.1, function() PlayTestSound("whisper") end) end,
+    })
+    panel:AddCheckbox({
+        label = "Play Sound on Party Chat",
+        tooltip = "Play an alert sound whenever a party message arrives.",
+        get = function() return CommanderChatDB.SoundPingParty end,
+        set = function(value) CommanderChatDB.SoundPingParty = value end,
+    })
+    panel:AddDropdown({
+        label = "Party Sound",
+        tooltip = "The sound played when a party message arrives. Selecting a sound previews it.",
+        options = AvailableSounds,
+        get = function() return CommanderChatDB.PartySound end,
+        set = function(value) CommanderChatDB.PartySound = value end,
+        isEnabled = function() return CommanderChatDB.SoundPingParty end,
+        onSelect = function() C_Timer.After(0.1, function() PlayTestSound("party") end) end,
+    })
+    panel:AddDropdown({
+        label = "Sound Channel",
+        tooltip = "Which audio channel alert sounds play through. Master ignores the SFX volume slider, so alerts stay audible even with game sounds muted.",
+        options = AvailableChannels,
+        width = 120,
+        get = function() return CommanderChatDB.SoundChannel end,
+        set = function(value) CommanderChatDB.SoundChannel = value end,
+        isEnabled = function() return CommanderChatDB.SoundPingWhisper or CommanderChatDB.SoundPingParty end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Test Whisper Sound",
+            tooltip = "Preview the whisper alert on the selected sound channel.",
+            onClick = function() PlayTestSound("whisper") end,
+        },
+        {
+            label = "Test Party Sound",
+            tooltip = "Preview the party alert on the selected sound channel.",
+            onClick = function() PlayTestSound("party") end,
+        },
+    })
 
-    showChatWindowCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    showChatWindowCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    showChatWindowCheckbox.Text:SetText("Show Chat Window")
-    showChatWindowCheckbox:SetChecked(CommanderChatDB.ShowChatWindow)
-    showChatWindowCheckbox:SetScript("OnClick", function(self)
-        CommanderChatDB.ShowChatWindow = self:GetChecked()
-        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-    end)
-
-    showChatButtonCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate") 
-    showChatButtonCheckbox:SetPoint("TOPLEFT", showChatWindowCheckbox, "BOTTOMLEFT", 0, -8)
-    showChatButtonCheckbox.Text:SetText("Show Chat Button")
-    showChatButtonCheckbox:SetChecked(CommanderChatDB.ShowChatButton)
-    showChatButtonCheckbox:SetScript("OnClick", function(self)
-        CommanderChatDB.ShowChatButton = self:GetChecked()
-        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-    end)
-
-    soundPingWhisperCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    soundPingWhisperCheckbox:SetPoint("TOPLEFT", showChatButtonCheckbox, "BOTTOMLEFT", 0, -8)
-    soundPingWhisperCheckbox.Text:SetText("Sound Ping for Whispers")
-    soundPingWhisperCheckbox:SetChecked(CommanderChatDB.SoundPingWhisper)
-    soundPingWhisperCheckbox:SetScript("OnClick", function(self)
-        CommanderChatDB.SoundPingWhisper = self:GetChecked()
-        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-    end)
-
-    soundPingPartyCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    soundPingPartyCheckbox:SetPoint("TOPLEFT", soundPingWhisperCheckbox, "BOTTOMLEFT", 0, -8)
-    soundPingPartyCheckbox.Text:SetText("Sound Ping for Party Messages")
-    soundPingPartyCheckbox:SetChecked(CommanderChatDB.SoundPingParty)
-    soundPingPartyCheckbox:SetScript("OnClick", function(self)
-        CommanderChatDB.SoundPingParty = self:GetChecked()
-        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-    end)
-
-    -- Whisper Sound Dropdown
-    local whisperSoundLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    whisperSoundLabel:SetPoint("TOPLEFT", soundPingPartyCheckbox, "BOTTOMLEFT", 0, -16)
-    whisperSoundLabel:SetText("Whisper Sound")
-
-    whisperSoundDropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
-    whisperSoundDropdown:SetPoint("TOPLEFT", whisperSoundLabel, "BOTTOMLEFT", -16, -8)
-    UIDropDownMenu_SetWidth(whisperSoundDropdown, 200)
-    UIDropDownMenu_SetText(whisperSoundDropdown, CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB")
-
-    -- Party Sound Dropdown
-    local partySoundLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    partySoundLabel:SetPoint("TOPLEFT", whisperSoundDropdown, "BOTTOMLEFT", 16, -16)
-    partySoundLabel:SetText("Party Sound")
-
-    partySoundDropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
-    partySoundDropdown:SetPoint("TOPLEFT", partySoundLabel, "BOTTOMLEFT", -16, -8)
-    UIDropDownMenu_SetWidth(partySoundDropdown, 200)
-    UIDropDownMenu_SetText(partySoundDropdown, CommanderChatDB.PartySound or "IG_CHARACTER_INFO_TAB")
-
-    -- Sound Channel Dropdown
-    local soundChannelLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    soundChannelLabel:SetPoint("TOPLEFT", partySoundDropdown, "BOTTOMLEFT", 16, -16)
-    soundChannelLabel:SetText("Sound Channel")
-
-    soundChannelDropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
-    soundChannelDropdown:SetPoint("TOPLEFT", soundChannelLabel, "BOTTOMLEFT", -16, -8)
-    UIDropDownMenu_SetWidth(soundChannelDropdown, 200)
-    UIDropDownMenu_SetText(soundChannelDropdown, CommanderChatDB.SoundChannel or "Master")
-
-    -- Test Buttons
-    local testButtonsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    testButtonsLabel:SetPoint("TOPLEFT", soundChannelDropdown, "BOTTOMLEFT", 16, -16)
-    testButtonsLabel:SetText("Test Sounds")
-
-    testWhisperButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    testWhisperButton:SetPoint("TOPLEFT", testButtonsLabel, "BOTTOMLEFT", 0, -8)
-    testWhisperButton:SetSize(120, 22)
-    testWhisperButton:SetText("Test Whisper")
-    testWhisperButton:SetScript("OnClick", function()
-        PlayTestSound("whisper")
-    end)
-
-    testPartyButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    testPartyButton:SetPoint("LEFT", testWhisperButton, "RIGHT", 10, 0)
-    testPartyButton:SetSize(120, 22)
-    testPartyButton:SetText("Test Party")
-    testPartyButton:SetScript("OnClick", function()
-        PlayTestSound("party")
-    end)
-
-    -- Initialize dropdowns
-    InitializeDropdown(whisperSoundDropdown, AvailableSounds, CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB", function(value)
-        CommanderChatDB.WhisperSound = value
-        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-    end, "whisper")
-    
-    InitializeDropdown(partySoundDropdown, AvailableSounds, CommanderChatDB.PartySound or "IG_CHARACTER_INFO_TAB", function(value)
-        CommanderChatDB.PartySound = value
-        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-    end, "party")
-    
-    InitializeDropdown(soundChannelDropdown, AvailableChannels, CommanderChatDB.SoundChannel or "Master", function(value)
-        CommanderChatDB.SoundChannel = value
-        Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
-    end)
-
-    return panel
-end
-
-local function OnUpdate()
-    if showChatWindowCheckbox then
-        showChatWindowCheckbox:SetChecked(CommanderChatDB.ShowChatWindow)
-    end
-    if showChatButtonCheckbox then
-        showChatButtonCheckbox:SetChecked(CommanderChatDB.ShowChatButton)
-    end
-    if soundPingWhisperCheckbox then
-        soundPingWhisperCheckbox:SetChecked(CommanderChatDB.SoundPingWhisper)
-    end
-    if soundPingPartyCheckbox then
-        soundPingPartyCheckbox:SetChecked(CommanderChatDB.SoundPingParty)
-    end
-    if whisperSoundDropdown then
-        local whisperSound = CommanderChatDB.WhisperSound or "IG_CHARACTER_INFO_TAB"
-        UIDropDownMenu_SetSelectedValue(whisperSoundDropdown, whisperSound)
-        for _, sound in ipairs(AvailableSounds) do
-            if sound.value == whisperSound then
-                UIDropDownMenu_SetText(whisperSoundDropdown, sound.text)
-                break
-            end
-        end
-    end
-    if partySoundDropdown then
-        local partySound = CommanderChatDB.PartySound or "IG_CHARACTER_INFO_TAB"
-        UIDropDownMenu_SetSelectedValue(partySoundDropdown, partySound)
-        for _, sound in ipairs(AvailableSounds) do
-            if sound.value == partySound then
-                UIDropDownMenu_SetText(partySoundDropdown, sound.text)
-                break
-            end
-        end
-    end
-    if soundChannelDropdown then
-        local soundChannel = CommanderChatDB.SoundChannel or "Master"
-        UIDropDownMenu_SetSelectedValue(soundChannelDropdown, soundChannel)
-        for _, channel in ipairs(AvailableChannels) do
-            if channel.value == soundChannel then
-                UIDropDownMenu_SetText(soundChannelDropdown, channel.text)
-                break
-            end
-        end
-    end
+    panel:Finalize({ onDefaults = Reset })
 end
 
 local function OnAwake()
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Chat")
-    local categoryID = category:GetID()
-    InitializeSlashCommands(categoryID)
-    Commander.AddListener(COMMANDER_CHAT_EVENTS.UPDATE, OnUpdate)
+    ApplyDefaults()
+    CreateOptionsPanel()
 end
-
-local function OnDestroy() end
 
 local function OnEvent(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == "Commander_Chat" then
             -- Saved variables replace the global after this file runs, so re-apply defaults for any missing keys
-            for key, value in pairs(DefaultSettings) do
-                if CommanderChatDB[key] == nil then
-                    CommanderChatDB[key] = value
-                end
-            end
+            ApplyDefaults()
             self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then
         OnAwake()
-        loaded = true
-    elseif event == "PLAYER_LOGOUT" then
-        OnDestroy()
-    elseif loaded then
-        OnUpdate()
     end
 end
 

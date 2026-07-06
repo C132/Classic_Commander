@@ -29,133 +29,89 @@ local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 
-local widgets = {}
-
 local function Reset()
-    print("Resetting Commander Nameplate")
     for key, value in pairs(DefaultSettings) do
         CommanderNameplateDB[key] = CopyValue(value)
     end
     Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
+    print("Commander Nameplate: settings restored to defaults")
 end
 
-local function InitializeSlashCommands(categoryID)
-    SLASH_CNP1 = "/cnp"
-    SlashCmdList["CNP"] = function(msg)
-        msg = msg:lower()
-        if msg == "" then
-            Settings.OpenToCategory(categoryID)
-        elseif msg == "reset" then
-            Reset()
-            print("Commander Nameplate Reset")
-        else
-            print("Usage: /cnp [reset]")
-        end
-    end
-end
-
-local function CreateCheckbox(panel, name, label, description)
-    local check = CreateFrame("CheckButton", "CommanderNameplate"..name.."CheckButton", panel, "InterfaceOptionsCheckButtonTemplate")
-    check:SetScript("OnClick", function(self)
-        CommanderNameplateDB[name] = self:GetChecked()
-        Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
-    end)
-    check.label = _G[check:GetName().."Text"]
-    check.label:SetText(label)
-    check.tooltipText = label
-    check.tooltipRequirement = description
-    return check
-end
-
-local function CreateSlider(panel, name, label, minVal, maxVal, valueStep)
-    local slider = CreateFrame("Slider", "CommanderNameplate"..name.."Slider", panel, "OptionsSliderTemplate")
-    local editbox = CreateFrame("EditBox", "$parentEditBox", slider, "InputBoxTemplate")
-    slider:SetMinMaxValues(minVal, maxVal)
-    slider:SetValueStep(valueStep)
-    slider:SetObeyStepOnDrag(true)
-    _G[slider:GetName().."Text"]:SetText(label)
-    _G[slider:GetName().."Low"]:SetText(minVal)
-    _G[slider:GetName().."High"]:SetText(maxVal)
-    editbox:SetSize(50,30)
-    editbox:ClearAllPoints()
-    editbox:SetPoint("TOP", slider, "BOTTOM", 0, -5)
-    editbox:SetFontObject(GameFontHighlightSmall)
-    editbox:SetJustifyH("CENTER")
-    editbox:SetAutoFocus(false)
-    slider:SetScript("OnValueChanged", function(self, value)
-        self.editbox:SetText(string.format("%.2f", value))
-        if CommanderNameplateDB[name] ~= value then
-            CommanderNameplateDB[name] = value
-            Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
-        end
-    end)
-    editbox:SetScript("OnEnterPressed", function(self)
-        local val = tonumber(self:GetText())
-        if val then
-            self:GetParent():SetValue(val)
-            self:ClearFocus()
-        end
-    end)
-    slider.editbox = editbox
-    return slider
+local function ResetPosition()
+    CommanderNameplateDB.position = CopyValue(DefaultSettings.position)
+    Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
 end
 
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Nameplate"
+    local panel = Commander.UI.NewPanel({
+        key = "Nameplate",
+        title = "Nameplate",
+        addonName = "Commander_Nameplate",
+        description = "A personal nameplate above your character with health, mana, and cast bars. It appears when you are in combat or below full resources, and hides itself when you are topped off.",
+        event = COMMANDER_NAMEPLATE_EVENTS.UPDATE,
+        slash = { "/cnp" },
+        slashHandlers = {
+            reset = Reset,
+        },
+    })
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Nameplate Settings")
+    panel:AddSection("Display")
+    panel:AddCheckbox({
+        label = "Show Player Name",
+        tooltip = "Show your character's name above the nameplate.",
+        get = function() return CommanderNameplateDB.showPlayerName end,
+        set = function(value) CommanderNameplateDB.showPlayerName = value end,
+    })
+    panel:AddCheckbox({
+        label = "Show Health Percentage",
+        tooltip = "Display your health as a percentage on the health bar.",
+        get = function() return CommanderNameplateDB.showHealthPercent end,
+        set = function(value) CommanderNameplateDB.showHealthPercent = value end,
+    })
+    panel:AddCheckbox({
+        label = "Show Mana Percentage",
+        tooltip = "Display your mana as a percentage on the mana bar.",
+        get = function() return CommanderNameplateDB.showManaPercent end,
+        set = function(value) CommanderNameplateDB.showManaPercent = value end,
+    })
+    panel:AddCheckbox({
+        label = "Always Show Mana Bar",
+        tooltip = "Keep the mana bar visible out of combat instead of showing it only while fighting or casting.",
+        get = function() return CommanderNameplateDB.alwaysShowMana end,
+        set = function(value) CommanderNameplateDB.alwaysShowMana = value end,
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Nameplate options below.")
+    panel:AddSection("Movement Fade")
+    panel:AddCheckbox({
+        label = "Fade While Moving",
+        tooltip = "Make the nameplate translucent while your character is moving.",
+        get = function() return CommanderNameplateDB.fadeWhileMoving end,
+        set = function(value) CommanderNameplateDB.fadeWhileMoving = value end,
+    })
+    panel:AddSlider({
+        label = "Faded Opacity",
+        tooltip = "How visible the nameplate remains while you are moving. Lower values make it more transparent.",
+        min = 0, max = 1, step = 0.05,
+        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        get = function() return CommanderNameplateDB.fadeIntensity end,
+        set = function(value) CommanderNameplateDB.fadeIntensity = value end,
+        isEnabled = function() return CommanderNameplateDB.fadeWhileMoving end,
+    })
 
-    widgets.showPlayerName = CreateCheckbox(panel, "showPlayerName", "Show Player Name", "Toggle visibility of player name on the nameplate")
-    widgets.showPlayerName:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    widgets.fadeWhileMoving = CreateCheckbox(panel, "fadeWhileMoving", "Fade While Moving", "Fade out the nameplate when the player is moving")
-    widgets.fadeWhileMoving:SetPoint("TOPLEFT", widgets.showPlayerName, "BOTTOMLEFT", 0, -24)
-    widgets.fadeIntensity = CreateSlider(panel, "fadeIntensity", "Fade Intensity", 0, 1, 0.01)
-    widgets.fadeIntensity:SetPoint("TOPLEFT", widgets.fadeWhileMoving, "BOTTOMLEFT", 0, -40)
-    widgets.fadeIntensity:SetWidth(200)
-    widgets.showHealthPercent = CreateCheckbox(panel, "showHealthPercent", "Show Health Percentage", "Display health percentage on the health bar")
-    widgets.showHealthPercent:SetPoint("TOPLEFT", widgets.fadeIntensity, "BOTTOMLEFT", 0, -32)
-    widgets.showManaPercent = CreateCheckbox(panel, "showManaPercent", "Show Mana Percentage", "Display mana percentage on the mana bar")
-    widgets.showManaPercent:SetPoint("TOPLEFT", widgets.showHealthPercent, "BOTTOMLEFT", 0, -24)
-    widgets.alwaysShowMana = CreateCheckbox(panel, "alwaysShowMana", "Always Show Mana Bar", "Always display the mana bar, even when out of combat")
-    widgets.alwaysShowMana:SetPoint("TOPLEFT", widgets.showManaPercent, "BOTTOMLEFT", 0, -24)
+    panel:AddSection("Position")
+    panel:AddButtonRow({
+        {
+            label = "Reset Position",
+            tooltip = "Move the nameplate back to its default spot above your character.",
+            onClick = ResetPosition,
+        },
+    })
 
-    local resetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetButton:SetSize(100, 22)
-    resetButton:SetPoint("TOPLEFT", widgets.alwaysShowMana, "BOTTOMLEFT", 0, -24)
-    resetButton:SetText("Reset")
-    resetButton:SetScript("OnClick", function()
-        Reset()
-        print("Commander Nameplate Reset")
-    end)
-
-    return panel
-end
-
-local function RefreshWidgets()
-    if not widgets.showPlayerName then return end
-    widgets.showPlayerName:SetChecked(CommanderNameplateDB.showPlayerName)
-    widgets.fadeWhileMoving:SetChecked(CommanderNameplateDB.fadeWhileMoving)
-    widgets.fadeIntensity:SetValue(CommanderNameplateDB.fadeIntensity)
-    widgets.fadeIntensity.editbox:SetText(string.format("%.2f", CommanderNameplateDB.fadeIntensity))
-    widgets.showHealthPercent:SetChecked(CommanderNameplateDB.showHealthPercent)
-    widgets.showManaPercent:SetChecked(CommanderNameplateDB.showManaPercent)
-    widgets.alwaysShowMana:SetChecked(CommanderNameplateDB.alwaysShowMana)
+    panel:Finalize({ onDefaults = Reset })
 end
 
 local function OnAwake()
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Nameplate")
-    local categoryID = category:GetID()
-    InitializeSlashCommands(categoryID)
-    Commander.AddListener(COMMANDER_NAMEPLATE_EVENTS.UPDATE, RefreshWidgets)
-    RefreshWidgets()
+    CreateOptionsPanel()
 end
 
 local function OnEvent(self, event, addon)

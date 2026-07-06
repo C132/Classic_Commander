@@ -1,7 +1,5 @@
 CommanderBuffsDB = _G.CommanderBuffsDB or {}
 
-local lockFramesCheckbox, showInCombatCheckbox, scaleSlider, buffsPerRowSlider
-
 COMMANDER_BUFFS_EVENTS = {
     UPDATE = "COMMANDER_BUFFS_UPDATE"
 }
@@ -30,148 +28,83 @@ end
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_LOGOUT")
-local loaded = false
 
 local function Reset()
-    print("Resetting Commander Buffs")
     for key, value in pairs(DefaultSettings) do
         CommanderBuffsDB[key] = value
     end
     Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    print("Commander Buffs: settings restored to defaults")
 end
 
-local function InitializeSlashCommands(categoryID)
-    SLASH_CBUFF1 = "/cbuff"
-    SlashCmdList["CBUFF"] = function(msg)
-        msg = msg:lower()
-        if msg == "" then
-            Settings.OpenToCategory(categoryID)
-        elseif msg == "reset" then
-            Reset()
-            print("Commander Buffs Reset")
-        else
-            print("Usage: /cbuff [reset]")
-        end
-    end
+local function ResetPosition()
+    CommanderBuffsDB.BuffFramePoint = DefaultSettings.BuffFramePoint
+    CommanderBuffsDB.BuffFrameX = DefaultSettings.BuffFrameX
+    CommanderBuffsDB.BuffFrameY = DefaultSettings.BuffFrameY
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 end
 
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Buffs"
+    local panel = Commander.UI.NewPanel({
+        key = "Buffs",
+        title = "Buffs",
+        addonName = "Commander_Buffs",
+        description = "Makes the buff display movable and adjustable: drag it anywhere with the unlock anchor, scale it, and choose how many buffs sit on each row.",
+        event = COMMANDER_BUFFS_EVENTS.UPDATE,
+        slash = { "/cbuff" },
+        slashHandlers = {
+            reset = Reset,
+        },
+    })
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Buffs Settings")
+    panel:AddSection("Position")
+    panel:AddCheckbox({
+        label = "Lock Buff Frame",
+        tooltip = "Hide the drag anchor and keep the buff frame fixed in place. Uncheck to show a drag handle above the buffs.",
+        get = function() return CommanderBuffsDB.LockBuffFrames end,
+        set = function(value) CommanderBuffsDB.LockBuffFrames = value end,
+    })
+    panel:AddCheckbox({
+        label = "Show Anchor in Combat",
+        tooltip = "Keep the drag anchor visible during combat while the frame is unlocked. Normally the anchor hides itself when a fight starts.",
+        get = function() return CommanderBuffsDB.ShowAnchorInCombat end,
+        set = function(value) CommanderBuffsDB.ShowAnchorInCombat = value end,
+        isEnabled = function() return not CommanderBuffsDB.LockBuffFrames end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Reset Position",
+            tooltip = "Move the buff frame back to its default spot near the minimap.",
+            onClick = ResetPosition,
+        },
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Buffs options below.")
+    panel:AddSection("Layout")
+    panel:AddSlider({
+        label = "Buff Frame Scale",
+        tooltip = "Overall size of the buff display.",
+        min = 0.5, max = 2.0, step = 0.05,
+        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        get = function() return CommanderBuffsDB.BuffScale end,
+        set = function(value) CommanderBuffsDB.BuffScale = value end,
+    })
+    panel:AddSlider({
+        label = "Buffs Per Row",
+        tooltip = "How many buff icons are placed on each row before wrapping to the next.",
+        min = 4, max = 16, step = 1,
+        format = "%d",
+        get = function() return CommanderBuffsDB.BuffsPerRow end,
+        set = function(value) CommanderBuffsDB.BuffsPerRow = value end,
+    })
 
-    -- Lock/Unlock Frames
-    lockFramesCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    lockFramesCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    lockFramesCheckbox.Text:SetText("Lock Buff Frame")
-    lockFramesCheckbox:SetChecked(CommanderBuffsDB.LockBuffFrames)
-    lockFramesCheckbox:SetScript("OnClick", function(self)
-        CommanderBuffsDB.LockBuffFrames = self:GetChecked()
-        Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
-    end)
-
-    -- Show Anchors in Combat
-    showInCombatCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    showInCombatCheckbox:SetPoint("TOPLEFT", lockFramesCheckbox, "BOTTOMLEFT", 0, -8)
-    showInCombatCheckbox.Text:SetText("Show Anchors in Combat")
-    showInCombatCheckbox:SetChecked(CommanderBuffsDB.ShowAnchorInCombat)
-    showInCombatCheckbox:SetScript("OnClick", function(self)
-        CommanderBuffsDB.ShowAnchorInCombat = self:GetChecked()
-        Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
-    end)
-
-    -- Scale Slider
-    scaleSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
-    scaleSlider:SetPoint("TOPLEFT", showInCombatCheckbox, "BOTTOMLEFT", 0, -24)
-    scaleSlider:SetWidth(200)
-    scaleSlider.Text:SetText("Buff Frame Scale")
-    scaleSlider.Low:SetText("0.5")
-    scaleSlider.High:SetText("2.0")
-    
-    scaleSlider:SetMinMaxValues(0.5, 2.0)
-    scaleSlider:SetValueStep(0.1)
-    scaleSlider:SetValue(CommanderBuffsDB.BuffScale or 1.0)
-    
-    scaleSlider:SetScript("OnValueChanged", function(self, value)
-        if value then
-            CommanderBuffsDB.BuffScale = value
-            Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
-        end
-    end)
-
-    -- Buffs Per Row Slider
-    buffsPerRowSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
-    buffsPerRowSlider:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -24)
-    buffsPerRowSlider:SetWidth(200)
-    buffsPerRowSlider.Text:SetText("Buffs Per Row")
-    buffsPerRowSlider.Low:SetText("4")
-    buffsPerRowSlider.High:SetText("16")
-    
-    buffsPerRowSlider:SetMinMaxValues(4, 16)
-    buffsPerRowSlider:SetValueStep(1)
-    buffsPerRowSlider:SetValue(CommanderBuffsDB.BuffsPerRow or 8)
-    
-    buffsPerRowSlider:SetScript("OnValueChanged", function(self, value)
-        if value then
-            CommanderBuffsDB.BuffsPerRow = math.floor(value)
-            Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
-        end
-    end)
-
-    -- Reset Position Button
-    local resetPosButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetPosButton:SetPoint("TOPLEFT", buffsPerRowSlider, "BOTTOMLEFT", 0, -16)
-    resetPosButton:SetText("Reset Position")
-    resetPosButton:SetWidth(120)
-    resetPosButton:SetScript("OnClick", function()
-        CommanderBuffsDB.BuffFramePoint = DefaultSettings.BuffFramePoint
-        CommanderBuffsDB.BuffFrameX = DefaultSettings.BuffFrameX
-        CommanderBuffsDB.BuffFrameY = DefaultSettings.BuffFrameY
-        CommanderBuffsDB.BuffScale = DefaultSettings.BuffScale
-        Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
-    end)
-
-    return panel
-end
-
--- Re-sync panel widgets from the DB so they never go stale after
--- /cbuff reset or the Reset Position button
-local function OnUpdate()
-    if lockFramesCheckbox then
-        lockFramesCheckbox:SetChecked(CommanderBuffsDB.LockBuffFrames)
-    end
-    if showInCombatCheckbox then
-        showInCombatCheckbox:SetChecked(CommanderBuffsDB.ShowAnchorInCombat)
-    end
-    -- Only SetValue when the value actually changed; SetValue fires
-    -- OnValueChanged, which would re-Notify this listener
-    if scaleSlider and scaleSlider:GetValue() ~= (CommanderBuffsDB.BuffScale or 1.0) then
-        scaleSlider:SetValue(CommanderBuffsDB.BuffScale or 1.0)
-    end
-    if buffsPerRowSlider and buffsPerRowSlider:GetValue() ~= (CommanderBuffsDB.BuffsPerRow or 8) then
-        buffsPerRowSlider:SetValue(CommanderBuffsDB.BuffsPerRow or 8)
-    end
+    local category = panel:Finalize({ onDefaults = Reset })
+    -- Shared with CommanderBuffs.lua for the anchor's settings button
+    CommanderBuffsCategoryID = category:GetID()
 end
 
 local function OnAwake()
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Buffs")
-    local categoryID = category:GetID()
-    -- Shared with CommanderBuffs.lua for the anchor settings button
-    CommanderBuffsCategoryID = categoryID
-    InitializeSlashCommands(categoryID)
-    Commander.AddListener(COMMANDER_BUFFS_EVENTS.UPDATE, OnUpdate)
+    CreateOptionsPanel()
 end
-
-local function OnDestroy() end
 
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Buffs" then
@@ -179,11 +112,6 @@ local function OnEvent(self, event, addonName)
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         OnAwake()
-        loaded = true
-    elseif event == "PLAYER_LOGOUT" then
-        OnDestroy()
-    elseif loaded then
-        OnUpdate()
     end
 end
 

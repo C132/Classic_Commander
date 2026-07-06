@@ -1,19 +1,17 @@
 CommanderResourceDB = CommanderResourceDB or {}
 
-local frame = CreateFrame("FRAME");
-frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_LOGOUT")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-
 COMMANDER_RESOURCE_EVENTS = {
     FIVE_SECOND_RULE_CHANGED = "FIVE_SECOND_RULE_CHANGED",
 }
 
 local DefaultSettings = {
     ShowFiveSecondRule = true,
+    PlayReadySound = true,
 }
 
-local categoryID
+local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_LOGIN")
 
 local function ApplyDefaultSettings()
     -- One-time migration: pre-2.0 code persisted ShowFiveSecondRule=false for
@@ -35,71 +33,62 @@ local function ApplyDefaultSettings()
 end
 
 local function Reset()
-    print("Resetting Commander Resources")
     for key, value in pairs(DefaultSettings) do
         CommanderResourceDB[key] = value
     end
     Commander.Notify(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED)
+    print("Commander Resources: settings restored to defaults")
 end
 
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Resources"
+    local panel = Commander.UI.NewPanel({
+        key = "Resources",
+        title = "Resources",
+        addonName = "Commander_Resources",
+        description = "Tracks the five second rule for mana users: a timer bar counts down until spirit regeneration resumes, then shows your estimated mana gained per tick.",
+        event = COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED,
+        slash = { "/cres" },
+        slashHandlers = {
+            reset = Reset,
+        },
+    })
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Resources Settings")
+    panel:AddSection("Five Second Rule")
+    panel:AddCheckbox({
+        label = "Show Five Second Rule Bar",
+        tooltip = "Show the regeneration tracker bar. It only appears on characters whose active power type is mana.",
+        get = function() return CommanderResourceDB.ShowFiveSecondRule end,
+        set = function(value) CommanderResourceDB.ShowFiveSecondRule = value end,
+    })
+    panel:AddCheckbox({
+        label = "Play Sound When Mana is Full",
+        tooltip = "Play the ready-check sound when your mana returns to full.",
+        get = function() return CommanderResourceDB.PlayReadySound end,
+        set = function(value) CommanderResourceDB.PlayReadySound = value end,
+        isEnabled = function() return CommanderResourceDB.ShowFiveSecondRule end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Reset Bar Position",
+            tooltip = "Move the tracker bar back to the center of the screen.",
+            onClick = function()
+                if CommanderResources_ResetBarPosition then
+                    CommanderResources_ResetBarPosition()
+                end
+            end,
+        },
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Resources options below.")
-
-    local resetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetButton:SetSize(100, 22)
-    resetButton:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    resetButton:SetText("Reset")
-    resetButton:SetScript("OnClick", function() Reset() end)
-
-    local showFiveSecondRuleCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    showFiveSecondRuleCheckbox:SetPoint("TOPLEFT", resetButton, "BOTTOMLEFT", 0, -8)
-    showFiveSecondRuleCheckbox.Text:SetText("Show Five Second Rule")
-    showFiveSecondRuleCheckbox:SetChecked(CommanderResourceDB.ShowFiveSecondRule)
-    showFiveSecondRuleCheckbox:SetScript("OnClick", function(self)
-        CommanderResourceDB.ShowFiveSecondRule = self:GetChecked()
-        Commander.Notify(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED)
-    end)
-
-    -- Re-sync the checkbox when the setting changes elsewhere (Reset, MyClassicAddon)
-    Commander.AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, function()
-        showFiveSecondRuleCheckbox:SetChecked(CommanderResourceDB.ShowFiveSecondRule)
-    end)
-
-    return panel
-end
-
-local function OnAwake()
-    -- SavedVariables replace the global after this file runs, so re-ensure the table here
-    CommanderResourceDB = CommanderResourceDB or {}
-    ApplyDefaultSettings()
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Resources")
-    categoryID = category:GetID()
-end
-
--- Initialize any necessary components or features
-local function OnStart()
-end
-
--- Save any necessary data before logout
-local function OnDestroy()
+    panel:Finalize({ onDefaults = Reset })
 end
 
 frame:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Resources" then
-        OnAwake()
-    elseif event == "PLAYER_LOGOUT" then
-        OnDestroy()
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        OnStart()
+        -- SavedVariables replace the global after this file runs, so re-ensure the table here
+        CommanderResourceDB = CommanderResourceDB or {}
+        ApplyDefaultSettings()
+        self:UnregisterEvent("ADDON_LOADED")
+    elseif event == "PLAYER_LOGIN" then
+        CreateOptionsPanel()
     end
 end)

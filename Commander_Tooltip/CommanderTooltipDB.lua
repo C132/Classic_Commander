@@ -14,6 +14,18 @@ local DefaultSettings = {
     Anchor = "BOTTOMLEFT"
 }
 
+local ANCHOR_OPTIONS = {
+    {text = "Top Left", value = "TOPLEFT"},
+    {text = "Top", value = "TOP"},
+    {text = "Top Right", value = "TOPRIGHT"},
+    {text = "Left", value = "LEFT"},
+    {text = "Center", value = "CENTER"},
+    {text = "Right", value = "RIGHT"},
+    {text = "Bottom Left", value = "BOTTOMLEFT"},
+    {text = "Bottom", value = "BOTTOM"},
+    {text = "Bottom Right", value = "BOTTOMRIGHT"},
+}
+
 local function ApplyDefaultSettings()
     for key, value in pairs(DefaultSettings) do
         if CommanderTooltipDB[key] == nil then
@@ -28,198 +40,92 @@ ApplyDefaultSettings()
 
 local frame = CreateFrame("FRAME")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_LOGOUT")
-local loaded = false
-
--- Panel widget references, kept so the COMMANDER_TOOLTIP_UPDATE listener can
--- re-sync the panel from the DB (e.g. after Reset).
-local showItemLevelCheckbox, showVendorPriceCheckbox, anchorToCursorCheckbox
-local anchorDropdown
-local xOffsetSlider, yOffsetSlider, scaleSlider
 
 local function Reset()
-    print("Resetting Commander Tooltip")
     for key, value in pairs(DefaultSettings) do
         CommanderTooltipDB[key] = value
     end
     Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-local function InitializeSlashCommands(categoryID)
-    SLASH_CTOOLTIP1 = "/ctooltip"
-    SlashCmdList["CTOOLTIP"] = function(msg)
-        msg = msg:lower()
-        if msg == "" then
-            Settings.OpenToCategory(categoryID)
-        end
-    end
+    print("Commander Tooltip: settings restored to defaults")
 end
 
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Tooltip"
-    -- Add settings to panel
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Tooltip Settings")
+    local panel = Commander.UI.NewPanel({
+        key = "Tooltip",
+        title = "Tooltip",
+        addonName = "Commander_Tooltip",
+        description = "Extends game tooltips with item levels and vendor prices, and controls where the default tooltip appears on screen.",
+        event = COMMANDER_TOOLTIP_EVENTS.UPDATE,
+        slash = { "/ctooltip" },
+        slashHandlers = {
+            reset = Reset,
+        },
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Tooltip options below.")
+    panel:AddSection("Tooltip Content")
+    panel:AddCheckbox({
+        label = "Show Item Level",
+        tooltip = "Add the item's level to item tooltips.",
+        get = function() return CommanderTooltipDB.ShowItemLevel end,
+        set = function(value) CommanderTooltipDB.ShowItemLevel = value end,
+    })
+    panel:AddCheckbox({
+        label = "Show Vendor Price",
+        tooltip = "Add the vendor sell price to item tooltips, even when you are not at a merchant.",
+        get = function() return CommanderTooltipDB.ShowVendorPrice end,
+        set = function(value) CommanderTooltipDB.ShowVendorPrice = value end,
+    })
 
-    local resetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetButton:SetSize(100, 22)
-    resetButton:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    resetButton:SetText("Reset")
-    resetButton:SetScript("OnClick", function() Reset() end)
+    panel:AddSection("Position")
+    panel:AddCheckbox({
+        label = "Anchor to Cursor",
+        tooltip = "Make the tooltip follow the mouse cursor. Uncheck to pin it to a fixed corner of the screen instead.",
+        get = function() return CommanderTooltipDB.AnchorToCursor end,
+        set = function(value) CommanderTooltipDB.AnchorToCursor = value end,
+    })
+    panel:AddDropdown({
+        label = "Screen Anchor",
+        tooltip = "Where the tooltip is pinned when it is not following the cursor.",
+        options = ANCHOR_OPTIONS,
+        width = 140,
+        get = function() return CommanderTooltipDB.Anchor end,
+        set = function(value) CommanderTooltipDB.Anchor = value end,
+        isEnabled = function() return not CommanderTooltipDB.AnchorToCursor end,
+    })
+    panel:AddSlider({
+        label = "Horizontal Offset",
+        tooltip = "Nudge the tooltip left or right from its anchor point.",
+        min = -50, max = 50, step = 1,
+        format = "%d",
+        get = function() return CommanderTooltipDB.xOffset end,
+        set = function(value) CommanderTooltipDB.xOffset = value end,
+    })
+    panel:AddSlider({
+        label = "Vertical Offset",
+        tooltip = "Nudge the tooltip up or down from its anchor point.",
+        min = -50, max = 50, step = 1,
+        format = "%d",
+        get = function() return CommanderTooltipDB.yOffset end,
+        set = function(value) CommanderTooltipDB.yOffset = value end,
+    })
 
-    showItemLevelCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    showItemLevelCheckbox:SetPoint("TOPLEFT", resetButton, "BOTTOMLEFT", 0, -8)
-    showItemLevelCheckbox.Text:SetText("Show Item Level")
-    showItemLevelCheckbox:SetChecked(CommanderTooltipDB.ShowItemLevel)
-    showItemLevelCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.ShowItemLevel = self:GetChecked() Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
+    panel:AddSection("Appearance")
+    panel:AddSlider({
+        label = "Tooltip Scale",
+        tooltip = "Overall size of game tooltips.",
+        min = 0.5, max = 2.0, step = 0.05,
+        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        get = function() return CommanderTooltipDB.Scale end,
+        set = function(value) CommanderTooltipDB.Scale = value end,
+    })
 
-    showVendorPriceCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    showVendorPriceCheckbox:SetPoint("TOPLEFT", showItemLevelCheckbox, "BOTTOMLEFT", 0, -8)
-    showVendorPriceCheckbox.Text:SetText("Show Vendor Price")
-    showVendorPriceCheckbox:SetChecked(CommanderTooltipDB.ShowVendorPrice)
-    showVendorPriceCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.ShowVendorPrice = self:GetChecked() Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
-
-    anchorToCursorCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    anchorToCursorCheckbox:SetPoint("TOPLEFT", showVendorPriceCheckbox, "BOTTOMLEFT", 0, -8)
-    anchorToCursorCheckbox.Text:SetText("Anchor to Cursor")
-    anchorToCursorCheckbox:SetChecked(CommanderTooltipDB.AnchorToCursor)
-    anchorToCursorCheckbox:SetScript("OnClick", function(self) CommanderTooltipDB.AnchorToCursor = self:GetChecked() Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE) end)
-
-    anchorDropdown = CreateFrame("Frame", nil, panel, "UIDropDownMenuTemplate")
-    anchorDropdown:SetPoint("TOPLEFT", anchorToCursorCheckbox, "BOTTOMLEFT", -15, -8)
-    UIDropDownMenu_SetWidth(anchorDropdown, 100)
-    UIDropDownMenu_SetText(anchorDropdown, CommanderTooltipDB.Anchor)
-    
-    local function AnchorDropdown_Initialize(self, level)
-        local info = UIDropDownMenu_CreateInfo()
-        info.func = function(self)
-            CommanderTooltipDB.Anchor = self.value
-            UIDropDownMenu_SetText(anchorDropdown, self.value)
-            Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-        end
-        
-        local anchors = {"TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT"}
-        for _, anchor in ipairs(anchors) do
-            info.text = anchor
-            info.value = anchor
-            info.checked = (CommanderTooltipDB.Anchor == anchor)
-            UIDropDownMenu_AddButton(info)
-        end
-    end
-    
-    UIDropDownMenu_Initialize(anchorDropdown, AnchorDropdown_Initialize)
-
-    -- X Offset Control
-    xOffsetSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
-    xOffsetSlider:SetPoint("TOPLEFT", anchorDropdown, "BOTTOMLEFT", 15, -8)
-    xOffsetSlider:SetSize(200, 22)
-    xOffsetSlider:SetMinMaxValues(-50, 50)
-    xOffsetSlider:SetValue(CommanderTooltipDB.xOffset)
-    xOffsetSlider:SetValueStep(1)
-    xOffsetSlider:SetObeyStepOnDrag(true)
-    xOffsetSlider.Text:SetText("X Offset")
-    xOffsetSlider.Low:SetText("-50")
-    xOffsetSlider.High:SetText("+50")
-    
-    local xOffsetValue = xOffsetSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    xOffsetValue:SetPoint("TOP", xOffsetSlider, "BOTTOM", 0, 0)
-    xOffsetValue:SetText(string.format("Current: %d", CommanderTooltipDB.xOffset))
-    
-    xOffsetSlider:SetScript("OnValueChanged", function(self, value)
-        value = math.floor(value)
-        CommanderTooltipDB.xOffset = value
-        xOffsetValue:SetText(string.format("Current: %d", value))
-        Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-    end)
-
-    -- Y Offset Control
-    yOffsetSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
-    yOffsetSlider:SetPoint("TOPLEFT", xOffsetSlider, "BOTTOMLEFT", 0, -24)
-    yOffsetSlider:SetSize(200, 22)
-    yOffsetSlider:SetMinMaxValues(-50, 50)
-    yOffsetSlider:SetValue(CommanderTooltipDB.yOffset)
-    yOffsetSlider:SetValueStep(1)
-    yOffsetSlider:SetObeyStepOnDrag(true)
-    yOffsetSlider.Text:SetText("Y Offset")
-    yOffsetSlider.Low:SetText("-50")
-    yOffsetSlider.High:SetText("+50")
-    
-    local yOffsetValue = yOffsetSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    yOffsetValue:SetPoint("TOP", yOffsetSlider, "BOTTOM", 0, 0)
-    yOffsetValue:SetText(string.format("Current: %d", CommanderTooltipDB.yOffset))
-    
-    yOffsetSlider:SetScript("OnValueChanged", function(self, value)
-        value = math.floor(value)
-        CommanderTooltipDB.yOffset = value
-        yOffsetValue:SetText(string.format("Current: %d", value))
-        Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-    end)
-
-    -- Scale Control
-    scaleSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
-    scaleSlider:SetPoint("TOPLEFT", yOffsetSlider, "BOTTOMLEFT", 0, -24)
-    scaleSlider:SetSize(200, 22)
-    scaleSlider:SetMinMaxValues(0.5, 2.0)
-    scaleSlider:SetValue(CommanderTooltipDB.Scale)
-    scaleSlider:SetValueStep(0.1)
-    scaleSlider:SetObeyStepOnDrag(true)
-    scaleSlider.Text:SetText("Tooltip Scale")
-    scaleSlider.Low:SetText("50%")
-    scaleSlider.High:SetText("200%")
-    
-    local scaleValue = scaleSlider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    scaleValue:SetPoint("TOP", scaleSlider, "BOTTOM", 0, 0)
-    scaleValue:SetText(string.format("Current: %.0f%%", CommanderTooltipDB.Scale * 100))
-    
-    scaleSlider:SetScript("OnValueChanged", function(self, value)
-        value = math.floor(value * 10) / 10 -- Round to 1 decimal place
-        CommanderTooltipDB.Scale = value
-        scaleValue:SetText(string.format("Current: %.0f%%", value * 100))
-        Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-    end)
-
-    return panel
-end
-
-local function OnUpdate()
-    -- Re-sync the panel widgets from the DB (e.g. after Reset)
-    if not showItemLevelCheckbox then return end
-    showItemLevelCheckbox:SetChecked(CommanderTooltipDB.ShowItemLevel)
-    showVendorPriceCheckbox:SetChecked(CommanderTooltipDB.ShowVendorPrice)
-    anchorToCursorCheckbox:SetChecked(CommanderTooltipDB.AnchorToCursor)
-    UIDropDownMenu_SetText(anchorDropdown, CommanderTooltipDB.Anchor)
-    xOffsetSlider:SetValue(CommanderTooltipDB.xOffset)
-    yOffsetSlider:SetValue(CommanderTooltipDB.yOffset)
-    scaleSlider:SetValue(CommanderTooltipDB.Scale)
-end
-
-local function OnAwake()
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, "Commander Tooltip")
-    local categoryID = category:GetID()
-    InitializeSlashCommands(categoryID)
-    Commander.AddListener(COMMANDER_TOOLTIP_EVENTS.UPDATE, OnUpdate)
-end
-
-local function OnDestroy()
-    -- Cleanup if needed
+    panel:Finalize({ onDefaults = Reset })
 end
 
 local function OnEvent(self, event)
     if event == "PLAYER_LOGIN" then
         ApplyDefaultSettings()
-        OnAwake()
-        loaded = true
-    elseif event == "PLAYER_LOGOUT" then
-        OnDestroy()
-    elseif loaded then
-        OnUpdate()
+        CreateOptionsPanel()
     end
 end
 

@@ -51,7 +51,8 @@ local function ApplyConsoleState()
         consoleBackdrop:Show()
         WorldFrame:ClearAllPoints()
         WorldFrame:SetPoint("TOPLEFT", 0, 0)
-        WorldFrame:SetPoint("BOTTOMRIGHT", 0, 150)  -- Leave 150 pixels at the bottom
+        -- Leave room at the bottom of the screen for the console area
+        WorldFrame:SetPoint("BOTTOMRIGHT", 0, CommanderConsoleDB.ConsoleHeight or 150)
     else
         consoleBackdrop:Hide()
         RestoreWorldFramePoints()
