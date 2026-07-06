@@ -4,8 +4,38 @@ fiveSecondRule:SetPoint("CENTER")
 fiveSecondRule:SetMovable(true)
 fiveSecondRule:EnableMouse(true)
 fiveSecondRule:RegisterForDrag("LeftButton")
-fiveSecondRule:SetScript("OnDragStart", fiveSecondRule.StartMoving)
-fiveSecondRule:SetScript("OnDragStop", fiveSecondRule.StopMovingOrSizing)
+-- Position is persisted explicitly in CommanderResourceDB.BarPosition (a
+-- single UIParent-relative point); opt out of the client's layout cache so
+-- there is exactly one source of truth for where the bar lives
+if fiveSecondRule.SetDontSavePosition then
+    pcall(fiveSecondRule.SetDontSavePosition, fiveSecondRule, true)
+end
+
+-- Re-anchor from the saved position (or the default center) with a single
+-- UIParent point, so the frame can never leave UIParent's anchor family
+local function ApplyBarPosition()
+    local pos = CommanderResourceDB and CommanderResourceDB.BarPosition
+    fiveSecondRule:ClearAllPoints()
+    if pos and type(pos.left) == "number" and type(pos.bottom) == "number" then
+        fiveSecondRule:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
+    else
+        fiveSecondRule:SetPoint("CENTER")
+    end
+end
+
+fiveSecondRule:SetScript("OnDragStart", function(self)
+    if CommanderResourceDB and CommanderResourceDB.LockBar then return end
+    self:StartMoving()
+end)
+fiveSecondRule:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    self:SetUserPlaced(false)
+    local left, bottom = self:GetLeft(), self:GetBottom()
+    if CommanderResourceDB and left and bottom then
+        CommanderResourceDB.BarPosition = { left = left, bottom = bottom }
+    end
+    ApplyBarPosition()
+end)
 
 local background = fiveSecondRule:CreateTexture(nil, "BACKGROUND")
 background:SetAllPoints()
@@ -62,6 +92,7 @@ local function OnEvent(self, event, unit, powerType)
         -- Fires on every loading screen; only register the listener once
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
         Commander.AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
+        ApplyBarPosition()
         UpdateVisibility()
     end
 end
@@ -132,8 +163,10 @@ fiveSecondRule:Hide()
 
 -- Shared with the options panel's "Reset Bar Position" button
 function CommanderResources_ResetBarPosition()
-    fiveSecondRule:ClearAllPoints()
-    fiveSecondRule:SetPoint("CENTER")
+    if CommanderResourceDB then
+        CommanderResourceDB.BarPosition = nil
+    end
+    ApplyBarPosition()
     print("Commander Resources: bar position reset")
 end
 

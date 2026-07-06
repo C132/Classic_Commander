@@ -7,6 +7,7 @@ COMMANDER_RESOURCE_EVENTS = {
 local DefaultSettings = {
     ShowFiveSecondRule = true,
     PlayReadySound = true,
+    LockBar = false,
 }
 
 local frame = CreateFrame("FRAME");
@@ -30,6 +31,12 @@ end
 
 local function Reset()
     Commander.UI.ResetToDefaults(CommanderResourceDB, DefaultSettings)
+    -- Also forget the dragged bar position (not part of DefaultSettings)
+    if CommanderResources_ResetBarPosition then
+        CommanderResources_ResetBarPosition()
+    else
+        CommanderResourceDB.BarPosition = nil
+    end
     Commander.Notify(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED)
     print("Commander Resources: settings restored to defaults")
 end
@@ -56,6 +63,15 @@ local function CreateOptionsPanel()
         tooltip = "Play the ready-check sound when your mana returns to full.",
         get = function() return CommanderResourceDB.PlayReadySound end,
         set = function(value) CommanderResourceDB.PlayReadySound = value end,
+        isEnabled = function() return CommanderResourceDB.ShowFiveSecondRule end,
+    })
+
+    panel:AddSection("Position")
+    panel:AddCheckbox({
+        label = "Lock Bar Position",
+        tooltip = "Prevent the tracker bar from being dragged. Its position is saved between sessions either way.",
+        get = function() return CommanderResourceDB.LockBar end,
+        set = function(value) CommanderResourceDB.LockBar = value end,
         isEnabled = function() return CommanderResourceDB.ShowFiveSecondRule end,
     })
     panel:AddButtonRow({

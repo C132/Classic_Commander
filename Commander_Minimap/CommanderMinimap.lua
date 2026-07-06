@@ -86,11 +86,12 @@ frame:SetScript("OnEvent", function(self, event, addonName)
     end
 end)
 
--- Make Minimap draggable
+-- Make Minimap draggable (gated by the Lock Minimap setting)
 Minimap:SetMovable(true)
 Minimap:EnableMouse(true)
 Minimap:RegisterForDrag("LeftButton")
 Minimap:SetScript("OnDragStart", function(self)
+    if CommanderMinimapDB and CommanderMinimapDB.LockMinimap then return end
     self:StartMoving()
 end)
 Minimap:SetScript("OnDragStop", function(self)

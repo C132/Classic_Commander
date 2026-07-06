@@ -8,6 +8,7 @@ local defaultSettings = {
     ShowMinimapButton = true,
     XPDisplayMode = "PERCENTAGE",
     MinimapScale = 1.37,
+    LockMinimap = false,
 }
 
 local XP_DISPLAY_MODES = {
@@ -49,6 +50,12 @@ local function CreateOptionsPanel()
         format = Commander.UI.FormatPercent,
         get = function() return CommanderMinimapDB.MinimapScale end,
         set = function(value) CommanderMinimapDB.MinimapScale = value end,
+    })
+    panel:AddCheckbox({
+        label = "Lock Minimap",
+        tooltip = "Prevent the minimap from being dragged to a new position.",
+        get = function() return CommanderMinimapDB.LockMinimap end,
+        set = function(value) CommanderMinimapDB.LockMinimap = value end,
     })
 
     panel:AddSection("Information Button")
