@@ -45,7 +45,7 @@ local function CreateOptionsPanel()
         slash = { "/ctooltip" },
     })
 
-    panel:AddSection("Tooltip Content")
+    panel:AddSection("Appearance")
     panel:AddCheckbox({
         label = "Show Item Level",
         tooltip = "Add the item's level to item tooltips.",
@@ -57,6 +57,14 @@ local function CreateOptionsPanel()
         tooltip = "Add the vendor sell price to item tooltips, even when you are not at a merchant.",
         get = function() return CommanderTooltipDB.ShowVendorPrice end,
         set = function(value) CommanderTooltipDB.ShowVendorPrice = value end,
+    })
+    panel:AddSlider({
+        label = "Tooltip Scale",
+        tooltip = "Overall size of game tooltips.",
+        min = 0.5, max = 2.0, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderTooltipDB.Scale end,
+        set = function(value) CommanderTooltipDB.Scale = value end,
     })
 
     panel:AddSection("Position")
@@ -90,16 +98,6 @@ local function CreateOptionsPanel()
         format = "%d",
         get = function() return CommanderTooltipDB.yOffset end,
         set = function(value) CommanderTooltipDB.yOffset = value end,
-    })
-
-    panel:AddSection("Appearance")
-    panel:AddSlider({
-        label = "Tooltip Scale",
-        tooltip = "Overall size of game tooltips.",
-        min = 0.5, max = 2.0, step = 0.05,
-        format = Commander.UI.FormatPercent,
-        get = function() return CommanderTooltipDB.Scale end,
-        set = function(value) CommanderTooltipDB.Scale = value end,
     })
 
     panel:Finalize({ onDefaults = Reset })
