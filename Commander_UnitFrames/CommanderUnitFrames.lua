@@ -1,5 +1,7 @@
 -- Applies the Commander Unit Frames settings to the default unit frames.
--- The options panel lives in CommanderUnitFramesDB.lua.
+-- The options panel lives in CommanderUnitFramesDB.lua. The percentage
+-- toggle writes the statusTextDisplay CVar directly from the panel (the game
+-- persists it), so the only setting applied here is the frame scale.
 
 local frame = CreateFrame("FRAME")
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -24,23 +26,10 @@ local function ApplyFrameScale()
     end
 end
 
--- statusTextDisplay is the game's "Status Text" option; PERCENT/NONE map the
--- checkbox onto it so the change shows up immediately on every status bar.
--- pcall in case a future patch renames the CVar (SetCVar errors on unknown names).
-local function ApplyStatusText()
-    local value = CommanderUnitFramesDB.showPercentage and "PERCENT" or "NONE"
-    pcall(SetCVar, "statusTextDisplay", value)
-end
-
-local function OnUpdate()
-    ApplyFrameScale()
-    ApplyStatusText()
-end
-
 frame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
-        Commander.AddListener(COMMANDER_UNIT_FRAMES_EVENTS.UPDATE, OnUpdate)
-        OnUpdate()
+        Commander.AddListener(COMMANDER_UNIT_FRAMES_EVENTS.UPDATE, ApplyFrameScale)
+        ApplyFrameScale()
         loaded = true
     elseif event == "PLAYER_REGEN_ENABLED" then
         self:UnregisterEvent("PLAYER_REGEN_ENABLED")

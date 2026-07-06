@@ -36,6 +36,17 @@ function Commander.GetModules()
     return list
 end
 
+-- Open a registered module's settings page by its panel key (e.g. "Buffs").
+-- Returns false when the module is not loaded or not yet registered.
+function Commander.OpenModuleSettings(key)
+    local info = modules[key]
+    if info and info.categoryID then
+        Settings.OpenToCategory(info.categoryID)
+        return true
+    end
+    return false
+end
+
 -- ---------------------------------------------------------------------------
 -- Layout constants
 -- ---------------------------------------------------------------------------
@@ -68,11 +79,50 @@ local function AttachTooltip(widget, title, text)
     end)
 end
 
+-- Shared so suite-level UIs (Commander_Suite) show tooltips identically
+UI.AttachTooltip = AttachTooltip
+
 local function FormatValue(fmt, value)
     if type(fmt) == "function" then
         return fmt(value)
     end
     return string.format(fmt or "%.1f", value)
+end
+
+-- Standard slider format for 0..N scale/opacity values shown as percentages
+function UI.FormatPercent(value)
+    return string.format("%d%%", value * 100 + 0.5)
+end
+
+local function CopyValue(value)
+    if type(value) == "table" then
+        local copy = {}
+        for k, v in pairs(value) do
+            copy[k] = CopyValue(v)
+        end
+        return copy
+    end
+    return value
+end
+
+UI.CopyValue = CopyValue
+
+-- Fill in missing keys from a defaults table (deep-copying table values so
+-- the shared defaults are never aliased into SavedVariables)
+function UI.ApplyDefaults(db, defaults)
+    for key, value in pairs(defaults) do
+        if db[key] == nil then
+            db[key] = CopyValue(value)
+        end
+    end
+end
+
+-- Overwrite every defaulted key; iterates the defaults table so a newly
+-- added setting can never be silently skipped by a hand-written reset list
+function UI.ResetToDefaults(db, defaults)
+    for key, value in pairs(defaults) do
+        db[key] = CopyValue(value)
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -128,7 +178,7 @@ function PanelMethods.AddCheckbox(panel, opts)
         panel:_Changed()
     end)
 
-    panel:_AddRefresher(function()
+    panel:AddRefresher(function()
         check:SetChecked(opts.get() and true or false)
         local enabled = not opts.isEnabled or opts.isEnabled()
         check:SetEnabled(enabled)
@@ -176,11 +226,14 @@ function PanelMethods.AddSlider(panel, opts)
         if self._lastValue == snapped then return end
         self._lastValue = snapped
         opts.set(snapped)
-        panel:_Changed()
+        -- Sliders fire continuously during a drag; coalesce the module
+        -- notifies so expensive apply paths run a few times per second
+        -- instead of once per pixel (the DB write above is immediate)
+        panel:_ChangedThrottled()
     end)
 
-    panel:_AddRefresher(function()
-        local value = Snap(opts.get() or opts.min)
+    panel:AddRefresher(function()
+        local value = Snap(tonumber(opts.get()) or opts.min)
         slider._lastValue = value
         slider:SetValue(value)
         valueText:SetText(FormatValue(opts.format, value))
@@ -211,6 +264,12 @@ function PanelMethods.AddDropdown(panel, opts)
     local dropdown = CreateFrame("Frame", "CommanderUIDropDown" .. dropdownCounter, row, "UIDropDownMenuTemplate")
     dropdown:SetPoint("TOPLEFT", row, "TOPLEFT", -14, -14)
     UIDropDownMenu_SetWidth(dropdown, opts.width or DROPDOWN_WIDTH)
+    -- The template's arrow button forwards OnEnter/OnLeave to the parent, but
+    -- only covers its own 24px; enable mouse on the container so the tooltip
+    -- also shows when hovering the dropdown's text area
+    if opts.tooltip then
+        dropdown:EnableMouse(true)
+    end
     AttachTooltip(dropdown, opts.label, opts.tooltip)
 
     local function TextForValue(value)
@@ -242,7 +301,7 @@ function PanelMethods.AddDropdown(panel, opts)
         end
     end)
 
-    panel:_AddRefresher(function()
+    panel:AddRefresher(function()
         local value = opts.get()
         UIDropDownMenu_SetSelectedValue(dropdown, value)
         UIDropDownMenu_SetText(dropdown, TextForValue(value))
@@ -277,7 +336,7 @@ function PanelMethods.AddButtonRow(panel, buttons)
         end)
         AttachTooltip(button, spec.label, spec.tooltip)
         if spec.isEnabled then
-            panel:_AddRefresher(function()
+            panel:AddRefresher(function()
                 button:SetEnabled(spec.isEnabled() and true or false)
             end)
         end
@@ -287,15 +346,23 @@ function PanelMethods.AddButtonRow(panel, buttons)
     return created
 end
 
-function PanelMethods._AddRefresher(panel, fn)
+-- Public extension point: register a function run on every panel Refresh
+-- (used by custom widgets such as Commander_Casting's texture preview)
+function PanelMethods.AddRefresher(panel, fn)
     panel._refreshers[#panel._refreshers + 1] = fn
 end
 
 function PanelMethods.Refresh(panel)
     if panel._loading then return end
     panel._loading = true
+    -- pcall each refresher: a corrupt saved value must surface as a normal
+    -- addon error, not leave _loading latched true (which would silently
+    -- freeze every slider and re-sync on this panel until reload)
     for _, fn in ipairs(panel._refreshers) do
-        fn()
+        local ok, err = pcall(fn)
+        if not ok then
+            geterrorhandler()(err)
+        end
     end
     panel._loading = false
 end
@@ -306,6 +373,21 @@ function PanelMethods._Changed(panel)
     if panel._event then
         Commander.Notify(panel._event)
     end
+end
+
+-- Trailing-edge throttle for continuous sources (slider drags): at most one
+-- notify per window, always ending with the final value since DB writes are
+-- immediate and the deferred notify reads the DB when it fires.
+local NOTIFY_THROTTLE = 0.15
+
+function PanelMethods._ChangedThrottled(panel)
+    if not panel._event then return end
+    if panel._notifyPending then return end
+    panel._notifyPending = true
+    C_Timer.After(NOTIFY_THROTTLE, function()
+        panel._notifyPending = false
+        Commander.Notify(panel._event)
+    end)
 end
 
 -- opts: onDefaults (function), defaultsTooltip
@@ -352,18 +434,32 @@ function PanelMethods.Finalize(panel, opts)
     end)
     panel:Refresh()
 
-    -- Standardized slash commands: bare command opens the panel, registered
-    -- subcommands (e.g. "reset") dispatch to their handler.
+    -- Standardized slash commands: bare command opens the panel (unless the
+    -- module overrides it via a "" handler, e.g. /ci toggling the item grid,
+    -- in which case a "settings" subcommand is provided automatically) and
+    -- registered subcommands dispatch to their handler. A "reset" subcommand
+    -- is wired to onDefaults automatically.
     if panel._slash and panel._slash[1] then
         local key = "COMMANDERUI_" .. panel._key:upper()
         for i, cmd in ipairs(panel._slash) do
             _G["SLASH_" .. key .. i] = cmd
         end
         local handlers = panel._slashHandlers or {}
+        local function OpenPanel()
+            Settings.OpenToCategory(panel._categoryID)
+        end
+        if opts.onDefaults and not handlers.reset then
+            handlers.reset = opts.onDefaults
+        end
+        if handlers[""] and not handlers.settings then
+            handlers.settings = OpenPanel
+        end
         local usage = "Usage: " .. panel._slash[1]
         local subcommands = {}
         for sub in pairs(handlers) do
-            subcommands[#subcommands + 1] = sub
+            if sub ~= "" then
+                subcommands[#subcommands + 1] = sub
+            end
         end
         table.sort(subcommands)
         if #subcommands > 0 then
@@ -371,10 +467,10 @@ function PanelMethods.Finalize(panel, opts)
         end
         SlashCmdList[key] = function(msg)
             msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-            if msg == "" then
-                Settings.OpenToCategory(panel._categoryID)
-            elseif handlers[msg] then
+            if handlers[msg] then
                 handlers[msg]()
+            elseif msg == "" then
+                OpenPanel()
             else
                 print(usage)
             end
@@ -395,35 +491,18 @@ function PanelMethods.Finalize(panel, opts)
 end
 
 -- ---------------------------------------------------------------------------
--- Panel constructor
+-- Panel header (shared with the root Commander page in CommanderEvents.lua)
 -- ---------------------------------------------------------------------------
 
--- opts: key (unique short id), title (subcategory name), addonName,
---       description, event (Commander update event to listen for / notify),
---       slash (array of slash commands), slashHandlers (map subcommand->fn)
-function UI.NewPanel(opts)
-    local panel = CreateFrame("Frame")
-    panel.name = opts.title
-    panel._key = opts.key
-    panel._title = opts.title
-    panel._addonName = opts.addonName
-    panel._description = opts.description
-    panel._event = opts.event
-    panel._slash = opts.slash
-    panel._slashHandlers = opts.slashHandlers
-    panel._refreshers = {}
-    panel._loading = false
-
-    for name, fn in pairs(PanelMethods) do
-        panel[name] = fn
-    end
-
+-- Draws the standard header — title, version tag, wrapped description, and a
+-- divider — and returns the divider (the anchor for content below) plus the
+-- resolved version string.
+function UI.BuildPanelHeader(panel, opts)
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", LEFT_MARGIN, -16)
-    title:SetText("Commander |cffffffff" .. opts.title .. "|r")
+    title:SetText(opts.titleText)
 
-    local version = C_AddOns.GetAddOnMetadata(opts.addonName, "Version")
-    panel._version = version
+    local version = opts.addonName and C_AddOns.GetAddOnMetadata(opts.addonName, "Version")
     if version then
         local versionText = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
         versionText:SetPoint("BOTTOMRIGHT", panel, "TOPRIGHT", -RIGHT_MARGIN, -24)
@@ -441,6 +520,41 @@ function UI.NewPanel(opts)
     divider:SetHeight(1)
     divider:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -10)
     divider:SetPoint("RIGHT", panel, "RIGHT", -RIGHT_MARGIN, 0)
+
+    return divider, version
+end
+
+-- ---------------------------------------------------------------------------
+-- Panel constructor
+-- ---------------------------------------------------------------------------
+
+-- opts: key (unique short id), title (subcategory name), addonName,
+--       description, event (Commander update event to listen for / notify),
+--       slash (array of slash commands), slashHandlers (map subcommand->fn;
+--       a "" key overrides what the bare command does)
+function UI.NewPanel(opts)
+    local panel = CreateFrame("Frame")
+    panel.name = opts.title
+    panel._key = opts.key
+    panel._title = opts.title
+    panel._addonName = opts.addonName
+    panel._description = opts.description
+    panel._event = opts.event
+    panel._slash = opts.slash
+    panel._slashHandlers = opts.slashHandlers
+    panel._refreshers = {}
+    panel._loading = false
+
+    for name, fn in pairs(PanelMethods) do
+        panel[name] = fn
+    end
+
+    local divider, version = UI.BuildPanelHeader(panel, {
+        titleText = "Commander |cffffffff" .. opts.title .. "|r",
+        addonName = opts.addonName,
+        description = opts.description,
+    })
+    panel._version = version
 
     -- Anchor target for the first row
     local anchorSeed = CreateFrame("Frame", nil, panel)

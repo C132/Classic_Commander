@@ -25,17 +25,11 @@ local function ApplyDefaultSettings()
         CommanderResourceDB._defaultsV2 = true
     end
 
-    for key, value in pairs(DefaultSettings) do
-        if CommanderResourceDB[key] == nil then
-            CommanderResourceDB[key] = value
-        end
-    end
+    Commander.UI.ApplyDefaults(CommanderResourceDB, DefaultSettings)
 end
 
 local function Reset()
-    for key, value in pairs(DefaultSettings) do
-        CommanderResourceDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderResourceDB, DefaultSettings)
     Commander.Notify(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED)
     print("Commander Resources: settings restored to defaults")
 end
@@ -48,9 +42,6 @@ local function CreateOptionsPanel()
         description = "Tracks the five second rule for mana users: a timer bar counts down until spirit regeneration resumes, then shows your estimated mana gained per tick.",
         event = COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED,
         slash = { "/cres" },
-        slashHandlers = {
-            reset = Reset,
-        },
     })
 
     panel:AddSection("Five Second Rule")

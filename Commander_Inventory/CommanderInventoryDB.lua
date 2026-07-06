@@ -12,23 +12,11 @@ local defaultSettings = {
     showFrame = true,
 }
 
-local function ApplyDefaults()
-    for key, value in pairs(defaultSettings) do
-        if CommanderInventoryDB[key] == nil then
-            CommanderInventoryDB[key] = value
-        end
-    end
-end
-
-ApplyDefaults()
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("PLAYER_LOGIN")
 
 local function Reset()
-    for key, value in pairs(defaultSettings) do
-        CommanderInventoryDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderInventoryDB, defaultSettings)
     Commander.Notify(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY)
     print("Commander Inventory: settings restored to defaults")
 end
@@ -57,8 +45,10 @@ local function CreateOptionsPanel()
         event = COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY,
         slash = { "/ci" },
         slashHandlers = {
+            -- Bare /ci keeps its long-standing meaning: toggle the item grid.
+            -- The framework auto-adds "/ci settings" to open this panel.
+            [""] = ToggleFrame,
             toggle = ToggleFrame,
-            reset = Reset,
             center = ResetPosition,
         },
     })
@@ -66,7 +56,7 @@ local function CreateOptionsPanel()
     panel:AddSection("Item Grid")
     panel:AddCheckbox({
         label = "Show Item Grid",
-        tooltip = "Show the usable-items grid. You can also toggle it with /ci toggle.",
+        tooltip = "Show the usable-items grid. You can also toggle it with /ci.",
         get = function() return CommanderInventoryDB.showFrame end,
         set = function(value) CommanderInventoryDB.showFrame = value end,
     })
@@ -103,7 +93,7 @@ local function CreateOptionsPanel()
         label = "Grid Scale",
         tooltip = "Overall size of the item grid.",
         min = 0.5, max = 2.0, step = 0.05,
-        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        format = Commander.UI.FormatPercent,
         get = function() return CommanderInventoryDB.scale end,
         set = function(value) CommanderInventoryDB.scale = value end,
     })
@@ -113,10 +103,9 @@ end
 
 frame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
-        -- Saved variables replace the table created at file load, so re-apply defaults
-        -- here for any keys missing from the saved data
-        ApplyDefaults()
-        _G.CommanderInventoryDB = CommanderInventoryDB
+        -- Saved variables replace the table created at file load, so apply
+        -- defaults here for any keys missing from the saved data
+        Commander.UI.ApplyDefaults(CommanderInventoryDB, defaultSettings)
         CreateOptionsPanel()
     end
 end)

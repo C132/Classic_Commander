@@ -11,26 +11,12 @@ local DefaultSettings = {
     WhisperDelay = 0.5,    -- Delay between whispers in seconds
 }
 
--- Fill in any missing defaults; re-run on ADDON_LOADED because the
--- SavedVariables table replaces CommanderWhoDB after this file executes
-local function ApplyDefaults()
-    for key, value in pairs(DefaultSettings) do
-        if CommanderWhoDB[key] == nil then
-            CommanderWhoDB[key] = value
-        end
-    end
-end
-
-ApplyDefaults()
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 
 local function Reset()
-    for key, value in pairs(DefaultSettings) do
-        CommanderWhoDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderWhoDB, DefaultSettings)
     Commander.Notify(COMMANDER_WHO_EVENTS.UPDATE)
     print("Commander Who: settings restored to defaults")
 end
@@ -43,9 +29,6 @@ local function CreateOptionsPanel()
         description = "Adds selection checkboxes and a mass whisper tool to the Who window, so you can message several players from one search.",
         event = COMMANDER_WHO_EVENTS.UPDATE,
         slash = { "/cw" },
-        slashHandlers = {
-            reset = Reset,
-        },
     })
 
     panel:AddSection("Who Window")
@@ -86,7 +69,8 @@ end
 
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Who" then
-        ApplyDefaults()  -- SavedVariables are available now
+        -- SavedVariables replace the global table after the file runs, so apply defaults here
+        Commander.UI.ApplyDefaults(CommanderWhoDB, DefaultSettings)
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         CreateOptionsPanel()

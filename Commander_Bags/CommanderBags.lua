@@ -29,6 +29,8 @@ scanningTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
 
 local NUM_CONTAINER_FRAMES = 13 -- Maximum number of container frames
 
+local FadeBags -- defined below; forward-declared for the UPDATE listener
+
 local function ResetItemColors()
     for i = 1, NUM_CONTAINER_FRAMES do
         local containerFrame = _G["ContainerFrame"..i]
@@ -197,6 +199,11 @@ local function ScheduleCursorRefresh()
 end
 
 local function OnUpdate()
+    -- If fading was just disabled while bags were faded (e.g. mid-move),
+    -- restore full opacity; nothing else ever writes container alpha back
+    if not CommanderBagsDB.FadeBagsWhileMoving then
+        FadeBags(false)
+    end
     UpdateItemColors()
 end
 
@@ -351,7 +358,7 @@ local function MaybeRevertAllBags()
 end
 
 -- Add function to fade bags
-local function FadeBags(fade)
+function FadeBags(fade)
     local fadedAlpha = CommanderBagsDB.FadeOpacity or 0.5
     for i = 1, NUM_CONTAINER_FRAMES do
         local bagFrame = _G["ContainerFrame"..i]
@@ -563,22 +570,9 @@ local function PrintBagDiagnostics()
     end
 end
 
-SLASH_CBAGSDIAG1 = "/cbags"
-SlashCmdList["CBAGSDIAG"] = function(msg)
-    msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-    if msg == "diag" then
-        PrintBagDiagnostics()
-    elseif msg == "reset" then
-        -- CommanderBags_Reset is exposed by CommanderBagsDB.lua
-        if CommanderBags_Reset then
-            CommanderBags_Reset()
-        else
-            print("Commander Bags reset is unavailable")
-        end
-    else
-        print("Usage: /cbags [diag|reset]")
-    end
-end
+-- /cb and /cbags (with reset and diag subcommands) are registered by the
+-- settings panel in CommanderBagsDB.lua; it dispatches "diag" here
+CommanderBags_PrintDiagnostics = PrintBagDiagnostics
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -595,7 +589,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif loaded then
         if event == "PLAYER_STARTED_MOVING" and CommanderBagsDB.FadeBagsWhileMoving then
             FadeBags(true)
-        elseif event == "PLAYER_STOPPED_MOVING" and CommanderBagsDB.FadeBagsWhileMoving then
+        elseif event == "PLAYER_STOPPED_MOVING" then
+            -- Unconditional: restores opacity even if fading was toggled off mid-move
             FadeBags(false)
         elseif event == "BAG_OPEN" then
             StartRefreshWindow()

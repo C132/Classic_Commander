@@ -22,25 +22,12 @@ local DefaultSettings = {
     EffectTexture = TEXTURE_PATH .. TEXTURE_FILES[1]
 }
 
-local function ApplyDefaultSettings()
-    for key, value in pairs(DefaultSettings) do
-        if CommanderCastingDB[key] == nil then
-            CommanderCastingDB[key] = value
-        end
-    end
-end
-
-ApplyDefaultSettings()
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-local loaded = false
 
 local function Reset()
-    for key, value in pairs(DefaultSettings) do
-        CommanderCastingDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderCastingDB, DefaultSettings)
     Commander.Notify(COMMANDER_CASTING_EVENTS.UPDATE)
     print("Commander Casting: settings restored to defaults")
 end
@@ -68,9 +55,6 @@ local function CreateOptionsPanel()
         description = "Adds a fullscreen glow that builds up around the edge of the screen while you cast, so you can track cast progress without watching a cast bar.",
         event = COMMANDER_CASTING_EVENTS.UPDATE,
         slash = { "/ccast" },
-        slashHandlers = {
-            reset = Reset,
-        },
     })
 
     panel:AddSection("Fullscreen Effect")
@@ -91,7 +75,7 @@ local function CreateOptionsPanel()
         label = "Effect Intensity",
         tooltip = "Maximum brightness the glow reaches as the cast completes.",
         min = 0, max = 1, step = 0.05,
-        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        format = Commander.UI.FormatPercent,
         get = function() return CommanderCastingDB.EffectIntensity end,
         set = function(value) CommanderCastingDB.EffectIntensity = value end,
         isEnabled = function() return CommanderCastingDB.ShowFullscreenEffect end,
@@ -122,7 +106,7 @@ local function CreateOptionsPanel()
     texturePreview:SetPoint("BOTTOMRIGHT", -2, 2)
     texturePreview:SetBlendMode("ADD")
 
-    panel:_AddRefresher(function()
+    panel:AddRefresher(function()
         texturePreview:SetTexture(CommanderCastingDB.EffectTexture)
         previewFrame:SetAlpha(CommanderCastingDB.ShowFullscreenEffect and 1 or 0.4)
     end)
@@ -136,14 +120,14 @@ end
 
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" then
-        -- SavedVariables replace the global table after the file runs, so re-apply defaults here
+        -- SavedVariables replace the global table after the file runs, so apply defaults here
         if addonName == "Commander_Casting" then
             CommanderCastingDB = CommanderCastingDB or {}
-            ApplyDefaultSettings()
+            Commander.UI.ApplyDefaults(CommanderCastingDB, DefaultSettings)
+            self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then
         OnAwake()
-        loaded = true
     end
 end
 

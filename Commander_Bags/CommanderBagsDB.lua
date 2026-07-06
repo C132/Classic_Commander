@@ -11,24 +11,9 @@ local DefaultSettings = {
     FadeOpacity = 0.5,
 }
 
-local function ApplyDefaultSettings()
-    for key, value in pairs(DefaultSettings) do
-        if CommanderBagsDB[key] == nil then
-            if key == "BagPositions" then
-                CommanderBagsDB[key] = {}
-            else
-                CommanderBagsDB[key] = value
-            end
-        end
-    end
-end
-
-ApplyDefaultSettings()
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-local loaded = false
 
 -- Container frames are unprotected, so relaying them out is legal even in
 -- combat; deferring the direct (insecure) UpdateContainerFrameAnchors call to
@@ -68,15 +53,10 @@ local function ResetBagPositions()
 end
 
 local function Reset()
-    CommanderBagsDB.ColorCodeItems = DefaultSettings.ColorCodeItems
-    CommanderBagsDB.FadeBagsWhileMoving = DefaultSettings.FadeBagsWhileMoving
-    CommanderBagsDB.FadeOpacity = DefaultSettings.FadeOpacity
+    Commander.UI.ResetToDefaults(CommanderBagsDB, DefaultSettings)
     ResetBagPositions()
     print("Commander Bags: settings restored to defaults")
 end
-
--- Exposed for the /cbags slash command registered in CommanderBags.lua
-CommanderBags_Reset = Reset
 
 local function CreateOptionsPanel()
     local panel = Commander.UI.NewPanel({
@@ -85,9 +65,14 @@ local function CreateOptionsPanel()
         addonName = "Commander_Bags",
         description = "Color-codes bag items by quality and type, makes bag windows freely draggable, and fades them out of the way while you travel.",
         event = COMMANDER_BAGS_EVENTS.UPDATE,
-        slash = { "/cb" },
+        slash = { "/cb", "/cbags" },
         slashHandlers = {
-            reset = Reset,
+            diag = function()
+                -- Defined in CommanderBags.lua, which loads after this file
+                if CommanderBags_PrintDiagnostics then
+                    CommanderBags_PrintDiagnostics()
+                end
+            end,
         },
     })
 
@@ -110,7 +95,7 @@ local function CreateOptionsPanel()
         label = "Faded Opacity",
         tooltip = "How visible bag windows remain while you are moving. Lower values make them more transparent.",
         min = 0.1, max = 1.0, step = 0.05,
-        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        format = Commander.UI.FormatPercent,
         get = function() return CommanderBagsDB.FadeOpacity end,
         set = function(value) CommanderBagsDB.FadeOpacity = value end,
         isEnabled = function() return CommanderBagsDB.FadeBagsWhileMoving end,
@@ -131,23 +116,16 @@ local function CreateOptionsPanel()
     panel:Finalize({ onDefaults = Reset })
 end
 
-local function OnAwake()
-    -- Re-apply defaults here: SavedVariables replace the global CommanderBagsDB
-    -- after this file runs, so the top-of-file merge is lost for existing saves
-    ApplyDefaultSettings()
-    CreateOptionsPanel()
-end
-
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" then
+        -- SavedVariables replace the global table after the file runs, so apply defaults here
         if addonName == "Commander_Bags" then
             CommanderBagsDB = CommanderBagsDB or {}
-            ApplyDefaultSettings()
+            Commander.UI.ApplyDefaults(CommanderBagsDB, DefaultSettings)
             self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then
-        OnAwake()
-        loaded = true
+        CreateOptionsPanel()
     end
 end
 

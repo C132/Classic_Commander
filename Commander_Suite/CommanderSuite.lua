@@ -7,8 +7,6 @@
 
 local ROW_HEIGHT = 24
 
-local built = false
-
 local function AddSectionHeader(panel, anchor, text)
     local label = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -14)
@@ -68,20 +66,12 @@ local function AddModuleRow(panel, anchor, module)
         end)
 
         if module.description then
+            local text = module.description
+            if module.slash then
+                text = text .. "\n\nSlash command: " .. module.slash
+            end
             row:EnableMouse(true)
-            row:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetText(module.title, 1, 1, 1)
-                GameTooltip:AddLine(module.description, nil, nil, nil, true)
-                if module.slash then
-                    GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Slash command: " .. module.slash, 0.7, 0.7, 0.7)
-                end
-                GameTooltip:Show()
-            end)
-            row:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
+            Commander.UI.AttachTooltip(row, module.title, text)
         end
     else
         title:SetFontObject(GameFontDisable)
@@ -91,14 +81,7 @@ local function AddModuleRow(panel, anchor, module)
     return row
 end
 
-local function BuildDashboard()
-    if built then return end
-    built = true
-
-    local panel = Commander.MainPanel
-    local anchor = panel.ContentAnchor
-    if not anchor then return end
-
+local function BuildDashboard(panel, anchor)
     anchor = AddSectionHeader(panel, anchor, "Modules")
 
     for _, module in ipairs(Commander.GetModules()) do
@@ -125,11 +108,12 @@ local function BuildDashboard()
     hint:SetText("Open this page any time with /commander")
 end
 
--- Build lazily on first show: PLAYER_LOGIN dispatch order follows addon load
--- order, so modules loading after Commander_Suite would be missing from an
--- eagerly built list. The settings UI cannot open before login completes, so
--- every module is registered by the time this fires.
-Commander.MainPanel:HookScript("OnShow", BuildDashboard)
+-- Registered with the hub's extension point, which runs builders once on the
+-- root panel's first OnShow. That timing matters: PLAYER_LOGIN dispatch
+-- follows addon load order, so modules loading after Commander_Suite would be
+-- missing from an eagerly built list, while the settings UI cannot open
+-- before login completes.
+Commander.AddMainPanelContent(BuildDashboard)
 
 SLASH_COMMANDERSUITE1 = "/commander"
 SLASH_COMMANDERSUITE2 = "/cmdr"

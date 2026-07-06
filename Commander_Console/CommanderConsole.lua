@@ -51,8 +51,10 @@ local function ApplyConsoleState()
         consoleBackdrop:Show()
         WorldFrame:ClearAllPoints()
         WorldFrame:SetPoint("TOPLEFT", 0, 0)
-        -- Leave room at the bottom of the screen for the console area
-        WorldFrame:SetPoint("BOTTOMRIGHT", 0, CommanderConsoleDB.ConsoleHeight or 150)
+        -- 150 matches the console strip baked into the fullscreen Console3.png
+        -- overlay (bottom ~18.5% of the art); a different inset would misalign
+        -- the world edge with the artwork, so this is intentionally not a setting
+        WorldFrame:SetPoint("BOTTOMRIGHT", 0, 150)
     else
         consoleBackdrop:Hide()
         RestoreWorldFramePoints()

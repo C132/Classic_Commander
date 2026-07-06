@@ -30,9 +30,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 
 local function Reset()
-    for key, value in pairs(DefaultSettings) do
-        CommanderBuffsDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderBuffsDB, DefaultSettings)
     Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
     print("Commander Buffs: settings restored to defaults")
 end
@@ -52,9 +50,6 @@ local function CreateOptionsPanel()
         description = "Makes the buff display movable and adjustable: drag it anywhere with the unlock anchor, scale it, and choose how many buffs sit on each row.",
         event = COMMANDER_BUFFS_EVENTS.UPDATE,
         slash = { "/cbuff" },
-        slashHandlers = {
-            reset = Reset,
-        },
     })
 
     panel:AddSection("Position")
@@ -84,7 +79,7 @@ local function CreateOptionsPanel()
         label = "Buff Frame Scale",
         tooltip = "Overall size of the buff display.",
         min = 0.5, max = 2.0, step = 0.05,
-        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        format = Commander.UI.FormatPercent,
         get = function() return CommanderBuffsDB.BuffScale end,
         set = function(value) CommanderBuffsDB.BuffScale = value end,
     })
@@ -97,9 +92,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderBuffsDB.BuffsPerRow = value end,
     })
 
-    local category = panel:Finalize({ onDefaults = Reset })
-    -- Shared with CommanderBuffs.lua for the anchor's settings button
-    CommanderBuffsCategoryID = category:GetID()
+    panel:Finalize({ onDefaults = Reset })
 end
 
 local function OnAwake()

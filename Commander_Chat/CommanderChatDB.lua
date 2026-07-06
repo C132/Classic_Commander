@@ -14,24 +14,12 @@ local DefaultSettings = {
     SoundChannel = "Master",
 }
 
-local function ApplyDefaults()
-    for key, value in pairs(DefaultSettings) do
-        if CommanderChatDB[key] == nil then
-            CommanderChatDB[key] = value
-        end
-    end
-end
-
-ApplyDefaults()
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 
 local function Reset()
-    for key, value in pairs(DefaultSettings) do
-        CommanderChatDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderChatDB, DefaultSettings)
     Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
     print("Commander Chat: settings restored to defaults")
 end
@@ -63,18 +51,34 @@ local AvailableChannels = {
     {text = "Dialog", value = "Dialog"},
 }
 
-local function PlayTestSound(soundType)
-    local soundName
+-- Preview an alert sound. With announce=true (test buttons, slash commands)
+-- it prints what played and warns when the corresponding alert toggle is off,
+-- so a successful preview is never mistaken for an armed alert. The silent
+-- form is used by the dropdowns' auto-preview on selection.
+local function PlayTestSound(soundType, announce)
+    local soundName, enabled, label
     if soundType == "whisper" then
         soundName = CommanderChatDB.WhisperSound
+        enabled = CommanderChatDB.SoundPingWhisper
+        label = "whisper"
     else
         soundName = CommanderChatDB.PartySound
+        enabled = CommanderChatDB.SoundPingParty
+        label = "party"
     end
 
-    local soundKit = SOUNDKIT[soundName or "IG_CHARACTER_INFO_TAB"]
+    soundName = soundName or "IG_CHARACTER_INFO_TAB"
+    local soundKit = SOUNDKIT[soundName]
     local channel = CommanderChatDB.SoundChannel or "Master"
     if soundKit then
         PlaySound(soundKit, channel)
+    end
+
+    if announce then
+        print(string.format("Commander Chat: playing %s sound '%s' on the %s channel", label, soundName, channel))
+        if not enabled then
+            print(string.format("Commander Chat: note - %s sound alerts are currently disabled, so real messages will not play this sound", label))
+        end
     end
 end
 
@@ -87,9 +91,8 @@ local function CreateOptionsPanel()
         event = COMMANDER_CHAT_EVENTS.UPDATE,
         slash = { "/cchat", "/commanderchat" },
         slashHandlers = {
-            reset = Reset,
-            ["test whisper"] = function() PlayTestSound("whisper") end,
-            ["test party"] = function() PlayTestSound("party") end,
+            ["test whisper"] = function() PlayTestSound("whisper", true) end,
+            ["test party"] = function() PlayTestSound("party", true) end,
         },
     })
 
@@ -151,32 +154,27 @@ local function CreateOptionsPanel()
         {
             label = "Test Whisper Sound",
             tooltip = "Preview the whisper alert on the selected sound channel.",
-            onClick = function() PlayTestSound("whisper") end,
+            onClick = function() PlayTestSound("whisper", true) end,
         },
         {
             label = "Test Party Sound",
             tooltip = "Preview the party alert on the selected sound channel.",
-            onClick = function() PlayTestSound("party") end,
+            onClick = function() PlayTestSound("party", true) end,
         },
     })
 
     panel:Finalize({ onDefaults = Reset })
 end
 
-local function OnAwake()
-    ApplyDefaults()
-    CreateOptionsPanel()
-end
-
 local function OnEvent(self, event, arg1)
     if event == "ADDON_LOADED" then
+        -- SavedVariables replace the global table after the file runs, so apply defaults here
         if arg1 == "Commander_Chat" then
-            -- Saved variables replace the global after this file runs, so re-apply defaults for any missing keys
-            ApplyDefaults()
+            Commander.UI.ApplyDefaults(CommanderChatDB, DefaultSettings)
             self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then
-        OnAwake()
+        CreateOptionsPanel()
     end
 end
 

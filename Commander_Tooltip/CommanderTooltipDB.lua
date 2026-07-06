@@ -26,25 +26,11 @@ local ANCHOR_OPTIONS = {
     {text = "Bottom Right", value = "BOTTOMRIGHT"},
 }
 
-local function ApplyDefaultSettings()
-    for key, value in pairs(DefaultSettings) do
-        if CommanderTooltipDB[key] == nil then
-            CommanderTooltipDB[key] = value
-        end
-    end
-end
-
--- Seed defaults now for a fresh install; re-applied at PLAYER_LOGIN because
--- SavedVariables replace CommanderTooltipDB after this file has run.
-ApplyDefaultSettings()
-
 local frame = CreateFrame("FRAME")
 frame:RegisterEvent("PLAYER_LOGIN")
 
 local function Reset()
-    for key, value in pairs(DefaultSettings) do
-        CommanderTooltipDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderTooltipDB, DefaultSettings)
     Commander.Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
     print("Commander Tooltip: settings restored to defaults")
 end
@@ -57,9 +43,6 @@ local function CreateOptionsPanel()
         description = "Extends game tooltips with item levels and vendor prices, and controls where the default tooltip appears on screen.",
         event = COMMANDER_TOOLTIP_EVENTS.UPDATE,
         slash = { "/ctooltip" },
-        slashHandlers = {
-            reset = Reset,
-        },
     })
 
     panel:AddSection("Tooltip Content")
@@ -114,7 +97,7 @@ local function CreateOptionsPanel()
         label = "Tooltip Scale",
         tooltip = "Overall size of game tooltips.",
         min = 0.5, max = 2.0, step = 0.05,
-        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        format = Commander.UI.FormatPercent,
         get = function() return CommanderTooltipDB.Scale end,
         set = function(value) CommanderTooltipDB.Scale = value end,
     })
@@ -124,7 +107,8 @@ end
 
 local function OnEvent(self, event)
     if event == "PLAYER_LOGIN" then
-        ApplyDefaultSettings()
+        -- SavedVariables replace the global table after the file runs, so apply defaults here
+        Commander.UI.ApplyDefaults(CommanderTooltipDB, DefaultSettings)
         CreateOptionsPanel()
     end
 end

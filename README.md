@@ -45,14 +45,15 @@ Settings panels are built with the shared `Commander.UI` framework (Commander_Ev
 local panel = Commander.UI.NewPanel({
     key = "Bags", title = "Bags", addonName = "Commander_Bags",
     description = "...", event = COMMANDER_BAGS_EVENTS.UPDATE,
-    slash = { "/cb" }, slashHandlers = { reset = Reset },
+    slash = { "/cb" },
 })
 panel:AddSection("Item Highlighting")
 panel:AddCheckbox({ label = ..., tooltip = ..., get = ..., set = ..., isEnabled = ... })
 panel:AddSlider({ label = ..., min = ..., max = ..., step = ..., format = ..., get = ..., set = ... })
 panel:AddDropdown({ label = ..., options = ..., get = ..., set = ... })
 panel:AddButtonRow({ { label = ..., onClick = ... } })
+panel:AddRefresher(function() ... end) -- custom widgets re-sync here
 panel:Finalize({ onDefaults = Reset })
 ```
 
-Widgets read through `get` and write through `set`; after any write the panel fires the module's update event, and every panel re-syncs its widgets whenever that event fires or the panel is shown. `Finalize` registers the canvas subcategory under **Commander**, standard slash commands, and the module registry entry consumed by Commander_Suite's dashboard.
+Widgets read through `get` and write through `set`; after any write the panel fires the module's update event (slider drags are throttled to a trailing notify), and every panel re-syncs its widgets whenever that event fires or the panel is shown. `Finalize` registers the canvas subcategory under **Commander**, standard slash commands (bare command opens the panel unless the module overrides it with a `[""]` handler; `reset` is wired to `onDefaults` automatically), and the module registry entry consumed by Commander_Suite's dashboard. Shared helpers: `Commander.UI.ApplyDefaults`/`ResetToDefaults`/`CopyValue` for SavedVariables handling, `Commander.UI.FormatPercent` for percent sliders, `Commander.UI.AttachTooltip`, and `Commander.OpenModuleSettings(key)` / `Commander.AddMainPanelContent(fn)` for suite-level integration.

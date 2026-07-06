@@ -15,40 +15,18 @@ local DefaultSettings = {
     }
 }
 
-local function DefaultPosition()
-    local p = DefaultSettings.position
-    return { point = p.point, relativePoint = p.relativePoint, xOfs = p.xOfs, yOfs = p.yOfs }
-end
-
-local function ApplyDefaultSettings()
-    for key, value in pairs(DefaultSettings) do
-        if CommanderActionBarDB[key] == nil then
-            if key == "position" then
-                CommanderActionBarDB[key] = DefaultPosition()
-            else
-                CommanderActionBarDB[key] = value
-            end
-        end
-    end
-end
-
-ApplyDefaultSettings()
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-local loaded = false
 
 local function Reset()
-    CommanderActionBarDB.locked = DefaultSettings.locked
-    CommanderActionBarDB.showBagButtons = DefaultSettings.showBagButtons
-    CommanderActionBarDB.position = DefaultPosition()
+    Commander.UI.ResetToDefaults(CommanderActionBarDB, DefaultSettings)
     Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
     print("Commander Action Bar: settings restored to defaults")
 end
 
 local function ResetPosition()
-    CommanderActionBarDB.position = DefaultPosition()
+    CommanderActionBarDB.position = Commander.UI.CopyValue(DefaultSettings.position)
     Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
 end
 
@@ -67,7 +45,6 @@ local function CreateOptionsPanel()
         event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
         slash = { "/cab" },
         slashHandlers = {
-            reset = Reset,
             lock = function() SetLocked(true) end,
             unlock = function() SetLocked(false) end,
         },
@@ -130,22 +107,20 @@ end
 
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" then
-        -- SavedVariables replace the global table after the file runs, so re-apply defaults here
+        -- SavedVariables replace the global table after the file runs, so apply defaults here
         if addonName == "Commander_ActionBar" then
             CommanderActionBarDB = CommanderActionBarDB or {}
-            ApplyDefaultSettings()
+            Commander.UI.ApplyDefaults(CommanderActionBarDB, DefaultSettings)
+            self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then
         OnAwake()
-        loaded = true
     elseif event == "PLAYER_REGEN_ENABLED" then
         frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
         if pendingBagButtonUpdate then
             pendingBagButtonUpdate = false
             ApplyBagButtonVisibility()
         end
-    elseif loaded then
-        OnUpdate()
     end
 end
 

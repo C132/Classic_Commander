@@ -14,31 +14,18 @@ local DefaultSettings = {
     position = {"CENTER", "UIParent", "CENTER", 0, 300}
 }
 
-local function CopyValue(value)
-    if type(value) == "table" then
-        local copy = {}
-        for k, v in pairs(value) do
-            copy[k] = v
-        end
-        return copy
-    end
-    return value
-end
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 
 local function Reset()
-    for key, value in pairs(DefaultSettings) do
-        CommanderNameplateDB[key] = CopyValue(value)
-    end
+    Commander.UI.ResetToDefaults(CommanderNameplateDB, DefaultSettings)
     Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
     print("Commander Nameplate: settings restored to defaults")
 end
 
 local function ResetPosition()
-    CommanderNameplateDB.position = CopyValue(DefaultSettings.position)
+    CommanderNameplateDB.position = Commander.UI.CopyValue(DefaultSettings.position)
     Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
 end
 
@@ -50,9 +37,6 @@ local function CreateOptionsPanel()
         description = "A personal nameplate above your character with health, mana, and cast bars. It appears when you are in combat or below full resources, and hides itself when you are topped off.",
         event = COMMANDER_NAMEPLATE_EVENTS.UPDATE,
         slash = { "/cnp" },
-        slashHandlers = {
-            reset = Reset,
-        },
     })
 
     panel:AddSection("Display")
@@ -92,7 +76,7 @@ local function CreateOptionsPanel()
         label = "Faded Opacity",
         tooltip = "How visible the nameplate remains while you are moving. Lower values make it more transparent.",
         min = 0, max = 1, step = 0.05,
-        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        format = Commander.UI.FormatPercent,
         get = function() return CommanderNameplateDB.fadeIntensity end,
         set = function(value) CommanderNameplateDB.fadeIntensity = value end,
         isEnabled = function() return CommanderNameplateDB.fadeWhileMoving end,
@@ -117,11 +101,7 @@ end
 local function OnEvent(self, event, addon)
     if event == "ADDON_LOADED" and addon == "Commander_Nameplate" then
         CommanderNameplateDB = CommanderNameplateDB or {}
-        for key, value in pairs(DefaultSettings) do
-            if CommanderNameplateDB[key] == nil then
-                CommanderNameplateDB[key] = CopyValue(value)
-            end
-        end
+        Commander.UI.ApplyDefaults(CommanderNameplateDB, DefaultSettings)
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         OnAwake()

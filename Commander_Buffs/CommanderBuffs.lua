@@ -39,10 +39,8 @@ local function CreateMoveableAnchor(name, parent)
 
     -- Settings button click handler
     settingsButton:SetScript("OnClick", function()
-        -- Open settings to the correct category (ID published by CommanderBuffsDB.lua)
-        if CommanderBuffsCategoryID then
-            Settings.OpenToCategory(CommanderBuffsCategoryID)
-        end
+        -- Resolved through the module registry (Commander.RegisterModule)
+        Commander.OpenModuleSettings("Buffs")
     end)
 
     anchor:SetScript("OnMouseDown", function(self, button)

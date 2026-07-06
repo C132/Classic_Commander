@@ -22,17 +22,11 @@ frame:RegisterEvent("PLAYER_LOGIN")
 -- Defaults are applied in ADDON_LOADED: SavedVariables replace the global
 -- after this file runs, so applying them at file scope would be overwritten
 local function ApplyDefaults()
-    for key, value in pairs(defaultSettings) do
-        if CommanderMinimapDB[key] == nil then
-            CommanderMinimapDB[key] = value
-        end
-    end
+    Commander.UI.ApplyDefaults(CommanderMinimapDB, defaultSettings)
 end
 
 local function Reset()
-    for key, value in pairs(defaultSettings) do
-        CommanderMinimapDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderMinimapDB, defaultSettings)
     Commander.Notify(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP)
     print("Commander Minimap: settings restored to defaults")
 end
@@ -45,9 +39,6 @@ local function CreateOptionsPanel()
         description = "Reshapes the minimap into a square, movable RTS-style map with a repositioned clock, mouse-wheel zoom, and an information button that tracks XP progress.",
         event = COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP,
         slash = { "/cmap" },
-        slashHandlers = {
-            reset = Reset,
-        },
     })
 
     panel:AddSection("Minimap")
@@ -55,7 +46,7 @@ local function CreateOptionsPanel()
         label = "Minimap Scale",
         tooltip = "Overall size of the minimap.",
         min = 0.8, max = 2.0, step = 0.01,
-        format = function(value) return string.format("%d%%", value * 100 + 0.5) end,
+        format = Commander.UI.FormatPercent,
         get = function() return CommanderMinimapDB.MinimapScale end,
         set = function(value) CommanderMinimapDB.MinimapScale = value end,
     })

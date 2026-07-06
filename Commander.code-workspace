@@ -5,8 +5,32 @@
             "path": ".git"
         },
         {
+            "name": "Commander_ActionBar",
+            "path": "Commander_ActionBar"
+        },
+        {
+            "name": "Commander_Bags",
+            "path": "Commander_Bags"
+        },
+        {
+            "name": "Commander_Buffs",
+            "path": "Commander_Buffs"
+        },
+        {
+            "name": "Commander_Casting",
+            "path": "Commander_Casting"
+        },
+        {
+            "name": "Commander_Chat",
+            "path": "Commander_Chat"
+        },
+        {
             "name": "Commander_Console",
             "path": "Commander_Console"
+        },
+        {
+            "name": "Commander_Events",
+            "path": "Commander_Events"
         },
         {
             "name": "Commander_Inventory",
@@ -25,19 +49,20 @@
             "path": "Commander_Resources"
         },
         {
+            "name": "Commander_Suite",
+            "path": "Commander_Suite"
+        },
+        {
+            "name": "Commander_Tooltip",
+            "path": "Commander_Tooltip"
+        },
+        {
             "name": "Commander_UnitFrames",
             "path": "Commander_UnitFrames"
         },
         {
-            "name": "Commander_Chat",
-            "path": "Commander_Chat"
-        },
-        {
-            "name": "MyClassicAddon",
-            "path": "MyClassicAddon"
-        },
-        {
-            "path": "Commander_Events"
+            "name": "Commander_Who",
+            "path": "Commander_Who"
         }
     ],
 	"settings": {}

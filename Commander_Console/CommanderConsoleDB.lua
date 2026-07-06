@@ -4,26 +4,18 @@ COMMANDER_CONSOLE_EVENTS = {
     UPDATE = "COMMANDER_CONSOLE_UPDATE"
 }
 
+-- The console strip's height is fixed by the artwork baked into Console3.png
+-- (a fullscreen overlay), so it is deliberately not a setting: a different
+-- viewport inset would misalign the world edge with the art.
 local DefaultSettings = {
     ShowConsole = false,
-    ConsoleHeight = 150,
 }
-
-local function ApplyDefaults()
-    for key, value in pairs(DefaultSettings) do
-        if CommanderConsoleDB[key] == nil then
-            CommanderConsoleDB[key] = value
-        end
-    end
-end
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("PLAYER_LOGIN")
 
 local function Reset()
-    for key, value in pairs(DefaultSettings) do
-        CommanderConsoleDB[key] = value
-    end
+    Commander.UI.ResetToDefaults(CommanderConsoleDB, DefaultSettings)
     Commander.Notify(COMMANDER_CONSOLE_EVENTS.UPDATE)
     print("Commander Console: settings restored to defaults")
 end
@@ -37,7 +29,6 @@ local function CreateOptionsPanel()
         event = COMMANDER_CONSOLE_EVENTS.UPDATE,
         slash = { "/cc" },
         slashHandlers = {
-            reset = Reset,
             toggle = function()
                 CommanderConsoleDB.ShowConsole = not CommanderConsoleDB.ShowConsole
                 Commander.Notify(COMMANDER_CONSOLE_EVENTS.UPDATE)
@@ -48,32 +39,21 @@ local function CreateOptionsPanel()
     panel:AddSection("Console")
     panel:AddCheckbox({
         label = "Show Console",
-        tooltip = "Enable the console backdrop and shrink the game viewport to make room for it.",
+        tooltip = "Enable the console backdrop and shrink the game viewport to make room for it. The console's height is fixed by its artwork.",
         get = function() return CommanderConsoleDB.ShowConsole end,
         set = function(value) CommanderConsoleDB.ShowConsole = value end,
-    })
-    panel:AddSlider({
-        label = "Console Height",
-        tooltip = "How many pixels of the bottom of the screen the console area occupies.",
-        min = 60, max = 300, step = 10,
-        format = "%d px",
-        get = function() return CommanderConsoleDB.ConsoleHeight end,
-        set = function(value) CommanderConsoleDB.ConsoleHeight = value end,
-        isEnabled = function() return CommanderConsoleDB.ShowConsole end,
     })
 
     panel:Finalize({ onDefaults = Reset })
 end
 
-local function OnAwake()
-    -- Merge defaults here so SavedVariables are already loaded
-    ApplyDefaults()
-    CreateOptionsPanel()
-end
-
 local function OnEvent(self, event)
     if event == "PLAYER_LOGIN" then
-        OnAwake()
+        -- Merge defaults here so SavedVariables are already loaded
+        Commander.UI.ApplyDefaults(CommanderConsoleDB, DefaultSettings)
+        -- Drop the briefly-shipped ConsoleHeight setting; the art is fixed-size
+        CommanderConsoleDB.ConsoleHeight = nil
+        CreateOptionsPanel()
     end
 end
 
