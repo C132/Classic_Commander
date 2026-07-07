@@ -1,4 +1,4 @@
-## Interface: 20505
+## Interface: 20506
 ## Category: Commander
 ## Title: Commander Tooltip
 ## Notes: Tooltip enhancements for the Commander suite: item level, vendor price, cursor anchoring, and scale.

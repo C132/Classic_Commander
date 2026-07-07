@@ -1,4 +1,4 @@
-## Interface: 20505
+## Interface: 20506
 ## Category: Commander
 ## Title: Commander Inventory
 ## Notes: Movable grid of usable items from your bags and equipment, with one-click access.

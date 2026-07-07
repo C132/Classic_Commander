@@ -1,4 +1,4 @@
-## Interface: 20505
+## Interface: 20506
 ## Category: Commander
 ## Title: Commander Chat
 ## Notes: Chat window visibility controls and sound pings for whispers and party messages.

@@ -1,6 +1,6 @@
 # Commander
 
-A modular UI suite for World of Warcraft: TBC Classic Anniversary (Interface 20505).
+A modular UI suite for World of Warcraft: TBC Classic Anniversary (Interface 20506).
 
 Each module is a standalone addon that can be enabled or disabled independently. All modules require **Commander_Events**, the shared hub that provides the event bus and the unified "Commander" settings category (Options → AddOns → Commander).
 
