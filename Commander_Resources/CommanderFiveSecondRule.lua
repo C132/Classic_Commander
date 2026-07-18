@@ -11,19 +11,14 @@ if fiveSecondRule.SetDontSavePosition then
     pcall(fiveSecondRule.SetDontSavePosition, fiveSecondRule, true)
 end
 
--- Re-anchor from the saved position (or the default center) with a single
--- UIParent point, so the frame can never leave UIParent's anchor family
-local function ApplyBarPosition()
-    local pos = CommanderResourceDB and CommanderResourceDB.BarPosition
-    fiveSecondRule:ClearAllPoints()
-    if pos and type(pos.left) == "number" and type(pos.bottom) == "number" then
-        fiveSecondRule:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
-    else
-        fiveSecondRule:SetPoint("CENTER")
-    end
+local ApplyBarLayout -- defined below, after the bar's regions exist
+
+local function IsAttachedToPlayerFrame()
+    return CommanderResourceDB and CommanderResourceDB.BarMode == "PLAYER_FRAME"
 end
 
 fiveSecondRule:SetScript("OnDragStart", function(self)
+    if IsAttachedToPlayerFrame() then return end
     if CommanderResourceDB and CommanderResourceDB.LockBar then return end
     self:StartMoving()
 end)
@@ -34,7 +29,7 @@ fiveSecondRule:SetScript("OnDragStop", function(self)
     if CommanderResourceDB and left and bottom then
         CommanderResourceDB.BarPosition = { left = left, bottom = bottom }
     end
-    ApplyBarPosition()
+    ApplyBarLayout()
 end)
 
 local background = fiveSecondRule:CreateTexture(nil, "BACKGROUND")
@@ -57,6 +52,42 @@ manaBar:SetStatusBarColor(0.2, 0.7, 1)
 local manaText = manaBar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 manaText:SetPoint("CENTER")
 manaText:SetText("Ready")
+
+-- Lay the bar out for the current placement mode.
+-- FLOATING: a standalone movable bar on UIParent at the saved (or default
+-- center) position — always a single UIParent point, so the frame can never
+-- leave UIParent's anchor family.
+-- PLAYER_FRAME: a slim strip parented to the player frame, docked beneath
+-- its mana bar, mouse-disabled so it can never eat clicks meant for the
+-- (protected) unit frame; it inherits the frame's scale and visibility.
+function ApplyBarLayout()
+    fiveSecondRule:ClearAllPoints()
+    if IsAttachedToPlayerFrame() and PlayerFrame then
+        fiveSecondRule:SetParent(PlayerFrame)
+        fiveSecondRule:EnableMouse(false)
+        manaText:SetFontObject(GameFontHighlightSmall)
+        local manaAnchor = _G["PlayerFrameManaBar"]
+        if manaAnchor then
+            local width = manaAnchor:GetWidth()
+            fiveSecondRule:SetSize((width and width > 0) and width or 119, 10)
+            fiveSecondRule:SetPoint("TOPLEFT", manaAnchor, "BOTTOMLEFT", 0, -2)
+        else
+            fiveSecondRule:SetSize(119, 10)
+            fiveSecondRule:SetPoint("TOP", PlayerFrame, "BOTTOM", 20, 20)
+        end
+    else
+        fiveSecondRule:SetParent(UIParent)
+        fiveSecondRule:EnableMouse(true)
+        manaText:SetFontObject(GameFontHighlight)
+        fiveSecondRule:SetSize(150, 25)
+        local pos = CommanderResourceDB and CommanderResourceDB.BarPosition
+        if pos and type(pos.left) == "number" and type(pos.bottom) == "number" then
+            fiveSecondRule:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
+        else
+            fiveSecondRule:SetPoint("CENTER")
+        end
+    end
+end
 
 local lastManaChangeTime, playerIsFull, lastManaPower = 0, true, 0
 local serverTickRate, lastRegenTime, tickOffset = 2, 0, 0
@@ -92,12 +123,15 @@ local function OnEvent(self, event, unit, powerType)
         -- Fires on every loading screen; only register the listener once
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
         Commander.AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
-        ApplyBarPosition()
+        ApplyBarLayout()
         UpdateVisibility()
     end
 end
 
 function OnFiveSecondRuleChanged()
+    -- Settings changed: re-apply placement (mode may have switched) and the
+    -- show/hide gate
+    ApplyBarLayout()
     UpdateVisibility()
 end
 
@@ -166,7 +200,7 @@ function CommanderResources_ResetBarPosition()
     if CommanderResourceDB then
         CommanderResourceDB.BarPosition = nil
     end
-    ApplyBarPosition()
+    ApplyBarLayout()
     print("Commander Resources: bar position reset")
 end
 
