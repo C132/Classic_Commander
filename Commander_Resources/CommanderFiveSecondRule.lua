@@ -53,27 +53,44 @@ local manaText = manaBar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 manaText:SetPoint("CENTER")
 manaText:SetText("Ready")
 
+-- The attached bar sits in the player frame's name band, so the name text
+-- yields to it: hidden (alpha 0) only while the bar is attached AND shown,
+-- restored the moment the bar floats, hides, or the class has no mana.
+-- Blizzard's name updates SetText only — they never touch alpha.
+local function UpdateNameOverlay()
+    local nameText = _G["PlayerName"]
+    if not nameText then return end
+    if IsAttachedToPlayerFrame() and fiveSecondRule:IsShown() then
+        nameText:SetAlpha(0)
+    else
+        nameText:SetAlpha(1)
+    end
+end
+
 -- Lay the bar out for the current placement mode.
 -- FLOATING: a standalone movable bar on UIParent at the saved (or default
 -- center) position — always a single UIParent point, so the frame can never
 -- leave UIParent's anchor family.
--- PLAYER_FRAME: a slim strip parented to the player frame, docked beneath
--- its mana bar, mouse-disabled so it can never eat clicks meant for the
--- (protected) unit frame; it inherits the frame's scale and visibility.
+-- PLAYER_FRAME: a slim strip parented to the player frame, occupying the
+-- name band above the health bar (where the player's name normally sits),
+-- mouse-disabled so it can never eat clicks meant for the (protected) unit
+-- frame; it inherits the frame's scale and visibility.
 function ApplyBarLayout()
     fiveSecondRule:ClearAllPoints()
     if IsAttachedToPlayerFrame() and PlayerFrame then
         fiveSecondRule:SetParent(PlayerFrame)
         fiveSecondRule:EnableMouse(false)
         manaText:SetFontObject(GameFontHighlightSmall)
-        local manaAnchor = _G["PlayerFrameManaBar"]
-        if manaAnchor then
-            local width = manaAnchor:GetWidth()
-            fiveSecondRule:SetSize((width and width > 0) and width or 119, 10)
-            fiveSecondRule:SetPoint("TOPLEFT", manaAnchor, "BOTTOMLEFT", 0, -2)
+        local healthBar = _G["PlayerFrameHealthBar"]
+        if healthBar then
+            local width = healthBar:GetWidth()
+            fiveSecondRule:SetSize((width and width > 0) and width or 119, 12)
+            -- Name band: the strip's bottom edge rests on the health bar's top
+            fiveSecondRule:SetPoint("BOTTOMLEFT", healthBar, "TOPLEFT", 0, 2)
         else
-            fiveSecondRule:SetSize(119, 10)
-            fiveSecondRule:SetPoint("TOP", PlayerFrame, "BOTTOM", 20, 20)
+            -- Classic frame geometry fallback: bars span x 90-209, name at ~y -27
+            fiveSecondRule:SetSize(119, 12)
+            fiveSecondRule:SetPoint("TOP", PlayerFrame, "TOP", 34, -27)
         end
     else
         fiveSecondRule:SetParent(UIParent)
@@ -87,6 +104,7 @@ function ApplyBarLayout()
             fiveSecondRule:SetPoint("CENTER")
         end
     end
+    UpdateNameOverlay()
 end
 
 local lastManaChangeTime, playerIsFull, lastManaPower = 0, true, 0
@@ -185,6 +203,8 @@ function UpdateVisibility()
         fiveSecondRule:SetScript("OnUpdate", nil)
         fiveSecondRule:Hide()
     end
+    -- The player-frame name text yields only while the attached bar is shown
+    UpdateNameOverlay()
 end
 
 fiveSecondRule:SetScript("OnEvent", OnEvent)

@@ -72,10 +72,10 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderResourceDB.ShowFiveSecondRule end,
     })
 
-    panel:AddSection("Placement", "Run the tracker as its own movable bar, or dock it into the player frame under the mana bar.")
+    panel:AddSection("Placement", "Run the tracker as its own movable bar, or build it into the player frame where the name normally sits.")
     panel:AddDropdown({
         label = "Bar Placement",
-        tooltip = "Floating Bar: a standalone bar you can drag anywhere. Attached to Player Frame: a slim strip docked beneath the player frame's mana bar that moves and scales with it.",
+        tooltip = "Floating Bar: a standalone bar you can drag anywhere. Attached to Player Frame: the bar takes the place of your name on the player frame (the name reappears whenever the bar is hidden), moving and scaling with the frame.",
         options = BAR_MODES,
         width = 200,
         get = function() return CommanderResourceDB.BarMode end,
