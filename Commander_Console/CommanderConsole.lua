@@ -74,11 +74,21 @@ local function RestoreWorldFramePoints()
     end
 end
 
-local function ApplyConsoleState()
+-- WorldFrame is protected during combat lockdown: re-anchoring it mid-fight
+-- trips ADDON_ACTION_BLOCKED (seen in the wild toggling the console in
+-- combat), so viewport changes are deferred to PLAYER_REGEN_ENABLED. The
+-- backdrop itself is our own insecure frame and can change any time.
+local pendingViewportUpdate = false
+local combatWatcher = CreateFrame("Frame")
+
+local function ApplyViewport()
+    if InCombatLockdown() then
+        pendingViewportUpdate = true
+        combatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
     if CommanderConsoleDB.ShowConsole then
         SaveWorldFramePoints()  -- Save the original anchors before adjusting the viewport
-        ApplyConsoleAppearance()
-        consoleBackdrop:Show()
         WorldFrame:ClearAllPoints()
         WorldFrame:SetPoint("TOPLEFT", 0, 0)
         -- 150 matches the console strip baked into the fullscreen console
@@ -86,9 +96,28 @@ local function ApplyConsoleState()
         -- the world edge with the artwork, so this is intentionally not a setting
         WorldFrame:SetPoint("BOTTOMRIGHT", 0, 150)
     else
-        consoleBackdrop:Hide()
         RestoreWorldFramePoints()
     end
+end
+
+combatWatcher:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        if pendingViewportUpdate then
+            pendingViewportUpdate = false
+            ApplyViewport()
+        end
+    end
+end)
+
+local function ApplyConsoleState()
+    if CommanderConsoleDB.ShowConsole then
+        ApplyConsoleAppearance()
+        consoleBackdrop:Show()
+    else
+        consoleBackdrop:Hide()
+    end
+    ApplyViewport()
 end
 
 local function ToggleConsoleBackdrop()
