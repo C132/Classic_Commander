@@ -23,7 +23,9 @@ local function CreatePlayerNameplate()
     nameplate.name = nameplate:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameplate.name:SetPoint("TOP", 0, 16)
     nameplate.name:SetText(UnitName("player"))
-    nameplate.name:SetFont(nameplate.name:GetFont(), 14, "BOLD")
+    -- "BOLD" is not a valid font flag and the 2.5.6 client rejects it with an
+    -- error (aborting this whole file); OUTLINE gives the intended emphasis
+    nameplate.name:SetFont(nameplate.name:GetFont(), 14, "OUTLINE")
     nameplate.level = nameplate:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameplate.level:SetPoint("LEFT", nameplate, "RIGHT", 5, 0)
     nameplate.manaBorderFrame = CreateFrame("Frame", nil, nameplate)
