@@ -10,6 +10,9 @@ local DefaultSettings = {
     ShowCrosshair = false,
     SweepSpeed = 0.5,
     SweepOpacity = 0.25,
+    ContactDetection = true,
+    ContactCounter = true,
+    PlayerAlert = true,
 }
 
 local frame = CreateFrame("FRAME");
@@ -27,7 +30,7 @@ local function CreateOptionsPanel()
         key = "Radar",
         title = "Radar",
         addonName = "Commander_Radar",
-        description = "Pure RTS flavor for the minimap: a radar sweep line rotating over the map, with an optional targeting crosshair. Zero gameplay effect, maximum command-center atmosphere.",
+        description = "The minimap as an early-warning system. The sweep line is the display, enemy nameplates are the sensor: hostile mobs turn it amber, an enemy player turns it red with a klaxon callout — warning you before the fight finds you. Enemy nameplates (default key: V) must be shown for contacts to register.",
         event = COMMANDER_RADAR_EVENTS.UPDATE,
         slash = { "/cradar" },
         slashHandlers = {},
@@ -71,6 +74,28 @@ local function CreateOptionsPanel()
         get = function() return CommanderRadarDB.SweepOpacity end,
         set = function(value) CommanderRadarDB.SweepOpacity = value end,
         isEnabled = function() return CommanderRadarDB.EnableRadar and CommanderRadarDB.ShowSweep end,
+    })
+
+    panel:AddSection("Contact Detection", "Enemy nameplates feed the scope: sweep goes amber on hostile mobs, red on enemy players.")
+    panel:AddCheckboxPair({
+        label = "Contact Detection",
+        tooltip = "Color the sweep by threat level as hostile nameplates appear. Requires enemy nameplates to be shown (default key: V).",
+        get = function() return CommanderRadarDB.ContactDetection end,
+        set = function(value) CommanderRadarDB.ContactDetection = value end,
+        isEnabled = function() return CommanderRadarDB.EnableRadar end,
+    }, {
+        label = "Contact Counter",
+        tooltip = "Show a live contact count under the minimap while anything hostile is on the scope.",
+        get = function() return CommanderRadarDB.ContactCounter end,
+        set = function(value) CommanderRadarDB.ContactCounter = value end,
+        isEnabled = function() return CommanderRadarDB.EnableRadar and CommanderRadarDB.ContactDetection end,
+    })
+    panel:AddCheckbox({
+        label = "Enemy Player Klaxon",
+        tooltip = "Raid-warning sound and chat callout the first time an enemy player appears (30s cooldown between alerts).",
+        get = function() return CommanderRadarDB.PlayerAlert end,
+        set = function(value) CommanderRadarDB.PlayerAlert = value end,
+        isEnabled = function() return CommanderRadarDB.EnableRadar and CommanderRadarDB.ContactDetection end,
     })
 
     panel:Finalize({ onDefaults = Reset })

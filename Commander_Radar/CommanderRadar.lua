@@ -1,7 +1,12 @@
--- Commander Radar: cosmetic radar overlay for the (square) Commander
--- minimap — a rotating sweep line and an optional crosshair. The sweep is
--- a thin full-diameter line rotating about the map center, sized to the
--- inscribed circle so it never pokes past the square's edges.
+-- Commander Radar: the minimap as an early-warning system. The rotating
+-- sweep is the display; nameplate appearances are the sensor. Hostile mobs
+-- turn the sweep amber, a hostile PLAYER turns it red and raises a klaxon
+-- callout — the alert you actually want while leveling on a contested
+-- realm, where the minimap itself shows nothing until it is too late.
+-- (Detection rides NAME_PLATE_UNIT_ADDED, so enemy nameplates must be
+-- shown — the V key — for contacts to register.)
+
+local PLAYER_ALERT_COOLDOWN = 30
 
 local overlay = CreateFrame("Frame", "CommanderRadarOverlay", Minimap)
 overlay:SetAllPoints(Minimap)
@@ -23,8 +28,98 @@ crosshairV:SetTexture("Interface\\Buttons\\WHITE8X8")
 crosshairV:SetVertexColor(0.3, 1, 0.4, 0.1)
 crosshairV:SetPoint("CENTER")
 
+local contactText = overlay:CreateFontString(nil, "OVERLAY")
+contactText:SetFontObject(GameFontHighlightSmall)
+contactText:SetPoint("BOTTOM", Minimap, "BOTTOM", 0, 2)
+contactText:Hide()
+
 local rotation = 0
 
+-- ---------------------------------------------------------------------------
+-- Contact tracking: nameplate tokens are transient, so remember what each
+-- token pointed at when it appeared and resolve removals from that.
+-- ---------------------------------------------------------------------------
+local contactsByGUID = {}   -- guid -> { player = bool }
+local guidByToken = {}      -- "nameplate3" -> guid
+local mobCount, playerCount = 0, 0
+local lastPlayerAlert = -math.huge
+
+local function SweepColor()
+    if playerCount > 0 then
+        return 1, 0.25, 0.2      -- red: enemy player on the scope
+    elseif mobCount > 0 then
+        return 1, 0.72, 0.15     -- amber: hostile mobs around
+    end
+    return 0.3, 1, 0.4           -- green: clear
+end
+
+local function RefreshContactDisplay()
+    sweep:SetVertexColor(SweepColor())
+    sweep:SetAlpha(CommanderRadarDB.SweepOpacity or 0.25)
+    if CommanderRadarDB.ContactCounter and (mobCount + playerCount) > 0 then
+        if playerCount > 0 then
+            contactText:SetText(string.format("|cffff4030CONTACTS: %d (%d player%s)|r",
+                mobCount + playerCount, playerCount, playerCount == 1 and "" or "s"))
+        else
+            contactText:SetText(string.format("|cffffb830CONTACTS: %d|r", mobCount))
+        end
+        contactText:Show()
+    else
+        contactText:Hide()
+    end
+end
+
+local function OnContactAdded(token)
+    if not CommanderRadarDB.ContactDetection then return end
+    if not (UnitGUID and UnitCanAttack("player", token)) then return end
+    if UnitIsDeadOrGhost(token) then return end
+    local guid = UnitGUID(token)
+    if not guid or contactsByGUID[guid] then
+        guidByToken[token] = guid
+        return
+    end
+    local isPlayer = UnitIsPlayer(token)
+    contactsByGUID[guid] = { player = isPlayer }
+    guidByToken[token] = guid
+    if isPlayer then
+        playerCount = playerCount + 1
+        if CommanderRadarDB.PlayerAlert and (GetTime() - lastPlayerAlert) >= PLAYER_ALERT_COOLDOWN then
+            lastPlayerAlert = GetTime()
+            PlaySound(SOUNDKIT.RAID_WARNING, "Master")
+            print(string.format("|cffff4030Commander Radar:|r enemy player contact — %s",
+                UnitName(token) or "unknown"))
+        end
+    else
+        mobCount = mobCount + 1
+    end
+    RefreshContactDisplay()
+end
+
+local function OnContactRemoved(token)
+    local guid = guidByToken[token]
+    guidByToken[token] = nil
+    if not guid then return end
+    local contact = contactsByGUID[guid]
+    if not contact then return end
+    contactsByGUID[guid] = nil
+    if contact.player then
+        playerCount = math.max(playerCount - 1, 0)
+    else
+        mobCount = math.max(mobCount - 1, 0)
+    end
+    RefreshContactDisplay()
+end
+
+local function ResetContacts()
+    wipe(contactsByGUID)
+    wipe(guidByToken)
+    mobCount, playerCount = 0, 0
+    RefreshContactDisplay()
+end
+
+-- ---------------------------------------------------------------------------
+-- Sweep + layout
+-- ---------------------------------------------------------------------------
 local function Layout()
     local side = math.min(Minimap:GetWidth() or 140, Minimap:GetHeight() or 140)
     local length = side * 0.95
@@ -44,12 +139,13 @@ end
 local function Apply()
     if not (CommanderRadarDB and CommanderRadarDB.EnableRadar) then
         overlay:Hide()
+        overlay:SetScript("OnUpdate", nil)
+        ResetContacts()
         return
     end
     Layout()
     local anyShown = false
     if CommanderRadarDB.ShowSweep then
-        sweep:SetVertexColor(0.3, 1, 0.4, CommanderRadarDB.SweepOpacity or 0.25)
         sweep:Show()
         anyShown = true
     else
@@ -63,18 +159,35 @@ local function Apply()
     if CommanderRadarDB.ShowCrosshair then
         anyShown = true
     end
+    if not CommanderRadarDB.ContactDetection then
+        ResetContacts()
+    elseif CommanderRadarDB.ContactCounter then
+        anyShown = true
+    end
+    RefreshContactDisplay()
     overlay:SetShown(anyShown)
 end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
-events:SetScript("OnEvent", function(self, event)
+events:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+events:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+events:RegisterEvent("PLAYER_ENTERING_WORLD")
+events:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
         Commander.AddListener(COMMANDER_RADAR_EVENTS.UPDATE, Apply)
-        -- Re-fit when the minimap scale setting changes
         if COMMANDER_MINIMAP_EVENTS then
             Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, Apply)
         end
         Apply()
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+        if CommanderRadarDB and CommanderRadarDB.EnableRadar then
+            OnContactAdded(arg1)
+        end
+    elseif event == "NAME_PLATE_UNIT_REMOVED" then
+        OnContactRemoved(arg1)
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Zone transition: every nameplate is gone, start a clean scope
+        ResetContacts()
     end
 end)
