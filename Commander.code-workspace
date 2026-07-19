@@ -29,6 +29,10 @@
             "path": "Commander_Chat"
         },
         {
+            "name": "Commander_Comms",
+            "path": "Commander_Comms"
+        },
+        {
             "name": "Commander_Console",
             "path": "Commander_Console"
         },
@@ -61,12 +65,20 @@
             "path": "Commander_Nameplate"
         },
         {
+            "name": "Commander_Objectives",
+            "path": "Commander_Objectives"
+        },
+        {
             "name": "Commander_Orders",
             "path": "Commander_Orders"
         },
         {
             "name": "Commander_Ping",
             "path": "Commander_Ping"
+        },
+        {
+            "name": "Commander_Production",
+            "path": "Commander_Production"
         },
         {
             "name": "Commander_Radar",
