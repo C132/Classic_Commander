@@ -20,6 +20,7 @@ local CALLS = {
     { label = "Charge", msg = "Charge!", emote = "CHARGE" },
     { label = "Help", msg = "Help me!", targetMsg = "Help me with %s!", emote = "HELPME" },
     { label = "Thank You", msg = "Thank you!", targetMsg = "Thank you, %s!", emote = "THANK" },
+    { label = "Cheer", msg = "Well played, team!", targetMsg = "Well played, %s!", emote = "CHEER" },
 }
 
 local function PickChannel()
