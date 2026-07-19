@@ -8,15 +8,17 @@ BINDING_NAME_COMMANDERCOMMS_TOGGLE = "Open Comms Wheel"
 
 local RADIUS = 110
 
+-- emote = voiced client emote token played via DoEmote when Use Voice
+-- Emotes is on (the classic /incoming, /healme, /oom... voice lines)
 local CALLS = {
     { label = "On My Way", msg = "On my way." },
-    { label = "Attack", msg = "Attack my target!", targetMsg = "Attack %s!" },
-    { label = "Need Healing", msg = "I need healing!" },
-    { label = "Fall Back", msg = "Fall back and regroup!" },
-    { label = "Incoming", msg = "Incoming enemies - get ready!" },
-    { label = "Out of Mana", msg = "I'm out of mana." },
-    { label = "Ready", msg = "Ready to go." },
-    { label = "Help", msg = "Help me!", targetMsg = "Help me with %s!" },
+    { label = "Attack", msg = "Attack my target!", targetMsg = "Attack %s!", emote = "ATTACKTARGET" },
+    { label = "Need Healing", msg = "I need healing!", emote = "HEALME" },
+    { label = "Fall Back", msg = "Fall back and regroup!", emote = "FLEE" },
+    { label = "Incoming", msg = "Incoming enemies - get ready!", emote = "INCOMING" },
+    { label = "Out of Mana", msg = "I'm out of mana.", emote = "OOM" },
+    { label = "Charge", msg = "Charge!", emote = "CHARGE" },
+    { label = "Help", msg = "Help me!", targetMsg = "Help me with %s!", emote = "HELPME" },
 }
 
 local function PickChannel()
@@ -57,6 +59,11 @@ center:SetPoint("CENTER")
 center:SetText("COMMS")
 center:SetTextColor(0.3, 1, 0.4)
 
+local function InAnyGroup()
+    return IsInGroup()
+        or (LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE))
+end
+
 local function SendCall(call)
     local message = call.msg
     if call.targetMsg and CommanderCommsDB.IncludeTarget and UnitExists("target") then
@@ -65,9 +72,73 @@ local function SendCall(call)
             message = string.format(call.targetMsg, targetName)
         end
     end
-    SendChatMessage(message, PickChannel())
+    local voiced = call.emote and CommanderCommsDB.UseEmotes
+    if voiced then
+        DoEmote(call.emote)
+    end
+    -- The voiced emote already announces locally; the channel message is
+    -- for the group. Solo with a voice line, skip the redundant /say.
+    if InAnyGroup() or not voiced then
+        SendChatMessage(message, PickChannel())
+    end
     ClickSound()
     wheel:Hide()
+end
+
+-- ---------------------------------------------------------------------------
+-- Auto-emote: smart battlefield callouts with spam protection. Each trigger
+-- has a per-emote cooldown AND hysteresis — it re-arms only after the stat
+-- recovers well above its threshold, so hovering at 29% health cannot spam.
+-- ---------------------------------------------------------------------------
+local REARM_MARGIN = 0.15
+
+local autoState = {
+    HEALME = { firedAt = -math.huge, armed = true },
+    OOM = { firedAt = -math.huge, armed = true },
+}
+
+local function TryAutoEmote(token)
+    local state = autoState[token]
+    if not state.armed then return end
+    local cooldown = CommanderCommsDB.AutoEmoteCooldown or 30
+    local now = GetTime()
+    if now - state.firedAt < cooldown then return end
+    state.firedAt = now
+    state.armed = false
+    DoEmote(token)
+end
+
+local function CheckAutoEmotes()
+    if not (CommanderCommsDB and CommanderCommsDB.EnableComms
+        and CommanderCommsDB.AutoEmote) then return end
+    if not UnitAffectingCombat("player") then return end
+
+    local health = UnitHealth("player")
+    local healthMax = UnitHealthMax("player")
+    if healthMax and healthMax > 0 then
+        local pct = health / healthMax
+        local threshold = CommanderCommsDB.AutoHealThreshold or 0.3
+        if pct <= threshold and InAnyGroup() then
+            TryAutoEmote("HEALME")
+        elseif pct >= threshold + REARM_MARGIN then
+            autoState.HEALME.armed = true
+        end
+    end
+
+    -- Only mana users call out OOM
+    if UnitPowerType("player") == 0 then
+        local mana = UnitPower("player")
+        local manaMax = UnitPowerMax("player")
+        if manaMax and manaMax > 0 then
+            local pct = mana / manaMax
+            local threshold = CommanderCommsDB.AutoOOMThreshold or 0.2
+            if pct <= threshold then
+                TryAutoEmote("OOM")
+            elseif pct >= threshold + REARM_MARGIN then
+                autoState.OOM.armed = true
+            end
+        end
+    end
 end
 
 for i, call in ipairs(CALLS) do
@@ -95,10 +166,16 @@ end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
-events:SetScript("OnEvent", function()
-    Commander.AddListener(COMMANDER_COMMS_EVENTS.UPDATE, function()
-        if not CommanderCommsDB.EnableComms then
-            wheel:Hide()
-        end
-    end)
+events:RegisterEvent("UNIT_HEALTH")
+events:RegisterEvent("UNIT_POWER_UPDATE")
+events:SetScript("OnEvent", function(self, event, unit)
+    if event == "PLAYER_LOGIN" then
+        Commander.AddListener(COMMANDER_COMMS_EVENTS.UPDATE, function()
+            if not CommanderCommsDB.EnableComms then
+                wheel:Hide()
+            end
+        end)
+    elseif unit == "player" then
+        CheckAutoEmotes()
+    end
 end)

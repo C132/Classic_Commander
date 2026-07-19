@@ -8,6 +8,11 @@ local DefaultSettings = {
     EnableComms = true,
     IncludeTarget = true,
     CommsSound = true,
+    UseEmotes = true,
+    AutoEmote = false,
+    AutoHealThreshold = 0.3,
+    AutoOOMThreshold = 0.2,
+    AutoEmoteCooldown = 30,
 }
 
 local frame = CreateFrame("FRAME");
@@ -42,14 +47,13 @@ local function CreateOptionsPanel()
         get = function() return CommanderCommsDB.EnableComms end,
         set = function(value) CommanderCommsDB.EnableComms = value end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Include Target Names",
         tooltip = "Calls like Attack and Focus name your current target when you have one.",
         get = function() return CommanderCommsDB.IncludeTarget end,
         set = function(value) CommanderCommsDB.IncludeTarget = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms end,
-    })
-    panel:AddCheckbox({
+    }, {
         label = "Comms Sound",
         tooltip = "Play a click when the wheel opens and when a call is sent.",
         get = function() return CommanderCommsDB.CommsSound end,
@@ -65,6 +69,48 @@ local function CreateOptionsPanel()
                 if CommanderComms_Toggle then CommanderComms_Toggle() end
             end,
         },
+    })
+
+    panel:AddSection("Voice", "The classic voiced emotes (/incoming, /healme, /oom...) — manually from the wheel, or automatically when the fight calls for them.")
+    panel:AddCheckboxPair({
+        label = "Use Voice Emotes",
+        tooltip = "Wheel calls with a matching voiced emote (Incoming, Charge, Need Healing, Out of Mana, Fall Back, Help, Attack) play your character's voice line via the real emote.",
+        get = function() return CommanderCommsDB.UseEmotes end,
+        set = function(value) CommanderCommsDB.UseEmotes = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms end,
+    }, {
+        label = "Auto-Emote",
+        tooltip = "Automatically call out /healme (low health, in a group) and /oom (low mana, mana users) during combat. Thresholds and spam protection below.",
+        get = function() return CommanderCommsDB.AutoEmote end,
+        set = function(value) CommanderCommsDB.AutoEmote = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms end,
+    })
+    panel:AddSlider({
+        label = "Heal Me Below",
+        tooltip = "Auto /healme when your health drops to this percentage in combat (re-arms only after you recover 15% above it).",
+        min = 0.1, max = 0.6, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderCommsDB.AutoHealThreshold end,
+        set = function(value) CommanderCommsDB.AutoHealThreshold = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.AutoEmote end,
+    })
+    panel:AddSlider({
+        label = "Out of Mana Below",
+        tooltip = "Auto /oom when your mana drops to this percentage in combat (mana users only; same re-arm rule).",
+        min = 0.05, max = 0.5, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderCommsDB.AutoOOMThreshold end,
+        set = function(value) CommanderCommsDB.AutoOOMThreshold = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.AutoEmote end,
+    })
+    panel:AddSlider({
+        label = "Auto-Emote Cooldown",
+        tooltip = "Minimum time between automatic emotes of the same kind — the spam guard.",
+        min = 10, max = 120, step = 5,
+        format = "%.0fs",
+        get = function() return CommanderCommsDB.AutoEmoteCooldown end,
+        set = function(value) CommanderCommsDB.AutoEmoteCooldown = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.AutoEmote end,
     })
 
     panel:Finalize({ onDefaults = Reset })
