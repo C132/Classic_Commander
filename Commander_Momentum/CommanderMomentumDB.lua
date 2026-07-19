@@ -148,7 +148,7 @@ local function CreateOptionsPanel()
     })
     panel:AddCheckboxPair({
         label = "Streak Break Emote",
-        tooltip = "Emote when the clock runs out on a live chain (floor set by Lament Streaks From) — the lament, with your session numbers. Public; off by default.",
+        tooltip = "When the clock runs out on a live chain (floor set by Lament Streaks From), your character audibly cries — the real /cry voice line — and emotes the lament with your session numbers. Public; off by default.",
         get = function() return CommanderMomentumDB.BreakEmotes end,
         set = function(value) CommanderMomentumDB.BreakEmotes = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,

@@ -14,6 +14,7 @@ local totalKills = 0        -- session-wide, for the milestone brags
 local bestStreak = 0
 local streakStart = 0       -- GetTime when the current streak began
 local testFeeding = false   -- the tester never sends public emotes
+local streakIsTest = false  -- chain fed only by the tester: no break lament
 local session   -- reload-resilient mirror of the state above
 
 local function SyncSession()
@@ -200,9 +201,14 @@ local function EndStreak(announceBreak)
     streak = 0
     announcedMilestone = 0
     SyncSession()
-    if announceBreak and CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
+    local wasTestChain = streakIsTest
+    streakIsTest = false
+    if announceBreak and not wasTestChain
+        and CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
         and CommanderMomentumDB.BreakEmotes
         and endedStreak >= (CommanderMomentumDB.BreakFloor or 2) then
+        -- The comms answer to a dead chain: an audible sob, then the lament
+        DoEmote("CRY")
         SendChatMessage(string.format(BREAK_LINES[math.random(#BREAK_LINES)],
             endedStreak, totalKills, bestStreak), "EMOTE")
     end
@@ -304,6 +310,11 @@ local function OnKill()
         streakStart = GetTime()
     end
     streak = streak + 1
+    if testFeeding then
+        if streak <= 2 then streakIsTest = true end
+    else
+        streakIsTest = false
+    end
     totalKills = totalKills + 1
     if streak > bestStreak then
         bestStreak = streak
