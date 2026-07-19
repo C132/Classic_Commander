@@ -11,7 +11,13 @@ local DefaultSettings = {
     ObjectiveSound = true,
     DungeonMissions = true,
     HoldTime = 2.5,
+    BoardAlwaysVisible = false,
+    BoardHold = 6,
+    EnabledObjectives = {},
 }
+for key, value in pairs(Commander.UI.HudChromeDefaults("Board", "DARK")) do
+    DefaultSettings[key] = value
+end
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
@@ -96,12 +102,86 @@ local function CreateOptionsPanel()
     panel:Finalize({ onDefaults = Reset })
 end
 
+-- Second subcategory: the mission board and its objective roster. Kept
+-- separate from the announcements panel — together they would blow the
+-- no-scroll height budget several times over.
+local function CreateBoardPanel()
+    local panel = Commander.UI.NewPanel({
+        key = "ObjectivesBoard",
+        title = "Objectives Board",
+        addonName = "Commander_Objectives",
+        description = "The standing mission board, SC2 style: algorithm-generated grind objectives — kills, primary targets, experience, supplies, quests, honor, survival — tick off as you play, whatever your role. Pick your roster below; the board rerolls fresh for every dungeon run.",
+        event = COMMANDER_OBJECTIVES_EVENTS.UPDATE,
+    })
+
+    panel:AddCheckbox({
+        label = "Always Visible",
+        tooltip = "Keep the board on screen at all times. Off, it surfaces when an objective progresses and fades again after the linger time.",
+        get = function() return CommanderObjectivesDB.BoardAlwaysVisible end,
+        set = function(value) CommanderObjectivesDB.BoardAlwaysVisible = value end,
+        isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
+    })
+    panel:AddSlider({
+        label = "Linger Time",
+        tooltip = "How long the board stays up after the last objective progress before fading.",
+        min = 2, max = 20, step = 1,
+        format = "%.0fs",
+        get = function() return CommanderObjectivesDB.BoardHold end,
+        set = function(value) CommanderObjectivesDB.BoardHold = value end,
+        isEnabled = function()
+            return CommanderObjectivesDB.EnableObjectives and not CommanderObjectivesDB.BoardAlwaysVisible
+        end,
+    })
+
+    panel:AddSection("Objective Roster")
+    local row = panel:AddRow(108, 8)
+    local scroll = CreateFrame("ScrollFrame", "CommanderObjectivesRosterScroll", row, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    scroll:SetPoint("RIGHT", row, "RIGHT", -28, 0)
+    scroll:SetHeight(100)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(520, 10)
+    scroll:SetScrollChild(content)
+
+    local checks = {}
+    local offsetY = 0
+    for _, def in ipairs(CommanderObjectives_GetRoster()) do
+        local check = CreateFrame("CheckButton", nil, content, "InterfaceOptionsCheckButtonTemplate")
+        check:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -offsetY)
+        check.Text:SetText(string.format("|cffffd100%s|r  %s", def.category, def.label))
+        check:SetScript("OnClick", function(self)
+            CommanderObjectivesDB.EnabledObjectives[def.key] = self:GetChecked() and true or false
+            Commander.Notify(COMMANDER_OBJECTIVES_EVENTS.UPDATE)
+        end)
+        checks[def.key] = check
+        offsetY = offsetY + 24
+    end
+    content:SetHeight(offsetY + 4)
+
+    panel:AddRefresher(function()
+        for key, check in pairs(checks) do
+            check:SetChecked(CommanderObjectivesDB.EnabledObjectives[key] ~= false)
+        end
+    end)
+
+    Commander.UI.AddHudChromeOptions(panel, CommanderObjectivesDB, "Board", {
+        isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
+        onChanged = function() Commander.Notify(COMMANDER_OBJECTIVES_EVENTS.UPDATE) end,
+    })
+
+    panel:Finalize({ onDefaults = Reset })
+end
+
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Objectives" then
         Commander.UI.ApplyDefaults(CommanderObjectivesDB, DefaultSettings)
+        if type(CommanderObjectivesDB.EnabledObjectives) ~= "table" then
+            CommanderObjectivesDB.EnabledObjectives = {}
+        end
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         CreateOptionsPanel()
+        CreateBoardPanel()
     end
 end
 
