@@ -19,6 +19,7 @@ local CALLS = {
     { label = "Out of Mana", msg = "I'm out of mana.", emote = "OOM" },
     { label = "Charge", msg = "Charge!", emote = "CHARGE" },
     { label = "Help", msg = "Help me!", targetMsg = "Help me with %s!", emote = "HELPME" },
+    { label = "Thank You", msg = "Thank you!", targetMsg = "Thank you, %s!", emote = "THANK" },
 }
 
 local function PickChannel()
@@ -152,8 +153,9 @@ for i, call in ipairs(CALLS) do
     local button = CreateFrame("Button", nil, wheel, "UIPanelButtonTemplate")
     button:SetSize(110, 24)
     button:SetText(call.label)
-    -- Slot 1 at the top, remaining calls clockwise at 45-degree steps
-    local angle = math.rad(90 - (i - 1) * 45)
+    -- Slot 1 at the top, remaining calls clockwise at even steps around
+    -- the wheel (the step follows the call count)
+    local angle = math.rad(90 - (i - 1) * (360 / #CALLS))
     button:SetPoint("CENTER", wheel, "CENTER", math.cos(angle) * RADIUS, math.sin(angle) * RADIUS)
     button:SetScript("OnClick", function() SendCall(call) end)
 end
