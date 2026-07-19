@@ -26,6 +26,8 @@ local tally = { [0] = 0, [1] = 0, [2] = 0, [3] = 0, [4] = 0, [5] = 0 }
 
 -- The session tally survives /reload: the local is re-pointed at the
 -- persisted table so every mutation lands in SavedVariables automatically
+local ApplyToastChrome   -- defined after the toast root below
+
 local tallyLoader = CreateFrame("Frame")
 tallyLoader:RegisterEvent("PLAYER_LOGIN")
 tallyLoader:SetScript("OnEvent", function()
@@ -38,6 +40,12 @@ tallyLoader:SetScript("OnEvent", function()
         end
     end
     tally = session.tally
+    -- The toast stack is a chromed HUD frame like its siblings:
+    -- style, scale, unlock-drag, saved position
+    if ApplyToastChrome then
+        Commander.AddListener(COMMANDER_SPOILS_EVENTS.UPDATE, ApplyToastChrome)
+        ApplyToastChrome()
+    end
 end)
 
 -- ---------------------------------------------------------------------------
@@ -47,6 +55,13 @@ local root = CreateFrame("Frame", "CommanderSpoilsToasts", UIParent)
 root:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -60)
 root:SetSize(TOAST_WIDTH, MAX_TOASTS * (TOAST_HEIGHT + 4))
 root:SetFrameStrata("HIGH")
+
+ApplyToastChrome = function()
+    Commander.UI.ApplyHudChrome(root, CommanderSpoilsDB, "Hud", {
+        title = "Spoils",
+        defaultPoint = { point = "TOPRIGHT", x = -20, y = -60 },
+    })
+end
 
 local toastFrames = {}
 for i = 1, MAX_TOASTS do

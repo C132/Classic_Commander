@@ -10,6 +10,10 @@ local DefaultSettings = {
     EpicFlash = true,
     SpoilsSound = false,
 }
+-- Toasts land unstyled by default; the frame options are there when wanted
+for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "NONE")) do
+    DefaultSettings[key] = value
+end
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
@@ -91,6 +95,11 @@ local function CreateOptionsPanel()
                 if CommanderSpoils_Test then CommanderSpoils_Test() end
             end,
         },
+    })
+
+    Commander.UI.AddHudChromeOptions(panel, CommanderSpoilsDB, "Hud", {
+        isEnabled = function() return CommanderSpoilsDB.EnableSpoils end,
+        onChanged = function() Commander.Notify(COMMANDER_SPOILS_EVENTS.UPDATE) end,
     })
 
     panel:Finalize({ onDefaults = Reset })
