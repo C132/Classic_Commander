@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Vitals
+## Author: Devin
+## Version: 2.0.0
+## Notes: RTS unit wireframe for your gear: per-slot condition bars that appear when equipment durability runs low.
+## IconTexture: Interface\Icons\INV_Hammer_20
+## SavedVariables: CommanderVitalsDB
+## RequiredDeps: Commander_Events
+
+CommanderVitalsDB.lua
+CommanderVitals.lua
