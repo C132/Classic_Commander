@@ -12,6 +12,7 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_ActionBar | Action bar cleanup and repositioning |
 | Commander_Adjutant | RTS announcer: banners and sounds for attacks, repairs, level-ups |
 | Commander_Bags | Bag positioning, item coloring, fading, on-demand sorting |
+| Commander_Camera | RTS camera hotkeys: save and recall up to four camera views |
 | Commander_Casting | Cast bar glow effects |
 | Commander_Chat | Chat window visibility and message sound pings |
 | Commander_Console | Optional bottom console viewport (off by default) |
@@ -22,6 +23,8 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Nameplate | Personal nameplate with cast bar |
 | Commander_Orders | RTS move orders: Ctrl+Right-click the map, follow the arrow |
 | Commander_Ping | Loud minimap ping alerts with flash and callout |
+| Commander_Radar | Cosmetic minimap radar sweep and crosshair overlay |
+| Commander_Recovery | Death report, session casualty count, auto corpse-run order |
 | Commander_Resources | Five-second-rule mana tick tracker |
 | Commander_Tooltip | Tooltip anchoring, scale, item level and vendor price |
 | Commander_TopBar | RTS resource strip: gold, bag supply, durability, XP rate |

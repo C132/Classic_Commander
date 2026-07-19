@@ -1,5 +1,5 @@
 {
-	"folders": [
+    "folders": [
         {
             "name": ".git",
             "path": ".git"
@@ -17,6 +17,10 @@
             "path": "Commander_Bags"
         },
         {
+            "name": "Commander_Camera",
+            "path": "Commander_Camera"
+        },
+        {
             "name": "Commander_Casting",
             "path": "Commander_Casting"
         },
@@ -29,20 +33,20 @@
             "path": "Commander_Console"
         },
         {
-            "name": "Commander_Idle",
-            "path": "Commander_Idle"
-        },
-        {
-            "name": "Commander_Logistics",
-            "path": "Commander_Logistics"
-        },
-        {
             "name": "Commander_Events",
             "path": "Commander_Events"
         },
         {
+            "name": "Commander_Idle",
+            "path": "Commander_Idle"
+        },
+        {
             "name": "Commander_Inventory",
             "path": "Commander_Inventory"
+        },
+        {
+            "name": "Commander_Logistics",
+            "path": "Commander_Logistics"
         },
         {
             "name": "Commander_Minimap",
@@ -59,6 +63,14 @@
         {
             "name": "Commander_Ping",
             "path": "Commander_Ping"
+        },
+        {
+            "name": "Commander_Radar",
+            "path": "Commander_Radar"
+        },
+        {
+            "name": "Commander_Recovery",
+            "path": "Commander_Recovery"
         },
         {
             "name": "Commander_Resources",
@@ -81,5 +93,5 @@
             "path": "Commander_Who"
         }
     ],
-	"settings": {}
+    "settings": {}
 }
