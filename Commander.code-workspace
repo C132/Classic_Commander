@@ -33,6 +33,10 @@
             "path": "Commander_Idle"
         },
         {
+            "name": "Commander_Logistics",
+            "path": "Commander_Logistics"
+        },
+        {
             "name": "Commander_Events",
             "path": "Commander_Events"
         },
