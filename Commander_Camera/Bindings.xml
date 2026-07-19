@@ -23,4 +23,19 @@
     <Binding name="COMMANDERCAMERA_SAVE5" category="ADDONS">
         CommanderCamera_Save(5)
     </Binding>
+    <Binding name="COMMANDERCAMERA_ZOOM1" category="ADDONS">
+        CommanderCamera_Zoom(1)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_ZOOM2" category="ADDONS">
+        CommanderCamera_Zoom(2)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_ZOOM3" category="ADDONS">
+        CommanderCamera_Zoom(3)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_ZOOM4" category="ADDONS">
+        CommanderCamera_Zoom(4)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_ZOOM5" category="ADDONS">
+        CommanderCamera_Zoom(5)
+    </Binding>
 </Bindings>
