@@ -174,22 +174,38 @@ function CommanderComms_Toggle()
 end
 
 -- ---------------------------------------------------------------------------
--- Silence on interrupt: a successful kick earns the victim a targeted
--- /silence emote. Cooldown-guarded so chain interrupts don't spam.
+-- Interrupt callouts: a successful kick is announced to the group — who
+-- you kicked, which cast you stopped, and with what ability — so the team
+-- knows interrupts are covered without anyone typing. (The old targeted
+-- /silence emote resolved unreliably from combat-log names and fell back
+-- to shushing everyone nearby.) Short dedupe window so AoE interrupts
+-- hitting several casters don't burst-spam the channel.
 -- ---------------------------------------------------------------------------
-local SILENCE_COOLDOWN = 10
-local lastSilence = -math.huge
+local INTERRUPT_ANNOUNCE_COOLDOWN = 2
+local lastInterruptAnnounce = -math.huge
 local playerGUID
 
 local function OnInterrupt()
     if not (CommanderCommsDB and CommanderCommsDB.EnableComms
         and CommanderCommsDB.InterruptSilence) then return end
-    local _, subevent, _, sourceGUID, _, _, _, _, destName = CombatLogGetCurrentEventInfo()
+    local _, subevent, _, sourceGUID, _, _, _, _, destName, _, _,
+        _, kickName, _, _, stoppedName = CombatLogGetCurrentEventInfo()
     if subevent ~= "SPELL_INTERRUPT" then return end
     if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
-    if GetTime() - lastSilence < SILENCE_COOLDOWN then return end
-    lastSilence = GetTime()
-    DoEmote("SILENCE", destName)
+    -- Team comms only: solo interrupts need no announcement
+    if not InAnyGroup() then return end
+    if GetTime() - lastInterruptAnnounce < INTERRUPT_ANNOUNCE_COOLDOWN then return end
+    lastInterruptAnnounce = GetTime()
+    local message
+    if stoppedName and destName then
+        message = string.format("Interrupted %s's %s%s", destName, stoppedName,
+            kickName and (" with " .. kickName .. ".") or ".")
+    elseif destName then
+        message = string.format("Interrupted %s.", destName)
+    else
+        message = "Interrupt landed."
+    end
+    SendChatMessage(message, PickChannel())
 end
 
 local events = CreateFrame("Frame")

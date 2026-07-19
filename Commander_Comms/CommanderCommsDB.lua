@@ -48,8 +48,8 @@ local function CreateOptionsPanel()
         get = function() return CommanderCommsDB.EnableComms end,
         set = function(value) CommanderCommsDB.EnableComms = value end,
     }, {
-        label = "Silence on Interrupt",
-        tooltip = "Successfully interrupting a cast makes your character /silence the victim — a targeted emote, 10s cooldown so kick chains don't spam.",
+        label = "Interrupt Callouts",
+        tooltip = "Announce your successful interrupts to the group automatically: who you kicked, which cast you stopped, and with what ability (\"Interrupted Pillager's Frostbolt with Pummel.\"). Group channels only; never fires solo.",
         get = function() return CommanderCommsDB.InterruptSilence end,
         set = function(value) CommanderCommsDB.InterruptSilence = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms end,
