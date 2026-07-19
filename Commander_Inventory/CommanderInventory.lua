@@ -43,11 +43,16 @@ local function CreateItemGrid()
 end
 
 local function CreateButton(index)
-    local button = CreateFrame("Button", "CIItemButton"..index, ButtonsContainer, "SecureActionButtonTemplate, ActionButtonTemplate")
+    -- Template order is load-bearing: ActionButtonTemplate inherits
+    -- FlyoutButtonTemplate, whose OnClick (a flyout no-op) would OVERWRITE
+    -- the secure handler if applied last — clicks then silently do nothing.
+    -- SecureActionButtonTemplate must come LAST so its OnClick survives.
+    local button = CreateFrame("Button", "CIItemButton"..index, ButtonsContainer, "ActionButtonTemplate, SecureActionButtonTemplate")
     button:SetSize(40, 40)
     button:SetAttribute("type", "item")
-    -- 2.5.5 secure buttons act on key-down by default (ActionButtonUseKeyDown), so register both
-    button:RegisterForClicks("AnyUp", "AnyDown")
+    -- Registering both means the click works whichever way the
+    -- ActionButtonUseKeyDown CVar points (down fires with 1, up with 0)
+    button:RegisterForClicks("AnyDown", "AnyUp")
     
     -- Create cooldown frame
     button.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
