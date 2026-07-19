@@ -107,8 +107,9 @@ local function CreatePlayerNameplate()
             powerIdle = (mana == maxMana)
         end
         local casting = UnitCastingInfo("player") or UnitChannelInfo("player")
+        local alwaysShow = CommanderNameplateDB and CommanderNameplateDB.alwaysShowPlate
         if health == maxHealth and powerIdle and not inCombat and not casting
-            and not nameplate._dragging then
+            and not alwaysShow and not nameplate._dragging then
             nameplate:Hide()
             return
         else
@@ -119,6 +120,13 @@ local function CreatePlayerNameplate()
         nameplate.healthBar:SetMinMaxValues(0, maxHealth)
         nameplate.healthBar:SetValue(health)
         nameplate.level:SetText(UnitLevel("player"))
+        nameplate.level:SetShown(not CommanderNameplateDB or CommanderNameplateDB.showLevel)
+        -- Low-health pulse: driven from the 0.1s update cadence
+        if CommanderNameplateDB and CommanderNameplateDB.lowHealthFlash and healthPercentage <= 0.25 then
+            nameplate.healthBar:SetAlpha(0.55 + 0.45 * math.abs(math.sin(GetTime() * 5)))
+        else
+            nameplate.healthBar:SetAlpha(1)
+        end
         if CommanderNameplateDB and CommanderNameplateDB.classColorHealth then
             local _, classToken = UnitClass("player")
             local color = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
@@ -163,7 +171,7 @@ local function CreatePlayerNameplate()
             nameplate.castBar.startTime = startTime / 1000
             nameplate.castBar.endTime = endTime / 1000
             nameplate.castBar.icon:SetTexture(texture)
-            nameplate.castBar.icon:Show()
+            nameplate.castBar.icon:SetShown(not CommanderNameplateDB or CommanderNameplateDB.showCastIcon)
         else
             nameplate.castBar:Hide()
             nameplate.castBar.icon:Hide()

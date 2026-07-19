@@ -14,6 +14,10 @@ local DefaultSettings = {
     unlockPlate = false,
     classColorHealth = false,
     hidePowerBar = false,
+    showLevel = true,
+    alwaysShowPlate = false,
+    lowHealthFlash = true,
+    showCastIcon = true,
     plateScale = 1.0,
     castBarColor = "GOLD",
     position = {"CENTER", "UIParent", "CENTER", 0, 300}
@@ -44,7 +48,6 @@ local function CreateOptionsPanel()
         slash = { "/cnp" },
     })
 
-    panel:AddSection("Display", "Percent text and the always-on power bar are optional extras on top of the base plate.")
     panel:AddCheckboxPair({
         label = "Show Player Name",
         tooltip = "Show your character's name above the nameplate.",
@@ -77,6 +80,28 @@ local function CreateOptionsPanel()
         tooltip = "Never show the power bar — health and cast bar only.",
         get = function() return CommanderNameplateDB.hidePowerBar end,
         set = function(value) CommanderNameplateDB.hidePowerBar = value end,
+    })
+    panel:AddCheckboxPair({
+        label = "Show Level",
+        tooltip = "Show your level beside the plate.",
+        get = function() return CommanderNameplateDB.showLevel end,
+        set = function(value) CommanderNameplateDB.showLevel = value end,
+    }, {
+        label = "Always Show Plate",
+        tooltip = "Keep the plate on screen at all times instead of melting away when you are topped off out of combat.",
+        get = function() return CommanderNameplateDB.alwaysShowPlate end,
+        set = function(value) CommanderNameplateDB.alwaysShowPlate = value end,
+    })
+    panel:AddCheckboxPair({
+        label = "Low Health Flash",
+        tooltip = "Pulse the health bar when you drop below 25% — impossible to miss.",
+        get = function() return CommanderNameplateDB.lowHealthFlash end,
+        set = function(value) CommanderNameplateDB.lowHealthFlash = value end,
+    }, {
+        label = "Cast Bar Icon",
+        tooltip = "Show the spell's icon beside the cast bar.",
+        get = function() return CommanderNameplateDB.showCastIcon end,
+        set = function(value) CommanderNameplateDB.showCastIcon = value end,
     })
     panel:AddSlider({
         label = "Plate Scale",
