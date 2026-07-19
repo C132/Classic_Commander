@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Adjutant
+## Author: Devin
+## Version: 2.0.0
+## Notes: RTS-style announcer: on-screen banners and alert sounds for attacks, critical health, repairs, full bags, level-ups, and reinforcements.
+## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
+## SavedVariables: CommanderAdjutantDB
+## RequiredDeps: Commander_Events
+
+CommanderAdjutantDB.lua
+CommanderAdjutant.lua
