@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Impact
+## Author: Devin
+## Version: 2.0.0
+## Notes: Kill confirmations and big-crit feedback: screen-edge pulses and TARGET ELIMINATED callouts on your blows.
+## IconTexture: Interface\Icons\Ability_Warrior_Decisivestrike
+## SavedVariables: CommanderImpactDB
+## RequiredDeps: Commander_Events
+
+CommanderImpactDB.lua
+CommanderImpact.lua
