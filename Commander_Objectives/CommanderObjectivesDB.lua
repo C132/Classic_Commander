@@ -13,7 +13,7 @@ local DefaultSettings = {
     HoldTime = 2.5,
     BoardAlwaysVisible = false,
     BoardHold = 6,
-    CompleteEmotes = true,
+    CompleteEmotes = false,
     EnabledObjectives = {},
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Board", "DARK")) do
@@ -123,7 +123,7 @@ local function CreateBoardPanel()
         isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
     }, {
         label = "Objective Emotes",
-        tooltip = "Announce each completed board objective to everyone nearby as a custom emote, with your running board tally (\"...completes a mission objective — Head Count! (3 of 18 on the board)\"). Public.",
+        tooltip = "Announce each completed board objective to everyone nearby as a custom emote, with your running board tally (\"...completes a mission objective — Head Count! (3 of 18 on the board)\"). Public bragging; off by default.",
         get = function() return CommanderObjectivesDB.CompleteEmotes end,
         set = function(value) CommanderObjectivesDB.CompleteEmotes = value end,
         isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
