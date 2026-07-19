@@ -171,8 +171,28 @@ function CommanderComms_Toggle()
     end
 end
 
+-- ---------------------------------------------------------------------------
+-- Silence on interrupt: a successful kick earns the victim a targeted
+-- /silence emote. Cooldown-guarded so chain interrupts don't spam.
+-- ---------------------------------------------------------------------------
+local SILENCE_COOLDOWN = 10
+local lastSilence = -math.huge
+local playerGUID
+
+local function OnInterrupt()
+    if not (CommanderCommsDB and CommanderCommsDB.EnableComms
+        and CommanderCommsDB.InterruptSilence) then return end
+    local _, subevent, _, sourceGUID, _, _, _, _, destName = CombatLogGetCurrentEventInfo()
+    if subevent ~= "SPELL_INTERRUPT" then return end
+    if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
+    if GetTime() - lastSilence < SILENCE_COOLDOWN then return end
+    lastSilence = GetTime()
+    DoEmote("SILENCE", destName)
+end
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 -- Player-only registration: these fire constantly for every visible unit
 if events.RegisterUnitEvent then
     events:RegisterUnitEvent("UNIT_HEALTH", "player")
@@ -183,11 +203,14 @@ else
 end
 events:SetScript("OnEvent", function(self, event, unit)
     if event == "PLAYER_LOGIN" then
+        playerGUID = UnitGUID("player")
         Commander.AddListener(COMMANDER_COMMS_EVENTS.UPDATE, function()
             if not CommanderCommsDB.EnableComms then
                 wheel:Hide()
             end
         end)
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        OnInterrupt()
     elseif unit == "player" then
         CheckAutoEmotes()
     end

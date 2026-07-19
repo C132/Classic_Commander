@@ -10,6 +10,7 @@ local DefaultSettings = {
     CommsSound = true,
     UseEmotes = true,
     AutoEmote = false,
+    InterruptSilence = true,
     AutoHealThreshold = 0.3,
     AutoOOMThreshold = 0.2,
     AutoEmoteCooldown = 30,
@@ -41,11 +42,17 @@ local function CreateOptionsPanel()
     })
 
     panel:AddSection("Comms Wheel")
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Enable Comms",
         tooltip = "Master switch for the whole module.",
         get = function() return CommanderCommsDB.EnableComms end,
         set = function(value) CommanderCommsDB.EnableComms = value end,
+    }, {
+        label = "Silence on Interrupt",
+        tooltip = "Successfully interrupting a cast makes your character /silence the victim — a targeted emote, 10s cooldown so kick chains don't spam.",
+        get = function() return CommanderCommsDB.InterruptSilence end,
+        set = function(value) CommanderCommsDB.InterruptSilence = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms end,
     })
     panel:AddCheckboxPair({
         label = "Include Target Names",
