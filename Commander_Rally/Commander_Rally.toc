@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Rally
+## Author: Devin
+## Version: 2.0.0
+## Notes: Four persistent rally points: mark a spot, then order yourself back to it any time with a Commander Orders arrow.
+## IconTexture: Interface\Icons\INV_BannerPVP_02
+## SavedVariables: CommanderRallyDB
+## RequiredDeps: Commander_Events, Commander_Orders
+
+CommanderRallyDB.lua
+CommanderRally.lua
