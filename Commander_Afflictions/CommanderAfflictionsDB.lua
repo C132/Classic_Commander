@@ -8,6 +8,7 @@ local DefaultSettings = {
     EnableAfflictions = true,
     MaxBars = 6,
     ShowTargetNames = true,
+    AlwaysShow = false,
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
     DefaultSettings[key] = value
@@ -31,22 +32,42 @@ local function CreateOptionsPanel()
         description = "Your afflictions as a live operations board. Every debuff you land — DoTs, curses, diseases, stuns — becomes a draining bar, and the board stays truthful: dispels, immunities, and target deaths remove bars the moment they happen, not when a timer guesses.",
         event = COMMANDER_AFFLICTIONS_EVENTS.UPDATE,
         slash = { "/caff" },
-        slashHandlers = {},
+        slashHandlers = {
+            test = function()
+                if CommanderAfflictions_Test then CommanderAfflictions_Test() end
+            end,
+        },
     })
 
     panel:AddSection("Affliction Board")
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Enable Afflictions",
         tooltip = "Master switch for the whole module.",
         get = function() return CommanderAfflictionsDB.EnableAfflictions end,
         set = function(value) CommanderAfflictionsDB.EnableAfflictions = value end,
-    })
-    panel:AddCheckbox({
+    }, {
         label = "Show Target Names",
         tooltip = "Append the afflicted unit's name to each bar (useful when dotting multiple targets).",
         get = function() return CommanderAfflictionsDB.ShowTargetNames end,
         set = function(value) CommanderAfflictionsDB.ShowTargetNames = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    })
+    panel:AddCheckbox({
+        label = "Always Show",
+        tooltip = "Keep the board frame on screen even with nothing afflicted.",
+        get = function() return CommanderAfflictionsDB.AlwaysShow end,
+        set = function(value) CommanderAfflictionsDB.AlwaysShow = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Test Board",
+            width = 110,
+            tooltip = "Inject sample afflictions so you can see and position the board without combat (also: /caff test).",
+            onClick = function()
+                if CommanderAfflictions_Test then CommanderAfflictions_Test() end
+            end,
+        },
     })
     panel:AddSlider({
         label = "Board Length",

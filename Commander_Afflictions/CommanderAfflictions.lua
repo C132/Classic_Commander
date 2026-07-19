@@ -181,7 +181,46 @@ local function Draw()
         rowPool[i]:Hide()
     end
     root:SetSize(BAR_WIDTH + 20, math.max(shown, 1) * (BAR_HEIGHT + ROW_GAP))
-    root:SetShown(shown > 0 or Commander.UI.HudUnlocked(CommanderAfflictionsDB, "Hud"))
+    root:SetShown(shown > 0 or CommanderAfflictionsDB.AlwaysShow
+        or Commander.UI.HudUnlocked(CommanderAfflictionsDB, "Hud"))
+end
+
+-- Injects fake entries so the board can be inspected without combat:
+-- three decaying afflictions plus one unknown-duration entry, all pruned
+-- by their own timers like the real thing
+function CommanderAfflictions_Test()
+    if not (CommanderAfflictionsDB and CommanderAfflictionsDB.EnableAfflictions) then
+        print("Commander Afflictions: module is disabled (enable it in settings or /caff)")
+        return
+    end
+    local now = GetTime()
+    local samples = {
+        { spell = "Test Corruption", duration = 18, icon = "Interface\\Icons\\Spell_Shadow_AbominationExplosion" },
+        { spell = "Test Curse", duration = 12, icon = "Interface\\Icons\\Spell_Shadow_CurseOfTounges" },
+        { spell = "Test Rend", duration = 8, icon = "Interface\\Icons\\Ability_Gouge" },
+    }
+    for i, sample in ipairs(samples) do
+        active["testboard:" .. i] = {
+            destGUID = "testboard",
+            targetName = "Training Dummy",
+            spellID = -i,
+            spellName = sample.spell,
+            icon = sample.icon,
+            seen = now,
+            expiration = now + sample.duration,
+            duration = sample.duration,
+        }
+    end
+    active["testboard:unknown"] = {
+        destGUID = "testboard",
+        targetName = "Training Dummy",
+        spellID = -99,
+        spellName = "Test Unknown Duration",
+        icon = "Interface\\Icons\\INV_Misc_QuestionMark",
+        seen = now - (UNKNOWN_MAX_AGE - 10),
+    }
+    Draw()
+    print("Commander Afflictions: test board injected — bars drain and clear themselves")
 end
 
 root:SetScript("OnUpdate", function(self, elapsed)
