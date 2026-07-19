@@ -8,6 +8,7 @@ local DefaultSettings = {
     EnableMomentum = true,
     Window = 20,
     MilestoneSound = true,
+    MilestoneEmotes = false,
     KillSource = "OWN",
     AlwaysShow = false,
     Display = "HUD",
@@ -82,11 +83,17 @@ local function CreateOptionsPanel()
         set = function(value) CommanderMomentumDB.Window = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Milestone Sound",
         tooltip = "Play a chime when the streak crosses a milestone (5, 10, 15, 20...).",
         get = function() return CommanderMomentumDB.MilestoneSound end,
         set = function(value) CommanderMomentumDB.MilestoneSound = value end,
+        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+    }, {
+        label = "Milestone Emotes",
+        tooltip = "Announce milestones to everyone nearby as a custom emote with escalating flavor and your session numbers — kill chain, pace, total kills, best chain. Public bragging; off by default.",
+        get = function() return CommanderMomentumDB.MilestoneEmotes end,
+        set = function(value) CommanderMomentumDB.MilestoneEmotes = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
 

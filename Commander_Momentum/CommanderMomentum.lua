@@ -10,13 +10,20 @@ local BAR_HEIGHT = 8
 local streak = 0
 local lastKill = -math.huge
 local announcedMilestone = 0
-local session   -- reload-resilient mirror of the three locals above
+local totalKills = 0        -- session-wide, for the milestone brags
+local bestStreak = 0
+local streakStart = 0       -- GetTime when the current streak began
+local session   -- reload-resilient mirror of the state above
 
 local function SyncSession()
     if session then
         session.streak = streak
         session.milestone = announcedMilestone
         session.lastKillEpoch = (streak > 0) and time() or 0
+        session.totalKills = totalKills
+        session.bestStreak = bestStreak
+        session.streakStartEpoch = (streak > 0)
+            and (time() - math.floor(GetTime() - streakStart)) or 0
     end
 end
 
@@ -205,6 +212,32 @@ local function Refresh()
     bar:SetVertexColor(r, g, b, 0.9)
 end
 
+-- Public brag at each milestone: a flavor line escalating with the tier
+-- plus the session's numbers, sent as a custom emote for everyone nearby
+local FLAVOR_TIERS = {
+    { min = 20, lines = { "erupts in TOTAL ANNIHILATION!", "is beyond containment!" } },
+    { min = 15, lines = { "is absolutely unstoppable!", "has become the battlefield!" } },
+    { min = 10, lines = { "is on a full rampage!", "carves through the enemy line!" } },
+    { min = 0, lines = { "is heating up!", "builds deadly momentum!" } },
+}
+
+local function BuildBrag()
+    local flavor
+    for _, tier in ipairs(FLAVOR_TIERS) do
+        if streak >= tier.min then
+            flavor = tier.lines[math.random(#tier.lines)]
+            break
+        end
+    end
+    local pace = ""
+    local elapsed = GetTime() - streakStart
+    if elapsed > 10 then
+        pace = string.format(", %.1f kills/min", streak / (elapsed / 60))
+    end
+    return string.format("%s (x%d chain%s — %d kills this session, best chain x%d)",
+        flavor, streak, pace, totalKills, math.max(bestStreak, streak))
+end
+
 local function OnKill()
     -- Enforce the window even for streaks too small to show: without this,
     -- a streak of 1 never expires (no visible frame, no drain driver) and
@@ -214,7 +247,14 @@ local function OnKill()
         streak = 0
         announcedMilestone = 0
     end
+    if streak == 0 then
+        streakStart = GetTime()
+    end
     streak = streak + 1
+    totalKills = totalKills + 1
+    if streak > bestStreak then
+        bestStreak = streak
+    end
     lastKill = GetTime()
     SyncSession()
     if streak >= 2 then
@@ -241,10 +281,14 @@ local function OnKill()
     local milestone = math.floor(streak / 5) * 5
     if milestone >= 5 and milestone > announcedMilestone then
         announcedMilestone = milestone
+        SyncSession()
         if CommanderMomentumDB.MilestoneSound then
             PlaySound(SOUNDKIT.READY_CHECK, "Master")
         end
         print(string.format("|cffffb830Commander Momentum:|r x%d streak", streak))
+        if CommanderMomentumDB.MilestoneEmotes then
+            SendChatMessage(BuildBrag(), "EMOTE")
+        end
     end
 end
 
@@ -302,11 +346,17 @@ events:SetScript("OnEvent", function(self, event)
         local fresh
         session, fresh = Commander.RestoreSession(CommanderMomentumDB, {
             streak = 0, milestone = 0, lastKillEpoch = 0,
+            totalKills = 0, bestStreak = 0, streakStartEpoch = 0,
         })
+        totalKills = session.totalKills or 0
+        bestStreak = session.bestStreak or 0
         if not fresh and session.streak > 0 and session.lastKillEpoch > 0 then
             streak = session.streak
             announcedMilestone = session.milestone
             lastKill = GetTime() - math.max(time() - session.lastKillEpoch, 0)
+            if session.streakStartEpoch > 0 then
+                streakStart = GetTime() - math.max(time() - session.streakStartEpoch, 0)
+            end
         end
         Commander.AddListener(COMMANDER_MOMENTUM_EVENTS.UPDATE, Apply)
         -- Nothing notifies at startup: Always Show / unlocked-at-reload
