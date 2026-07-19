@@ -16,6 +16,7 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Casting | Cast bar glow effects |
 | Commander_Chat | Chat window visibility and message sound pings |
 | Commander_Console | Optional bottom console viewport (off by default) |
+| Commander_Economy | Session mission summary: gold, XP rate, quests, casualties |
 | Commander_Idle | RTS idle-worker alert when your character stands around |
 | Commander_Inventory | Equipment/inventory quick-access button grid |
 | Commander_Logistics | Auto-sell junk and auto-repair with a quartermaster report |
@@ -24,10 +25,12 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Orders | RTS move orders: Ctrl+Right-click the map, follow the arrow |
 | Commander_Ping | Loud minimap ping alerts with flash and callout |
 | Commander_Radar | Cosmetic minimap radar sweep and crosshair overlay |
+| Commander_Rally | Four persistent rally points re-issued as Orders arrows |
 | Commander_Recovery | Death report, session casualty count, auto corpse-run order |
 | Commander_Resources | Five-second-rule mana tick tracker |
 | Commander_Tooltip | Tooltip anchoring, scale, item level and vendor price |
 | Commander_TopBar | RTS resource strip: gold, bag supply, durability, XP rate |
+| Commander_Vitals | Per-slot equipment condition wireframe, shows when gear runs low |
 | Commander_Who | /who window enhancements and mass whisper |
 | Commander_Suite | Suite dashboard on the root settings page: module directory, quick settings access (`/commander`) |
 

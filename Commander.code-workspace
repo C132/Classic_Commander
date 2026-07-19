@@ -33,6 +33,10 @@
             "path": "Commander_Console"
         },
         {
+            "name": "Commander_Economy",
+            "path": "Commander_Economy"
+        },
+        {
             "name": "Commander_Events",
             "path": "Commander_Events"
         },
@@ -69,6 +73,10 @@
             "path": "Commander_Radar"
         },
         {
+            "name": "Commander_Rally",
+            "path": "Commander_Rally"
+        },
+        {
             "name": "Commander_Recovery",
             "path": "Commander_Recovery"
         },
@@ -87,6 +95,10 @@
         {
             "name": "Commander_TopBar",
             "path": "Commander_TopBar"
+        },
+        {
+            "name": "Commander_Vitals",
+            "path": "Commander_Vitals"
         },
         {
             "name": "Commander_Who",
