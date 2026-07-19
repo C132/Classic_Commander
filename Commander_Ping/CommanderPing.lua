@@ -63,8 +63,10 @@ function CommanderPing_Test()
     end
 end
 
--- MINIMAP_PING's documented payload order is (unitTarget, Y, X) — y first.
-local function OnPing(unit, y, x)
+-- MINIMAP_PING payload is (unitTarget, x, y) — normalized offsets from the
+-- minimap center. (An earlier build assumed y-first; in-game testing showed
+-- bottom-right clicks flashing top-left, the signature of swapped axes.)
+local function OnPing(unit, x, y)
     if not (CommanderPingDB and CommanderPingDB.EnablePing) then return end
     local isOwn = UnitIsUnit and UnitIsUnit(unit, "player")
     if isOwn and not CommanderPingDB.IncludeOwnPings then return end
@@ -86,11 +88,11 @@ end
 local events = CreateFrame("Frame")
 if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("MINIMAP_PING") then
     events:RegisterEvent("MINIMAP_PING")
-    events:SetScript("OnEvent", function(self, event, unit, y, x)
-        OnPing(unit, y, x)
+    events:SetScript("OnEvent", function(self, event, unit, x, y)
+        OnPing(unit, x, y)
     end)
 elseif events.RegisterEventCallback then
-    pcall(events.RegisterEventCallback, events, "MINIMAP_PING", function(owner, unit, y, x)
-        OnPing(unit, y, x)
+    pcall(events.RegisterEventCallback, events, "MINIMAP_PING", function(owner, unit, x, y)
+        OnPing(unit, x, y)
     end)
 end
