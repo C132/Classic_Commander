@@ -112,11 +112,13 @@ local Comparators = {
 
 -- The desired arrangement, computed fresh each step so player-made changes
 -- mid-sort never corrupt the plan: sorted items fill the slot list front to
--- back; nil means the slot should end up empty.
-local function ComputePlan(slots)
+-- back; nil means the slot should end up empty. Works from the current[]
+-- snapshot Step already read — the old version re-read every slot a second
+-- time per tick (GetItemInfo per slot, doubled).
+local function ComputePlan(slots, current)
     local items = {}
-    for _, s in ipairs(slots) do
-        local entry = ReadSlot(s.bag, s.slot)
+    for i = 1, #slots do
+        local entry = current[i]
         if entry then
             items[#items + 1] = entry
         end
@@ -162,7 +164,6 @@ local function Step()
     end
 
     local slots = CollectSlots()
-    local desired = ComputePlan(slots)
     local current = {}
     local anyLocked = false
     for i, s in ipairs(slots) do
@@ -171,6 +172,7 @@ local function Step()
             anyLocked = true
         end
     end
+    local desired = ComputePlan(slots, current)
 
     local target
     for i = 1, #slots do

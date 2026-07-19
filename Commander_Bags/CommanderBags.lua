@@ -31,7 +31,13 @@ local NUM_CONTAINER_FRAMES = 13 -- Maximum number of container frames
 
 local FadeBags -- defined below; forward-declared for the UPDATE listener
 
+-- Buttons memoize the itemID they were last colored for; bumping the
+-- generation invalidates every memo at once (borders force-reset, or
+-- coloring toggled) without touching each button
+local colorGen = 0
+
 local function ResetItemColors()
+    colorGen = colorGen + 1
     for i = 1, NUM_CONTAINER_FRAMES do
         local containerFrame = _G["ContainerFrame"..i]
         if containerFrame then
@@ -50,31 +56,57 @@ local function ResetItemColors()
     end
 end
 
-local function IsConsumable(bagID, slot)
+-- Consumable-ness and quest-ness are properties of the ITEM, not the
+-- slot — cached per itemID, they cost ONE tooltip build ever. The old
+-- code paid two SetBagItem rebuilds (one of the most expensive UI calls
+-- in the client) per occupied slot per pass, ~1200-2000 per refresh
+-- burst: the module's entire CPU story.
+local itemFlags = {}
+
+local function GetItemFlags(itemID, bagID, slot, resolved)
+    local cached = itemFlags[itemID]
+    if cached then return cached end
     scanningTooltip:ClearLines()
     scanningTooltip:SetBagItem(bagID, slot)
-    
-    -- Check first line for "Use:" or "Equip:"
-    local firstLine = _G["CommanderBagsScanningTooltipTextLeft1"]
-    if not firstLine then return false end
-    
-    for i = 2, scanningTooltip:NumLines() do
+    local numLines = scanningTooltip:NumLines()
+
+    -- Consumable: a "Use:" line with no "Equip:" line at or after it
+    -- (same shape as the original scan, so borders do not change)
+    local consumable = false
+    for i = 2, numLines do
         local textLeft = _G["CommanderBagsScanningTooltipTextLeft" .. i]
-        if textLeft then
-            local text = textLeft:GetText()
-            if text and text:find("^Use: ") then
-                -- Check if it's not equipment (items with "Equip:" are not consumables)
-                for j = i, scanningTooltip:NumLines() do
-                    local equipText = _G["CommanderBagsScanningTooltipTextLeft" .. j]
-                    if equipText and equipText:GetText() and equipText:GetText():find("^Equip: ") then
-                        return false
-                    end
+        local text = textLeft and textLeft:GetText()
+        if text and text:find("^Use: ") then
+            consumable = true
+            for j = i, numLines do
+                local equipText = _G["CommanderBagsScanningTooltipTextLeft" .. j]
+                local equip = equipText and equipText:GetText()
+                if equip and equip:find("^Equip: ") then
+                    consumable = false
+                    break
                 end
-                return true
             end
+            break
         end
     end
-    return false
+
+    local quest = false
+    for i = 1, numLines do
+        local textLeft = _G["CommanderBagsScanningTooltipTextLeft" .. i]
+        local text = textLeft and textLeft:GetText()
+        if text and (text:find("Quest Item") or text:find("This Item Begins a Quest")) then
+            quest = true
+            break
+        end
+    end
+
+    local flags = { consumable = consumable, quest = quest }
+    -- Only cache once the item's data is confirmed loaded — early passes
+    -- can see incomplete tooltips, and the refresh window retries those
+    if resolved then
+        itemFlags[itemID] = flags
+    end
+    return flags
 end
 
 local function UpdateItemColors()
@@ -88,64 +120,61 @@ local function UpdateItemColors()
         local containerFrame = _G["ContainerFrame"..i]
         if containerFrame and containerFrame:IsShown() then
             local bagID = containerFrame:GetID()
-            
-            -- Update each item button in the container
+            local baseName = containerFrame:GetName() .. "Item"
+
+            -- Update each item button in the container. A button memoizes
+            -- the itemID it was last colored for: unchanged slots skip the
+            -- item lookup and tooltip work entirely.
             for j = 1, containerFrame.size or 0 do
-                local button = _G[containerFrame:GetName().."Item"..j]
+                local button = _G[baseName .. j]
                 if button then
-                    -- Get the actual bag slot from the button
                     local slot = button:GetID()
-                    local itemLink = C_Container.GetContainerItemLink(bagID, slot)
-                    
-                    if itemLink then
-                        local _, _, rarity, _, _, itemType = C_Item.GetItemInfo(itemLink)
-                        local isQuestItem = false
-                        local isConsumable = IsConsumable(bagID, slot)
-                        
-                        -- Check if item is a quest item using tooltip scanning
-                        scanningTooltip:ClearLines()
-                        scanningTooltip:SetBagItem(bagID, slot)
-                        
-                        for i = 1, scanningTooltip:NumLines() do
-                            local textLeft = _G["CommanderBagsScanningTooltipTextLeft" .. i]
-                            if textLeft then
-                                local text = textLeft:GetText()
-                                if text and (text:find("Quest Item") or text:find("This Item Begins a Quest")) then
-                                    isQuestItem = true
-                                    break
+                    local itemID = C_Container.GetContainerItemID
+                        and C_Container.GetContainerItemID(bagID, slot)
+
+                    if itemID then
+                        if button.cbItemID ~= itemID or button.cbGen ~= colorGen then
+                            local _, _, rarity = C_Item.GetItemInfo(itemID)
+                            local flags = GetItemFlags(itemID, bagID, slot, rarity ~= nil)
+
+                            button.icon:SetVertexColor(1, 1, 1, 1)
+                            if button.IconBorder then
+                                button.IconBorder:Show()
+                                if flags.quest then
+                                    button.IconBorder:SetVertexColor(1, 0.8, 0, 1) -- Bright yellow
+                                    button.IconBorder:SetAlpha(1)
+                                elseif rarity == 0 then -- Poor (Gray)
+                                    button.IconBorder:SetVertexColor(1, 0.1, 0.1, 1) -- Even brighter, more saturated red
+                                    button.IconBorder:SetAlpha(1)
+                                elseif flags.consumable then -- Consumable items
+                                    button.IconBorder:SetVertexColor(0, 0.8, 1, 1) -- Bright cyan
+                                    button.IconBorder:SetAlpha(1)
+                                elseif rarity == 1 then -- Common (White)
+                                    button.IconBorder:Hide() -- Hide border for common items
+                                elseif rarity then
+                                    local r, g, b = C_Item.GetItemQualityColor(rarity)
+                                    button.IconBorder:SetVertexColor(r, g, b, 1)
+                                    button.IconBorder:SetAlpha(1)
+                                else
+                                    button.IconBorder:Hide() -- Item info not cached yet; refresh cycle will retry
                                 end
                             end
-                        end
-                        
-                        button.icon:SetVertexColor(1, 1, 1, 1)
-                        
-                        if button.IconBorder then
-                            button.IconBorder:Show()
-                            
-                            if isQuestItem then
-                                button.IconBorder:SetVertexColor(1, 0.8, 0, 1) -- Bright yellow
-                                button.IconBorder:SetAlpha(1)
-                            elseif rarity == 0 then -- Poor (Gray)
-                                button.IconBorder:SetVertexColor(1, 0.1, 0.1, 1) -- Even brighter, more saturated red
-                                button.IconBorder:SetAlpha(1)
-                            elseif isConsumable then -- Consumable items
-                                button.IconBorder:SetVertexColor(0, 0.8, 1, 1) -- Bright cyan
-                                button.IconBorder:SetAlpha(1)
-                            elseif rarity == 1 then -- Common (White)
-                                button.IconBorder:Hide() -- Hide border for common items
-                            elseif rarity then
-                                local r, g, b = C_Item.GetItemQualityColor(rarity)
-                                button.IconBorder:SetVertexColor(r, g, b, 1)
-                                button.IconBorder:SetAlpha(1)
+                            if rarity then
+                                button.cbItemID, button.cbGen = itemID, colorGen
                             else
-                                button.IconBorder:Hide() -- Item info not cached yet; refresh cycle will retry
+                                -- Data not loaded — leave unmemoized so the
+                                -- refresh window retries this slot
+                                button.cbItemID = nil
                             end
                         end
                     else
-                        if button.IconBorder then
-                            button.IconBorder:Hide()
+                        if button.cbItemID ~= false or button.cbGen ~= colorGen then
+                            button.cbItemID, button.cbGen = false, colorGen
+                            if button.IconBorder then
+                                button.IconBorder:Hide()
+                            end
+                            button.icon:SetVertexColor(1, 1, 1, 1)
                         end
-                        button.icon:SetVertexColor(1, 1, 1, 1)
                     end
                 end
             end
@@ -153,49 +182,53 @@ local function UpdateItemColors()
     end
 end
 
+-- Timer callbacks are file-level named functions: these debounces fire on
+-- every bag/cursor event, and a fresh closure per scheduling call was
+-- steady-state garbage
+local function RefreshCycle()
+    UpdateItemColors()
+    refreshCount = refreshCount + 1
+
+    if refreshCount < MAX_REFRESH_COUNT then
+        refreshTimer = C_Timer.NewTimer(REFRESH_INTERVAL, RefreshCycle)
+    else
+        refreshTimer = nil
+    end
+end
+
 local function StartRefreshWindow()
     if refreshTimer then
         refreshTimer:Cancel()
     end
-    
+
     refreshCount = 0
-    
-    local function RefreshCycle()
-        UpdateItemColors()
-        refreshCount = refreshCount + 1
-        
-        if refreshCount < MAX_REFRESH_COUNT then
-            refreshTimer = C_Timer.NewTimer(REFRESH_INTERVAL, RefreshCycle)
-        else
-            refreshTimer = nil
-        end
-    end
-    
     RefreshCycle()
+end
+
+local function RunScheduledUpdate()
+    updateTimer = nil
+    StartRefreshWindow()
 end
 
 local function ScheduleUpdate()
     if updateTimer then
         updateTimer:Cancel()
     end
-
-    updateTimer = C_Timer.NewTimer(0.1, function()
-        StartRefreshWindow()
-        updateTimer = nil
-    end)
+    updateTimer = C_Timer.NewTimer(0.1, RunScheduledUpdate)
 end
 
 -- Cursor changes can fire many times per second while items are picked up and
 -- dropped; restart a single short timer instead of running a full refresh burst
+local function RunCursorRefresh()
+    cursorRefreshTimer = nil
+    UpdateItemColors()
+end
+
 local function ScheduleCursorRefresh()
     if cursorRefreshTimer then
         cursorRefreshTimer:Cancel()
     end
-
-    cursorRefreshTimer = C_Timer.NewTimer(CURSOR_REFRESH_DELAY, function()
-        cursorRefreshTimer = nil
-        UpdateItemColors()
-    end)
+    cursorRefreshTimer = C_Timer.NewTimer(CURSOR_REFRESH_DELAY, RunCursorRefresh)
 end
 
 local function OnUpdate()
@@ -608,8 +641,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
         elseif event == "BAG_OPEN" then
             StartRefreshWindow()
             HookAllContainerFrames()
-        elseif event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
+        elseif event == "MERCHANT_SHOW" then
             StartRefreshWindow()
+        elseif event == "MERCHANT_UPDATE" then
+            -- Fires once per transaction and in bursts when vendoring a
+            -- bag of junk — debounce instead of a synchronous full pass
+            ScheduleUpdate()
         elseif event == "CURSOR_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "ITEM_UNLOCKED" then
             ScheduleCursorRefresh()
         else

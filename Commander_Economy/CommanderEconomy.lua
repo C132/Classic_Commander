@@ -233,25 +233,36 @@ end
 -- exactly once each time a report is shown, feature-flagged.
 -- ---------------------------------------------------------------------------
 local glowSet = {}
+local glowsShown = 0   -- lit glows on screen, so empty scans can bail
 
 local function HideButtonGlow(button)
-    if button._commanderEcoGlow then
+    if button._commanderEcoGlow and button._commanderEcoGlowShown then
+        button._commanderEcoGlowShown = nil
+        glowsShown = glowsShown - 1
         button._commanderEcoGlow:Hide()
     end
 end
 
 local function ApplyBagGlows()
-    -- No empty-set early return: the loop's else-branch is also the
-    -- cleanup pass that hides glows which are no longer wanted
+    -- The else-branch of the loop is the cleanup pass that hides glows no
+    -- longer wanted — but with nothing armed AND nothing lit there is no
+    -- possible work, and that is the overwhelmingly common case (glows
+    -- only exist between opening a report and mousing over the loot).
+    -- Bailing here skips a per-slot scan on every bag event.
+    if not next(glowSet) and glowsShown == 0 then return end
     for f = 1, 13 do
         local containerFrame = _G["ContainerFrame" .. f]
         if containerFrame and containerFrame:IsShown() then
             local bagID = containerFrame:GetID()
+            local baseName = containerFrame:GetName() .. "Item"
             for j = 1, containerFrame.size or 0 do
-                local button = _G[containerFrame:GetName() .. "Item" .. j]
+                local button = _G[baseName .. j]
                 if button then
-                    local info = C_Container.GetContainerItemInfo(bagID, button:GetID())
-                    local wanted = info and info.itemID and glowSet[info.itemID]
+                    -- GetContainerItemID returns a plain number; the old
+                    -- GetContainerItemInfo allocated a table per slot
+                    local itemID = C_Container.GetContainerItemID
+                        and C_Container.GetContainerItemID(bagID, button:GetID())
+                    local wanted = itemID and glowSet[itemID]
                     if wanted then
                         if not button._commanderEcoGlow then
                             local glow = button:CreateTexture(nil, "OVERLAY")
@@ -262,14 +273,19 @@ local function ApplyBagGlows()
                             glow:SetSize(button:GetWidth() and button:GetWidth() * 1.7 or 62, button:GetHeight() and button:GetHeight() * 1.7 or 62)
                             button._commanderEcoGlow = glow
                         end
+                        if not button._commanderEcoGlowShown then
+                            button._commanderEcoGlowShown = true
+                            glowsShown = glowsShown + 1
+                        end
                         button._commanderEcoGlow:Show()
                         if not button._commanderEcoHooked then
                             button._commanderEcoHooked = true
                             button:HookScript("OnEnter", function(self)
-                                local hoveredInfo = C_Container.GetContainerItemInfo(
-                                    self:GetParent() and self:GetParent():GetID() or 0, self:GetID())
-                                if hoveredInfo and hoveredInfo.itemID then
-                                    glowSet[hoveredInfo.itemID] = nil
+                                local hoveredID = C_Container.GetContainerItemID
+                                    and C_Container.GetContainerItemID(
+                                        self:GetParent() and self:GetParent():GetID() or 0, self:GetID())
+                                if hoveredID then
+                                    glowSet[hoveredID] = nil
                                 end
                                 HideButtonGlow(self)
                             end)
@@ -296,9 +312,18 @@ local function ArmBagGlows(items)
 end
 
 -- Opening a bag fires no BAG_UPDATE, so the glows also need a hook on the
--- open paths themselves (deferred a frame so the container frames exist)
+-- open paths themselves (deferred a frame so the container frames exist).
+-- Coalesced: ToggleAllBags cascades into per-bag hooks, so one keypress
+-- would otherwise queue ~6 timers and 6 redundant scans in the same frame.
+local applyPending = false
+local function RunDeferredApply()
+    applyPending = false
+    ApplyBagGlows()
+end
 local function DeferredApply()
-    C_Timer.After(0, ApplyBagGlows)
+    if applyPending then return end
+    applyPending = true
+    C_Timer.After(0, RunDeferredApply)
 end
 if hooksecurefunc then
     pcall(hooksecurefunc, "ToggleBag", DeferredApply)

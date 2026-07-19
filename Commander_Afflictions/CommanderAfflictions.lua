@@ -19,6 +19,7 @@ local DRAW_THROTTLE = 0.1
 local UNKNOWN_MAX_AGE = 120
 
 local active = {}   -- key destGUID..spellID -> entry
+local playerGUID    -- cached at login: CLEU compares this dozens of times/sec
 local rowPool = {}
 local sinceDraw = 0
 
@@ -181,13 +182,19 @@ end
 
 -- Refine entries for a unit we can actually address: exact expiration,
 -- proper icon, and removal of anything the scan proves is gone
+local scanFound = {}   -- scratch, reused across scans
+
 local function ScanUnit(unit)
     if not (C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex and UnitGUID) then return end
     local guid = UnitGUID(unit)
     if not guid then return end
-    local found = {}
+    local found = scanFound
+    wipe(found)
     for i = 1, 40 do
-        local aura = C_UnitAuras.GetDebuffDataByIndex(unit, i)
+        -- PLAYER filter: only materialize aura tables for the player's own
+        -- debuffs — the unfiltered scan allocated one per debuff from
+        -- EVERYONE in a group just to discard them at the source check
+        local aura = C_UnitAuras.GetDebuffDataByIndex(unit, i, "HARMFUL|PLAYER")
         if not aura then break end
         if aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") then
             local key = Key(guid, aura.spellId)
@@ -417,7 +424,7 @@ local function OnCombatLog()
     if AURA_ADD_EVENTS[subevent] then
         -- arg15 is the aura type; buffs and HoTs the player casts on
         -- friends are not afflictions
-        if sourceGUID == UnitGUID("player") and arg15 == "DEBUFF" then
+        if sourceGUID == (playerGUID or UnitGUID("player")) and arg15 == "DEBUFF" then
             AddOrRefresh(destGUID, destName, spellID, spellName)
             Draw()
         end
@@ -455,11 +462,13 @@ events:RegisterEvent("UNIT_AURA")
 events:SetScript("OnEvent", function(self, event, arg1)
     if not (CommanderAfflictionsDB and CommanderAfflictionsDB.EnableAfflictions) then
         if event == "PLAYER_LOGIN" then
+            playerGUID = UnitGUID("player")
             Commander.AddListener(COMMANDER_AFFLICTIONS_EVENTS.UPDATE, Apply)
         end
         return
     end
     if event == "PLAYER_LOGIN" then
+        playerGUID = UnitGUID("player")
         Commander.AddListener(COMMANDER_AFFLICTIONS_EVENTS.UPDATE, Apply)
         Apply()
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then

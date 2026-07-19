@@ -47,6 +47,9 @@ local CHANNEL_TAGS = {
 }
 
 local function AbbreviateChannels(text)
+    -- Most lines carry no channel tag at all — skip the eight-pattern
+    -- gsub chain unless a bracket is even present (plain find, no pattern)
+    if not text:find("[", 1, true) then return text end
     for _, rule in ipairs(CHANNEL_TAGS) do
         text = text:gsub(rule[1], rule[2])
     end
@@ -61,6 +64,11 @@ local hookedAddMessage = {}
 local function InstallChannelTagHooks()
     for i = 1, (NUM_CHAT_WINDOWS or 10) do
         local chatFrame = _G["ChatFrame" .. i]
+        -- Never hook the combat log (ChatFrame2): its lines cannot carry a
+        -- channel tag, and wrapping its AddMessage makes every combat-log
+        -- line's history-buffer allocation land in THIS addon's memory
+        -- accounting — dozens of lines per second of phantom retention
+        if chatFrame == ChatFrame2 then chatFrame = nil end
         if chatFrame and chatFrame.AddMessage and not hookedAddMessage[chatFrame] then
             hookedAddMessage[chatFrame] = chatFrame.AddMessage
             chatFrame.AddMessage = function(self, text, ...)

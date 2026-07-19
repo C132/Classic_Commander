@@ -83,8 +83,13 @@ end
 -- numbers are real this session; the live CVar only drives the toggle.
 local profilingActive = (GetCVar and GetCVar("scriptProfile") == "1") or false
 
+-- Scratch list reused per call — the viewer must not measure itself into
+-- its own churn column any more than necessary
+local suiteAddonList = {}
+
 local function SuiteAddons()
-    local list = {}
+    local list = suiteAddonList
+    wipe(list)
     for i = 1, C_AddOns.GetNumAddOns() do
         local name = C_AddOns.GetAddOnInfo(i)
         if type(name) == "string" and name:find("^Commander_")
@@ -101,6 +106,15 @@ local baseline = {}
 local lastCPU = {}
 local lastCPUAt
 
+-- Row tables pooled per index and reused every 2s refresh — ~30 fresh
+-- tables per tick was the viewer's own contribution to the hub's churn
+local sampleList = {}
+local samplePool = {}
+
+local function SampleCompare(a, b)
+    return a.mem > b.mem
+end
+
 local function Sample()
     UpdateAddOnMemoryUsage()
     local profiling = profilingActive
@@ -108,7 +122,8 @@ local function Sample()
         UpdateAddOnCPUUsage()
     end
     local now = GetTime()
-    local rows = {}
+    local rows = sampleList
+    local count = 0
     for _, name in ipairs(SuiteAddons()) do
         local mem = GetAddOnMemoryUsage(name) or 0
         if not baseline[name] then
@@ -124,10 +139,20 @@ local function Sample()
             end
             lastCPU[name] = total
         end
-        rows[#rows + 1] = { name = name, mem = mem, drift = drift, cpuRate = cpuRate }
+        count = count + 1
+        local row = samplePool[count]
+        if not row then
+            row = {}
+            samplePool[count] = row
+        end
+        row.name, row.mem, row.drift, row.cpuRate = name, mem, drift, cpuRate
+        rows[count] = row
+    end
+    for i = #rows, count + 1, -1 do
+        rows[i] = nil
     end
     lastCPUAt = now
-    table.sort(rows, function(a, b) return a.mem > b.mem end)
+    table.sort(rows, SampleCompare)
     return rows, profiling
 end
 
@@ -281,6 +306,9 @@ local function FormatKB(kb)
     return string.format("%.0f KB", kb)
 end
 
+local cachedFrameCount = 0
+local refreshTick = 0
+
 local function Refresh()
     local rows, profiling = Sample()
     local totalKB = 0
@@ -301,17 +329,24 @@ local function Refresh()
     end
     listContent:SetHeight(math.max(#rows * ROW_H, 10))
 
+    -- The frame walk is thousands of C calls and the total does not move
+    -- on a 2s timescale — recount every 5th refresh
+    refreshTick = refreshTick + 1
+    if refreshTick % 5 == 1 then
+        cachedFrameCount = CountFrames()
+    end
     summary:SetText(string.format(
         "%d modules · %s total · %d UI frames · dispatch metrics %s",
-        #rows, FormatKB(totalKB), CountFrames(),
+        #rows, FormatKB(totalKB), cachedFrameCount,
         metricsResetAt and "since stats reset" or "since login"))
 
-    for i, e in ipairs(TopEvents(EVENT_ROWS)) do
+    local top = TopEvents(EVENT_ROWS)
+    for i, e in ipairs(top) do
         eventRows[i]:SetText(string.format("%s   %d · %d · %.2f · %.2f",
             e.event, e.count, e.listeners, e.avgMs, e.maxMs))
         eventRows[i]:Show()
     end
-    for i = #TopEvents(EVENT_ROWS) + 1, EVENT_ROWS do
+    for i = #top + 1, EVENT_ROWS do
         eventRows[i]:SetText("")
     end
 
