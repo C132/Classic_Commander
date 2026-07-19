@@ -81,21 +81,49 @@ local function AddModuleRow(panel, anchor, module)
     return row
 end
 
+local SCROLL_HEIGHT = 330
+local CONTENT_WIDTH = 560
+
 local function BuildDashboard(panel, anchor)
     anchor = AddSectionHeader(panel, anchor, "Modules")
 
+    -- The directory long outgrew the page: 30+ modules overflow the canvas,
+    -- so the list lives in a fixed-height scroll frame
+    local scroll = CreateFrame("ScrollFrame", "CommanderSuiteModuleScroll", panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -8)
+    scroll:SetPoint("RIGHT", panel, "RIGHT", -38, 0)
+    scroll:SetHeight(SCROLL_HEIGHT)
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(CONTENT_WIDTH, 10)
+    scroll:SetScrollChild(content)
+
+    -- Seed anchor sits 8px above the content top so the first row's -8
+    -- offset lands exactly at 0
+    local seed = CreateFrame("Frame", nil, content)
+    seed:SetSize(1, 1)
+    seed:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 8)
+
+    local rowAnchor = seed
+    local rowCount = 0
     for _, module in ipairs(Commander.GetModules()) do
-        anchor = AddModuleRow(panel, anchor, module)
+        rowAnchor = AddModuleRow(content, rowAnchor, module)
+        rowCount = rowCount + 1
     end
 
     for _, addon in ipairs(GetUnloadedSuiteAddons()) do
-        anchor = AddModuleRow(panel, anchor, {
+        rowAnchor = AddModuleRow(content, rowAnchor, {
             title = addon.title:gsub("^Commander ", ""),
             reason = addon.reason,
         })
+        rowCount = rowCount + 1
     end
+    content:SetHeight(rowCount * ROW_HEIGHT + 16)
 
     anchor = AddSectionHeader(panel, anchor, "Suite")
+    -- Re-anchor the Suite section below the scroll viewport
+    anchor:ClearAllPoints()
+    anchor:SetPoint("TOPLEFT", scroll, "BOTTOMLEFT", 0, -14)
 
     local reloadButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     reloadButton:SetSize(100, 22)
