@@ -690,8 +690,11 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
         -- takes the mouse, so locked frames stay click-transparent.
         local overlay = CreateFrame("Frame", nil, frame)
         frame._hudDragOverlay = overlay
-        overlay:SetAllPoints(frame)
-        overlay:SetFrameLevel((frame:GetFrameLevel() or 1) + 10)
+        -- Cover the chrome pad too, so the styled border is also a grab
+        -- handle — a bigger target than the content alone
+        overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", -12, 12)
+        overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 12, -12)
+        overlay:SetFrameLevel((frame:GetFrameLevel() or 1) + 20)
         overlay:EnableMouse(true)
         overlay:RegisterForDrag("LeftButton")
         overlay.fill = overlay:CreateTexture(nil, "OVERLAY")
@@ -757,6 +760,9 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
     end
 
     local locked = db[prefix .. "Locked"]
+    -- Recompute the level each apply: module content created after init
+    -- (pooled rows) must never end up above the drag surface
+    frame._hudDragOverlay:SetFrameLevel((frame:GetFrameLevel() or 1) + 20)
     frame._hudDragOverlay:SetShown(not locked)
     if not locked then
         if style then
