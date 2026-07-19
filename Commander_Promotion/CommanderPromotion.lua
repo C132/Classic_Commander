@@ -171,7 +171,11 @@ end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LEVEL_UP")
-events:SetScript("OnEvent", function(self, event, level, hp, power, talents, str, agi, stam, int, spi)
+-- Retail-era engine payload: (level, healthDelta, powerDelta, newTalents,
+-- newPvpTalentSlots, strDelta, agiDelta, stamDelta, intDelta) — position 5
+-- is PvP talent slots (always 0 here), and there is no spirit delta. The
+-- vanilla-era signature would shift every stat label by one.
+events:SetScript("OnEvent", function(self, event, level, hp, power, talents, pvpTalents, str, agi, stam, int)
     if not IsOn() then return end
-    ShowCeremony(level, hp, power, str, agi, stam, int, spi)
+    ShowCeremony(level, hp, power, str, agi, stam, int, nil)
 end)

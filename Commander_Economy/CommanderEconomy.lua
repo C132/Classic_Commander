@@ -174,7 +174,8 @@ local function HideButtonGlow(button)
 end
 
 local function ApplyBagGlows()
-    if not next(glowSet) then return end
+    -- No empty-set early return: the loop's else-branch is also the
+    -- cleanup pass that hides glows which are no longer wanted
     for f = 1, 13 do
         local containerFrame = _G["ContainerFrame" .. f]
         if containerFrame and containerFrame:IsShown() then
@@ -216,14 +217,27 @@ local function ApplyBagGlows()
 end
 
 local function ArmBagGlows(items)
-    if not (CommanderEconomyDB and CommanderEconomyDB.BagGlow) then return end
+    -- Always wipe first: opening a report with the flag off must clear any
+    -- previously armed set, not leave it re-applying forever
     wipe(glowSet)
-    if items then
+    if CommanderEconomyDB and CommanderEconomyDB.BagGlow and items then
         for _, itemID in ipairs(items) do
             glowSet[itemID] = true
         end
     end
     ApplyBagGlows()
+end
+
+-- Opening a bag fires no BAG_UPDATE, so the glows also need a hook on the
+-- open paths themselves (deferred a frame so the container frames exist)
+local function DeferredApply()
+    C_Timer.After(0, ApplyBagGlows)
+end
+if hooksecurefunc then
+    pcall(hooksecurefunc, "ToggleBag", DeferredApply)
+    pcall(hooksecurefunc, "ToggleAllBags", DeferredApply)
+    pcall(hooksecurefunc, "OpenAllBags", DeferredApply)
+    pcall(hooksecurefunc, "OpenBag", DeferredApply)
 end
 
 local function FillReport(subtitle, data)
@@ -261,12 +275,18 @@ function CommanderEconomy_ShowReport(kind)
         return
     end
     local duration, elapsed = SessionDuration()
+    -- Only the newest items: arming a glow for hours of loot would light
+    -- up the whole bag, defeating spot-the-spoils
+    local recent = {}
+    for i = math.max(#lootedItems - (AAR_ICONS - 1), 1), #lootedItems do
+        recent[#recent + 1] = lootedItems[i]
+    end
     FillReport("Full session", {
         goldEarned = goldEarned, goldSpent = goldSpent, xpGained = xpGained,
         quests = questsTurnedIn, deaths = deaths,
         loot = lootCount, lootRare = lootRarePlus,
         duration = duration, elapsed = elapsed,
-        items = lootedItems,
+        items = recent,
     })
 end
 
@@ -386,6 +406,11 @@ local function UpdateTicker()
     elseif not wantTicker and hourlyTicker then
         hourlyTicker:Cancel()
         hourlyTicker = nil
+    end
+    -- Turning Bag Glow off must clear glows that are already lit
+    if CommanderEconomyDB and not CommanderEconomyDB.BagGlow and next(glowSet) then
+        wipe(glowSet)
+        ApplyBagGlows()
     end
 end
 

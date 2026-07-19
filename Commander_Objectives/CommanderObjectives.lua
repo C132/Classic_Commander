@@ -162,9 +162,12 @@ local function EndMission()
 end
 
 local function IsHostileNPC(flags)
+    -- Pets, guardians, and totems die noisily but are not kills
     return flags
         and bit.band(flags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0
         and bit.band(flags, COMBATLOG_OBJECT_CONTROL_NPC) > 0
+        and bit.band(flags, (COMBATLOG_OBJECT_TYPE_PET or 0x1000)
+            + (COMBATLOG_OBJECT_TYPE_GUARDIAN or 0x2000)) == 0
 end
 
 -- The CLEU read happens once in the event handler; this only does the
@@ -392,6 +395,13 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5)
         StartOperation()
         xpPrev, xpPrevMax, xpPrevLevel = UnitXP("player"), UnitXPMax("player"), UnitLevel("player")
         RefreshBoard()
+        -- The board's own OnUpdate only ticks while it is shown; deathless
+        -- objectives completing with the board hidden need this heartbeat
+        C_Timer.NewTicker(30, function()
+            if IsOn() and op then
+                CheckCompletions()
+            end
+        end)
     elseif event == "UI_INFO_MESSAGE" then
         -- Payload is (messageType, message)
         OnInfoMessage(arg2)

@@ -6,33 +6,64 @@
 
 local TEXT_HOLD = 1.4
 
-local pulse = WorldFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
-pulse:SetTexture("Interface\\FullScreenTextures\\LowHealth")
-pulse:SetAllPoints(WorldFrame)
-pulse:SetBlendMode("ADD")
-pulse:SetAlpha(0)
-
-local driver = CreateFrame("Frame")
-local pulseAlpha = 0
-local decayRate = 1.1
-
-local function OnDecay(self, elapsed)
-    pulseAlpha = pulseAlpha - elapsed * decayRate
-    if pulseAlpha <= 0 then
-        pulseAlpha = 0
-        pulse:SetAlpha(0)
-        driver:SetScript("OnUpdate", nil)
-        return
-    end
-    pulse:SetAlpha(pulseAlpha)
+-- Two independent pulse layers: the kill flash uses a flat white fill
+-- (the LowHealth vignette art is red — tinting it gold still renders red)
+-- and the crit flash keeps the red vignette. Separate layers also mean an
+-- overlapping weaker pulse can never recolor or re-extend a stronger one.
+local function NewPulseLayer(texture, flat)
+    local layer = {
+        texture = (function()
+            local t = WorldFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
+            t:SetTexture(texture)
+            t:SetAllPoints(WorldFrame)
+            t:SetBlendMode("ADD")
+            t:SetAlpha(0)
+            return t
+        end)(),
+        alpha = 0,
+        decay = 1.1,
+        flat = flat,
+    }
+    return layer
 end
 
-local function Pulse(r, g, b, strength)
-    pulse:SetVertexColor(r, g, b)
-    pulseAlpha = math.max(pulseAlpha, strength)
-    -- Linger control: the pulse fades to nothing over Flash Duration
-    decayRate = pulseAlpha / (CommanderImpactDB.FlashDuration or 1)
-    pulse:SetAlpha(pulseAlpha)
+local killLayer = NewPulseLayer("Interface\\Buttons\\WHITE8X8", true)
+local critLayer = NewPulseLayer("Interface\\FullScreenTextures\\LowHealth", false)
+
+local pulseLayers = { killLayer, critLayer }
+local driver = CreateFrame("Frame")
+
+local function OnDecay(self, elapsed)
+    local anyAlive = false
+    for _, layer in ipairs(pulseLayers) do
+        if layer.alpha > 0 then
+            layer.alpha = layer.alpha - elapsed * layer.decay
+            if layer.alpha <= 0 then
+                layer.alpha = 0
+            else
+                anyAlive = true
+            end
+            layer.texture:SetAlpha(layer.alpha)
+        end
+    end
+    if not anyAlive then
+        driver:SetScript("OnUpdate", nil)
+    end
+end
+
+local function Pulse(layer, r, g, b, strength)
+    -- Flat fills read much brighter than the vignette; scale them down
+    if layer.flat then
+        strength = strength * 0.7
+    end
+    -- A weaker overlapping pulse must not recolor or re-extend a stronger
+    -- active one
+    if strength >= layer.alpha then
+        layer.texture:SetVertexColor(r, g, b)
+        layer.alpha = strength
+        layer.decay = strength / (CommanderImpactDB.FlashDuration or 1)
+        layer.texture:SetAlpha(layer.alpha)
+    end
     driver:SetScript("OnUpdate", OnDecay)
 end
 
@@ -63,7 +94,7 @@ end
 
 local function OnKill(destName)
     if CommanderImpactDB.KillFlash then
-        Pulse(1, 0.82, 0.15, CommanderImpactDB.FlashIntensity or 0.4)
+        Pulse(killLayer, 1, 0.82, 0.15, CommanderImpactDB.FlashIntensity or 0.4)
     end
     if CommanderImpactDB.KillText then
         ShowKillText(destName and string.format("TARGET ELIMINATED: %s", destName) or "TARGET ELIMINATED")
@@ -82,7 +113,7 @@ local function OnCrit(amount)
     -- slider promises
     local intensity = CommanderImpactDB.FlashIntensity or 0.4
     local ramp = math.min((amount - threshold) / (threshold * 2), 1)
-    Pulse(1, 0.35, 0.1, intensity * (0.7 + 0.3 * ramp))
+    Pulse(critLayer, 1, 0.35, 0.1, intensity * (0.7 + 0.3 * ramp))
 end
 
 function CommanderImpact_Test()

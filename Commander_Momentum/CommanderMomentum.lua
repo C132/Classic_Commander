@@ -120,11 +120,14 @@ end
 local function Apply()
     if not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then
         EndStreak()
+        root:Hide()
         return
     end
-    -- Unlocked or Always Show: keep the meter on screen with no streak
     local unlocked = Commander.UI.HudUnlocked(CommanderMomentumDB, "Hud")
-    if root:IsShown() or unlocked or CommanderMomentumDB.AlwaysShow then
+    -- Visibility derives from state, never from the sticky IsShown():
+    -- re-locking or turning Always Show off must actually hide an idle meter
+    local shouldShow = streak >= 2 or unlocked or CommanderMomentumDB.AlwaysShow
+    if shouldShow then
         Commander.UI.ApplyHudChrome(root, CommanderMomentumDB, "Hud", {
             defaultPoint = { point = "TOP", x = 0, y = -260 },
         })
@@ -135,6 +138,8 @@ local function Apply()
             streakText:SetTextColor(0.6, 0.6, 0.6)
             bar:SetSize(unlocked and BAR_WIDTH or 1, BAR_HEIGHT)
         end
+    else
+        root:Hide()
     end
 end
 
@@ -144,16 +149,23 @@ events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 events:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         Commander.AddListener(COMMANDER_MOMENTUM_EVENTS.UPDATE, Apply)
+        -- Nothing notifies at startup: Always Show / unlocked-at-reload
+        -- need an initial apply or the frame stays invisible until a
+        -- streak or a settings touch
+        Apply()
         return
     end
     if not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then return end
     local _, subevent, _, sourceGUID, _, _, _, _, _, destFlags = CombatLogGetCurrentEventInfo()
     if CommanderMomentumDB.KillSource == "SQUAD" then
         -- Any hostile NPC death nearby feeds the meter — momentum for
-        -- healers and tanks, not just whoever lands the killing blow
+        -- healers and tanks, not just whoever lands the killing blow.
+        -- Pets, guardians, and totems die noisily but are not kills.
         if subevent == "UNIT_DIED" and destFlags
             and bit.band(destFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0
-            and bit.band(destFlags, COMBATLOG_OBJECT_CONTROL_NPC) > 0 then
+            and bit.band(destFlags, COMBATLOG_OBJECT_CONTROL_NPC) > 0
+            and bit.band(destFlags, (COMBATLOG_OBJECT_TYPE_PET or 0x1000)
+                + (COMBATLOG_OBJECT_TYPE_GUARDIAN or 0x2000)) == 0 then
             OnKill()
         end
     elseif subevent == "PARTY_KILL" and sourceGUID == UnitGUID("player") then
