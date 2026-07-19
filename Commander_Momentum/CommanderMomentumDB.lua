@@ -8,6 +8,8 @@ local DefaultSettings = {
     EnableMomentum = true,
     Window = 20,
     MilestoneSound = true,
+    KillSource = "OWN",
+    AlwaysShow = false,
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "DARK")) do
     DefaultSettings[key] = value
@@ -35,11 +37,29 @@ local function CreateOptionsPanel()
     })
 
     panel:AddSection("Momentum Meter")
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Enable Momentum",
         tooltip = "Master switch for the whole module.",
         get = function() return CommanderMomentumDB.EnableMomentum end,
         set = function(value) CommanderMomentumDB.EnableMomentum = value end,
+    }, {
+        label = "Always Show",
+        tooltip = "Keep the meter on screen at x0 between streaks instead of appearing only while one is alive.",
+        get = function() return CommanderMomentumDB.AlwaysShow end,
+        set = function(value) CommanderMomentumDB.AlwaysShow = value end,
+        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+    })
+    panel:AddDropdown({
+        label = "Kill Source",
+        tooltip = "My Killing Blows counts only kills where you land the final hit. Squad Kills counts every hostile that dies around you — the meter works for healers and tanks too.",
+        options = {
+            { text = "My Killing Blows", value = "OWN" },
+            { text = "Squad Kills", value = "SQUAD" },
+        },
+        width = 160,
+        get = function() return CommanderMomentumDB.KillSource end,
+        set = function(value) CommanderMomentumDB.KillSource = value end,
+        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
     panel:AddSlider({
         label = "Momentum Window",

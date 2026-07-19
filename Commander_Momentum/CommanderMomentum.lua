@@ -12,7 +12,7 @@ local lastKill = -math.huge
 local announcedMilestone = 0
 
 local root = CreateFrame("Frame", "CommanderMomentumFrame", UIParent)
-root:SetPoint("CENTER", UIParent, "CENTER", 0, -170)
+root:SetPoint("TOP", UIParent, "TOP", 0, -260)
 root:SetSize(BAR_WIDTH + 10, 44)
 root:SetFrameStrata("MEDIUM")
 root:Hide()
@@ -55,10 +55,16 @@ end
 local function EndStreak()
     streak = 0
     announcedMilestone = 0
-    root:SetShown(CommanderMomentumDB
-        and CommanderMomentumDB.EnableMomentum
-        and Commander.UI.HudUnlocked(CommanderMomentumDB, "Hud") or false)
+    local keepShown = CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
+        and (CommanderMomentumDB.AlwaysShow
+            or Commander.UI.HudUnlocked(CommanderMomentumDB, "Hud"))
+    root:SetShown(keepShown or false)
     root:SetScript("OnUpdate", nil)
+    if keepShown then
+        streakText:SetText("x0")
+        streakText:SetTextColor(0.6, 0.6, 0.6)
+        bar:SetSize(1, BAR_HEIGHT)
+    end
 end
 
 local sinceDraw = 0
@@ -96,7 +102,7 @@ local function OnKill()
     if streak >= 2 then
         Refresh()
         Commander.UI.ApplyHudChrome(root, CommanderMomentumDB, "Hud", {
-            defaultPoint = { point = "CENTER", x = 0, y = -170 },
+            defaultPoint = { point = "TOP", x = 0, y = -260 },
         })
         root:Show()
         root:SetScript("OnUpdate", OnDrain)
@@ -116,15 +122,18 @@ local function Apply()
         EndStreak()
         return
     end
-    -- Unlocked: show the meter as a drag placeholder even with no streak
+    -- Unlocked or Always Show: keep the meter on screen with no streak
     local unlocked = Commander.UI.HudUnlocked(CommanderMomentumDB, "Hud")
-    if root:IsShown() or unlocked then
+    if root:IsShown() or unlocked or CommanderMomentumDB.AlwaysShow then
         Commander.UI.ApplyHudChrome(root, CommanderMomentumDB, "Hud", {
-            defaultPoint = { point = "CENTER", x = 0, y = -170 },
+            defaultPoint = { point = "TOP", x = 0, y = -260 },
         })
+        root:Show()
         Refresh()
-        if unlocked then
-            bar:SetSize(BAR_WIDTH, BAR_HEIGHT)
+        if streak < 2 then
+            streakText:SetText(string.format("x%d", streak))
+            streakText:SetTextColor(0.6, 0.6, 0.6)
+            bar:SetSize(unlocked and BAR_WIDTH or 1, BAR_HEIGHT)
         end
     end
 end
@@ -138,8 +147,16 @@ events:SetScript("OnEvent", function(self, event)
         return
     end
     if not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then return end
-    local _, subevent, _, sourceGUID = CombatLogGetCurrentEventInfo()
-    if subevent == "PARTY_KILL" and sourceGUID == UnitGUID("player") then
+    local _, subevent, _, sourceGUID, _, _, _, _, _, destFlags = CombatLogGetCurrentEventInfo()
+    if CommanderMomentumDB.KillSource == "SQUAD" then
+        -- Any hostile NPC death nearby feeds the meter — momentum for
+        -- healers and tanks, not just whoever lands the killing blow
+        if subevent == "UNIT_DIED" and destFlags
+            and bit.band(destFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0
+            and bit.band(destFlags, COMBATLOG_OBJECT_CONTROL_NPC) > 0 then
+            OnKill()
+        end
+    elseif subevent == "PARTY_KILL" and sourceGUID == UnitGUID("player") then
         OnKill()
     end
 end)
