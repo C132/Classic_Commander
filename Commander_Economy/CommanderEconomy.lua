@@ -124,6 +124,49 @@ end
 local aarClose = CreateFrame("Button", nil, aar, "UIPanelCloseButton")
 aarClose:SetPoint("TOPRIGHT", aar, "TOPRIGHT", -4, -4)
 
+-- Share the displayed report to the group (instance > raid > party)
+local function ShareChannel()
+    if LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+        return "INSTANCE_CHAT"
+    elseif IsInRaid() then
+        return "RAID"
+    elseif IsInGroup() then
+        return "PARTY"
+    end
+end
+
+function CommanderEconomy_ShareReport()
+    if not aarCurrent then
+        print("Commander Economy: open a report first (/ceco aar)")
+        return
+    end
+    local channel = ShareChannel()
+    if not channel then
+        print("Commander Economy: no group to share the report with")
+        return
+    end
+    local d = aarCurrent.data
+    SendChatMessage(string.format("Commander AAR — %s (%s)", aarCurrent.subtitle, d.duration), channel)
+    SendChatMessage(string.format("Gold: %s earned, %s spent (net %s)",
+        Coins(d.goldEarned), Coins(d.goldSpent), Coins(d.goldEarned - d.goldSpent)), channel)
+    local xpText
+    if d.elapsed >= 60 and d.xpGained > 0 then
+        xpText = string.format("%d (%d/hour)", d.xpGained, math.floor(d.xpGained / (d.elapsed / 3600)))
+    else
+        xpText = tostring(d.xpGained)
+    end
+    SendChatMessage(string.format("XP: %s | Quests: %d | Deaths: %d | Loot: %d items (%d uncommon+)",
+        xpText, d.quests, d.deaths, d.loot, d.lootRare), channel)
+end
+
+local aarShare = CreateFrame("Button", nil, aar, "UIPanelButtonTemplate")
+aarShare:SetSize(90, 20)
+aarShare:SetPoint("BOTTOMLEFT", aar, "BOTTOMLEFT", 24, 14)
+aarShare:SetText("Share")
+aarShare:SetScript("OnClick", function()
+    CommanderEconomy_ShareReport()
+end)
+
 -- Icon strip: the report's spoils, hoverable for full item tooltips
 local aarIcons = {}
 for i = 1, AAR_ICONS do
@@ -249,7 +292,10 @@ if hooksecurefunc then
     pcall(hooksecurefunc, "OpenBag", DeferredApply)
 end
 
+local aarCurrent   -- what the window is currently showing, for sharing
+
 local function FillReport(subtitle, data)
+    aarCurrent = { subtitle = subtitle, data = data }
     aarSubtitle:SetText(subtitle)
     aarLines[1]:SetText(string.format("Gold:  %s earned   %s spent   (net %s)",
         Coins(data.goldEarned), Coins(data.goldSpent), Coins(data.goldEarned - data.goldSpent)))

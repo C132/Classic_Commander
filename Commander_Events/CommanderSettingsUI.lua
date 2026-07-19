@@ -833,8 +833,16 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
         overlay.label = overlay:CreateFontString(nil, "OVERLAY")
         overlay.label:SetFontObject(GameFontHighlightSmall)
         overlay.label:SetPoint("CENTER")
-        overlay.label:SetText("DRAG")
+        overlay.label:SetText("DRAG · right-click locks")
         overlay:Hide()
+        -- Right-click on an unlocked frame locks it in place — no trip
+        -- back to the settings panel needed
+        overlay:SetScript("OnMouseUp", function(_, mouseButton)
+            if mouseButton == "RightButton" then
+                db[prefix .. "Locked"] = true
+                UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts or opts)
+            end
+        end)
         overlay:SetScript("OnDragStart", function()
             frame._hudDragging = true
             frame:StartMoving()

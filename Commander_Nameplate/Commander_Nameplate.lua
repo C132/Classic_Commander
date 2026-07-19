@@ -228,6 +228,15 @@ playerNameplate:SetScript("OnDragStart", function(self)
     self._dragging = true
     self:StartMoving()
 end)
+-- Right-click locks an unlocked plate in place (mouse is only enabled
+-- while unlocked, so this can never eat clicks otherwise)
+playerNameplate:SetScript("OnMouseUp", function(self, mouseButton)
+    if mouseButton == "RightButton" and CommanderNameplateDB
+        and CommanderNameplateDB.unlockPlate then
+        CommanderNameplateDB.unlockPlate = false
+        Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
+    end
+end)
 playerNameplate:SetScript("OnDragStop", function(self)
     self._dragging = false
     self:StopMovingOrSizing()

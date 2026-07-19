@@ -36,6 +36,9 @@ local function CreateOptionsPanel()
             aar = function()
                 if CommanderEconomy_ShowReport then CommanderEconomy_ShowReport("session") end
             end,
+            share = function()
+                if CommanderEconomy_ShareReport then CommanderEconomy_ShareReport() end
+            end,
         },
     })
 
