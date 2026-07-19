@@ -214,5 +214,68 @@ events:SetScript("OnEvent", function(self, event, addonName)
 end)
 
 -- Public API for sibling modules (Commander_Recovery issues corpse-run
--- orders; Commander_Rally re-issues saved rally points)
+-- orders; the rally points below re-issue saved positions)
 CommanderOrders_IssueOrder = SetOrder
+
+-- ---------------------------------------------------------------------------
+-- Rally points, absorbed from Commander_Rally in 2.1.0: four persistent
+-- slots. Marking a slot stores the current map position; rallying to it
+-- re-issues the position as a normal move order, so the arrow does all
+-- the guidance work. Points live in CommanderOrdersDB.RallyPoints and
+-- survive both /reload and settings resets.
+-- ---------------------------------------------------------------------------
+local function ValidSlot(slot)
+    return type(slot) == "number" and slot >= 1 and slot <= 4
+end
+
+local function OrdersOn()
+    if CommanderOrdersDB and CommanderOrdersDB.EnableOrders then return true end
+    print("Commander Orders: module is disabled (enable it in settings or /corder)")
+    return false
+end
+
+function CommanderOrders_RallySet(slot)
+    if not OrdersOn() or not ValidSlot(slot) then return end
+    local mapID = C_Map.GetBestMapForUnit("player")
+    local pos = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
+    if not pos then
+        print("Commander Orders: cannot mark a rally point here (no map position — instances and some interiors)")
+        return
+    end
+    CommanderOrdersDB.RallyPoints[slot] = {
+        mapID = mapID, x = pos.x, y = pos.y,
+        zone = GetZoneText() or "unknown territory",
+    }
+    if CommanderOrdersDB.OrderSound then
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
+    end
+    print(string.format("Commander Orders: rally point %d marked — %s (%.0f, %.0f)",
+        slot, CommanderOrdersDB.RallyPoints[slot].zone, pos.x * 100, pos.y * 100))
+end
+
+function CommanderOrders_RallyGo(slot)
+    if not OrdersOn() or not ValidSlot(slot) then return end
+    local p = CommanderOrdersDB.RallyPoints[slot]
+    if not p then
+        print(string.format("Commander Orders: no rally point marked in slot %d (use /corder set %d)", slot, slot))
+        return
+    end
+    if not CommanderOrders_IssueOrder(p.mapID, p.x, p.y) then
+        print(string.format("Commander Orders: could not issue an order for rally point %d (%s)", slot, p.zone or "unknown"))
+    end
+end
+
+function CommanderOrders_RallyList()
+    local any = false
+    for slot = 1, 4 do
+        local p = CommanderOrdersDB.RallyPoints and CommanderOrdersDB.RallyPoints[slot]
+        if p then
+            print(string.format("Commander Orders rally %d: %s (%.0f, %.0f)",
+                slot, p.zone or "unknown", (p.x or 0) * 100, (p.y or 0) * 100))
+            any = true
+        end
+    end
+    if not any then
+        print("Commander Orders: no rally points marked yet (/corder set 1 while standing somewhere worth returning to)")
+    end
+end

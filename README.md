@@ -32,7 +32,6 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Production | Cooldowns as an RTS production queue with ready alerts |
 | Commander_Promotion | Level-up ceremony: gold burst, banner, stat gains |
 | Commander_Radar | Cosmetic minimap radar sweep and crosshair overlay |
-| Commander_Rally | Four persistent rally points re-issued as Orders arrows |
 | Commander_Recovery | Death report, session casualty count, auto corpse-run order |
 | Commander_Resources | Five-second-rule mana tick tracker |
 | Commander_Spoils | SUPPLY ACQUIRED loot toasts with quality colors and epic flash |

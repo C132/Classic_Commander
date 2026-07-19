@@ -101,10 +101,6 @@
             "path": "Commander_Radar"
         },
         {
-            "name": "Commander_Rally",
-            "path": "Commander_Rally"
-        },
-        {
             "name": "Commander_Recovery",
             "path": "Commander_Recovery"
         },

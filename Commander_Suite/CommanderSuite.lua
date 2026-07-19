@@ -15,7 +15,7 @@ local GROUP_HEADER_HEIGHT = 30
 -- not know yet falls through to Other Modules, so nothing ever vanishes.
 local PILLARS = {
     { title = "Command & Control",
-      keys = { "Comms", "Orders", "Rally", "Ping", "Camera", "Radar" } },
+      keys = { "Comms", "Orders", "Ping", "Camera", "Radar" } },
     { title = "Battle HUD",
       keys = { "Production", "Afflictions", "Vitals", "Nameplate", "Casting", "Resources" } },
     { title = "Feedback & Alerts",
