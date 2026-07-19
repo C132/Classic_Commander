@@ -84,16 +84,25 @@ local function EnsurePortraitOverlay()
         portraitOverlay:SetPoint("CENTER", anchor, "CENTER", 0, 0)
     end
     portraitCooldown = CreateFrame("Cooldown", nil, portraitOverlay, "CooldownFrameTemplate")
-    portraitCooldown:SetAllPoints(portraitOverlay)
-    -- The portrait is round; keep the sweep quiet: no client countdown
-    -- numbers, no bright edge, circular clip where the client supports it
+    -- Slightly larger than the portrait so the ring wraps its rim
+    portraitCooldown:SetPoint("TOPLEFT", portraitOverlay, "TOPLEFT", -4, 4)
+    portraitCooldown:SetPoint("BOTTOMRIGHT", portraitOverlay, "BOTTOMRIGHT", 4, -4)
+    -- The swipe texture is a ring, so the radial sweep only ever draws
+    -- ring pixels: a blue progress ring around the portrait instead of a
+    -- dark wedge over the face. No client countdown numbers or edge line.
     if portraitCooldown.SetHideCountdownNumbers then
         portraitCooldown:SetHideCountdownNumbers(true)
     end
     if portraitCooldown.SetDrawEdge then
         portraitCooldown:SetDrawEdge(false)
     end
-    if portraitCooldown.SetUseCircularEdge then
+    if portraitCooldown.SetSwipeTexture then
+        portraitCooldown:SetSwipeTexture("Interface\\AddOns\\Commander_Momentum\\Textures\\Ring")
+        if portraitCooldown.SetSwipeColor then
+            portraitCooldown:SetSwipeColor(0.25, 0.55, 1, 0.95)
+        end
+    elseif portraitCooldown.SetUseCircularEdge then
+        -- Old-style fallback: at least clip the default wedge round
         portraitCooldown:SetUseCircularEdge(true)
     end
     -- Text must sit above the cooldown sweep, so it lives on its own
