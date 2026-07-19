@@ -116,6 +116,52 @@ local function StopWatching()
     end
 end
 
+-- Standard suite tester: preview the glow without casting — a three second
+-- ramp, cycling a school color per press when school coloring is on. A
+-- real cast starting mid-test takes over instantly.
+local TEST_SCHOOL_COLORS = {
+    { "Holy", 1, 0.95, 0.2 }, { "Fire", 1, 0.2, 0 }, { "Nature", 0, 1, 0.3 },
+    { "Frost", 0, 0.8, 1 }, { "Shadow", 0.6, 0, 1 }, { "Arcane", 1, 0.3, 1 },
+}
+local TEST_DURATION = 3
+local testDriver = CreateFrame("Frame")
+testDriver:Hide()
+local testStart, testColor = 0, nil
+
+testDriver:SetScript("OnUpdate", function(self)
+    if isWatching then
+        self:Hide()
+        return
+    end
+    local progress = (GetTime() - testStart) / TEST_DURATION
+    if progress >= 1 then
+        self:Hide()
+        fullScreenGlow:SetAlpha(0)
+        return
+    end
+    fullScreenGlow:SetVertexColor(testColor[2], testColor[3], testColor[4])
+    fullScreenGlow:SetAlpha(math.max(0, progress) * CommanderCastingDB.EffectIntensity)
+end)
+
+local testIndex = 0
+function CommanderCasting_Test()
+    if not (CommanderCastingDB and CommanderCastingDB.ShowFullscreenEffect) then
+        print("Commander Casting: the fullscreen effect is disabled (enable it in settings or /ccast)")
+        return
+    end
+    fullScreenGlow:SetTexture(CommanderCastingDB.EffectTexture)
+    if CommanderCastingDB.ColorBySpellSchool then
+        testIndex = testIndex % #TEST_SCHOOL_COLORS + 1
+        testColor = TEST_SCHOOL_COLORS[testIndex]
+        print(string.format("Commander Casting: test cast — %s glow ramping for %d seconds", testColor[1], TEST_DURATION))
+    else
+        testColor = { "Default", 1, 0.7, 0 }
+        print(string.format("Commander Casting: test cast — glow ramping for %d seconds", TEST_DURATION))
+    end
+    testStart = GetTime()
+    testDriver:Show()
+end
+
 local function OnAwake()
     Commander.AddListener(COMMANDER_CASTING_EVENTS.UPDATE, OnUpdate)
     Commander.Notify(COMMANDER_CASTING_EVENTS.UPDATE)

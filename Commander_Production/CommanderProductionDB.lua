@@ -39,7 +39,11 @@ local function CreateOptionsPanel()
         description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar filling toward ready — like watching units build in an RTS — stacked at the left edge of the screen, longest waits at the bottom, with an optional callout the moment something finishes.",
         event = COMMANDER_PRODUCTION_EVENTS.UPDATE,
         slash = { "/cprod" },
-        slashHandlers = {},
+        slashHandlers = {
+            test = function()
+                if CommanderProduction_Test then CommanderProduction_Test() end
+            end,
+        },
     })
 
     panel:AddCheckboxPair({
@@ -133,6 +137,17 @@ local function CreateOptionsPanel()
         get = function() return CommanderProductionDB.LingerReady end,
         set = function(value) CommanderProductionDB.LingerReady = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
+    })
+
+    panel:AddButtonRow({
+        {
+            label = "Test Cooldown",
+            width = 130,
+            tooltip = "Feed a fake 30-second cooldown through the real queue to preview the frame, layout, and ready alert (also: /cprod test).",
+            onClick = function()
+                if CommanderProduction_Test then CommanderProduction_Test() end
+            end,
+        },
     })
 
     Commander.UI.AddHudChromeOptions(panel, CommanderProductionDB, "Hud", {

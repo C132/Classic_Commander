@@ -365,6 +365,24 @@ root:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 
+-- Standard suite tester: feed a fake 30-second cooldown through the real
+-- queue so the frame, layout, overlays, and the ready flow can be
+-- previewed anywhere. Never in the spellbook scan, so sweeps leave it
+-- alone until it expires naturally.
+function CommanderProduction_Test()
+    if not (CommanderProductionDB and CommanderProductionDB.EnableProduction) then
+        print("Commander Production: module is disabled (enable it in settings or /cprod)")
+        return
+    end
+    active["Test Cooldown"] = {
+        texture = "Interface\\Icons\\INV_Misc_PocketWatch_01",
+        start = GetTime(),
+        duration = 30,
+    }
+    Draw()
+    print("Commander Production: test cooldown queued — 30 seconds to ready")
+end
+
 local watcher = CreateFrame("Frame")
 watcher:RegisterEvent("PLAYER_LOGIN")
 watcher:RegisterEvent("SPELL_UPDATE_COOLDOWN")

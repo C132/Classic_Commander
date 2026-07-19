@@ -29,7 +29,11 @@ local function CreateOptionsPanel()
         description = "The RTS idle-worker alert, for your character: stand around doing nothing — no moving, no fighting, no casting — and a pulsing pocket-watch button appears in the corner. Click it to open your orders (the quest log) and get back to work.",
         event = COMMANDER_IDLE_EVENTS.UPDATE,
         slash = { "/cidle" },
-        slashHandlers = {},
+        slashHandlers = {
+            test = function()
+                if CommanderIdle_Test then CommanderIdle_Test() end
+            end,
+        },
     })
 
     panel:AddSection("Idle Alert")
@@ -61,6 +65,17 @@ local function CreateOptionsPanel()
         get = function() return CommanderIdleDB.IdleWhileResting end,
         set = function(value) CommanderIdleDB.IdleWhileResting = value end,
         isEnabled = function() return CommanderIdleDB.EnableIdle end,
+    })
+
+    panel:AddButtonRow({
+        {
+            label = "Test Alert",
+            width = 110,
+            tooltip = "Show the idle alert right now — click the pocket watch or start moving to dismiss it (also: /cidle test).",
+            onClick = function()
+                if CommanderIdle_Test then CommanderIdle_Test() end
+            end,
+        },
     })
 
     panel:Finalize({ onDefaults = Reset })

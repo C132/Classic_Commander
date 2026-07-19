@@ -104,6 +104,22 @@ local function Check()
     end
 end
 
+-- Standard suite tester: show the alert immediately. Real activity (or
+-- the click itself) dismisses it exactly like a genuine idle alert.
+function CommanderIdle_Test()
+    if not (CommanderIdleDB and CommanderIdleDB.EnableIdle) then
+        print("Commander Idle: module is disabled (enable it in settings or /cidle)")
+        return
+    end
+    alerted = true
+    pulseTime = 0
+    button:Show()
+    if CommanderIdleDB.IdleSound then
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
+    end
+    print("Commander Idle: test alert — click the pocket watch or start moving to dismiss")
+end
+
 local function ApplyEnabled()
     if CommanderIdleDB.EnableIdle then
         if not ticker then

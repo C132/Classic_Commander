@@ -33,6 +33,9 @@ local function CreateOptionsPanel()
             report = function()
                 if CommanderRecovery_Report then CommanderRecovery_Report() end
             end,
+            test = function()
+                if CommanderRecovery_Test then CommanderRecovery_Test() end
+            end,
         },
     })
 
@@ -73,6 +76,14 @@ local function CreateOptionsPanel()
             tooltip = "Print this session's casualty report in chat (also: /crec report).",
             onClick = function()
                 if CommanderRecovery_Report then CommanderRecovery_Report() end
+            end,
+        },
+        {
+            label = "Test Casualty",
+            width = 130,
+            tooltip = "Preview the casualty flow: the death report line for your current position and the recovery sound. No session numbers change, no order is issued (also: /crec test).",
+            onClick = function()
+                if CommanderRecovery_Test then CommanderRecovery_Test() end
             end,
         },
     })

@@ -57,6 +57,27 @@ function CommanderRecovery_Report()
     end
 end
 
+-- Standard suite tester: preview the casualty flow — the report line for
+-- a pretend death at your current position and the recovery sound —
+-- without touching the session log or issuing any order
+function CommanderRecovery_Test()
+    if not IsOn() then
+        print("Commander Recovery: module is disabled (enable it in settings or /crec)")
+        return
+    end
+    local here = CaptureDeathPosition()
+    if here.x then
+        print(string.format(
+            "Commander Recovery: TEST — unit lost in %s (%.0f, %.0f); releasing would issue a corpse run order back to this spot",
+            here.zone, here.x * 100, here.y * 100))
+    else
+        print(string.format("Commander Recovery: TEST — unit lost in %s", here.zone))
+    end
+    if CommanderRecoveryDB.RecoverySound then
+        PlaySound(SOUNDKIT.READY_CHECK, "Master")
+    end
+end
+
 local session   -- reload-resilient casualty count
 
 local function OnDeath()
