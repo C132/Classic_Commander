@@ -400,6 +400,13 @@ local function BackgroundSample()
         end
         a.last = mem
         if mem > a.peak then a.peak = mem end
+        -- Last ~10 minutes of samples: lets the leak heuristic tell a
+        -- sustained climb from a one-time step (settings UI built once)
+        a.ring = a.ring or {}
+        a.ring[#a.ring + 1] = mem
+        if #a.ring > 11 then
+            table.remove(a.ring, 1)
+        end
         if profiling and GetAddOnCPUUsage then
             a.cpu = GetAddOnCPUUsage(name) or a.cpu
         end
@@ -445,7 +452,7 @@ local function SortedSessionAddons(record)
         rows[#rows + 1] = {
             name = name:gsub("^Commander_", ""),
             start = a.start or 0, peak = a.peak or 0,
-            last = a.last or 0, cpu = a.cpu,
+            last = a.last or 0, cpu = a.cpu, ring = a.ring,
         }
     end
     table.sort(rows, function(x, y) return x.last > y.last end)
@@ -506,10 +513,22 @@ local function GenerateInsights(record, priors)
         for _, row in ipairs(rows) do
             local grown = row.last - row.start
             local perMin = grown / minutes
-            if perMin >= 3 and grown >= 50 then
+            -- Three filters before crying leak: overall growth, a recent
+            -- slope that is STILL climbing (one-time steps like building
+            -- the settings UI settle flat), and not explained away as
+            -- collectible garbage by the last GC probe
+            local stillClimbing = true
+            local ring = row.ring
+            if ring and #ring >= 6 then
+                stillClimbing = ((ring[#ring] - ring[1]) / (#ring - 1)) >= 2
+            end
+            local probeReclaim = lastGCProbe and lastGCProbe.perAddon[row.name]
+            local mostlyChurn = probeReclaim and probeReclaim >= grown * 0.5
+            if perMin >= 3 and grown >= 50 and stillClimbing and not mostlyChurn then
                 insights[#insights + 1] = string.format(
-                    "[LEAK?] %s grew %+.0f KB over %s (%.1f KB/min sustained) — look for tables that only append: session logs, uncapped ring buffers, per-event allocations.",
-                    row.name, grown, FormatDuration(record.duration), perMin)
+                    "[LEAK?] %s grew %+.0f KB over %s (%.1f KB/min sustained%s) — look for tables that only append: session logs, uncapped ring buffers, per-event allocations.",
+                    row.name, grown, FormatDuration(record.duration), perMin,
+                    lastGCProbe and ", survived the GC probe" or "; run the GC Probe to rule out churn")
             end
         end
     else
