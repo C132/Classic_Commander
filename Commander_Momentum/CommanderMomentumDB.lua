@@ -10,6 +10,7 @@ local DefaultSettings = {
     MilestoneSound = true,
     KillSource = "OWN",
     AlwaysShow = false,
+    Display = "HUD",
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "DARK")) do
     DefaultSettings[key] = value
@@ -36,7 +37,6 @@ local function CreateOptionsPanel()
         slashHandlers = {},
     })
 
-    panel:AddSection("Momentum Meter")
     panel:AddCheckboxPair({
         label = "Enable Momentum",
         tooltip = "Master switch for the whole module.",
@@ -47,6 +47,18 @@ local function CreateOptionsPanel()
         tooltip = "Keep the meter on screen at x0 between streaks instead of appearing only while one is alive.",
         get = function() return CommanderMomentumDB.AlwaysShow end,
         set = function(value) CommanderMomentumDB.AlwaysShow = value end,
+        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+    })
+    panel:AddDropdown({
+        label = "Display Mode",
+        tooltip = "Floating Meter is the standalone HUD frame. Portrait Overlay lives on the default player frame instead: a radial timer sweeps the momentum window over your portrait with the multiplier centered on it.",
+        options = {
+            { text = "Floating Meter", value = "HUD" },
+            { text = "Portrait Overlay", value = "PORTRAIT" },
+        },
+        width = 160,
+        get = function() return CommanderMomentumDB.Display end,
+        set = function(value) CommanderMomentumDB.Display = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
     panel:AddDropdown({
@@ -78,9 +90,10 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
 
-    panel:AddSection("Frame")
     Commander.UI.AddHudChromeOptions(panel, CommanderMomentumDB, "Hud", {
-        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+        isEnabled = function()
+            return CommanderMomentumDB.EnableMomentum and CommanderMomentumDB.Display ~= "PORTRAIT"
+        end,
         onChanged = function() Commander.Notify(COMMANDER_MOMENTUM_EVENTS.UPDATE) end,
     })
 

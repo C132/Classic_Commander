@@ -52,10 +52,97 @@ local function StreakColor()
     return 0.95, 0.95, 0.95
 end
 
+-- ---------------------------------------------------------------------------
+-- Player-portrait overlay mode: the streak lives on the default player
+-- frame instead of a floating meter — a radial cooldown sweep over the
+-- portrait counts down the momentum window, with the multiplier centered.
+-- ---------------------------------------------------------------------------
+local portraitOverlay, portraitCooldown, portraitText
+
+local function DisplayMode()
+    return (CommanderMomentumDB and CommanderMomentumDB.Display) or "HUD"
+end
+
+local function EnsurePortraitOverlay()
+    if portraitOverlay then return true end
+    local anchor = PlayerPortrait or PlayerFrame
+    if not anchor then return false end
+    portraitOverlay = CreateFrame("Frame", "CommanderMomentumPortrait", PlayerFrame or UIParent)
+    if PlayerPortrait then
+        portraitOverlay:SetAllPoints(PlayerPortrait)
+    else
+        portraitOverlay:SetSize(60, 60)
+        portraitOverlay:SetPoint("CENTER", anchor, "CENTER", 0, 0)
+    end
+    portraitCooldown = CreateFrame("Cooldown", nil, portraitOverlay, "CooldownFrameTemplate")
+    portraitCooldown:SetAllPoints(portraitOverlay)
+    -- The portrait is round; keep the sweep quiet: no client countdown
+    -- numbers, no bright edge, circular clip where the client supports it
+    if portraitCooldown.SetHideCountdownNumbers then
+        portraitCooldown:SetHideCountdownNumbers(true)
+    end
+    if portraitCooldown.SetDrawEdge then
+        portraitCooldown:SetDrawEdge(false)
+    end
+    if portraitCooldown.SetUseCircularEdge then
+        portraitCooldown:SetUseCircularEdge(true)
+    end
+    -- Text must sit above the cooldown sweep, so it lives on its own
+    -- higher-level frame
+    local textHolder = CreateFrame("Frame", nil, portraitOverlay)
+    textHolder:SetAllPoints(portraitOverlay)
+    textHolder:SetFrameLevel((portraitCooldown:GetFrameLevel() or 1) + 2)
+    portraitText = textHolder:CreateFontString(nil, "OVERLAY")
+    portraitText:SetFontObject(GameFontNormalLarge)
+    portraitText:SetPoint("CENTER")
+    portraitOverlay:Hide()
+    return true
+end
+
+local function ClearPortraitCooldown()
+    if not portraitCooldown then return end
+    if portraitCooldown.Clear then
+        portraitCooldown:Clear()
+    else
+        portraitCooldown:SetCooldown(0, 0)
+    end
+end
+
+local function UpdatePortrait()
+    if DisplayMode() ~= "PORTRAIT"
+        or not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then
+        if portraitOverlay then
+            portraitOverlay:Hide()
+            ClearPortraitCooldown()
+        end
+        return
+    end
+    if not EnsurePortraitOverlay() then return end
+    local show = streak >= 2 or CommanderMomentumDB.AlwaysShow
+    portraitOverlay:SetShown(show)
+    if not show then
+        ClearPortraitCooldown()
+        return
+    end
+    local r, g, b = StreakColor()
+    if streak < 2 then
+        r, g, b = 0.6, 0.6, 0.6
+    end
+    portraitText:SetText(string.format("x%d", streak))
+    portraitText:SetTextColor(r, g, b)
+    local window = CommanderMomentumDB.Window or 20
+    if streak >= 1 and (GetTime() - lastKill) < window then
+        portraitCooldown:SetCooldown(lastKill, window)
+    else
+        ClearPortraitCooldown()
+    end
+end
+
 local function EndStreak()
     streak = 0
     announcedMilestone = 0
     local keepShown = CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
+        and DisplayMode() == "HUD"
         and (CommanderMomentumDB.AlwaysShow
             or Commander.UI.HudUnlocked(CommanderMomentumDB, "Hud"))
     root:SetShown(keepShown or false)
@@ -64,6 +151,10 @@ local function EndStreak()
         streakText:SetText("x0")
         streakText:SetTextColor(0.6, 0.6, 0.6)
         bar:SetSize(1, BAR_HEIGHT)
+    end
+    if portraitOverlay then
+        portraitOverlay:SetScript("OnUpdate", nil)
+        UpdatePortrait()
     end
 end
 
@@ -100,12 +191,25 @@ local function OnKill()
     streak = streak + 1
     lastKill = GetTime()
     if streak >= 2 then
-        Refresh()
-        Commander.UI.ApplyHudChrome(root, CommanderMomentumDB, "Hud", {
-            defaultPoint = { point = "TOP", x = 0, y = -260 },
-        })
-        root:Show()
-        root:SetScript("OnUpdate", OnDrain)
+        if DisplayMode() == "PORTRAIT" then
+            -- The drain driver rides the overlay so window expiry still
+            -- ends the streak while the floating meter stays hidden
+            root:Hide()
+            UpdatePortrait()
+            if portraitOverlay then
+                portraitOverlay:SetScript("OnUpdate", OnDrain)
+            end
+        else
+            Refresh()
+            Commander.UI.ApplyHudChrome(root, CommanderMomentumDB, "Hud", {
+                defaultPoint = { point = "TOP", x = 0, y = -260 },
+            })
+            root:Show()
+            root:SetScript("OnUpdate", OnDrain)
+        end
+    end
+    if DisplayMode() == "PORTRAIT" then
+        UpdatePortrait()
     end
     local milestone = math.floor(streak / 5) * 5
     if milestone >= 5 and milestone > announcedMilestone then
@@ -122,6 +226,23 @@ local function Apply()
         EndStreak()
         root:Hide()
         return
+    end
+    UpdatePortrait()
+    if DisplayMode() == "PORTRAIT" then
+        -- Portrait mode owns the display; keep the floating meter down but
+        -- move its drain driver to the overlay if a streak is live
+        root:Hide()
+        root:SetScript("OnUpdate", nil)
+        if streak >= 2 and portraitOverlay then
+            portraitOverlay:SetScript("OnUpdate", OnDrain)
+        end
+        return
+    end
+    if portraitOverlay then
+        portraitOverlay:SetScript("OnUpdate", nil)
+    end
+    if streak >= 2 then
+        root:SetScript("OnUpdate", OnDrain)
     end
     local unlocked = Commander.UI.HudUnlocked(CommanderMomentumDB, "Hud")
     -- Visibility derives from state, never from the sticky IsShown():
