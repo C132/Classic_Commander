@@ -112,6 +112,13 @@ local function EnsurePortraitOverlay()
     textHolder:SetFrameLevel((portraitCooldown:GetFrameLevel() or 1) + 2)
     portraitText = textHolder:CreateFontString(nil, "OVERLAY")
     portraitText:SetFontObject(GameFontNormalLarge)
+    -- Outlined so the multiplier stays readable over the portrait art
+    do
+        local fontPath, fontSize = portraitText:GetFont()
+        if fontPath then
+            portraitText:SetFont(fontPath, fontSize or 16, "OUTLINE")
+        end
+    end
     portraitText:SetPoint("CENTER")
     portraitOverlay:Hide()
     return true
