@@ -9,6 +9,9 @@ local DefaultSettings = {
     MaxBars = 6,
     ShowTargetNames = true,
     AlwaysShow = false,
+    FixedHeight = false,
+    Layout = "BARS_DOWN",
+    BarWidth = 130,
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
     DefaultSettings[key] = value
@@ -39,7 +42,6 @@ local function CreateOptionsPanel()
         },
     })
 
-    panel:AddSection("Affliction Board")
     panel:AddCheckboxPair({
         label = "Enable Afflictions",
         tooltip = "Master switch for the whole module.",
@@ -52,11 +54,49 @@ local function CreateOptionsPanel()
         set = function(value) CommanderAfflictionsDB.ShowTargetNames = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Always Show",
         tooltip = "Keep the board frame on screen even with nothing afflicted.",
         get = function() return CommanderAfflictionsDB.AlwaysShow end,
         set = function(value) CommanderAfflictionsDB.AlwaysShow = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    }, {
+        label = "Fixed Frame Size",
+        tooltip = "Keep the frame (and its styled backdrop) sized for the full board length instead of shrinking to what is currently shown. Applies to both layouts.",
+        get = function() return CommanderAfflictionsDB.FixedHeight end,
+        set = function(value) CommanderAfflictionsDB.FixedHeight = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    })
+    panel:AddDropdown({
+        label = "Layout",
+        tooltip = "Bars list afflictions with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching left to right with a slim drain bar under each (hover an icon for details).",
+        options = {
+            { text = "Bars — grow down", value = "BARS_DOWN" },
+            { text = "Bars — grow up", value = "BARS_UP" },
+            { text = "Icon Strip", value = "ICONS" },
+        },
+        width = 160,
+        get = function() return CommanderAfflictionsDB.Layout end,
+        set = function(value) CommanderAfflictionsDB.Layout = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    })
+    panel:AddSliderPair({
+        label = "Bar Width",
+        tooltip = "Width of the drain bars in the Bars layouts — widen until spell and target names fit.",
+        min = 100, max = 260, step = 5,
+        format = "%.0f",
+        get = function() return CommanderAfflictionsDB.BarWidth end,
+        set = function(value) CommanderAfflictionsDB.BarWidth = value end,
+        isEnabled = function()
+            return CommanderAfflictionsDB.EnableAfflictions and CommanderAfflictionsDB.Layout ~= "ICONS"
+        end,
+    }, {
+        label = "Board Length",
+        tooltip = "Maximum number of afflictions shown at once (soonest to expire first).",
+        min = 1, max = 12, step = 1,
+        format = "%.0f",
+        get = function() return CommanderAfflictionsDB.MaxBars end,
+        set = function(value) CommanderAfflictionsDB.MaxBars = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
     })
     panel:AddButtonRow({
@@ -69,17 +109,7 @@ local function CreateOptionsPanel()
             end,
         },
     })
-    panel:AddSlider({
-        label = "Board Length",
-        tooltip = "Maximum number of affliction bars shown at once (soonest to expire first).",
-        min = 1, max = 12, step = 1,
-        format = "%.0f bars",
-        get = function() return CommanderAfflictionsDB.MaxBars end,
-        set = function(value) CommanderAfflictionsDB.MaxBars = value end,
-        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
-    })
 
-    panel:AddSection("Frame")
     Commander.UI.AddHudChromeOptions(panel, CommanderAfflictionsDB, "Hud", {
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
         onChanged = function() Commander.Notify(COMMANDER_AFFLICTIONS_EVENTS.UPDATE) end,

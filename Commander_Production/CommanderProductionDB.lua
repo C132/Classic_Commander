@@ -11,6 +11,8 @@ local DefaultSettings = {
     ReadyAlert = true,
     AlwaysShow = false,
     FixedHeight = false,
+    Layout = "BARS_DOWN",
+    BarWidth = 110,
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
     DefaultSettings[key] = value
@@ -37,7 +39,6 @@ local function CreateOptionsPanel()
         slashHandlers = {},
     })
 
-    panel:AddSection("Production Queue")
     panel:AddCheckboxPair({
         label = "Enable Production",
         tooltip = "Master switch for the whole module.",
@@ -50,7 +51,31 @@ local function CreateOptionsPanel()
         set = function(value) CommanderProductionDB.AlwaysShow = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
+    panel:AddDropdown({
+        label = "Layout",
+        tooltip = "Bars list spells with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching left to right with a slim progress bar under each (hover an icon for details).",
+        options = {
+            { text = "Bars — grow down", value = "BARS_DOWN" },
+            { text = "Bars — grow up", value = "BARS_UP" },
+            { text = "Icon Strip", value = "ICONS" },
+        },
+        width = 160,
+        get = function() return CommanderProductionDB.Layout end,
+        set = function(value) CommanderProductionDB.Layout = value end,
+        isEnabled = function() return CommanderProductionDB.EnableProduction end,
+    })
     panel:AddSlider({
+        label = "Bar Width",
+        tooltip = "Width of the progress bars in the Bars layouts — widen until names and timers fit.",
+        min = 100, max = 240, step = 5,
+        format = "%.0f px",
+        get = function() return CommanderProductionDB.BarWidth end,
+        set = function(value) CommanderProductionDB.BarWidth = value end,
+        isEnabled = function()
+            return CommanderProductionDB.EnableProduction and CommanderProductionDB.Layout ~= "ICONS"
+        end,
+    })
+    panel:AddSliderPair({
         label = "Minimum Cooldown",
         tooltip = "Only track cooldowns at least this long — keeps short rotational abilities and the global cooldown out of the queue.",
         min = 3, max = 60, step = 1,
@@ -58,12 +83,11 @@ local function CreateOptionsPanel()
         get = function() return CommanderProductionDB.MinDuration end,
         set = function(value) CommanderProductionDB.MinDuration = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
-    })
-    panel:AddSlider({
+    }, {
         label = "Queue Length",
-        tooltip = "Maximum number of bars shown at once (the soonest-ready cooldowns win).",
+        tooltip = "Maximum number of entries shown at once (the soonest-ready cooldowns win).",
         min = 1, max = 8, step = 1,
-        format = "%.0f bars",
+        format = "%.0f",
         get = function() return CommanderProductionDB.MaxBars end,
         set = function(value) CommanderProductionDB.MaxBars = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
@@ -75,14 +99,13 @@ local function CreateOptionsPanel()
         set = function(value) CommanderProductionDB.ReadyAlert = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     }, {
-        label = "Fixed Frame Height",
-        tooltip = "Keep the frame (and its styled backdrop) sized for the full queue length instead of shrinking to the bars currently shown — a stable panel that never jumps around.",
+        label = "Fixed Frame Size",
+        tooltip = "Keep the frame (and its styled backdrop) sized for the full queue length instead of shrinking to what is currently shown — a stable panel that never jumps around. Applies to both layouts.",
         get = function() return CommanderProductionDB.FixedHeight end,
         set = function(value) CommanderProductionDB.FixedHeight = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
 
-    panel:AddSection("Frame")
     Commander.UI.AddHudChromeOptions(panel, CommanderProductionDB, "Hud", {
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
         onChanged = function() Commander.Notify(COMMANDER_PRODUCTION_EVENTS.UPDATE) end,

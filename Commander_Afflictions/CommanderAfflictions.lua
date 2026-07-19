@@ -8,9 +8,11 @@
 -- removes them or a scan pins them down; a 40s fallback prunes strays that
 -- expire out of combat-log range.
 
-local BAR_WIDTH = 130
 local BAR_HEIGHT = 12
 local ROW_GAP = 4
+local ICON_SIZE = 26
+local ICON_GAP = 4
+local ICON_BAR_HEIGHT = 4
 local DRAW_THROTTLE = 0.1
 -- Fallback prune for entries whose expiration was never pinned by a scan;
 -- generous because unscanned curses/DoTs can legitimately run 2 minutes
@@ -22,41 +24,79 @@ local sinceDraw = 0
 
 local root = CreateFrame("Frame", "CommanderAfflictionsFrame", UIParent)
 root:SetPoint("LEFT", UIParent, "LEFT", 14, 120)
-root:SetSize(BAR_WIDTH + 20, 12 * (BAR_HEIGHT + ROW_GAP))
+root:SetSize(150, 12 * (BAR_HEIGHT + ROW_GAP))
 root:SetFrameStrata("MEDIUM")
 root:Hide()
+
+local function BarWidth()
+    return (CommanderAfflictionsDB and CommanderAfflictionsDB.BarWidth) or 130
+end
+
+local function LayoutMode()
+    return (CommanderAfflictionsDB and CommanderAfflictionsDB.Layout) or "BARS_DOWN"
+end
 
 local function AcquireRow(index)
     local row = rowPool[index]
     if row then return row end
     row = CreateFrame("Frame", nil, root)
-    row:SetSize(BAR_WIDTH + 20, BAR_HEIGHT)
-    row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -(index - 1) * (BAR_HEIGHT + ROW_GAP))
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetSize(BAR_HEIGHT, BAR_HEIGHT)
-    row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
-
     row.barBG = row:CreateTexture(nil, "BACKGROUND")
     row.barBG:SetTexture("Interface\\Buttons\\WHITE8X8")
     row.barBG:SetVertexColor(0, 0, 0, 0.55)
-    row.barBG:SetSize(BAR_WIDTH, BAR_HEIGHT)
-    row.barBG:SetPoint("LEFT", row, "LEFT", BAR_HEIGHT + 4, 0)
-
     row.bar = row:CreateTexture(nil, "ARTWORK")
     row.bar:SetTexture("Interface\\Buttons\\WHITE8X8")
     row.bar:SetVertexColor(0.7, 0.35, 1, 0.9)
-    row.bar:SetSize(1, BAR_HEIGHT)
-    row.bar:SetPoint("LEFT", row.barBG, "LEFT", 0, 0)
-
     row.label = row:CreateFontString(nil, "OVERLAY")
     row.label:SetFontObject(GameFontHighlightSmall)
-    row.label:SetPoint("LEFT", row.barBG, "LEFT", 3, 0)
-    row.label:SetPoint("RIGHT", row.barBG, "RIGHT", -3, 0)
     row.label:SetJustifyH("LEFT")
+
+    if row.EnableMouseMotion then
+        row:EnableMouseMotion(true)
+    end
+    Commander.UI.AttachTooltip(row, nil, function() return row.tipText end)
 
     rowPool[index] = row
     return row
+end
+
+-- Same layout system as Commander_Production: bars growing down or up, or
+-- the SC2-style icon strip with a slim drain bar under each icon
+local function ApplyRowGeometry(row, index, layout, barWidth)
+    row:ClearAllPoints()
+    row.icon:ClearAllPoints()
+    row.barBG:ClearAllPoints()
+    row.bar:ClearAllPoints()
+    row.label:ClearAllPoints()
+    if layout == "ICONS" then
+        row:SetSize(ICON_SIZE, ICON_SIZE + ICON_BAR_HEIGHT + 2)
+        row:SetPoint("TOPLEFT", root, "TOPLEFT", (index - 1) * (ICON_SIZE + ICON_GAP), 0)
+        row.icon:SetSize(ICON_SIZE, ICON_SIZE)
+        row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+        row.barBG:SetSize(ICON_SIZE, ICON_BAR_HEIGHT)
+        row.barBG:SetPoint("TOPLEFT", row.icon, "BOTTOMLEFT", 0, -2)
+        row.bar:SetSize(1, ICON_BAR_HEIGHT)
+        row.bar:SetPoint("LEFT", row.barBG, "LEFT", 0, 0)
+        row.label:Hide()
+    else
+        row:SetSize(barWidth + 20, BAR_HEIGHT)
+        if layout == "BARS_UP" then
+            row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * (BAR_HEIGHT + ROW_GAP))
+        else
+            row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -(index - 1) * (BAR_HEIGHT + ROW_GAP))
+        end
+        row.icon:SetSize(BAR_HEIGHT, BAR_HEIGHT)
+        row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row.barBG:SetSize(barWidth, BAR_HEIGHT)
+        row.barBG:SetPoint("LEFT", row, "LEFT", BAR_HEIGHT + 4, 0)
+        row.bar:SetSize(1, BAR_HEIGHT)
+        row.bar:SetPoint("LEFT", row.barBG, "LEFT", 0, 0)
+        row.label:SetPoint("LEFT", row.barBG, "LEFT", 3, 0)
+        row.label:SetPoint("RIGHT", row.barBG, "RIGHT", -3, 0)
+        row.label:Show()
+    end
+    row.geometrySig = layout .. barWidth
 end
 
 local function Key(destGUID, spellID)
@@ -156,16 +196,24 @@ local function Draw()
 
     local maxBars = CommanderAfflictionsDB.MaxBars or 6
     local shown = math.min(#queue, maxBars)
+    local layout = LayoutMode()
+    local barWidth = BarWidth()
+    local geometrySig = layout .. barWidth
     for i = 1, shown do
         local row = AcquireRow(i)
+        if row.geometrySig ~= geometrySig then
+            ApplyRowGeometry(row, i, layout, barWidth)
+        end
         local item = queue[i]
         local entry = item.entry
         row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        local fillWidth = (layout == "ICONS") and ICON_SIZE or barWidth
+        local fillHeight = (layout == "ICONS") and ICON_BAR_HEIGHT or BAR_HEIGHT
         if item.remaining and entry.duration and entry.duration > 0 then
             local progress = item.remaining / entry.duration
-            row.bar:SetSize(math.max(BAR_WIDTH * progress, 1), BAR_HEIGHT)
+            row.bar:SetSize(math.max(fillWidth * progress, 1), fillHeight)
         else
-            row.bar:SetSize(BAR_WIDTH, BAR_HEIGHT)
+            row.bar:SetSize(fillWidth, fillHeight)
         end
         local text = entry.spellName or "?"
         if CommanderAfflictionsDB.ShowTargetNames and entry.targetName then
@@ -174,13 +222,23 @@ local function Draw()
         if item.remaining then
             text = string.format("%s  %ds", text, math.ceil(item.remaining))
         end
-        row.label:SetText(text)
+        if layout ~= "ICONS" then
+            row.label:SetText(text)
+        end
+        row.tipText = text
         row:Show()
     end
     for i = shown + 1, #rowPool do
         rowPool[i]:Hide()
     end
-    root:SetSize(BAR_WIDTH + 20, math.max(shown, 1) * (BAR_HEIGHT + ROW_GAP))
+    -- Fixed size keeps a stable footprint for the styled backdrop
+    local slots = CommanderAfflictionsDB.FixedHeight
+        and (CommanderAfflictionsDB.MaxBars or 6) or math.max(shown, 1)
+    if layout == "ICONS" then
+        root:SetSize(slots * (ICON_SIZE + ICON_GAP) - ICON_GAP, ICON_SIZE + ICON_BAR_HEIGHT + 2)
+    else
+        root:SetSize(barWidth + 20, slots * (BAR_HEIGHT + ROW_GAP))
+    end
     root:SetShown(shown > 0 or CommanderAfflictionsDB.AlwaysShow
         or Commander.UI.HudUnlocked(CommanderAfflictionsDB, "Hud"))
 end

@@ -218,11 +218,9 @@ function PanelMethods.AddCheckboxPair(panel, left, right)
 end
 
 -- opts: label, tooltip, min, max, step, get, set, format, isEnabled
-function PanelMethods.AddSlider(panel, opts)
-    local row = panel:AddRow(52, 8)
-
+local function BuildSlider(panel, row, opts, xOffset, width)
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    label:SetPoint("TOPLEFT", row, "TOPLEFT", 2, 0)
+    label:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset + 2, 0)
     label:SetText(opts.label)
 
     -- Hand-rolled slider: the deprecated OptionsSliderTemplate draws its
@@ -232,8 +230,8 @@ function PanelMethods.AddSlider(panel, opts)
     -- with the BACKDROP_SLIDER_8_8 track, so draw it that way ourselves.
     local slider = CreateFrame("Slider", nil, row, "BackdropTemplate")
     slider:SetOrientation("HORIZONTAL")
-    slider:SetPoint("TOPLEFT", row, "TOPLEFT", 2, -18)
-    slider:SetSize(SLIDER_WIDTH, 17)
+    slider:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset + 2, -18)
+    slider:SetSize(width, 17)
     slider:SetHitRectInsets(0, 0, -10, -10)
     slider:SetBackdrop(BACKDROP_SLIDER_8_8 or {
         bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
@@ -299,6 +297,21 @@ function PanelMethods.AddSlider(panel, opts)
     end)
 
     return slider
+end
+
+function PanelMethods.AddSlider(panel, opts)
+    local row = panel:AddRow(52, 8)
+    return BuildSlider(panel, row, opts, 0, SLIDER_WIDTH)
+end
+
+-- Two compact sliders sharing one row — same budget trick as
+-- AddCheckboxPair. Each opts table is the AddSlider shape; right may be
+-- nil for an odd final entry.
+function PanelMethods.AddSliderPair(panel, left, right)
+    local row = panel:AddRow(52, 8)
+    local leftSlider = BuildSlider(panel, row, left, 0, 170)
+    local rightSlider = right and BuildSlider(panel, row, right, 270, 170) or nil
+    return leftSlider, rightSlider
 end
 
 -- opts: label, tooltip, options ({text=, value=}...), get, set, width,
