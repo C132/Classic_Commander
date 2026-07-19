@@ -12,6 +12,10 @@ local DefaultSettings = {
     WhisperSound = "IG_CHARACTER_INFO_TAB",
     PartySound = "IG_CHARACTER_INFO_TAB",
     SoundChannel = "Master",
+    Timestamps = false,
+    ShortChannels = false,
+    CombatQuiet = false,
+    KeepChatVisible = false,
 }
 
 local frame = CreateFrame("FRAME");
@@ -87,7 +91,7 @@ local function CreateOptionsPanel()
         key = "Chat",
         title = "Chat",
         addonName = "Commander_Chat",
-        description = "Keeps chat on your terms: hide the chat frame entirely for a clean battlefield view, and add distinct alert sounds for whispers and party chat so nothing slips past you.",
+        description = "Keeps chat on your terms: hide the chat frame for a clean battlefield view, timestamps and compact channel tags for readable comms, combat quiet for full focus, and distinct alert sounds for whispers and party chat so nothing slips past you.",
         event = COMMANDER_CHAT_EVENTS.UPDATE,
         slash = { "/cchat", "/commanderchat" },
         slashHandlers = {
@@ -97,25 +101,51 @@ local function CreateOptionsPanel()
     })
 
     panel:AddSection("Chat Frame")
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Show Chat Window",
         tooltip = "Show the main chat window and its tabs. Uncheck for a fully clean screen.",
         get = function() return CommanderChatDB.ShowChatWindow end,
         set = function(value) CommanderChatDB.ShowChatWindow = value end,
-    })
-    panel:AddCheckbox({
+    }, {
         label = "Show Chat Buttons",
         tooltip = "Show the chat menu, channel, and social buttons next to the chat window.",
         get = function() return CommanderChatDB.ShowChatButton end,
         set = function(value) CommanderChatDB.ShowChatButton = value end,
     })
+    panel:AddCheckboxPair({
+        label = "Timestamps",
+        tooltip = "Prefix every chat line with a 24-hour timestamp (sets the client's timestamp option; unchecking turns timestamps off).",
+        get = function() return CommanderChatDB.Timestamps end,
+        set = function(value) CommanderChatDB.Timestamps = value end,
+    }, {
+        label = "Short Channel Tags",
+        tooltip = "Compact channel prefixes, RTS-brief: [Party] becomes [P], [Guild] [G], [Raid Leader] [RL], numbered channels just [2].",
+        get = function() return CommanderChatDB.ShortChannels end,
+        set = function(value) CommanderChatDB.ShortChannels = value end,
+    })
+    panel:AddCheckboxPair({
+        label = "Combat Quiet",
+        tooltip = "Fade the chat window to near-invisible while you are in combat — full focus on the fight, chat returns when it ends.",
+        get = function() return CommanderChatDB.CombatQuiet end,
+        set = function(value) CommanderChatDB.CombatQuiet = value end,
+    }, {
+        label = "Keep Chat Visible",
+        tooltip = "Stop chat lines from fading out over time; every window keeps its full history on screen.",
+        get = function() return CommanderChatDB.KeepChatVisible end,
+        set = function(value) CommanderChatDB.KeepChatVisible = value end,
+    })
 
     panel:AddSection("Sound Alerts", "Selecting a sound previews it; /cchat test whisper (or test party) prints exactly what plays.")
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Play Sound on Whisper",
         tooltip = "Play an alert sound whenever you receive a whisper.",
         get = function() return CommanderChatDB.SoundPingWhisper end,
         set = function(value) CommanderChatDB.SoundPingWhisper = value end,
+    }, {
+        label = "Play Sound on Party Chat",
+        tooltip = "Play an alert sound whenever a party message arrives.",
+        get = function() return CommanderChatDB.SoundPingParty end,
+        set = function(value) CommanderChatDB.SoundPingParty = value end,
     })
     panel:AddDropdown({
         label = "Whisper Sound",
@@ -125,12 +155,6 @@ local function CreateOptionsPanel()
         set = function(value) CommanderChatDB.WhisperSound = value end,
         isEnabled = function() return CommanderChatDB.SoundPingWhisper end,
         onSelect = function() C_Timer.After(0.1, function() PlayTestSound("whisper") end) end,
-    })
-    panel:AddCheckbox({
-        label = "Play Sound on Party Chat",
-        tooltip = "Play an alert sound whenever a party message arrives.",
-        get = function() return CommanderChatDB.SoundPingParty end,
-        set = function(value) CommanderChatDB.SoundPingParty = value end,
     })
     panel:AddDropdown({
         label = "Party Sound",

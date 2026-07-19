@@ -30,6 +30,60 @@ local chatElements = {
     FriendsMicroButton
 }
 
+-- ---------------------------------------------------------------------------
+-- Readability: short channel tags, timestamps, fade control, combat quiet
+-- ---------------------------------------------------------------------------
+local inCombat = false
+
+local CHANNEL_TAGS = {
+    { "%[Party Leader%]", "[PL]" },
+    { "%[Party%]", "[P]" },
+    { "%[Raid Leader%]", "[RL]" },
+    { "%[Raid Warning%]", "[RW]" },
+    { "%[Raid%]", "[R]" },
+    { "%[Guild%]", "[G]" },
+    { "%[Officer%]", "[O]" },
+}
+
+local function AbbreviateChannels(text)
+    for _, rule in ipairs(CHANNEL_TAGS) do
+        text = text:gsub(rule[1], rule[2])
+    end
+    -- "[2. Trade - City]" -> "[2]"
+    text = text:gsub("%[(%d+)%.%s?[^%]]*%]", "[%1]")
+    return text
+end
+
+-- Wrap AddMessage once per window; the DB flag gates per message, so the
+-- toggle applies instantly without rehooking
+local hookedAddMessage = {}
+local function InstallChannelTagHooks()
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local chatFrame = _G["ChatFrame" .. i]
+        if chatFrame and chatFrame.AddMessage and not hookedAddMessage[chatFrame] then
+            hookedAddMessage[chatFrame] = chatFrame.AddMessage
+            chatFrame.AddMessage = function(self, text, ...)
+                if CommanderChatDB.ShortChannels and type(text) == "string" then
+                    text = AbbreviateChannels(text)
+                end
+                return hookedAddMessage[chatFrame](self, text, ...)
+            end
+        end
+    end
+end
+
+local function ApplyReadability()
+    if SetCVar then
+        SetCVar("showTimestamps", CommanderChatDB.Timestamps and "%H:%M " or "none")
+    end
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local chatFrame = _G["ChatFrame" .. i]
+        if chatFrame and chatFrame.SetFading then
+            chatFrame:SetFading(not CommanderChatDB.KeepChatVisible)
+        end
+    end
+end
+
 local function UpdateChatVisibility()
     local isVisible = CommanderChatDB.ShowChatButton
     for _, element in ipairs(chatElements) do
@@ -38,10 +92,15 @@ local function UpdateChatVisibility()
     end
 
     isVisible = CommanderChatDB.ShowChatWindow
+    -- Combat quiet dims (rather than hides) so incoming lines still land
+    local windowAlpha = 1
+    if CommanderChatDB.CombatQuiet and inCombat then
+        windowAlpha = 0.15
+    end
     ChatFrame1:SetShown(isVisible)
-    ChatFrame1:SetAlpha(isVisible and 1 or 0)
+    ChatFrame1:SetAlpha(isVisible and windowAlpha or 0)
     ChatFrame1Tab:SetShown(isVisible)
-    ChatFrame1Tab:SetAlpha(isVisible and 1 or 0)
+    ChatFrame1Tab:SetAlpha(isVisible and windowAlpha or 0)
     
     local chatFrame = _G["ChatFrame1"]
     if chatFrame and chatFrame.Tab then
@@ -79,12 +138,17 @@ local function OnDestroy() end
 
 local function OnUpdate()
     UpdateChatVisibility()
+    ApplyReadability()
 end
 
 local function OnAwake()
+    InstallChannelTagHooks()
     Commander.AddListener(COMMANDER_CHAT_EVENTS.UPDATE, OnUpdate)
     Commander.Notify(COMMANDER_CHAT_EVENTS.UPDATE)
 end
+
+frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -93,6 +157,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
         OnUpdate()
     elseif event == "PLAYER_LOGOUT" then
         OnDestroy()
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        inCombat = true
+        UpdateChatVisibility()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        inCombat = false
+        UpdateChatVisibility()
     elseif event == "CHAT_MSG_WHISPER" then
         PlaySoundPing("whisper")
     elseif event == "CHAT_MSG_PARTY" then
