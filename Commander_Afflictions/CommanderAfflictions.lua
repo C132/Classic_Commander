@@ -52,10 +52,52 @@ local function AcquireRow(index)
     row.label:SetFontObject(GameFontHighlightSmall)
     row.label:SetJustifyH("LEFT")
 
+    -- Optional per-icon drain overlays, mirroring Production's cooldown
+    -- overlays: radial sweep and countdown text
+    row.sweep = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
+    row.sweep:SetAllPoints(row.icon)
+    if row.sweep.SetHideCountdownNumbers then
+        row.sweep:SetHideCountdownNumbers(true)
+    end
+    if row.sweep.SetDrawEdge then
+        row.sweep:SetDrawEdge(false)
+    end
+    row.sweep:Hide()
+    local timerHolder = CreateFrame("Frame", nil, row)
+    timerHolder:SetAllPoints(row.icon)
+    timerHolder:SetFrameLevel((row.sweep:GetFrameLevel() or 1) + 2)
+    row.timer = timerHolder:CreateFontString(nil, "OVERLAY")
+    row.timer:SetFontObject(GameFontHighlightSmall)
+    do
+        local fontPath, fontSize = row.timer:GetFont()
+        if fontPath then
+            row.timer:SetFont(fontPath, fontSize or 10, "OUTLINE")
+        end
+    end
+    row.timer:SetPoint("CENTER", row.icon, "CENTER", 0, 0)
+    row.timer:Hide()
+
+    -- Full debuff tooltip on hover (test entries and unresolvable spells
+    -- fall back to the text line); hover-only so chrome drags pass
     if row.EnableMouseMotion then
         row:EnableMouseMotion(true)
     end
-    Commander.UI.AttachTooltip(row, nil, function() return row.tipText end)
+    row:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.spellID and self.spellID > 0 and GameTooltip.SetSpellByID then
+            GameTooltip:SetSpellByID(self.spellID)
+            if self.tipText then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(self.tipText, 0.7, 0.35, 1)
+            end
+        else
+            GameTooltip:SetText(self.tipText or "")
+        end
+        GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
 
     rowPool[index] = row
     return row
@@ -206,14 +248,40 @@ local function Draw()
         end
         local item = queue[i]
         local entry = item.entry
+        local overlay = CommanderAfflictionsDB.DrainOverlay or "BAR"
         row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        local hasTimes = item.remaining and entry.duration and entry.duration > 0
+        -- The slim underbar is an overlay choice in the icon strip; the
+        -- big bar is the row itself in the bar layouts and always stays
+        local showBar = layout ~= "ICONS" or overlay == "BAR" or overlay == "BOTH"
+        row.barBG:SetShown(showBar)
+        row.bar:SetShown(showBar)
         local fillWidth = (layout == "ICONS") and ICON_SIZE or barWidth
         local fillHeight = (layout == "ICONS") and ICON_BAR_HEIGHT or BAR_HEIGHT
-        if item.remaining and entry.duration and entry.duration > 0 then
+        if hasTimes then
             local progress = item.remaining / entry.duration
             row.bar:SetSize(math.max(fillWidth * progress, 1), fillHeight)
         else
             row.bar:SetSize(fillWidth, fillHeight)
+        end
+        -- Radial sweep / countdown need real times; unknown-duration
+        -- entries keep their full bar instead
+        if hasTimes and (overlay == "SWEEP" or overlay == "BOTH") then
+            local sweepSig = tostring(entry.expiration) .. ":" .. tostring(entry.duration)
+            if row.sweepSig ~= sweepSig then
+                row.sweepSig = sweepSig
+                row.sweep:SetCooldown(entry.expiration - entry.duration, entry.duration)
+            end
+            row.sweep:Show()
+        else
+            row.sweepSig = nil
+            row.sweep:Hide()
+        end
+        if hasTimes and overlay == "TEXT" then
+            row.timer:SetText(string.format("%d", math.ceil(item.remaining)))
+            row.timer:Show()
+        else
+            row.timer:Hide()
         end
         local text = entry.spellName or "?"
         if CommanderAfflictionsDB.ShowTargetNames and entry.targetName then
@@ -225,6 +293,7 @@ local function Draw()
         if layout ~= "ICONS" then
             row.label:SetText(text)
         end
+        row.spellID = entry.spellID
         row.tipText = text
         row:Show()
     end

@@ -12,6 +12,7 @@ local DefaultSettings = {
     FixedHeight = false,
     Layout = "BARS_DOWN",
     BarWidth = 130,
+    DrainOverlay = "BAR",
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
     DefaultSettings[key] = value
@@ -67,17 +68,28 @@ local function CreateOptionsPanel()
         set = function(value) CommanderAfflictionsDB.FixedHeight = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
     })
-    panel:AddDropdown({
+    panel:AddDropdownPair({
         label = "Layout",
-        tooltip = "Bars list afflictions with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching left to right with a slim drain bar under each (hover an icon for details).",
+        tooltip = "Bars list afflictions with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching left to right (hover for the full debuff tooltip).",
         options = {
             { text = "Bars — grow down", value = "BARS_DOWN" },
             { text = "Bars — grow up", value = "BARS_UP" },
             { text = "Icon Strip", value = "ICONS" },
         },
-        width = 160,
         get = function() return CommanderAfflictionsDB.Layout end,
         set = function(value) CommanderAfflictionsDB.Layout = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    }, {
+        label = "Drain Overlay",
+        tooltip = "How each icon shows the remaining time: the slim Drain Bar, a Radial Sweep over the icon, both at once, or Timer Text. Sweep and Timer also apply to the small icons in the Bars layouts; unknown-duration afflictions keep their full bar.",
+        options = {
+            { text = "Drain Bar", value = "BAR" },
+            { text = "Radial Sweep", value = "SWEEP" },
+            { text = "Sweep + Bar", value = "BOTH" },
+            { text = "Timer Text", value = "TEXT" },
+        },
+        get = function() return CommanderAfflictionsDB.DrainOverlay end,
+        set = function(value) CommanderAfflictionsDB.DrainOverlay = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
     })
     panel:AddSliderPair({
