@@ -442,8 +442,24 @@ C_Timer.NewTicker(1, function()
     end
 end)
 
+-- Session resets: the momentum "session" is a fighting stretch, not the
+-- whole login — death ends it, and so does a loading-screen transition
+-- (instance entry/exit, continent change). Zone identity is tracked in
+-- the persisted session, so a /reload in place never counts as a change.
+local function ResetSessionStats()
+    totalKills, bestStreak = 0, 0
+    SyncSession()
+end
+
+local function CurrentZoneKey()
+    local _, instanceType, _, _, _, _, _, instanceMapID = GetInstanceInfo()
+    return tostring(instanceType or "none") .. ":" .. tostring(instanceMapID or 0)
+end
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("PLAYER_DEAD")
+events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 events:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
@@ -453,6 +469,7 @@ events:SetScript("OnEvent", function(self, event)
         session, fresh = Commander.RestoreSession(CommanderMomentumDB, {
             streak = 0, milestone = 0, lastKillEpoch = 0,
             totalKills = 0, bestStreak = 0, streakStartEpoch = 0,
+            zoneKey = false,
         })
         totalKills = session.totalKills or 0
         bestStreak = session.bestStreak or 0
@@ -472,6 +489,26 @@ events:SetScript("OnEvent", function(self, event)
         return
     end
     if not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then return end
+    if event == "PLAYER_DEAD" then
+        if CommanderMomentumDB.ResetOnDeath then
+            -- Dying breaks the chain (lament rules apply) and zeroes the
+            -- session numbers: the next fight starts a fresh story
+            EndStreak(true)
+            ResetSessionStats()
+        end
+        return
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if session then
+            local key = CurrentZoneKey()
+            if CommanderMomentumDB.ResetOnZone and session.zoneKey and session.zoneKey ~= key then
+                -- The loading screen already broke the flow; end quietly
+                EndStreak()
+                ResetSessionStats()
+            end
+            session.zoneKey = key
+        end
+        return
+    end
     local _, subevent, _, sourceGUID, _, _, _, _, _, destFlags = CombatLogGetCurrentEventInfo()
     if CommanderMomentumDB.KillSource == "SQUAD" then
         -- Any hostile NPC death nearby feeds the meter — momentum for

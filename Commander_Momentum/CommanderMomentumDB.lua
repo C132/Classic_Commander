@@ -12,6 +12,8 @@ local DefaultSettings = {
     BreakEmotes = false,
     BreakFloor = 2,
     BreakWarning = true,
+    ResetOnDeath = true,
+    ResetOnZone = true,
     KillSource = "OWN",
     AlwaysShow = false,
     Display = "HUD",
@@ -130,6 +132,19 @@ local function CreateOptionsPanel()
                 if CommanderMomentum_Report then CommanderMomentum_Report() end
             end,
         },
+    })
+    panel:AddCheckboxPair({
+        label = "Reset on Death",
+        tooltip = "Dying breaks the live chain (lament rules apply) and zeroes the session numbers — kills and best chain start over.",
+        get = function() return CommanderMomentumDB.ResetOnDeath end,
+        set = function(value) CommanderMomentumDB.ResetOnDeath = value end,
+        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+    }, {
+        label = "Reset on Zone Change",
+        tooltip = "Loading-screen transitions (entering or leaving an instance, continent travel) quietly end the chain and start fresh session numbers. A /reload in place never counts.",
+        get = function() return CommanderMomentumDB.ResetOnZone end,
+        set = function(value) CommanderMomentumDB.ResetOnZone = value end,
+        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
     panel:AddCheckboxPair({
         label = "Streak Break Emote",
