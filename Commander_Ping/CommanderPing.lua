@@ -64,7 +64,15 @@ function CommanderPing_Test()
 end
 
 local events = CreateFrame("Frame")
-events:RegisterEvent("MINIMAP_PING")
+-- The 2.5.6 anniversary client rejects unknown event names with a hard error
+-- (which, at file scope, would kill the whole module) — and MINIMAP_PING's
+-- availability differs across client flavors. Register defensively; when the
+-- event is absent, the module still loads and /cping test works.
+local pingEventOK = pcall(events.RegisterEvent, events, "MINIMAP_PING")
+if not pingEventOK then
+    -- Ping detection unavailable on this client build; flash/test remain usable
+    CommanderPing_EventUnavailable = true
+end
 events:SetScript("OnEvent", function(self, event, unit, x, y)
     if not (CommanderPingDB and CommanderPingDB.EnablePing) then return end
     local isOwn = UnitIsUnit and UnitIsUnit(unit, "player")
