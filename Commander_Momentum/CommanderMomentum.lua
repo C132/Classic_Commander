@@ -13,6 +13,7 @@ local announcedMilestone = 0
 local totalKills = 0        -- session-wide, for the milestone brags
 local bestStreak = 0
 local streakStart = 0       -- GetTime when the current streak began
+local testFeeding = false   -- the tester never sends public emotes
 local session   -- reload-resilient mirror of the state above
 
 local function SyncSession()
@@ -318,10 +319,35 @@ local function OnKill()
             PlaySound(SOUNDKIT.READY_CHECK, "Master")
         end
         print(string.format("|cffffb830Commander Momentum:|r x%d streak", streak))
-        if CommanderMomentumDB.MilestoneEmotes then
+        if CommanderMomentumDB.MilestoneEmotes and not testFeeding then
             SendChatMessage(BuildBrag(), "EMOTE")
         end
     end
+end
+
+-- Standard suite report and tester
+function CommanderMomentum_Report()
+    print(string.format(
+        "Commander Momentum: %d kill%s this session, best chain x%d%s",
+        totalKills, totalKills == 1 and "" or "s", bestStreak,
+        streak >= 2 and string.format(" (live streak x%d)", streak) or ""))
+end
+
+function CommanderMomentum_Test()
+    if not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then
+        print("Commander Momentum: module is disabled (enable it in settings or /cmom)")
+        return
+    end
+    -- Feed two kills through the real pipeline so the live display and
+    -- drain are genuine, but keep session stats and public emotes clean
+    local savedKills, savedBest = totalKills, bestStreak
+    testFeeding = true
+    OnKill()
+    OnKill()
+    testFeeding = false
+    totalKills, bestStreak = savedKills, savedBest
+    SyncSession()
+    print(string.format("Commander Momentum: test kills fed — live x%d streak, watch it drain", streak))
 end
 
 local function Apply()

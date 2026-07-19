@@ -36,7 +36,14 @@ local function CreateOptionsPanel()
         description = "A kill-streak combo meter. Each killing blow feeds the meter and resets its drain timer; keep chaining kills and the streak climbs through escalating colors — hesitate and the bar empties, taking the streak with it. Pure grinding dopamine.",
         event = COMMANDER_MOMENTUM_EVENTS.UPDATE,
         slash = { "/cmom" },
-        slashHandlers = {},
+        slashHandlers = {
+            report = function()
+                if CommanderMomentum_Report then CommanderMomentum_Report() end
+            end,
+            test = function()
+                if CommanderMomentum_Test then CommanderMomentum_Test() end
+            end,
+        },
     })
 
     panel:AddCheckboxPair({
@@ -93,6 +100,24 @@ local function CreateOptionsPanel()
         get = function() return CommanderMomentumDB.MilestoneEmotes end,
         set = function(value) CommanderMomentumDB.MilestoneEmotes = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Test Streak",
+            width = 110,
+            tooltip = "Feed two harmless test kills so you can see and position the meter (also: /cmom test). No public emotes, session stats untouched.",
+            onClick = function()
+                if CommanderMomentum_Test then CommanderMomentum_Test() end
+            end,
+        },
+        {
+            label = "Session Report",
+            width = 130,
+            tooltip = "Print this session's kills, best chain, and any live streak (also: /cmom report).",
+            onClick = function()
+                if CommanderMomentum_Report then CommanderMomentum_Report() end
+            end,
+        },
     })
     panel:AddCheckbox({
         label = "Streak Break Emote",
