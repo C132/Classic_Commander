@@ -810,6 +810,28 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
                 self:Hide()
             end
         end)
+        -- Triple right-click on a LOCKED frame unlocks it. Only possible
+        -- where the client can pass left-clicks through (so a locked frame
+        -- still never blocks normal interaction); without the API the old
+        -- fully-transparent contract stands.
+        if frame.SetPassThroughButtons then
+            local ok = pcall(frame.SetPassThroughButtons, frame, "LeftButton")
+            frame._hudRightCatch = ok or nil
+            frame:SetScript("OnMouseUp", function(self, mouseButton)
+                if mouseButton ~= "RightButton" then return end
+                local now = GetTime()
+                if not (self._hudRightAt and (now - self._hudRightAt) < 0.7) then
+                    self._hudRightClicks = 0
+                end
+                self._hudRightClicks = (self._hudRightClicks or 0) + 1
+                self._hudRightAt = now
+                if self._hudRightClicks >= 3 then
+                    self._hudRightClicks = 0
+                    db[prefix .. "Locked"] = false
+                    UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts)
+                end
+            end)
+        end
 
         -- The drag surface is a dedicated overlay ABOVE the frame's
         -- content: module content frequently has its own mouse-enabled
@@ -916,6 +938,12 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
     end
 
     local locked = db[prefix .. "Locked"]
+    -- Locked + right-catch support: the root listens for the triple
+    -- right-click unlock while left-clicks pass straight through.
+    -- Unlocked: the drag overlay owns the mouse instead.
+    if frame._hudRightCatch then
+        frame:EnableMouse(locked and true or false)
+    end
     -- Recompute the level each apply: module content created after init
     -- (pooled rows) must never end up above the drag surface
     frame._hudDragOverlay:SetFrameLevel((frame:GetFrameLevel() or 1) + 20)
@@ -969,7 +997,7 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
     local row = panel:AddRow(26, 2)
     BuildCheckbox(panel, row, {
         label = "Unlock Frame",
-        tooltip = "Unlock to drag the frame anywhere (border turns green). Lock again when placed so it never catches the mouse.",
+        tooltip = "Unlock to drag the frame anywhere (border turns green); right-click the unlocked frame to lock it, triple right-click a locked frame to unlock it from here on out.",
         get = function() return not db[prefix .. "Locked"] end,
         set = function(value) db[prefix .. "Locked"] = not value end,
         isEnabled = enabled,

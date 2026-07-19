@@ -186,9 +186,26 @@ local function CreatePlayerNameplate()
         if CommanderNameplateDB then
             nameplate.name:SetShown(CommanderNameplateDB.showPlayerName)
             nameplate:SetScale(CommanderNameplateDB.plateScale or 1)
-            -- Mouse only while unlocked: a permanently mouse-enabled plate
-            -- silently eats clicks near the top-center of the screen
-            nameplate:EnableMouse(CommanderNameplateDB.unlockPlate or false)
+            -- Unlocked: full mouse for dragging. Locked: where the client
+            -- supports left-click pass-through, keep listening for the
+            -- triple right-click unlock without ever blocking normal
+            -- clicks; otherwise fall back to fully mouse-transparent.
+            local unlocked = CommanderNameplateDB.unlockPlate or false
+            if nameplate.SetPassThroughButtons then
+                local wantState = unlocked and "none" or "left"
+                if nameplate._passState ~= wantState and not InCombatLockdown() then
+                    local ok
+                    if unlocked then
+                        ok = pcall(nameplate.SetPassThroughButtons, nameplate)
+                    else
+                        ok = pcall(nameplate.SetPassThroughButtons, nameplate, "LeftButton")
+                    end
+                    if ok then nameplate._passState = wantState end
+                end
+                nameplate:EnableMouse(unlocked or nameplate._passState == "left")
+            else
+                nameplate:EnableMouse(unlocked)
+            end
             nameplate:SetAlpha(CommanderNameplateDB.fadeWhileMoving and IsPlayerMoving() and CommanderNameplateDB.fadeIntensity or 1)
         else
             nameplate.name:Show()
@@ -228,13 +245,25 @@ playerNameplate:SetScript("OnDragStart", function(self)
     self._dragging = true
     self:StartMoving()
 end)
--- Right-click locks an unlocked plate in place (mouse is only enabled
--- while unlocked, so this can never eat clicks otherwise)
+-- Right-click locks an unlocked plate; triple right-click on a locked
+-- plate (left clicks pass through where supported) unlocks it again
 playerNameplate:SetScript("OnMouseUp", function(self, mouseButton)
-    if mouseButton == "RightButton" and CommanderNameplateDB
-        and CommanderNameplateDB.unlockPlate then
+    if mouseButton ~= "RightButton" or not CommanderNameplateDB then return end
+    if CommanderNameplateDB.unlockPlate then
         CommanderNameplateDB.unlockPlate = false
         Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
+    else
+        local now = GetTime()
+        if not (self._rightAt and (now - self._rightAt) < 0.7) then
+            self._rightClicks = 0
+        end
+        self._rightClicks = (self._rightClicks or 0) + 1
+        self._rightAt = now
+        if self._rightClicks >= 3 then
+            self._rightClicks = 0
+            CommanderNameplateDB.unlockPlate = true
+            Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
+        end
     end
 end)
 playerNameplate:SetScript("OnDragStop", function(self)
