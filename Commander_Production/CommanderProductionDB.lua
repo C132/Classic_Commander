@@ -10,6 +10,7 @@ local DefaultSettings = {
     MaxBars = 5,
     ReadyAlert = true,
     ReadyChat = true,
+    LingerReady = false,
     AlwaysShow = false,
     FixedHeight = false,
     Layout = "BARS_DOWN",
@@ -118,7 +119,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderProductionDB.FixedHeight = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Ready Chat Message",
         tooltip = "Include the chat line in ready alerts; uncheck for the click sound alone.",
         get = function() return CommanderProductionDB.ReadyChat end,
@@ -126,6 +127,12 @@ local function CreateOptionsPanel()
         isEnabled = function()
             return CommanderProductionDB.EnableProduction and CommanderProductionDB.ReadyAlert
         end,
+    }, {
+        label = "Linger When Ready",
+        tooltip = "Finished cooldowns stay on the queue as a green READY entry for a minute, then fade out over 30 seconds — a running record of what came available. Casting the spell puts it straight back on the clock.",
+        get = function() return CommanderProductionDB.LingerReady end,
+        set = function(value) CommanderProductionDB.LingerReady = value end,
+        isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
 
     Commander.UI.AddHudChromeOptions(panel, CommanderProductionDB, "Hud", {

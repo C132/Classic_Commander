@@ -12,6 +12,10 @@ local ICON_GAP = 4
 local ICON_BAR_HEIGHT = 4
 local SWEEP_THROTTLE = 0.25
 local DRAW_THROTTLE = 0.1
+-- Linger When Ready: finished cooldowns hold on the queue this long...
+local READY_HOLD = 60
+-- ...then fade out over this long (90s total lingering)
+local READY_FADE = 30
 
 local active = {}     -- name -> { texture, start, duration }
 local rowPool = {}
@@ -186,6 +190,8 @@ local function Sweep()
                         }
                     else
                         entry.start, entry.duration = start, duration
+                        -- Recast while lingering: back to a pending bar
+                        entry.readyAt = nil
                     end
                 end
             end
@@ -193,11 +199,15 @@ local function Sweep()
     end
     -- Early cooldown resets (Preparation, Cold Snap, Readiness): the
     -- spellbook now reports the cooldown gone before the recorded end
-    -- time — the spell really is ready, so drop the bar and alert now
-    -- instead of minutes later
-    for name in pairs(active) do
-        if scanned[name] and not stillOn[name] then
-            active[name] = nil
+    -- time — the spell really is ready, so alert now instead of minutes
+    -- later, and either drop the bar or park it as READY
+    for name, entry in pairs(active) do
+        if scanned[name] and not stillOn[name] and not entry.readyAt then
+            if CommanderProductionDB.LingerReady then
+                entry.readyAt = now
+            else
+                active[name] = nil
+            end
             ReadyAlert(name)
         end
     end
@@ -207,15 +217,43 @@ local function Draw()
     local now = GetTime()
     local queue = {}
     for name, entry in pairs(active) do
-        local remaining = entry.start + entry.duration - now
-        if remaining <= 0 then
-            active[name] = nil
-            ReadyAlert(name)
+        if entry.readyAt then
+            -- Lingering READY entry: 60s hold, 30s fade, then gone
+            local lingering = now - entry.readyAt
+            if lingering > (READY_HOLD + READY_FADE) or not CommanderProductionDB.LingerReady then
+                active[name] = nil
+            else
+                local alpha = 1
+                if lingering > READY_HOLD then
+                    alpha = 1 - (lingering - READY_HOLD) / READY_FADE
+                end
+                queue[#queue + 1] = { name = name, entry = entry, ready = true, alpha = alpha }
+            end
         else
-            queue[#queue + 1] = { name = name, entry = entry, remaining = remaining }
+            local remaining = entry.start + entry.duration - now
+            if remaining <= 0 then
+                if CommanderProductionDB.LingerReady then
+                    entry.readyAt = now
+                    queue[#queue + 1] = { name = name, entry = entry, ready = true, alpha = 1 }
+                else
+                    active[name] = nil
+                end
+                ReadyAlert(name)
+            else
+                queue[#queue + 1] = { name = name, entry = entry, remaining = remaining }
+            end
         end
     end
+    -- Pending cooldowns first (soonest ready on top), READY stragglers
+    -- after, freshest first
     table.sort(queue, function(a, b)
+        if (a.ready or false) ~= (b.ready or false) then return not a.ready end
+        if a.ready then
+            if a.entry.readyAt ~= b.entry.readyAt then
+                return a.entry.readyAt > b.entry.readyAt
+            end
+            return a.name < b.name
+        end
         if a.remaining ~= b.remaining then return a.remaining < b.remaining end
         return a.name < b.name
     end)
@@ -231,7 +269,6 @@ local function Draw()
             ApplyRowGeometry(row, i, layout, barWidth)
         end
         local item = queue[i]
-        local progress = 1 - (item.remaining / item.entry.duration)
         local overlay = CommanderProductionDB.CooldownOverlay or "BAR"
         row.icon:SetTexture(item.entry.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
         -- In the icon strip the slim bar is itself an overlay choice; in
@@ -239,31 +276,50 @@ local function Draw()
         local showBar = layout ~= "ICONS" or overlay == "BAR" or overlay == "BOTH"
         row.barBG:SetShown(showBar)
         row.bar:SetShown(showBar)
-        if layout == "ICONS" then
-            row.bar:SetSize(math.max(ICON_SIZE * progress, 1), ICON_BAR_HEIGHT)
-        else
-            row.bar:SetSize(math.max(barWidth * progress, 1), BAR_HEIGHT)
-            row.label:SetText(string.format("%s  %s", item.name, FormatRemaining(item.remaining)))
-        end
-        if overlay == "SWEEP" or overlay == "BOTH" then
-            local sweepSig = tostring(item.entry.start) .. ":" .. tostring(item.entry.duration)
-            if row.sweepSig ~= sweepSig then
-                row.sweepSig = sweepSig
-                row.sweep:SetCooldown(item.entry.start, item.entry.duration)
+        if item.ready then
+            -- READY straggler: full green bar, fading out on its clock
+            row.bar:SetVertexColor(0.3, 1, 0.4, 0.9)
+            if layout == "ICONS" then
+                row.bar:SetSize(ICON_SIZE, ICON_BAR_HEIGHT)
+            else
+                row.bar:SetSize(barWidth, BAR_HEIGHT)
+                row.label:SetText(string.format("%s  READY", item.name))
             end
-            row.sweep:Show()
-        else
             row.sweepSig = nil
             row.sweep:Hide()
-        end
-        if overlay == "TEXT" then
-            row.timer:SetText(FormatRemaining(item.remaining))
-            row.timer:Show()
-        else
             row.timer:Hide()
+            row.tipText = string.format("%s — ready", item.name)
+            row:SetAlpha(item.alpha or 1)
+        else
+            local progress = 1 - (item.remaining / item.entry.duration)
+            row.bar:SetVertexColor(0.35, 0.65, 1, 0.9)
+            if layout == "ICONS" then
+                row.bar:SetSize(math.max(ICON_SIZE * progress, 1), ICON_BAR_HEIGHT)
+            else
+                row.bar:SetSize(math.max(barWidth * progress, 1), BAR_HEIGHT)
+                row.label:SetText(string.format("%s  %s", item.name, FormatRemaining(item.remaining)))
+            end
+            if overlay == "SWEEP" or overlay == "BOTH" then
+                local sweepSig = tostring(item.entry.start) .. ":" .. tostring(item.entry.duration)
+                if row.sweepSig ~= sweepSig then
+                    row.sweepSig = sweepSig
+                    row.sweep:SetCooldown(item.entry.start, item.entry.duration)
+                end
+                row.sweep:Show()
+            else
+                row.sweepSig = nil
+                row.sweep:Hide()
+            end
+            if overlay == "TEXT" then
+                row.timer:SetText(FormatRemaining(item.remaining))
+                row.timer:Show()
+            else
+                row.timer:Hide()
+            end
+            row.tipText = string.format("%s — %s", item.name, FormatRemaining(item.remaining))
+            row:SetAlpha(1)
         end
         row.spellID = item.entry.spellID
-        row.tipText = string.format("%s — %s", item.name, FormatRemaining(item.remaining))
         row:Show()
     end
     for i = shown + 1, #rowPool do
