@@ -13,6 +13,7 @@ local deaths = 0
 local deadNow = false   -- PLAYER_DEAD re-fires in odd rez flows; count once
 local hourlyTicker = nil
 local lootCount, lootRarePlus = 0, 0
+local lootedItems = {}         -- itemIDs in loot order, session-long
 local instanceSnap = nil       -- counters snapshotted at instance entry
 local lastInstanceReport = nil -- deltas from the most recent completed instance
 
@@ -64,9 +65,10 @@ end
 -- segment; instance segments are detected automatically.
 -- ---------------------------------------------------------------------------
 local AAR_LINES = 6
+local AAR_ICONS = 12
 
 local aar = CreateFrame("Frame", "CommanderEconomyAAR", UIParent, "BackdropTemplate")
-aar:SetSize(420, 236)
+aar:SetSize(420, 282)
 aar:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
 aar:SetFrameStrata("DIALOG")
 aar:SetBackdrop({
@@ -113,6 +115,117 @@ end
 local aarClose = CreateFrame("Button", nil, aar, "UIPanelCloseButton")
 aarClose:SetPoint("TOPRIGHT", aar, "TOPRIGHT", -4, -4)
 
+-- Icon strip: the report's spoils, hoverable for full item tooltips
+local aarIcons = {}
+for i = 1, AAR_ICONS do
+    local icon = CreateFrame("Button", nil, aar)
+    icon:SetSize(24, 24)
+    icon:SetPoint("TOPLEFT", aar, "TOPLEFT", 26 + (i - 1) * 28, -212)
+    icon.texture = icon:CreateTexture(nil, "ARTWORK")
+    icon.texture:SetAllPoints()
+    icon:SetScript("OnEnter", function(self)
+        if self.itemID then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if GameTooltip.SetItemByID then
+                GameTooltip:SetItemByID(self.itemID)
+            end
+            GameTooltip:Show()
+        end
+    end)
+    icon:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    icon:Hide()
+    aarIcons[i] = icon
+end
+
+local function FillReportIcons(items)
+    local shown = 0
+    if items then
+        -- Newest first, capped at the strip length
+        for i = #items, 1, -1 do
+            if shown >= AAR_ICONS then break end
+            local itemID = items[i]
+            shown = shown + 1
+            local icon = aarIcons[shown]
+            icon.itemID = itemID
+            local texture
+            if C_Item and C_Item.GetItemInfo then
+                texture = select(10, C_Item.GetItemInfo(itemID))
+            end
+            icon.texture:SetTexture(texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+            icon:Show()
+        end
+    end
+    for i = shown + 1, AAR_ICONS do
+        aarIcons[i]:Hide()
+        aarIcons[i].itemID = nil
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Bag glow: items in the report glow in the bags until moused over. Armed
+-- exactly once each time a report is shown, feature-flagged.
+-- ---------------------------------------------------------------------------
+local glowSet = {}
+
+local function HideButtonGlow(button)
+    if button._commanderEcoGlow then
+        button._commanderEcoGlow:Hide()
+    end
+end
+
+local function ApplyBagGlows()
+    if not next(glowSet) then return end
+    for f = 1, 13 do
+        local containerFrame = _G["ContainerFrame" .. f]
+        if containerFrame and containerFrame:IsShown() then
+            local bagID = containerFrame:GetID()
+            for j = 1, containerFrame.size or 0 do
+                local button = _G[containerFrame:GetName() .. "Item" .. j]
+                if button then
+                    local info = C_Container.GetContainerItemInfo(bagID, button:GetID())
+                    local wanted = info and info.itemID and glowSet[info.itemID]
+                    if wanted then
+                        if not button._commanderEcoGlow then
+                            local glow = button:CreateTexture(nil, "OVERLAY")
+                            glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+                            glow:SetBlendMode("ADD")
+                            glow:SetVertexColor(1, 0.82, 0.15, 0.9)
+                            glow:SetPoint("CENTER")
+                            glow:SetSize(button:GetWidth() and button:GetWidth() * 1.7 or 62, button:GetHeight() and button:GetHeight() * 1.7 or 62)
+                            button._commanderEcoGlow = glow
+                        end
+                        button._commanderEcoGlow:Show()
+                        if not button._commanderEcoHooked then
+                            button._commanderEcoHooked = true
+                            button:HookScript("OnEnter", function(self)
+                                local hoveredInfo = C_Container.GetContainerItemInfo(
+                                    self:GetParent() and self:GetParent():GetID() or 0, self:GetID())
+                                if hoveredInfo and hoveredInfo.itemID then
+                                    glowSet[hoveredInfo.itemID] = nil
+                                end
+                                HideButtonGlow(self)
+                            end)
+                        end
+                    else
+                        HideButtonGlow(button)
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function ArmBagGlows(items)
+    if not (CommanderEconomyDB and CommanderEconomyDB.BagGlow) then return end
+    wipe(glowSet)
+    if items then
+        for _, itemID in ipairs(items) do
+            glowSet[itemID] = true
+        end
+    end
+    ApplyBagGlows()
+end
+
 local function FillReport(subtitle, data)
     aarSubtitle:SetText(subtitle)
     aarLines[1]:SetText(string.format("Gold:  %s earned   %s spent   (net %s)",
@@ -128,7 +241,10 @@ local function FillReport(subtitle, data)
     aarLines[5]:SetText(string.format("Supplies:  %d item%s looted  (%d uncommon+)",
         data.loot, data.loot == 1 and "" or "s", data.lootRare))
     aarLines[6]:SetText(string.format("Duration:  %s", data.duration))
+    FillReportIcons(data.items)
     aar:Show()
+    -- Bag glow arms exactly once per report display
+    ArmBagGlows(data.items)
 end
 
 function CommanderEconomy_ShowReport(kind)
@@ -150,6 +266,7 @@ function CommanderEconomy_ShowReport(kind)
         quests = questsTurnedIn, deaths = deaths,
         loot = lootCount, lootRare = lootRarePlus,
         duration = duration, elapsed = elapsed,
+        items = lootedItems,
     })
 end
 
@@ -174,6 +291,11 @@ local pendingExit = nil   -- { snap, at }
 
 local function FinalizeSegment(snap)
     local elapsed = GetTime() - snap.start
+    -- Items looted during the segment: everything past the entry watermark
+    local segmentItems = {}
+    for i = (snap.itemWatermark or 0) + 1, #lootedItems do
+        segmentItems[#segmentItems + 1] = lootedItems[i]
+    end
     lastInstanceReport = {
         name = snap.name,
         goldEarned = goldEarned - snap.goldEarned,
@@ -185,6 +307,7 @@ local function FinalizeSegment(snap)
         lootRare = lootRarePlus - snap.lootRare,
         duration = DurationString(elapsed),
         elapsed = elapsed,
+        items = segmentItems,
     }
     if CommanderEconomyDB.EnableEconomy and CommanderEconomyDB.AutoInstanceReport then
         CommanderEconomy_ShowReport("instance")
@@ -213,6 +336,7 @@ local function CheckInstanceSegment()
                 goldEarned = goldEarned, goldSpent = goldSpent, xpGained = xpGained,
                 quests = questsTurnedIn, deaths = deaths,
                 loot = lootCount, lootRare = lootRarePlus,
+                itemWatermark = #lootedItems,
             }
         end
     elseif instanceSnap then
@@ -247,6 +371,10 @@ local function OnLootMessage(message)
     local color = message:match("|c(%x%x%x%x%x%x%x%x)")
     if color and RARE_COLORS[color:lower()] then
         lootRarePlus = lootRarePlus + 1
+    end
+    local itemID = tonumber(message:match("|Hitem:(%d+)"))
+    if itemID then
+        lootedItems[#lootedItems + 1] = itemID
     end
 end
 
@@ -302,6 +430,7 @@ events:RegisterEvent("PLAYER_ALIVE")
 events:RegisterEvent("PLAYER_UNGHOST")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("CHAT_MSG_LOOT")
+events:RegisterEvent("BAG_UPDATE_DELAYED")
 -- Quest turn-in event: valid on this client, but guard like MINIMAP_PING in
 -- case a future patch moves it — quests just stop counting, nothing breaks
 if not C_EventUtils or C_EventUtils.IsEventValid("QUEST_TURNED_IN") then
@@ -335,5 +464,8 @@ events:SetScript("OnEvent", function(self, event, arg1)
         CheckInstanceSegment()
     elseif event == "CHAT_MSG_LOOT" then
         OnLootMessage(arg1)
+    elseif event == "BAG_UPDATE_DELAYED" then
+        -- Re-run pending glows when bags open or contents shift
+        ApplyBagGlows()
     end
 end)

@@ -8,6 +8,7 @@ local DefaultSettings = {
     EnableEconomy = true,
     HourlyReport = false,
     AutoInstanceReport = true,
+    BagGlow = true,
 }
 
 local frame = CreateFrame("FRAME");
@@ -39,11 +40,17 @@ local function CreateOptionsPanel()
     })
 
     panel:AddSection("Mission Economics")
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Enable Economy",
         tooltip = "Master switch for the whole module.",
         get = function() return CommanderEconomyDB.EnableEconomy end,
         set = function(value) CommanderEconomyDB.EnableEconomy = value end,
+    }, {
+        label = "Bag Glow",
+        tooltip = "When an After Action Report opens, the items it lists glow gold in your bags until you mouse over them — spot the run's spoils at a glance.",
+        get = function() return CommanderEconomyDB.BagGlow end,
+        set = function(value) CommanderEconomyDB.BagGlow = value end,
+        isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
     })
     panel:AddCheckboxPair({
         label = "Hourly Report",
