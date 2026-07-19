@@ -53,6 +53,10 @@
             "path": "Commander_Idle"
         },
         {
+            "name": "Commander_Impact",
+            "path": "Commander_Impact"
+        },
+        {
             "name": "Commander_Inventory",
             "path": "Commander_Inventory"
         },
@@ -63,6 +67,10 @@
         {
             "name": "Commander_Minimap",
             "path": "Commander_Minimap"
+        },
+        {
+            "name": "Commander_Momentum",
+            "path": "Commander_Momentum"
         },
         {
             "name": "Commander_Nameplate",
