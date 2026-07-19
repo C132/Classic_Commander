@@ -74,7 +74,7 @@ local function CreateOptionsPanel()
         addonName = "Commander_Bags",
         description = "Your quartermaster: bag items get color-coded borders so loot reads at a glance, bag windows drag freely and remember where you put them, and everything fades out of your way while you travel.",
         event = COMMANDER_BAGS_EVENTS.UPDATE,
-        slash = { "/cb", "/cbags" },
+        slash = { "/cbags", "/cb" },
         slashHandlers = {
             sort = function()
                 if CommanderBags_SortBags then

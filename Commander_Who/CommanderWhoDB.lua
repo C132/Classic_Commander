@@ -28,7 +28,7 @@ local function CreateOptionsPanel()
         addonName = "Commander_Who",
         description = "Turns /who into a recruiting tool: tick the players you want from the search results, type one message, and it whispers each of them with a polite delay between sends.",
         event = COMMANDER_WHO_EVENTS.UPDATE,
-        slash = { "/cw" },
+        slash = { "/cwho", "/cw" },
     })
 
     panel:AddSection("Who Window")

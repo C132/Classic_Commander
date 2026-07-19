@@ -53,7 +53,7 @@ local function CreateOptionsPanel()
         addonName = "Commander_Console",
         description = "Frames the game world like a classic RTS: the viewport rises and an armored command console fills the bottom of the screen, docking neatly under the suite's action bar, minimap, and bag panels.",
         event = COMMANDER_CONSOLE_EVENTS.UPDATE,
-        slash = { "/cc" },
+        slash = { "/cconsole", "/cc" },
         slashHandlers = {
             toggle = function()
                 CommanderConsoleDB.ShowConsole = not CommanderConsoleDB.ShowConsole

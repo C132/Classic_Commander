@@ -45,7 +45,7 @@ local function CreateOptionsPanel()
         addonName = "Commander_Nameplate",
         description = "A personal plate floating above your character with health, mana, and cast bars. It appears when something is happening — combat, casting, missing resources — and melts away when you are topped off.",
         event = COMMANDER_NAMEPLATE_EVENTS.UPDATE,
-        slash = { "/cnp" },
+        slash = { "/cplate", "/cnp" },
     })
 
     panel:AddCheckboxPair({

@@ -49,7 +49,7 @@ local function CreateMainPanel()
     local divider = Commander.UI.BuildPanelHeader(panel, {
         titleText = "Commander",
         addonName = "Commander_Events",
-        description = "A modular, RTS-inspired interface suite. Each module has its own settings page in the list on the left; open this page any time with /commander.",
+        description = "A modular, RTS-inspired command layer for the whole game, built on five pillars: Command & Control (comms, orders, rally points), Battle HUD (production, afflictions, vitals), Feedback & Alerts (momentum, impact, ceremony), Operations (economy, logistics, the mission board), and Interface (command card, bags, map, chat). Every module stands alone behind its own master switch and settings page in the list on the left; open this page any time with /commander.",
     })
     panel.ContentAnchor = divider
 

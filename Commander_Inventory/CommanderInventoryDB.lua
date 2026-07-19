@@ -45,7 +45,7 @@ local function CreateOptionsPanel()
         addonName = "Commander_Inventory",
         description = "A quick bar that builds itself: every usable item you carry or wear — potions, trinkets, bombs, on-use gear — collected into one clickable grid with live cooldowns and stack counts.",
         event = COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY,
-        slash = { "/ci" },
+        slash = { "/cinv", "/ci" },
         slashHandlers = {
             -- Bare /ci keeps its long-standing meaning: toggle the item grid.
             -- The framework auto-adds "/ci settings" to open this panel.

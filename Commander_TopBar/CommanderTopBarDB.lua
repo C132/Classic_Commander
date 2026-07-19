@@ -42,7 +42,7 @@ local function CreateOptionsPanel()
         addonName = "Commander_TopBar",
         description = "A command readout along the top of the screen, SC2-style: floating icons and numbers with no backdrop, right-aligned to the screen edge — gold, income, supply, ammo, condition, XP, and more at a glance.",
         event = COMMANDER_TOPBAR_EVENTS.UPDATE,
-        slash = { "/ctb" },
+        slash = { "/ctopbar", "/ctb" },
         slashHandlers = {
             toggle = function()
                 CommanderTopBarDB.EnableTopBar = not CommanderTopBarDB.EnableTopBar
