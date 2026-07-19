@@ -1,0 +1,26 @@
+<Bindings>
+    <Binding name="COMMANDERCAMERA_RECALL2" header="COMMANDERCAMERA" category="ADDONS">
+        CommanderCamera_Recall(2)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_RECALL3" category="ADDONS">
+        CommanderCamera_Recall(3)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_RECALL4" category="ADDONS">
+        CommanderCamera_Recall(4)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_RECALL5" category="ADDONS">
+        CommanderCamera_Recall(5)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_SAVE2" category="ADDONS">
+        CommanderCamera_Save(2)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_SAVE3" category="ADDONS">
+        CommanderCamera_Save(3)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_SAVE4" category="ADDONS">
+        CommanderCamera_Save(4)
+    </Binding>
+    <Binding name="COMMANDERCAMERA_SAVE5" category="ADDONS">
+        CommanderCamera_Save(5)
+    </Binding>
+</Bindings>
