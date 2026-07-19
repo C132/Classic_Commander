@@ -206,3 +206,7 @@ events:SetScript("OnEvent", function(self, event, addonName)
         HookWorldMap()
     end
 end)
+
+-- Public API for sibling modules (Commander_Recovery issues corpse-run
+-- orders; Commander_Rally re-issues saved rally points)
+CommanderOrders_IssueOrder = SetOrder
