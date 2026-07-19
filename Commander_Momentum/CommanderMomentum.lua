@@ -200,9 +200,9 @@ local function EndStreak(announceBreak)
     streak = 0
     announcedMilestone = 0
     SyncSession()
-    if announceBreak and endedStreak >= 5
-        and CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
-        and CommanderMomentumDB.BreakEmotes then
+    if announceBreak and CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
+        and CommanderMomentumDB.BreakEmotes
+        and endedStreak >= (CommanderMomentumDB.BreakFloor or 2) then
         SendChatMessage(string.format(BREAK_LINES[math.random(#BREAK_LINES)],
             endedStreak, totalKills, bestStreak), "EMOTE")
     end
@@ -288,6 +288,8 @@ local function BuildBrag()
         flavor, streak, pace, totalKills, math.max(bestStreak, streak))
 end
 
+local warnedThisWindow = false
+
 local function OnKill()
     -- Enforce the window even for streaks too small to show: without this,
     -- a streak of 1 never expires (no visible frame, no drain driver) and
@@ -297,6 +299,7 @@ local function OnKill()
         streak = 0
         announcedMilestone = 0
     end
+    warnedThisWindow = false
     if streak == 0 then
         streakStart = GetTime()
     end
@@ -410,6 +413,34 @@ local function Apply()
         root:Hide()
     end
 end
+
+-- Display-independent watchdog: streak expiry and the near-break warning
+-- must fire even when no meter frame happens to be visible — game logic
+-- can never ride an OnUpdate driver alone. The frame drivers still handle
+-- the smooth bar drain; this catches what they miss.
+C_Timer.NewTicker(1, function()
+    if not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then return end
+    if streak < 2 then return end
+    local window = CommanderMomentumDB.Window or 20
+    local remaining = (lastKill + window) - GetTime()
+    if remaining <= 0 then
+        EndStreak(true)
+        return
+    end
+    -- Local heads-up before the chain dies (the public Charge rally is
+    -- Commander_Comms' Auto Charge Rally option)
+    if CommanderMomentumDB.BreakWarning and not warnedThisWindow and remaining <= 5 then
+        warnedThisWindow = true
+        PlaySound(SOUNDKIT.READY_CHECK, "Master")
+        print(string.format("|cffff4030Commander Momentum:|r x%d streak breaking in %d seconds!",
+            streak, math.ceil(remaining)))
+        local flashRed = function(text)
+            if text then text:SetTextColor(1, 0.25, 0.2) end
+        end
+        flashRed(streakText)
+        flashRed(portraitText)
+    end
+end)
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")

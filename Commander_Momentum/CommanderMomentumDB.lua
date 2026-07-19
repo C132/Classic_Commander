@@ -10,6 +10,8 @@ local DefaultSettings = {
     MilestoneSound = true,
     MilestoneEmotes = false,
     BreakEmotes = false,
+    BreakFloor = 2,
+    BreakWarning = true,
     KillSource = "OWN",
     AlwaysShow = false,
     Display = "HUD",
@@ -79,7 +81,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderMomentumDB.KillSource = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
-    panel:AddSlider({
+    panel:AddSliderPair({
         label = "Momentum Window",
         tooltip = "Seconds you have to land the next killing blow before the streak drains away.",
         min = 8, max = 60, step = 1,
@@ -87,6 +89,16 @@ local function CreateOptionsPanel()
         get = function() return CommanderMomentumDB.Window end,
         set = function(value) CommanderMomentumDB.Window = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+    }, {
+        label = "Lament Streaks From",
+        tooltip = "Minimum chain size worth announcing when it breaks (with Streak Break Emote on).",
+        min = 2, max = 10, step = 1,
+        format = "x%.0f",
+        get = function() return CommanderMomentumDB.BreakFloor end,
+        set = function(value) CommanderMomentumDB.BreakFloor = value end,
+        isEnabled = function()
+            return CommanderMomentumDB.EnableMomentum and CommanderMomentumDB.BreakEmotes
+        end,
     })
     panel:AddCheckboxPair({
         label = "Milestone Sound",
@@ -119,11 +131,17 @@ local function CreateOptionsPanel()
             end,
         },
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Streak Break Emote",
-        tooltip = "Also emote when the clock runs out on a live chain of x5 or better — the lament, with your session numbers. Public; off by default.",
+        tooltip = "Emote when the clock runs out on a live chain (floor set by Lament Streaks From) — the lament, with your session numbers. Public; off by default.",
         get = function() return CommanderMomentumDB.BreakEmotes end,
         set = function(value) CommanderMomentumDB.BreakEmotes = value end,
+        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+    }, {
+        label = "Break Warning",
+        tooltip = "Local heads-up (sound, chat line, meter flashes red) when a live streak has 5 seconds left. For the public group rally, enable Auto Charge Rally in Commander Comms.",
+        get = function() return CommanderMomentumDB.BreakWarning end,
+        set = function(value) CommanderMomentumDB.BreakWarning = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
 
