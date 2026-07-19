@@ -77,7 +77,9 @@ local function Refresh()
         root:Hide()
         return
     end
-    root:SetScale(CommanderVitalsDB.VitalsScale or 1)
+    Commander.UI.ApplyHudChrome(root, CommanderVitalsDB, "Vitals", {
+        defaultPoint = { point = "RIGHT", x = -14, y = 0 },
+    })
 
     local shownRows = 0
     local worst = 1

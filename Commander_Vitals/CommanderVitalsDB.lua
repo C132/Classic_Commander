@@ -8,8 +8,11 @@ local DefaultSettings = {
     EnableVitals = true,
     AlwaysShow = false,
     WarnThreshold = 0.5,
-    VitalsScale = 1.0,
 }
+-- Chrome keys: VitalsStyle / VitalsScale / VitalsLocked / VitalsPos
+for key, value in pairs(Commander.UI.HudChromeDefaults("Vitals", "CLASSIC")) do
+    DefaultSettings[key] = value
+end
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
@@ -55,14 +58,10 @@ local function CreateOptionsPanel()
         set = function(value) CommanderVitalsDB.WarnThreshold = value end,
         isEnabled = function() return CommanderVitalsDB.EnableVitals and not CommanderVitalsDB.AlwaysShow end,
     })
-    panel:AddSlider({
-        label = "Scale",
-        tooltip = "Overall size of the wireframe.",
-        min = 0.7, max = 1.5, step = 0.05,
-        format = Commander.UI.FormatPercent,
-        get = function() return CommanderVitalsDB.VitalsScale end,
-        set = function(value) CommanderVitalsDB.VitalsScale = value end,
+    panel:AddSection("Frame")
+    Commander.UI.AddHudChromeOptions(panel, CommanderVitalsDB, "Vitals", {
         isEnabled = function() return CommanderVitalsDB.EnableVitals end,
+        onChanged = function() Commander.Notify(COMMANDER_VITALS_EVENTS.UPDATE) end,
     })
 
     panel:Finalize({ onDefaults = Reset })

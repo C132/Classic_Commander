@@ -618,3 +618,156 @@ function UI.NewPanel(opts)
 
     return panel
 end
+
+-- ---------------------------------------------------------------------------
+-- HUD chrome: shared style / unlock+drag / scale treatment for the suite's
+-- on-screen HUD frames (Production queue, Vitals wireframe, ...) so they
+-- all offer the same options and can match the command card's framing.
+-- ---------------------------------------------------------------------------
+
+-- Keys used in the module's SavedVariables, derived from the prefix:
+--   <prefix>Style ("NONE" | "CLASSIC" | "DARK"), <prefix>Scale,
+--   <prefix>Locked (bool), <prefix>Pos ({point, x, y} or nil = default)
+function UI.HudChromeDefaults(prefix, styleDefault)
+    return {
+        [prefix .. "Style"] = styleDefault or "DARK",
+        [prefix .. "Scale"] = 1.0,
+        [prefix .. "Locked"] = true,
+    }
+end
+
+local HUD_STYLES = {
+    -- Matches the command card (Commander_ActionBar) framing
+    CLASSIC = {
+        backdrop = {
+            bgFile = "Interface\\BankFrame\\Bank-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 8, right = 8, top = 8, bottom = 8 },
+        },
+        bg = { 0.5, 0.5, 0.5, 1 },
+        border = { 1, 1, 1, 1 },
+        pad = 12,
+    },
+    DARK = {
+        backdrop = {
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = false, edgeSize = 12,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        },
+        bg = { 0, 0, 0, 0.6 },
+        border = { 0.6, 0.6, 0.6, 1 },
+        pad = 8,
+    },
+}
+
+-- Re-appliable: call from the module's settings listener. opts:
+--   defaultPoint = {point=, x=, y=} (required) — position when no saved drag
+function UI.ApplyHudChrome(frame, db, prefix, opts)
+    if not frame._hudChromeInit then
+        frame._hudChromeInit = true
+        frame._hudBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        frame._hudBackdrop:SetFrameLevel(math.max((frame:GetFrameLevel() or 1) - 1, 0))
+        frame:SetMovable(true)
+        frame:SetClampedToScreen(true)
+        frame:RegisterForDrag("LeftButton")
+        frame:SetScript("OnDragStart", function(self)
+            if not db[prefix .. "Locked"] then
+                self:StartMoving()
+            end
+        end)
+        frame:SetScript("OnDragStop", function(self)
+            self:StopMovingOrSizing()
+            local point, _, _, x, y = self:GetPoint(1)
+            if point then
+                db[prefix .. "Pos"] = { point = point, x = x, y = y }
+            end
+        end)
+    end
+
+    frame:SetScale(db[prefix .. "Scale"] or 1)
+
+    local pos = db[prefix .. "Pos"]
+    frame:ClearAllPoints()
+    if pos and pos.point then
+        frame:SetPoint(pos.point, UIParent, pos.point, pos.x or 0, pos.y or 0)
+    else
+        local p = opts.defaultPoint
+        frame:SetPoint(p.point, UIParent, p.point, p.x or 0, p.y or 0)
+    end
+
+    local style = HUD_STYLES[db[prefix .. "Style"] or "NONE"]
+    local backdrop = frame._hudBackdrop
+    if style then
+        backdrop:ClearAllPoints()
+        backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", -style.pad, style.pad)
+        backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", style.pad, -style.pad)
+        backdrop:SetBackdrop(style.backdrop)
+        backdrop:SetBackdropColor(unpack(style.bg))
+        backdrop:SetBackdropBorderColor(unpack(style.border))
+        backdrop:Show()
+    else
+        backdrop:Hide()
+    end
+
+    -- Unlocked: take the mouse for dragging and show a green border cue.
+    -- Locked HUD frames stay mouse-transparent so they never eat clicks.
+    local locked = db[prefix .. "Locked"]
+    frame:EnableMouse(not locked)
+    if not locked and style then
+        backdrop:SetBackdropBorderColor(0.3, 1, 0.4, 1)
+    end
+end
+
+-- The standard settings rows every chromed HUD module offers. opts:
+--   isEnabled (fn gating all rows), onChanged (fn run after any change,
+--   usually the module's Apply), defaultPoint (for Reset Position)
+function UI.AddHudChromeOptions(panel, db, prefix, opts)
+    local enabled = opts.isEnabled
+    panel:AddDropdown({
+        label = "Frame Style",
+        tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing.",
+        options = {
+            { text = "None", value = "NONE" },
+            { text = "Classic Panel", value = "CLASSIC" },
+            { text = "Dark Panel", value = "DARK" },
+        },
+        get = function() return db[prefix .. "Style"] or "NONE" end,
+        set = function(value) db[prefix .. "Style"] = value end,
+        isEnabled = enabled,
+    })
+    panel:AddSlider({
+        label = "Frame Scale",
+        tooltip = "Overall size of the frame.",
+        min = 0.6, max = 1.6, step = 0.05,
+        format = UI.FormatPercent,
+        get = function() return db[prefix .. "Scale"] or 1 end,
+        set = function(value) db[prefix .. "Scale"] = value end,
+        isEnabled = enabled,
+    })
+    -- Compact final row: unlock checkbox left, reset button right, sharing
+    -- one 26px row to respect the panels' no-scroll height budget
+    local row = panel:AddRow(26, 2)
+    BuildCheckbox(panel, row, {
+        label = "Unlock Frame",
+        tooltip = "Unlock to drag the frame anywhere (border turns green). Lock again when placed so it never catches the mouse.",
+        get = function() return not db[prefix .. "Locked"] end,
+        set = function(value) db[prefix .. "Locked"] = not value end,
+        isEnabled = enabled,
+    }, 0)
+    local reset = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    reset:SetSize(130, 24)
+    reset:SetPoint("LEFT", row, "LEFT", 270, 0)
+    reset:SetText("Reset Position")
+    reset:SetScript("OnClick", function()
+        db[prefix .. "Pos"] = nil
+        if opts.onChanged then opts.onChanged() end
+    end)
+    AttachTooltip(reset, "Reset Position", "Return the frame to its default position.")
+    if enabled then
+        panel:AddRefresher(function()
+            reset:SetEnabled(enabled() and true or false)
+        end)
+    end
+end

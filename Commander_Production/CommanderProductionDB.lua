@@ -10,6 +10,9 @@ local DefaultSettings = {
     MaxBars = 5,
     ReadyAlert = true,
 }
+for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
+    DefaultSettings[key] = value
+end
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
@@ -63,6 +66,12 @@ local function CreateOptionsPanel()
         get = function() return CommanderProductionDB.ReadyAlert end,
         set = function(value) CommanderProductionDB.ReadyAlert = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
+    })
+
+    panel:AddSection("Frame")
+    Commander.UI.AddHudChromeOptions(panel, CommanderProductionDB, "Hud", {
+        isEnabled = function() return CommanderProductionDB.EnableProduction end,
+        onChanged = function() Commander.Notify(COMMANDER_PRODUCTION_EVENTS.UPDATE) end,
     })
 
     panel:Finalize({ onDefaults = Reset })

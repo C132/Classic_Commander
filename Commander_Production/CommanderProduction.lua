@@ -178,6 +178,9 @@ watcher:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 
 local function Apply()
     if CommanderProductionDB and CommanderProductionDB.EnableProduction then
+        Commander.UI.ApplyHudChrome(root, CommanderProductionDB, "Hud", {
+            defaultPoint = { point = "LEFT", x = 14, y = -40 },
+        })
         Sweep()
         Draw()
         -- The OnUpdate driver only runs while the root is shown; when the
