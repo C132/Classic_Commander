@@ -1,3 +1,28 @@
+-- Cast bar color presets offered in settings
+local CASTBAR_COLORS = {
+    GOLD = { 1, 0.7, 0 },
+    GREEN = { 0.3, 1, 0.4 },
+    BLUE = { 0.35, 0.65, 1 },
+    PURPLE = { 0.7, 0.35, 1 },
+    RED = { 1, 0.3, 0.25 },
+}
+
+-- Power bar colored by actual power type (mana/rage/energy), not always
+-- mana blue; falls back to the client's own PowerBarColor when present
+local FALLBACK_POWER_COLORS = {
+    [0] = { r = 0, g = 0.44, b = 0.87 },  -- mana
+    [1] = { r = 1, g = 0.2, b = 0.2 },    -- rage
+    [2] = { r = 1, g = 0.5, b = 0.25 },   -- focus
+    [3] = { r = 1, g = 0.9, b = 0.3 },    -- energy
+}
+
+local function PowerColor()
+    local powerType = UnitPowerType("player")
+    local color = (PowerBarColor and PowerBarColor[powerType]) or FALLBACK_POWER_COLORS[powerType]
+        or FALLBACK_POWER_COLORS[0]
+    return color.r, color.g, color.b
+end
+
 local function CreatePlayerNameplate()
     local nameplate = CreateFrame("Frame", "CommanderPlayerNameplate", UIParent)
     nameplate:SetSize(128, 12)
@@ -83,7 +108,15 @@ local function CreatePlayerNameplate()
         nameplate.healthBar:SetMinMaxValues(0, maxHealth)
         nameplate.healthBar:SetValue(health)
         nameplate.level:SetText(UnitLevel("player"))
-        nameplate.healthBar:SetStatusBarColor(healthPercentage > 0.5 and 0 or 1, healthPercentage > 0.2 and 1 or 0, 0)
+        if CommanderNameplateDB and CommanderNameplateDB.classColorHealth then
+            local _, classToken = UnitClass("player")
+            local color = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
+            if color then
+                nameplate.healthBar:SetStatusBarColor(color.r, color.g, color.b)
+            end
+        else
+            nameplate.healthBar:SetStatusBarColor(healthPercentage > 0.5 and 0 or 1, healthPercentage > 0.2 and 1 or 0, 0)
+        end
         if CommanderNameplateDB and CommanderNameplateDB.showHealthPercent then
             nameplate.healthBar.text:SetText(string.format("%.0f%%", healthPercentage * 100))
             nameplate.healthBar.text:Show()
@@ -92,13 +125,17 @@ local function CreatePlayerNameplate()
         end
         nameplate.manaBar:SetMinMaxValues(0, maxMana)
         nameplate.manaBar:SetValue(mana)
-        nameplate.manaBar:SetStatusBarColor(0, 0.44, 0.87)
+        nameplate.manaBar:SetStatusBarColor(PowerColor())
         if CommanderNameplateDB and CommanderNameplateDB.showManaPercent then
             nameplate.manaBar.text:SetText(string.format("%.0f%%", mana / maxMana * 100))
             nameplate.manaBar.text:Show()
         else
             nameplate.manaBar.text:Hide()
         end
+        local castColor = CASTBAR_COLORS[CommanderNameplateDB and CommanderNameplateDB.castBarColor or "GOLD"]
+            or CASTBAR_COLORS.GOLD
+        nameplate.castBar:SetStatusBarColor(castColor[1], castColor[2], castColor[3])
+        local hidePower = CommanderNameplateDB and CommanderNameplateDB.hidePowerBar
         local name, _, texture, startTime, endTime = UnitCastingInfo("player")
         if name then
             nameplate.castBar:Show()
@@ -115,7 +152,7 @@ local function CreatePlayerNameplate()
         else
             nameplate.castBar:Hide()
             nameplate.castBar.icon:Hide()
-            if CommanderNameplateDB and (CommanderNameplateDB.alwaysShowMana or inCombat) then
+            if not hidePower and CommanderNameplateDB and (CommanderNameplateDB.alwaysShowMana or inCombat) then
                 nameplate.manaBar:Show()
                 nameplate.manaBorderFrame:Show()
             else
@@ -125,6 +162,7 @@ local function CreatePlayerNameplate()
         end
         if CommanderNameplateDB then
             nameplate.name:SetShown(CommanderNameplateDB.showPlayerName)
+            nameplate:SetScale(CommanderNameplateDB.plateScale or 1)
             nameplate:SetAlpha(CommanderNameplateDB.fadeWhileMoving and IsPlayerMoving() and CommanderNameplateDB.fadeIntensity or 1)
         else
             nameplate.name:Show()

@@ -11,6 +11,10 @@ local DefaultSettings = {
     showHealthPercent = false,
     showManaPercent = false,
     alwaysShowMana = false,
+    classColorHealth = false,
+    hidePowerBar = false,
+    plateScale = 1.0,
+    castBarColor = "GOLD",
     position = {"CENTER", "UIParent", "CENTER", 0, 300}
 }
 
@@ -39,33 +43,63 @@ local function CreateOptionsPanel()
         slash = { "/cnp" },
     })
 
-    panel:AddSection("Display", "Percent text and the always-on mana bar are optional extras on top of the base plate.")
-    panel:AddCheckbox({
+    panel:AddSection("Display", "Percent text and the always-on power bar are optional extras on top of the base plate.")
+    panel:AddCheckboxPair({
         label = "Show Player Name",
         tooltip = "Show your character's name above the nameplate.",
         get = function() return CommanderNameplateDB.showPlayerName end,
         set = function(value) CommanderNameplateDB.showPlayerName = value end,
-    })
-    panel:AddCheckbox({
+    }, {
         label = "Show Health Percentage",
         tooltip = "Display your health as a percentage on the health bar.",
         get = function() return CommanderNameplateDB.showHealthPercent end,
         set = function(value) CommanderNameplateDB.showHealthPercent = value end,
     })
-    panel:AddCheckbox({
-        label = "Show Mana Percentage",
-        tooltip = "Display your mana as a percentage on the mana bar.",
+    panel:AddCheckboxPair({
+        label = "Show Power Percentage",
+        tooltip = "Display your mana, rage, or energy as a percentage on the power bar.",
         get = function() return CommanderNameplateDB.showManaPercent end,
         set = function(value) CommanderNameplateDB.showManaPercent = value end,
-    })
-    panel:AddCheckbox({
-        label = "Always Show Mana Bar",
-        tooltip = "Keep the mana bar visible out of combat instead of showing it only while fighting or casting.",
+    }, {
+        label = "Always Show Power Bar",
+        tooltip = "Keep the power bar visible out of combat instead of showing it only while fighting or casting.",
         get = function() return CommanderNameplateDB.alwaysShowMana end,
         set = function(value) CommanderNameplateDB.alwaysShowMana = value end,
     })
+    panel:AddCheckboxPair({
+        label = "Class-Colored Health",
+        tooltip = "Color the health bar in your class color instead of the green/yellow/red condition gradient.",
+        get = function() return CommanderNameplateDB.classColorHealth end,
+        set = function(value) CommanderNameplateDB.classColorHealth = value end,
+    }, {
+        label = "Hide Power Bar",
+        tooltip = "Never show the power bar — health and cast bar only.",
+        get = function() return CommanderNameplateDB.hidePowerBar end,
+        set = function(value) CommanderNameplateDB.hidePowerBar = value end,
+    })
+    panel:AddSlider({
+        label = "Plate Scale",
+        tooltip = "Overall size of the nameplate.",
+        min = 0.7, max = 1.8, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderNameplateDB.plateScale end,
+        set = function(value) CommanderNameplateDB.plateScale = value end,
+    })
+    panel:AddDropdown({
+        label = "Cast Bar Color",
+        tooltip = "Color of the casting bar.",
+        options = {
+            { text = "Command Gold", value = "GOLD" },
+            { text = "Signal Green", value = "GREEN" },
+            { text = "Arcane Blue", value = "BLUE" },
+            { text = "Fel Purple", value = "PURPLE" },
+            { text = "Alert Red", value = "RED" },
+        },
+        width = 140,
+        get = function() return CommanderNameplateDB.castBarColor end,
+        set = function(value) CommanderNameplateDB.castBarColor = value end,
+    })
 
-    panel:AddSection("Movement Fade")
     panel:AddCheckbox({
         label = "Fade While Moving",
         tooltip = "Make the nameplate translucent while your character is moving.",
@@ -81,8 +115,6 @@ local function CreateOptionsPanel()
         set = function(value) CommanderNameplateDB.fadeIntensity = value end,
         isEnabled = function() return CommanderNameplateDB.fadeWhileMoving end,
     })
-
-    panel:AddSection("Position")
     panel:AddButtonRow({
         {
             label = "Reset Position",
