@@ -124,6 +124,25 @@ local function ResetContacts()
     RefreshContactDisplay()
 end
 
+-- Standard suite tester: fake contacts so the color states and klaxon
+-- can be seen without hunting an enemy player
+function CommanderRadar_Test()
+    if not (CommanderRadarDB and CommanderRadarDB.EnableRadar) then
+        print("Commander Radar: module is disabled (enable it in settings or /cradar)")
+        return
+    end
+    mobCount = mobCount + 2
+    playerCount = playerCount + 1
+    RefreshContactDisplay()
+    PlaySound(SOUNDKIT.RAID_WARNING, "Master")
+    print("|cffff4030Commander Radar:|r test contact — scope runs red for 5 seconds")
+    C_Timer.After(5, function()
+        mobCount = math.max(mobCount - 2, 0)
+        playerCount = math.max(playerCount - 1, 0)
+        RefreshContactDisplay()
+    end)
+end
+
 -- ---------------------------------------------------------------------------
 -- Sweep + layout
 -- ---------------------------------------------------------------------------

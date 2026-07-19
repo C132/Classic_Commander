@@ -33,7 +33,11 @@ local function CreateOptionsPanel()
         description = "The minimap as an early-warning system. The sweep line is the display, enemy nameplates are the sensor: hostile mobs turn it amber, an enemy player turns it red with a klaxon callout — warning you before the fight finds you. Enemy nameplates (default key: V) must be shown for contacts to register.",
         event = COMMANDER_RADAR_EVENTS.UPDATE,
         slash = { "/cradar" },
-        slashHandlers = {},
+        slashHandlers = {
+            test = function()
+                if CommanderRadar_Test then CommanderRadar_Test() end
+            end,
+        },
     })
 
     panel:AddSection("Radar")
