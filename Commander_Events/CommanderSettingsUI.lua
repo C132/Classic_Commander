@@ -707,6 +707,37 @@ local HUD_STYLES = {
     WINDOW = { window = true },
 }
 
+-- Standalone style backdrop for frames that manage their own window art
+-- (Commander_Inventory's grid): applies the CLASSIC/DARK backdrops from
+-- the shared style table, or hides the backdrop for NONE/WINDOW.
+function UI.ApplyStyleBackdrop(frame, styleKey)
+    local style = HUD_STYLES[styleKey]
+    if style and style.window then
+        style = nil
+    end
+    if not frame._styleBackdrop then
+        if not style then return end
+        frame._styleBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        frame._styleBackdrop:SetFrameLevel(math.max((frame:GetFrameLevel() or 1) - 1, 0))
+    end
+    local backdrop = frame._styleBackdrop
+    if style then
+        if frame._styleBackdropKey ~= styleKey then
+            frame._styleBackdropKey = styleKey
+            backdrop:ClearAllPoints()
+            backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+            backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+            backdrop:SetBackdrop(style.backdrop)
+        end
+        backdrop:SetBackdropColor(unpack(style.bg))
+        backdrop:SetBackdropBorderColor(unpack(style.border))
+        backdrop:Show()
+    else
+        frame._styleBackdropKey = nil
+        backdrop:Hide()
+    end
+end
+
 -- Build the window dressing lazily on first use. All template children
 -- are guarded: the smoke harness's CreateFrame ignores templates.
 local function EnsureWindowChrome(frame, db, prefix)

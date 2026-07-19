@@ -10,6 +10,9 @@ local defaultSettings = {
     locked = false,
     tooltips = true,
     showFrame = true,
+    frameStyle = "WINDOW",
+    -- false (not nil) so Restore Defaults clears a saved drag position
+    position = false,
 }
 
 local frame = CreateFrame("FRAME");
@@ -21,9 +24,8 @@ local function Reset()
     print("Commander Inventory: settings restored to defaults")
 end
 
--- Center the item grid; its position lives in the client's layout cache, not
--- in the saved variables, so this is the only way to recover an off-screen grid
 local function ResetPosition()
+    CommanderInventoryDB.position = false
     if CIItemGrid then
         CIItemGrid:ClearAllPoints()
         CIItemGrid:SetPoint("CENTER", UIParent, "CENTER")
@@ -54,15 +56,14 @@ local function CreateOptionsPanel()
     })
 
     panel:AddSection("Item Grid", "The grid rebuilds itself automatically as your inventory changes.")
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Show Item Grid",
         tooltip = "Show the usable-items grid. You can also toggle it with /ci.",
         get = function() return CommanderInventoryDB.showFrame end,
         set = function(value) CommanderInventoryDB.showFrame = value end,
-    })
-    panel:AddCheckbox({
+    }, {
         label = "Lock Grid Position",
-        tooltip = "Prevent the grid from being dragged.",
+        tooltip = "Prevent the grid from being dragged. Its position now saves with your settings like every other Commander frame.",
         get = function() return CommanderInventoryDB.locked end,
         set = function(value) CommanderInventoryDB.locked = value end,
     })
@@ -72,24 +73,36 @@ local function CreateOptionsPanel()
         get = function() return CommanderInventoryDB.tooltips end,
         set = function(value) CommanderInventoryDB.tooltips = value end,
     })
+    panel:AddDropdown({
+        label = "Frame Style",
+        tooltip = "Window keeps the title bar and close button. Classic Panel and Dark Panel match the framing options on the other Commander frames; None is just the buttons.",
+        options = {
+            { text = "Window", value = "WINDOW" },
+            { text = "Classic Panel", value = "CLASSIC" },
+            { text = "Dark Panel", value = "DARK" },
+            { text = "None", value = "NONE" },
+        },
+        width = 140,
+        get = function() return CommanderInventoryDB.frameStyle or "WINDOW" end,
+        set = function(value) CommanderInventoryDB.frameStyle = value end,
+    })
     panel:AddButtonRow({
         {
             label = "Reset Position",
-            tooltip = "Move the item grid back to the center of the screen.",
+            tooltip = "Move the item grid back to the center of the screen and clear the saved position.",
             onClick = ResetPosition,
         },
     })
 
     panel:AddSection("Layout")
-    panel:AddSlider({
+    panel:AddSliderPair({
         label = "Columns",
         tooltip = "Number of item buttons per row.",
         min = 1, max = 12, step = 1,
         format = "%d",
         get = function() return CommanderInventoryDB.columns end,
         set = function(value) CommanderInventoryDB.columns = value end,
-    })
-    panel:AddSlider({
+    }, {
         label = "Grid Scale",
         tooltip = "Overall size of the item grid.",
         min = 0.5, max = 2.0, step = 0.05,
