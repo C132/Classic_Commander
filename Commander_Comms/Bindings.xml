@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="COMMANDERCOMMS_TOGGLE" category="ADDONS" header="COMMANDERCOMMS">
+        CommanderComms_Toggle()
+    </Binding>
+</Bindings>

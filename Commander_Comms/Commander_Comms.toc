@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Comms
+## Author: Devin
+## Version: 2.0.0
+## Notes: A radial quick-message wheel: one keypress, eight battle calls, routed to raid, party, or say automatically.
+## IconTexture: Interface\Icons\INV_Misc_Horn_01
+## SavedVariables: CommanderCommsDB
+## RequiredDeps: Commander_Events
+
+CommanderCommsDB.lua
+CommanderComms.lua
