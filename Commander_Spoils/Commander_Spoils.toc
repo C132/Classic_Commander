@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Spoils
+## Author: Devin
+## Version: 2.0.0
+## Notes: Loot feedback: SUPPLY ACQUIRED toasts with item icons, quality colors, and an epic screen flash.
+## IconTexture: Interface\Icons\INV_Box_01
+## SavedVariables: CommanderSpoilsDB
+## RequiredDeps: Commander_Events
+
+CommanderSpoilsDB.lua
+CommanderSpoils.lua
