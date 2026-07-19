@@ -296,11 +296,28 @@ events:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
 events:RegisterEvent("PLAYER_XP_UPDATE")
 events:RegisterEvent("PLAYER_LEVEL_UP")
 local loaded = false
+local session
 events:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
-        ResetXPRate()
-        sessionStart = GetTime()
-        moneyAtLogin = GetMoney()
+        -- Rate counters survive /reload: resume the income session where
+        -- it left off instead of restarting both meters from zero
+        local fresh
+        session, fresh = Commander.RestoreSession(CommanderTopBarDB, {
+            startEpoch = time(),
+            moneyAtLogin = GetMoney(),
+            xpStartEpoch = time(),
+            xpGained = 0,
+        })
+        if fresh then
+            session.startEpoch = time()
+            session.moneyAtLogin = GetMoney()
+            session.xpStartEpoch = time()
+            session.xpGained = 0
+        end
+        sessionStart = GetTime() - (time() - session.startEpoch)
+        moneyAtLogin = session.moneyAtLogin
+        xpSessionStart = GetTime() - (time() - session.xpStartEpoch)
+        xpSessionGained = session.xpGained
         -- Seed the XP watermark now, or the first gain of the session
         -- (e.g. a saved quest turn-in) would be silently uncounted
         events.lastXP = UnitXP("player") or 0
@@ -324,11 +341,16 @@ events:SetScript("OnEvent", function(self, event)
         local delta = current - events.lastXP
         if delta > 0 then
             xpSessionGained = xpSessionGained + delta
+            if session then session.xpGained = xpSessionGained end
         end
         events.lastXP = current
     elseif event == "PLAYER_LEVEL_UP" then
         -- Restart the income counter each level; carry the XP watermark over
         ResetXPRate()
+        if session then
+            session.xpStartEpoch = time()
+            session.xpGained = 0
+        end
         events.lastXP = 0
     end
 

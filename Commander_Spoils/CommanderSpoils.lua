@@ -24,6 +24,22 @@ local QUALITY_NAMES = {
 
 local tally = { [0] = 0, [1] = 0, [2] = 0, [3] = 0, [4] = 0, [5] = 0 }
 
+-- The session tally survives /reload: the local is re-pointed at the
+-- persisted table so every mutation lands in SavedVariables automatically
+local tallyLoader = CreateFrame("Frame")
+tallyLoader:RegisterEvent("PLAYER_LOGIN")
+tallyLoader:SetScript("OnEvent", function()
+    local session = Commander.RestoreSession(CommanderSpoilsDB, {
+        tally = { [0] = 0, [1] = 0, [2] = 0, [3] = 0, [4] = 0, [5] = 0 },
+    })
+    for quality = 0, 5 do
+        if session.tally[quality] == nil then
+            session.tally[quality] = 0
+        end
+    end
+    tally = session.tally
+end)
+
 -- ---------------------------------------------------------------------------
 -- Toast stack
 -- ---------------------------------------------------------------------------

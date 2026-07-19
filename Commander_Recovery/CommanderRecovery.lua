@@ -57,12 +57,15 @@ function CommanderRecovery_Report()
     end
 end
 
+local session   -- reload-resilient casualty count
+
 local function OnDeath()
     if not IsOn() then return end
     -- PLAYER_DEAD can re-fire in odd resurrection flows; only count a death
     -- when we are not already tracking one
     if lastDeath then return end
     sessionDeaths = sessionDeaths + 1
+    if session then session.deaths = sessionDeaths end
     lastDeath = CaptureDeathPosition()
     if CommanderRecoveryDB.DeathReport then
         CommanderRecovery_Report()
@@ -114,10 +117,16 @@ local function OnRecovered()
 end
 
 local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_DEAD")
 events:RegisterEvent("PLAYER_ALIVE")
 events:RegisterEvent("PLAYER_UNGHOST")
 events:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_LOGIN" then
+        session = Commander.RestoreSession(CommanderRecoveryDB, { deaths = 0 })
+        sessionDeaths = session.deaths
+        return
+    end
     if event == "PLAYER_DEAD" then
         OnDeath()
     elseif event == "PLAYER_ALIVE" then

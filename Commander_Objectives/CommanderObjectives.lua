@@ -146,19 +146,27 @@ end
 
 local function StartMission()
     local name = GetInstanceInfo() or "unknown objective"
-    mission = { name = name, start = GetTime(), kills = 0, nextAt = NextMilestone(0), encounters = 0 }
+    mission = { name = name, startEpoch = time(), kills = 0, nextAt = NextMilestone(0), encounters = 0 }
+    if CommanderObjectivesDB.Session then
+        CommanderObjectivesDB.Session.mission = mission
+    end
     ShowBanner("MISSION START", name, COLOR_MISSION, true, true)
 end
 
 local function EndMission()
     if not mission then return end
-    local minutes = math.max(math.floor((GetTime() - mission.start) / 60), 1)
+    local elapsed = mission.startEpoch and (time() - mission.startEpoch)
+        or (GetTime() - (mission.start or GetTime()))
+    local minutes = math.max(math.floor(elapsed / 60), 1)
     local bosses = mission.encounters > 0
         and string.format(", %d primary target%s down", mission.encounters, mission.encounters == 1 and "" or "s")
         or ""
     print(string.format("Commander Objectives: %s — %d hostiles eliminated%s in %dm",
         mission.name, mission.kills, bosses, minutes))
     mission = nil
+    if CommanderObjectivesDB.Session then
+        CommanderObjectivesDB.Session.mission = false
+    end
 end
 
 local function IsHostileNPC(flags)
@@ -196,14 +204,17 @@ end
 -- time-based from the operation start or the last death.
 -- ---------------------------------------------------------------------------
 local op = nil
+local session   -- reload-resilient home for op and mission
 
 local function StartOperation()
     op = {
         start = GetTime(),
+        startEpoch = time(),
         lastDeath = nil,
         counters = { kills = 0, bosses = 0, xp = 0, loot = 0, rareloot = 0, quests = 0, honor = 0 },
         completed = {},
     }
+    if session then session.op = op end
 end
 
 local function ObjectiveEnabled(def)
@@ -392,7 +403,26 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5)
         -- so disabling things mid-instance actually takes effect
         Commander.AddListener(COMMANDER_OBJECTIVES_EVENTS.UPDATE, CheckMissionState)
         Commander.AddListener(COMMANDER_OBJECTIVES_EVENTS.UPDATE, RefreshBoard)
-        StartOperation()
+        -- A /reload resumes the running operation (and any live dungeon
+        -- mission) with clocks converted from epoch back into GetTime's
+        -- domain; a real break rolls a fresh board
+        local fresh
+        session, fresh = Commander.RestoreSession(CommanderObjectivesDB, { op = false, mission = false })
+        if not fresh and session.op then
+            op = session.op
+            op.start = GetTime() - (time() - (op.startEpoch or time()))
+            if op.lastDeathEpoch then
+                op.lastDeath = GetTime() - (time() - op.lastDeathEpoch)
+            else
+                op.lastDeath = nil
+            end
+            if session.mission then
+                mission = session.mission
+            end
+        else
+            session.mission = false
+            StartOperation()
+        end
         xpPrev, xpPrevMax, xpPrevLevel = UnitXP("player"), UnitXPMax("player"), UnitLevel("player")
         RefreshBoard()
         -- The board's own OnUpdate only ticks while it is shown; deathless
@@ -448,6 +478,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5)
     elseif event == "PLAYER_DEAD" then
         if op then
             op.lastDeath = GetTime()
+            op.lastDeathEpoch = time()
             if TouchBoard then TouchBoard() end
         end
     elseif event == "CHAT_MSG_COMBAT_HONOR_GAIN" then

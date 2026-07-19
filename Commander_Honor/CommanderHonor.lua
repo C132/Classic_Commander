@@ -53,6 +53,7 @@ end
 
 local sessionKills = 0
 local sessionHonor = 0
+local session   -- reload-resilient mirror
 
 local function IsOn()
     return CommanderHonorDB and CommanderHonorDB.EnableHonor
@@ -61,6 +62,10 @@ end
 local function Celebrate(victim, honor)
     sessionKills = sessionKills + 1
     sessionHonor = sessionHonor + (honor or 0)
+    if session then
+        session.kills = sessionKills
+        session.honor = sessionHonor
+    end
     if CommanderHonorDB.HonorFlash then
         CrimsonFlash()
     end
@@ -97,13 +102,21 @@ function CommanderHonor_Test()
     end
     Celebrate("Testdummy", 0)
     sessionKills = sessionKills - 1
+    if session then session.kills = sessionKills end
 end
 
 local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_LOGIN")
 if not C_EventUtils or (C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("CHAT_MSG_COMBAT_HONOR_GAIN")) then
     pcall(events.RegisterEvent, events, "CHAT_MSG_COMBAT_HONOR_GAIN")
 end
 events:SetScript("OnEvent", function(self, event, message)
+    if event == "PLAYER_LOGIN" then
+        -- The war record survives /reload
+        session = Commander.RestoreSession(CommanderHonorDB, { kills = 0, honor = 0 })
+        sessionKills, sessionHonor = session.kills, session.honor
+        return
+    end
     if IsOn() then
         OnHonorMessage(message)
     end

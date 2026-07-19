@@ -16,6 +16,15 @@ local lootCount, lootRarePlus = 0, 0
 local lootedItems = {}         -- itemIDs in loot order, session-long
 local instanceSnap = nil       -- counters snapshotted at instance entry
 local lastInstanceReport = nil -- deltas from the most recent completed instance
+local session                  -- reload-resilient mirror of all of the above
+
+local function SyncCounters()
+    if not session then return end
+    session.goldEarned, session.goldSpent = goldEarned, goldSpent
+    session.xpGained = xpGained
+    session.quests, session.deaths = questsTurnedIn, deaths
+    session.lootCount, session.lootRare = lootCount, lootRarePlus
+end
 
 local function Coins(copper)
     local sign = copper < 0 and "-" or ""
@@ -310,7 +319,9 @@ local EXIT_GRACE = 180
 local pendingExit = nil   -- { snap, at }
 
 local function FinalizeSegment(snap)
-    local elapsed = GetTime() - snap.start
+    -- Epoch-based: segment durations stay correct across /reload and even
+    -- a full client restart mid-run
+    local elapsed = snap.startEpoch and (time() - snap.startEpoch) or (GetTime() - (snap.start or GetTime()))
     -- Items looted during the segment: everything past the entry watermark
     local segmentItems = {}
     for i = (snap.itemWatermark or 0) + 1, #lootedItems do
@@ -329,9 +340,26 @@ local function FinalizeSegment(snap)
         elapsed = elapsed,
         items = segmentItems,
     }
+    if session then session.lastInstanceReport = lastInstanceReport end
     if CommanderEconomyDB.EnableEconomy and CommanderEconomyDB.AutoInstanceReport then
         CommanderEconomy_ShowReport("instance")
     end
+end
+
+local function SyncSegments()
+    if not session then return end
+    session.instanceSnap = instanceSnap or false
+    session.pendingExit = pendingExit or false
+end
+
+local function ArmExitGraceTimer(delay)
+    C_Timer.After(delay, function()
+        if pendingExit and (time() - (pendingExit.atEpoch or 0)) >= (EXIT_GRACE - 1) then
+            FinalizeSegment(pendingExit.snap)
+            pendingExit = nil
+            SyncSegments()
+        end
+    end)
 end
 
 local function CheckInstanceSegment()
@@ -344,6 +372,7 @@ local function CheckInstanceSegment()
                 -- Back in the same run within the grace period: resume
                 instanceSnap = pendingExit.snap
                 pendingExit = nil
+                SyncSegments()
                 return
             end
             FinalizeSegment(pendingExit.snap)
@@ -352,24 +381,21 @@ local function CheckInstanceSegment()
         if not instanceSnap then
             instanceSnap = {
                 name = name,
-                start = GetTime(),
+                startEpoch = time(),
                 goldEarned = goldEarned, goldSpent = goldSpent, xpGained = xpGained,
                 quests = questsTurnedIn, deaths = deaths,
                 loot = lootCount, lootRare = lootRarePlus,
                 itemWatermark = #lootedItems,
             }
         end
+        SyncSegments()
     elseif instanceSnap then
         -- Ghost releases land outside the instance; ignore them entirely
         if UnitIsDeadOrGhost("player") then return end
-        pendingExit = { snap = instanceSnap, at = GetTime() }
+        pendingExit = { snap = instanceSnap, atEpoch = time() }
         instanceSnap = nil
-        C_Timer.After(EXIT_GRACE, function()
-            if pendingExit and (GetTime() - pendingExit.at) >= (EXIT_GRACE - 1) then
-                FinalizeSegment(pendingExit.snap)
-                pendingExit = nil
-            end
-        end)
+        SyncSegments()
+        ArmExitGraceTimer(EXIT_GRACE)
     end
 end
 
@@ -464,20 +490,58 @@ end
 
 events:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
-        sessionStart = GetTime()
+        -- Resume the session's economics across /reload; only a real
+        -- break starts the books over
+        local fresh
+        session, fresh = Commander.RestoreSession(CommanderEconomyDB, {
+            startEpoch = time(),
+            goldEarned = 0, goldSpent = 0, xpGained = 0,
+            quests = 0, deaths = 0, lootCount = 0, lootRare = 0,
+            lootedItems = {},
+            lastInstanceReport = false, instanceSnap = false, pendingExit = false,
+        })
+        if fresh then
+            session.startEpoch = time()
+        end
+        goldEarned, goldSpent = session.goldEarned, session.goldSpent
+        xpGained = session.xpGained
+        questsTurnedIn, deaths = session.quests, session.deaths
+        lootCount, lootRarePlus = session.lootCount, session.lootRare
+        lootedItems = session.lootedItems
+        lastInstanceReport = session.lastInstanceReport or nil
+        sessionStart = GetTime() - (time() - session.startEpoch)
+        if session.instanceSnap then
+            -- Mid-run reload: the segment carries straight on
+            instanceSnap = session.instanceSnap
+        end
+        if session.pendingExit then
+            pendingExit = session.pendingExit
+            local remaining = EXIT_GRACE - (time() - (pendingExit.atEpoch or 0))
+            if remaining > 0 then
+                ArmExitGraceTimer(remaining)
+            else
+                FinalizeSegment(pendingExit.snap)
+                pendingExit = nil
+                SyncSegments()
+            end
+        end
+        -- Money/XP watermarks always re-baseline from live values
         lastMoney = GetMoney()
         prevXP, prevXPMax, prevLevel = UnitXP("player"), UnitXPMax("player"), UnitLevel("player")
         Commander.AddListener(COMMANDER_ECONOMY_EVENTS.UPDATE, UpdateTicker)
         UpdateTicker()
     elseif event == "PLAYER_MONEY" then
         OnMoney()
+        SyncCounters()
     elseif event == "PLAYER_XP_UPDATE" then
         OnXP()
+        SyncCounters()
     elseif event == "PLAYER_DEAD" then
         -- Feign Death can emit PLAYER_DEAD without the unit being dead
         if not deadNow and UnitIsDeadOrGhost("player") then
             deaths = deaths + 1
             deadNow = true
+            SyncCounters()
         end
     elseif event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
         if not UnitIsGhost("player") then
@@ -485,10 +549,12 @@ events:SetScript("OnEvent", function(self, event, arg1)
         end
     elseif event == "QUEST_TURNED_IN" then
         questsTurnedIn = questsTurnedIn + 1
+        SyncCounters()
     elseif event == "PLAYER_ENTERING_WORLD" then
         CheckInstanceSegment()
     elseif event == "CHAT_MSG_LOOT" then
         OnLootMessage(arg1)
+        SyncCounters()
     elseif event == "BAG_UPDATE_DELAYED" then
         -- Re-run pending glows when bags open or contents shift
         ApplyBagGlows()

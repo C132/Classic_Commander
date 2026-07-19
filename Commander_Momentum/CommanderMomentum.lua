@@ -10,6 +10,15 @@ local BAR_HEIGHT = 8
 local streak = 0
 local lastKill = -math.huge
 local announcedMilestone = 0
+local session   -- reload-resilient mirror of the three locals above
+
+local function SyncSession()
+    if session then
+        session.streak = streak
+        session.milestone = announcedMilestone
+        session.lastKillEpoch = (streak > 0) and time() or 0
+    end
+end
 
 local root = CreateFrame("Frame", "CommanderMomentumFrame", UIParent)
 root:SetPoint("TOP", UIParent, "TOP", 0, -260)
@@ -141,6 +150,7 @@ end
 local function EndStreak()
     streak = 0
     announcedMilestone = 0
+    SyncSession()
     local keepShown = CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
         and DisplayMode() == "HUD"
         and (CommanderMomentumDB.AlwaysShow
@@ -190,6 +200,7 @@ local function OnKill()
     end
     streak = streak + 1
     lastKill = GetTime()
+    SyncSession()
     if streak >= 2 then
         if DisplayMode() == "PORTRAIT" then
             -- The drain driver rides the overlay so window expiry still
@@ -269,6 +280,17 @@ events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 events:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
+        -- A /reload must not eat a live streak: restore it with the kill
+        -- clock converted from epoch back into GetTime's domain
+        local fresh
+        session, fresh = Commander.RestoreSession(CommanderMomentumDB, {
+            streak = 0, milestone = 0, lastKillEpoch = 0,
+        })
+        if not fresh and session.streak > 0 and session.lastKillEpoch > 0 then
+            streak = session.streak
+            announcedMilestone = session.milestone
+            lastKill = GetTime() - math.max(time() - session.lastKillEpoch, 0)
+        end
         Commander.AddListener(COMMANDER_MOMENTUM_EVENTS.UPDATE, Apply)
         -- Nothing notifies at startup: Always Show / unlocked-at-reload
         -- need an initial apply or the frame stays invisible until a
