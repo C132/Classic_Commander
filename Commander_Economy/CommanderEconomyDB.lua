@@ -7,6 +7,7 @@ COMMANDER_ECONOMY_EVENTS = {
 local DefaultSettings = {
     EnableEconomy = true,
     HourlyReport = false,
+    AutoInstanceReport = true,
 }
 
 local frame = CreateFrame("FRAME");
@@ -31,6 +32,9 @@ local function CreateOptionsPanel()
             report = function()
                 if CommanderEconomy_Report then CommanderEconomy_Report() end
             end,
+            aar = function()
+                if CommanderEconomy_ShowReport then CommanderEconomy_ShowReport("session") end
+            end,
         },
     })
 
@@ -41,17 +45,39 @@ local function CreateOptionsPanel()
         get = function() return CommanderEconomyDB.EnableEconomy end,
         set = function(value) CommanderEconomyDB.EnableEconomy = value end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Hourly Report",
         tooltip = "Print the mission summary in chat automatically once an hour.",
         get = function() return CommanderEconomyDB.HourlyReport end,
         set = function(value) CommanderEconomyDB.HourlyReport = value end,
         isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
+    }, {
+        label = "Instance Reports",
+        tooltip = "Automatically open the After Action Report window when you leave a dungeon or raid, covering just that run: gold, experience, loot, quests, casualties, duration.",
+        get = function() return CommanderEconomyDB.AutoInstanceReport end,
+        set = function(value) CommanderEconomyDB.AutoInstanceReport = value end,
+        isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
     })
     panel:AddButtonRow({
         {
-            label = "Mission Summary",
-            width = 140,
+            label = "After Action Report",
+            width = 150,
+            tooltip = "Open the full-session After Action Report window (also: /ceco aar).",
+            onClick = function()
+                if CommanderEconomy_ShowReport then CommanderEconomy_ShowReport("session") end
+            end,
+        },
+        {
+            label = "Last Instance",
+            width = 120,
+            tooltip = "Open the report for the most recently completed dungeon or raid run.",
+            onClick = function()
+                if CommanderEconomy_ShowReport then CommanderEconomy_ShowReport("instance") end
+            end,
+        },
+        {
+            label = "Chat Summary",
+            width = 120,
             tooltip = "Print this session's economics in chat (also: /ceco report).",
             onClick = function()
                 if CommanderEconomy_Report then CommanderEconomy_Report() end
