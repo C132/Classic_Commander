@@ -12,7 +12,9 @@ local RADIUS = 110
 -- Emotes is on (the classic /incoming, /healme, /oom... voice lines)
 local CALLS = {
     { label = "On My Way", msg = "On my way." },
-    { label = "Attack", msg = "Attack my target!", targetMsg = "Attack %s!", emote = "ATTACKTARGET" },
+    -- OPENFIRE, not ATTACKTARGET: /attack is the auto-attack command, not
+    -- a communication — /openfire is the voiced call
+    { label = "Attack", msg = "Attack my target!", targetMsg = "Attack %s!", emote = "OPENFIRE" },
     { label = "Need Healing", msg = "I need healing!", emote = "HEALME" },
     { label = "Fall Back", msg = "Fall back and regroup!", emote = "FLEE" },
     { label = "Incoming", msg = "Incoming enemies - get ready!", emote = "INCOMING" },
@@ -86,6 +88,44 @@ local function SendCall(call)
     ClickSound()
     wheel:Hide()
 end
+SendCallRef = SendCall
+
+-- ---------------------------------------------------------------------------
+-- Auto charge rally: when Commander Momentum's streak clock is about to
+-- run out, fire the Charge com automatically — keep the group moving and
+-- the chain alive. Re-arms only after a kill refills the window (or the
+-- streak dies), plus an absolute cooldown, so it calls once per stall.
+-- ---------------------------------------------------------------------------
+local AUTO_CHARGE_COOLDOWN = 20
+local chargeArmed = true
+local lastAutoCharge = -math.huge
+local SendCallRef   -- forward reference; SendCall is defined below
+
+C_Timer.NewTicker(1, function()
+    if not (CommanderCommsDB and CommanderCommsDB.EnableComms
+        and CommanderCommsDB.AutoCharge) then return end
+    if not CommanderMomentum_GetStreakInfo then return end
+    local streak, remaining = CommanderMomentum_GetStreakInfo()
+    if not remaining then
+        chargeArmed = true
+        return
+    end
+    local threshold = CommanderCommsDB.AutoChargeThreshold or 8
+    if remaining >= threshold then
+        chargeArmed = true
+        return
+    end
+    if not chargeArmed then return end
+    if GetTime() - lastAutoCharge < AUTO_CHARGE_COOLDOWN then return end
+    chargeArmed = false
+    lastAutoCharge = GetTime()
+    for _, call in ipairs(CALLS) do
+        if call.label == "Charge" and SendCallRef then
+            SendCallRef(call)
+            break
+        end
+    end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Auto-emote: smart battlefield callouts with spam protection. Each trigger

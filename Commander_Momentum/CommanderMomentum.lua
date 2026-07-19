@@ -227,6 +227,23 @@ local function Refresh()
     bar:SetVertexColor(r, g, b, 0.9)
 end
 
+-- Public: current streak and seconds left on its window (nil remaining
+-- when no live streak). Commander_Comms' auto charge rally reads this.
+function CommanderMomentum_GetStreakInfo()
+    if not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then
+        return 0, nil
+    end
+    if streak < 2 then
+        return streak, nil
+    end
+    local window = CommanderMomentumDB.Window or 20
+    local remaining = (lastKill + window) - GetTime()
+    if remaining <= 0 then
+        return streak, nil
+    end
+    return streak, remaining
+end
+
 -- Public brag at each milestone: a flavor line escalating with the tier
 -- plus the session's numbers, sent as a custom emote for everyone nearby
 local FLAVOR_TIERS = {

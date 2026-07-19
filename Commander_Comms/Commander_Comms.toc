@@ -7,6 +7,7 @@
 ## IconTexture: Interface\Icons\INV_Misc_Horn_01
 ## SavedVariables: CommanderCommsDB
 ## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Momentum
 
 CommanderCommsDB.lua
 CommanderComms.lua

@@ -14,6 +14,8 @@ local DefaultSettings = {
     AutoHealThreshold = 0.3,
     AutoOOMThreshold = 0.2,
     AutoEmoteCooldown = 30,
+    AutoCharge = false,
+    AutoChargeThreshold = 8,
 }
 
 local frame = CreateFrame("FRAME");
@@ -92,7 +94,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderCommsDB.AutoEmote = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms end,
     })
-    panel:AddSlider({
+    panel:AddSliderPair({
         label = "Heal Me Below",
         tooltip = "Auto /healme when your health drops to this percentage in combat (re-arms only after you recover 15% above it).",
         min = 0.1, max = 0.6, step = 0.05,
@@ -100,8 +102,7 @@ local function CreateOptionsPanel()
         get = function() return CommanderCommsDB.AutoHealThreshold end,
         set = function(value) CommanderCommsDB.AutoHealThreshold = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.AutoEmote end,
-    })
-    panel:AddSlider({
+    }, {
         label = "Out of Mana Below",
         tooltip = "Auto /oom when your mana drops to this percentage in combat (mana users only; same re-arm rule).",
         min = 0.05, max = 0.5, step = 0.05,
@@ -110,7 +111,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderCommsDB.AutoOOMThreshold = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.AutoEmote end,
     })
-    panel:AddSlider({
+    panel:AddSliderPair({
         label = "Auto-Emote Cooldown",
         tooltip = "Minimum time between automatic emotes of the same kind — the spam guard.",
         min = 10, max = 120, step = 5,
@@ -118,6 +119,21 @@ local function CreateOptionsPanel()
         get = function() return CommanderCommsDB.AutoEmoteCooldown end,
         set = function(value) CommanderCommsDB.AutoEmoteCooldown = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.AutoEmote end,
+    }, {
+        label = "Charge Rally Under",
+        tooltip = "When your Commander Momentum streak clock drops below this many seconds, the Charge com fires automatically to rally the pace. Once per stall, 20s cooldown.",
+        min = 3, max = 15, step = 1,
+        format = "%.0fs",
+        get = function() return CommanderCommsDB.AutoChargeThreshold end,
+        set = function(value) CommanderCommsDB.AutoChargeThreshold = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.AutoCharge end,
+    })
+    panel:AddCheckbox({
+        label = "Auto Charge Rally",
+        tooltip = "Automatically issue the Charge com when a live Momentum kill streak is about to run out of clock — keep the group motivated and the chain alive. Requires Commander Momentum.",
+        get = function() return CommanderCommsDB.AutoCharge end,
+        set = function(value) CommanderCommsDB.AutoCharge = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms end,
     })
 
     panel:Finalize({ onDefaults = Reset })
