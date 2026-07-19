@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Orders
+## Author: Devin
+## Version: 2.0.0
+## Notes: RTS move orders: Ctrl+Right-click the world map to issue a move order and follow the on-screen arrow to it.
+## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
+## SavedVariables: CommanderOrdersDB
+## RequiredDeps: Commander_Events
+
+CommanderOrdersDB.lua
+CommanderOrders.lua

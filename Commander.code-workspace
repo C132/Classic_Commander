@@ -29,6 +29,10 @@
             "path": "Commander_Console"
         },
         {
+            "name": "Commander_Idle",
+            "path": "Commander_Idle"
+        },
+        {
             "name": "Commander_Events",
             "path": "Commander_Events"
         },
@@ -43,6 +47,14 @@
         {
             "name": "Commander_Nameplate",
             "path": "Commander_Nameplate"
+        },
+        {
+            "name": "Commander_Orders",
+            "path": "Commander_Orders"
+        },
+        {
+            "name": "Commander_Ping",
+            "path": "Commander_Ping"
         },
         {
             "name": "Commander_Resources",

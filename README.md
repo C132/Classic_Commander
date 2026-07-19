@@ -15,9 +15,12 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Casting | Cast bar glow effects |
 | Commander_Chat | Chat window visibility and message sound pings |
 | Commander_Console | Optional bottom console viewport (off by default) |
+| Commander_Idle | RTS idle-worker alert when your character stands around |
 | Commander_Inventory | Equipment/inventory quick-access button grid |
 | Commander_Minimap | Minimap cleanup, zone text, XP tracker, minimap button |
 | Commander_Nameplate | Personal nameplate with cast bar |
+| Commander_Orders | RTS move orders: Ctrl+Right-click the map, follow the arrow |
+| Commander_Ping | Loud minimap ping alerts with flash and callout |
 | Commander_Resources | Five-second-rule mana tick tracker |
 | Commander_Tooltip | Tooltip anchoring, scale, item level and vendor price |
 | Commander_TopBar | RTS resource strip: gold, bag supply, durability, XP rate |
