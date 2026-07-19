@@ -6,11 +6,23 @@ COMMANDER_TOPBAR_EVENTS = {
 
 local DefaultSettings = {
     EnableTopBar = true,
+    BarStyle = "NONE",
+    RightOffset = 12,
     ShowGold = true,
+    ShowGoldRate = true,
     ShowBags = true,
+    ShowAmmo = true,
     ShowDurability = true,
     ShowXP = true,
+    ShowCoords = false,
+    ShowClock = true,
     ShowPerformance = true,
+}
+
+local BAR_STYLES = {
+    { text = "None (SC2)", value = "NONE" },
+    { text = "Dark Strip", value = "DARK" },
+    { text = "Console Metal", value = "CONSOLE" },
 }
 
 local frame = CreateFrame("FRAME");
@@ -28,7 +40,7 @@ local function CreateOptionsPanel()
         key = "TopBar",
         title = "Top Bar",
         addonName = "Commander_TopBar",
-        description = "A command bar across the top of the screen, RTS-style: your resources at a glance — gold, bag supply, armor condition, XP income, and connection health — without opening a single window.",
+        description = "A command readout along the top of the screen, SC2-style: floating icons and numbers with no backdrop, right-aligned to the screen edge — gold, income, supply, ammo, condition, XP, and more at a glance.",
         event = COMMANDER_TOPBAR_EVENTS.UPDATE,
         slash = { "/ctb" },
         slashHandlers = {
@@ -39,29 +51,57 @@ local function CreateOptionsPanel()
         },
     })
 
-    panel:AddSection("Command Bar", "The master switch; turn it off and the whole bar is gone.")
+    panel:AddSection("Command Bar")
     panel:AddCheckbox({
         label = "Enable Top Bar",
-        tooltip = "Show the resource strip across the top of the screen.",
+        tooltip = "Master switch for the whole readout strip.",
         get = function() return CommanderTopBarDB.EnableTopBar end,
         set = function(value) CommanderTopBarDB.EnableTopBar = value end,
     })
+    panel:AddDropdown({
+        label = "Bar Style",
+        tooltip = "None: floating readouts with no backdrop, like SC2. Dark Strip: a translucent black band. Console Metal: the lower console's rail art flipped onto the top edge, tinted with the console's own color setting so the two always match.",
+        options = BAR_STYLES,
+        width = 150,
+        get = function() return CommanderTopBarDB.BarStyle end,
+        set = function(value) CommanderTopBarDB.BarStyle = value end,
+        isEnabled = function() return CommanderTopBarDB.EnableTopBar end,
+    })
+    panel:AddSlider({
+        label = "Right Offset",
+        tooltip = "Distance from the right screen edge to the first readout. Raise it if something else lives in your top-right corner.",
+        min = 0, max = 500, step = 10,
+        format = "%d px",
+        get = function() return CommanderTopBarDB.RightOffset end,
+        set = function(value) CommanderTopBarDB.RightOffset = value end,
+        isEnabled = function() return CommanderTopBarDB.EnableTopBar end,
+    })
 
-    panel:AddSection("Readouts", "Pick which resources report in. Supply counts your used and total bag slots.")
-    local function SegmentCheckbox(key, label, tooltip)
-        panel:AddCheckbox({
+    panel:AddSection("Readouts")
+    local function Toggle(key, label, tooltip)
+        return {
             label = label,
             tooltip = tooltip,
             get = function() return CommanderTopBarDB[key] end,
             set = function(value) CommanderTopBarDB[key] = value end,
             isEnabled = function() return CommanderTopBarDB.EnableTopBar end,
-        })
+        }
     end
-    SegmentCheckbox("ShowGold", "Gold", "Your current money.")
-    SegmentCheckbox("ShowBags", "Supply (Bag Slots)", "Used / total bag slots, like an RTS supply counter. Turns red when you are nearly full.")
-    SegmentCheckbox("ShowDurability", "Durability", "Lowest equipment durability. Turns red when your gear needs repair.")
-    SegmentCheckbox("ShowXP", "XP Rate", "XP gained per hour this session and estimated time to level. Hidden at max level.")
-    SegmentCheckbox("ShowPerformance", "Performance", "Framerate and home latency.")
+    panel:AddCheckboxPair(
+        Toggle("ShowGold", "Gold", "Your current money."),
+        Toggle("ShowGoldRate", "Gold Income", "Net gold earned per hour this session (green earning, red spending)."))
+    panel:AddCheckboxPair(
+        Toggle("ShowBags", "Supply (Bag Slots)", "Used / total bag slots, red when nearly full."),
+        Toggle("ShowAmmo", "Ammo", "Equipped ammo count with its icon; red under 200. Hidden for classes without ammo."))
+    panel:AddCheckboxPair(
+        Toggle("ShowDurability", "Durability", "Lowest equipment durability; red when repairs loom."),
+        Toggle("ShowXP", "XP Rate", "XP per hour and estimated time to level. Hidden at max level."))
+    panel:AddCheckboxPair(
+        Toggle("ShowCoords", "Coordinates", "Your current map coordinates. Hidden where the map has no position data."),
+        Toggle("ShowClock", "Clock", "Local time."))
+    panel:AddCheckboxPair(
+        Toggle("ShowPerformance", "Performance", "Framerate and home latency."),
+        nil)
 
     panel:Finalize({ onDefaults = Reset })
 end

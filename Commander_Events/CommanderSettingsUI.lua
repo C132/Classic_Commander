@@ -167,11 +167,9 @@ function PanelMethods.AddSpacer(panel, height)
     return panel:AddRow(height or 8, 0)
 end
 
--- opts: label, tooltip, get, set, isEnabled
-function PanelMethods.AddCheckbox(panel, opts)
-    local row = panel:AddRow(26, 2)
+local function BuildCheckbox(panel, row, opts, xOffset)
     local check = CreateFrame("CheckButton", nil, row, "InterfaceOptionsCheckButtonTemplate")
-    check:SetPoint("LEFT", row, "LEFT", 0, 0)
+    check:SetPoint("LEFT", row, "LEFT", xOffset or 0, 0)
     check.Text:SetText(opts.label)
     AttachTooltip(check, opts.label, opts.tooltip)
 
@@ -194,6 +192,22 @@ function PanelMethods.AddCheckbox(panel, opts)
     end)
 
     return check
+end
+
+-- opts: label, tooltip, get, set, isEnabled
+function PanelMethods.AddCheckbox(panel, opts)
+    local row = panel:AddRow(26, 2)
+    return BuildCheckbox(panel, row, opts, 0)
+end
+
+-- Two compact checkboxes sharing one row — for long toggle lists that would
+-- otherwise blow the page's no-scroll height budget. Each opts table is the
+-- same shape AddCheckbox takes; right may be nil for an odd final entry.
+function PanelMethods.AddCheckboxPair(panel, left, right)
+    local row = panel:AddRow(26, 2)
+    local leftCheck = BuildCheckbox(panel, row, left, 0)
+    local rightCheck = right and BuildCheckbox(panel, row, right, 270) or nil
+    return leftCheck, rightCheck
 end
 
 -- opts: label, tooltip, min, max, step, get, set, format, isEnabled

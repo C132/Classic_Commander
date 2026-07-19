@@ -1,12 +1,14 @@
--- Commander Top Bar: an RTS-style resource strip across the top of the
--- screen. Right-aligned readout cluster (like an RTS resource corner):
--- gold, bag supply, durability, XP rate, and performance. All data comes
--- from cheap read-only APIs; the bar updates on relevant events plus a 1s
--- ticker for the rates.
+-- Commander Top Bar: an RTS-style resource readout along the top of the
+-- screen, SC2-style: floating icons+text with no backdrop by default,
+-- right-aligned to the screen edge. Optional bar styles: a dark strip, or
+-- the Commander_Console rail art (flipped onto the top edge and tinted with
+-- the console's own color setting, so the two always match).
 
-local BAR_HEIGHT = 20
-local SEGMENT_GAP = 24
+local BAR_HEIGHT = 24
+local SEGMENT_GAP = 26
+local ICON = 18
 local MAX_PLAYER_LEVEL = 70
+local CONSOLE_TEXTURE = "Interface\\AddOns\\Commander_Console\\Textures\\Console3_LowProfile.png"
 
 local bar = CreateFrame("Frame", "CommanderTopBar", UIParent)
 bar:SetHeight(BAR_HEIGHT)
@@ -17,7 +19,6 @@ bar:Hide()
 
 local background = bar:CreateTexture(nil, "BACKGROUND")
 background:SetAllPoints()
-background:SetColorTexture(0, 0, 0, 0.55)
 
 local bottomEdge = bar:CreateTexture(nil, "BORDER")
 bottomEdge:SetHeight(1)
@@ -25,22 +26,58 @@ bottomEdge:SetPoint("BOTTOMLEFT")
 bottomEdge:SetPoint("BOTTOMRIGHT")
 bottomEdge:SetColorTexture(1, 1, 1, 0.15)
 
--- Segments are single FontStrings (icons embedded via |T...|t escapes),
--- anchored right-to-left from the screen edge
-local SEGMENT_KEYS = { "performance", "xp", "durability", "bags", "gold" }
-local segments = {}
-for _, key in ipairs(SEGMENT_KEYS) do
-    local text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    segments[key] = text
+-- Fallback tint palette; when Commander_Console is loaded its own palette
+-- and the user's chosen console tint are used instead, keeping both bars
+-- visually matched from a single setting.
+local FALLBACK_COLORS = { STEEL = { r = 1, g = 1, b = 1 } }
+
+local function ConsoleTint()
+    local key = (CommanderConsoleDB and CommanderConsoleDB.ConsoleColor) or "STEEL"
+    for _, color in ipairs(CommanderConsole_Colors or {}) do
+        if color.value == key then
+            return color.r, color.g, color.b
+        end
+    end
+    local fallback = FALLBACK_COLORS[key] or FALLBACK_COLORS.STEEL
+    return fallback.r, fallback.g, fallback.b
 end
 
--- Re-anchor visible segments right-to-left with even gaps. The cluster
--- starts well left of the screen edge so it clears the square minimap that
--- Commander_Minimap parks in the top-right corner.
-local RIGHT_CLEARANCE = 250
+local function ApplyStyle()
+    local style = CommanderTopBarDB.BarStyle or "NONE"
+    if style == "CONSOLE" then
+        -- The console rail band (bottom 20% of the overlay art), flipped
+        -- vertically so its finished border edge faces down
+        background:SetTexture(CONSOLE_TEXTURE)
+        background:SetTexCoord(0, 1, 1, 0.8)
+        background:SetVertexColor(ConsoleTint())
+        background:SetAlpha(1)
+        background:Show()
+        bottomEdge:Hide()
+    elseif style == "DARK" then
+        background:SetTexture(nil)
+        background:SetTexCoord(0, 1, 0, 1)
+        background:SetColorTexture(0, 0, 0, 0.55)
+        background:Show()
+        bottomEdge:Show()
+    else -- NONE: SC2 look, readouts floating with no backdrop
+        background:Hide()
+        bottomEdge:Hide()
+    end
+end
+
+-- Segments: single FontStrings (icons embedded via |T...|t escapes),
+-- anchored right-to-left from the screen edge. Iteration order is
+-- right-to-left, so on screen it reads: gold, income, supply, ammo,
+-- durability, XP, coords, performance, clock.
+local SEGMENT_KEYS = { "clock", "performance", "coords", "xp", "durability", "ammo", "bags", "goldrate", "gold" }
+local segments = {}
+for _, key in ipairs(SEGMENT_KEYS) do
+    segments[key] = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+end
 
 local function LayoutSegments()
     local previous
+    local offset = CommanderTopBarDB.RightOffset or 12
     for _, key in ipairs(SEGMENT_KEYS) do
         local segment = segments[key]
         segment:ClearAllPoints()
@@ -48,11 +85,15 @@ local function LayoutSegments()
             if previous then
                 segment:SetPoint("RIGHT", previous, "LEFT", -SEGMENT_GAP, 0)
             else
-                segment:SetPoint("RIGHT", bar, "RIGHT", -RIGHT_CLEARANCE, 0)
+                segment:SetPoint("RIGHT", bar, "RIGHT", -offset, 0)
             end
             previous = segment
         end
     end
+end
+
+local function Icon(path)
+    return string.format("|T%s:%d:%d:0:0|t ", path, ICON, ICON)
 end
 
 local function FormatMoney(copper)
@@ -67,7 +108,25 @@ end
 local function UpdateGold()
     local segment = segments.gold
     if not CommanderTopBarDB.ShowGold then segment:Hide() return end
-    segment:SetText("|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:0:0|t " .. FormatMoney(GetMoney()))
+    segment:SetText(Icon("Interface\\MoneyFrame\\UI-GoldIcon") .. FormatMoney(GetMoney()))
+    segment:Show()
+end
+
+-- Session gold income, RTS-style: net earnings per hour since login
+local moneyAtLogin = 0
+local sessionStart = 0
+
+local function UpdateGoldRate()
+    local segment = segments.goldrate
+    local elapsed = GetTime() - sessionStart
+    if not CommanderTopBarDB.ShowGoldRate or elapsed < 60 then
+        segment:Hide()
+        return
+    end
+    local earnedPerHour = (GetMoney() - moneyAtLogin) / elapsed * 3600
+    local goldPerHour = earnedPerHour / 10000
+    local color = goldPerHour >= 0 and "|cff40ff40" or "|cffff4040"
+    segment:SetFormattedText("%s%+.1fg/h|r", color, goldPerHour)
     segment:Show()
 end
 
@@ -84,7 +143,22 @@ local function UpdateBags()
     end
     local used = total - free
     local color = (free <= 2) and "|cffff4040" or "|cffffffff"
-    segment:SetText(string.format("|TInterface\\Buttons\\Button-Backpack-Up:12:12:0:0|t %s%d/%d|r", color, used, total))
+    segment:SetText(string.format("%s%s%d/%d|r", Icon("Interface\\Buttons\\Button-Backpack-Up"), color, used, total))
+    segment:Show()
+end
+
+local function UpdateAmmo()
+    local segment = segments.ammo
+    if not CommanderTopBarDB.ShowAmmo then segment:Hide() return end
+    -- Slot 0 is the ammo slot; count is nil/0 for classes without ammo
+    local count = GetInventoryItemCount("player", 0)
+    local texture = GetInventoryItemTexture("player", 0)
+    if not count or count <= 1 or not texture then
+        segment:Hide()
+        return
+    end
+    local color = (count < 200) and "|cffff4040" or "|cffffffff"
+    segment:SetText(string.format("%s%s%d|r", Icon(texture), color, count))
     segment:Show()
 end
 
@@ -101,7 +175,7 @@ local function UpdateDurability()
     end
     local percent = math.floor(lowest * 100 + 0.5)
     local color = (percent <= 20) and "|cffff4040" or "|cffffffff"
-    segment:SetFormattedText("|TInterface\\Icons\\Trade_BlackSmithing:12:12:0:0|t %s%d%%|r", color, percent)
+    segment:SetFormattedText("%s%s%d%%|r", Icon("Interface\\Icons\\Trade_BlackSmithing"), color, percent)
     segment:Show()
 end
 
@@ -134,7 +208,29 @@ local function UpdateXP()
     else
         textValue = string.format("%d%% XP", math.floor((UnitXP("player") or 0) / math.max(UnitXPMax("player") or 1, 1) * 100))
     end
-    segment:SetText("|TInterface\\Icons\\Spell_Nature_EnchantArmor:12:12:0:0|t " .. textValue)
+    segment:SetText(Icon("Interface\\Icons\\Spell_Nature_EnchantArmor") .. textValue)
+    segment:Show()
+end
+
+local function UpdateCoords()
+    local segment = segments.coords
+    if not CommanderTopBarDB.ShowCoords then segment:Hide() return end
+    local shown = false
+    local ok, mapID = pcall(C_Map.GetBestMapForUnit, "player")
+    if ok and mapID then
+        local okPos, position = pcall(C_Map.GetPlayerMapPosition, mapID, "player")
+        if okPos and position and position.x and position.x > 0 then
+            segment:SetFormattedText("|cffc7c7cf%.0f, %.0f|r", position.x * 100, position.y * 100)
+            shown = true
+        end
+    end
+    segment:SetShown(shown)
+end
+
+local function UpdateClock()
+    local segment = segments.clock
+    if not CommanderTopBarDB.ShowClock then segment:Hide() return end
+    segment:SetText("|cffffffff" .. date("%H:%M") .. "|r")
     segment:Show()
 end
 
@@ -150,9 +246,13 @@ end
 
 local function UpdateAll()
     UpdateGold()
+    UpdateGoldRate()
     UpdateBags()
+    UpdateAmmo()
     UpdateDurability()
     UpdateXP()
+    UpdateCoords()
+    UpdateClock()
     UpdatePerformance()
     LayoutSegments()
 end
@@ -161,6 +261,7 @@ local ticker
 
 local function ApplyEnabled()
     if CommanderTopBarDB.EnableTopBar then
+        ApplyStyle()
         bar:Show()
         UpdateAll()
         if not ticker then
@@ -186,7 +287,14 @@ local loaded = false
 events:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         ResetXPRate()
+        sessionStart = GetTime()
+        moneyAtLogin = GetMoney()
         Commander.AddListener(COMMANDER_TOPBAR_EVENTS.UPDATE, ApplyEnabled)
+        -- Re-tint live when the console's color setting changes, so the
+        -- CONSOLE style always matches the lower console
+        if COMMANDER_CONSOLE_EVENTS then
+            Commander.AddListener(COMMANDER_CONSOLE_EVENTS.UPDATE, ApplyStyle)
+        end
         ApplyEnabled()
         loaded = true
         return
@@ -194,8 +302,7 @@ events:SetScript("OnEvent", function(self, event)
     if not loaded then return end
 
     -- XP bookkeeping runs even while the bar is disabled, so the rate is
-    -- accurate the moment it is re-enabled (a level-up while hidden would
-    -- otherwise leave a stale watermark and a wrong income figure)
+    -- accurate the moment it is re-enabled
     if event == "PLAYER_XP_UPDATE" then
         local current = UnitXP("player") or 0
         if not events.lastXP then events.lastXP = current end
