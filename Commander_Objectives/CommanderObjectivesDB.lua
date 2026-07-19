@@ -9,6 +9,7 @@ local DefaultSettings = {
     ProgressToasts = true,
     MissionBanner = true,
     ObjectiveSound = true,
+    DungeonMissions = true,
     HoldTime = 2.5,
 }
 
@@ -63,6 +64,13 @@ local function CreateOptionsPanel()
         tooltip = "Play a chime when an objective is secured or a mission is accomplished.",
         get = function() return CommanderObjectivesDB.ObjectiveSound end,
         set = function(value) CommanderObjectivesDB.ObjectiveSound = value end,
+        isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
+    })
+    panel:AddCheckbox({
+        label = "Dungeon Missions",
+        tooltip = "In dungeons and raids, run the instance as a mission: MISSION START on entry, banners at kill-count milestones (10, 25, 50...), PRIMARY TARGET ELIMINATED on boss kills, and a run tally when you leave. Feedback the quest system never gives a dungeon group.",
+        get = function() return CommanderObjectivesDB.DungeonMissions end,
+        set = function(value) CommanderObjectivesDB.DungeonMissions = value end,
         isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
     })
     panel:AddSlider({

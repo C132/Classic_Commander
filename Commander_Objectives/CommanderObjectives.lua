@@ -76,18 +76,105 @@ function CommanderObjectives_Test()
     ShowBanner("OBJECTIVE SECURED", "Test Objective: 8/8", COLOR_SECURED, true)
 end
 
+-- ---------------------------------------------------------------------------
+-- Dungeon missions: solo questing gets objective toasts from the quest
+-- system; dungeon groups get almost no feedback at all. In an instance the
+-- module runs a "mission": every hostile the group drops counts, kill
+-- milestones raise banners, boss kills are PRIMARY TARGET ELIMINATED, and
+-- leaving prints the run's tally — incremental progress for dungeon spam.
+-- ---------------------------------------------------------------------------
+local mission = nil   -- { name, start, kills, nextAt, encounters }
+
+local MILESTONES = { 10, 25, 50, 75, 100 }
+
+local function NextMilestone(kills)
+    for _, m in ipairs(MILESTONES) do
+        if kills < m then return m end
+    end
+    return (math.floor(kills / 50) + 1) * 50
+end
+
+local function MissionsWanted()
+    if not (IsOn() and CommanderObjectivesDB.DungeonMissions) then return false end
+    local inInstance, instanceType = IsInInstance()
+    return inInstance and (instanceType == "party" or instanceType == "raid")
+end
+
+local function StartMission()
+    local name = GetInstanceInfo() or "unknown objective"
+    mission = { name = name, start = GetTime(), kills = 0, nextAt = NextMilestone(0), encounters = 0 }
+    ShowBanner("MISSION START", name, COLOR_MISSION, true)
+end
+
+local function EndMission()
+    if not mission then return end
+    local minutes = math.max(math.floor((GetTime() - mission.start) / 60), 1)
+    local bosses = mission.encounters > 0
+        and string.format(", %d primary target%s down", mission.encounters, mission.encounters == 1 and "" or "s")
+        or ""
+    print(string.format("Commander Objectives: %s — %d hostiles eliminated%s in %dm",
+        mission.name, mission.kills, bosses, minutes))
+    mission = nil
+end
+
+local function IsHostileNPC(flags)
+    return flags
+        and bit.band(flags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0
+        and bit.band(flags, COMBATLOG_OBJECT_CONTROL_NPC) > 0
+end
+
+local function OnMissionCombatLog()
+    if not mission then return end
+    local _, subevent, _, _, _, _, _, _, _, destFlags = CombatLogGetCurrentEventInfo()
+    if subevent ~= "UNIT_DIED" then return end
+    if not IsHostileNPC(destFlags) then return end
+    mission.kills = mission.kills + 1
+    if mission.kills >= mission.nextAt then
+        ShowBanner(string.format("%d HOSTILES ELIMINATED", mission.kills), "Squad advancing", COLOR_SECURED, true)
+        mission.nextAt = NextMilestone(mission.kills)
+    end
+end
+
+local function OnEncounterEnd(encounterName, success)
+    if not mission then return end
+    if success == 1 then
+        mission.encounters = mission.encounters + 1
+        ShowBanner("PRIMARY TARGET ELIMINATED", encounterName, COLOR_MISSION, true)
+    end
+end
+
+local function CheckMissionState()
+    if MissionsWanted() then
+        if not mission then StartMission() end
+    elseif mission then
+        EndMission()
+    end
+end
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("UI_INFO_MESSAGE")
+events:RegisterEvent("PLAYER_ENTERING_WORLD")
+events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 -- Same guard pattern as Commander_Economy: if a future patch moves the
 -- event, banners just stop, nothing breaks
 if not C_EventUtils or C_EventUtils.IsEventValid("QUEST_TURNED_IN") then
     pcall(events.RegisterEvent, events, "QUEST_TURNED_IN")
 end
-events:SetScript("OnEvent", function(self, event, arg1, arg2)
+if not C_EventUtils or C_EventUtils.IsEventValid("ENCOUNTER_END") then
+    pcall(events.RegisterEvent, events, "ENCOUNTER_END")
+end
+events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5)
     if event == "UI_INFO_MESSAGE" then
         -- Payload is (messageType, message)
         OnInfoMessage(arg2)
     elseif event == "QUEST_TURNED_IN" then
         OnQuestTurnedIn()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        CheckMissionState()
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        OnMissionCombatLog()
+    elseif event == "ENCOUNTER_END" then
+        -- (encounterID, name, difficulty, groupSize, success)
+        OnEncounterEnd(arg2, arg5)
     end
 end)
