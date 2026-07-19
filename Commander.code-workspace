@@ -49,6 +49,10 @@
             "path": "Commander_Events"
         },
         {
+            "name": "Commander_Honor",
+            "path": "Commander_Honor"
+        },
+        {
             "name": "Commander_Idle",
             "path": "Commander_Idle"
         },
@@ -93,6 +97,10 @@
             "path": "Commander_Production"
         },
         {
+            "name": "Commander_Promotion",
+            "path": "Commander_Promotion"
+        },
+        {
             "name": "Commander_Radar",
             "path": "Commander_Radar"
         },
@@ -107,6 +115,10 @@
         {
             "name": "Commander_Resources",
             "path": "Commander_Resources"
+        },
+        {
+            "name": "Commander_Spoils",
+            "path": "Commander_Spoils"
         },
         {
             "name": "Commander_Suite",

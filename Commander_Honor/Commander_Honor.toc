@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Honor
+## Author: Devin
+## Version: 2.0.0
+## Notes: Honorable-kill feedback: a crimson flash and callout for every HK, with a session honor tally.
+## IconTexture: Interface\Icons\INV_BannerPVP_01
+## SavedVariables: CommanderHonorDB
+## RequiredDeps: Commander_Events
+
+CommanderHonorDB.lua
+CommanderHonor.lua
