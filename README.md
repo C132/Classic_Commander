@@ -11,6 +11,7 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Events | Shared hub: event bus + root settings category (required by all) |
 | Commander_ActionBar | Action bar cleanup and repositioning |
 | Commander_Adjutant | RTS announcer: banners and sounds for attacks, repairs, level-ups |
+| Commander_Afflictions | Live board of your applied debuffs, accurate through dispels |
 | Commander_Bags | Bag positioning, item coloring, fading, on-demand sorting |
 | Commander_Camera | RTS camera hotkeys: save and recall up to four camera views |
 | Commander_Casting | Cast bar glow effects |
