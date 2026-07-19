@@ -142,10 +142,13 @@ local function Draw()
     for i = shown + 1, #rowPool do
         rowPool[i]:Hide()
     end
-    -- Fit the frame (and its chrome backdrop) to what is actually shown,
-    -- and keep it visible as a drag placeholder while unlocked
-    root:SetSize(BAR_WIDTH + 20, math.max(shown, 1) * (BAR_HEIGHT + ROW_GAP))
-    root:SetShown(shown > 0 or Commander.UI.HudUnlocked(CommanderProductionDB, "Hud"))
+    -- Fixed height keeps a stable backdrop; dynamic fits what is shown.
+    -- Unlocked or Always Show keeps the frame visible with an empty queue.
+    local heightRows = CommanderProductionDB.FixedHeight
+        and (CommanderProductionDB.MaxBars or 5) or math.max(shown, 1)
+    root:SetSize(BAR_WIDTH + 20, heightRows * (BAR_HEIGHT + ROW_GAP))
+    root:SetShown(shown > 0 or CommanderProductionDB.AlwaysShow
+        or Commander.UI.HudUnlocked(CommanderProductionDB, "Hud"))
     -- Hiding the root kills the OnUpdate driver; a sweep still queued at
     -- that moment (new cooldown started as the last bar expired) must run
     -- now or the new bar would be lost until the next cooldown event

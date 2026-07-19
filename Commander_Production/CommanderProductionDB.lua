@@ -9,6 +9,8 @@ local DefaultSettings = {
     MinDuration = 10,
     MaxBars = 5,
     ReadyAlert = true,
+    AlwaysShow = false,
+    FixedHeight = false,
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
     DefaultSettings[key] = value
@@ -36,11 +38,17 @@ local function CreateOptionsPanel()
     })
 
     panel:AddSection("Production Queue")
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Enable Production",
         tooltip = "Master switch for the whole module.",
         get = function() return CommanderProductionDB.EnableProduction end,
         set = function(value) CommanderProductionDB.EnableProduction = value end,
+    }, {
+        label = "Always Show",
+        tooltip = "Keep the frame on screen even with an empty queue, instead of appearing only while something is on cooldown.",
+        get = function() return CommanderProductionDB.AlwaysShow end,
+        set = function(value) CommanderProductionDB.AlwaysShow = value end,
+        isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
     panel:AddSlider({
         label = "Minimum Cooldown",
@@ -60,11 +68,17 @@ local function CreateOptionsPanel()
         set = function(value) CommanderProductionDB.MaxBars = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Ready Alert",
         tooltip = "Print a chat callout and play a click when a tracked cooldown finishes.",
         get = function() return CommanderProductionDB.ReadyAlert end,
         set = function(value) CommanderProductionDB.ReadyAlert = value end,
+        isEnabled = function() return CommanderProductionDB.EnableProduction end,
+    }, {
+        label = "Fixed Frame Height",
+        tooltip = "Keep the frame (and its styled backdrop) sized for the full queue length instead of shrinking to the bars currently shown — a stable panel that never jumps around.",
+        get = function() return CommanderProductionDB.FixedHeight end,
+        set = function(value) CommanderProductionDB.FixedHeight = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
 
