@@ -34,7 +34,11 @@ for _, key in ipairs(SEGMENT_KEYS) do
     segments[key] = text
 end
 
--- Re-anchor visible segments right-to-left with even gaps
+-- Re-anchor visible segments right-to-left with even gaps. The cluster
+-- starts well left of the screen edge so it clears the square minimap that
+-- Commander_Minimap parks in the top-right corner.
+local RIGHT_CLEARANCE = 250
+
 local function LayoutSegments()
     local previous
     for _, key in ipairs(SEGMENT_KEYS) do
@@ -44,7 +48,7 @@ local function LayoutSegments()
             if previous then
                 segment:SetPoint("RIGHT", previous, "LEFT", -SEGMENT_GAP, 0)
             else
-                segment:SetPoint("RIGHT", bar, "RIGHT", -12, 0)
+                segment:SetPoint("RIGHT", bar, "RIGHT", -RIGHT_CLEARANCE, 0)
             end
             previous = segment
         end
@@ -185,20 +189,28 @@ events:SetScript("OnEvent", function(self, event)
         Commander.AddListener(COMMANDER_TOPBAR_EVENTS.UPDATE, ApplyEnabled)
         ApplyEnabled()
         loaded = true
-    elseif loaded and CommanderTopBarDB.EnableTopBar then
-        if event == "PLAYER_XP_UPDATE" then
-            local current = UnitXP("player") or 0
-            if not events.lastXP then events.lastXP = current end
-            local delta = current - events.lastXP
-            if delta > 0 then
-                xpSessionGained = xpSessionGained + delta
-            end
-            events.lastXP = current
-        elseif event == "PLAYER_LEVEL_UP" then
-            -- Restart the income counter each level; carry the XP watermark over
-            ResetXPRate()
-            events.lastXP = 0
+        return
+    end
+    if not loaded then return end
+
+    -- XP bookkeeping runs even while the bar is disabled, so the rate is
+    -- accurate the moment it is re-enabled (a level-up while hidden would
+    -- otherwise leave a stale watermark and a wrong income figure)
+    if event == "PLAYER_XP_UPDATE" then
+        local current = UnitXP("player") or 0
+        if not events.lastXP then events.lastXP = current end
+        local delta = current - events.lastXP
+        if delta > 0 then
+            xpSessionGained = xpSessionGained + delta
         end
+        events.lastXP = current
+    elseif event == "PLAYER_LEVEL_UP" then
+        -- Restart the income counter each level; carry the XP watermark over
+        ResetXPRate()
+        events.lastXP = 0
+    end
+
+    if CommanderTopBarDB.EnableTopBar then
         UpdateAll()
     end
 end)

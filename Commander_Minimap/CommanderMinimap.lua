@@ -125,14 +125,28 @@ local revealed = false
 
 local RevealButtons -- forward declaration (hooked onto collected buttons)
 
+-- Only fade frames that are actually addon minimap BUTTONS. Addons also
+-- parent map PINS directly to the Minimap (Questie quest icons, guide
+-- arrows via HereBeDragons), and fading those would blank the map's quest
+-- data — so membership is by naming convention, not "every Minimap child":
+-- LibDBIcon buttons are "LibDBIcon10_<Addon>", hand-rolled ones almost
+-- universally contain "MinimapButton"/"MinimapIcon"/"MinimapFrame".
+local function IsAddonMinimapButton(child)
+    local name = child.GetName and child:GetName()
+    if not name or TIDY_KEEP[name] then return false end
+    return name:find("^LibDBIcon") ~= nil
+        or name:find("MinimapButton") ~= nil
+        or name:find("MinimapIcon") ~= nil
+        or name:find("MinimapFrame") ~= nil
+end
+
 -- Re-enumerated on every apply/reveal so buttons created late (most addons
 -- spawn theirs at PLAYER_LOGIN or later) are always picked up
 local function CollectTidyButtons()
     tidyButtons = {}
     local children = { Minimap:GetChildren() }
     for _, child in ipairs(children) do
-        local name = child.GetName and child:GetName()
-        if not (name and TIDY_KEEP[name]) then
+        if IsAddonMinimapButton(child) then
             tidyButtons[#tidyButtons + 1] = child
             -- Entering a rim button directly (without crossing the minimap
             -- circle) must also reveal the set

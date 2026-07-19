@@ -73,30 +73,40 @@ local function ReadSlot(bag, slot)
 end
 
 -- Comparators: each returns true when a should come before b.
--- Name is always the final tiebreaker; itemID after that for stability.
+-- Every comparator MUST be a total order on slot CONTENT (itemID + count):
+-- table.sort is unstable, and a plan recomputed each tick under a partial
+-- order flips between tied arrangements, making the executor ping-pong two
+-- equal-item stacks forever. The itemID+count tail guarantees ties only
+-- between literally identical stacks, which the executor treats as already
+-- in place.
+local function ContentTiebreak(a, b)
+    if a.itemID ~= b.itemID then return a.itemID < b.itemID end
+    return a.count > b.count
+end
+
 local Comparators = {
     QUALITY = function(a, b)
         if a.quality ~= b.quality then return a.quality > b.quality end
         if a.ilvl ~= b.ilvl then return a.ilvl > b.ilvl end
         if a.name ~= b.name then return a.name < b.name end
-        return a.itemID < b.itemID
+        return ContentTiebreak(a, b)
     end,
     ILVL = function(a, b)
         if a.ilvl ~= b.ilvl then return a.ilvl > b.ilvl end
         if a.quality ~= b.quality then return a.quality > b.quality end
         if a.name ~= b.name then return a.name < b.name end
-        return a.itemID < b.itemID
+        return ContentTiebreak(a, b)
     end,
     CATEGORY = function(a, b)
         if a.classID ~= b.classID then return a.classID < b.classID end
         if a.subClassID ~= b.subClassID then return a.subClassID < b.subClassID end
         if a.quality ~= b.quality then return a.quality > b.quality end
         if a.name ~= b.name then return a.name < b.name end
-        return a.itemID < b.itemID
+        return ContentTiebreak(a, b)
     end,
     NAME = function(a, b)
         if a.name ~= b.name then return a.name < b.name end
-        return a.itemID < b.itemID
+        return ContentTiebreak(a, b)
     end,
 }
 
@@ -129,17 +139,24 @@ end
 -- One swap per tick: find the first out-of-place slot, find a mismatched
 -- source slot holding what belongs there, and swap. Every swap fixes at
 -- least one position, so the sort always converges.
+local ticksTaken = 0
+
 local function Step()
     if InCombatLockdown() then
         StopSort("sorting paused by combat — click sort again after the fight")
         return
     end
-    if CursorHasItem() then
-        StopSort("sorting stopped — hands full (an item is on the cursor)")
+    -- SpellIsTargeting: a spell awaiting an item target (Disenchant,
+    -- Prospecting, enchants) is DELIVERED by PickupContainerItem — sorting
+    -- through it would cast the spell on an arbitrary item
+    if CursorHasItem() or SpellIsTargeting() then
+        StopSort("sorting stopped — hands full (item or spell on the cursor)")
         return
     end
-    stepsTaken = stepsTaken + 1
-    if stepsTaken > MAX_STEPS then
+    -- Hard safety cap on total ticks (covers pathological lock churn);
+    -- the swap budget below is what normally bounds the sort
+    ticksTaken = ticksTaken + 1
+    if ticksTaken > MAX_STEPS * 3 then
         StopSort("sorting stopped after too many moves")
         return
     end
@@ -184,6 +201,14 @@ local function Step()
         return
     end
 
+    -- Only ticks that actually issue a swap consume the move budget;
+    -- lock-wait ticks (a few per swap at normal latency) are free
+    stepsTaken = stepsTaken + 1
+    if stepsTaken > MAX_STEPS then
+        StopSort("sorting stopped after too many moves")
+        return
+    end
+
     local s, t = slots[source], slots[target]
     C_Container.PickupContainerItem(s.bag, s.slot)
     C_Container.PickupContainerItem(t.bag, t.slot)
@@ -204,10 +229,11 @@ function CommanderBags_SortBags()
         print("Commander Bags: cannot sort during combat")
         return
     end
-    if CursorHasItem() then
-        print("Commander Bags: put down the item on your cursor first")
+    if CursorHasItem() or SpellIsTargeting() then
+        print("Commander Bags: finish what's on your cursor first")
         return
     end
     stepsTaken = 0
+    ticksTaken = 0
     sortTicker = C_Timer.NewTicker(TICK_INTERVAL, Step)
 end

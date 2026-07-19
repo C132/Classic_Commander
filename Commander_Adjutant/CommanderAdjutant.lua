@@ -32,6 +32,7 @@ bannerText:SetPoint("CENTER")
 bannerText:SetTextColor(1, 0.85, 0.2)
 
 local fadeTicker
+local bannerGeneration = 0
 
 local function StopFade()
     if fadeTicker then
@@ -42,11 +43,17 @@ end
 
 local function ShowBanner(text, r, g, b)
     StopFade()
+    -- Generation token invalidates hold callbacks from earlier banners:
+    -- without it, banner A's uncancellable After() would start fading
+    -- banner B partway through B's own hold
+    bannerGeneration = bannerGeneration + 1
+    local generation = bannerGeneration
     bannerText:SetText(text)
     bannerText:SetTextColor(r or 1, g or 0.85, b or 0.2)
     banner:SetAlpha(1)
     banner:Show()
     C_Timer.After(BANNER_HOLD, function()
+        if generation ~= bannerGeneration then return end
         StopFade()
         fadeTicker = C_Timer.NewTicker(0.05, function()
             local alpha = banner:GetAlpha() - BANNER_FADE_STEP
@@ -85,15 +92,30 @@ local lowHealthAnnounced = false
 local repairAnnounced = false
 local bagsFullAnnounced = false
 local lastGroupSize = 0
+local lastReinforcement = 0
+local loginTime = 0
+local REINFORCEMENT_COOLDOWN = 30
+local LOGIN_GRACE = 10
 
 local function GroupSize()
     return (GetNumGroupMembers and GetNumGroupMembers()) or 0
 end
 
 local function CheckLowHealth()
-    if not CommanderAdjutantDB.AlertLowHealth or lowHealthAnnounced then return end
+    if not CommanderAdjutantDB.AlertLowHealth then return end
     local health, maxHealth = UnitHealth("player"), UnitHealthMax("player")
-    if maxHealth > 0 and health / maxHealth < 0.25 and health > 0 then
+    if maxHealth <= 0 then return end
+    local ratio = health / maxHealth
+    -- Hysteresis: re-arm only after recovering comfortably above the
+    -- threshold, so a fight that ENDS below 25% can't re-announce on the
+    -- first out-of-combat regen tick
+    if lowHealthAnnounced then
+        if ratio >= 0.35 then
+            lowHealthAnnounced = false
+        end
+        return
+    end
+    if ratio < 0.25 and health > 0 then
         lowHealthAnnounced = true
         Announce("LOW_HEALTH", "We're taking critical damage!", 1, 0.2, 0.2)
     end
@@ -152,6 +174,7 @@ events:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         lastGroupSize = GroupSize()
         lastCombatEnd = 0
+        loginTime = GetTime()
         loaded = true
         return
     end
@@ -164,7 +187,8 @@ events:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         lastCombatEnd = GetTime()
-        lowHealthAnnounced = false
+        -- lowHealthAnnounced deliberately NOT cleared here; CheckLowHealth's
+        -- hysteresis re-arms it once health recovers above 35%
     elseif event == "UNIT_HEALTH" then
         CheckLowHealth()
     elseif event == "UPDATE_INVENTORY_DURABILITY" then
@@ -177,7 +201,13 @@ events:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "GROUP_ROSTER_UPDATE" then
         local size = GroupSize()
-        if CommanderAdjutantDB.AlertReinforcements and size > lastGroupSize and size > 1 then
+        -- Throttled (one announce per 30s window) so a filling battleground
+        -- or raid announces once, not once per joiner — and never during
+        -- the first seconds after login, when the roster is still settling
+        if CommanderAdjutantDB.AlertReinforcements and size > lastGroupSize and size > 1
+            and (GetTime() - loginTime) > LOGIN_GRACE
+            and (GetTime() - lastReinforcement) > REINFORCEMENT_COOLDOWN then
+            lastReinforcement = GetTime()
             Announce("REINFORCEMENTS", "Reinforcements have arrived", 0.4, 0.8, 1)
         end
         lastGroupSize = size
