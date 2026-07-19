@@ -74,7 +74,7 @@ end
 -- frame instead of a floating meter — a radial cooldown sweep over the
 -- portrait counts down the momentum window, with the multiplier centered.
 -- ---------------------------------------------------------------------------
-local portraitOverlay, portraitCooldown, portraitText
+local portraitOverlay, portraitCooldown, portraitText, portraitTint
 
 local function DisplayMode()
     return (CommanderMomentumDB and CommanderMomentumDB.Display) or "HUD"
@@ -91,6 +91,15 @@ local function EnsurePortraitOverlay()
         portraitOverlay:SetSize(60, 60)
         portraitOverlay:SetPoint("CENTER", anchor, "CENTER", 0, 0)
     end
+    -- Circular tint over the portrait while a streak is alive: the round
+    -- alpha-mask art used as a texture gives a clean disc, additive so the
+    -- face glows in the streak's color instead of being painted over
+    portraitTint = portraitOverlay:CreateTexture(nil, "ARTWORK")
+    portraitTint:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
+    portraitTint:SetAllPoints(portraitOverlay)
+    portraitTint:SetBlendMode("ADD")
+    portraitTint:Hide()
+
     portraitCooldown = CreateFrame("Cooldown", nil, portraitOverlay, "CooldownFrameTemplate")
     -- Slightly larger than the portrait so the ring wraps its rim
     portraitCooldown:SetPoint("TOPLEFT", portraitOverlay, "TOPLEFT", -4, 4)
@@ -163,6 +172,14 @@ local function UpdatePortrait()
     end
     portraitText:SetText(string.format("x%d", streak))
     portraitText:SetTextColor(r, g, b)
+    -- Streak alive: glow the portrait in the streak's color, a touch
+    -- stronger as the chain climbs
+    if streak >= 2 then
+        portraitTint:SetVertexColor(r, g, b, 0.18 + math.min(streak, 20) / 20 * 0.17)
+        portraitTint:Show()
+    else
+        portraitTint:Hide()
+    end
     local window = CommanderMomentumDB.Window or 20
     if streak >= 1 and (GetTime() - lastKill) < window then
         portraitCooldown:SetCooldown(lastKill, window)
