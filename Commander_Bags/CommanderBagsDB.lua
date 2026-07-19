@@ -9,6 +9,15 @@ local DefaultSettings = {
     BagPositions = {},
     FadeBagsWhileMoving = true,
     FadeOpacity = 0.5,
+    SortOrder = "QUALITY",
+    PortraitSortClick = true,
+}
+
+local SORT_ORDERS = {
+    { text = "Quality", value = "QUALITY" },
+    { text = "Item Level", value = "ILVL" },
+    { text = "Category", value = "CATEGORY" },
+    { text = "Name (A-Z)", value = "NAME" },
 }
 
 local frame = CreateFrame("FRAME");
@@ -67,6 +76,11 @@ local function CreateOptionsPanel()
         event = COMMANDER_BAGS_EVENTS.UPDATE,
         slash = { "/cb", "/cbags" },
         slashHandlers = {
+            sort = function()
+                if CommanderBags_SortBags then
+                    CommanderBags_SortBags()
+                end
+            end,
             diag = function()
                 -- Defined in CommanderBags.lua, which loads after this file
                 if CommanderBags_PrintDiagnostics then
@@ -101,8 +115,32 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderBagsDB.FadeBagsWhileMoving end,
     })
 
-    panel:AddSection("Bag Positions", "Dragged bag windows are remembered per window; resetting returns the stock layout.")
+    panel:AddSection("Sorting", "Click any bag's icon to sort. Special bags (quivers, soul bags) are never touched.")
+    panel:AddDropdown({
+        label = "Sort Order",
+        tooltip = "Quality: epics first, junk last. Item Level: strongest gear first. Category: weapons, armor, consumables, trade goods grouped. Name: alphabetical.",
+        options = SORT_ORDERS,
+        width = 140,
+        get = function() return CommanderBagsDB.SortOrder end,
+        set = function(value) CommanderBagsDB.SortOrder = value end,
+    })
+    panel:AddCheckbox({
+        label = "Bag Icon Click Sorts",
+        tooltip = "Left-clicking a bag window's icon runs the sort (right-click keeps the normal bag menu). Uncheck to restore the default left-click behavior; /cb sort always works.",
+        get = function() return CommanderBagsDB.PortraitSortClick end,
+        set = function(value) CommanderBagsDB.PortraitSortClick = value end,
+    })
     panel:AddButtonRow({
+        {
+            label = "Sort Now",
+            width = 100,
+            tooltip = "Sort the general-purpose bags using the selected order.",
+            onClick = function()
+                if CommanderBags_SortBags then
+                    CommanderBags_SortBags()
+                end
+            end,
+        },
         {
             label = "Reset Bag Positions",
             tooltip = "Forget every dragged bag position and return all bag windows to the standard layout.",

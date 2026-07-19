@@ -401,7 +401,9 @@ local function HookContainerFrame(frame)
         end)
     end
 
-    -- Also make portrait button draggable
+    -- Also make portrait button draggable, and make a plain left-click on it
+    -- run the bag sort (right-click keeps the default bag menu; the override
+    -- can be disabled in settings)
     local portraitButton = _G[frame:GetName().."PortraitButton"]
     if portraitButton then
         portraitButton:EnableMouse(true)
@@ -411,6 +413,17 @@ local function HookContainerFrame(frame)
         end)
         portraitButton:SetScript("OnDragStop", function()
             EndBagDrag(frame)
+        end)
+
+        local originalPortraitClick = portraitButton:GetScript("OnClick")
+        portraitButton:SetScript("OnClick", function(self, mouseButton, ...)
+            if mouseButton == "LeftButton" and CommanderBagsDB.PortraitSortClick then
+                if CommanderBags_SortBags then
+                    CommanderBags_SortBags()
+                end
+            elseif originalPortraitClick then
+                originalPortraitClick(self, mouseButton, ...)
+            end
         end)
     end
 
