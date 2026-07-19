@@ -170,10 +170,24 @@ local function UpdatePortrait()
     end
 end
 
-local function EndStreak()
+-- Public lament when a real streak dies on the clock; only chains that
+-- reached the first milestone (x5) are worth announcing
+local BREAK_LINES = {
+    "loses momentum — the x%d chain is broken! (%d kills this session, best chain x%d)",
+    "watches a x%d streak slip away... (%d kills this session, best chain x%d)",
+}
+
+local function EndStreak(announceBreak)
+    local endedStreak = streak
     streak = 0
     announcedMilestone = 0
     SyncSession()
+    if announceBreak and endedStreak >= 5
+        and CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
+        and CommanderMomentumDB.BreakEmotes then
+        SendChatMessage(string.format(BREAK_LINES[math.random(#BREAK_LINES)],
+            endedStreak, totalKills, bestStreak), "EMOTE")
+    end
     local keepShown = CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
         and DisplayMode() == "HUD"
         and (CommanderMomentumDB.AlwaysShow
@@ -199,7 +213,8 @@ local function OnDrain(self, elapsed)
     local window = CommanderMomentumDB.Window or 20
     local remaining = (lastKill + window) - GetTime()
     if remaining <= 0 then
-        EndStreak()
+        -- The clock ran out on a live streak: the one true "broken" path
+        EndStreak(true)
         return
     end
     bar:SetSize(math.max(BAR_WIDTH * (remaining / window), 1), BAR_HEIGHT)

@@ -9,6 +9,7 @@ local DefaultSettings = {
     Window = 20,
     MilestoneSound = true,
     MilestoneEmotes = false,
+    BreakEmotes = false,
     KillSource = "OWN",
     AlwaysShow = false,
     Display = "HUD",
@@ -50,26 +51,23 @@ local function CreateOptionsPanel()
         set = function(value) CommanderMomentumDB.AlwaysShow = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
-    panel:AddDropdown({
+    panel:AddDropdownPair({
         label = "Display Mode",
         tooltip = "Floating Meter is the standalone HUD frame. Portrait Overlay lives on the default player frame instead: a radial timer sweeps the momentum window over your portrait with the multiplier centered on it.",
         options = {
             { text = "Floating Meter", value = "HUD" },
             { text = "Portrait Overlay", value = "PORTRAIT" },
         },
-        width = 160,
         get = function() return CommanderMomentumDB.Display end,
         set = function(value) CommanderMomentumDB.Display = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
-    })
-    panel:AddDropdown({
+    }, {
         label = "Kill Source",
         tooltip = "My Killing Blows counts only kills where you land the final hit. Squad Kills counts every hostile that dies around you — the meter works for healers and tanks too.",
         options = {
             { text = "My Killing Blows", value = "OWN" },
             { text = "Squad Kills", value = "SQUAD" },
         },
-        width = 160,
         get = function() return CommanderMomentumDB.KillSource end,
         set = function(value) CommanderMomentumDB.KillSource = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
@@ -94,6 +92,13 @@ local function CreateOptionsPanel()
         tooltip = "Announce milestones to everyone nearby as a custom emote with escalating flavor and your session numbers — kill chain, pace, total kills, best chain. Public bragging; off by default.",
         get = function() return CommanderMomentumDB.MilestoneEmotes end,
         set = function(value) CommanderMomentumDB.MilestoneEmotes = value end,
+        isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
+    })
+    panel:AddCheckbox({
+        label = "Streak Break Emote",
+        tooltip = "Also emote when the clock runs out on a live chain of x5 or better — the lament, with your session numbers. Public; off by default.",
+        get = function() return CommanderMomentumDB.BreakEmotes end,
+        set = function(value) CommanderMomentumDB.BreakEmotes = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
     })
 
