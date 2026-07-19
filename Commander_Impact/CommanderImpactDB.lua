@@ -12,6 +12,7 @@ local DefaultSettings = {
     CritFlash = true,
     CritThreshold = 400,
     FlashIntensity = 0.4,
+    FlashDuration = 1.0,
 }
 
 local frame = CreateFrame("FRAME");
@@ -91,6 +92,15 @@ local function CreateOptionsPanel()
         format = Commander.UI.FormatPercent,
         get = function() return CommanderImpactDB.FlashIntensity end,
         set = function(value) CommanderImpactDB.FlashIntensity = value end,
+        isEnabled = function() return CommanderImpactDB.EnableImpact end,
+    })
+    panel:AddSlider({
+        label = "Flash Duration",
+        tooltip = "How long each pulse lingers before fading out completely.",
+        min = 0.3, max = 3.0, step = 0.1,
+        format = "%.1fs",
+        get = function() return CommanderImpactDB.FlashDuration end,
+        set = function(value) CommanderImpactDB.FlashDuration = value end,
         isEnabled = function() return CommanderImpactDB.EnableImpact end,
     })
     panel:AddButtonRow({

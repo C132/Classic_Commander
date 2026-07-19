@@ -4,7 +4,6 @@
 -- a rising buildup. Kills pulse gold with a TARGET ELIMINATED float; crits
 -- past the threshold pulse red-orange, scaled to the damage.
 
-local DECAY_PER_SECOND = 1.1
 local TEXT_HOLD = 1.4
 
 local pulse = WorldFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
@@ -15,9 +14,10 @@ pulse:SetAlpha(0)
 
 local driver = CreateFrame("Frame")
 local pulseAlpha = 0
+local decayRate = 1.1
 
 local function OnDecay(self, elapsed)
-    pulseAlpha = pulseAlpha - elapsed * DECAY_PER_SECOND
+    pulseAlpha = pulseAlpha - elapsed * decayRate
     if pulseAlpha <= 0 then
         pulseAlpha = 0
         pulse:SetAlpha(0)
@@ -30,6 +30,8 @@ end
 local function Pulse(r, g, b, strength)
     pulse:SetVertexColor(r, g, b)
     pulseAlpha = math.max(pulseAlpha, strength)
+    -- Linger control: the pulse fades to nothing over Flash Duration
+    decayRate = pulseAlpha / (CommanderImpactDB.FlashDuration or 1)
     pulse:SetAlpha(pulseAlpha)
     driver:SetScript("OnUpdate", OnDecay)
 end
