@@ -9,6 +9,9 @@ local DefaultSettings = {
     HourlyReport = false,
     AutoInstanceReport = true,
     BagGlow = true,
+    AarStyle = "CLASSIC",
+    AarScale = 1.0,
+    AarPos = false,
 }
 
 local frame = CreateFrame("FRAME");
@@ -93,6 +96,35 @@ local function CreateOptionsPanel()
                 if CommanderEconomy_Report then CommanderEconomy_Report() end
             end,
         },
+        {
+            label = "Reset Position",
+            width = 120,
+            tooltip = "Return the report window to the center of the screen.",
+            onClick = function()
+                CommanderEconomyDB.AarPos = false
+                Commander.Notify(COMMANDER_ECONOMY_EVENTS.UPDATE)
+            end,
+        },
+    })
+    panel:AddDropdownPair({
+        label = "Report Style",
+        tooltip = "Framing for the After Action Report window, matching the suite's panel styles.",
+        options = {
+            { text = "Classic Panel", value = "CLASSIC" },
+            { text = "Dark Panel", value = "DARK" },
+        },
+        get = function() return CommanderEconomyDB.AarStyle end,
+        set = function(value) CommanderEconomyDB.AarStyle = value end,
+        isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
+    }, nil)
+    panel:AddSlider({
+        label = "Report Scale",
+        tooltip = "Overall size of the After Action Report window.",
+        min = 0.7, max = 1.4, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderEconomyDB.AarScale end,
+        set = function(value) CommanderEconomyDB.AarScale = value end,
+        isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
     })
 
     panel:Finalize({ onDefaults = Reset })

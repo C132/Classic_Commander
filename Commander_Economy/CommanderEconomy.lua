@@ -76,23 +76,38 @@ end
 local AAR_LINES = 6
 local AAR_ICONS = 12
 
-local aar = CreateFrame("Frame", "CommanderEconomyAAR", UIParent, "BackdropTemplate")
+local aar = CreateFrame("Frame", "CommanderEconomyAAR", UIParent)
 aar:SetSize(420, 282)
 aar:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
 aar:SetFrameStrata("DIALOG")
-aar:SetBackdrop({
-    bgFile = "Interface\\BankFrame\\Bank-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 8, right = 8, top = 8, bottom = 8 },
-})
-aar:SetBackdropColor(0.45, 0.45, 0.45, 1)
 aar:SetMovable(true)
 aar:EnableMouse(true)
 aar:RegisterForDrag("LeftButton")
 aar:SetScript("OnDragStart", aar.StartMoving)
-aar:SetScript("OnDragStop", aar.StopMovingOrSizing)
+aar:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    -- Screen-space save, like every other Commander frame
+    local point, _, _, x, y = self:GetPoint(1)
+    if point and CommanderEconomyDB then
+        local aarScale = self:GetScale() or 1
+        CommanderEconomyDB.AarPos = { point = point, x = x * aarScale, y = y * aarScale }
+    end
+end)
 aar:Hide()
+
+-- Style, scale, and saved position, aligned with the suite's framing
+local function ApplyAarLook()
+    local aarScale = (CommanderEconomyDB and CommanderEconomyDB.AarScale) or 1
+    aar:SetScale(aarScale)
+    Commander.UI.ApplyStyleBackdrop(aar, (CommanderEconomyDB and CommanderEconomyDB.AarStyle) or "CLASSIC")
+    local pos = CommanderEconomyDB and CommanderEconomyDB.AarPos
+    aar:ClearAllPoints()
+    if pos and pos.point then
+        aar:SetPoint(pos.point, UIParent, pos.point, (pos.x or 0) / aarScale, (pos.y or 0) / aarScale)
+    else
+        aar:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+    end
+end
 if UISpecialFrames then
     table.insert(UISpecialFrames, "CommanderEconomyAAR")
 end
@@ -311,6 +326,7 @@ local function FillReport(subtitle, data)
         data.loot, data.loot == 1 and "" or "s", data.lootRare))
     aarLines[6]:SetText(string.format("Duration:  %s", data.duration))
     FillReportIcons(data.items)
+    ApplyAarLook()
     aar:Show()
     -- Bag glow arms exactly once per report display
     ArmBagGlows(data.items)
@@ -575,6 +591,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
         lastMoney = GetMoney()
         prevXP, prevXPMax, prevLevel = UnitXP("player"), UnitXPMax("player"), UnitLevel("player")
         Commander.AddListener(COMMANDER_ECONOMY_EVENTS.UPDATE, UpdateTicker)
+        Commander.AddListener(COMMANDER_ECONOMY_EVENTS.UPDATE, ApplyAarLook)
         UpdateTicker()
     elseif event == "PLAYER_MONEY" then
         OnMoney()
