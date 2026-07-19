@@ -15,6 +15,7 @@ local DefaultSettings = {
     Timestamps = false,
     ShortChannels = false,
     CombatQuiet = false,
+    CombatQuietAlpha = 0.15,
     KeepChatVisible = false,
 }
 
@@ -125,7 +126,7 @@ local function CreateOptionsPanel()
     })
     panel:AddCheckboxPair({
         label = "Combat Quiet",
-        tooltip = "Fade the chat window to near-invisible while you are in combat — full focus on the fight, chat returns when it ends.",
+        tooltip = "Fade the chat window while you are in combat — full focus on the fight, chat returns when it ends. The slider below sets how far it fades.",
         get = function() return CommanderChatDB.CombatQuiet end,
         set = function(value) CommanderChatDB.CombatQuiet = value end,
     }, {
@@ -133,6 +134,15 @@ local function CreateOptionsPanel()
         tooltip = "Stop chat lines from fading out over time; every window keeps its full history on screen.",
         get = function() return CommanderChatDB.KeepChatVisible end,
         set = function(value) CommanderChatDB.KeepChatVisible = value end,
+    })
+    panel:AddSlider({
+        label = "Combat Quiet Opacity",
+        tooltip = "How visible chat remains during combat: 0% is fully invisible, higher values keep a readable ghost of it.",
+        min = 0, max = 0.6, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderChatDB.CombatQuietAlpha end,
+        set = function(value) CommanderChatDB.CombatQuietAlpha = value end,
+        isEnabled = function() return CommanderChatDB.CombatQuiet end,
     })
 
     panel:AddSection("Sound Alerts", "Selecting a sound previews it; /cchat test whisper (or test party) prints exactly what plays.")
@@ -147,7 +157,7 @@ local function CreateOptionsPanel()
         get = function() return CommanderChatDB.SoundPingParty end,
         set = function(value) CommanderChatDB.SoundPingParty = value end,
     })
-    panel:AddDropdown({
+    panel:AddDropdownPair({
         label = "Whisper Sound",
         tooltip = "The sound played when a whisper arrives. Selecting a sound previews it.",
         options = AvailableSounds,
@@ -155,8 +165,7 @@ local function CreateOptionsPanel()
         set = function(value) CommanderChatDB.WhisperSound = value end,
         isEnabled = function() return CommanderChatDB.SoundPingWhisper end,
         onSelect = function() C_Timer.After(0.1, function() PlayTestSound("whisper") end) end,
-    })
-    panel:AddDropdown({
+    }, {
         label = "Party Sound",
         tooltip = "The sound played when a party message arrives. Selecting a sound previews it.",
         options = AvailableSounds,

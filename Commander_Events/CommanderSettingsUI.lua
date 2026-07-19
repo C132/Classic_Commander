@@ -939,7 +939,10 @@ end
 --   usually the module's Apply), defaultPoint (for Reset Position)
 function UI.AddHudChromeOptions(panel, db, prefix, opts)
     local enabled = opts.isEnabled
-    panel:AddDropdown({
+    -- Style and scale share one row (dropdown left, slider right) so the
+    -- chrome block costs each panel two rows, not three
+    local chromeRow = panel:AddRow(52, 8)
+    BuildDropdown(panel, chromeRow, {
         label = "Frame Style",
         tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing; Window turns it into a little window with a title bar, lock and close buttons, and a resize grip.",
         options = {
@@ -951,8 +954,8 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
         get = function() return db[prefix .. "Style"] or "NONE" end,
         set = function(value) db[prefix .. "Style"] = value end,
         isEnabled = enabled,
-    })
-    panel:AddSlider({
+    }, 0, 120)
+    BuildSlider(panel, chromeRow, {
         label = "Frame Scale",
         tooltip = "Overall size of the frame.",
         min = 0.6, max = 1.6, step = 0.05,
@@ -960,7 +963,7 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
         get = function() return db[prefix .. "Scale"] or 1 end,
         set = function(value) db[prefix .. "Scale"] = value end,
         isEnabled = enabled,
-    })
+    }, 270, 170)
     -- Compact final row: unlock checkbox left, reset button right, sharing
     -- one 26px row to respect the panels' no-scroll height budget
     local row = panel:AddRow(26, 2)

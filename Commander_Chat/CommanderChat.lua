@@ -102,10 +102,11 @@ local function UpdateChatVisibility()
     end
 
     isVisible = CommanderChatDB.ShowChatWindow
-    -- Combat quiet dims (rather than hides) so incoming lines still land
+    -- Combat quiet dims (rather than hides) so incoming lines still land;
+    -- how far it dims is the user's call
     local windowAlpha = 1
     if CommanderChatDB.CombatQuiet and inCombat then
-        windowAlpha = 0.15
+        windowAlpha = CommanderChatDB.CombatQuietAlpha or 0.15
     end
     ChatFrame1:SetShown(isVisible)
     ChatFrame1:SetAlpha(isVisible and windowAlpha or 0)

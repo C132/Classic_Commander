@@ -149,7 +149,9 @@ end
 
 local function ReadyAlert(name)
     if CommanderProductionDB.ReadyAlert then
-        print(string.format("Commander Production: %s ready", name))
+        if CommanderProductionDB.ReadyChat ~= false then
+            print(string.format("Commander Production: %s ready", name))
+        end
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
     end
 end

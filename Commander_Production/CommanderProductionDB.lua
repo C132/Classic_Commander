@@ -9,6 +9,7 @@ local DefaultSettings = {
     MinDuration = 10,
     MaxBars = 5,
     ReadyAlert = true,
+    ReadyChat = true,
     AlwaysShow = false,
     FixedHeight = false,
     Layout = "BARS_DOWN",
@@ -106,7 +107,7 @@ local function CreateOptionsPanel()
     })
     panel:AddCheckboxPair({
         label = "Ready Alert",
-        tooltip = "Print a chat callout and play a click when a tracked cooldown finishes.",
+        tooltip = "Play a click (and optionally a chat callout) when a tracked cooldown finishes.",
         get = function() return CommanderProductionDB.ReadyAlert end,
         set = function(value) CommanderProductionDB.ReadyAlert = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
@@ -116,6 +117,15 @@ local function CreateOptionsPanel()
         get = function() return CommanderProductionDB.FixedHeight end,
         set = function(value) CommanderProductionDB.FixedHeight = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
+    })
+    panel:AddCheckbox({
+        label = "Ready Chat Message",
+        tooltip = "Include the chat line in ready alerts; uncheck for the click sound alone.",
+        get = function() return CommanderProductionDB.ReadyChat end,
+        set = function(value) CommanderProductionDB.ReadyChat = value end,
+        isEnabled = function()
+            return CommanderProductionDB.EnableProduction and CommanderProductionDB.ReadyAlert
+        end,
     })
 
     Commander.UI.AddHudChromeOptions(panel, CommanderProductionDB, "Hud", {
