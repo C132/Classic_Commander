@@ -16,6 +16,7 @@ local DefaultSettings = {
     AutoEmoteCooldown = 30,
     AutoCharge = false,
     AutoChargeThreshold = 8,
+    DispelCallouts = true,
 }
 
 local frame = CreateFrame("FRAME");
@@ -33,7 +34,7 @@ local function CreateOptionsPanel()
         key = "Comms",
         title = "Comms",
         addonName = "Commander_Comms",
-        description = "Battle comms on a radial wheel, like pinging in an RTS or MOBA. One keybind opens eight quick calls — on my way, need healing, attack, fall back — sent to raid, party, or say automatically depending on your group. Bind the wheel under Key Bindings > AddOns > Commander Comms.",
+        description = "Battle comms on a radial wheel, like pinging in an RTS or MOBA. One keybind opens ten quick calls — on my way, need healing, attack, fall back — voiced calls play your character's real voice line, the rest go to raid, party, or say depending on your group. Hover a call to preview exactly what it sends. Bind the wheel under Key Bindings > AddOns > Commander Comms.",
         event = COMMANDER_COMMS_EVENTS.UPDATE,
         slash = { "/ccomms" },
         slashHandlers = {
@@ -83,7 +84,7 @@ local function CreateOptionsPanel()
     panel:AddSection("Voice", "The classic voiced emotes (/incoming, /healme, /oom...) — manually from the wheel, or automatically when the fight calls for them.")
     panel:AddCheckboxPair({
         label = "Use Voice Emotes",
-        tooltip = "Wheel calls with a matching voiced emote (Incoming, Charge, Need Healing, Out of Mana, Fall Back, Help, Attack) play your character's voice line via the real emote.",
+        tooltip = "Wheel calls with a matching voiced emote (marked with a speaker on the wheel) play your character's voice line via the real emote INSTEAD of a chat message — the voice and its emote text are the announcement. Off, every call goes to chat.",
         get = function() return CommanderCommsDB.UseEmotes end,
         set = function(value) CommanderCommsDB.UseEmotes = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms end,
@@ -128,11 +129,17 @@ local function CreateOptionsPanel()
         set = function(value) CommanderCommsDB.AutoChargeThreshold = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.AutoCharge end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Auto Charge Rally",
         tooltip = "Automatically issue the Charge com when a live Momentum kill streak is about to run out of clock — keep the group motivated and the chain alive. Requires Commander Momentum.",
         get = function() return CommanderCommsDB.AutoCharge end,
         set = function(value) CommanderCommsDB.AutoCharge = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms end,
+    }, {
+        label = "Cleanse Callouts",
+        tooltip = "Announce your dispels to the group automatically: who you cleansed and what came off (\"Removed Curse of Tongues from Healbot (Remove Curse).\"). Debuff removals only — offensive purges stay quiet. Group channels only; never fires solo.",
+        get = function() return CommanderCommsDB.DispelCallouts end,
+        set = function(value) CommanderCommsDB.DispelCallouts = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms end,
     })
 

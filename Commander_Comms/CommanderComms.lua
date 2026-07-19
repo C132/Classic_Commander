@@ -1,12 +1,16 @@
--- Commander Comms: a radial wheel of eight quick battle calls. Opened by
--- keybind (Bindings.xml), slash, or the settings button; each call routes
--- to the widest channel that fits the group (raid > party > say). Clicking
--- a call sends and closes; Escape or a second toggle also closes.
+-- Commander Comms: a radial wheel of ten quick battle calls. Opened by
+-- keybind (Bindings.xml), slash, or the settings button. Voiced calls play
+-- the real emote — the voice line and its text ARE the announcement — the
+-- rest route to the widest channel that fits the group (raid > party >
+-- say). Clicking a call sends and closes; Escape or a toggle also closes.
 
 BINDING_HEADER_COMMANDERCOMMS = "Commander Comms"
 BINDING_NAME_COMMANDERCOMMS_TOGGLE = "Open Comms Wheel"
 
-local RADIUS = 110
+local RADIUS = 110      -- vertical radius of the wheel ellipse
+local RADIUS_X = 180    -- horizontal radius: wide ring for wide screens
+local STAGGER = 1.22    -- every second call sits on an outer ring — ten
+                        -- 110px buttons on one circle overlap at the poles
 
 -- emote = voiced client emote token played via DoEmote when Use Voice
 -- Emotes is on (the classic /incoming, /healme, /oom... voice lines)
@@ -47,7 +51,7 @@ end
 
 local wheel = CreateFrame("Frame", "CommanderCommsWheel", UIParent)
 wheel:SetPoint("CENTER")
-wheel:SetSize((RADIUS + 60) * 2, (RADIUS + 30) * 2)
+wheel:SetSize((RADIUS_X * STAGGER + 65) * 2, (RADIUS * STAGGER + 45) * 2)
 wheel:SetFrameStrata("DIALOG")
 -- Swallow clicks between the buttons: a miss must not fall through to the
 -- world and retarget right before a targeted call
@@ -60,15 +64,22 @@ end
 local center = wheel:CreateFontString(nil, "OVERLAY")
 center:SetFontObject(GameFontNormalLarge)
 center:SetPoint("CENTER")
+center:SetWidth(210)
 center:SetText("COMMS")
 center:SetTextColor(0.3, 1, 0.4)
+
+-- Delivery line under the hovered call's preview: voiced or which channel
+local centerSub = wheel:CreateFontString(nil, "OVERLAY")
+centerSub:SetFontObject(GameFontHighlightSmall)
+centerSub:SetPoint("TOP", center, "BOTTOM", 0, -5)
+centerSub:SetText("")
 
 local function InAnyGroup()
     return IsInGroup()
         or (LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE))
 end
 
-local function SendCall(call)
+local function BuildMessage(call)
     local message = call.msg
     if call.targetMsg and CommanderCommsDB.IncludeTarget and UnitExists("target") then
         local targetName = UnitName("target")
@@ -76,19 +87,21 @@ local function SendCall(call)
             message = string.format(call.targetMsg, targetName)
         end
     end
-    local voiced = call.emote and CommanderCommsDB.UseEmotes
-    if voiced then
+    return message
+end
+
+local function SendCall(call)
+    -- A voiced call IS the announcement — the real emote carries the voice
+    -- line and its own text, so doubling it with a chat message is noise.
+    -- Calls without a voice line (or with voice emotes off) go to chat.
+    if call.emote and CommanderCommsDB.UseEmotes then
         DoEmote(call.emote)
-    end
-    -- The voiced emote already announces locally; the channel message is
-    -- for the group. Solo with a voice line, skip the redundant /say.
-    if InAnyGroup() or not voiced then
-        SendChatMessage(message, PickChannel())
+    else
+        SendChatMessage(BuildMessage(call), PickChannel())
     end
     ClickSound()
     wheel:Hide()
 end
-SendCallRef = SendCall
 
 -- ---------------------------------------------------------------------------
 -- Auto charge rally: when Commander Momentum's streak clock is about to
@@ -99,7 +112,6 @@ SendCallRef = SendCall
 local AUTO_CHARGE_COOLDOWN = 20
 local chargeArmed = true
 local lastAutoCharge = -math.huge
-local SendCallRef   -- forward reference; SendCall is defined below
 
 C_Timer.NewTicker(1, function()
     if not (CommanderCommsDB and CommanderCommsDB.EnableComms
@@ -120,8 +132,8 @@ C_Timer.NewTicker(1, function()
     chargeArmed = false
     lastAutoCharge = GetTime()
     for _, call in ipairs(CALLS) do
-        if call.label == "Charge" and SendCallRef then
-            SendCallRef(call)
+        if call.label == "Charge" then
+            SendCall(call)
             break
         end
     end
@@ -190,15 +202,47 @@ local function CheckAutoEmotes()
     end
 end
 
+-- Hovering a call previews exactly what firing it will do: the outgoing
+-- line in the middle of the wheel, plus whether it goes out as your
+-- character's voice or as a chat message (and to which channel)
+local function PreviewCall(call)
+    center:SetText("\"" .. BuildMessage(call) .. "\"")
+    center:SetTextColor(1, 1, 1)
+    if call.emote and CommanderCommsDB.UseEmotes then
+        centerSub:SetText("voiced emote")
+        centerSub:SetTextColor(0.3, 1, 0.4)
+    else
+        centerSub:SetText("to " .. PickChannel():lower():gsub("_", " "))
+        centerSub:SetTextColor(0.7, 0.7, 0.7)
+    end
+end
+
+local function ClearPreview()
+    center:SetText("COMMS")
+    center:SetTextColor(0.3, 1, 0.4)
+    centerSub:SetText("")
+end
+
 for i, call in ipairs(CALLS) do
     local button = CreateFrame("Button", nil, wheel, "UIPanelButtonTemplate")
     button:SetSize(110, 24)
     button:SetText(call.label)
     -- Slot 1 at the top, remaining calls clockwise at even steps around
-    -- the wheel (the step follows the call count)
+    -- the ellipse, alternating between the inner and outer ring
     local angle = math.rad(90 - (i - 1) * (360 / #CALLS))
-    button:SetPoint("CENTER", wheel, "CENTER", math.cos(angle) * RADIUS, math.sin(angle) * RADIUS)
+    local ring = (i % 2 == 0) and STAGGER or 1
+    button:SetPoint("CENTER", wheel, "CENTER",
+        math.cos(angle) * RADIUS_X * ring, math.sin(angle) * RADIUS * ring)
+    if call.emote then
+        -- Speaker badge: this call carries a voice line
+        local speaker = button:CreateTexture(nil, "OVERLAY")
+        speaker:SetSize(14, 14)
+        speaker:SetPoint("LEFT", button, "LEFT", 4, 0)
+        speaker:SetTexture("Interface\\Common\\VoiceChat-Speaker")
+    end
     button:SetScript("OnClick", function() SendCall(call) end)
+    button:SetScript("OnEnter", function() PreviewCall(call) end)
+    button:SetScript("OnLeave", ClearPreview)
 end
 
 function CommanderComms_Toggle()
@@ -222,20 +266,14 @@ end
 -- to shushing everyone nearby.) Short dedupe window so AoE interrupts
 -- hitting several casters don't burst-spam the channel.
 -- ---------------------------------------------------------------------------
-local INTERRUPT_ANNOUNCE_COOLDOWN = 2
+local ANNOUNCE_COOLDOWN = 2
 local lastInterruptAnnounce = -math.huge
+local lastDispelAnnounce = -math.huge
 local playerGUID
 
-local function OnInterrupt()
-    if not (CommanderCommsDB and CommanderCommsDB.EnableComms
-        and CommanderCommsDB.InterruptSilence) then return end
-    local _, subevent, _, sourceGUID, _, _, _, _, destName, _, _,
-        _, kickName, _, _, stoppedName = CombatLogGetCurrentEventInfo()
-    if subevent ~= "SPELL_INTERRUPT" then return end
-    if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
-    -- Team comms only: solo interrupts need no announcement
-    if not InAnyGroup() then return end
-    if GetTime() - lastInterruptAnnounce < INTERRUPT_ANNOUNCE_COOLDOWN then return end
+local function OnInterrupt(destName, kickName, stoppedName)
+    if not CommanderCommsDB.InterruptSilence then return end
+    if GetTime() - lastInterruptAnnounce < ANNOUNCE_COOLDOWN then return end
     lastInterruptAnnounce = GetTime()
     local message
     if stoppedName and destName then
@@ -247,6 +285,41 @@ local function OnInterrupt()
         message = "Interrupt landed."
     end
     SendChatMessage(message, PickChannel())
+end
+
+-- Cleanse callouts mirror the interrupt ones: dispelling a debuff off a
+-- friendly target announces who was cleansed and what came off, so the
+-- invisible support work is visible. DEBUFF-only keeps offensive purges
+-- (stripping enemy buffs) out of the channel.
+local function OnDispel(destName, dispelName, removedName, auraType)
+    if not CommanderCommsDB.DispelCallouts then return end
+    if auraType ~= "DEBUFF" then return end
+    if GetTime() - lastDispelAnnounce < ANNOUNCE_COOLDOWN then return end
+    lastDispelAnnounce = GetTime()
+    if destName == UnitName("player") then destName = "myself" end
+    local message
+    if removedName then
+        message = string.format("Removed %s from %s%s", removedName,
+            destName or "the target",
+            dispelName and (" (" .. dispelName .. ").") or ".")
+    else
+        message = string.format("Cleansed %s.", destName or "the target")
+    end
+    SendChatMessage(message, PickChannel())
+end
+
+local function OnCombatLog()
+    if not (CommanderCommsDB and CommanderCommsDB.EnableComms) then return end
+    local _, subevent, _, sourceGUID, _, _, _, _, destName, _, _,
+        _, actionName, _, _, extraName, _, auraType = CombatLogGetCurrentEventInfo()
+    if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
+    -- Team comms only: solo callouts have no audience
+    if not InAnyGroup() then return end
+    if subevent == "SPELL_INTERRUPT" then
+        OnInterrupt(destName, actionName, extraName)
+    elseif subevent == "SPELL_DISPEL" then
+        OnDispel(destName, actionName, extraName, auraType)
+    end
 end
 
 local events = CreateFrame("Frame")
@@ -269,7 +342,7 @@ events:SetScript("OnEvent", function(self, event, unit)
             end
         end)
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        OnInterrupt()
+        OnCombatLog()
     elseif unit == "player" then
         CheckAutoEmotes()
     end
