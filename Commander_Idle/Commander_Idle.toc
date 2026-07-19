@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Idle
 ## Author: Devin
-## Version: 2.0.0
+## Version: 2.1.0
 ## Notes: RTS idle-worker alert: a pulsing button appears when your character has been standing around doing nothing.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderIdleDB

@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Promotion
 ## Author: Devin
-## Version: 2.0.0
+## Version: 2.1.0
 ## Notes: A level-up ceremony worthy of the grind: full-screen gold burst, PROMOTION banner, and your stat gains on parade.
 ## IconTexture: Interface\Icons\INV_Scroll_11
 ## SavedVariables: CommanderPromotionDB

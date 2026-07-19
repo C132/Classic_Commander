@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Momentum
 ## Author: Devin
-## Version: 2.0.0
+## Version: 2.1.0
 ## Notes: A decaying kill-streak meter: chain kills to build momentum, watch it drain when you stop.
 ## IconTexture: Interface\Icons\Ability_Rogue_Sprint
 ## SavedVariables: CommanderMomentumDB

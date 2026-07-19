@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Rally
 ## Author: Devin
-## Version: 2.0.0
+## Version: 2.1.0
 ## Notes: Four persistent rally points: mark a spot, then order yourself back to it any time with a Commander Orders arrow.
 ## IconTexture: Interface\Icons\INV_BannerPVP_02
 ## SavedVariables: CommanderRallyDB

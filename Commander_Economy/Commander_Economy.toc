@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Economy
 ## Author: Devin
-## Version: 2.0.0
+## Version: 2.1.0
 ## Notes: End-of-mission economics: session summary of gold earned and spent, experience rate, quests, and casualties.
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## SavedVariables: CommanderEconomyDB

@@ -3,7 +3,7 @@
 ## Title: Commander Nameplate
 ## Notes: Personal player nameplate with health, mana, and cast bars.
 ## Author: Devin
-## Version: 2.0.0
+## Version: 2.1.0
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderNameplateDB
 ## RequiredDeps: Commander_Events

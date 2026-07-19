@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Production
 ## Author: Devin
-## Version: 2.0.0
+## Version: 2.1.0
 ## Notes: Spell cooldowns as an RTS production queue: bars that fill toward ready, with an optional completion callout.
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
 ## SavedVariables: CommanderProductionDB
