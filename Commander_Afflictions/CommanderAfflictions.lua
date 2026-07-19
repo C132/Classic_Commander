@@ -214,9 +214,32 @@ local function ScanUnit(unit)
     end
 end
 
+-- Queue scratch reused across draws — same churn cut as Production: a
+-- fresh table set per draw was steady-state garbage
+local queue = {}
+local queueItems = {}
+
+local function NextQueueItem()
+    local index = #queue + 1
+    local it = queueItems[index]
+    if not it then
+        it = {}
+        queueItems[index] = it
+    end
+    it.key, it.entry, it.remaining = nil, nil, nil
+    queue[index] = it
+    return it
+end
+
+local function QueueCompare(a, b)
+    local ra, rb = a.remaining or math.huge, b.remaining or math.huge
+    if ra ~= rb then return ra < rb end
+    return a.key < b.key
+end
+
 local function Draw()
     local now = GetTime()
-    local queue = {}
+    wipe(queue)
     for key, entry in pairs(active) do
         local remaining
         if entry.expiration then
@@ -227,14 +250,11 @@ local function Draw()
         elseif not entry.expiration and (now - entry.seen) > UNKNOWN_MAX_AGE then
             active[key] = nil
         else
-            queue[#queue + 1] = { key = key, entry = entry, remaining = remaining }
+            local it = NextQueueItem()
+            it.key, it.entry, it.remaining = key, entry, remaining
         end
     end
-    table.sort(queue, function(a, b)
-        local ra, rb = a.remaining or math.huge, b.remaining or math.huge
-        if ra ~= rb then return ra < rb end
-        return a.key < b.key
-    end)
+    table.sort(queue, QueueCompare)
 
     local maxBars = CommanderAfflictionsDB.MaxBars or 6
     local shown = math.min(#queue, maxBars)
@@ -245,6 +265,9 @@ local function Draw()
         local row = AcquireRow(i)
         if row.geometrySig ~= geometrySig then
             ApplyRowGeometry(row, i, layout, barWidth)
+            -- Layout switches change which widgets carry the text — force
+            -- the next content write through the dirty-check below
+            row.shownKey = nil
         end
         local item = queue[i]
         local entry = item.entry
@@ -267,34 +290,42 @@ local function Draw()
         -- Radial sweep / countdown need real times; unknown-duration
         -- entries keep their full bar instead
         if hasTimes and (overlay == "SWEEP" or overlay == "BOTH") then
-            local sweepSig = tostring(entry.expiration) .. ":" .. tostring(entry.duration)
-            if row.sweepSig ~= sweepSig then
-                row.sweepSig = sweepSig
+            -- Numeric comparison: the old string signature allocated two
+            -- tostrings and a concat per row per draw
+            if row.sweepExp ~= entry.expiration or row.sweepDuration ~= entry.duration then
+                row.sweepExp, row.sweepDuration = entry.expiration, entry.duration
                 row.sweep:SetCooldown(entry.expiration - entry.duration, entry.duration)
             end
             row.sweep:Show()
         else
-            row.sweepSig = nil
+            row.sweepExp = nil
             row.sweep:Hide()
         end
-        if hasTimes and overlay == "TEXT" then
-            row.timer:SetText(string.format("%d", math.ceil(item.remaining)))
-            row.timer:Show()
-        else
-            row.timer:Hide()
-        end
-        local text = entry.spellName or "?"
-        if CommanderAfflictionsDB.ShowTargetNames and entry.targetName then
-            text = string.format("%s @ %s", text, entry.targetName)
-        end
-        if item.remaining then
-            text = string.format("%s  %ds", text, math.ceil(item.remaining))
-        end
-        if layout ~= "ICONS" then
-            row.label:SetText(text)
+        row.timer:SetShown(hasTimes and overlay == "TEXT" or false)
+        -- Text changes once per second; skip the format churn on
+        -- unchanged seconds (secs -1 = unknown-duration entry)
+        local secs = item.remaining and math.ceil(item.remaining) or -1
+        local showNames = (CommanderAfflictionsDB.ShowTargetNames and entry.targetName) and true or false
+        if row.shownKey ~= item.key or row.shownSecs ~= secs
+            or row.shownOverlay ~= overlay or row.shownNames ~= showNames then
+            row.shownKey, row.shownSecs = item.key, secs
+            row.shownOverlay, row.shownNames = overlay, showNames
+            local text = entry.spellName or "?"
+            if showNames then
+                text = string.format("%s @ %s", text, entry.targetName)
+            end
+            if item.remaining then
+                text = string.format("%s  %ds", text, secs)
+            end
+            if layout ~= "ICONS" then
+                row.label:SetText(text)
+            end
+            if hasTimes and overlay == "TEXT" then
+                row.timer:SetText(secs)
+            end
+            row.tipText = text
         end
         row.spellID = entry.spellID
-        row.tipText = text
         row:Show()
     end
     for i = shown + 1, #rowPool do

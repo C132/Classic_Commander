@@ -3,8 +3,9 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-frame:RegisterEvent("PLAYER_STARTED_MOVING")
-frame:RegisterEvent("PLAYER_STOPPED_MOVING")
+-- PLAYER_STARTED/STOPPED_MOVING deliberately NOT registered: each one ran a
+-- full unthrottled cosmetics pass, multiplying every per-tick allocation on
+-- top of the 0.25s poll — which already refreshes everything within 250ms
 frame:RegisterEvent("PLAYER_REGEN_ENABLED") -- Re-apply deferred layout after combat (protected frames are locked in combat)
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 local loaded = false
@@ -392,6 +393,8 @@ local function FlashFor(button)
         flash:SetAllPoints(button)
         flash:SetVertexColor(1, 1, 0.6, 0.55)
         flash:Hide()
+        -- One hide-closure per button for its lifetime, not one per flash
+        flash._hide = function() flash:Hide() end
         flashTextures[button] = flash
     end
     return flash
@@ -473,7 +476,15 @@ local function ApplyButtonCosmetics()
                     and (start + duration - now) or 0
                 if db.cooldownText and remaining > 0 then
                     local text = CooldownTextFor(button)
-                    text:SetText(FormatCooldown(remaining))
+                    -- Signed key (-minutes vs +seconds) is bijective with
+                    -- the displayed string, so unchanged ticks skip both
+                    -- the format allocation and the SetText relayout
+                    local key = remaining >= 60 and -math.ceil(remaining / 60)
+                        or math.ceil(remaining)
+                    if text._last ~= key then
+                        text._last = key
+                        text:SetText(FormatCooldown(remaining))
+                    end
                     text:Show()
                 elseif cooldownTexts[button] then
                     cooldownTexts[button]:Hide()
@@ -485,7 +496,7 @@ local function ApplyButtonCosmetics()
                         readyAt[button] = nil
                         local flash = FlashFor(button)
                         flash:Show()
-                        C_Timer.After(0.35, function() flash:Hide() end)
+                        C_Timer.After(0.35, flash._hide)
                     end
                 end
             end

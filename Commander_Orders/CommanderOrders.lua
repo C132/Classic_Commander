@@ -100,6 +100,7 @@ end
 -- Arrow updates
 -- ---------------------------------------------------------------------------
 local sinceUpdate = 0
+local shownYards   -- last rendered distance, to skip unchanged re-layouts
 
 local function UpdateArrow(self, elapsed)
     sinceUpdate = sinceUpdate + elapsed
@@ -112,19 +113,17 @@ local function UpdateArrow(self, elapsed)
         return
     end
 
-    local ok, playerMap = pcall(C_Map.GetBestMapForUnit, "player")
-    if not ok or not playerMap then
+    -- UnitPosition gives live world coordinates directly — no per-tick map
+    -- lookups and no Vector2D tables (the old map->world chain allocated
+    -- three tables per tick, ~19KB/s of garbage while an order was up).
+    -- It returns (posY, posX, posZ, instanceID) — y first — and nil in
+    -- restricted areas (instances), exactly where the map path also bailed.
+    if not UnitPosition then
         arrow:Hide()
         return
     end
-    local okPos, playerPos = pcall(C_Map.GetPlayerMapPosition, playerMap, "player")
-    if not okPos or not playerPos or not playerPos.x then
-        arrow:Hide()
-        return
-    end
-
-    local playerWorld, playerInstance = WorldPos(playerMap, playerPos.x, playerPos.y)
-    if not playerWorld then
+    local py, px, _, playerInstance = UnitPosition("player")
+    if not px then
         arrow:Hide()
         return
     end
@@ -136,14 +135,17 @@ local function UpdateArrow(self, elapsed)
         arrowTexture:SetRotation(0)
         arrowTexture:SetVertexColor(0.6, 0.6, 0.6)
         distanceText:SetText("other continent")
+        -- The text no longer shows a distance; clear the guard so the
+        -- next in-continent tick always rewrites it
+        shownYards = nil
         arrow:Show()
         arrivedAnnounced = false
         return
     end
     arrowTexture:SetVertexColor(0.3, 1, 0.4)
 
-    local dx = waypoint.worldX - playerWorld.x
-    local dy = waypoint.worldY - playerWorld.y
+    local dx = waypoint.worldX - px
+    local dy = waypoint.worldY - py
     local distance = math.sqrt(dx * dx + dy * dy)
 
     if distance <= ARRIVE_DISTANCE then
@@ -160,7 +162,11 @@ local function UpdateArrow(self, elapsed)
     local bearing = math.atan2(dy, dx)
     local facing = GetPlayerFacing() or 0
     arrowTexture:SetRotation(bearing - facing)
-    distanceText:SetFormattedText("%d yd", math.floor(distance + 0.5))
+    local yards = math.floor(distance + 0.5)
+    if yards ~= shownYards then
+        shownYards = yards
+        distanceText:SetFormattedText("%d yd", yards)
+    end
     arrow:Show()
 end
 

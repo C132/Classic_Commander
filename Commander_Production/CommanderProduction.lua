@@ -160,11 +160,17 @@ local function ReadyAlert(name)
     end
 end
 
+-- Scratch tables reused across sweeps: `scanned` holds every spellbook
+-- name (100+ entries), so allocating it fresh each 250ms sweep was
+-- kilobytes of garbage per call
+local scanned, stillOn = {}, {}
+
 local function Sweep()
     if not GetNumSpellTabs then return end
     local minDuration = CommanderProductionDB.MinDuration or 10
     local now = GetTime()
-    local scanned, stillOn = {}, {}
+    wipe(scanned)
+    wipe(stillOn)
     for tab = 1, GetNumSpellTabs() do
         local _, _, offset, numSlots = GetSpellTabInfo(tab)
         for slot = offset + 1, offset + (numSlots or 0) do
@@ -213,9 +219,41 @@ local function Sweep()
     end
 end
 
+-- Queue scratch reused across draws — the list plus one pooled item table
+-- per slot, refilled in place. A fresh table set per 0.1s draw was this
+-- module's main garbage source.
+local queue = {}
+local queueItems = {}
+
+local function NextQueueItem()
+    local index = #queue + 1
+    local it = queueItems[index]
+    if not it then
+        it = {}
+        queueItems[index] = it
+    end
+    it.name, it.entry, it.ready, it.alpha, it.remaining = nil, nil, nil, nil, nil
+    queue[index] = it
+    return it
+end
+
+-- Pending cooldowns first (soonest ready on top), READY stragglers
+-- after, freshest first
+local function QueueCompare(a, b)
+    if (a.ready or false) ~= (b.ready or false) then return not a.ready end
+    if a.ready then
+        if a.entry.readyAt ~= b.entry.readyAt then
+            return a.entry.readyAt > b.entry.readyAt
+        end
+        return a.name < b.name
+    end
+    if a.remaining ~= b.remaining then return a.remaining < b.remaining end
+    return a.name < b.name
+end
+
 local function Draw()
     local now = GetTime()
-    local queue = {}
+    wipe(queue)
     for name, entry in pairs(active) do
         if entry.readyAt then
             -- Lingering READY entry: 60s hold, 30s fade, then gone
@@ -227,36 +265,27 @@ local function Draw()
                 if lingering > READY_HOLD then
                     alpha = 1 - (lingering - READY_HOLD) / READY_FADE
                 end
-                queue[#queue + 1] = { name = name, entry = entry, ready = true, alpha = alpha }
+                local it = NextQueueItem()
+                it.name, it.entry, it.ready, it.alpha = name, entry, true, alpha
             end
         else
             local remaining = entry.start + entry.duration - now
             if remaining <= 0 then
                 if CommanderProductionDB.LingerReady then
                     entry.readyAt = now
-                    queue[#queue + 1] = { name = name, entry = entry, ready = true, alpha = 1 }
+                    local it = NextQueueItem()
+                    it.name, it.entry, it.ready, it.alpha = name, entry, true, 1
                 else
                     active[name] = nil
                 end
                 ReadyAlert(name)
             else
-                queue[#queue + 1] = { name = name, entry = entry, remaining = remaining }
+                local it = NextQueueItem()
+                it.name, it.entry, it.remaining = name, entry, remaining
             end
         end
     end
-    -- Pending cooldowns first (soonest ready on top), READY stragglers
-    -- after, freshest first
-    table.sort(queue, function(a, b)
-        if (a.ready or false) ~= (b.ready or false) then return not a.ready end
-        if a.ready then
-            if a.entry.readyAt ~= b.entry.readyAt then
-                return a.entry.readyAt > b.entry.readyAt
-            end
-            return a.name < b.name
-        end
-        if a.remaining ~= b.remaining then return a.remaining < b.remaining end
-        return a.name < b.name
-    end)
+    table.sort(queue, QueueCompare)
 
     local maxBars = CommanderProductionDB.MaxBars or 5
     local shown = math.min(#queue, maxBars)
@@ -267,6 +296,9 @@ local function Draw()
         local row = AcquireRow(i)
         if row.geometrySig ~= geometrySig then
             ApplyRowGeometry(row, i, layout, barWidth)
+            -- Layout switches change which widgets carry the text — force
+            -- the next content write through the dirty-check below
+            row.shownName = nil
         end
         local item = queue[i]
         local overlay = CommanderProductionDB.CooldownOverlay or "BAR"
@@ -277,18 +309,25 @@ local function Draw()
         row.barBG:SetShown(showBar)
         row.bar:SetShown(showBar)
         if item.ready then
-            -- READY straggler: full green bar, fading out on its clock
+            -- READY straggler: full green bar, fading out on its clock.
+            -- Text content is static per item (secs key -1) — only the
+            -- first draw after a change pays the format
             row.bar:SetVertexColor(0.3, 1, 0.4, 0.9)
             if layout == "ICONS" then
                 row.bar:SetSize(ICON_SIZE, ICON_BAR_HEIGHT)
             else
                 row.bar:SetSize(barWidth, BAR_HEIGHT)
-                row.label:SetText(string.format("%s  READY", item.name))
             end
-            row.sweepSig = nil
+            if row.shownName ~= item.name or row.shownSecs ~= -1 then
+                row.shownName, row.shownSecs = item.name, -1
+                if layout ~= "ICONS" then
+                    row.label:SetText(string.format("%s  READY", item.name))
+                end
+                row.tipText = string.format("%s — ready", item.name)
+            end
+            row.sweepStart = nil
             row.sweep:Hide()
             row.timer:Hide()
-            row.tipText = string.format("%s — ready", item.name)
             row:SetAlpha(item.alpha or 1)
         else
             local progress = 1 - (item.remaining / item.entry.duration)
@@ -297,26 +336,38 @@ local function Draw()
                 row.bar:SetSize(math.max(ICON_SIZE * progress, 1), ICON_BAR_HEIGHT)
             else
                 row.bar:SetSize(math.max(barWidth * progress, 1), BAR_HEIGHT)
-                row.label:SetText(string.format("%s  %s", item.name, FormatRemaining(item.remaining)))
+            end
+            -- Text changes once per second; the bar resizes every draw.
+            -- Skip the format+SetText+tipText churn on unchanged seconds.
+            local secs = math.ceil(item.remaining)
+            if row.shownName ~= item.name or row.shownSecs ~= secs
+                or row.shownOverlay ~= overlay then
+                row.shownName, row.shownSecs, row.shownOverlay = item.name, secs, overlay
+                if layout ~= "ICONS" then
+                    row.label:SetText(string.format("%s  %s", item.name, FormatRemaining(item.remaining)))
+                end
+                if overlay == "TEXT" then
+                    row.timer:SetText(FormatRemaining(item.remaining))
+                end
+                row.tipText = string.format("%s — %s", item.name, FormatRemaining(item.remaining))
             end
             if overlay == "SWEEP" or overlay == "BOTH" then
-                local sweepSig = tostring(item.entry.start) .. ":" .. tostring(item.entry.duration)
-                if row.sweepSig ~= sweepSig then
-                    row.sweepSig = sweepSig
+                -- Numeric comparison: the old string signature allocated
+                -- two tostrings and a concat per row per draw
+                if row.sweepStart ~= item.entry.start or row.sweepDuration ~= item.entry.duration then
+                    row.sweepStart, row.sweepDuration = item.entry.start, item.entry.duration
                     row.sweep:SetCooldown(item.entry.start, item.entry.duration)
                 end
                 row.sweep:Show()
             else
-                row.sweepSig = nil
+                row.sweepStart = nil
                 row.sweep:Hide()
             end
             if overlay == "TEXT" then
-                row.timer:SetText(FormatRemaining(item.remaining))
                 row.timer:Show()
             else
                 row.timer:Hide()
             end
-            row.tipText = string.format("%s — %s", item.name, FormatRemaining(item.remaining))
             row:SetAlpha(1)
         end
         row.spellID = item.entry.spellID
