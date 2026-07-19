@@ -60,20 +60,33 @@ arrow:SetScript("OnClick", function()
     CommanderOrders_ClearOrder(true)
 end)
 
-local function SetOrder(mapID, x, y)
-    CommanderOrdersDB.Waypoint = { mapID = mapID, x = x, y = y }
-    PlayOrderSound()
-    print(string.format("Commander Orders: move order issued (%.0f, %.0f)", x * 100, y * 100))
-end
-
--- World-space position of a map point; nil when the map has no world data
+-- World-space position of a map point plus its continent (instance) ID;
+-- nil when the map has no world data (cosmic/azeroth-level maps)
 local function WorldPos(mapID, x, y)
     if not (C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D) then return nil end
-    local ok, _, world = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(x, y))
+    local ok, instance, world = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(x, y))
     if ok and world then
-        return world
+        return world, instance
     end
     return nil
+end
+
+local function SetOrder(mapID, x, y)
+    -- Resolve and cache the world position now: maps without world data are
+    -- rejected up front instead of producing a dead order, and the arrow
+    -- never needs to re-resolve the target
+    local world, instance = WorldPos(mapID, x, y)
+    if not world then
+        print("Commander Orders: that map has no world coordinates — zoom in to a zone map first")
+        return false
+    end
+    CommanderOrdersDB.Waypoint = {
+        mapID = mapID, x = x, y = y,
+        worldX = world.x, worldY = world.y, instance = instance,
+    }
+    PlayOrderSound()
+    print(string.format("Commander Orders: move order issued (%.0f, %.0f)", x * 100, y * 100))
+    return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -88,7 +101,7 @@ local function UpdateArrow(self, elapsed)
     sinceUpdate = 0
 
     local waypoint = CommanderOrdersDB.Waypoint
-    if not (CommanderOrdersDB.EnableOrders and waypoint) then
+    if not (CommanderOrdersDB.EnableOrders and waypoint and waypoint.worldX) then
         arrow:Hide()
         return
     end
@@ -104,15 +117,27 @@ local function UpdateArrow(self, elapsed)
         return
     end
 
-    local playerWorld = WorldPos(playerMap, playerPos.x, playerPos.y)
-    local targetWorld = WorldPos(waypoint.mapID, waypoint.x, waypoint.y)
-    if not playerWorld or not targetWorld then
+    local playerWorld, playerInstance = WorldPos(playerMap, playerPos.x, playerPos.y)
+    if not playerWorld then
         arrow:Hide()
         return
     end
 
-    local dx = targetWorld.x - playerWorld.x
-    local dy = targetWorld.y - playerWorld.y
+    -- Cross-continent: EK and Kalimdor world coordinates overlap, so
+    -- distance math between instances is meaningless (and could even
+    -- fake an arrival). Show a neutral waiting state instead.
+    if playerInstance ~= waypoint.instance then
+        arrowTexture:SetRotation(0)
+        arrowTexture:SetVertexColor(0.6, 0.6, 0.6)
+        distanceText:SetText("other continent")
+        arrow:Show()
+        arrivedAnnounced = false
+        return
+    end
+    arrowTexture:SetVertexColor(0.3, 1, 0.4)
+
+    local dx = waypoint.worldX - playerWorld.x
+    local dy = waypoint.worldY - playerWorld.y
     local distance = math.sqrt(dx * dx + dy * dy)
 
     if distance <= ARRIVE_DISTANCE then
@@ -137,28 +162,38 @@ local driver = CreateFrame("Frame")
 driver:SetScript("OnUpdate", UpdateArrow)
 
 -- ---------------------------------------------------------------------------
--- World map click hook (Ctrl+Right-click issues an order)
+-- World map click handler (Ctrl+Right-click issues an order)
+--
+-- Registered through WorldMapFrame:AddCanvasClickHandler, which runs BEFORE
+-- Blizzard's own right-click handling and, by returning true, suppresses
+-- the map's navigate-to-parent zoom-out. A plain OnMouseUp post-hook cannot
+-- work here: Blizzard's handler swaps to the parent map first, so the hook
+-- would read the wrong map and the wrong coordinates.
 -- ---------------------------------------------------------------------------
 local hooked = false
 
 local function HookWorldMap()
     if hooked then return end
-    if not (WorldMapFrame and WorldMapFrame.ScrollContainer) then return end
+    if not (WorldMapFrame and WorldMapFrame.AddCanvasClickHandler) then return end
     hooked = true
-    WorldMapFrame.ScrollContainer:HookScript("OnMouseUp", function(container, mouseButton)
-        if mouseButton ~= "RightButton" or not IsControlKeyDown() then return end
-        if not CommanderOrdersDB.EnableOrders then return end
-        local x, y = container:GetNormalizedCursorPosition()
-        local mapID = WorldMapFrame:GetMapID()
+    WorldMapFrame:AddCanvasClickHandler(function(map, mouseButton, x, y)
+        if mouseButton ~= "RightButton" or not IsControlKeyDown() then return false end
+        if not CommanderOrdersDB.EnableOrders then return false end
+        local mapID = (map.GetMapID and map:GetMapID()) or WorldMapFrame:GetMapID()
         if mapID and x and y and x > 0 and x < 1 and y > 0 and y < 1 then
             SetOrder(mapID, x, y)
+            -- Consume the click either way so the ctrl-click gesture never
+            -- doubles as the map's zoom-out
+            return true
         end
+        return false
     end)
 end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
-events:SetScript("OnEvent", function(self, event)
+events:RegisterEvent("ADDON_LOADED")
+events:SetScript("OnEvent", function(self, event, addonName)
     if event == "PLAYER_LOGIN" then
         HookWorldMap()
         Commander.AddListener(COMMANDER_ORDERS_EVENTS.UPDATE, function()
@@ -166,5 +201,8 @@ events:SetScript("OnEvent", function(self, event)
                 arrow:Hide()
             end
         end)
+    elseif event == "ADDON_LOADED" and addonName == "Blizzard_WorldMap" then
+        -- The world map UI can be load-on-demand; hook it whenever it appears
+        HookWorldMap()
     end
 end)

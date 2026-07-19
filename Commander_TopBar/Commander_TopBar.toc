@@ -7,6 +7,7 @@
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderTopBarDB
 ## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Console
 
 CommanderTopBarDB.lua
 CommanderTopBar.lua

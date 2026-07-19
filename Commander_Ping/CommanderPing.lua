@@ -63,17 +63,8 @@ function CommanderPing_Test()
     end
 end
 
-local events = CreateFrame("Frame")
--- The 2.5.6 anniversary client rejects unknown event names with a hard error
--- (which, at file scope, would kill the whole module) — and MINIMAP_PING's
--- availability differs across client flavors. Register defensively; when the
--- event is absent, the module still loads and /cping test works.
-local pingEventOK = pcall(events.RegisterEvent, events, "MINIMAP_PING")
-if not pingEventOK then
-    -- Ping detection unavailable on this client build; flash/test remain usable
-    CommanderPing_EventUnavailable = true
-end
-events:SetScript("OnEvent", function(self, event, unit, x, y)
+-- MINIMAP_PING's documented payload order is (unitTarget, Y, X) — y first.
+local function OnPing(unit, y, x)
     if not (CommanderPingDB and CommanderPingDB.EnablePing) then return end
     local isOwn = UnitIsUnit and UnitIsUnit(unit, "player")
     if isOwn and not CommanderPingDB.IncludeOwnPings then return end
@@ -86,4 +77,20 @@ events:SetScript("OnEvent", function(self, event, unit, x, y)
         local name = UnitName(unit) or "Someone"
         print(string.format("|cff40c0ffCommander Ping:|r %s pinged the minimap", name))
     end
-end)
+end
+
+-- The 2.5.6 patch made MINIMAP_PING a callback-only event: RegisterEvent
+-- raises "unknown event" for it (Blizzard's own minimap switched to
+-- RegisterEventCallback in the same patch). Pick the mechanism the client
+-- actually supports; everything is guarded so the module always loads.
+local events = CreateFrame("Frame")
+if C_EventUtils and C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("MINIMAP_PING") then
+    events:RegisterEvent("MINIMAP_PING")
+    events:SetScript("OnEvent", function(self, event, unit, y, x)
+        OnPing(unit, y, x)
+    end)
+elseif events.RegisterEventCallback then
+    pcall(events.RegisterEventCallback, events, "MINIMAP_PING", function(owner, unit, y, x)
+        OnPing(unit, y, x)
+    end)
+end

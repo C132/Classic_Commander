@@ -45,11 +45,31 @@ end)
 local idleSince
 local alerted = false
 
+-- Standing at a vendor, mailbox, auctioneer, quest giver, bank, trainer, or
+-- flight master is work, not idling — suppress while any of these are open
+-- (AuctionFrame is load-on-demand, hence the nil guards)
+local INTERACTION_FRAMES = {
+    "MerchantFrame", "MailFrame", "AuctionFrame", "TradeFrame",
+    "GossipFrame", "QuestFrame", "BankFrame", "TaxiFrame",
+    "ClassTrainerFrame", "CraftFrame", "TradeSkillFrame",
+}
+
+local function IsInteracting()
+    for _, name in ipairs(INTERACTION_FRAMES) do
+        local interactionFrame = _G[name]
+        if interactionFrame and interactionFrame.IsShown and interactionFrame:IsShown() then
+            return true
+        end
+    end
+    return false
+end
+
 local function IsIdleNow()
     if UnitAffectingCombat("player") then return false end
     if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then return false end
     if UnitCastingInfo("player") or UnitChannelInfo("player") then return false end
     if (GetUnitSpeed("player") or 0) > 0 then return false end
+    if IsInteracting() then return false end
     if IsResting() and not CommanderIdleDB.IdleWhileResting then return false end
     return true
 end

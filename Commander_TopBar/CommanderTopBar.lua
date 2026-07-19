@@ -45,6 +45,16 @@ end
 local function ApplyStyle()
     local style = CommanderTopBarDB.BarStyle or "NONE"
     if style == "CONSOLE" then
+        -- Without Commander_Console installed the rail texture file doesn't
+        -- exist and would render as nothing; fall back to the dark strip so
+        -- the dropdown choice always does something visible
+        local consoleInstalled = CommanderConsole_Colors ~= nil
+            or (C_AddOns and pcall(C_AddOns.GetAddOnInfo, "Commander_Console"))
+        if not consoleInstalled then
+            style = "DARK"
+        end
+    end
+    if style == "CONSOLE" then
         -- The console rail band (bottom 20% of the overlay art), flipped
         -- vertically so its finished border edge faces down
         background:SetTexture(CONSOLE_TEXTURE)
@@ -150,10 +160,12 @@ end
 local function UpdateAmmo()
     local segment = segments.ammo
     if not CommanderTopBarDB.ShowAmmo then segment:Hide() return end
-    -- Slot 0 is the ammo slot; count is nil/0 for classes without ammo
+    -- Slot 0 is the ammo slot; count is 0/nil for classes without ammo.
+    -- count < 1 (not <= 1): the last arrow is exactly when the red warning
+    -- matters most
     local count = GetInventoryItemCount("player", 0)
     local texture = GetInventoryItemTexture("player", 0)
-    if not count or count <= 1 or not texture then
+    if not count or count < 1 or not texture then
         segment:Hide()
         return
     end
@@ -289,6 +301,9 @@ events:SetScript("OnEvent", function(self, event)
         ResetXPRate()
         sessionStart = GetTime()
         moneyAtLogin = GetMoney()
+        -- Seed the XP watermark now, or the first gain of the session
+        -- (e.g. a saved quest turn-in) would be silently uncounted
+        events.lastXP = UnitXP("player") or 0
         Commander.AddListener(COMMANDER_TOPBAR_EVENTS.UPDATE, ApplyEnabled)
         -- Re-tint live when the console's color setting changes, so the
         -- CONSOLE style always matches the lower console
