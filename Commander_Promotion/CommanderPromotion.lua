@@ -3,7 +3,7 @@
 -- a strong gold vignette burst (Impact's WorldFrame technique), a
 -- PROMOTION banner, and the gains lined up underneath.
 
-local BANNER_HOLD = 5
+local BANNER_HOLD = 8
 
 -- Flat white texture, not the LowHealth vignette: that art is itself red,
 -- so vertex-tinting it gold still renders red. A white fill tinted gold
@@ -36,19 +36,54 @@ local function GoldBurst()
 end
 
 local banner = CreateFrame("Frame", "CommanderPromotionBanner", UIParent)
-banner:SetSize(600, 90)
-banner:SetPoint("TOP", UIParent, "TOP", 0, -140)
+banner:SetSize(600, 220)
+banner:SetPoint("TOP", UIParent, "TOP", 0, -110)
 banner:SetFrameStrata("HIGH")
 banner:Hide()
+
+-- Twin star rays spinning in opposite directions behind the numeral —
+-- the client's cooldown-flash star art, tinted gold, additive
+local rayA = banner:CreateTexture(nil, "BACKGROUND")
+rayA:SetTexture("Interface\\Cooldown\\star4")
+rayA:SetBlendMode("ADD")
+rayA:SetVertexColor(1, 0.82, 0.15, 0.8)
+rayA:SetSize(320, 320)
+rayA:SetPoint("CENTER", banner, "TOP", 0, -110)
+
+local rayB = banner:CreateTexture(nil, "BACKGROUND")
+rayB:SetTexture("Interface\\Cooldown\\star4")
+rayB:SetBlendMode("ADD")
+rayB:SetVertexColor(1, 0.6, 0.1, 0.6)
+rayB:SetSize(240, 240)
+rayB:SetPoint("CENTER", banner, "TOP", 0, -110)
+
+local rayRotation = 0
+banner:SetScript("OnUpdate", function(self, elapsed)
+    rayRotation = rayRotation + elapsed * 0.7
+    rayA:SetRotation(rayRotation)
+    rayB:SetRotation(-rayRotation * 1.4)
+end)
 
 local headline = banner:CreateFontString(nil, "OVERLAY")
 headline:SetFontObject(GameFontNormalHuge)
 headline:SetPoint("TOP", banner, "TOP", 0, 0)
 headline:SetTextColor(1, 0.82, 0.15)
 
+-- The oversized golden numeral is the centerpiece
+local numeral = banner:CreateFontString(nil, "OVERLAY")
+numeral:SetFontObject(GameFontNormalHuge)
+do
+    local fontPath = numeral:GetFont()
+    if fontPath then
+        numeral:SetFont(fontPath, 64, "THICKOUTLINE")
+    end
+end
+numeral:SetPoint("TOP", headline, "BOTTOM", 0, -10)
+numeral:SetTextColor(1, 0.85, 0.2)
+
 local subline = banner:CreateFontString(nil, "OVERLAY")
 subline:SetFontObject(GameFontNormal)
-subline:SetPoint("TOP", headline, "BOTTOM", 0, -6)
+subline:SetPoint("TOP", numeral, "BOTTOM", 0, -8)
 subline:SetTextColor(0.95, 0.95, 0.95)
 
 local statline = banner:CreateFontString(nil, "OVERLAY")
@@ -63,7 +98,8 @@ local function ShowCeremony(level, hp, power, str, agi, stam, int, spi)
     local myGeneration = generation
 
     headline:SetText("PROMOTION")
-    subline:SetText(string.format("Level %d attained", level))
+    numeral:SetText(tostring(level))
+    subline:SetText("The war council salutes your new rank")
 
     if CommanderPromotionDB.StatReadout then
         local parts = {}
@@ -89,11 +125,29 @@ local function ShowCeremony(level, hp, power, str, agi, stam, int, spi)
     end
 
     banner:Show()
+    -- Ceremony timeline: three staggered golden bursts and a layered
+    -- fanfare — promotions are rare, they get the full parade
     if CommanderPromotionDB.PromotionFlash then
         GoldBurst()
+        C_Timer.After(0.45, function()
+            if generation == myGeneration then GoldBurst() end
+        end)
+        C_Timer.After(0.95, function()
+            if generation == myGeneration then GoldBurst() end
+        end)
     end
     if CommanderPromotionDB.PromotionSound then
-        PlaySound(SOUNDKIT.READY_CHECK, "Master")
+        PlaySound(SOUNDKIT.RAID_WARNING, "Master")
+        C_Timer.After(0.4, function()
+            if generation == myGeneration then
+                PlaySound(SOUNDKIT.READY_CHECK, "Master")
+            end
+        end)
+        C_Timer.After(0.9, function()
+            if generation == myGeneration then
+                PlaySound(SOUNDKIT.IG_QUEST_LIST_COMPLETE, "Master")
+            end
+        end)
     end
     C_Timer.After(BANNER_HOLD, function()
         if generation == myGeneration then
