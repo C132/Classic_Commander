@@ -316,11 +316,9 @@ end
 
 -- opts: label, tooltip, options ({text=, value=}...), get, set, width,
 --       isEnabled, onSelect
-function PanelMethods.AddDropdown(panel, opts)
-    local row = panel:AddRow(52, 8)
-
+local function BuildDropdown(panel, row, opts, xOffset, defaultWidth)
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    label:SetPoint("TOPLEFT", row, "TOPLEFT", 2, 0)
+    label:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset + 2, 0)
     label:SetText(opts.label)
 
     -- UIDropDownMenu_EnableDropDown/DisableDropDown resolve child regions via
@@ -328,8 +326,8 @@ function PanelMethods.AddDropdown(panel, opts)
     -- unique global name.
     dropdownCounter = dropdownCounter + 1
     local dropdown = CreateFrame("Frame", "CommanderUIDropDown" .. dropdownCounter, row, "UIDropDownMenuTemplate")
-    dropdown:SetPoint("TOPLEFT", row, "TOPLEFT", -14, -14)
-    UIDropDownMenu_SetWidth(dropdown, opts.width or DROPDOWN_WIDTH)
+    dropdown:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset - 14, -14)
+    UIDropDownMenu_SetWidth(dropdown, opts.width or defaultWidth)
     -- The template's arrow button forwards OnEnter/OnLeave to the parent, but
     -- only covers its own 24px; enable mouse on the container so the tooltip
     -- also shows when hovering the dropdown's text area
@@ -381,6 +379,20 @@ function PanelMethods.AddDropdown(panel, opts)
     end)
 
     return dropdown
+end
+
+function PanelMethods.AddDropdown(panel, opts)
+    local row = panel:AddRow(52, 8)
+    return BuildDropdown(panel, row, opts, 0, DROPDOWN_WIDTH)
+end
+
+-- Two compact dropdowns sharing one row — the AddCheckboxPair trick for
+-- dropdowns. Each opts table is the AddDropdown shape; right may be nil.
+function PanelMethods.AddDropdownPair(panel, left, right)
+    local row = panel:AddRow(52, 8)
+    local leftDropdown = BuildDropdown(panel, row, left, 0, 120)
+    local rightDropdown = right and BuildDropdown(panel, row, right, 270, 120) or nil
+    return leftDropdown, rightDropdown
 end
 
 -- buttons: array of {label, onClick, tooltip, width, isEnabled}
@@ -921,12 +933,12 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
     local enabled = opts.isEnabled
     panel:AddDropdown({
         label = "Frame Style",
-        tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing; Inventory Window turns it into a little window with a title bar, lock and close buttons, and a resize grip.",
+        tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing; Window turns it into a little window with a title bar, lock and close buttons, and a resize grip.",
         options = {
             { text = "None", value = "NONE" },
             { text = "Classic Panel", value = "CLASSIC" },
             { text = "Dark Panel", value = "DARK" },
-            { text = "Inventory Window", value = "WINDOW" },
+            { text = "Window", value = "WINDOW" },
         },
         get = function() return db[prefix .. "Style"] or "NONE" end,
         set = function(value) db[prefix .. "Style"] = value end,

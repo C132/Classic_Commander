@@ -13,6 +13,7 @@ local DefaultSettings = {
     FixedHeight = false,
     Layout = "BARS_DOWN",
     BarWidth = 110,
+    CooldownOverlay = "BAR",
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
     DefaultSettings[key] = value
@@ -51,17 +52,28 @@ local function CreateOptionsPanel()
         set = function(value) CommanderProductionDB.AlwaysShow = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
-    panel:AddDropdown({
+    panel:AddDropdownPair({
         label = "Layout",
-        tooltip = "Bars list spells with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching left to right with a slim progress bar under each (hover an icon for details).",
+        tooltip = "Bars list spells with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching left to right (hover an icon for the full spell tooltip).",
         options = {
             { text = "Bars — grow down", value = "BARS_DOWN" },
             { text = "Bars — grow up", value = "BARS_UP" },
             { text = "Icon Strip", value = "ICONS" },
         },
-        width = 160,
         get = function() return CommanderProductionDB.Layout end,
         set = function(value) CommanderProductionDB.Layout = value end,
+        isEnabled = function() return CommanderProductionDB.EnableProduction end,
+    }, {
+        label = "Cooldown Overlay",
+        tooltip = "How each icon shows its cooldown progress: the slim Progress Bar, a classic Radial Sweep over the icon, both at once, or a Timer Text countdown. Sweep and Timer also apply to the small icons in the Bars layouts.",
+        options = {
+            { text = "Progress Bar", value = "BAR" },
+            { text = "Radial Sweep", value = "SWEEP" },
+            { text = "Sweep + Bar", value = "BOTH" },
+            { text = "Timer Text", value = "TEXT" },
+        },
+        get = function() return CommanderProductionDB.CooldownOverlay end,
+        set = function(value) CommanderProductionDB.CooldownOverlay = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
     panel:AddSlider({

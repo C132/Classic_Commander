@@ -49,11 +49,52 @@ local function AcquireRow(index)
     row.label:SetFontObject(GameFontHighlightSmall)
     row.label:SetJustifyH("LEFT")
 
-    -- Icon-strip entries have no label; the tooltip carries the details
+    -- Optional per-icon cooldown overlays: a radial sweep and a countdown
+    -- text, toggled by the Cooldown Overlay setting
+    row.sweep = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
+    row.sweep:SetAllPoints(row.icon)
+    if row.sweep.SetHideCountdownNumbers then
+        row.sweep:SetHideCountdownNumbers(true)
+    end
+    if row.sweep.SetDrawEdge then
+        row.sweep:SetDrawEdge(false)
+    end
+    row.sweep:Hide()
+    local timerHolder = CreateFrame("Frame", nil, row)
+    timerHolder:SetAllPoints(row.icon)
+    timerHolder:SetFrameLevel((row.sweep:GetFrameLevel() or 1) + 2)
+    row.timer = timerHolder:CreateFontString(nil, "OVERLAY")
+    row.timer:SetFontObject(GameFontHighlightSmall)
+    do
+        local fontPath, fontSize = row.timer:GetFont()
+        if fontPath then
+            row.timer:SetFont(fontPath, fontSize or 10, "OUTLINE")
+        end
+    end
+    row.timer:SetPoint("CENTER", row.icon, "CENTER", 0, 0)
+    row.timer:Hide()
+
+    -- Full spell tooltip on hover (falls back to name + remaining when the
+    -- spell can't be resolved); hover-only mouse so chrome drags pass
     if row.EnableMouseMotion then
         row:EnableMouseMotion(true)
     end
-    Commander.UI.AttachTooltip(row, nil, function() return row.tipText end)
+    row:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.spellID and GameTooltip.SetSpellByID then
+            GameTooltip:SetSpellByID(self.spellID)
+            if self.tipText then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(self.tipText, 0.3, 1, 0.4)
+            end
+        else
+            GameTooltip:SetText(self.tipText or "")
+        end
+        GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
 
     rowPool[index] = row
     return row
@@ -131,9 +172,15 @@ local function Sweep()
                     stillOn[name] = true
                     local entry = active[name]
                     if not entry then
+                        local spellID
+                        if GetSpellBookItemInfo then
+                            local _, id = GetSpellBookItemInfo(slot, BOOKTYPE)
+                            spellID = id
+                        end
                         active[name] = {
                             texture = GetSpellBookItemTexture(slot, BOOKTYPE),
                             start = start, duration = duration,
+                            spellID = spellID,
                         }
                     else
                         entry.start, entry.duration = start, duration
@@ -183,13 +230,37 @@ local function Draw()
         end
         local item = queue[i]
         local progress = 1 - (item.remaining / item.entry.duration)
+        local overlay = CommanderProductionDB.CooldownOverlay or "BAR"
         row.icon:SetTexture(item.entry.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+        -- In the icon strip the slim bar is itself an overlay choice; in
+        -- the bar layouts the big bar is the row and always stays
+        local showBar = layout ~= "ICONS" or overlay == "BAR" or overlay == "BOTH"
+        row.barBG:SetShown(showBar)
+        row.bar:SetShown(showBar)
         if layout == "ICONS" then
             row.bar:SetSize(math.max(ICON_SIZE * progress, 1), ICON_BAR_HEIGHT)
         else
             row.bar:SetSize(math.max(barWidth * progress, 1), BAR_HEIGHT)
             row.label:SetText(string.format("%s  %s", item.name, FormatRemaining(item.remaining)))
         end
+        if overlay == "SWEEP" or overlay == "BOTH" then
+            local sweepSig = tostring(item.entry.start) .. ":" .. tostring(item.entry.duration)
+            if row.sweepSig ~= sweepSig then
+                row.sweepSig = sweepSig
+                row.sweep:SetCooldown(item.entry.start, item.entry.duration)
+            end
+            row.sweep:Show()
+        else
+            row.sweepSig = nil
+            row.sweep:Hide()
+        end
+        if overlay == "TEXT" then
+            row.timer:SetText(FormatRemaining(item.remaining))
+            row.timer:Show()
+        else
+            row.timer:Hide()
+        end
+        row.spellID = item.entry.spellID
         row.tipText = string.format("%s — %s", item.name, FormatRemaining(item.remaining))
         row:Show()
     end
