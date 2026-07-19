@@ -13,6 +13,7 @@ local DefaultSettings = {
     HoldTime = 2.5,
     BoardAlwaysVisible = false,
     BoardHold = 6,
+    CompleteEmotes = true,
     EnabledObjectives = {},
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Board", "DARK")) do
@@ -114,11 +115,17 @@ local function CreateBoardPanel()
         event = COMMANDER_OBJECTIVES_EVENTS.UPDATE,
     })
 
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Always Visible",
         tooltip = "Keep the board on screen at all times. Off, it surfaces when an objective progresses and fades again after the linger time.",
         get = function() return CommanderObjectivesDB.BoardAlwaysVisible end,
         set = function(value) CommanderObjectivesDB.BoardAlwaysVisible = value end,
+        isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
+    }, {
+        label = "Objective Emotes",
+        tooltip = "Announce each completed board objective to everyone nearby as a custom emote, with your running board tally (\"...completes a mission objective — Head Count! (3 of 18 on the board)\"). Public.",
+        get = function() return CommanderObjectivesDB.CompleteEmotes end,
+        set = function(value) CommanderObjectivesDB.CompleteEmotes = value end,
         isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
     })
     panel:AddSlider({

@@ -232,6 +232,22 @@ end
 
 local TouchBoard -- forward-declared; defined with the board below
 
+-- Completed board objectives can go out as a custom emote so the group
+-- watches the objectives fall as you clear — with the running board tally
+local function AnnounceCompletion(def)
+    if not CommanderObjectivesDB.CompleteEmotes then return end
+    local done, total = 0, 0
+    for _, d in ipairs(ROSTER) do
+        if ObjectiveEnabled(d) then
+            total = total + 1
+            if op.completed[d.key] then done = done + 1 end
+        end
+    end
+    SendChatMessage(string.format(
+        "completes a mission objective — %s! (%d of %d on the board)",
+        def.label, done, total), "EMOTE")
+end
+
 local function CheckCompletions()
     if not op then return end
     for _, def in ipairs(ROSTER) do
@@ -239,6 +255,7 @@ local function CheckCompletions()
             and Progress(def) >= def.target then
             op.completed[def.key] = true
             ShowBanner("OBJECTIVE COMPLETE", def.label, COLOR_SECURED, true, true)
+            AnnounceCompletion(def)
         end
     end
 end
