@@ -5,6 +5,7 @@
 ## Version: 2.1.0
 ## Notes: Event system for Commander
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
+## SavedVariables: CommanderTelemetryDB
 
 CommanderSettingsUI.lua
 CommanderEvents.lua
