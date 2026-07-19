@@ -66,7 +66,7 @@ end
 local AAR_LINES = 6
 
 local aar = CreateFrame("Frame", "CommanderEconomyAAR", UIParent, "BackdropTemplate")
-aar:SetSize(360, 236)
+aar:SetSize(420, 236)
 aar:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
 aar:SetFrameStrata("DIALOG")
 aar:SetBackdrop({
@@ -103,6 +103,10 @@ for i = 1, AAR_LINES do
     line:SetPoint("TOPLEFT", aar, "TOPLEFT", 26, -62 - (i - 1) * 24)
     line:SetPoint("RIGHT", aar, "RIGHT", -26, 0)
     line:SetJustifyH("LEFT")
+    -- Truncate rather than wrap: a wrapped line would overlap the next row
+    if line.SetWordWrap then
+        line:SetWordWrap(false)
+    end
     aarLines[i] = line
 end
 
@@ -161,35 +165,67 @@ local function DurationString(elapsed)
     return string.format("%dm", minutes)
 end
 
+-- A dungeon run is not over just because the player briefly left the
+-- instance: ghost releases, meeting-stone summons, and BG queue pops all
+-- exit and return. The segment only finalizes after a grace period spent
+-- genuinely outside (or when a different instance begins).
+local EXIT_GRACE = 180
+local pendingExit = nil   -- { snap, at }
+
+local function FinalizeSegment(snap)
+    local elapsed = GetTime() - snap.start
+    lastInstanceReport = {
+        name = snap.name,
+        goldEarned = goldEarned - snap.goldEarned,
+        goldSpent = goldSpent - snap.goldSpent,
+        xpGained = xpGained - snap.xpGained,
+        quests = questsTurnedIn - snap.quests,
+        deaths = deaths - snap.deaths,
+        loot = lootCount - snap.loot,
+        lootRare = lootRarePlus - snap.lootRare,
+        duration = DurationString(elapsed),
+        elapsed = elapsed,
+    }
+    if CommanderEconomyDB.EnableEconomy and CommanderEconomyDB.AutoInstanceReport then
+        CommanderEconomy_ShowReport("instance")
+    end
+end
+
 local function CheckInstanceSegment()
     local inInstance, instanceType = IsInInstance()
     local tracking = inInstance and (instanceType == "party" or instanceType == "raid")
-    if tracking and not instanceSnap then
-        instanceSnap = {
-            name = GetInstanceInfo() or "Instance",
-            start = GetTime(),
-            goldEarned = goldEarned, goldSpent = goldSpent, xpGained = xpGained,
-            quests = questsTurnedIn, deaths = deaths,
-            loot = lootCount, lootRare = lootRarePlus,
-        }
-    elseif not tracking and instanceSnap then
-        local elapsed = GetTime() - instanceSnap.start
-        lastInstanceReport = {
-            name = instanceSnap.name,
-            goldEarned = goldEarned - instanceSnap.goldEarned,
-            goldSpent = goldSpent - instanceSnap.goldSpent,
-            xpGained = xpGained - instanceSnap.xpGained,
-            quests = questsTurnedIn - instanceSnap.quests,
-            deaths = deaths - instanceSnap.deaths,
-            loot = lootCount - instanceSnap.loot,
-            lootRare = lootRarePlus - instanceSnap.lootRare,
-            duration = DurationString(elapsed),
-            elapsed = elapsed,
-        }
-        instanceSnap = nil
-        if CommanderEconomyDB.EnableEconomy and CommanderEconomyDB.AutoInstanceReport then
-            CommanderEconomy_ShowReport("instance")
+    if tracking then
+        local name = GetInstanceInfo() or "Instance"
+        if pendingExit then
+            if pendingExit.snap.name == name then
+                -- Back in the same run within the grace period: resume
+                instanceSnap = pendingExit.snap
+                pendingExit = nil
+                return
+            end
+            FinalizeSegment(pendingExit.snap)
+            pendingExit = nil
         end
+        if not instanceSnap then
+            instanceSnap = {
+                name = name,
+                start = GetTime(),
+                goldEarned = goldEarned, goldSpent = goldSpent, xpGained = xpGained,
+                quests = questsTurnedIn, deaths = deaths,
+                loot = lootCount, lootRare = lootRarePlus,
+            }
+        end
+    elseif instanceSnap then
+        -- Ghost releases land outside the instance; ignore them entirely
+        if UnitIsDeadOrGhost("player") then return end
+        pendingExit = { snap = instanceSnap, at = GetTime() }
+        instanceSnap = nil
+        C_Timer.After(EXIT_GRACE, function()
+            if pendingExit and (GetTime() - pendingExit.at) >= (EXIT_GRACE - 1) then
+                FinalizeSegment(pendingExit.snap)
+                pendingExit = nil
+            end
+        end)
     end
 end
 
@@ -284,7 +320,8 @@ events:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_XP_UPDATE" then
         OnXP()
     elseif event == "PLAYER_DEAD" then
-        if not deadNow then
+        -- Feign Death can emit PLAYER_DEAD without the unit being dead
+        if not deadNow and UnitIsDeadOrGhost("player") then
             deaths = deaths + 1
             deadNow = true
         end

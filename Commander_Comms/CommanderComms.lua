@@ -111,6 +111,13 @@ end
 local function CheckAutoEmotes()
     if not (CommanderCommsDB and CommanderCommsDB.EnableComms
         and CommanderCommsDB.AutoEmote) then return end
+    -- Dead units don't call for heals; death also re-arms both triggers so
+    -- a battle res or run-back starts with fresh alarms
+    if UnitIsDeadOrGhost("player") then
+        autoState.HEALME.armed = true
+        autoState.OOM.armed = true
+        return
+    end
     if not UnitAffectingCombat("player") then return end
 
     local health = UnitHealth("player")
@@ -166,8 +173,14 @@ end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
-events:RegisterEvent("UNIT_HEALTH")
-events:RegisterEvent("UNIT_POWER_UPDATE")
+-- Player-only registration: these fire constantly for every visible unit
+if events.RegisterUnitEvent then
+    events:RegisterUnitEvent("UNIT_HEALTH", "player")
+    events:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
+else
+    events:RegisterEvent("UNIT_HEALTH")
+    events:RegisterEvent("UNIT_POWER_UPDATE")
+end
 events:SetScript("OnEvent", function(self, event, unit)
     if event == "PLAYER_LOGIN" then
         Commander.AddListener(COMMANDER_COMMS_EVENTS.UPDATE, function()

@@ -34,6 +34,7 @@ local chatElements = {
 -- Readability: short channel tags, timestamps, fade control, combat quiet
 -- ---------------------------------------------------------------------------
 local inCombat = false
+local hiddenTabs = {}
 
 local CHANNEL_TAGS = {
     { "%[Party Leader%]", "[PL]" },
@@ -73,8 +74,17 @@ local function InstallChannelTagHooks()
 end
 
 local function ApplyReadability()
+    -- Only write the timestamps CVar while this addon owns the setting:
+    -- turning our toggle on claims it, turning it off releases it once.
+    -- A user who configured timestamps outside the addon is never clobbered.
     if SetCVar then
-        SetCVar("showTimestamps", CommanderChatDB.Timestamps and "%H:%M " or "none")
+        if CommanderChatDB.Timestamps then
+            SetCVar("showTimestamps", "%H:%M ")
+            CommanderChatDB.TimestampsApplied = true
+        elseif CommanderChatDB.TimestampsApplied then
+            SetCVar("showTimestamps", "none")
+            CommanderChatDB.TimestampsApplied = nil
+        end
     end
     for i = 1, (NUM_CHAT_WINDOWS or 10) do
         local chatFrame = _G["ChatFrame" .. i]
@@ -105,14 +115,32 @@ local function UpdateChatVisibility()
     local chatFrame = _G["ChatFrame1"]
     if chatFrame and chatFrame.Tab then
         chatFrame.Tab:SetShown(isVisible)
-        chatFrame.Tab:SetAlpha(isVisible and 1 or 0)
+        chatFrame.Tab:SetAlpha(isVisible and windowAlpha or 0)
     end
-    
+
+    -- Remember which secondary tabs WE hid: on re-show, `IsShown()` is
+    -- false for exactly the tabs we need to restore, so filtering on it
+    -- when showing would leave them hidden forever
     for i = 2, NUM_CHAT_WINDOWS do
         local tab = _G["ChatFrame" .. i .. "Tab"]
-        if tab and tab:IsShown() then
-            tab:SetShown(isVisible)
-            tab:SetAlpha(isVisible and 1 or 0)
+        local secondaryFrame = _G["ChatFrame" .. i]
+        if tab then
+            if not isVisible then
+                if tab:IsShown() then
+                    hiddenTabs[i] = true
+                    tab:SetShown(false)
+                    tab:SetAlpha(0)
+                end
+            elseif hiddenTabs[i] then
+                hiddenTabs[i] = nil
+                tab:SetShown(true)
+            end
+            if isVisible and tab:IsShown() then
+                tab:SetAlpha(windowAlpha)
+                if secondaryFrame and secondaryFrame:IsShown() then
+                    secondaryFrame:SetAlpha(windowAlpha)
+                end
+            end
         end
     end
 end
@@ -149,6 +177,8 @@ end
 
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+frame:RegisterEvent("CHAT_MSG_PARTY_LEADER")
+pcall(frame.RegisterEvent, frame, "CHAT_MSG_BN_WHISPER")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -163,11 +193,14 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         inCombat = false
         UpdateChatVisibility()
-    elseif event == "CHAT_MSG_WHISPER" then
+    elseif event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER" then
         PlaySoundPing("whisper")
-    elseif event == "CHAT_MSG_PARTY" then
+    elseif event == "CHAT_MSG_PARTY" or event == "CHAT_MSG_PARTY_LEADER" then
         PlaySoundPing("party")
     elseif loaded and CommanderChatDB.ShowChatWindow == false then
-        OnUpdate()
+        -- Blizzard re-shows chat elements on new messages; keep them
+        -- hidden. Visibility only — no need to re-run CVar/fading writes
+        -- on every incoming chat line.
+        UpdateChatVisibility()
     end
 end)

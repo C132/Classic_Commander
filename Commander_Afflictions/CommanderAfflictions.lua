@@ -12,7 +12,9 @@ local BAR_WIDTH = 130
 local BAR_HEIGHT = 12
 local ROW_GAP = 4
 local DRAW_THROTTLE = 0.1
-local UNKNOWN_MAX_AGE = 40
+-- Fallback prune for entries whose expiration was never pinned by a scan;
+-- generous because unscanned curses/DoTs can legitimately run 2 minutes
+local UNKNOWN_MAX_AGE = 120
 
 local active = {}   -- key destGUID..spellID -> entry
 local rowPool = {}
@@ -178,7 +180,8 @@ local function Draw()
     for i = shown + 1, #rowPool do
         rowPool[i]:Hide()
     end
-    root:SetShown(shown > 0)
+    root:SetSize(BAR_WIDTH + 20, math.max(shown, 1) * (BAR_HEIGHT + ROW_GAP))
+    root:SetShown(shown > 0 or Commander.UI.HudUnlocked(CommanderAfflictionsDB, "Hud"))
 end
 
 root:SetScript("OnUpdate", function(self, elapsed)
@@ -198,29 +201,39 @@ local AURA_REMOVE_EVENTS = {
     SPELL_AURA_REMOVED = true,
     SPELL_AURA_BROKEN = true,
     SPELL_AURA_BROKEN_SPELL = true,
-    SPELL_AURA_STOLEN = true,
+    SPELL_STOLEN = true,
     SPELL_DISPEL = true,
 }
 
 local function OnCombatLog()
     local _, subevent, _, sourceGUID, _, _, _, destGUID, destName,
-        _, _, spellID, spellName, _, extraID, extraName = CombatLogGetCurrentEventInfo()
+        destFlags, _, spellID, spellName, _, arg15, arg16 = CombatLogGetCurrentEventInfo()
     if subevent == "UNIT_DIED" or subevent == "UNIT_DESTROYED" then
-        RemoveAllForGUID(destGUID)
+        -- Only wipe NPC deaths outright: player "deaths" include Feign
+        -- Death, and real player deaths emit REMOVED for each aura anyway
+        if destFlags and bit.band(destFlags, COMBATLOG_OBJECT_CONTROL_NPC) > 0 then
+            RemoveAllForGUID(destGUID)
+            Draw()
+        end
         return
     end
     if AURA_ADD_EVENTS[subevent] then
-        if sourceGUID == UnitGUID("player") then
+        -- arg15 is the aura type; buffs and HoTs the player casts on
+        -- friends are not afflictions
+        if sourceGUID == UnitGUID("player") and arg15 == "DEBUFF" then
             AddOrRefresh(destGUID, destName, spellID, spellName)
+            Draw()
         end
     elseif AURA_REMOVE_EVENTS[subevent] then
-        if subevent == "SPELL_DISPEL" or subevent == "SPELL_AURA_STOLEN" then
-            -- For dispels the removed aura is the EXTRA spell, and anyone
-            -- may be the dispeller — match on the affected unit + aura
-            RemoveByGUIDSpell(destGUID, extraID)
+        if subevent == "SPELL_DISPEL" or subevent == "SPELL_STOLEN" then
+            -- For dispels the removed aura is the EXTRA spell (arg16 name,
+            -- arg15 id), and anyone may be the dispeller — match on the
+            -- affected unit + aura
+            RemoveByGUIDSpell(destGUID, arg15)
         else
             RemoveByGUIDSpell(destGUID, spellID)
         end
+        Draw()
     end
 end
 
@@ -255,9 +268,11 @@ events:SetScript("OnEvent", function(self, event, arg1)
         OnCombatLog()
     elseif event == "PLAYER_TARGET_CHANGED" then
         ScanUnit("target")
+        Draw()
     elseif event == "UNIT_AURA" then
         if arg1 == "target" or arg1 == "mouseover" then
             ScanUnit(arg1)
+            Draw()
         end
     end
 end)

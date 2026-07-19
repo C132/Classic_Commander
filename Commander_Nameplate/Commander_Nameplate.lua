@@ -96,8 +96,19 @@ local function CreatePlayerNameplate()
         local health, maxHealth = UnitHealth("player"), UnitHealthMax("player")
         local mana, maxMana = UnitPower("player"), UnitPowerMax("player")
         local inCombat = UnitAffectingCombat("player")
-        
-        if health == maxHealth and mana == maxMana and not inCombat then
+
+        -- "Power is fine" means empty for rage (idles at 0), full for
+        -- mana/energy — a warrior at full health should not show a plate
+        -- forever just because rage is not maxed
+        local powerIdle
+        if UnitPowerType("player") == 1 then
+            powerIdle = (mana == 0)
+        else
+            powerIdle = (mana == maxMana)
+        end
+        local casting = UnitCastingInfo("player") or UnitChannelInfo("player")
+        if health == maxHealth and powerIdle and not inCombat and not casting
+            and not nameplate._dragging then
             nameplate:Hide()
             return
         else
@@ -137,6 +148,10 @@ local function CreatePlayerNameplate()
         nameplate.castBar:SetStatusBarColor(castColor[1], castColor[2], castColor[3])
         local hidePower = CommanderNameplateDB and CommanderNameplateDB.hidePowerBar
         local name, _, texture, startTime, endTime = UnitCastingInfo("player")
+        if not name then
+            -- Channels share the first five return positions
+            name, _, texture, startTime, endTime = UnitChannelInfo("player")
+        end
         if name then
             nameplate.castBar:Show()
             nameplate.manaBorderFrame:Show()
@@ -163,6 +178,9 @@ local function CreatePlayerNameplate()
         if CommanderNameplateDB then
             nameplate.name:SetShown(CommanderNameplateDB.showPlayerName)
             nameplate:SetScale(CommanderNameplateDB.plateScale or 1)
+            -- Mouse only while unlocked: a permanently mouse-enabled plate
+            -- silently eats clicks near the top-center of the screen
+            nameplate:EnableMouse(CommanderNameplateDB.unlockPlate or false)
             nameplate:SetAlpha(CommanderNameplateDB.fadeWhileMoving and IsPlayerMoving() and CommanderNameplateDB.fadeIntensity or 1)
         else
             nameplate.name:Show()
@@ -180,6 +198,9 @@ local function CreatePlayerNameplate()
     nameplate:SetScript("OnUpdate", function(self, elapsed)
         if self.castBar:IsShown() then
             local name, _, _, startTime = UnitCastingInfo("player")
+            if not name then
+                name, _, _, startTime = UnitChannelInfo("player")
+            end
             if name then
                 self.castBar:SetValue(GetTime() - startTime / 1000)
             end
@@ -194,21 +215,33 @@ local function CreatePlayerNameplate()
 end
 local playerNameplate = CreatePlayerNameplate()
 playerNameplate:SetMovable(true)
-playerNameplate:EnableMouse(true)
 playerNameplate:RegisterForDrag("LeftButton")
-playerNameplate:SetScript("OnDragStart", playerNameplate.StartMoving)
+playerNameplate:SetScript("OnDragStart", function(self)
+    self._dragging = true
+    self:StartMoving()
+end)
 playerNameplate:SetScript("OnDragStop", function(self)
+    self._dragging = false
     self:StopMovingOrSizing()
     local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
-    CommanderNameplateDB.position = {point, "UIParent", relativePoint, xOfs, yOfs}
+    -- Screen-space offsets (scale multiplied out) so a later Plate Scale
+    -- change keeps the plate where the user dragged it; the 6th field
+    -- marks the new format
+    local scale = self:GetScale() or 1
+    CommanderNameplateDB.position = {point, "UIParent", relativePoint, xOfs * scale, yOfs * scale, true}
 end)
 playerNameplate.Update()
 
 local function ApplySavedPosition()
     if CommanderNameplateDB and CommanderNameplateDB.position then
-        local point, _, relativePoint, xOfs, yOfs = unpack(CommanderNameplateDB.position)
+        local point, _, relativePoint, xOfs, yOfs, screenSpace = unpack(CommanderNameplateDB.position)
         playerNameplate:ClearAllPoints()
-        playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
+        if screenSpace then
+            local scale = CommanderNameplateDB.plateScale or 1
+            playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs / scale, yOfs / scale)
+        else
+            playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
+        end
     end
 end
 

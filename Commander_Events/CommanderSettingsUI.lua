@@ -633,6 +633,9 @@ function UI.HudChromeDefaults(prefix, styleDefault)
         [prefix .. "Style"] = styleDefault or "DARK",
         [prefix .. "Scale"] = 1.0,
         [prefix .. "Locked"] = true,
+        -- false (not nil) so Restore Defaults actually clears a saved drag
+        -- position: ResetToDefaults only writes keys present here
+        [prefix .. "Pos"] = false,
     }
 end
 
@@ -662,6 +665,13 @@ local HUD_STYLES = {
     },
 }
 
+-- True while the module's HUD frame is unlocked for dragging. Consumers
+-- must keep their frame SHOWN while unlocked (even with nothing to
+-- display) so there is something on screen to drag.
+function UI.HudUnlocked(db, prefix)
+    return not db[prefix .. "Locked"]
+end
+
 -- Re-appliable: call from the module's settings listener. opts:
 --   defaultPoint = {point=, x=, y=} (required) — position when no saved drag
 function UI.ApplyHudChrome(frame, db, prefix, opts)
@@ -671,52 +681,90 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
         frame._hudBackdrop:SetFrameLevel(math.max((frame:GetFrameLevel() or 1) - 1, 0))
         frame:SetMovable(true)
         frame:SetClampedToScreen(true)
-        frame:RegisterForDrag("LeftButton")
-        frame:SetScript("OnDragStart", function(self)
-            if not db[prefix .. "Locked"] then
-                self:StartMoving()
-            end
+
+        -- The drag surface is a dedicated overlay ABOVE the frame's
+        -- content: module content frequently has its own mouse-enabled
+        -- children (tooltip rows), which would otherwise swallow every
+        -- drag; and while unlocked the overlay doubles as the visual cue
+        -- even with Frame Style set to None. The root frame itself never
+        -- takes the mouse, so locked frames stay click-transparent.
+        local overlay = CreateFrame("Frame", nil, frame)
+        frame._hudDragOverlay = overlay
+        overlay:SetAllPoints(frame)
+        overlay:SetFrameLevel((frame:GetFrameLevel() or 1) + 10)
+        overlay:EnableMouse(true)
+        overlay:RegisterForDrag("LeftButton")
+        overlay.fill = overlay:CreateTexture(nil, "OVERLAY")
+        overlay.fill:SetTexture("Interface\\Buttons\\WHITE8X8")
+        overlay.fill:SetVertexColor(0.3, 1, 0.4, 0.25)
+        overlay.fill:SetAllPoints()
+        overlay.label = overlay:CreateFontString(nil, "OVERLAY")
+        overlay.label:SetFontObject(GameFontHighlightSmall)
+        overlay.label:SetPoint("CENTER")
+        overlay.label:SetText("DRAG")
+        overlay:Hide()
+        overlay:SetScript("OnDragStart", function()
+            frame._hudDragging = true
+            frame:StartMoving()
         end)
-        frame:SetScript("OnDragStop", function(self)
-            self:StopMovingOrSizing()
-            local point, _, _, x, y = self:GetPoint(1)
+        overlay:SetScript("OnDragStop", function()
+            frame._hudDragging = false
+            frame:StopMovingOrSizing()
+            local point, _, _, x, y = frame:GetPoint(1)
             if point then
-                db[prefix .. "Pos"] = { point = point, x = x, y = y }
+                -- Store offsets in SCREEN space (multiply out the frame's
+                -- scale) so a later scale change keeps the frame where the
+                -- user put it instead of migrating the anchor
+                local scale = frame:GetScale() or 1
+                db[prefix .. "Pos"] = { point = point, x = x * scale, y = y * scale }
             end
         end)
     end
 
-    frame:SetScale(db[prefix .. "Scale"] or 1)
+    local scale = db[prefix .. "Scale"] or 1
+    frame:SetScale(scale)
 
-    local pos = db[prefix .. "Pos"]
-    frame:ClearAllPoints()
-    if pos and pos.point then
-        frame:SetPoint(pos.point, UIParent, pos.point, pos.x or 0, pos.y or 0)
-    else
-        local p = opts.defaultPoint
-        frame:SetPoint(p.point, UIParent, p.point, p.x or 0, p.y or 0)
+    -- Never re-anchor mid-drag: throttled setting notifies would snap the
+    -- frame out of the user's hand
+    if not frame._hudDragging then
+        local pos = db[prefix .. "Pos"]
+        frame:ClearAllPoints()
+        if pos and pos.point then
+            frame:SetPoint(pos.point, UIParent, pos.point, (pos.x or 0) / scale, (pos.y or 0) / scale)
+        else
+            local p = opts.defaultPoint
+            frame:SetPoint(p.point, UIParent, p.point, p.x or 0, p.y or 0)
+        end
     end
 
-    local style = HUD_STYLES[db[prefix .. "Style"] or "NONE"]
+    local styleKey = db[prefix .. "Style"] or "NONE"
+    local style = HUD_STYLES[styleKey]
     local backdrop = frame._hudBackdrop
     if style then
-        backdrop:ClearAllPoints()
-        backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", -style.pad, style.pad)
-        backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", style.pad, -style.pad)
-        backdrop:SetBackdrop(style.backdrop)
+        if frame._hudStyleApplied ~= styleKey then
+            frame._hudStyleApplied = styleKey
+            backdrop:ClearAllPoints()
+            backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", -style.pad, style.pad)
+            backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", style.pad, -style.pad)
+            backdrop:SetBackdrop(style.backdrop)
+        end
         backdrop:SetBackdropColor(unpack(style.bg))
         backdrop:SetBackdropBorderColor(unpack(style.border))
         backdrop:Show()
     else
+        frame._hudStyleApplied = nil
         backdrop:Hide()
     end
 
-    -- Unlocked: take the mouse for dragging and show a green border cue.
-    -- Locked HUD frames stay mouse-transparent so they never eat clicks.
     local locked = db[prefix .. "Locked"]
-    frame:EnableMouse(not locked)
-    if not locked and style then
-        backdrop:SetBackdropBorderColor(0.3, 1, 0.4, 1)
+    frame._hudDragOverlay:SetShown(not locked)
+    if not locked then
+        if style then
+            backdrop:SetBackdropBorderColor(0.3, 1, 0.4, 1)
+        end
+        -- A hidden frame cannot be dragged; force it visible as a
+        -- placeholder while unlocked (consumers keep it shown too)
+        frame:Show()
     end
 end
 

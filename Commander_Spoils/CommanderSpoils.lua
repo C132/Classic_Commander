@@ -136,15 +136,20 @@ local function OnLoot(message)
     if not (message:find("You receive loot") or message:find("You receive item")) then return end
     local color, itemID, itemName = message:match("|c(%x%x%x%x%x%x%x%x)|Hitem:(%d+)[^|]*|h%[([^%]]+)%]")
     if not itemName then return end
+    -- Stack loots carry a count suffix after the link: "...|h|rx5."
+    local count = tonumber(message:match("|h|rx(%d+)")) or 1
     local quality = QUALITY_BY_COLOR[color:lower()] or 1
-    tally[quality] = (tally[quality] or 0) + 1
+    tally[quality] = (tally[quality] or 0) + count
 
     if quality < (CommanderSpoilsDB.MinQuality or 2) then return end
     local icon
     if C_Item and C_Item.GetItemInfo then
         icon = select(10, C_Item.GetItemInfo(tonumber(itemID)))
     end
-    PushToast(string.format("SUPPLY ACQUIRED: %s", itemName), icon, quality)
+    local label = count > 1
+        and string.format("SUPPLY ACQUIRED: %s x%d", itemName, count)
+        or string.format("SUPPLY ACQUIRED: %s", itemName)
+    PushToast(label, icon, quality)
     if quality >= 3 and CommanderSpoilsDB.SpoilsSound then
         PlaySound(SOUNDKIT.IG_QUEST_LIST_COMPLETE, "Master")
     end

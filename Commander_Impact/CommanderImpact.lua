@@ -75,21 +75,12 @@ local function OnCrit(amount)
     if not CommanderImpactDB.CritFlash then return end
     local threshold = CommanderImpactDB.CritThreshold or 400
     if amount < threshold then return end
-    -- Scale from base intensity at the threshold up to +50% at 3x threshold
+    -- 70% of Flash Intensity at the threshold, ramping to the full
+    -- configured intensity at 3x threshold — never brighter than the
+    -- slider promises
     local intensity = CommanderImpactDB.FlashIntensity or 0.4
-    local scale = math.min(amount / (threshold * 3), 1)
-    Pulse(1, 0.35, 0.1, intensity * (0.7 + 0.5 * scale))
-end
-
-local function ExtractDamage(subevent, ...)
-    if subevent == "SWING_DAMAGE" then
-        local amount, _, _, _, _, _, critical = select(12, ...)
-        return amount, critical
-    elseif subevent == "SPELL_DAMAGE" or subevent == "RANGE_DAMAGE"
-        or subevent == "SPELL_PERIODIC_DAMAGE" then
-        local amount, _, _, _, _, _, critical = select(15, ...)
-        return amount, critical
-    end
+    local ramp = math.min((amount - threshold) / (threshold * 2), 1)
+    Pulse(1, 0.35, 0.1, intensity * (0.7 + 0.3 * ramp))
 end
 
 function CommanderImpact_Test()
@@ -100,18 +91,34 @@ function CommanderImpact_Test()
     OnKill("Test Dummy")
 end
 
+-- Hot path: this fires for EVERY combat log event in range. No table
+-- allocation — capture the needed positions directly and bail on
+-- non-player sources first. Player GUID is stable per session.
+local playerGUID
+
 local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-events:SetScript("OnEvent", function()
+events:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_LOGIN" then
+        playerGUID = UnitGUID("player")
+        return
+    end
     if not IsOn() then return end
-    local payload = { CombatLogGetCurrentEventInfo() }
-    local subevent, sourceGUID, destName = payload[2], payload[4], payload[9]
-    if sourceGUID ~= UnitGUID("player") then return end
+    local _, subevent, _, sourceGUID, _, _, _, _, destName, _, _,
+        a12, _, _, a15, _, _, a18, _, _, a21 = CombatLogGetCurrentEventInfo()
+    if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
     if subevent == "PARTY_KILL" then
         OnKill(destName)
         return
     end
-    local amount, critical = ExtractDamage(subevent, unpack(payload))
+    local amount, critical
+    if subevent == "SWING_DAMAGE" then
+        amount, critical = a12, a18
+    elseif subevent == "SPELL_DAMAGE" or subevent == "RANGE_DAMAGE"
+        or subevent == "SPELL_PERIODIC_DAMAGE" then
+        amount, critical = a15, a21
+    end
     if critical and amount then
         OnCrit(amount)
     end

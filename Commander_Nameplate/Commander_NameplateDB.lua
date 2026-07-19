@@ -11,6 +11,7 @@ local DefaultSettings = {
     showHealthPercent = false,
     showManaPercent = false,
     alwaysShowMana = false,
+    unlockPlate = false,
     classColorHealth = false,
     hidePowerBar = false,
     plateScale = 1.0,
@@ -100,11 +101,16 @@ local function CreateOptionsPanel()
         set = function(value) CommanderNameplateDB.castBarColor = value end,
     })
 
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Fade While Moving",
         tooltip = "Make the nameplate translucent while your character is moving.",
         get = function() return CommanderNameplateDB.fadeWhileMoving end,
         set = function(value) CommanderNameplateDB.fadeWhileMoving = value end,
+    }, {
+        label = "Unlock Plate",
+        tooltip = "Unlock to drag the plate anywhere. Lock again when placed — a locked plate never intercepts mouse clicks.",
+        get = function() return CommanderNameplateDB.unlockPlate end,
+        set = function(value) CommanderNameplateDB.unlockPlate = value end,
     })
     panel:AddSlider({
         label = "Faded Opacity",

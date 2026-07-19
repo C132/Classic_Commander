@@ -57,6 +57,8 @@ function CommanderCamera_SaveZoom(slot)
     print(string.format("Commander Camera: zoom preset %d saved (%.1f yd)", slot, GetCameraZoom()))
 end
 
+local lastZoomRecall = -math.huge
+
 function CommanderCamera_Zoom(slot)
     if not (CommanderCameraDB and CommanderCameraDB.EnableCamera) then return end
     if slot < 1 or slot > 5 then return end
@@ -65,6 +67,11 @@ function CommanderCamera_Zoom(slot)
         print(string.format("Commander Camera: zoom preset %d is empty (Shift-click its button to save the current zoom)", slot))
         return
     end
+    -- Zoom requests are queued distances, not absolute targets: a second
+    -- recall while the camera is still gliding would stack deltas and
+    -- overshoot. Debounce until the previous glide has finished.
+    if GetTime() - lastZoomRecall < 0.8 then return end
+    lastZoomRecall = GetTime()
     local delta = target - GetCameraZoom()
     if delta > 0 then
         CameraZoomOut(delta)

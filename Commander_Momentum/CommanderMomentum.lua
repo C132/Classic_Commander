@@ -55,7 +55,9 @@ end
 local function EndStreak()
     streak = 0
     announcedMilestone = 0
-    root:Hide()
+    root:SetShown(CommanderMomentumDB
+        and CommanderMomentumDB.EnableMomentum
+        and Commander.UI.HudUnlocked(CommanderMomentumDB, "Hud") or false)
     root:SetScript("OnUpdate", nil)
 end
 
@@ -81,6 +83,14 @@ local function Refresh()
 end
 
 local function OnKill()
+    -- Enforce the window even for streaks too small to show: without this,
+    -- a streak of 1 never expires (no visible frame, no drain driver) and
+    -- any two kills ever would chain into a bogus x2
+    local window = CommanderMomentumDB.Window or 20
+    if GetTime() - lastKill > window then
+        streak = 0
+        announcedMilestone = 0
+    end
     streak = streak + 1
     lastKill = GetTime()
     if streak >= 2 then
@@ -106,11 +116,16 @@ local function Apply()
         EndStreak()
         return
     end
-    if root:IsShown() then
+    -- Unlocked: show the meter as a drag placeholder even with no streak
+    local unlocked = Commander.UI.HudUnlocked(CommanderMomentumDB, "Hud")
+    if root:IsShown() or unlocked then
         Commander.UI.ApplyHudChrome(root, CommanderMomentumDB, "Hud", {
             defaultPoint = { point = "CENTER", x = 0, y = -170 },
         })
         Refresh()
+        if unlocked then
+            bar:SetSize(BAR_WIDTH, BAR_HEIGHT)
+        end
     end
 end
 

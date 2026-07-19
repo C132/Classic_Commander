@@ -5,8 +5,11 @@
 
 local BANNER_HOLD = 5
 
+-- Flat white texture, not the LowHealth vignette: that art is itself red,
+-- so vertex-tinting it gold still renders red. A white fill tinted gold
+-- with ADD blending is an actual gold burst.
 local pulse = WorldFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
-pulse:SetTexture("Interface\\FullScreenTextures\\LowHealth")
+pulse:SetTexture("Interface\\Buttons\\WHITE8X8")
 pulse:SetAllPoints(WorldFrame)
 pulse:SetBlendMode("ADD")
 pulse:SetAlpha(0)
@@ -26,7 +29,8 @@ end
 
 local function GoldBurst()
     pulse:SetVertexColor(1, 0.82, 0.15)
-    pulseAlpha = 0.55
+    -- Flat fill needs less alpha than a vignette to read as a burst
+    pulseAlpha = 0.35
     pulse:SetAlpha(pulseAlpha)
     pulseDriver:SetScript("OnUpdate", OnDecay)
 end
@@ -107,7 +111,8 @@ function CommanderPromotion_Test()
         print("Commander Promotion: module is disabled (enable it in settings or /cpromo)")
         return
     end
-    ShowCeremony((UnitLevel("player") or 59) + 1, 42, 65, 1, 1, 2, 1, 1)
+    -- Never announce a level beyond the TBC cap in the preview
+    ShowCeremony(math.min((UnitLevel("player") or 59) + 1, 70), 42, 65, 1, 1, 2, 1, 1)
 end
 
 local events = CreateFrame("Frame")

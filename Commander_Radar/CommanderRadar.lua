@@ -73,6 +73,13 @@ local function OnContactAdded(token)
     if not CommanderRadarDB.ContactDetection then return end
     if not (UnitGUID and UnitCanAttack("player", token)) then return end
     if UnitIsDeadOrGhost(token) then return end
+    -- Attackable is not hostile: neutral mobs (yellow) and duel opponents
+    -- are both attackable — only genuinely hostile reactions count as
+    -- contacts (reaction 1-3; 4 is neutral)
+    if UnitReaction then
+        local reaction = UnitReaction("player", token)
+        if reaction and reaction > 3 then return end
+    end
     local guid = UnitGUID(token)
     if not guid or contactsByGUID[guid] then
         guidByToken[token] = guid
@@ -161,8 +168,21 @@ local function Apply()
     end
     if not CommanderRadarDB.ContactDetection then
         ResetContacts()
-    elseif CommanderRadarDB.ContactCounter then
-        anyShown = true
+    else
+        -- Sweep already-visible nameplates so (re)enabling detection does
+        -- not show a green scope with enemies plainly on screen
+        if C_NamePlate and C_NamePlate.GetNamePlates then
+            for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
+                local token = plate.namePlateUnitToken
+                    or (plate.UnitFrame and plate.UnitFrame.unit)
+                if token then
+                    OnContactAdded(token)
+                end
+            end
+        end
+        if CommanderRadarDB.ContactCounter then
+            anyShown = true
+        end
     end
     RefreshContactDisplay()
     overlay:SetShown(anyShown)

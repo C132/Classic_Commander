@@ -41,7 +41,13 @@ for i, slot in ipairs(DURABILITY_SLOTS) do
     local row = CreateFrame("Frame", nil, root)
     row:SetSize(BAR_WIDTH + 22, ROW_HEIGHT)
     row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -(i - 1) * ROW_HEIGHT)
-    row:EnableMouse(true)
+    -- Hover-only mouse where the client supports it: EnableMouse(true)
+    -- would swallow clicks (including the chrome overlay's drags beneath)
+    if row.EnableMouseMotion then
+        row:EnableMouseMotion(true)
+    else
+        row:EnableMouse(true)
+    end
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(12, 12)
@@ -101,13 +107,17 @@ local function Refresh()
         end
     end
 
+    -- While unlocked the frame must stay visible to be draggable, even
+    -- with nothing to report
+    local unlocked = Commander.UI.HudUnlocked(CommanderVitalsDB, "Vitals")
     if shownRows == 0 then
-        root:Hide()
+        root:SetSize(BAR_WIDTH + 22, ROW_HEIGHT)
+        root:SetShown(unlocked)
         return
     end
     root:SetSize(BAR_WIDTH + 22, shownRows * ROW_HEIGHT)
     local threshold = CommanderVitalsDB.WarnThreshold or 0.5
-    root:SetShown(CommanderVitalsDB.AlwaysShow or worst <= threshold)
+    root:SetShown(unlocked or CommanderVitalsDB.AlwaysShow or worst <= threshold)
 end
 
 local events = CreateFrame("Frame")
