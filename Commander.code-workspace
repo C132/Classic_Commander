@@ -49,10 +49,6 @@
             "path": "Commander_Events"
         },
         {
-            "name": "Commander_Honor",
-            "path": "Commander_Honor"
-        },
-        {
             "name": "Commander_Idle",
             "path": "Commander_Idle"
         },

@@ -19,7 +19,6 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Comms | Radial quick-message wheel: eight battle calls on a keybind |
 | Commander_Console | Optional bottom console viewport (off by default) |
 | Commander_Economy | Session mission summary: gold, XP rate, quests, casualties |
-| Commander_Honor | Honorable-kill flashes, callouts, and a session war record |
 | Commander_Idle | RTS idle-worker alert when your character stands around |
 | Commander_Impact | Kill confirmations and big-crit screen pulses |
 | Commander_Inventory | Equipment/inventory quick-access button grid |

@@ -76,10 +76,11 @@ killText:Hide()
 
 local textGeneration = 0
 
-local function ShowKillText(text)
+local function ShowKillText(text, r, g, b)
     textGeneration = textGeneration + 1
     local myGeneration = textGeneration
     killText:SetText(text)
+    killText:SetTextColor(r or 1, g or 0.82, b or 0.15)
     killText:Show()
     C_Timer.After(TEXT_HOLD, function()
         if textGeneration == myGeneration then
@@ -124,6 +125,66 @@ function CommanderImpact_Test()
     OnKill("Test Dummy")
 end
 
+-- ---------------------------------------------------------------------------
+-- War record: honorable-kill feedback, absorbed from Commander_Honor in
+-- 2.1.0 — the same product beat as the PvE kill confirmation, on the PvP
+-- front. CHAT_MSG_COMBAT_HONOR_GAIN carries lines like
+--   "Playername dies, honorable kill Rank: Grunt (Estimated Honor Points: 199)"
+-- Dishonorable-kill formats are deliberately ignored, and the registration
+-- is guarded like MINIMAP_PING's in case a patch moves the event.
+-- ---------------------------------------------------------------------------
+local sessionKills = 0
+local sessionHonor = 0
+local session   -- reload-resilient war record
+
+local function CelebrateHonorKill(victim, honor)
+    sessionKills = sessionKills + 1
+    sessionHonor = sessionHonor + (honor or 0)
+    if session then
+        session.kills = sessionKills
+        session.honor = sessionHonor
+    end
+    if CommanderImpactDB.HonorFlash then
+        Pulse(critLayer, 1, 0.15, 0.15, 0.45)
+    end
+    if CommanderImpactDB.HonorText then
+        ShowKillText(victim and string.format("HONORABLE KILL: %s", victim)
+            or "HONORABLE KILL", 1, 0.25, 0.2)
+    end
+    if CommanderImpactDB.HonorSound then
+        PlaySound(SOUNDKIT.RAID_WARNING, "Master")
+    end
+end
+
+local function OnHonorMessage(message)
+    if type(message) ~= "string" then return end
+    if not CommanderImpactDB.HonorKills then return end
+    -- Only honorable kills carry a victim name before "dies"
+    local victim = message:match("^(%S+) dies, honorable kill")
+    if not victim then return end
+    local honor = tonumber(message:match("Estimated Honor Points: (%d+)"))
+    CelebrateHonorKill(victim, honor)
+end
+
+function CommanderImpact_WarRecord()
+    if sessionKills == 0 then
+        print("Commander Impact: no honorable kills this session yet — the war record is clean")
+        return
+    end
+    print(string.format("Commander Impact: %d honorable kill%s this session, ~%d honor",
+        sessionKills, sessionKills == 1 and "" or "s", sessionHonor))
+end
+
+function CommanderImpact_TestHonor()
+    if not IsOn() then
+        print("Commander Impact: module is disabled (enable it in settings or /cimpact)")
+        return
+    end
+    CelebrateHonorKill("Testdummy", 0)
+    sessionKills = sessionKills - 1
+    if session then session.kills = sessionKills end
+end
+
 -- Hot path: this fires for EVERY combat log event in range. No table
 -- allocation — capture the needed positions directly and bail on
 -- non-player sources first. Player GUID is stable per session.
@@ -132,12 +193,22 @@ local playerGUID
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-events:SetScript("OnEvent", function(self, event)
+if not C_EventUtils or (C_EventUtils.IsEventValid and C_EventUtils.IsEventValid("CHAT_MSG_COMBAT_HONOR_GAIN")) then
+    pcall(events.RegisterEvent, events, "CHAT_MSG_COMBAT_HONOR_GAIN")
+end
+events:SetScript("OnEvent", function(self, event, message)
     if event == "PLAYER_LOGIN" then
         playerGUID = UnitGUID("player")
+        -- The war record survives /reload
+        session = Commander.RestoreSession(CommanderImpactDB, { kills = 0, honor = 0 })
+        sessionKills, sessionHonor = session.kills, session.honor
         return
     end
     if not IsOn() then return end
+    if event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
+        OnHonorMessage(message)
+        return
+    end
     local _, subevent, _, sourceGUID, _, _, _, _, destName, _, _,
         a12, _, _, a15, _, _, a18, _, _, a21 = CombatLogGetCurrentEventInfo()
     if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
