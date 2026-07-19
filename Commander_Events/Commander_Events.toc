@@ -8,3 +8,4 @@
 
 CommanderSettingsUI.lua
 CommanderEvents.lua
+CommanderTelemetry.lua

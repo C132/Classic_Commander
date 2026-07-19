@@ -206,8 +206,18 @@ local function BuildDashboard(panel, anchor)
     reloadButton:SetText("Reload UI")
     reloadButton:SetScript("OnClick", ReloadUI)
 
+    local telemetryButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    telemetryButton:SetSize(100, 22)
+    telemetryButton:SetPoint("LEFT", reloadButton, "RIGHT", 8, 0)
+    telemetryButton:SetText("Telemetry")
+    telemetryButton:SetScript("OnClick", function()
+        if CommanderTelemetry_Toggle then CommanderTelemetry_Toggle() end
+    end)
+    Commander.UI.AttachTooltip(telemetryButton, "Commander Telemetry",
+        "Live memory, CPU, and event-traffic profiling for every suite module (also: /ctelemetry).")
+
     local hint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    hint:SetPoint("LEFT", reloadButton, "RIGHT", 12, 0)
+    hint:SetPoint("LEFT", telemetryButton, "RIGHT", 12, 0)
     hint:SetText("Open this page any time with /commander")
 end
 
