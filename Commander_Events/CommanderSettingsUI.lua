@@ -652,6 +652,19 @@ function UI.HudChromeDefaults(prefix, styleDefault)
     }
 end
 
+-- Session-scoped "closed" flags for window-style HUD frames (weak-keyed on
+-- the module DB, so nothing persists or leaks)
+local hudClosed = setmetatable({}, { __mode = "k" })
+
+local function IsHudClosed(db, prefix)
+    return hudClosed[db] and hudClosed[db][prefix]
+end
+
+local function SetHudClosed(db, prefix, value)
+    hudClosed[db] = hudClosed[db] or {}
+    hudClosed[db][prefix] = value or nil
+end
+
 local HUD_STYLES = {
     -- Matches the command card (Commander_ActionBar) framing
     CLASSIC = {
@@ -676,7 +689,90 @@ local HUD_STYLES = {
         border = { 0.6, 0.6, 0.6, 1 },
         pad = 8,
     },
+    -- Commander_Inventory's framing: a real little window
+    -- (BasicFrameTemplateWithInset) with title, lock, close, and a
+    -- scale-driving resize grip
+    WINDOW = { window = true },
 }
+
+-- Build the window dressing lazily on first use. All template children
+-- are guarded: the smoke harness's CreateFrame ignores templates.
+local function EnsureWindowChrome(frame, db, prefix)
+    if frame._hudWindow then return frame._hudWindow end
+    local win = CreateFrame("Frame", nil, frame, "BasicFrameTemplateWithInset")
+    frame._hudWindow = win
+    win:SetFrameLevel(math.max((frame:GetFrameLevel() or 1) - 1, 0))
+    win:SetPoint("TOPLEFT", frame, "TOPLEFT", -8, 28)
+    win:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 8, -10)
+
+    if win.CloseButton then
+        win.CloseButton:SetScript("OnClick", function()
+            SetHudClosed(db, prefix, true)
+            frame:Hide()
+            print("Commander: window closed for this session — Reset Position in its settings reopens it")
+        end)
+    end
+
+    local lock = CreateFrame("Button", nil, win)
+    win.lockButton = lock
+    lock:SetSize(16, 16)
+    if win.CloseButton then
+        lock:SetPoint("RIGHT", win.CloseButton, "LEFT", -1, 0)
+    else
+        lock:SetPoint("TOPRIGHT", win, "TOPRIGHT", -24, -4)
+    end
+    lock.tex = lock:CreateTexture(nil, "ARTWORK")
+    lock.tex:SetAllPoints()
+    lock:SetScript("OnClick", function()
+        db[prefix .. "Locked"] = not db[prefix .. "Locked"]
+        if frame._hudOpts then
+            UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts)
+        end
+    end)
+    AttachTooltip(lock, "Lock / Unlock", "Unlocked frames can be dragged anywhere; lock when placed.")
+
+    -- Resize grip: dragging it scales the frame, saved to the module's
+    -- Frame Scale setting, position preserved on release
+    local grip = CreateFrame("Button", nil, win)
+    win.grip = grip
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -3, 3)
+    grip:SetFrameLevel((frame:GetFrameLevel() or 1) + 25)
+    grip.tex = grip:CreateTexture(nil, "ARTWORK")
+    grip.tex:SetAllPoints()
+    grip.tex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetScript("OnMouseDown", function()
+        frame._hudDragging = true    -- freezes re-anchoring while sizing
+        local startX, startY = GetCursorPosition()
+        local startScale = db[prefix .. "Scale"] or 1
+        local uiScale = (UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+        grip:SetScript("OnUpdate", function()
+            local x, y = GetCursorPosition()
+            local delta = ((x - startX) - (y - startY)) / 2 / uiScale
+            local newScale = math.max(0.6, math.min(1.6, startScale + delta / 160))
+            newScale = math.floor(newScale * 100 + 0.5) / 100
+            db[prefix .. "Scale"] = newScale
+            frame:SetScale(newScale)
+        end)
+    end)
+    grip:SetScript("OnMouseUp", function()
+        grip:SetScript("OnUpdate", nil)
+        frame._hudDragging = false
+        -- Re-save the position in screen space under the new scale so the
+        -- window stays where it visually ended up
+        local point, _, _, x, y = frame:GetPoint(1)
+        if point then
+            local scale = db[prefix .. "Scale"] or 1
+            db[prefix .. "Pos"] = { point = point, x = x * scale, y = y * scale }
+        end
+        if frame._hudOpts then
+            UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts)
+        end
+    end)
+    AttachTooltip(grip, "Resize", "Drag to resize the window (adjusts Frame Scale).")
+
+    return win
+end
 
 -- True while the module's HUD frame is unlocked for dragging. Consumers
 -- must keep their frame SHOWN while unlocked (even with nothing to
@@ -688,12 +784,20 @@ end
 -- Re-appliable: call from the module's settings listener. opts:
 --   defaultPoint = {point=, x=, y=} (required) — position when no saved drag
 function UI.ApplyHudChrome(frame, db, prefix, opts)
+    frame._hudOpts = opts
     if not frame._hudChromeInit then
         frame._hudChromeInit = true
         frame._hudBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
         frame._hudBackdrop:SetFrameLevel(math.max((frame:GetFrameLevel() or 1) - 1, 0))
         frame:SetMovable(true)
         frame:SetClampedToScreen(true)
+        -- Window-style close is session-scoped; a consumer's SetShown must
+        -- not resurrect a closed window
+        frame:HookScript("OnShow", function(self)
+            if IsHudClosed(db, prefix) then
+                self:Hide()
+            end
+        end)
 
         -- The drag surface is a dedicated overlay ABOVE the frame's
         -- content: module content frequently has its own mouse-enabled
@@ -756,7 +860,23 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
     local styleKey = db[prefix .. "Style"] or "NONE"
     local style = HUD_STYLES[styleKey]
     local backdrop = frame._hudBackdrop
-    if style then
+    if style and style.window then
+        backdrop:Hide()
+        frame._hudStyleApplied = styleKey
+        local win = EnsureWindowChrome(frame, db, prefix)
+        if win.TitleText then
+            win.TitleText:SetText(opts.title or "Commander")
+        end
+        if win.lockButton and win.lockButton.tex then
+            win.lockButton.tex:SetTexture(db[prefix .. "Locked"]
+                and "Interface\\Buttons\\LockButton-Locked-Up"
+                or "Interface\\Buttons\\LockButton-Unlocked-Up")
+        end
+        win:Show()
+    elseif style then
+        if frame._hudWindow then
+            frame._hudWindow:Hide()
+        end
         if frame._hudStyleApplied ~= styleKey then
             frame._hudStyleApplied = styleKey
             backdrop:ClearAllPoints()
@@ -770,6 +890,9 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
     else
         frame._hudStyleApplied = nil
         backdrop:Hide()
+        if frame._hudWindow then
+            frame._hudWindow:Hide()
+        end
     end
 
     local locked = db[prefix .. "Locked"]
@@ -778,12 +901,16 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
     frame._hudDragOverlay:SetFrameLevel((frame:GetFrameLevel() or 1) + 20)
     frame._hudDragOverlay:SetShown(not locked)
     if not locked then
-        if style then
+        if style and not style.window then
             backdrop:SetBackdropBorderColor(0.3, 1, 0.4, 1)
         end
         -- A hidden frame cannot be dragged; force it visible as a
         -- placeholder while unlocked (consumers keep it shown too)
         frame:Show()
+    end
+    -- Closed windows stay closed no matter what the consumer decides
+    if IsHudClosed(db, prefix) then
+        frame:Hide()
     end
 end
 
@@ -794,11 +921,12 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
     local enabled = opts.isEnabled
     panel:AddDropdown({
         label = "Frame Style",
-        tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing.",
+        tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing; Inventory Window turns it into a little window with a title bar, lock and close buttons, and a resize grip.",
         options = {
             { text = "None", value = "NONE" },
             { text = "Classic Panel", value = "CLASSIC" },
             { text = "Dark Panel", value = "DARK" },
+            { text = "Inventory Window", value = "WINDOW" },
         },
         get = function() return db[prefix .. "Style"] or "NONE" end,
         set = function(value) db[prefix .. "Style"] = value end,
@@ -829,9 +957,11 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
     reset:SetText("Reset Position")
     reset:SetScript("OnClick", function()
         db[prefix .. "Pos"] = nil
+        -- Also reopens a window closed with its X for this session
+        SetHudClosed(db, prefix, nil)
         if opts.onChanged then opts.onChanged() end
     end)
-    AttachTooltip(reset, "Reset Position", "Return the frame to its default position.")
+    AttachTooltip(reset, "Reset Position", "Return the frame to its default position (and reopen it if its window was closed).")
     if enabled then
         panel:AddRefresher(function()
             reset:SetEnabled(enabled() and true or false)

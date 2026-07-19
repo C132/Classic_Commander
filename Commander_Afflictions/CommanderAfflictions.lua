@@ -337,6 +337,7 @@ end
 local function Apply()
     if CommanderAfflictionsDB and CommanderAfflictionsDB.EnableAfflictions then
         Commander.UI.ApplyHudChrome(root, CommanderAfflictionsDB, "Hud", {
+            title = "Afflictions",
             defaultPoint = { point = "LEFT", x = 14, y = 120 },
         })
         Draw()

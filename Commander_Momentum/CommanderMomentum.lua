@@ -270,6 +270,7 @@ local function Apply()
     local shouldShow = streak >= 2 or unlocked or CommanderMomentumDB.AlwaysShow
     if shouldShow then
         Commander.UI.ApplyHudChrome(root, CommanderMomentumDB, "Hud", {
+            title = "Momentum",
             defaultPoint = { point = "TOP", x = 0, y = -260 },
         })
         root:Show()

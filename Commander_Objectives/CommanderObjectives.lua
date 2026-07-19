@@ -348,6 +348,7 @@ local function RefreshBoard()
     end
     board:SetSize(BOARD_WIDTH, 20 + shown * BOARD_ROW_HEIGHT)
     Commander.UI.ApplyHudChrome(board, CommanderObjectivesDB, "Board", {
+        title = "Objectives",
         defaultPoint = { point = "RIGHT", x = -14, y = 170 },
     })
     board:SetShown(BoardWanted() and shown > 0)

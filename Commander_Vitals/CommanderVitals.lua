@@ -84,6 +84,7 @@ local function Refresh()
         return
     end
     Commander.UI.ApplyHudChrome(root, CommanderVitalsDB, "Vitals", {
+        title = "Vitals",
         defaultPoint = { point = "RIGHT", x = -14, y = 0 },
     })
 
