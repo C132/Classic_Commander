@@ -9,6 +9,10 @@
             "path": "Commander_ActionBar"
         },
         {
+            "name": "Commander_Adjutant",
+            "path": "Commander_Adjutant"
+        },
+        {
             "name": "Commander_Bags",
             "path": "Commander_Bags"
         },
@@ -51,6 +55,10 @@
         {
             "name": "Commander_Tooltip",
             "path": "Commander_Tooltip"
+        },
+        {
+            "name": "Commander_TopBar",
+            "path": "Commander_TopBar"
         },
         {
             "name": "Commander_Who",

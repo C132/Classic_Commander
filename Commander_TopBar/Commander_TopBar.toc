@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Top Bar
+## Author: Devin
+## Version: 2.0.0
+## Notes: RTS-style resource strip across the top of the screen: gold, bag supply, durability, XP rate, and performance.
+## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
+## SavedVariables: CommanderTopBarDB
+## RequiredDeps: Commander_Events
+
+CommanderTopBarDB.lua
+CommanderTopBar.lua

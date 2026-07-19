@@ -10,7 +10,8 @@ Each module is a standalone addon that can be enabled or disabled independently.
 |---|---|
 | Commander_Events | Shared hub: event bus + root settings category (required by all) |
 | Commander_ActionBar | Action bar cleanup and repositioning |
-| Commander_Bags | Bag frame positioning, item quality coloring, fading |
+| Commander_Adjutant | RTS announcer: banners and sounds for attacks, repairs, level-ups |
+| Commander_Bags | Bag positioning, item coloring, fading, on-demand sorting |
 | Commander_Casting | Cast bar glow effects |
 | Commander_Chat | Chat window visibility and message sound pings |
 | Commander_Console | Optional bottom console viewport (off by default) |
@@ -19,6 +20,7 @@ Each module is a standalone addon that can be enabled or disabled independently.
 | Commander_Nameplate | Personal nameplate with cast bar |
 | Commander_Resources | Five-second-rule mana tick tracker |
 | Commander_Tooltip | Tooltip anchoring, scale, item level and vendor price |
+| Commander_TopBar | RTS resource strip: gold, bag supply, durability, XP rate |
 | Commander_Who | /who window enhancements and mass whisper |
 | Commander_Suite | Suite dashboard on the root settings page: module directory, quick settings access (`/commander`) |
 
