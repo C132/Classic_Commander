@@ -20,7 +20,12 @@ local CALLS = {
 }
 
 local function PickChannel()
-    if IsInRaid() then
+    -- Battlegrounds and arenas are instance-category groups on this
+    -- engine: IsInRaid() is true in a BG but "RAID" fails there — the
+    -- instance group speaks INSTANCE_CHAT
+    if LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+        return "INSTANCE_CHAT"
+    elseif IsInRaid() then
         return "RAID"
     elseif IsInGroup() then
         return "PARTY"
@@ -38,6 +43,9 @@ local wheel = CreateFrame("Frame", "CommanderCommsWheel", UIParent)
 wheel:SetPoint("CENTER")
 wheel:SetSize((RADIUS + 60) * 2, (RADIUS + 30) * 2)
 wheel:SetFrameStrata("DIALOG")
+-- Swallow clicks between the buttons: a miss must not fall through to the
+-- world and retarget right before a targeted call
+wheel:EnableMouse(true)
 wheel:Hide()
 if UISpecialFrames then
     table.insert(UISpecialFrames, "CommanderCommsWheel")

@@ -11,7 +11,10 @@
 
 local sessionDeaths = 0
 local lastDeath = nil        -- { mapID, x, y, zone, when }
-local orderIssued = false    -- we placed a corpse order that is still live
+-- The corpse order we issued lives in CommanderRecoveryDB.IssuedOrder (a
+-- SavedVariable, so it survives /reload while dead) and is only ever
+-- cleared when the active Orders waypoint still matches it — never a
+-- waypoint the player set themselves during the ghost run.
 
 local function IsOn()
     return CommanderRecoveryDB and CommanderRecoveryDB.EnableRecovery
@@ -19,7 +22,12 @@ end
 
 local function CaptureDeathPosition()
     local mapID = C_Map.GetBestMapForUnit("player")
-    if not mapID then return nil end
+    if not mapID then
+        -- Still return a sentinel: lastDeath doubles as the "currently
+        -- tracking a death" flag, so nil would disable the re-fire guard
+        -- and the recovery confirmation
+        return { zone = GetZoneText() or "unknown territory" }
+    end
     local pos = C_Map.GetPlayerMapPosition(mapID, "player")
     if not pos then
         return { mapID = mapID, zone = GetZoneText() or "unknown territory" }
@@ -65,20 +73,36 @@ local function OnReleased()
     if not IsOn() then return end
     if not (CommanderRecoveryDB.CorpseOrder and CommanderOrders_IssueOrder) then return end
     if not (lastDeath and lastDeath.x) then return end
+    -- With Orders disabled the order would be silently accepted but no
+    -- arrow would ever show — skip instead of pretending to help
+    if CommanderOrdersDB and CommanderOrdersDB.EnableOrders == false then return end
     if CommanderOrders_IssueOrder(lastDeath.mapID, lastDeath.x, lastDeath.y) then
-        orderIssued = true
+        CommanderRecoveryDB.IssuedOrder = { mapID = lastDeath.mapID, x = lastDeath.x, y = lastDeath.y }
         print("Commander Recovery: corpse run order issued — follow the arrow, soldier")
     end
 end
 
+-- Clear the corpse order if and only if it is still the active waypoint:
+-- an order the player issued themselves mid-ghost-run (map click, rally)
+-- or one that already self-cleared on arrival is left alone
+local function ClearOwnOrder()
+    local issued = CommanderRecoveryDB.IssuedOrder
+    CommanderRecoveryDB.IssuedOrder = nil
+    if not (issued and CommanderOrders_ClearOrder) then return end
+    local waypoint = CommanderOrdersDB and CommanderOrdersDB.Waypoint
+    if waypoint and waypoint.mapID == issued.mapID
+        and waypoint.x == issued.x and waypoint.y == issued.y then
+        CommanderOrders_ClearOrder(false)
+    end
+end
+
 local function OnRecovered()
+    -- Even with the module disabled mid-run, an order we issued is ours
+    -- to clean up
+    ClearOwnOrder()
     if not IsOn() then
         lastDeath = nil
-        orderIssued = false
         return
-    end
-    if orderIssued and CommanderOrders_ClearOrder then
-        CommanderOrders_ClearOrder(false)
     end
     if lastDeath then
         print("Commander Recovery: unit recovered and back in the field")
@@ -87,7 +111,6 @@ local function OnRecovered()
         end
     end
     lastDeath = nil
-    orderIssued = false
 end
 
 local events = CreateFrame("Frame")

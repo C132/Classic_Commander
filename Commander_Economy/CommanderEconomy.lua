@@ -10,6 +10,7 @@ local xpGained = 0
 local prevXP, prevXPMax, prevLevel = nil, nil, nil
 local questsTurnedIn = 0
 local deaths = 0
+local deadNow = false   -- PLAYER_DEAD re-fires in odd rez flows; count once
 local hourlyTicker = nil
 
 local function Coins(copper)
@@ -100,6 +101,8 @@ events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_MONEY")
 events:RegisterEvent("PLAYER_XP_UPDATE")
 events:RegisterEvent("PLAYER_DEAD")
+events:RegisterEvent("PLAYER_ALIVE")
+events:RegisterEvent("PLAYER_UNGHOST")
 -- Quest turn-in event: valid on this client, but guard like MINIMAP_PING in
 -- case a future patch moves it — quests just stop counting, nothing breaks
 if not C_EventUtils or C_EventUtils.IsEventValid("QUEST_TURNED_IN") then
@@ -118,7 +121,14 @@ events:SetScript("OnEvent", function(self, event)
     elseif event == "PLAYER_XP_UPDATE" then
         OnXP()
     elseif event == "PLAYER_DEAD" then
-        deaths = deaths + 1
+        if not deadNow then
+            deaths = deaths + 1
+            deadNow = true
+        end
+    elseif event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+        if not UnitIsGhost("player") then
+            deadNow = false
+        end
     elseif event == "QUEST_TURNED_IN" then
         questsTurnedIn = questsTurnedIn + 1
     end

@@ -49,6 +49,12 @@ function CommanderRally_Go(slot)
         print("Commander Rally: Commander Orders is not loaded — no arrow available")
         return
     end
+    -- IssueOrder itself does not check the Orders master flag, but the
+    -- arrow never shows while it is off — refuse instead of faking success
+    if CommanderOrdersDB and CommanderOrdersDB.EnableOrders == false then
+        print("Commander Rally: Commander Orders is disabled — enable it to get a rally arrow")
+        return
+    end
     if not CommanderOrders_IssueOrder(p.mapID, p.x, p.y) then
         print(string.format("Commander Rally: could not issue an order for rally point %d (%s)", slot, p.zone or "unknown"))
     end

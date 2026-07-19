@@ -33,13 +33,13 @@ local function Layout()
     crosshairV:SetSize(1, length)
 end
 
-overlay:SetScript("OnUpdate", function(self, elapsed)
+local function OnSweepUpdate(self, elapsed)
     rotation = rotation + elapsed * (CommanderRadarDB.SweepSpeed or 0.5) * math.pi * 2
     if rotation > math.pi * 2 then
         rotation = rotation - math.pi * 2
     end
     sweep:SetRotation(rotation)
-end)
+end
 
 local function Apply()
     if not (CommanderRadarDB and CommanderRadarDB.EnableRadar) then
@@ -55,6 +55,9 @@ local function Apply()
     else
         sweep:Hide()
     end
+    -- Only drive the rotation while the sweep is actually shown; a
+    -- crosshair-only radar is static and needs no per-frame work
+    overlay:SetScript("OnUpdate", CommanderRadarDB.ShowSweep and OnSweepUpdate or nil)
     crosshairH:SetShown(CommanderRadarDB.ShowCrosshair)
     crosshairV:SetShown(CommanderRadarDB.ShowCrosshair)
     if CommanderRadarDB.ShowCrosshair then

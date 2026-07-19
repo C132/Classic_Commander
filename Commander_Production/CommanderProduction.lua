@@ -15,6 +15,7 @@ local active = {}     -- name -> { texture, start, duration }
 local rowPool = {}
 local sinceSweep, sinceDraw = 0, 0
 local sweepQueued = false
+local drawingAfterSweep = false
 
 local root = CreateFrame("Frame", "CommanderProductionFrame", UIParent)
 root:SetPoint("LEFT", UIParent, "LEFT", 14, -40)
@@ -62,19 +63,29 @@ local function FormatRemaining(seconds)
     return string.format("%ds", math.ceil(seconds))
 end
 
+local function ReadyAlert(name)
+    if CommanderProductionDB.ReadyAlert then
+        print(string.format("Commander Production: %s ready", name))
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
+    end
+end
+
 local function Sweep()
     if not GetNumSpellTabs then return end
     local minDuration = CommanderProductionDB.MinDuration or 10
     local now = GetTime()
+    local scanned, stillOn = {}, {}
     for tab = 1, GetNumSpellTabs() do
         local _, _, offset, numSlots = GetSpellTabInfo(tab)
         for slot = offset + 1, offset + (numSlots or 0) do
             local name = GetSpellBookItemName(slot, BOOKTYPE)
             if name then
+                scanned[name] = true
                 local start, duration, enabled = GetSpellCooldown(slot, BOOKTYPE)
                 if start and start > 0 and enabled == 1
                     and duration and duration >= minDuration
                     and (start + duration) > now then
+                    stillOn[name] = true
                     local entry = active[name]
                     if not entry then
                         active[name] = {
@@ -88,6 +99,16 @@ local function Sweep()
             end
         end
     end
+    -- Early cooldown resets (Preparation, Cold Snap, Readiness): the
+    -- spellbook now reports the cooldown gone before the recorded end
+    -- time — the spell really is ready, so drop the bar and alert now
+    -- instead of minutes later
+    for name in pairs(active) do
+        if scanned[name] and not stillOn[name] then
+            active[name] = nil
+            ReadyAlert(name)
+        end
+    end
 end
 
 local function Draw()
@@ -97,10 +118,7 @@ local function Draw()
         local remaining = entry.start + entry.duration - now
         if remaining <= 0 then
             active[name] = nil
-            if CommanderProductionDB.ReadyAlert then
-                print(string.format("Commander Production: %s ready", name))
-                PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
-            end
+            ReadyAlert(name)
         else
             queue[#queue + 1] = { name = name, entry = entry, remaining = remaining }
         end
@@ -125,6 +143,17 @@ local function Draw()
         rowPool[i]:Hide()
     end
     root:SetShown(shown > 0)
+    -- Hiding the root kills the OnUpdate driver; a sweep still queued at
+    -- that moment (new cooldown started as the last bar expired) must run
+    -- now or the new bar would be lost until the next cooldown event
+    if shown == 0 and sweepQueued and not drawingAfterSweep then
+        sweepQueued = false
+        sinceSweep = 0
+        Sweep()
+        drawingAfterSweep = true
+        Draw()
+        drawingAfterSweep = false
+    end
 end
 
 root:SetScript("OnUpdate", function(self, elapsed)
@@ -165,7 +194,10 @@ watcher:SetScript("OnEvent", function(self, event)
         Apply()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         if CommanderProductionDB and CommanderProductionDB.EnableProduction then
-            if root:IsShown() then
+            -- IsVisible, not IsShown: with the UI hidden (Alt+Z, cinematic)
+            -- the OnUpdate driver is not ticking, so a queued sweep would
+            -- never run — sweep directly instead
+            if root:IsVisible() then
                 sweepQueued = true
             else
                 Sweep()

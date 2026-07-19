@@ -55,7 +55,9 @@ local function SellNextJunk()
     for bag = 0, 4 do
         for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
             local info = C_Container.GetContainerItemInfo(bag, slot)
-            if info and info.quality == 0 and not info.isLocked then
+            -- hasNoValue is accurate while a merchant is open; without the
+            -- check, a no-value gray would be re-attempted every tick forever
+            if info and info.quality == 0 and not info.isLocked and not info.hasNoValue then
                 local unitPrice = select(11, C_Item.GetItemInfo(info.itemID))
                 if unitPrice and unitPrice > 0 then
                     soldValue = soldValue + unitPrice * (info.stackCount or 1)
@@ -98,6 +100,11 @@ events:SetScript("OnEvent", function(self, event)
     if event == "MERCHANT_SHOW" then
         RunLogistics()
     elseif event == "MERCHANT_CLOSED" then
-        StopSelling()
+        -- A live ticker means the junk pass was cut short (Escape, walking
+        -- away) — still report what was sold and repaired before the close
+        if sellTicker then
+            StopSelling()
+            Report()
+        end
     end
 end)

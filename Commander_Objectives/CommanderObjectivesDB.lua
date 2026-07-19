@@ -46,7 +46,7 @@ local function CreateOptionsPanel()
     })
     panel:AddCheckbox({
         label = "Progress Toasts",
-        tooltip = "Show quest objective progress (kills, gathers) as a toast at the top of the screen.",
+        tooltip = "Show partial quest objective progress (kills, gathers) as a toast at the top of the screen. OBJECTIVE SECURED lines for filled objectives always show while the module is enabled.",
         get = function() return CommanderObjectivesDB.ProgressToasts end,
         set = function(value) CommanderObjectivesDB.ProgressToasts = value end,
         isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,

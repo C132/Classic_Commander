@@ -65,11 +65,12 @@ local dropdownCounter = 0
 -- ---------------------------------------------------------------------------
 
 -- text may be a function: evaluated on hover, so tooltips can reflect
--- current state (return nil to show just the title)
-local function AttachTooltip(widget, title, text)
+-- current state (return nil to show just the title). anchor overrides the
+-- default ANCHOR_RIGHT for widgets living near the right screen edge.
+local function AttachTooltip(widget, title, text, anchor)
     if not title and not text then return end
     widget:HookScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, anchor or "ANCHOR_RIGHT")
         GameTooltip:SetText(title or "", 1, 1, 1)
         local body = text
         if type(body) == "function" then

@@ -44,17 +44,18 @@ local function CreateOptionsPanel()
         set = function(value) CommanderCameraDB.CameraSound = value end,
         isEnabled = function() return CommanderCameraDB.EnableCamera end,
     })
+    local enabled = function() return CommanderCameraDB.EnableCamera end
     panel:AddButtonRow({
-        { label = "Save View 1", width = 105, tooltip = "Store the current camera in slot 1.", onClick = function() CommanderCamera_Save(2) end },
-        { label = "Save View 2", width = 105, tooltip = "Store the current camera in slot 2.", onClick = function() CommanderCamera_Save(3) end },
-        { label = "Save View 3", width = 105, tooltip = "Store the current camera in slot 3.", onClick = function() CommanderCamera_Save(4) end },
-        { label = "Save View 4", width = 105, tooltip = "Store the current camera in slot 4.", onClick = function() CommanderCamera_Save(5) end },
+        { label = "Save View 1", width = 105, tooltip = "Store the current camera in slot 1.", onClick = function() CommanderCamera_Save(2) end, isEnabled = enabled },
+        { label = "Save View 2", width = 105, tooltip = "Store the current camera in slot 2.", onClick = function() CommanderCamera_Save(3) end, isEnabled = enabled },
+        { label = "Save View 3", width = 105, tooltip = "Store the current camera in slot 3.", onClick = function() CommanderCamera_Save(4) end, isEnabled = enabled },
+        { label = "Save View 4", width = 105, tooltip = "Store the current camera in slot 4.", onClick = function() CommanderCamera_Save(5) end, isEnabled = enabled },
     })
     panel:AddButtonRow({
-        { label = "Recall 1", width = 105, tooltip = "Snap the camera to saved view 1.", onClick = function() CommanderCamera_Recall(2) end },
-        { label = "Recall 2", width = 105, tooltip = "Snap the camera to saved view 2.", onClick = function() CommanderCamera_Recall(3) end },
-        { label = "Recall 3", width = 105, tooltip = "Snap the camera to saved view 3.", onClick = function() CommanderCamera_Recall(4) end },
-        { label = "Recall 4", width = 105, tooltip = "Snap the camera to saved view 4.", onClick = function() CommanderCamera_Recall(5) end },
+        { label = "Recall 1", width = 105, tooltip = "Snap the camera to saved view 1.", onClick = function() CommanderCamera_Recall(2) end, isEnabled = enabled },
+        { label = "Recall 2", width = 105, tooltip = "Snap the camera to saved view 2.", onClick = function() CommanderCamera_Recall(3) end, isEnabled = enabled },
+        { label = "Recall 3", width = 105, tooltip = "Snap the camera to saved view 3.", onClick = function() CommanderCamera_Recall(4) end, isEnabled = enabled },
+        { label = "Recall 4", width = 105, tooltip = "Snap the camera to saved view 4.", onClick = function() CommanderCamera_Recall(5) end, isEnabled = enabled },
     })
 
     panel:Finalize({ onDefaults = Reset })

@@ -47,9 +47,15 @@ local function PlayOrderSound()
     end
 end
 
+-- Declared here (not with the arrow-update code) so SetOrder/ClearOrder can
+-- reset it: a latched value from a finished order would otherwise swallow
+-- the arrival announcement of a next order issued within arrive range
+local arrivedAnnounced = false
+
 -- Shared with the settings panel and /corder clear
 function CommanderOrders_ClearOrder(announce)
     CommanderOrdersDB.Waypoint = nil
+    arrivedAnnounced = false
     arrow:Hide()
     if announce then
         print("Commander Orders: order cleared")
@@ -84,6 +90,7 @@ local function SetOrder(mapID, x, y)
         mapID = mapID, x = x, y = y,
         worldX = world.x, worldY = world.y, instance = instance,
     }
+    arrivedAnnounced = false
     PlayOrderSound()
     print(string.format("Commander Orders: move order issued (%.0f, %.0f)", x * 100, y * 100))
     return true
@@ -93,7 +100,6 @@ end
 -- Arrow updates
 -- ---------------------------------------------------------------------------
 local sinceUpdate = 0
-local arrivedAnnounced = false
 
 local function UpdateArrow(self, elapsed)
     sinceUpdate = sinceUpdate + elapsed

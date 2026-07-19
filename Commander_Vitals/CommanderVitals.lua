@@ -59,13 +59,15 @@ for i, slot in ipairs(DURABILITY_SLOTS) do
     row.bar:SetPoint("LEFT", row.barBG, "LEFT", 0, 0)
 
     row.slotID = slot.id
+    -- ANCHOR_LEFT: the wireframe hugs the right screen edge, so a
+    -- right-growing tooltip would render off screen
     Commander.UI.AttachTooltip(row, slot.label, function()
         local cur, max = GetInventoryItemDurability(row.slotID)
         if cur and max and max > 0 then
             return string.format("Condition: %d / %d (%.0f%%)", cur, max, cur / max * 100)
         end
         return "No durability on this slot."
-    end)
+    end, "ANCHOR_LEFT")
 
     rows[i] = row
 end

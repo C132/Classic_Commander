@@ -50,13 +50,15 @@ local function IsOn()
 end
 
 local function OnInfoMessage(message)
-    if not (IsOn() and CommanderObjectivesDB.ProgressToasts) then return end
+    if not IsOn() then return end
     if type(message) ~= "string" then return end
     local current, total = message:match("(%d+)%s*/%s*(%d+)")
     if not current then return end
     if tonumber(current) >= tonumber(total) then
+        -- Secured lines are the module's headline and stay on even when
+        -- the (spammier) per-kill progress toasts are turned off
         ShowBanner("OBJECTIVE SECURED", message, COLOR_SECURED, true)
-    else
+    elseif CommanderObjectivesDB.ProgressToasts then
         ShowBanner("OBJECTIVE PROGRESS", message, COLOR_PROGRESS, false)
     end
 end
