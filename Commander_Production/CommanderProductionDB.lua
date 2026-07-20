@@ -104,7 +104,7 @@ local function CreateOptionsPanel()
     }, {
         label = "Queue Length",
         tooltip = "Maximum number of entries shown at once (the soonest-ready cooldowns win).",
-        min = 1, max = 8, step = 1,
+        min = 1, max = 20, step = 1,
         format = "%.0f",
         get = function() return CommanderProductionDB.MaxBars end,
         set = function(value) CommanderProductionDB.MaxBars = value end,

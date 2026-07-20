@@ -105,7 +105,7 @@ local function CreateOptionsPanel()
     }, {
         label = "Board Length",
         tooltip = "Maximum number of afflictions shown at once (soonest to expire first).",
-        min = 1, max = 12, step = 1,
+        min = 1, max = 20, step = 1,
         format = "%.0f",
         get = function() return CommanderAfflictionsDB.MaxBars end,
         set = function(value) CommanderAfflictionsDB.MaxBars = value end,
