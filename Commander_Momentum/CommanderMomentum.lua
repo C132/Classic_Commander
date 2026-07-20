@@ -189,8 +189,9 @@ local function UpdatePortrait()
     end
 end
 
--- Public lament when a real streak dies on the clock; only chains that
--- reached the first milestone (x5) are worth announcing
+-- Public lament when a real streak dies on the clock; only chains over
+-- x10 are worth announcing, and only chains over x15 earn the audible
+-- /cry sob (sent after the lament so the chat log reads in order)
 local BREAK_LINES = {
     "loses momentum — the x%d chain is broken! (%d kills this session, best chain x%d)",
     "watches a x%d streak slip away... (%d kills this session, best chain x%d)",
@@ -206,11 +207,12 @@ local function EndStreak(announceBreak)
     if announceBreak and not wasTestChain
         and CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
         and CommanderMomentumDB.BreakEmotes
-        and endedStreak >= (CommanderMomentumDB.BreakFloor or 2) then
-        -- The comms answer to a dead chain: an audible sob, then the lament
-        DoEmote("CRY")
+        and endedStreak > 10 then
         SendChatMessage(string.format(BREAK_LINES[math.random(#BREAK_LINES)],
             endedStreak, totalKills, bestStreak), "EMOTE")
+        if endedStreak > 15 then
+            DoEmote("CRY")
+        end
     end
     local keepShown = CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
         and DisplayMode() == "HUD"
