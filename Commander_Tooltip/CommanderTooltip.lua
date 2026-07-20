@@ -5,17 +5,19 @@ local CommanderTooltip = {
 }
 
 function CommanderTooltip:OnGameTooltipSetItem(tooltip)
-    if not CommanderTooltipDB.ShowItemLevel then return end
-    
+    -- Item level and vendor price are independent options; neither gates the other
+    if not CommanderTooltipDB.ShowItemLevel and not CommanderTooltipDB.ShowVendorPrice then return end
+
     local _, link = tooltip:GetItem()
     if not link then return end
-    
-    local itemLevel = C_Item.GetDetailedItemLevelInfo(link)
-    if itemLevel then
-        tooltip:AddLine("Item Level: " .. itemLevel, 1, 1, 1)
+
+    if CommanderTooltipDB.ShowItemLevel then
+        local itemLevel = C_Item.GetDetailedItemLevelInfo(link)
+        if itemLevel then
+            tooltip:AddLine("Item Level: " .. itemLevel, 1, 1, 1)
+        end
     end
 
-    -- Add vendor price directly in OnGameTooltipSetItem
     if CommanderTooltipDB.ShowVendorPrice then
         local itemID = C_Item.GetItemInfoInstant(link)
         if itemID then
@@ -27,76 +29,58 @@ function CommanderTooltip:OnGameTooltipSetItem(tooltip)
     end
 end
 
-function CommanderTooltip:UpdateTooltipPosition(tooltip)
-    if not CommanderTooltipDB.AnchorToCursor then return end
-    
-    local scale = UIParent:GetEffectiveScale()
-    local x, y = GetCursorPosition()
-    x = x / scale + CommanderTooltipDB.xOffset
-    y = y / scale + CommanderTooltipDB.yOffset
-    
-    local anchor = CommanderTooltipDB.Anchor
-    tooltip:ClearAllPoints()
-    
-    if anchor == "TOPLEFT" then
-        y = y - tooltip:GetHeight()
-    elseif anchor == "TOPRIGHT" then
-        x = x - tooltip:GetWidth()
-        y = y - tooltip:GetHeight()
-    elseif anchor == "BOTTOMRIGHT" then
-        x = x - tooltip:GetWidth()
-    elseif anchor == "TOP" then
-        x = x - tooltip:GetWidth() / 2
-        y = y - tooltip:GetHeight()
-    elseif anchor == "BOTTOM" then
-        x = x - tooltip:GetWidth() / 2
-    elseif anchor == "LEFT" then
-        y = y - tooltip:GetHeight() / 2
-    elseif anchor == "RIGHT" then
-        x = x - tooltip:GetWidth()
-        y = y - tooltip:GetHeight() / 2
-    elseif anchor == "CENTER" then
-        x = x - tooltip:GetWidth() / 2
-        y = y - tooltip:GetHeight() / 2
+-- Runs as a secure post-hook on GameTooltip_SetDefaultAnchor, so it only ever
+-- sees tooltips that Blizzard just default-anchored (SetOwner ANCHOR_NONE +
+-- a single SetPoint to UIParent). Tooltips that are owner-anchored to a
+-- specific frame (bag item buttons, Questie icons, action buttons, ...) never
+-- pass through here, so we can never fight their anchor code.
+function CommanderTooltip:OnSetDefaultAnchor(tooltip, parent)
+    if tooltip ~= GameTooltip then return end
+
+    if CommanderTooltipDB.AnchorToCursor then
+        -- ANCHOR_CURSOR_RIGHT follows the cursor client-side and honors
+        -- offsets; no manual repositioning is ever needed.
+        tooltip:SetOwner(parent, "ANCHOR_CURSOR_RIGHT", CommanderTooltipDB.xOffset, CommanderTooltipDB.yOffset)
+    else
+        -- Re-point the freshly default-anchored tooltip to the user's chosen
+        -- corner of the screen. Anchoring only to UIParent keeps the anchor
+        -- family acyclic no matter what other addons do.
+        tooltip:ClearAllPoints()
+        tooltip:SetPoint(CommanderTooltipDB.Anchor, UIParent, CommanderTooltipDB.Anchor, CommanderTooltipDB.xOffset, CommanderTooltipDB.yOffset)
     end
-    
-    tooltip:SetPoint(anchor, UIParent, "BOTTOMLEFT", x, y)
+end
+
+function CommanderTooltip:ApplyScale()
+    -- Scale lives outside the anchor system, so it is safe to apply to a
+    -- live tooltip at any time.
+    GameTooltip:SetScale(CommanderTooltipDB.Scale)
+    ItemRefTooltip:SetScale(CommanderTooltipDB.Scale)
 end
 
 function CommanderTooltip:SetupTooltips()
     -- Apply scale
-    GameTooltip:SetScale(CommanderTooltipDB.Scale)
-    ItemRefTooltip:SetScale(CommanderTooltipDB.Scale)
-    
-    -- Hook scripts
-    GameTooltip:HookScript("OnTooltipSetItem", function(tooltip, ...) 
-        self:OnGameTooltipSetItem(tooltip, ...) 
+    self:ApplyScale()
+
+    -- Hooks are registered exactly once at load; the handlers read the
+    -- settings on each call, so settings changes need no re-hooking.
+    GameTooltip:HookScript("OnTooltipSetItem", function(tooltip, ...)
+        self:OnGameTooltipSetItem(tooltip, ...)
     end)
-    GameTooltip:HookScript("OnUpdate", function(tooltip, ...) 
-        self:UpdateTooltipPosition(tooltip, ...) 
+    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+        self:OnSetDefaultAnchor(tooltip, parent)
     end)
 end
 
 function CommanderTooltip:OnUpdate()
-    -- ShowItemLevel and AnchorToCursor changes are handled by the hooks
-    -- installed once in SetupTooltips; the handlers check the settings on
-    -- each call. Re-hooking here would stack duplicate hooks, and clearing
-    -- the scripts would wipe out Blizzard's own tooltip handlers.
-
-    -- Snap the tooltip back to its default corner when cursor anchoring is off
-    if not CommanderTooltipDB.AnchorToCursor then
-        GameTooltip:ClearAllPoints()
-        GameTooltip:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -CONTAINER_OFFSET_X - 13, CONTAINER_OFFSET_Y)
-    end
-
-    -- Apply scale changes
-    GameTooltip:SetScale(CommanderTooltipDB.Scale)
-    ItemRefTooltip:SetScale(CommanderTooltipDB.Scale)
+    -- Settings changes only take effect for the NEXT tooltip shown, via the
+    -- GameTooltip_SetDefaultAnchor hook; a live tooltip is never re-anchored
+    -- from here. Scale is the one setting that is safe to apply immediately.
+    self:ApplyScale()
 end
 
 function CommanderTooltip:OnAwake()
     self:SetupTooltips()
-    AddListener(COMMANDER_TOOLTIP_EVENTS.UPDATE, function() self:OnUpdate() end)
+    Commander.AddListener(COMMANDER_TOOLTIP_EVENTS.UPDATE, function() self:OnUpdate() end)
     self.loaded = true
 end
 
@@ -118,37 +102,6 @@ end
 CommanderTooltip.frame = CreateFrame("Frame")
 CommanderTooltip.frame:RegisterEvent("PLAYER_LOGIN")
 CommanderTooltip.frame:RegisterEvent("PLAYER_LOGOUT")
-CommanderTooltip.frame:SetScript("OnEvent", function(_, event, ...) 
-    CommanderTooltip:OnEvent(event, ...) 
+CommanderTooltip.frame:SetScript("OnEvent", function(_, event, ...)
+    CommanderTooltip:OnEvent(event, ...)
 end)
-
--- Expose functions for settings panel
-function UpdateShowItemLevel(value)
-    CommanderTooltipDB.ShowItemLevel = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateShowVendorPrice(value)
-    CommanderTooltipDB.ShowVendorPrice = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateAnchorToCursor(value)
-    CommanderTooltipDB.AnchorToCursor = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateXOffset(value)
-    CommanderTooltipDB.xOffset = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateYOffset(value)
-    CommanderTooltipDB.yOffset = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end
-
-function UpdateScale(value)
-    CommanderTooltipDB.Scale = value
-    Notify(COMMANDER_TOOLTIP_EVENTS.UPDATE)
-end

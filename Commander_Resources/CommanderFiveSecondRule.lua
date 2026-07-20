@@ -4,8 +4,38 @@ fiveSecondRule:SetPoint("CENTER")
 fiveSecondRule:SetMovable(true)
 fiveSecondRule:EnableMouse(true)
 fiveSecondRule:RegisterForDrag("LeftButton")
-fiveSecondRule:SetScript("OnDragStart", fiveSecondRule.StartMoving)
-fiveSecondRule:SetScript("OnDragStop", fiveSecondRule.StopMovingOrSizing)
+-- Position is persisted explicitly in CommanderResourceDB.BarPosition (a
+-- single UIParent-relative point); opt out of the client's layout cache so
+-- there is exactly one source of truth for where the bar lives
+if fiveSecondRule.SetDontSavePosition then
+    pcall(fiveSecondRule.SetDontSavePosition, fiveSecondRule, true)
+end
+
+-- Re-anchor from the saved position (or the default center) with a single
+-- UIParent point, so the frame can never leave UIParent's anchor family
+local function ApplyBarPosition()
+    local pos = CommanderResourceDB and CommanderResourceDB.BarPosition
+    fiveSecondRule:ClearAllPoints()
+    if pos and type(pos.left) == "number" and type(pos.bottom) == "number" then
+        fiveSecondRule:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
+    else
+        fiveSecondRule:SetPoint("CENTER")
+    end
+end
+
+fiveSecondRule:SetScript("OnDragStart", function(self)
+    if CommanderResourceDB and CommanderResourceDB.LockBar then return end
+    self:StartMoving()
+end)
+fiveSecondRule:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    self:SetUserPlaced(false)
+    local left, bottom = self:GetLeft(), self:GetBottom()
+    if CommanderResourceDB and left and bottom then
+        CommanderResourceDB.BarPosition = { left = left, bottom = bottom }
+    end
+    ApplyBarPosition()
+end)
 
 local background = fiveSecondRule:CreateTexture(nil, "BACKGROUND")
 background:SetAllPoints()
@@ -33,6 +63,7 @@ local serverTickRate, lastRegenTime, tickOffset = 2, 0, 0
 local wasReady, manaAtFiveSecondStart = true, 0
 local readySound = SOUNDKIT.READY_CHECK
 local OnFiveSecondRuleChanged
+local UpdateVisibility
 
 local function OnEvent(self, event, unit, powerType)
     if event == "UNIT_POWER_UPDATE" and unit == "player" and powerType == "MANA" then
@@ -54,17 +85,20 @@ local function OnEvent(self, event, unit, powerType)
             playerIsFull = (currentMana == maxMana)
             lastManaPower = currentMana
         end
+    elseif event == "UNIT_DISPLAYPOWER" then
+        -- Display power changed (e.g. druid shapeshift); re-check the mana-user gate
+        UpdateVisibility()
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Fires on every loading screen; only register the listener once
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-        AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
+        Commander.AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
+        ApplyBarPosition()
+        UpdateVisibility()
     end
 end
 
 function OnFiveSecondRuleChanged()
-    if CommanderResourceDB and CommanderResourceDB.ShowFiveSecondRule ~= nil then
-        fiveSecondRule:SetShown(CommanderResourceDB.ShowFiveSecondRule)
-    end
+    UpdateVisibility()
 end
 
 local function OnUpdate(self, elapsed)
@@ -77,7 +111,9 @@ local function OnUpdate(self, elapsed)
             manaBar:SetValue(5)
             manaText:SetText("Ready")
             manaBar:SetStatusBarColor(0.2, 0.7, 1)
-            PlaySound(readySound, "Master")
+            if not CommanderResourceDB or CommanderResourceDB.PlayReadySound ~= false then
+                PlaySound(readySound, "Master")
+            end
             wasReady = true
         end
     else
@@ -105,16 +141,34 @@ local function OnUpdate(self, elapsed)
     end
 end
 
+-- Only mana users get the five second rule display (and its per-frame OnUpdate cost)
+function UpdateVisibility()
+    local isManaUser = UnitPowerType("player") == Enum.PowerType.Mana
+    if isManaUser and CommanderResourceDB and CommanderResourceDB.ShowFiveSecondRule then
+        fiveSecondRule:SetScript("OnUpdate", OnUpdate)
+        fiveSecondRule:Show()
+    else
+        fiveSecondRule:SetScript("OnUpdate", nil)
+        fiveSecondRule:Hide()
+    end
+end
+
 fiveSecondRule:SetScript("OnEvent", OnEvent)
-fiveSecondRule:SetScript("OnUpdate", OnUpdate)
 fiveSecondRule:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
+fiveSecondRule:RegisterUnitEvent("UNIT_DISPLAYPOWER", "player")
 fiveSecondRule:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-fiveSecondRule:Show()
+-- Hidden until PLAYER_ENTERING_WORLD applies the saved setting and mana-user gate
+fiveSecondRule:Hide()
+
+-- Shared with the options panel's "Reset Bar Position" button
+function CommanderResources_ResetBarPosition()
+    if CommanderResourceDB then
+        CommanderResourceDB.BarPosition = nil
+    end
+    ApplyBarPosition()
+    print("Commander Resources: bar position reset")
+end
 
 SLASH_RESETFSR1 = "/resetfsr"
-SlashCmdList["RESETFSR"] = function()
-    fiveSecondRule:ClearAllPoints()
-    fiveSecondRule:SetPoint("CENTER")
-    print("Five Second Rule frame position has been reset.")
-end
+SlashCmdList["RESETFSR"] = CommanderResources_ResetBarPosition

@@ -81,41 +81,65 @@ local function CreateMassWhisperFrame()
     return whisperFrame
 end
 
+-- Row pool for the mass whisper player list; rows are hidden and reused
+-- across refreshes instead of being orphaned and recreated
+local playerRows = {}
+
+-- Acquire a row from the pool, creating one only when the pool is exhausted
+local function AcquirePlayerRow(scrollChild, index)
+    local button = playerRows[index]
+    if not button then
+        button = CreateFrame("Frame", nil, scrollChild)
+        button:SetSize(350, 20)
+
+        -- Checkbox
+        local checkbox = CreateFrame("CheckButton", nil, button, "UICheckButtonTemplate")
+        checkbox:SetPoint("LEFT", 2, 0)
+        checkbox:SetSize(14, 14)
+        button.checkbox = checkbox
+
+        -- Player info text
+        local infoText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        infoText:SetPoint("LEFT", checkbox, "RIGHT", 2, 0)
+        button.infoText = infoText
+
+        -- Status text (for whisper progress)
+        local statusText = button:CreateFontString(nil, "OVERLAY", "GameFontGreenSmall")
+        statusText:SetPoint("RIGHT", -2, 0)
+        button.statusText = statusText
+
+        playerRows[index] = button
+    end
+    return button
+end
+
 -- Function to update the player list in the mass whisper frame
 local function UpdatePlayerList(frame)
     local scrollChild = frame.scrollChild
-    -- Clear existing entries
-    for _, child in pairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
+    -- Hide all pooled rows; the ones still needed are re-shown below
+    for _, row in ipairs(playerRows) do
+        row:Hide()
     end
 
     local previousButton
     local numResults = C_FriendList.GetNumWhoResults()
-    
+    local numRows = 0
+
     for i = 1, numResults do
         local whoInfo = C_FriendList.GetWhoInfo(i)
         if whoInfo then
-            local button = CreateFrame("Frame", nil, scrollChild)
-            button:SetSize(350, 20)
-            
+            numRows = numRows + 1
+            local button = AcquirePlayerRow(scrollChild, numRows)
+
+            button:ClearAllPoints()
             if previousButton then
                 button:SetPoint("TOPLEFT", previousButton, "BOTTOMLEFT", 0, 0)
             else
                 button:SetPoint("TOPLEFT", 0, 0)
             end
 
-            -- Checkbox
-            local checkbox = CreateFrame("CheckButton", nil, button, "UICheckButtonTemplate")
-            checkbox:SetPoint("LEFT", 2, 0)
-            checkbox:SetSize(14, 14)
-            checkbox:SetChecked(true)
-            button.checkbox = checkbox
+            button.checkbox:SetChecked(true)
 
-            -- Player info text
-            local infoText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            infoText:SetPoint("LEFT", checkbox, "RIGHT", 2, 0)
-            
             -- Get proper class name and color
             local englishClass = whoInfo.classFileName or whoInfo.filename -- Try both possible properties
             if not englishClass then
@@ -130,12 +154,12 @@ local function UpdatePlayerList(frame)
                 end
             end
             englishClass = englishClass or "WARRIOR" -- Fallback
-            
+
             local classColor = RAID_CLASS_COLORS[englishClass] or "FFFFFFFF"
             local displayName = whoInfo.fullName and whoInfo.fullName:match("([^-]+)") or "Unknown"
-            
+
             -- Format the text with class coloring and cleaned up name
-            infoText:SetText(string.format(
+            button.infoText:SetText(string.format(
                 "|cff%s%s|r %d %s %s",
                 classColor,
                 displayName,
@@ -143,14 +167,9 @@ local function UpdatePlayerList(frame)
                 whoInfo.className or "",
                 whoInfo.area or ""
             ))
-            button.infoText = infoText
             button.playerName = displayName -- Store clean name for whispers
-            
-            -- Status text (for whisper progress)
-            local statusText = button:CreateFontString(nil, "OVERLAY", "GameFontGreenSmall")
-            statusText:SetPoint("RIGHT", -2, 0)
-            statusText:SetText("")
-            button.statusText = statusText
+            button.statusText:SetText("")
+            button:Show()
 
             previousButton = button
         end
@@ -167,8 +186,9 @@ local massWhisperFrame = CreateMassWhisperFrame()
 -- Send whispers function
 local function SendMassWhispers(message)
     local selectedPlayers = {}
-    for _, child in pairs({massWhisperFrame.scrollChild:GetChildren()}) do
-        if child.checkbox and child.checkbox:GetChecked() then
+    for _, child in ipairs(playerRows) do
+        -- Skip hidden pooled rows left over from a previous, larger result set
+        if child:IsShown() and child.checkbox:GetChecked() then
             table.insert(selectedPlayers, {
                 frame = child,
                 name = child.playerName -- Use stored clean name
@@ -240,17 +260,12 @@ local function HookWhoScroll()
         return
     end
 
-    -- Hook the WhoFrame's update function
+    -- Hook the WhoFrame's update function; scrolling already triggers
+    -- WhoList_Update via the native OnVerticalScroll handler, so this hook
+    -- covers scroll refreshes too
     if WhoList_Update then
         hooksecurefunc("WhoList_Update", function()
             C_Timer.After(0, UpdateWhoCheckboxes)
-        end)
-    end
-
-    -- Hook the scroll event
-    if WhoListScrollFrame then
-        WhoListScrollFrame:HookScript("OnVerticalScroll", function(self, offset)
-            FauxScrollFrame_OnVerticalScroll(self, offset, FRIENDS_FRAME_WHO_HEIGHT, WhoList_Update)
         end)
     end
 end
@@ -370,10 +385,10 @@ local function OnAwake()
     -- Wait for WhoFrame to be available
     C_Timer.After(1, function()  -- Increased delay to ensure frames are loaded
         if WhoFrame then
-            AddListener(COMMANDER_WHO_EVENTS.UPDATE, OnUpdate)
+            Commander.AddListener(COMMANDER_WHO_EVENTS.UPDATE, OnUpdate)
             HookWhoScroll()
             UpdateWhoCheckboxes()
-            Notify(COMMANDER_WHO_EVENTS.UPDATE)
+            Commander.Notify(COMMANDER_WHO_EVENTS.UPDATE)
         else
             -- Try again if WhoFrame isn't loaded yet
             C_Timer.After(0.5, OnAwake)

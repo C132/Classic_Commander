@@ -5,93 +5,106 @@ COMMANDER_NAMEPLATE_EVENTS = {
 }
 
 local DefaultSettings = {
+    showPlayerName = true,
+    fadeWhileMoving = false,
+    fadeIntensity = 0.5,
+    showHealthPercent = false,
+    showManaPercent = false,
+    alwaysShowMana = false,
+    position = {"CENTER", "UIParent", "CENTER", 0, 300}
 }
 
-for key, value in pairs(DefaultSettings) do
-    if CommanderNameplateDB[key] == nil then
-        CommanderNameplateDB[key] = value
-    end
-end
-
-
 local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_LOGOUT")
-local loaded = false
 
 local function Reset()
-    print("Resetting Commander Nameplate")
-    for key, value in pairs(DefaultSettings) do
-        CommanderNameplateDB[key] = value
-    end
-    Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
+    Commander.UI.ResetToDefaults(CommanderNameplateDB, DefaultSettings)
+    Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
+    print("Commander Nameplate: settings restored to defaults")
 end
 
-local function InitializeSlashCommands(categoryID)
-    SLASH_CNP1 = "/cnp"
-    SlashCmdList["CNP"] = function(msg)
-        msg = msg:lower()
-        if msg == "" then
-            Settings.OpenToCategory(categoryID)
-        elseif msg == "reset" then
-            Reset()
-            print("Commander Nameplate Reset")
-        else
-            print("Usage: /cnp [reset]")
-        end
-    end
+local function ResetPosition()
+    CommanderNameplateDB.position = Commander.UI.CopyValue(DefaultSettings.position)
+    Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
 end
 
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Nameplate"
+    local panel = Commander.UI.NewPanel({
+        key = "Nameplate",
+        title = "Nameplate",
+        addonName = "Commander_Nameplate",
+        description = "A personal plate floating above your character with health, mana, and cast bars. It appears when something is happening — combat, casting, missing resources — and melts away when you are topped off.",
+        event = COMMANDER_NAMEPLATE_EVENTS.UPDATE,
+        slash = { "/cnp" },
+    })
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Nameplate Settings")
+    panel:AddSection("Display", "Percent text and the always-on mana bar are optional extras on top of the base plate.")
+    panel:AddCheckbox({
+        label = "Show Player Name",
+        tooltip = "Show your character's name above the nameplate.",
+        get = function() return CommanderNameplateDB.showPlayerName end,
+        set = function(value) CommanderNameplateDB.showPlayerName = value end,
+    })
+    panel:AddCheckbox({
+        label = "Show Health Percentage",
+        tooltip = "Display your health as a percentage on the health bar.",
+        get = function() return CommanderNameplateDB.showHealthPercent end,
+        set = function(value) CommanderNameplateDB.showHealthPercent = value end,
+    })
+    panel:AddCheckbox({
+        label = "Show Mana Percentage",
+        tooltip = "Display your mana as a percentage on the mana bar.",
+        get = function() return CommanderNameplateDB.showManaPercent end,
+        set = function(value) CommanderNameplateDB.showManaPercent = value end,
+    })
+    panel:AddCheckbox({
+        label = "Always Show Mana Bar",
+        tooltip = "Keep the mana bar visible out of combat instead of showing it only while fighting or casting.",
+        get = function() return CommanderNameplateDB.alwaysShowMana end,
+        set = function(value) CommanderNameplateDB.alwaysShowMana = value end,
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Nameplate options below.")
-    
-    local resetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetButton:SetSize(100, 22)
-    resetButton:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    resetButton:SetText("Reset")
-    resetButton:SetScript("OnClick", function()
-        Reset()
-        print("Commander Nameplate Reset")
-    end)
+    panel:AddSection("Movement Fade")
+    panel:AddCheckbox({
+        label = "Fade While Moving",
+        tooltip = "Make the nameplate translucent while your character is moving.",
+        get = function() return CommanderNameplateDB.fadeWhileMoving end,
+        set = function(value) CommanderNameplateDB.fadeWhileMoving = value end,
+    })
+    panel:AddSlider({
+        label = "Faded Opacity",
+        tooltip = "How visible the nameplate remains while you are moving. Lower values make it more transparent.",
+        min = 0, max = 1, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderNameplateDB.fadeIntensity end,
+        set = function(value) CommanderNameplateDB.fadeIntensity = value end,
+        isEnabled = function() return CommanderNameplateDB.fadeWhileMoving end,
+    })
 
-    
-    return panel
-end
+    panel:AddSection("Position")
+    panel:AddButtonRow({
+        {
+            label = "Reset Position",
+            tooltip = "Move the nameplate back to its default spot above your character.",
+            onClick = ResetPosition,
+        },
+    })
 
-local function OnUpdate()
-
+    panel:Finalize({ onDefaults = Reset })
 end
 
 local function OnAwake()
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Nameplate")
-    local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
-    InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_NAMEPLATE_EVENTS.UPDATE, OnUpdate)
+    CreateOptionsPanel()
 end
 
-local function OnDestroy()
-    print("Commander Nameplate Destroy")
-end
-
-local function OnEvent(self, event)
-    if event == "PLAYER_LOGIN" then
+local function OnEvent(self, event, addon)
+    if event == "ADDON_LOADED" and addon == "Commander_Nameplate" then
+        CommanderNameplateDB = CommanderNameplateDB or {}
+        Commander.UI.ApplyDefaults(CommanderNameplateDB, DefaultSettings)
+        self:UnregisterEvent("ADDON_LOADED")
+    elseif event == "PLAYER_LOGIN" then
         OnAwake()
-        loaded = true
-    elseif event == "PLAYER_LOGOUT" then
-        OnDestroy()
-    elseif loaded then
-        OnUpdate()
     end
 end
 

@@ -1,7 +1,5 @@
 CommanderBagsDB = _G.CommanderBagsDB or {}
 
-local colorCodeItemsCheckbox
-
 COMMANDER_BAGS_EVENTS = {
     UPDATE = "COMMANDER_BAGS_UPDATE"
 }
@@ -9,133 +7,125 @@ COMMANDER_BAGS_EVENTS = {
 local DefaultSettings = {
     ColorCodeItems = true,
     BagPositions = {},
-    FadeBagsWhileMoving = true
+    FadeBagsWhileMoving = true,
+    FadeOpacity = 0.5,
 }
 
-for key, value in pairs(DefaultSettings) do
-    if CommanderBagsDB[key] == nil then
-        CommanderBagsDB[key] = value
+local frame = CreateFrame("FRAME");
+frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_LOGIN")
+
+-- Container frames are unprotected, so relaying them out is legal even in
+-- combat; deferring the direct (insecure) UpdateContainerFrameAnchors call to
+-- after combat just avoids a gratuitously tainted layout pass while the UI is
+-- in lockdown
+local relayoutWatcher = CreateFrame("Frame")
+relayoutWatcher:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        UpdateContainerFrameAnchors()
+    end
+end)
+
+local function RequestContainerRelayout()
+    if InCombatLockdown() then
+        relayoutWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    else
+        UpdateContainerFrameAnchors()
     end
 end
 
-local frame = CreateFrame("FRAME");
-frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_LOGOUT")
-local loaded = false
+-- Drop any custom anchors (hidden frames included, so stale points cannot
+-- combine with Blizzard's later SetPoint), then let Blizzard lay the shown
+-- bags back out in the stock layout.
+local function ResetBagPositions()
+    CommanderBagsDB.BagPositions = {}
+    -- NUM_CONTAINER_FRAMES is Blizzard's global; fall back to 13 (this client's
+    -- count) in case a future patch drops it
+    for i = 1, (NUM_CONTAINER_FRAMES or 13) do
+        local containerFrame = _G["ContainerFrame"..i]
+        if containerFrame then
+            containerFrame:ClearAllPoints()
+        end
+    end
+    RequestContainerRelayout()
+    Commander.Notify(COMMANDER_BAGS_EVENTS.UPDATE)
+end
 
 local function Reset()
-    print("Resetting Commander Bags")
-    for key, value in pairs(DefaultSettings) do
-        CommanderBagsDB[key] = value
-    end
-    
-    -- Reset bag positions
-    for i = 1, NUM_BAG_FRAMES do
-        local frame = _G["ContainerFrame"..i]
-        if frame then
-            frame:ClearAllPoints()
-            frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -50, 100)
-        end
-    end
-    
-    CommanderBagsDB.BagPositions = {}
-    Notify(COMMANDER_BAGS_EVENTS.UPDATE)
-end
-
-local function InitializeSlashCommands(categoryID)
-    SLASH_CB1 = "/cb"
-    SlashCmdList["CB"] = function(msg)
-        msg = msg:lower()
-        if msg == "" then
-            Settings.OpenToCategory(categoryID)
-        elseif msg == "reset" then
-            Reset()
-            print("Commander Bags Reset")
-        else
-            print("Usage: /cb [reset]")
-        end
-    end
+    Commander.UI.ResetToDefaults(CommanderBagsDB, DefaultSettings)
+    ResetBagPositions()
+    print("Commander Bags: settings restored to defaults")
 end
 
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Bags"
+    local panel = Commander.UI.NewPanel({
+        key = "Bags",
+        title = "Bags",
+        addonName = "Commander_Bags",
+        description = "Your quartermaster: bag items get color-coded borders so loot reads at a glance, bag windows drag freely and remember where you put them, and everything fades out of your way while you travel.",
+        event = COMMANDER_BAGS_EVENTS.UPDATE,
+        slash = { "/cb", "/cbags" },
+        slashHandlers = {
+            diag = function()
+                -- Defined in CommanderBags.lua, which loads after this file
+                if CommanderBags_PrintDiagnostics then
+                    CommanderBags_PrintDiagnostics()
+                end
+            end,
+        },
+    })
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Bags Settings")
+    panel:AddSection("Item Highlighting", "Quest items glow yellow, consumables cyan, gray junk red, and gear keeps its quality color.")
+    panel:AddCheckbox({
+        label = "Color Code Item Borders",
+        tooltip = "Draw a colored border around bag items: quality colors for gear, yellow for quest items, cyan for consumables, and red for gray junk.",
+        get = function() return CommanderBagsDB.ColorCodeItems end,
+        set = function(value) CommanderBagsDB.ColorCodeItems = value end,
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Bags options below.")
+    panel:AddSection("Movement Fade", "Open bags turn translucent while you move and snap back to full opacity when you stop.")
+    panel:AddCheckbox({
+        label = "Fade Bags While Moving",
+        tooltip = "Make open bag windows translucent while your character is moving, so they block less of the world.",
+        get = function() return CommanderBagsDB.FadeBagsWhileMoving end,
+        set = function(value) CommanderBagsDB.FadeBagsWhileMoving = value end,
+    })
+    panel:AddSlider({
+        label = "Faded Opacity",
+        tooltip = "How visible bag windows remain while you are moving. Lower values make them more transparent.",
+        min = 0.1, max = 1.0, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderBagsDB.FadeOpacity end,
+        set = function(value) CommanderBagsDB.FadeOpacity = value end,
+        isEnabled = function() return CommanderBagsDB.FadeBagsWhileMoving end,
+    })
 
-    colorCodeItemsCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    colorCodeItemsCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    colorCodeItemsCheckbox.Text:SetText("Color Code Item Icons")
-    colorCodeItemsCheckbox:SetChecked(CommanderBagsDB.ColorCodeItems)
-    colorCodeItemsCheckbox:SetScript("OnClick", function(self)
-        CommanderBagsDB.ColorCodeItems = self:GetChecked()
-        print("Color coding setting changed to:", self:GetChecked())
-        Notify(COMMANDER_BAGS_EVENTS.UPDATE)
-    end)
+    panel:AddSection("Bag Positions", "Dragged bag windows are remembered per window; resetting returns the stock layout.")
+    panel:AddButtonRow({
+        {
+            label = "Reset Bag Positions",
+            tooltip = "Forget every dragged bag position and return all bag windows to the standard layout.",
+            onClick = function()
+                ResetBagPositions()
+                print("Commander Bags: bag positions reset")
+            end,
+        },
+    })
 
-    -- Add Reset Position Button
-    local resetPositionButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetPositionButton:SetSize(140, 22)
-    resetPositionButton:SetPoint("TOPLEFT", colorCodeItemsCheckbox, "BOTTOMLEFT", 0, -16)
-    resetPositionButton:SetText("Reset Bag Positions")
-    resetPositionButton:SetScript("OnClick", function()
-        Reset()
-        print("Bag positions have been reset")
-    end)
-
-    -- Add Fade Bags While Moving checkbox
-    local fadeBagsCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    fadeBagsCheckbox:SetPoint("TOPLEFT", resetPositionButton, "BOTTOMLEFT", 0, -8)
-    fadeBagsCheckbox.Text:SetText("Fade Bags While Moving")
-    fadeBagsCheckbox:SetChecked(CommanderBagsDB.FadeBagsWhileMoving)
-    fadeBagsCheckbox:SetScript("OnClick", function(self)
-        CommanderBagsDB.FadeBagsWhileMoving = self:GetChecked()
-        print("Fade bags while moving setting changed to:", self:GetChecked())
-        Notify(COMMANDER_BAGS_EVENTS.UPDATE)
-    end)
-
-    return panel
+    panel:Finalize({ onDefaults = Reset })
 end
 
-local function OnUpdate()
-    if colorCodeItemsCheckbox then
-        colorCodeItemsCheckbox:SetChecked(CommanderBagsDB.ColorCodeItems)
-    end
-end
-
-local function OnAwake()
-    -- Re-apply defaults here: SavedVariables replace the global CommanderBagsDB
-    -- after this file runs, so the top-of-file merge is lost for existing saves
-    for key, value in pairs(DefaultSettings) do
-        if CommanderBagsDB[key] == nil then
-            CommanderBagsDB[key] = value
+local function OnEvent(self, event, addonName)
+    if event == "ADDON_LOADED" then
+        -- SavedVariables replace the global table after the file runs, so apply defaults here
+        if addonName == "Commander_Bags" then
+            CommanderBagsDB = CommanderBagsDB or {}
+            Commander.UI.ApplyDefaults(CommanderBagsDB, DefaultSettings)
+            self:UnregisterEvent("ADDON_LOADED")
         end
-    end
-
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Bags")
-    local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
-    InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_BAGS_EVENTS.UPDATE, OnUpdate)
-end
-
-local function OnDestroy() end
-
-local function OnEvent(self, event)
-    if event == "PLAYER_LOGIN" then
-        OnAwake()
-        loaded = true
-    elseif event == "PLAYER_LOGOUT" then
-        OnDestroy()
-    elseif loaded then
-        OnUpdate()
+    elseif event == "PLAYER_LOGIN" then
+        CreateOptionsPanel()
     end
 end
 

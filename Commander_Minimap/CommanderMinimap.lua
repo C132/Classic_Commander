@@ -9,10 +9,14 @@ frame:RegisterEvent("ZONE_CHANGED_INDOORS")
 frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
 -- Constants
-local MINIMAP_SCALE = 1.37 -- Adjust this value to change minimap size (1.0 is default)
 local CLOCK_OFFSET_X = 48 -- Horizontal offset for clock position
 local CLOCK_OFFSET_Y = 14 -- Vertical offset for clock position
 local ZONE_TEXT_OFFSET_Y = -2 -- Vertical offset for zone text
+
+-- Scale is a saved setting (Commander Minimap options); 1.37 is the default
+local function ApplyMinimapScale()
+    Minimap:SetScale((CommanderMinimapDB and CommanderMinimapDB.MinimapScale) or 1.37)
+end
 
 -- Hide default minimap art and elements
 --MinimapBackdrop:Hide()
@@ -44,10 +48,12 @@ end
 
 frame:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Minimap" then
-        print("Commander_Minimap loaded successfully!")
         Minimap:SetMaskTexture("Interface\\BUTTONS\\WHITE8X8")
-        Minimap:SetScale(MINIMAP_SCALE)
-        
+        -- CommanderMinimapDB.lua loads first and merges defaults in its own
+        -- ADDON_LOADED handler, so the saved scale is available here
+        ApplyMinimapScale()
+        Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, ApplyMinimapScale)
+
         -- Update zone text
         UpdateZoneText()
     
@@ -80,11 +86,12 @@ frame:SetScript("OnEvent", function(self, event, addonName)
     end
 end)
 
--- Make Minimap draggable
+-- Make Minimap draggable (gated by the Lock Minimap setting)
 Minimap:SetMovable(true)
 Minimap:EnableMouse(true)
 Minimap:RegisterForDrag("LeftButton")
 Minimap:SetScript("OnDragStart", function(self)
+    if CommanderMinimapDB and CommanderMinimapDB.LockMinimap then return end
     self:StartMoving()
 end)
 Minimap:SetScript("OnDragStop", function(self)

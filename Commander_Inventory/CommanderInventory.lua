@@ -24,9 +24,6 @@ ItemGrid:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
 end)
 
--- Add after local frame declaration
-local debugFrame
-
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
@@ -225,16 +222,11 @@ local function LoadSettings()
 end
 
 frame:SetScript("OnEvent", function(self, event)
-    if debugFrame then
-        debugFrame.LogEvent(event)
-    end
-    
     if event == "PLAYER_LOGIN" then
         CreateItemGrid()
         UpdateButtons()
         LoadSettings()
-        AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, LoadSettings)
-        debugFrame = _G.CIDebugFrame -- Get reference to debug frame
+        Commander.AddListener(COMMANDER_INVENTORY_EVENTS.COMMANDER_INVENTORY, LoadSettings)
         loaded = true
     elseif event == "ACTIONBAR_UPDATE_COOLDOWN" and loaded then
         -- Only update cooldowns without rebuilding the entire grid

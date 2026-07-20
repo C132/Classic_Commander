@@ -129,17 +129,20 @@ local function CreatePlayerNameplate()
             nameplate:SetAlpha(1)
         end
     end
-    local events = {"UNIT_HEALTH", "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD", "UNIT_POWER_UPDATE", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_TARGET_CHANGED"}
+    local unitEvents = {"UNIT_HEALTH", "UNIT_POWER_UPDATE", "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED"}
+    for _, event in ipairs(unitEvents) do nameplate:RegisterUnitEvent(event, "player") end
+    local events = {"PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_TARGET_CHANGED"}
     for _, event in ipairs(events) do nameplate:RegisterEvent(event) end
     nameplate:SetScript("OnEvent", function(self, event, unit)
         if unit == "player" or event:match("^PLAYER_") then self.Update() end
     end)
     nameplate.updateElapsed = 0
     nameplate:SetScript("OnUpdate", function(self, elapsed)
-        local name, _, _, startTime = UnitCastingInfo("player")
-        if name then
-            local currentProgress = GetTime() - startTime / 1000
-            self.castBar:SetValue(currentProgress)
+        if self.castBar:IsShown() then
+            local name, _, _, startTime = UnitCastingInfo("player")
+            if name then
+                self.castBar:SetValue(GetTime() - startTime / 1000)
+            end
         end
         self.updateElapsed = self.updateElapsed + elapsed
         if self.updateElapsed >= 0.1 then
@@ -160,104 +163,26 @@ playerNameplate:SetScript("OnDragStop", function(self)
     CommanderNameplateDB.position = {point, "UIParent", relativePoint, xOfs, yOfs}
 end)
 playerNameplate.Update()
-local settingsPanel = CreateFrame("Frame", "CommanderNameplateSettingsPanel")
-settingsPanel.name = "Commander Nameplate"
-local settingsCategory = Settings.RegisterCanvasLayoutCategory(settingsPanel, "Commander Nameplate")
-Settings.RegisterAddOnCategory(settingsCategory)
-local function CreateCheckbox(name, label, description, onClick)
-    local check = CreateFrame("CheckButton", "CommanderNameplate"..name.."CheckButton", settingsPanel, "InterfaceOptionsCheckButtonTemplate")
-    check:SetScript("OnClick", function(self)
-        CommanderNameplateDB[name] = self:GetChecked()
-        onClick(self, self:GetChecked())
-    end)
-    check.label = _G[check:GetName().."Text"]
-    check.label:SetText(label)
-    check.tooltipText = label
-    check.tooltipRequirement = description
-    return check
-end
-local function CreateSlider(name, label, minVal, maxVal, valueStep)
-    local slider = CreateFrame("Slider", "CommanderNameplate"..name.."Slider", settingsPanel, "OptionsSliderTemplate")
-    local editbox = CreateFrame("EditBox", "$parentEditBox", slider, "InputBoxTemplate")
-    slider:SetMinMaxValues(minVal, maxVal)
-    slider:SetValueStep(valueStep)
-    slider:SetObeyStepOnDrag(true)
-    _G[slider:GetName().."Text"]:SetText(label)
-    _G[slider:GetName().."Low"]:SetText(minVal)
-    _G[slider:GetName().."High"]:SetText(maxVal)
-    editbox:SetSize(50,30)
-    editbox:ClearAllPoints()
-    editbox:SetPoint("TOP", slider, "BOTTOM", 0, -5)
-    editbox:SetFontObject(GameFontHighlightSmall)
-    editbox:SetJustifyH("CENTER")
-    editbox:SetAutoFocus(false)
-    slider:SetScript("OnValueChanged", function(self,value)
-        self.editbox:SetText(string.format("%.2f", value))
-        CommanderNameplateDB[name] = value
-        playerNameplate.Update()
-    end)
-    editbox:SetScript("OnEnterPressed", function(self)
-        local val = tonumber(self:GetText())
-        if val then
-            self:GetParent():SetValue(val)
-            self:ClearFocus()
-        end
-    end)
-    slider.editbox = editbox
-    return slider
-end
-local showPlayerNameCheck = CreateCheckbox("showPlayerName", "Show Player Name", "Toggle visibility of player name on the nameplate", function(self, checked) 
-    playerNameplate.Update()
-end)
-showPlayerNameCheck:SetPoint("TOPLEFT", 16, -16)
-local fadeWhileMovingCheck = CreateCheckbox("fadeWhileMoving", "Fade While Moving", "Fade out the nameplate when the player is moving", function(self, checked) 
-    playerNameplate.Update()
-end)
-fadeWhileMovingCheck:SetPoint("TOPLEFT", showPlayerNameCheck, "BOTTOMLEFT", 0, -24)
-local fadeIntensitySlider = CreateSlider("fadeIntensity", "Fade Intensity", 0, 1, 0.01)
-fadeIntensitySlider:SetPoint("TOPLEFT", fadeWhileMovingCheck, "BOTTOMLEFT", 0, -40)
-fadeIntensitySlider:SetWidth(200)
-local showHealthPercentCheck = CreateCheckbox("showHealthPercent", "Show Health Percentage", "Display health percentage on the health bar", function(self, checked) 
-    playerNameplate.Update()
-end)
-showHealthPercentCheck:SetPoint("TOPLEFT", fadeIntensitySlider, "BOTTOMLEFT", 0, -32)
-local showManaPercentCheck = CreateCheckbox("showManaPercent", "Show Mana Percentage", "Display mana percentage on the mana bar", function(self, checked) 
-    playerNameplate.Update()
-end)
-showManaPercentCheck:SetPoint("TOPLEFT", showHealthPercentCheck, "BOTTOMLEFT", 0, -24)
-local alwaysShowManaCheck = CreateCheckbox("alwaysShowMana", "Always Show Mana Bar", "Always display the mana bar, even when out of combat", function(self, checked) 
-    playerNameplate.Update()
-end)
-alwaysShowManaCheck:SetPoint("TOPLEFT", showManaPercentCheck, "BOTTOMLEFT", 0, -24)
 
-settingsPanel:RegisterEvent("ADDON_LOADED")
-settingsPanel:SetScript("OnEvent", function(self, event, addon)
+local function ApplySavedPosition()
+    if CommanderNameplateDB and CommanderNameplateDB.position then
+        local point, _, relativePoint, xOfs, yOfs = unpack(CommanderNameplateDB.position)
+        playerNameplate:ClearAllPoints()
+        playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
+    end
+end
+
+Commander.AddListener(COMMANDER_NAMEPLATE_EVENTS.UPDATE, function()
+    ApplySavedPosition()
+    playerNameplate.Update()
+end)
+
+local loader = CreateFrame("Frame")
+loader:RegisterEvent("ADDON_LOADED")
+loader:SetScript("OnEvent", function(self, event, addon)
     if addon == "Commander_Nameplate" then
-        CommanderNameplateDB = CommanderNameplateDB or {
-            showPlayerName = true,
-            fadeWhileMoving = false,
-            fadeIntensity = 0.5,
-            showHealthPercent = false,
-            showManaPercent = false,
-            alwaysShowMana = false
-        }
-        for k, v in pairs({showPlayerName = true, fadeWhileMoving = false, fadeIntensity = 0.5, showHealthPercent = false, showManaPercent = false, alwaysShowMana = false}) do
-            if CommanderNameplateDB[k] == nil then
-                CommanderNameplateDB[k] = v
-            end
-        end
-        if CommanderNameplateDB.position then
-            local point, _, relativePoint, xOfs, yOfs = unpack(CommanderNameplateDB.position)
-            playerNameplate:ClearAllPoints()
-            playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
-        end
-        showPlayerNameCheck:SetChecked(CommanderNameplateDB.showPlayerName)
-        fadeWhileMovingCheck:SetChecked(CommanderNameplateDB.fadeWhileMoving)
-        fadeIntensitySlider:SetValue(CommanderNameplateDB.fadeIntensity)
-        fadeIntensitySlider.editbox:SetText(string.format("%.2f", CommanderNameplateDB.fadeIntensity))
-        showHealthPercentCheck:SetChecked(CommanderNameplateDB.showHealthPercent)
-        showManaPercentCheck:SetChecked(CommanderNameplateDB.showManaPercent)
-        alwaysShowManaCheck:SetChecked(CommanderNameplateDB.alwaysShowMana)
+        self:UnregisterEvent("ADDON_LOADED")
+        ApplySavedPosition()
         playerNameplate.Update()
     end
 end)

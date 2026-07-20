@@ -9,102 +9,78 @@ local DefaultSettings = {
     showBagButtons = true,
     position = {
         point = "CENTER",
-        relativePoint = "CENTER", 
+        relativePoint = "CENTER",
         xOfs = 0,
         yOfs = 0
     }
 }
 
-local function ApplyDefaultSettings()
-    for key, value in pairs(DefaultSettings) do
-        if CommanderActionBarDB[key] == nil then
-            CommanderActionBarDB[key] = value
-        end
-    end
-end
-
-ApplyDefaultSettings()
-
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_LOGOUT")
-local loaded = false
 
 local function Reset()
-    print("Resetting Commander Action Bar")
-    for key, value in pairs(DefaultSettings) do
-        CommanderActionBarDB[key] = value
-    end
-    Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    Commander.UI.ResetToDefaults(CommanderActionBarDB, DefaultSettings)
+    Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    print("Commander Action Bar: settings restored to defaults")
 end
 
-local function InitializeSlashCommands(categoryID)
-    SLASH_CAB1 = "/cab"
-    SlashCmdList["CAB"] = function(msg)
-        msg = msg:lower()
-        if msg == "" then
-            Settings.OpenToCategory(categoryID)
-        elseif msg == "reset" then
-            Reset()
-            print("Commander Action Bar Reset")
-        elseif msg == "lock" then
-            CommanderActionBarDB.locked = true
-            Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
-            print("Commander Action Bar Locked")
-        elseif msg == "unlock" then
-            CommanderActionBarDB.locked = false
-            Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
-            print("Commander Action Bar Unlocked")
-        else
-            print("Usage: /cab [reset|lock|unlock]")
-        end
-    end
+local function ResetPosition()
+    CommanderActionBarDB.position = Commander.UI.CopyValue(DefaultSettings.position)
+    Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+end
+
+local function SetLocked(locked)
+    CommanderActionBarDB.locked = locked
+    Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    print("Commander Action Bar " .. (locked and "locked" or "unlocked"))
 end
 
 local function CreateOptionsPanel()
-    local panel = CreateFrame("Frame")
-    panel.name = "Commander Action Bar"
+    local panel = Commander.UI.NewPanel({
+        key = "ActionBar",
+        title = "Action Bar",
+        addonName = "Commander_ActionBar",
+        description = "Replaces the sprawling default action bars with a single compact command card: an RTS-style grid of your actions on a movable armored plate, with the stock bar art, micro buttons, and XP bar cleared away.",
+        event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
+        slash = { "/cab" },
+        slashHandlers = {
+            lock = function() SetLocked(true) end,
+            unlock = function() SetLocked(false) end,
+        },
+    })
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Commander Action Bar Settings")
+    panel:AddSection("Command Card", "Unlock to drag the card anywhere on screen, then lock it back down to avoid accidental moves.")
+    panel:AddCheckbox({
+        label = "Lock Action Bar",
+        tooltip = "Prevent the command card from being dragged. Uncheck to move it, then lock it again to avoid accidental drags.",
+        get = function() return CommanderActionBarDB.locked end,
+        set = function(value) CommanderActionBarDB.locked = value end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Reset Position",
+            tooltip = "Move the command card back to the center of the screen.",
+            onClick = ResetPosition,
+        },
+    })
 
-    local description = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    description:SetText("Configure Commander Action Bar options below.")
-    
-    local resetButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetButton:SetSize(100, 22)
-    resetButton:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
-    resetButton:SetText("Reset")
-    resetButton:SetScript("OnClick", function()
-        Reset()
-        print("Commander Action Bar Reset")
-    end)
+    panel:AddSection("Bag Buttons", "The four bag slot buttons are re-anchored to the bottom-right corner of the screen.")
+    panel:AddCheckbox({
+        label = "Show Bag Buttons",
+        tooltip = "Show the four bag slot buttons in the bottom-right corner of the screen.",
+        get = function() return CommanderActionBarDB.showBagButtons end,
+        set = function(value) CommanderActionBarDB.showBagButtons = value end,
+    })
 
-    local lockCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    lockCheckbox:SetPoint("TOPLEFT", resetButton, "BOTTOMLEFT", 0, -8)
-    lockCheckbox.Text:SetText("Lock Action Bars")
-    lockCheckbox:SetChecked(CommanderActionBarDB.locked)
-    lockCheckbox:SetScript("OnClick", function(self)
-        CommanderActionBarDB.locked = self:GetChecked()
-        Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
-    end)
-
-    local bagButtonsCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    bagButtonsCheckbox:SetPoint("TOPLEFT", lockCheckbox, "BOTTOMLEFT", 0, -8)
-    bagButtonsCheckbox.Text:SetText("Show Bag Buttons")
-    bagButtonsCheckbox:SetChecked(CommanderActionBarDB.showBagButtons)
-    bagButtonsCheckbox:SetScript("OnClick", function(self)
-        CommanderActionBarDB.showBagButtons = self:GetChecked()
-        Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
-    end)
-    
-    return panel
+    panel:Finalize({ onDefaults = Reset })
 end
 
-local function OnUpdate()
+-- Set when a bag button update is skipped due to combat lockdown; applied on
+-- PLAYER_REGEN_ENABLED
+local pendingBagButtonUpdate = false
+
+local function ApplyBagButtonVisibility()
     for i = 0, 3 do
         local bagButton = _G["CharacterBag" .. i .. "Slot"]
         if bagButton then
@@ -113,32 +89,38 @@ local function OnUpdate()
     end
 end
 
-local function OnAwake()
-    local panel = CreateOptionsPanel()
-    local category = Settings.RegisterCanvasLayoutSubcategory(MainCategory, panel, "Commander Action Bar")
-    local categoryID = category:GetID()
-    Settings.RegisterAddOnCategory(category)
-    InitializeSlashCommands(categoryID)
-    AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, OnUpdate)
+local function OnUpdate()
+    -- CharacterBag0-3Slot are protected; SetShown on them during combat
+    -- lockdown trips ADDON_ACTION_BLOCKED, so defer until combat ends
+    if InCombatLockdown() then
+        pendingBagButtonUpdate = true
+        frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    else
+        ApplyBagButtonVisibility()
+    end
 end
 
-local function OnDestroy()
+local function OnAwake()
+    CreateOptionsPanel()
+    Commander.AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, OnUpdate)
 end
 
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" then
-        -- SavedVariables replace the global table after the file runs, so re-apply defaults here
+        -- SavedVariables replace the global table after the file runs, so apply defaults here
         if addonName == "Commander_ActionBar" then
             CommanderActionBarDB = CommanderActionBarDB or {}
-            ApplyDefaultSettings()
+            Commander.UI.ApplyDefaults(CommanderActionBarDB, DefaultSettings)
+            self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then
         OnAwake()
-        loaded = true
-    elseif event == "PLAYER_LOGOUT" then
-        OnDestroy()
-    elseif loaded then
-        OnUpdate()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        if pendingBagButtonUpdate then
+            pendingBagButtonUpdate = false
+            ApplyBagButtonVisibility()
+        end
     end
 end
 

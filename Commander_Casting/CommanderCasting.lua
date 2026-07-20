@@ -57,6 +57,10 @@ local function UpdateCastingGlow(glow)
 
     if name and CommanderCastingDB.ShowFullscreenEffect then
         local castDuration = endTime - startTime
+        if castDuration <= 0 then  -- Guard against dividing by zero (endTime == startTime)
+            glow:SetAlpha(0)
+            return
+        end
         local castElapsed = GetTime() * 1000 - startTime
         local castProgress = castElapsed / castDuration
 
@@ -95,23 +99,52 @@ local function OnUpdate()
     UpdateCastingGlow(fullScreenGlow)
 end
 
+-- Only run the OnUpdate script while the player is actually casting or channeling
+local isWatching = false
+
+local function StartWatching()
+    if not isWatching then
+        isWatching = true
+        frame:SetScript("OnUpdate", OnUpdate)
+    end
+end
+
+local function StopWatching()
+    if isWatching then
+        isWatching = false
+        frame:SetScript("OnUpdate", nil)
+    end
+end
+
 local function OnAwake()
-    AddListener(COMMANDER_CASTING_EVENTS.UPDATE, OnUpdate)
-    Notify(COMMANDER_CASTING_EVENTS.UPDATE)
-    frame:SetScript("OnUpdate", OnUpdate)
+    Commander.AddListener(COMMANDER_CASTING_EVENTS.UPDATE, OnUpdate)
+    Commander.Notify(COMMANDER_CASTING_EVENTS.UPDATE)
+    -- Handle logging in / reloading mid-cast
+    if UnitCastingInfo("player") or UnitChannelInfo("player") then
+        StartWatching()
+    end
 end
 
-local function OnDestroy()
-    print("CommanderCasting: OnDestroy")
-end
+local function OnDestroy() end
 
-local function OnEvent(self, event)
+local function OnEvent(self, event, unit)
     if event == "PLAYER_LOGIN" then
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then
         OnDestroy()
     elseif loaded then
+        if unit == "player" then
+            if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
+                StartWatching()
+            elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED"
+                or event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+                -- Only stop once nothing is in progress (e.g. an instant can fail mid-channel)
+                if not UnitCastingInfo("player") and not UnitChannelInfo("player") then
+                    StopWatching()
+                end
+            end
+        end
         OnUpdate()
     end
 end
