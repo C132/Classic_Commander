@@ -8,6 +8,7 @@ local DefaultSettings = {
     EnableEconomy = true,
     HourlyReport = false,
     AutoInstanceReport = true,
+    AutoShare = false,
     BagGlow = true,
     AarStyle = "CLASSIC",
     AarScale = 1.0,
@@ -42,6 +43,12 @@ local function CreateOptionsPanel()
             share = function()
                 if CommanderEconomy_ShareReport then CommanderEconomy_ShareReport() end
             end,
+            newmission = function()
+                if CommanderEconomy_NewMission then CommanderEconomy_NewMission() end
+            end,
+            history = function()
+                if CommanderEconomy_CycleHistory then CommanderEconomy_CycleHistory() end
+            end,
         },
     })
 
@@ -66,9 +73,16 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
     }, {
         label = "Instance Reports",
-        tooltip = "Automatically open the After Action Report window when you leave a dungeon or raid, covering just that run: gold, experience, loot, quests, casualties, duration.",
+        tooltip = "Automatically open the After Action Report window when a dungeon or raid run completes, covering just that run. Empty runs never pop a report, and the window waits politely if you are in combat.",
         get = function() return CommanderEconomyDB.AutoInstanceReport end,
         set = function(value) CommanderEconomyDB.AutoInstanceReport = value end,
+        isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
+    })
+    panel:AddCheckbox({
+        label = "Auto-Share Runs",
+        tooltip = "When a dungeon or raid run completes, automatically share its report lines with your group (skipped when the run recorded nothing, and when you have no group). Off by default.",
+        get = function() return CommanderEconomyDB.AutoShare end,
+        set = function(value) CommanderEconomyDB.AutoShare = value end,
         isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
     })
     panel:AddButtonRow({
