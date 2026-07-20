@@ -18,6 +18,8 @@ local function ApplyMinimapScale()
     Minimap:SetScale((CommanderMinimapDB and CommanderMinimapDB.MinimapScale) or 1.37)
 end
 
+local ApplyTidy -- defined below; referenced by the event handler above it
+
 -- Hide default minimap art and elements
 --MinimapBackdrop:Hide()
 MinimapCluster.BorderTop:Hide() -- MinimapBorderTop global no longer exists on 2.5.5
@@ -53,6 +55,7 @@ frame:SetScript("OnEvent", function(self, event, addonName)
         -- ADDON_LOADED handler, so the saved scale is available here
         ApplyMinimapScale()
         Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, ApplyMinimapScale)
+        Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, ApplyTidy)
 
         -- Update zone text
         UpdateZoneText()
@@ -81,10 +84,132 @@ frame:SetScript("OnEvent", function(self, event, addonName)
         end
         UpdateZoneText()
         PositionLFGButton()
+        -- Fade third-party minimap buttons now, and again shortly after —
+        -- most addons create their buttons at or after PLAYER_LOGIN
+        ApplyTidy()
+        C_Timer.After(5, ApplyTidy)
     elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "ZONE_CHANGED_NEW_AREA" then
         UpdateZoneText()
     end
 end)
+
+-- ---------------------------------------------------------------------------
+-- Tidy addon buttons: third-party minimap buttons stay faded until the mouse
+-- is over the minimap. Blizzard's own elements and the Commander information
+-- button are never touched (allowlist below); everything else parented to
+-- the Minimap fades to the configured opacity.
+local TIDY_KEEP = {
+    CommanderMinimapButton = true,
+    MiniMapTracking = true,
+    MiniMapTrackingFrame = true,
+    MiniMapTrackingButton = true,
+    MiniMapMailFrame = true,
+    GameTimeFrame = true,
+    TimeManagerClockButton = true,
+    MinimapZoomIn = true,
+    MinimapZoomOut = true,
+    MinimapZoneTextButton = true,
+    MinimapBackdrop = true,
+    MiniMapWorldMapButton = true,
+    MinimapToggleButton = true,
+    LFGMinimapFrame = true,
+    MiniMapBattlefieldFrame = true,
+    MiniMapLFGFrame = true,
+    MiniMapInstanceDifficulty = true,
+    QueueStatusMinimapButton = true,
+}
+
+local tidyButtons = {}
+local revealTicker
+local revealed = false
+
+local RevealButtons -- forward declaration (hooked onto collected buttons)
+
+-- Only fade frames that are actually addon minimap BUTTONS. Addons also
+-- parent map PINS directly to the Minimap (Questie quest icons, guide
+-- arrows via HereBeDragons), and fading those would blank the map's quest
+-- data — so membership is by naming convention, not "every Minimap child":
+-- LibDBIcon buttons are "LibDBIcon10_<Addon>", hand-rolled ones almost
+-- universally contain "MinimapButton"/"MinimapIcon"/"MinimapFrame".
+local function IsAddonMinimapButton(child)
+    local name = child.GetName and child:GetName()
+    if not name or TIDY_KEEP[name] then return false end
+    return name:find("^LibDBIcon") ~= nil
+        or name:find("MinimapButton") ~= nil
+        or name:find("MinimapIcon") ~= nil
+        or name:find("MinimapFrame") ~= nil
+end
+
+-- Re-enumerated on every apply/reveal so buttons created late (most addons
+-- spawn theirs at PLAYER_LOGIN or later) are always picked up
+local function CollectTidyButtons()
+    tidyButtons = {}
+    local children = { Minimap:GetChildren() }
+    for _, child in ipairs(children) do
+        if IsAddonMinimapButton(child) then
+            tidyButtons[#tidyButtons + 1] = child
+            -- Entering a rim button directly (without crossing the minimap
+            -- circle) must also reveal the set
+            if not child.__commanderTidyHooked then
+                child.__commanderTidyHooked = true
+                child:HookScript("OnEnter", RevealButtons)
+            end
+        end
+    end
+end
+
+local function SetTidyAlpha(alpha)
+    for _, button in ipairs(tidyButtons) do
+        button:SetAlpha(alpha)
+    end
+end
+
+local function HiddenAlpha()
+    return (CommanderMinimapDB and CommanderMinimapDB.TidyFadedOpacity) or 0
+end
+
+local function ConcealButtons()
+    revealed = false
+    if revealTicker then
+        revealTicker:Cancel()
+        revealTicker = nil
+    end
+    SetTidyAlpha(HiddenAlpha())
+end
+
+function RevealButtons()
+    if not (CommanderMinimapDB and CommanderMinimapDB.TidyAddonButtons) then return end
+    CollectTidyButtons()
+    SetTidyAlpha(1)
+    revealed = true
+    if not revealTicker then
+        revealTicker = C_Timer.NewTicker(0.2, function()
+            -- Generous padding so hovering rim buttons counts as "over the map"
+            if not Minimap:IsMouseOver(24, -24, -24, 24) then
+                ConcealButtons()
+            end
+        end)
+    end
+end
+
+-- Applied at login, on delayed rescans, and whenever the setting changes
+function ApplyTidy()
+    CollectTidyButtons()
+    if CommanderMinimapDB and CommanderMinimapDB.TidyAddonButtons then
+        if not revealed then
+            SetTidyAlpha(HiddenAlpha())
+        end
+    else
+        if revealTicker then
+            revealTicker:Cancel()
+            revealTicker = nil
+        end
+        revealed = false
+        SetTidyAlpha(1)
+    end
+end
+
+Minimap:HookScript("OnEnter", RevealButtons)
 
 -- Make Minimap draggable (gated by the Lock Minimap setting)
 Minimap:SetMovable(true)

@@ -9,6 +9,8 @@ local defaultSettings = {
     XPDisplayMode = "PERCENTAGE",
     MinimapScale = 1.37,
     LockMinimap = false,
+    TidyAddonButtons = true,
+    TidyFadedOpacity = 0,
 }
 
 local XP_DISPLAY_MODES = {
@@ -56,6 +58,21 @@ local function CreateOptionsPanel()
         tooltip = "Prevent the minimap from being dragged to a new position.",
         get = function() return CommanderMinimapDB.LockMinimap end,
         set = function(value) CommanderMinimapDB.LockMinimap = value end,
+    })
+    panel:AddCheckbox({
+        label = "Tidy Addon Buttons",
+        tooltip = "Fade other addons' minimap buttons until you mouse over the minimap. Blizzard's own elements (tracking, mail, clock, zone text) and the Commander information button always stay visible.",
+        get = function() return CommanderMinimapDB.TidyAddonButtons end,
+        set = function(value) CommanderMinimapDB.TidyAddonButtons = value end,
+    })
+    panel:AddSlider({
+        label = "Faded Button Opacity",
+        tooltip = "How visible the tidied addon buttons stay when you are not hovering the minimap. 0% hides them completely.",
+        min = 0, max = 0.5, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderMinimapDB.TidyFadedOpacity end,
+        set = function(value) CommanderMinimapDB.TidyFadedOpacity = value end,
+        isEnabled = function() return CommanderMinimapDB.TidyAddonButtons end,
     })
 
     panel:AddSection("Information Button", "Left-click opens game windows, right-click shows character stats, middle-click lists professions.")

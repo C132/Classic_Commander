@@ -1,0 +1,287 @@
+-- Commander Orders: RTS move orders. Ctrl+Right-click the world map to set
+-- a destination; an on-screen arrow (with distance) points the way, using
+-- world-coordinate math via C_Map.GetWorldPosFromMapPos. The order clears
+-- itself on arrival and persists across reloads in CommanderOrdersDB.
+--
+-- NOTE on the bearing math: WoW world coordinates have x increasing north
+-- and y increasing west; GetPlayerFacing() is 0 facing north, increasing
+-- counterclockwise (toward west). atan2(dy, dx) therefore yields a bearing
+-- in the same convention, and (bearing - facing) rotates the arrow texture
+-- into screen space.
+
+local ARRIVE_DISTANCE = 15
+local UPDATE_INTERVAL = 0.1
+
+-- ---------------------------------------------------------------------------
+-- Arrow display
+-- ---------------------------------------------------------------------------
+local arrow = CreateFrame("Button", "CommanderOrdersArrow", UIParent)
+arrow:SetSize(56, 72)
+arrow:SetPoint("TOP", UIParent, "TOP", 0, -220)
+arrow:SetFrameStrata("HIGH")
+arrow:Hide()
+
+local arrowTexture = arrow:CreateTexture(nil, "ARTWORK")
+arrowTexture:SetSize(48, 48)
+arrowTexture:SetPoint("TOP")
+arrowTexture:SetTexture("Interface\\Minimap\\MiniMap-DeadArrow")
+arrowTexture:SetVertexColor(0.3, 1, 0.4)
+
+local distanceText = arrow:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+distanceText:SetPoint("TOP", arrowTexture, "BOTTOM", 0, -2)
+
+arrow:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Move Order", 1, 1, 1)
+    GameTooltip:AddLine("Click to cancel the order.", nil, nil, nil, true)
+    GameTooltip:Show()
+end)
+arrow:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+-- ---------------------------------------------------------------------------
+-- Order state
+-- ---------------------------------------------------------------------------
+local function PlayOrderSound()
+    if CommanderOrdersDB.OrderSound then
+        PlaySound(SOUNDKIT.IG_QUEST_LOG_OPEN, "Master")
+    end
+end
+
+-- Declared here (not with the arrow-update code) so SetOrder/ClearOrder can
+-- reset it: a latched value from a finished order would otherwise swallow
+-- the arrival announcement of a next order issued within arrive range
+local arrivedAnnounced = false
+
+-- Shared with the settings panel and /corder clear
+function CommanderOrders_ClearOrder(announce)
+    CommanderOrdersDB.Waypoint = nil
+    arrivedAnnounced = false
+    arrow:Hide()
+    if announce then
+        print("Commander Orders: order cleared")
+    end
+end
+
+arrow:SetScript("OnClick", function()
+    CommanderOrders_ClearOrder(true)
+end)
+
+-- World-space position of a map point plus its continent (instance) ID;
+-- nil when the map has no world data (cosmic/azeroth-level maps)
+local function WorldPos(mapID, x, y)
+    if not (C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D) then return nil end
+    local ok, instance, world = pcall(C_Map.GetWorldPosFromMapPos, mapID, CreateVector2D(x, y))
+    if ok and world then
+        return world, instance
+    end
+    return nil
+end
+
+local function SetOrder(mapID, x, y)
+    -- Resolve and cache the world position now: maps without world data are
+    -- rejected up front instead of producing a dead order, and the arrow
+    -- never needs to re-resolve the target
+    local world, instance = WorldPos(mapID, x, y)
+    if not world then
+        print("Commander Orders: that map has no world coordinates — zoom in to a zone map first")
+        return false
+    end
+    CommanderOrdersDB.Waypoint = {
+        mapID = mapID, x = x, y = y,
+        worldX = world.x, worldY = world.y, instance = instance,
+    }
+    arrivedAnnounced = false
+    PlayOrderSound()
+    print(string.format("Commander Orders: move order issued (%.0f, %.0f)", x * 100, y * 100))
+    return true
+end
+
+-- ---------------------------------------------------------------------------
+-- Arrow updates
+-- ---------------------------------------------------------------------------
+local sinceUpdate = 0
+local shownYards   -- last rendered distance, to skip unchanged re-layouts
+
+local function UpdateArrow(self, elapsed)
+    sinceUpdate = sinceUpdate + elapsed
+    if sinceUpdate < UPDATE_INTERVAL then return end
+    sinceUpdate = 0
+
+    local waypoint = CommanderOrdersDB.Waypoint
+    if not (CommanderOrdersDB.EnableOrders and waypoint and waypoint.worldX) then
+        arrow:Hide()
+        return
+    end
+
+    -- UnitPosition gives live world coordinates directly — no per-tick map
+    -- lookups and no Vector2D tables (the old map->world chain allocated
+    -- three tables per tick, ~19KB/s of garbage while an order was up).
+    -- It returns (posY, posX, posZ, instanceID) — y first — and nil in
+    -- restricted areas (instances), exactly where the map path also bailed.
+    if not UnitPosition then
+        arrow:Hide()
+        return
+    end
+    local py, px, _, playerInstance = UnitPosition("player")
+    if not px then
+        arrow:Hide()
+        return
+    end
+
+    -- Cross-continent: EK and Kalimdor world coordinates overlap, so
+    -- distance math between instances is meaningless (and could even
+    -- fake an arrival). Show a neutral waiting state instead.
+    if playerInstance ~= waypoint.instance then
+        arrowTexture:SetRotation(0)
+        arrowTexture:SetVertexColor(0.6, 0.6, 0.6)
+        distanceText:SetText("other continent")
+        -- The text no longer shows a distance; clear the guard so the
+        -- next in-continent tick always rewrites it
+        shownYards = nil
+        arrow:Show()
+        arrivedAnnounced = false
+        return
+    end
+    arrowTexture:SetVertexColor(0.3, 1, 0.4)
+
+    local dx = waypoint.worldX - px
+    local dy = waypoint.worldY - py
+    local distance = math.sqrt(dx * dx + dy * dy)
+
+    if distance <= ARRIVE_DISTANCE then
+        if not arrivedAnnounced then
+            arrivedAnnounced = true
+            print("Commander Orders: destination reached")
+            PlayOrderSound()
+        end
+        CommanderOrders_ClearOrder(false)
+        return
+    end
+    arrivedAnnounced = false
+
+    local bearing = math.atan2(dy, dx)
+    local facing = GetPlayerFacing() or 0
+    arrowTexture:SetRotation(bearing - facing)
+    local yards = math.floor(distance + 0.5)
+    if yards ~= shownYards then
+        shownYards = yards
+        distanceText:SetFormattedText("%d yd", yards)
+    end
+    arrow:Show()
+end
+
+local driver = CreateFrame("Frame")
+driver:SetScript("OnUpdate", UpdateArrow)
+
+-- ---------------------------------------------------------------------------
+-- World map click handler (Ctrl+Right-click issues an order)
+--
+-- Registered through WorldMapFrame:AddCanvasClickHandler, which runs BEFORE
+-- Blizzard's own right-click handling and, by returning true, suppresses
+-- the map's navigate-to-parent zoom-out. A plain OnMouseUp post-hook cannot
+-- work here: Blizzard's handler swaps to the parent map first, so the hook
+-- would read the wrong map and the wrong coordinates.
+-- ---------------------------------------------------------------------------
+local hooked = false
+
+local function HookWorldMap()
+    if hooked then return end
+    if not (WorldMapFrame and WorldMapFrame.AddCanvasClickHandler) then return end
+    hooked = true
+    WorldMapFrame:AddCanvasClickHandler(function(map, mouseButton, x, y)
+        if mouseButton ~= "RightButton" or not IsControlKeyDown() then return false end
+        if not CommanderOrdersDB.EnableOrders then return false end
+        local mapID = (map.GetMapID and map:GetMapID()) or WorldMapFrame:GetMapID()
+        if mapID and x and y and x > 0 and x < 1 and y > 0 and y < 1 then
+            SetOrder(mapID, x, y)
+            -- Consume the click either way so the ctrl-click gesture never
+            -- doubles as the map's zoom-out
+            return true
+        end
+        return false
+    end)
+end
+
+local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("ADDON_LOADED")
+events:SetScript("OnEvent", function(self, event, addonName)
+    if event == "PLAYER_LOGIN" then
+        HookWorldMap()
+        Commander.AddListener(COMMANDER_ORDERS_EVENTS.UPDATE, function()
+            if not CommanderOrdersDB.EnableOrders then
+                arrow:Hide()
+            end
+        end)
+    elseif event == "ADDON_LOADED" and addonName == "Blizzard_WorldMap" then
+        -- The world map UI can be load-on-demand; hook it whenever it appears
+        HookWorldMap()
+    end
+end)
+
+-- Public API for sibling modules (Commander_Recovery issues corpse-run
+-- orders; the rally points below re-issue saved positions)
+CommanderOrders_IssueOrder = SetOrder
+
+-- ---------------------------------------------------------------------------
+-- Rally points, absorbed from Commander_Rally in 2.1.0: four persistent
+-- slots. Marking a slot stores the current map position; rallying to it
+-- re-issues the position as a normal move order, so the arrow does all
+-- the guidance work. Points live in CommanderOrdersDB.RallyPoints and
+-- survive both /reload and settings resets.
+-- ---------------------------------------------------------------------------
+local function ValidSlot(slot)
+    return type(slot) == "number" and slot >= 1 and slot <= 4
+end
+
+local function OrdersOn()
+    if CommanderOrdersDB and CommanderOrdersDB.EnableOrders then return true end
+    print("Commander Orders: module is disabled (enable it in settings or /corder)")
+    return false
+end
+
+function CommanderOrders_RallySet(slot)
+    if not OrdersOn() or not ValidSlot(slot) then return end
+    local mapID = C_Map.GetBestMapForUnit("player")
+    local pos = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
+    if not pos then
+        print("Commander Orders: cannot mark a rally point here (no map position — instances and some interiors)")
+        return
+    end
+    CommanderOrdersDB.RallyPoints[slot] = {
+        mapID = mapID, x = pos.x, y = pos.y,
+        zone = GetZoneText() or "unknown territory",
+    }
+    if CommanderOrdersDB.OrderSound then
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
+    end
+    print(string.format("Commander Orders: rally point %d marked — %s (%.0f, %.0f)",
+        slot, CommanderOrdersDB.RallyPoints[slot].zone, pos.x * 100, pos.y * 100))
+end
+
+function CommanderOrders_RallyGo(slot)
+    if not OrdersOn() or not ValidSlot(slot) then return end
+    local p = CommanderOrdersDB.RallyPoints[slot]
+    if not p then
+        print(string.format("Commander Orders: no rally point marked in slot %d (use /corder set %d)", slot, slot))
+        return
+    end
+    if not CommanderOrders_IssueOrder(p.mapID, p.x, p.y) then
+        print(string.format("Commander Orders: could not issue an order for rally point %d (%s)", slot, p.zone or "unknown"))
+    end
+end
+
+function CommanderOrders_RallyList()
+    local any = false
+    for slot = 1, 4 do
+        local p = CommanderOrdersDB.RallyPoints and CommanderOrdersDB.RallyPoints[slot]
+        if p then
+            print(string.format("Commander Orders rally %d: %s (%.0f, %.0f)",
+                slot, p.zone or "unknown", (p.x or 0) * 100, (p.y or 0) * 100))
+            any = true
+        end
+    end
+    if not any then
+        print("Commander Orders: no rally points marked yet (/corder set 1 while standing somewhere worth returning to)")
+    end
+end

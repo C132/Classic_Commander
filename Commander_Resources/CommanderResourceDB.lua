@@ -8,6 +8,12 @@ local DefaultSettings = {
     ShowFiveSecondRule = true,
     PlayReadySound = true,
     LockBar = false,
+    BarMode = "FLOATING",
+}
+
+local BAR_MODES = {
+    { text = "Floating Bar", value = "FLOATING" },
+    { text = "Attached to Player Frame", value = "PLAYER_FRAME" },
 }
 
 local frame = CreateFrame("FRAME");
@@ -66,22 +72,36 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderResourceDB.ShowFiveSecondRule end,
     })
 
-    panel:AddSection("Position")
+    panel:AddSection("Placement", "Run the tracker as its own movable bar, or build it into the player frame where the name normally sits.")
+    panel:AddDropdown({
+        label = "Bar Placement",
+        tooltip = "Floating Bar: a standalone bar you can drag anywhere. Attached to Player Frame: the bar takes the place of your name on the player frame (the name reappears whenever the bar is hidden), moving and scaling with the frame.",
+        options = BAR_MODES,
+        width = 200,
+        get = function() return CommanderResourceDB.BarMode end,
+        set = function(value) CommanderResourceDB.BarMode = value end,
+        isEnabled = function() return CommanderResourceDB.ShowFiveSecondRule end,
+    })
     panel:AddCheckbox({
         label = "Lock Bar Position",
-        tooltip = "Prevent the tracker bar from being dragged. Its position is saved between sessions either way.",
+        tooltip = "Prevent the floating bar from being dragged. Its position is saved between sessions either way.",
         get = function() return CommanderResourceDB.LockBar end,
         set = function(value) CommanderResourceDB.LockBar = value end,
-        isEnabled = function() return CommanderResourceDB.ShowFiveSecondRule end,
+        isEnabled = function()
+            return CommanderResourceDB.ShowFiveSecondRule and CommanderResourceDB.BarMode == "FLOATING"
+        end,
     })
     panel:AddButtonRow({
         {
             label = "Reset Bar Position",
-            tooltip = "Move the tracker bar back to the center of the screen.",
+            tooltip = "Move the floating bar back to the center of the screen.",
             onClick = function()
                 if CommanderResources_ResetBarPosition then
                     CommanderResources_ResetBarPosition()
                 end
+            end,
+            isEnabled = function()
+                return CommanderResourceDB.ShowFiveSecondRule and CommanderResourceDB.BarMode == "FLOATING"
             end,
         },
     })

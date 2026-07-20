@@ -55,6 +55,11 @@ local function CreateOptionsPanel()
         description = "Wraps the screen in a rising glow while you cast: the edges of the world brighten as the cast completes, so you can track progress without staring at a cast bar.",
         event = COMMANDER_CASTING_EVENTS.UPDATE,
         slash = { "/ccast" },
+        slashHandlers = {
+            test = function()
+                if CommanderCasting_Test then CommanderCasting_Test() end
+            end,
+        },
     })
 
     panel:AddSection("Fullscreen Effect", "The glow builds from nothing to full intensity across the length of the cast.")
@@ -110,6 +115,17 @@ local function CreateOptionsPanel()
         texturePreview:SetTexture(CommanderCastingDB.EffectTexture)
         previewFrame:SetAlpha(CommanderCastingDB.ShowFullscreenEffect and 1 or 0.4)
     end)
+
+    panel:AddButtonRow({
+        {
+            label = "Test Glow",
+            width = 110,
+            tooltip = "Preview the casting glow without casting: a three-second ramp, cycling a school color per press when school coloring is on (also: /ccast test).",
+            onClick = function()
+                if CommanderCasting_Test then CommanderCasting_Test() end
+            end,
+        },
+    })
 
     panel:Finalize({ onDefaults = Reset })
 end

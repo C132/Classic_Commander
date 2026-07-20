@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Objectives
+## Author: Devin
+## Version: 2.1.0
+## Notes: RTS mission-objective announcements: progress toasts as you work quest objectives, a banner when one is secured.
+## IconTexture: Interface\Icons\INV_Misc_Note_06
+## SavedVariables: CommanderObjectivesDB
+## RequiredDeps: Commander_Events
+
+CommanderObjectivesDB.lua
+CommanderObjectives.lua

@@ -1,3 +1,28 @@
+-- Cast bar color presets offered in settings
+local CASTBAR_COLORS = {
+    GOLD = { 1, 0.7, 0 },
+    GREEN = { 0.3, 1, 0.4 },
+    BLUE = { 0.35, 0.65, 1 },
+    PURPLE = { 0.7, 0.35, 1 },
+    RED = { 1, 0.3, 0.25 },
+}
+
+-- Power bar colored by actual power type (mana/rage/energy), not always
+-- mana blue; falls back to the client's own PowerBarColor when present
+local FALLBACK_POWER_COLORS = {
+    [0] = { r = 0, g = 0.44, b = 0.87 },  -- mana
+    [1] = { r = 1, g = 0.2, b = 0.2 },    -- rage
+    [2] = { r = 1, g = 0.5, b = 0.25 },   -- focus
+    [3] = { r = 1, g = 0.9, b = 0.3 },    -- energy
+}
+
+local function PowerColor()
+    local powerType = UnitPowerType("player")
+    local color = (PowerBarColor and PowerBarColor[powerType]) or FALLBACK_POWER_COLORS[powerType]
+        or FALLBACK_POWER_COLORS[0]
+    return color.r, color.g, color.b
+end
+
 local function CreatePlayerNameplate()
     local nameplate = CreateFrame("Frame", "CommanderPlayerNameplate", UIParent)
     nameplate:SetSize(128, 12)
@@ -23,7 +48,9 @@ local function CreatePlayerNameplate()
     nameplate.name = nameplate:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameplate.name:SetPoint("TOP", 0, 16)
     nameplate.name:SetText(UnitName("player"))
-    nameplate.name:SetFont(nameplate.name:GetFont(), 14, "BOLD")
+    -- "BOLD" is not a valid font flag and the 2.5.6 client rejects it with an
+    -- error (aborting this whole file); OUTLINE gives the intended emphasis
+    nameplate.name:SetFont(nameplate.name:GetFont(), 14, "OUTLINE")
     nameplate.level = nameplate:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameplate.level:SetPoint("LEFT", nameplate, "RIGHT", 5, 0)
     nameplate.manaBorderFrame = CreateFrame("Frame", nil, nameplate)
@@ -69,8 +96,20 @@ local function CreatePlayerNameplate()
         local health, maxHealth = UnitHealth("player"), UnitHealthMax("player")
         local mana, maxMana = UnitPower("player"), UnitPowerMax("player")
         local inCombat = UnitAffectingCombat("player")
-        
-        if health == maxHealth and mana == maxMana and not inCombat then
+
+        -- "Power is fine" means empty for rage (idles at 0), full for
+        -- mana/energy — a warrior at full health should not show a plate
+        -- forever just because rage is not maxed
+        local powerIdle
+        if UnitPowerType("player") == 1 then
+            powerIdle = (mana == 0)
+        else
+            powerIdle = (mana == maxMana)
+        end
+        local casting = UnitCastingInfo("player") or UnitChannelInfo("player")
+        local alwaysShow = CommanderNameplateDB and CommanderNameplateDB.alwaysShowPlate
+        if health == maxHealth and powerIdle and not inCombat and not casting
+            and not alwaysShow and not nameplate._dragging then
             nameplate:Hide()
             return
         else
@@ -81,7 +120,22 @@ local function CreatePlayerNameplate()
         nameplate.healthBar:SetMinMaxValues(0, maxHealth)
         nameplate.healthBar:SetValue(health)
         nameplate.level:SetText(UnitLevel("player"))
-        nameplate.healthBar:SetStatusBarColor(healthPercentage > 0.5 and 0 or 1, healthPercentage > 0.2 and 1 or 0, 0)
+        nameplate.level:SetShown(not CommanderNameplateDB or CommanderNameplateDB.showLevel)
+        -- Low-health pulse: driven from the 0.1s update cadence
+        if CommanderNameplateDB and CommanderNameplateDB.lowHealthFlash and healthPercentage <= 0.25 then
+            nameplate.healthBar:SetAlpha(0.55 + 0.45 * math.abs(math.sin(GetTime() * 5)))
+        else
+            nameplate.healthBar:SetAlpha(1)
+        end
+        if CommanderNameplateDB and CommanderNameplateDB.classColorHealth then
+            local _, classToken = UnitClass("player")
+            local color = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
+            if color then
+                nameplate.healthBar:SetStatusBarColor(color.r, color.g, color.b)
+            end
+        else
+            nameplate.healthBar:SetStatusBarColor(healthPercentage > 0.5 and 0 or 1, healthPercentage > 0.2 and 1 or 0, 0)
+        end
         if CommanderNameplateDB and CommanderNameplateDB.showHealthPercent then
             nameplate.healthBar.text:SetText(string.format("%.0f%%", healthPercentage * 100))
             nameplate.healthBar.text:Show()
@@ -90,14 +144,22 @@ local function CreatePlayerNameplate()
         end
         nameplate.manaBar:SetMinMaxValues(0, maxMana)
         nameplate.manaBar:SetValue(mana)
-        nameplate.manaBar:SetStatusBarColor(0, 0.44, 0.87)
+        nameplate.manaBar:SetStatusBarColor(PowerColor())
         if CommanderNameplateDB and CommanderNameplateDB.showManaPercent then
             nameplate.manaBar.text:SetText(string.format("%.0f%%", mana / maxMana * 100))
             nameplate.manaBar.text:Show()
         else
             nameplate.manaBar.text:Hide()
         end
+        local castColor = CASTBAR_COLORS[CommanderNameplateDB and CommanderNameplateDB.castBarColor or "GOLD"]
+            or CASTBAR_COLORS.GOLD
+        nameplate.castBar:SetStatusBarColor(castColor[1], castColor[2], castColor[3])
+        local hidePower = CommanderNameplateDB and CommanderNameplateDB.hidePowerBar
         local name, _, texture, startTime, endTime = UnitCastingInfo("player")
+        if not name then
+            -- Channels share the first five return positions
+            name, _, texture, startTime, endTime = UnitChannelInfo("player")
+        end
         if name then
             nameplate.castBar:Show()
             nameplate.manaBorderFrame:Show()
@@ -109,11 +171,11 @@ local function CreatePlayerNameplate()
             nameplate.castBar.startTime = startTime / 1000
             nameplate.castBar.endTime = endTime / 1000
             nameplate.castBar.icon:SetTexture(texture)
-            nameplate.castBar.icon:Show()
+            nameplate.castBar.icon:SetShown(not CommanderNameplateDB or CommanderNameplateDB.showCastIcon)
         else
             nameplate.castBar:Hide()
             nameplate.castBar.icon:Hide()
-            if CommanderNameplateDB and (CommanderNameplateDB.alwaysShowMana or inCombat) then
+            if not hidePower and CommanderNameplateDB and (CommanderNameplateDB.alwaysShowMana or inCombat) then
                 nameplate.manaBar:Show()
                 nameplate.manaBorderFrame:Show()
             else
@@ -123,6 +185,27 @@ local function CreatePlayerNameplate()
         end
         if CommanderNameplateDB then
             nameplate.name:SetShown(CommanderNameplateDB.showPlayerName)
+            nameplate:SetScale(CommanderNameplateDB.plateScale or 1)
+            -- Unlocked: full mouse for dragging. Locked: where the client
+            -- supports left-click pass-through, keep listening for the
+            -- triple right-click unlock without ever blocking normal
+            -- clicks; otherwise fall back to fully mouse-transparent.
+            local unlocked = CommanderNameplateDB.unlockPlate or false
+            if nameplate.SetPassThroughButtons then
+                local wantState = unlocked and "none" or "left"
+                if nameplate._passState ~= wantState and not InCombatLockdown() then
+                    local ok
+                    if unlocked then
+                        ok = pcall(nameplate.SetPassThroughButtons, nameplate)
+                    else
+                        ok = pcall(nameplate.SetPassThroughButtons, nameplate, "LeftButton")
+                    end
+                    if ok then nameplate._passState = wantState end
+                end
+                nameplate:EnableMouse(unlocked or nameplate._passState == "left")
+            else
+                nameplate:EnableMouse(unlocked)
+            end
             nameplate:SetAlpha(CommanderNameplateDB.fadeWhileMoving and IsPlayerMoving() and CommanderNameplateDB.fadeIntensity or 1)
         else
             nameplate.name:Show()
@@ -140,6 +223,9 @@ local function CreatePlayerNameplate()
     nameplate:SetScript("OnUpdate", function(self, elapsed)
         if self.castBar:IsShown() then
             local name, _, _, startTime = UnitCastingInfo("player")
+            if not name then
+                name, _, _, startTime = UnitChannelInfo("player")
+            end
             if name then
                 self.castBar:SetValue(GetTime() - startTime / 1000)
             end
@@ -154,21 +240,54 @@ local function CreatePlayerNameplate()
 end
 local playerNameplate = CreatePlayerNameplate()
 playerNameplate:SetMovable(true)
-playerNameplate:EnableMouse(true)
 playerNameplate:RegisterForDrag("LeftButton")
-playerNameplate:SetScript("OnDragStart", playerNameplate.StartMoving)
+playerNameplate:SetScript("OnDragStart", function(self)
+    self._dragging = true
+    self:StartMoving()
+end)
+-- Right-click locks an unlocked plate; triple right-click on a locked
+-- plate (left clicks pass through where supported) unlocks it again
+playerNameplate:SetScript("OnMouseUp", function(self, mouseButton)
+    if mouseButton ~= "RightButton" or not CommanderNameplateDB then return end
+    if CommanderNameplateDB.unlockPlate then
+        CommanderNameplateDB.unlockPlate = false
+        Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
+    else
+        local now = GetTime()
+        if not (self._rightAt and (now - self._rightAt) < 0.7) then
+            self._rightClicks = 0
+        end
+        self._rightClicks = (self._rightClicks or 0) + 1
+        self._rightAt = now
+        if self._rightClicks >= 3 then
+            self._rightClicks = 0
+            CommanderNameplateDB.unlockPlate = true
+            Commander.Notify(COMMANDER_NAMEPLATE_EVENTS.UPDATE)
+        end
+    end
+end)
 playerNameplate:SetScript("OnDragStop", function(self)
+    self._dragging = false
     self:StopMovingOrSizing()
     local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
-    CommanderNameplateDB.position = {point, "UIParent", relativePoint, xOfs, yOfs}
+    -- Screen-space offsets (scale multiplied out) so a later Plate Scale
+    -- change keeps the plate where the user dragged it; the 6th field
+    -- marks the new format
+    local scale = self:GetScale() or 1
+    CommanderNameplateDB.position = {point, "UIParent", relativePoint, xOfs * scale, yOfs * scale, true}
 end)
 playerNameplate.Update()
 
 local function ApplySavedPosition()
     if CommanderNameplateDB and CommanderNameplateDB.position then
-        local point, _, relativePoint, xOfs, yOfs = unpack(CommanderNameplateDB.position)
+        local point, _, relativePoint, xOfs, yOfs, screenSpace = unpack(CommanderNameplateDB.position)
         playerNameplate:ClearAllPoints()
-        playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
+        if screenSpace then
+            local scale = CommanderNameplateDB.plateScale or 1
+            playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs / scale, yOfs / scale)
+        else
+            playerNameplate:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
+        end
     end
 end
 

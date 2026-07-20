@@ -1,0 +1,13 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Recovery
+## Author: Devin
+## Version: 2.1.0
+## Notes: Casualty response: reports where you fell, counts session deaths, and issues an automatic corpse-run move order.
+## IconTexture: Interface\Icons\Spell_Holy_Resurrection
+## SavedVariables: CommanderRecoveryDB
+## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Orders
+
+CommanderRecoveryDB.lua
+CommanderRecovery.lua

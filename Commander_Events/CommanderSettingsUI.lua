@@ -64,13 +64,20 @@ local dropdownCounter = 0
 -- Small helpers
 -- ---------------------------------------------------------------------------
 
-local function AttachTooltip(widget, title, text)
+-- text may be a function: evaluated on hover, so tooltips can reflect
+-- current state (return nil to show just the title). anchor overrides the
+-- default ANCHOR_RIGHT for widgets living near the right screen edge.
+local function AttachTooltip(widget, title, text, anchor)
     if not title and not text then return end
     widget:HookScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, anchor or "ANCHOR_RIGHT")
         GameTooltip:SetText(title or "", 1, 1, 1)
-        if text then
-            GameTooltip:AddLine(text, nil, nil, nil, true)
+        local body = text
+        if type(body) == "function" then
+            body = body()
+        end
+        if body then
+            GameTooltip:AddLine(body, nil, nil, nil, true)
         end
         GameTooltip:Show()
     end)
@@ -167,11 +174,9 @@ function PanelMethods.AddSpacer(panel, height)
     return panel:AddRow(height or 8, 0)
 end
 
--- opts: label, tooltip, get, set, isEnabled
-function PanelMethods.AddCheckbox(panel, opts)
-    local row = panel:AddRow(26, 2)
+local function BuildCheckbox(panel, row, opts, xOffset)
     local check = CreateFrame("CheckButton", nil, row, "InterfaceOptionsCheckButtonTemplate")
-    check:SetPoint("LEFT", row, "LEFT", 0, 0)
+    check:SetPoint("LEFT", row, "LEFT", xOffset or 0, 0)
     check.Text:SetText(opts.label)
     AttachTooltip(check, opts.label, opts.tooltip)
 
@@ -196,12 +201,26 @@ function PanelMethods.AddCheckbox(panel, opts)
     return check
 end
 
--- opts: label, tooltip, min, max, step, get, set, format, isEnabled
-function PanelMethods.AddSlider(panel, opts)
-    local row = panel:AddRow(52, 8)
+-- opts: label, tooltip, get, set, isEnabled
+function PanelMethods.AddCheckbox(panel, opts)
+    local row = panel:AddRow(26, 2)
+    return BuildCheckbox(panel, row, opts, 0)
+end
 
+-- Two compact checkboxes sharing one row — for long toggle lists that would
+-- otherwise blow the page's no-scroll height budget. Each opts table is the
+-- same shape AddCheckbox takes; right may be nil for an odd final entry.
+function PanelMethods.AddCheckboxPair(panel, left, right)
+    local row = panel:AddRow(26, 2)
+    local leftCheck = BuildCheckbox(panel, row, left, 0)
+    local rightCheck = right and BuildCheckbox(panel, row, right, 270) or nil
+    return leftCheck, rightCheck
+end
+
+-- opts: label, tooltip, min, max, step, get, set, format, isEnabled
+local function BuildSlider(panel, row, opts, xOffset, width)
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    label:SetPoint("TOPLEFT", row, "TOPLEFT", 2, 0)
+    label:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset + 2, 0)
     label:SetText(opts.label)
 
     -- Hand-rolled slider: the deprecated OptionsSliderTemplate draws its
@@ -211,8 +230,8 @@ function PanelMethods.AddSlider(panel, opts)
     -- with the BACKDROP_SLIDER_8_8 track, so draw it that way ourselves.
     local slider = CreateFrame("Slider", nil, row, "BackdropTemplate")
     slider:SetOrientation("HORIZONTAL")
-    slider:SetPoint("TOPLEFT", row, "TOPLEFT", 2, -18)
-    slider:SetSize(SLIDER_WIDTH, 17)
+    slider:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset + 2, -18)
+    slider:SetSize(width, 17)
     slider:SetHitRectInsets(0, 0, -10, -10)
     slider:SetBackdrop(BACKDROP_SLIDER_8_8 or {
         bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
@@ -280,13 +299,26 @@ function PanelMethods.AddSlider(panel, opts)
     return slider
 end
 
+function PanelMethods.AddSlider(panel, opts)
+    local row = panel:AddRow(52, 8)
+    return BuildSlider(panel, row, opts, 0, SLIDER_WIDTH)
+end
+
+-- Two compact sliders sharing one row — same budget trick as
+-- AddCheckboxPair. Each opts table is the AddSlider shape; right may be
+-- nil for an odd final entry.
+function PanelMethods.AddSliderPair(panel, left, right)
+    local row = panel:AddRow(52, 8)
+    local leftSlider = BuildSlider(panel, row, left, 0, 170)
+    local rightSlider = right and BuildSlider(panel, row, right, 270, 170) or nil
+    return leftSlider, rightSlider
+end
+
 -- opts: label, tooltip, options ({text=, value=}...), get, set, width,
 --       isEnabled, onSelect
-function PanelMethods.AddDropdown(panel, opts)
-    local row = panel:AddRow(52, 8)
-
+local function BuildDropdown(panel, row, opts, xOffset, defaultWidth)
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    label:SetPoint("TOPLEFT", row, "TOPLEFT", 2, 0)
+    label:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset + 2, 0)
     label:SetText(opts.label)
 
     -- UIDropDownMenu_EnableDropDown/DisableDropDown resolve child regions via
@@ -294,8 +326,8 @@ function PanelMethods.AddDropdown(panel, opts)
     -- unique global name.
     dropdownCounter = dropdownCounter + 1
     local dropdown = CreateFrame("Frame", "CommanderUIDropDown" .. dropdownCounter, row, "UIDropDownMenuTemplate")
-    dropdown:SetPoint("TOPLEFT", row, "TOPLEFT", -14, -14)
-    UIDropDownMenu_SetWidth(dropdown, opts.width or DROPDOWN_WIDTH)
+    dropdown:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset - 14, -14)
+    UIDropDownMenu_SetWidth(dropdown, opts.width or defaultWidth)
     -- The template's arrow button forwards OnEnter/OnLeave to the parent, but
     -- only covers its own 24px; enable mouse on the container so the tooltip
     -- also shows when hovering the dropdown's text area
@@ -347,6 +379,20 @@ function PanelMethods.AddDropdown(panel, opts)
     end)
 
     return dropdown
+end
+
+function PanelMethods.AddDropdown(panel, opts)
+    local row = panel:AddRow(52, 8)
+    return BuildDropdown(panel, row, opts, 0, DROPDOWN_WIDTH)
+end
+
+-- Two compact dropdowns sharing one row — the AddCheckboxPair trick for
+-- dropdowns. Each opts table is the AddDropdown shape; right may be nil.
+function PanelMethods.AddDropdownPair(panel, left, right)
+    local row = panel:AddRow(52, 8)
+    local leftDropdown = BuildDropdown(panel, row, left, 0, 120)
+    local rightDropdown = right and BuildDropdown(panel, row, right, 270, 120) or nil
+    return leftDropdown, rightDropdown
 end
 
 -- buttons: array of {label, onClick, tooltip, width, isEnabled}
@@ -596,4 +642,411 @@ function UI.NewPanel(opts)
     panel._anchor = anchorSeed
 
     return panel
+end
+
+-- ---------------------------------------------------------------------------
+-- HUD chrome: shared style / unlock+drag / scale treatment for the suite's
+-- on-screen HUD frames (Production queue, Vitals wireframe, ...) so they
+-- all offer the same options and can match the command card's framing.
+-- ---------------------------------------------------------------------------
+
+-- Keys used in the module's SavedVariables, derived from the prefix:
+--   <prefix>Style ("NONE" | "CLASSIC" | "DARK"), <prefix>Scale,
+--   <prefix>Locked (bool), <prefix>Pos ({point, x, y} or nil = default)
+function UI.HudChromeDefaults(prefix, styleDefault)
+    return {
+        [prefix .. "Style"] = styleDefault or "DARK",
+        [prefix .. "Scale"] = 1.0,
+        [prefix .. "Locked"] = true,
+        -- false (not nil) so Restore Defaults actually clears a saved drag
+        -- position: ResetToDefaults only writes keys present here
+        [prefix .. "Pos"] = false,
+    }
+end
+
+-- Session-scoped "closed" flags for window-style HUD frames (weak-keyed on
+-- the module DB, so nothing persists or leaks)
+local hudClosed = setmetatable({}, { __mode = "k" })
+
+local function IsHudClosed(db, prefix)
+    return hudClosed[db] and hudClosed[db][prefix]
+end
+
+local function SetHudClosed(db, prefix, value)
+    hudClosed[db] = hudClosed[db] or {}
+    hudClosed[db][prefix] = value or nil
+end
+
+local HUD_STYLES = {
+    -- Matches the command card (Commander_ActionBar) framing
+    CLASSIC = {
+        backdrop = {
+            bgFile = "Interface\\BankFrame\\Bank-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 8, right = 8, top = 8, bottom = 8 },
+        },
+        bg = { 0.5, 0.5, 0.5, 1 },
+        border = { 1, 1, 1, 1 },
+        pad = 12,
+    },
+    DARK = {
+        backdrop = {
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = false, edgeSize = 12,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        },
+        bg = { 0, 0, 0, 0.6 },
+        border = { 0.6, 0.6, 0.6, 1 },
+        pad = 8,
+    },
+    -- Commander_Inventory's framing: a real little window
+    -- (BasicFrameTemplateWithInset) with title, lock, close, and a
+    -- scale-driving resize grip
+    WINDOW = { window = true },
+}
+
+-- Standalone style backdrop for frames that manage their own window art
+-- (Commander_Inventory's grid): applies the CLASSIC/DARK backdrops from
+-- the shared style table, or hides the backdrop for NONE/WINDOW.
+function UI.ApplyStyleBackdrop(frame, styleKey)
+    local style = HUD_STYLES[styleKey]
+    if style and style.window then
+        style = nil
+    end
+    if not frame._styleBackdrop then
+        if not style then return end
+        frame._styleBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        frame._styleBackdrop:SetFrameLevel(math.max((frame:GetFrameLevel() or 1) - 1, 0))
+    end
+    local backdrop = frame._styleBackdrop
+    if style then
+        if frame._styleBackdropKey ~= styleKey then
+            frame._styleBackdropKey = styleKey
+            backdrop:ClearAllPoints()
+            backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+            backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+            backdrop:SetBackdrop(style.backdrop)
+        end
+        backdrop:SetBackdropColor(unpack(style.bg))
+        backdrop:SetBackdropBorderColor(unpack(style.border))
+        backdrop:Show()
+    else
+        frame._styleBackdropKey = nil
+        backdrop:Hide()
+    end
+end
+
+-- Build the window dressing lazily on first use. All template children
+-- are guarded: the smoke harness's CreateFrame ignores templates.
+local function EnsureWindowChrome(frame, db, prefix)
+    if frame._hudWindow then return frame._hudWindow end
+    local win = CreateFrame("Frame", nil, frame, "BasicFrameTemplateWithInset")
+    frame._hudWindow = win
+    win:SetFrameLevel(math.max((frame:GetFrameLevel() or 1) - 1, 0))
+    win:SetPoint("TOPLEFT", frame, "TOPLEFT", -8, 28)
+    win:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 8, -10)
+
+    if win.CloseButton then
+        win.CloseButton:SetScript("OnClick", function()
+            SetHudClosed(db, prefix, true)
+            frame:Hide()
+            print("Commander: window closed for this session — Reset Position in its settings reopens it")
+        end)
+    end
+
+    local lock = CreateFrame("Button", nil, win)
+    win.lockButton = lock
+    lock:SetSize(16, 16)
+    if win.CloseButton then
+        lock:SetPoint("RIGHT", win.CloseButton, "LEFT", -1, 0)
+    else
+        lock:SetPoint("TOPRIGHT", win, "TOPRIGHT", -24, -4)
+    end
+    lock.tex = lock:CreateTexture(nil, "ARTWORK")
+    lock.tex:SetAllPoints()
+    lock:SetScript("OnClick", function()
+        db[prefix .. "Locked"] = not db[prefix .. "Locked"]
+        if frame._hudOpts then
+            UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts)
+        end
+    end)
+    AttachTooltip(lock, "Lock / Unlock", "Unlocked frames can be dragged anywhere; lock when placed.")
+
+    -- Resize grip: dragging it scales the frame, saved to the module's
+    -- Frame Scale setting, position preserved on release
+    local grip = CreateFrame("Button", nil, win)
+    win.grip = grip
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -3, 3)
+    grip:SetFrameLevel((frame:GetFrameLevel() or 1) + 25)
+    grip.tex = grip:CreateTexture(nil, "ARTWORK")
+    grip.tex:SetAllPoints()
+    grip.tex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetScript("OnMouseDown", function()
+        frame._hudDragging = true    -- freezes re-anchoring while sizing
+        local startX, startY = GetCursorPosition()
+        local startScale = db[prefix .. "Scale"] or 1
+        local uiScale = (UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+        grip:SetScript("OnUpdate", function()
+            local x, y = GetCursorPosition()
+            local delta = ((x - startX) - (y - startY)) / 2 / uiScale
+            local newScale = math.max(0.6, math.min(1.6, startScale + delta / 160))
+            newScale = math.floor(newScale * 100 + 0.5) / 100
+            db[prefix .. "Scale"] = newScale
+            frame:SetScale(newScale)
+        end)
+    end)
+    grip:SetScript("OnMouseUp", function()
+        grip:SetScript("OnUpdate", nil)
+        frame._hudDragging = false
+        -- Re-save the position in screen space under the new scale so the
+        -- window stays where it visually ended up
+        local point, _, _, x, y = frame:GetPoint(1)
+        if point then
+            local scale = db[prefix .. "Scale"] or 1
+            db[prefix .. "Pos"] = { point = point, x = x * scale, y = y * scale }
+        end
+        if frame._hudOpts then
+            UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts)
+        end
+    end)
+    AttachTooltip(grip, "Resize", "Drag to resize the window (adjusts Frame Scale).")
+
+    return win
+end
+
+-- True while the module's HUD frame is unlocked for dragging. Consumers
+-- must keep their frame SHOWN while unlocked (even with nothing to
+-- display) so there is something on screen to drag.
+function UI.HudUnlocked(db, prefix)
+    return not db[prefix .. "Locked"]
+end
+
+-- Re-appliable: call from the module's settings listener. opts:
+--   defaultPoint = {point=, x=, y=} (required) — position when no saved drag
+function UI.ApplyHudChrome(frame, db, prefix, opts)
+    frame._hudOpts = opts
+    if not frame._hudChromeInit then
+        frame._hudChromeInit = true
+        frame._hudBackdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        frame._hudBackdrop:SetFrameLevel(math.max((frame:GetFrameLevel() or 1) - 1, 0))
+        frame:SetMovable(true)
+        frame:SetClampedToScreen(true)
+        -- Window-style close is session-scoped; a consumer's SetShown must
+        -- not resurrect a closed window
+        frame:HookScript("OnShow", function(self)
+            if IsHudClosed(db, prefix) then
+                self:Hide()
+            end
+        end)
+        -- Triple right-click on a LOCKED frame unlocks it. Only possible
+        -- where the client can pass left-clicks through (so a locked frame
+        -- still never blocks normal interaction); without the API the old
+        -- fully-transparent contract stands.
+        if frame.SetPassThroughButtons then
+            local ok = pcall(frame.SetPassThroughButtons, frame, "LeftButton")
+            frame._hudRightCatch = ok or nil
+            frame:SetScript("OnMouseUp", function(self, mouseButton)
+                if mouseButton ~= "RightButton" then return end
+                local now = GetTime()
+                if not (self._hudRightAt and (now - self._hudRightAt) < 0.7) then
+                    self._hudRightClicks = 0
+                end
+                self._hudRightClicks = (self._hudRightClicks or 0) + 1
+                self._hudRightAt = now
+                if self._hudRightClicks >= 3 then
+                    self._hudRightClicks = 0
+                    db[prefix .. "Locked"] = false
+                    UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts)
+                end
+            end)
+        end
+
+        -- The drag surface is a dedicated overlay ABOVE the frame's
+        -- content: module content frequently has its own mouse-enabled
+        -- children (tooltip rows), which would otherwise swallow every
+        -- drag; and while unlocked the overlay doubles as the visual cue
+        -- even with Frame Style set to None. The root frame itself never
+        -- takes the mouse, so locked frames stay click-transparent.
+        local overlay = CreateFrame("Frame", nil, frame)
+        frame._hudDragOverlay = overlay
+        -- Cover the chrome pad too, so the styled border is also a grab
+        -- handle — a bigger target than the content alone
+        overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", -12, 12)
+        overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 12, -12)
+        overlay:SetFrameLevel((frame:GetFrameLevel() or 1) + 20)
+        overlay:EnableMouse(true)
+        overlay:RegisterForDrag("LeftButton")
+        overlay.fill = overlay:CreateTexture(nil, "OVERLAY")
+        overlay.fill:SetTexture("Interface\\Buttons\\WHITE8X8")
+        overlay.fill:SetVertexColor(0.3, 1, 0.4, 0.25)
+        overlay.fill:SetAllPoints()
+        overlay.label = overlay:CreateFontString(nil, "OVERLAY")
+        overlay.label:SetFontObject(GameFontHighlightSmall)
+        overlay.label:SetPoint("CENTER")
+        overlay.label:SetText("DRAG · right-click locks")
+        overlay:Hide()
+        -- Right-click on an unlocked frame locks it in place — no trip
+        -- back to the settings panel needed
+        overlay:SetScript("OnMouseUp", function(_, mouseButton)
+            if mouseButton == "RightButton" then
+                db[prefix .. "Locked"] = true
+                UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts or opts)
+            end
+        end)
+        overlay:SetScript("OnDragStart", function()
+            frame._hudDragging = true
+            frame:StartMoving()
+        end)
+        overlay:SetScript("OnDragStop", function()
+            frame._hudDragging = false
+            frame:StopMovingOrSizing()
+            local point, _, _, x, y = frame:GetPoint(1)
+            if point then
+                -- Store offsets in SCREEN space (multiply out the frame's
+                -- scale) so a later scale change keeps the frame where the
+                -- user put it instead of migrating the anchor
+                local scale = frame:GetScale() or 1
+                db[prefix .. "Pos"] = { point = point, x = x * scale, y = y * scale }
+            end
+        end)
+    end
+
+    local scale = db[prefix .. "Scale"] or 1
+    frame:SetScale(scale)
+
+    -- Never re-anchor mid-drag: throttled setting notifies would snap the
+    -- frame out of the user's hand
+    if not frame._hudDragging then
+        local pos = db[prefix .. "Pos"]
+        frame:ClearAllPoints()
+        if pos and pos.point then
+            frame:SetPoint(pos.point, UIParent, pos.point, (pos.x or 0) / scale, (pos.y or 0) / scale)
+        else
+            local p = opts.defaultPoint
+            frame:SetPoint(p.point, UIParent, p.point, p.x or 0, p.y or 0)
+        end
+    end
+
+    local styleKey = db[prefix .. "Style"] or "NONE"
+    local style = HUD_STYLES[styleKey]
+    local backdrop = frame._hudBackdrop
+    if style and style.window then
+        backdrop:Hide()
+        frame._hudStyleApplied = styleKey
+        local win = EnsureWindowChrome(frame, db, prefix)
+        if win.TitleText then
+            win.TitleText:SetText(opts.title or "Commander")
+        end
+        if win.lockButton and win.lockButton.tex then
+            win.lockButton.tex:SetTexture(db[prefix .. "Locked"]
+                and "Interface\\Buttons\\LockButton-Locked-Up"
+                or "Interface\\Buttons\\LockButton-Unlocked-Up")
+        end
+        win:Show()
+    elseif style then
+        if frame._hudWindow then
+            frame._hudWindow:Hide()
+        end
+        if frame._hudStyleApplied ~= styleKey then
+            frame._hudStyleApplied = styleKey
+            backdrop:ClearAllPoints()
+            backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", -style.pad, style.pad)
+            backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", style.pad, -style.pad)
+            backdrop:SetBackdrop(style.backdrop)
+        end
+        backdrop:SetBackdropColor(unpack(style.bg))
+        backdrop:SetBackdropBorderColor(unpack(style.border))
+        backdrop:Show()
+    else
+        frame._hudStyleApplied = nil
+        backdrop:Hide()
+        if frame._hudWindow then
+            frame._hudWindow:Hide()
+        end
+    end
+
+    local locked = db[prefix .. "Locked"]
+    -- Locked + right-catch support: the root listens for the triple
+    -- right-click unlock while left-clicks pass straight through.
+    -- Unlocked: the drag overlay owns the mouse instead.
+    if frame._hudRightCatch then
+        frame:EnableMouse(locked and true or false)
+    end
+    -- Recompute the level each apply: module content created after init
+    -- (pooled rows) must never end up above the drag surface
+    frame._hudDragOverlay:SetFrameLevel((frame:GetFrameLevel() or 1) + 20)
+    frame._hudDragOverlay:SetShown(not locked)
+    if not locked then
+        if style and not style.window then
+            backdrop:SetBackdropBorderColor(0.3, 1, 0.4, 1)
+        end
+        -- A hidden frame cannot be dragged; force it visible as a
+        -- placeholder while unlocked (consumers keep it shown too)
+        frame:Show()
+    end
+    -- Closed windows stay closed no matter what the consumer decides
+    if IsHudClosed(db, prefix) then
+        frame:Hide()
+    end
+end
+
+-- The standard settings rows every chromed HUD module offers. opts:
+--   isEnabled (fn gating all rows), onChanged (fn run after any change,
+--   usually the module's Apply), defaultPoint (for Reset Position)
+function UI.AddHudChromeOptions(panel, db, prefix, opts)
+    local enabled = opts.isEnabled
+    -- Style and scale share one row (dropdown left, slider right) so the
+    -- chrome block costs each panel two rows, not three
+    local chromeRow = panel:AddRow(52, 8)
+    BuildDropdown(panel, chromeRow, {
+        label = "Frame Style",
+        tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing; Window turns it into a little window with a title bar, lock and close buttons, and a resize grip.",
+        options = {
+            { text = "None", value = "NONE" },
+            { text = "Classic Panel", value = "CLASSIC" },
+            { text = "Dark Panel", value = "DARK" },
+            { text = "Window", value = "WINDOW" },
+        },
+        get = function() return db[prefix .. "Style"] or "NONE" end,
+        set = function(value) db[prefix .. "Style"] = value end,
+        isEnabled = enabled,
+    }, 0, 120)
+    BuildSlider(panel, chromeRow, {
+        label = "Frame Scale",
+        tooltip = "Overall size of the frame.",
+        min = 0.6, max = 1.6, step = 0.05,
+        format = UI.FormatPercent,
+        get = function() return db[prefix .. "Scale"] or 1 end,
+        set = function(value) db[prefix .. "Scale"] = value end,
+        isEnabled = enabled,
+    }, 270, 170)
+    -- Compact final row: unlock checkbox left, reset button right, sharing
+    -- one 26px row to respect the panels' no-scroll height budget
+    local row = panel:AddRow(26, 2)
+    BuildCheckbox(panel, row, {
+        label = "Unlock Frame",
+        tooltip = "Unlock to drag the frame anywhere (border turns green); right-click the unlocked frame to lock it, triple right-click a locked frame to unlock it from here on out.",
+        get = function() return not db[prefix .. "Locked"] end,
+        set = function(value) db[prefix .. "Locked"] = not value end,
+        isEnabled = enabled,
+    }, 0)
+    local reset = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    reset:SetSize(130, 24)
+    reset:SetPoint("LEFT", row, "LEFT", 270, 0)
+    reset:SetText("Reset Position")
+    reset:SetScript("OnClick", function()
+        db[prefix .. "Pos"] = nil
+        -- Also reopens a window closed with its X for this session
+        SetHudClosed(db, prefix, nil)
+        if opts.onChanged then opts.onChanged() end
+    end)
+    AttachTooltip(reset, "Reset Position", "Return the frame to its default position (and reopen it if its window was closed).")
+    if enabled then
+        panel:AddRefresher(function()
+            reset:SetEnabled(enabled() and true or false)
+        end)
+    end
 end

@@ -49,7 +49,7 @@ local function CreateMainPanel()
     local divider = Commander.UI.BuildPanelHeader(panel, {
         titleText = "Commander",
         addonName = "Commander_Events",
-        description = "A modular, RTS-inspired interface suite. Each module has its own settings page in the list on the left; open this page any time with /commander.",
+        description = "A modular, RTS-inspired command layer for the whole game, built on five pillars: Command & Control (comms, orders, rally points), Battle HUD (production, afflictions, vitals), Feedback & Alerts (momentum, impact, ceremony), Operations (economy, logistics, the mission board), and Interface (command card, bags, map, chat). Every module stands alone behind its own master switch and settings page in the list on the left; open this page any time with /commander.",
     })
     panel.ContentAnchor = divider
 
@@ -92,3 +92,50 @@ Settings.RegisterAddOnCategory(Commander.MainCategory)
 MainPanel = Commander.MainPanel
 MainCategory = Commander.MainCategory
 MainCategoryID = Commander.MainCategoryID
+
+-- ---------------------------------------------------------------------------
+-- Reload-resilient session state. A module keeps its session-scoped
+-- counters in db.Session and restores them through here: a brief
+-- interruption (/reload, a quick relog) resumes the same session, a real
+-- break starts fresh. Timestamps stored inside MUST be epoch time() —
+-- GetTime() resets on client restart; convert at the call site. The hub
+-- stamps every registered table at PLAYER_LOGOUT (which fires on /reload
+-- too) and once a minute as a crash guard.
+-- ---------------------------------------------------------------------------
+local SESSION_RESUME_WINDOW = 600
+local sessionTables = {}
+
+local function StampSessions()
+    local now = time()
+    for _, db in ipairs(sessionTables) do
+        if db.Session then
+            db.Session.savedAt = now
+        end
+    end
+end
+
+-- Returns (session, fresh). fresh is true when a new session block was
+-- started; false means the previous session resumed. defaults fills any
+-- missing keys either way, so adding fields later is safe.
+function Commander.RestoreSession(db, defaults)
+    local session = db.Session
+    local fresh = not (type(session) == "table" and session.savedAt
+        and (time() - session.savedAt) < SESSION_RESUME_WINDOW)
+    if fresh then
+        session = {}
+        db.Session = session
+    end
+    for key, value in pairs(defaults) do
+        if session[key] == nil then
+            session[key] = Commander.UI.CopyValue(value)
+        end
+    end
+    session.savedAt = time()
+    sessionTables[#sessionTables + 1] = db
+    return session, fresh
+end
+
+local sessionStamper = CreateFrame("Frame")
+sessionStamper:RegisterEvent("PLAYER_LOGOUT")
+sessionStamper:SetScript("OnEvent", StampSessions)
+C_Timer.NewTicker(60, StampSessions)

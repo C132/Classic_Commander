@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Camera
+## Author: Devin
+## Version: 2.1.0
+## Notes: RTS camera hotkeys: save and recall camera views like F-key camera locations, using the engine's own view slots.
+## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
+## SavedVariables: CommanderCameraDB
+## RequiredDeps: Commander_Events
+
+CommanderCameraDB.lua
+CommanderCamera.lua

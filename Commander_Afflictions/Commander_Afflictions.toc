@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Afflictions
+## Author: Devin
+## Version: 2.1.0
+## Notes: Tracks every debuff you have afflicted, accurate through dispels: draining bars for your DoTs, curses, and diseases.
+## IconTexture: Interface\Icons\Spell_Shadow_ShadowWordPain
+## SavedVariables: CommanderAfflictionsDB
+## RequiredDeps: Commander_Events
+
+CommanderAfflictionsDB.lua
+CommanderAfflictions.lua

@@ -10,15 +10,34 @@ Each module is a standalone addon that can be enabled or disabled independently.
 |---|---|
 | Commander_Events | Shared hub: event bus + root settings category (required by all) |
 | Commander_ActionBar | Action bar cleanup and repositioning |
-| Commander_Bags | Bag frame positioning, item quality coloring, fading |
+| Commander_Adjutant | RTS announcer: banners and sounds for attacks, repairs, level-ups |
+| Commander_Afflictions | Live board of your applied debuffs, accurate through dispels |
+| Commander_Bags | Bag positioning, item coloring, fading, on-demand sorting |
+| Commander_Camera | RTS camera hotkeys: save and recall up to four camera views |
 | Commander_Casting | Cast bar glow effects |
 | Commander_Chat | Chat window visibility and message sound pings |
+| Commander_Comms | Radial quick-message wheel: eight battle calls on a keybind |
 | Commander_Console | Optional bottom console viewport (off by default) |
+| Commander_Economy | Session mission summary: gold, XP rate, quests, casualties |
+| Commander_Idle | RTS idle-worker alert when your character stands around |
+| Commander_Impact | Kill confirmations and big-crit screen pulses |
 | Commander_Inventory | Equipment/inventory quick-access button grid |
+| Commander_Logistics | Auto-sell junk and auto-repair with a quartermaster report |
 | Commander_Minimap | Minimap cleanup, zone text, XP tracker, minimap button |
+| Commander_Momentum | Decaying kill-streak combo meter with escalating colors |
 | Commander_Nameplate | Personal nameplate with cast bar |
+| Commander_Objectives | RTS mission announcements for quest progress and turn-ins |
+| Commander_Orders | RTS move orders: Ctrl+Right-click the map, follow the arrow |
+| Commander_Ping | Loud minimap ping alerts with flash and callout |
+| Commander_Production | Cooldowns as an RTS production queue with ready alerts |
+| Commander_Promotion | Level-up ceremony: gold burst, banner, stat gains |
+| Commander_Radar | Cosmetic minimap radar sweep and crosshair overlay |
+| Commander_Recovery | Death report, session casualty count, auto corpse-run order |
 | Commander_Resources | Five-second-rule mana tick tracker |
+| Commander_Spoils | SUPPLY ACQUIRED loot toasts with quality colors and epic flash |
 | Commander_Tooltip | Tooltip anchoring, scale, item level and vendor price |
+| Commander_TopBar | RTS resource strip: gold, bag supply, durability, XP rate |
+| Commander_Vitals | Per-slot equipment condition wireframe, shows when gear runs low |
 | Commander_Who | /who window enhancements and mass whisper |
 | Commander_Suite | Suite dashboard on the root settings page: module directory, quick settings access (`/commander`) |
 

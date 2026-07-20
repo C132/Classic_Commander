@@ -1,5 +1,5 @@
 {
-	"folders": [
+    "folders": [
         {
             "name": ".git",
             "path": ".git"
@@ -9,8 +9,20 @@
             "path": "Commander_ActionBar"
         },
         {
+            "name": "Commander_Adjutant",
+            "path": "Commander_Adjutant"
+        },
+        {
+            "name": "Commander_Afflictions",
+            "path": "Commander_Afflictions"
+        },
+        {
             "name": "Commander_Bags",
             "path": "Commander_Bags"
+        },
+        {
+            "name": "Commander_Camera",
+            "path": "Commander_Camera"
         },
         {
             "name": "Commander_Casting",
@@ -21,28 +33,84 @@
             "path": "Commander_Chat"
         },
         {
+            "name": "Commander_Comms",
+            "path": "Commander_Comms"
+        },
+        {
             "name": "Commander_Console",
             "path": "Commander_Console"
+        },
+        {
+            "name": "Commander_Economy",
+            "path": "Commander_Economy"
         },
         {
             "name": "Commander_Events",
             "path": "Commander_Events"
         },
         {
+            "name": "Commander_Idle",
+            "path": "Commander_Idle"
+        },
+        {
+            "name": "Commander_Impact",
+            "path": "Commander_Impact"
+        },
+        {
             "name": "Commander_Inventory",
             "path": "Commander_Inventory"
+        },
+        {
+            "name": "Commander_Logistics",
+            "path": "Commander_Logistics"
         },
         {
             "name": "Commander_Minimap",
             "path": "Commander_Minimap"
         },
         {
+            "name": "Commander_Momentum",
+            "path": "Commander_Momentum"
+        },
+        {
             "name": "Commander_Nameplate",
             "path": "Commander_Nameplate"
         },
         {
+            "name": "Commander_Objectives",
+            "path": "Commander_Objectives"
+        },
+        {
+            "name": "Commander_Orders",
+            "path": "Commander_Orders"
+        },
+        {
+            "name": "Commander_Ping",
+            "path": "Commander_Ping"
+        },
+        {
+            "name": "Commander_Production",
+            "path": "Commander_Production"
+        },
+        {
+            "name": "Commander_Promotion",
+            "path": "Commander_Promotion"
+        },
+        {
+            "name": "Commander_Radar",
+            "path": "Commander_Radar"
+        },
+        {
+            "name": "Commander_Recovery",
+            "path": "Commander_Recovery"
+        },
+        {
             "name": "Commander_Resources",
             "path": "Commander_Resources"
+        },
+        {
+            "name": "Commander_Spoils",
+            "path": "Commander_Spoils"
         },
         {
             "name": "Commander_Suite",
@@ -53,9 +121,17 @@
             "path": "Commander_Tooltip"
         },
         {
+            "name": "Commander_TopBar",
+            "path": "Commander_TopBar"
+        },
+        {
+            "name": "Commander_Vitals",
+            "path": "Commander_Vitals"
+        },
+        {
             "name": "Commander_Who",
             "path": "Commander_Who"
         }
     ],
-	"settings": {}
+    "settings": {}
 }

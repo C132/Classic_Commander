@@ -3,7 +3,7 @@
 ## Title: Commander Inventory
 ## Notes: Movable grid of usable items from your bags and equipment, with one-click access.
 ## Author: Devin
-## Version: 2.0.0
+## Version: 2.1.0
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderInventoryDB
 ## DefaultState: enabled

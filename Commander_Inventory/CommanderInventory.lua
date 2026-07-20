@@ -22,7 +22,41 @@ ItemGrid:SetScript("OnDragStart", function(self)
 end)
 ItemGrid:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
+    -- Persist the drag like every other Commander frame (screen-space
+    -- offsets so scale changes keep it in place)
+    local point, _, _, x, y = self:GetPoint(1)
+    if point and CommanderInventoryDB then
+        local gridScale = self:GetScale() or 1
+        CommanderInventoryDB.position = { point = point, x = x * gridScale, y = y * gridScale }
+    end
 end)
+
+-- Framing flexibility to match the rest of the suite: the grid can keep
+-- its window art or switch to the shared Classic/Dark/None framings
+local function ApplyFraming()
+    local style = (CommanderInventoryDB and CommanderInventoryDB.frameStyle) or "WINDOW"
+    local windowArt = style == "WINDOW"
+    if ItemGrid.NineSlice then ItemGrid.NineSlice:SetShown(windowArt) end
+    if ItemGrid.Bg then ItemGrid.Bg:SetShown(windowArt) end
+    if ItemGrid.TitleBg then ItemGrid.TitleBg:SetShown(windowArt) end
+    if ItemGrid.TitleText then ItemGrid.TitleText:SetShown(windowArt) end
+    if ItemGrid.CloseButton then ItemGrid.CloseButton:SetShown(windowArt) end
+    if ItemGrid.Inset then ItemGrid.Inset:SetShown(windowArt) end
+    Commander.UI.ApplyStyleBackdrop(ItemGrid, windowArt and "NONE" or style)
+    if ButtonsContainer then
+        -- No title bar outside window art; reclaim its space
+        ButtonsContainer:SetPoint("TOPLEFT", ItemGrid, "TOPLEFT", 7, windowArt and -25 or -8)
+    end
+end
+
+local function ApplySavedGridPosition()
+    local pos = CommanderInventoryDB and CommanderInventoryDB.position
+    if pos and pos.point then
+        local gridScale = (CommanderInventoryDB and CommanderInventoryDB.scale) or 1
+        ItemGrid:ClearAllPoints()
+        ItemGrid:SetPoint(pos.point, UIParent, pos.point, (pos.x or 0) / gridScale, (pos.y or 0) / gridScale)
+    end
+end
 
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
@@ -32,7 +66,7 @@ frame:RegisterEvent("ITEM_LOCK_CHANGED")
 frame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED") -- Refresh buttons after combat (secure attributes are locked in combat)
 
-local function CreateItemGrid()    
+local function CreateItemGrid()
     ItemGrid.TitleText:SetText("Inventory")
     ItemGrid:SetShown(CommanderInventoryDB.showFrame)
     ItemGrid:SetScale(CommanderInventoryDB.scale)
@@ -40,14 +74,21 @@ local function CreateItemGrid()
     ButtonsContainer = CreateFrame("Frame", nil, ItemGrid)
     ButtonsContainer:SetPoint("TOPLEFT", ItemGrid, "TOPLEFT", 7, -25)
     ButtonsContainer:SetPoint("BOTTOMRIGHT", ItemGrid, "BOTTOMRIGHT", -7, 7)
+    ApplyFraming()
+    ApplySavedGridPosition()
 end
 
 local function CreateButton(index)
-    local button = CreateFrame("Button", "CIItemButton"..index, ButtonsContainer, "SecureActionButtonTemplate, ActionButtonTemplate")
+    -- Template order is load-bearing: ActionButtonTemplate inherits
+    -- FlyoutButtonTemplate, whose OnClick (a flyout no-op) would OVERWRITE
+    -- the secure handler if applied last — clicks then silently do nothing.
+    -- SecureActionButtonTemplate must come LAST so its OnClick survives.
+    local button = CreateFrame("Button", "CIItemButton"..index, ButtonsContainer, "ActionButtonTemplate, SecureActionButtonTemplate")
     button:SetSize(40, 40)
     button:SetAttribute("type", "item")
-    -- 2.5.5 secure buttons act on key-down by default (ActionButtonUseKeyDown), so register both
-    button:RegisterForClicks("AnyUp", "AnyDown")
+    -- Registering both means the click works whichever way the
+    -- ActionButtonUseKeyDown CVar points (down fires with 1, up with 0)
+    button:RegisterForClicks("AnyDown", "AnyUp")
     
     -- Create cooldown frame
     button.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
@@ -217,6 +258,8 @@ local function LoadSettings()
     if ItemGrid then
         ItemGrid:SetShown(CommanderInventoryDB.showFrame)
         ItemGrid:SetScale(CommanderInventoryDB.scale)
+        ApplyFraming()
+        ApplySavedGridPosition()
     end
     UpdateButtons()
 end

@@ -11,19 +11,14 @@ if fiveSecondRule.SetDontSavePosition then
     pcall(fiveSecondRule.SetDontSavePosition, fiveSecondRule, true)
 end
 
--- Re-anchor from the saved position (or the default center) with a single
--- UIParent point, so the frame can never leave UIParent's anchor family
-local function ApplyBarPosition()
-    local pos = CommanderResourceDB and CommanderResourceDB.BarPosition
-    fiveSecondRule:ClearAllPoints()
-    if pos and type(pos.left) == "number" and type(pos.bottom) == "number" then
-        fiveSecondRule:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
-    else
-        fiveSecondRule:SetPoint("CENTER")
-    end
+local ApplyBarLayout -- defined below, after the bar's regions exist
+
+local function IsAttachedToPlayerFrame()
+    return CommanderResourceDB and CommanderResourceDB.BarMode == "PLAYER_FRAME"
 end
 
 fiveSecondRule:SetScript("OnDragStart", function(self)
+    if IsAttachedToPlayerFrame() then return end
     if CommanderResourceDB and CommanderResourceDB.LockBar then return end
     self:StartMoving()
 end)
@@ -34,7 +29,7 @@ fiveSecondRule:SetScript("OnDragStop", function(self)
     if CommanderResourceDB and left and bottom then
         CommanderResourceDB.BarPosition = { left = left, bottom = bottom }
     end
-    ApplyBarPosition()
+    ApplyBarLayout()
 end)
 
 local background = fiveSecondRule:CreateTexture(nil, "BACKGROUND")
@@ -57,6 +52,60 @@ manaBar:SetStatusBarColor(0.2, 0.7, 1)
 local manaText = manaBar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 manaText:SetPoint("CENTER")
 manaText:SetText("Ready")
+
+-- The attached bar sits in the player frame's name band, so the name text
+-- yields to it: hidden (alpha 0) only while the bar is attached AND shown,
+-- restored the moment the bar floats, hides, or the class has no mana.
+-- Blizzard's name updates SetText only — they never touch alpha.
+local function UpdateNameOverlay()
+    local nameText = _G["PlayerName"]
+    if not nameText then return end
+    if IsAttachedToPlayerFrame() and fiveSecondRule:IsShown() then
+        nameText:SetAlpha(0)
+    else
+        nameText:SetAlpha(1)
+    end
+end
+
+-- Lay the bar out for the current placement mode.
+-- FLOATING: a standalone movable bar on UIParent at the saved (or default
+-- center) position — always a single UIParent point, so the frame can never
+-- leave UIParent's anchor family.
+-- PLAYER_FRAME: a slim strip parented to the player frame, occupying the
+-- name band above the health bar (where the player's name normally sits),
+-- mouse-disabled so it can never eat clicks meant for the (protected) unit
+-- frame; it inherits the frame's scale and visibility.
+function ApplyBarLayout()
+    fiveSecondRule:ClearAllPoints()
+    if IsAttachedToPlayerFrame() and PlayerFrame then
+        fiveSecondRule:SetParent(PlayerFrame)
+        fiveSecondRule:EnableMouse(false)
+        manaText:SetFontObject(GameFontHighlightSmall)
+        local healthBar = _G["PlayerFrameHealthBar"]
+        if healthBar then
+            local width = healthBar:GetWidth()
+            fiveSecondRule:SetSize((width and width > 0) and width or 119, 12)
+            -- Name band: the strip's bottom edge rests on the health bar's top
+            fiveSecondRule:SetPoint("BOTTOMLEFT", healthBar, "TOPLEFT", 0, 2)
+        else
+            -- Classic frame geometry fallback: bars span x 90-209, name at ~y -27
+            fiveSecondRule:SetSize(119, 12)
+            fiveSecondRule:SetPoint("TOP", PlayerFrame, "TOP", 34, -27)
+        end
+    else
+        fiveSecondRule:SetParent(UIParent)
+        fiveSecondRule:EnableMouse(true)
+        manaText:SetFontObject(GameFontHighlight)
+        fiveSecondRule:SetSize(150, 25)
+        local pos = CommanderResourceDB and CommanderResourceDB.BarPosition
+        if pos and type(pos.left) == "number" and type(pos.bottom) == "number" then
+            fiveSecondRule:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.left, pos.bottom)
+        else
+            fiveSecondRule:SetPoint("CENTER")
+        end
+    end
+    UpdateNameOverlay()
+end
 
 local lastManaChangeTime, playerIsFull, lastManaPower = 0, true, 0
 local serverTickRate, lastRegenTime, tickOffset = 2, 0, 0
@@ -92,12 +141,15 @@ local function OnEvent(self, event, unit, powerType)
         -- Fires on every loading screen; only register the listener once
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
         Commander.AddListener(COMMANDER_RESOURCE_EVENTS.FIVE_SECOND_RULE_CHANGED, OnFiveSecondRuleChanged)
-        ApplyBarPosition()
+        ApplyBarLayout()
         UpdateVisibility()
     end
 end
 
 function OnFiveSecondRuleChanged()
+    -- Settings changed: re-apply placement (mode may have switched) and the
+    -- show/hide gate
+    ApplyBarLayout()
     UpdateVisibility()
 end
 
@@ -151,6 +203,8 @@ function UpdateVisibility()
         fiveSecondRule:SetScript("OnUpdate", nil)
         fiveSecondRule:Hide()
     end
+    -- The player-frame name text yields only while the attached bar is shown
+    UpdateNameOverlay()
 end
 
 fiveSecondRule:SetScript("OnEvent", OnEvent)
@@ -166,7 +220,7 @@ function CommanderResources_ResetBarPosition()
     if CommanderResourceDB then
         CommanderResourceDB.BarPosition = nil
     end
-    ApplyBarPosition()
+    ApplyBarLayout()
     print("Commander Resources: bar position reset")
 end
 
