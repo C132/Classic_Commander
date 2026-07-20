@@ -79,8 +79,17 @@ local function AcquireRow(index)
     row.timer:Hide()
 
     -- Optional 2D portrait of the afflicted target. Lives on the timer
-    -- holder so it renders above the radial sweep in the icon strip.
-    row.portrait = timerHolder:CreateTexture(nil, "OVERLAY")
+    -- holder so it renders above the radial sweep in the icon strip; the
+    -- dark backdrop sits one sublevel below the portrait and one pixel
+    -- proud of it, framing the face so it reads apart from the debuff
+    -- icon underneath.
+    row.portraitBack = timerHolder:CreateTexture(nil, "OVERLAY", nil, 1)
+    row.portraitBack:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.portraitBack:SetVertexColor(0, 0, 0, 0.9)
+    row.portraitBack:Hide()
+    row.portrait = timerHolder:CreateTexture(nil, "OVERLAY", nil, 2)
+    -- Crop the model shot's fuzzy edges so the face fills the frame
+    row.portrait:SetTexCoord(0.12, 0.88, 0.12, 0.88)
     row.portrait:Hide()
 
     -- Full debuff tooltip on hover (test entries and unresolvable spells
@@ -118,6 +127,9 @@ local function ApplyRowGeometry(row, index, layout, barWidth, portraits)
     row.bar:ClearAllPoints()
     row.label:ClearAllPoints()
     row.portrait:ClearAllPoints()
+    row.portraitBack:ClearAllPoints()
+    row.portraitBack:SetPoint("TOPLEFT", row.portrait, "TOPLEFT", -1, 1)
+    row.portraitBack:SetPoint("BOTTOMRIGHT", row.portrait, "BOTTOMRIGHT", 1, -1)
     if layout == "ICONS" then
         row:SetSize(ICON_SIZE, ICON_SIZE + ICON_BAR_HEIGHT + 2)
         row:SetPoint("TOPLEFT", root, "TOPLEFT", (index - 1) * (ICON_SIZE + ICON_GAP), 0)
@@ -133,8 +145,10 @@ local function ApplyRowGeometry(row, index, layout, barWidth, portraits)
             row.portrait:SetSize(ICON_SIZE * 0.55, ICON_SIZE * 0.55)
             row.portrait:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMLEFT", -3, -3)
             row.portrait:Show()
+            row.portraitBack:Show()
         else
             row.portrait:Hide()
+            row.portraitBack:Hide()
         end
     else
         -- With portraits on, the target's face leads the row and everything
@@ -148,10 +162,12 @@ local function ApplyRowGeometry(row, index, layout, barWidth, portraits)
         end
         if portraits then
             row.portrait:SetSize(BAR_HEIGHT, BAR_HEIGHT)
-            row.portrait:SetPoint("LEFT", row, "LEFT", 0, 0)
+            row.portrait:SetPoint("LEFT", row, "LEFT", 1, 0)
             row.portrait:Show()
+            row.portraitBack:Show()
         else
             row.portrait:Hide()
+            row.portraitBack:Hide()
         end
         row.icon:SetSize(BAR_HEIGHT, BAR_HEIGHT)
         row.icon:SetPoint("LEFT", row, "LEFT", offset, 0)
