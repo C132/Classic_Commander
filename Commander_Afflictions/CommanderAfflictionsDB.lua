@@ -8,6 +8,7 @@ local DefaultSettings = {
     EnableAfflictions = true,
     MaxBars = 6,
     ShowTargetNames = true,
+    ShowPortraits = false,
     AlwaysShow = false,
     FixedHeight = false,
     Layout = "BARS_DOWN",
@@ -53,6 +54,13 @@ local function CreateOptionsPanel()
         tooltip = "Append the afflicted unit's name to each bar (useful when dotting multiple targets).",
         get = function() return CommanderAfflictionsDB.ShowTargetNames end,
         set = function(value) CommanderAfflictionsDB.ShowTargetNames = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    })
+    panel:AddCheckbox({
+        label = "Show Target Portraits",
+        tooltip = "Put the afflicted target's 2D portrait on each entry — leading the bar in the bar layouts, a corner badge on the icon strip. Portraits paint when the unit is your target, focus, mouseover, or has a visible nameplate, and stick for the entry's lifetime; until then a silhouette stands in.",
+        get = function() return CommanderAfflictionsDB.ShowPortraits end,
+        set = function(value) CommanderAfflictionsDB.ShowPortraits = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
     })
     panel:AddCheckboxPair({
