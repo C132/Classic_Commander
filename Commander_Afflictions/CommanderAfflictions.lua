@@ -1,9 +1,11 @@
--- Commander Afflictions: live tracker for debuffs the PLAYER has applied.
+-- Commander Afflictions: live tracker for the auras the PLAYER applies.
+-- Debuffs on enemies always; buffs on allies too when Include Ally Buffs is on
+-- (HoTs, blessings, shields — drawn as green bars beside the purple afflictions).
 -- Two sources keep the board truthful:
 --   1. The combat log (APPLIED/REFRESH add, REMOVED/BROKEN/DISPEL/UNIT_DIED
 --      delete) — authoritative about existence, knows nothing of durations.
---   2. C_UnitAuras scans of units we can address (target, mouseover) refine
---      entries with exact expiration times where sourceUnit == "player".
+--   2. C_UnitAuras scans of units we can address (target, mouseover, focus)
+--      refine entries with exact expiration times where sourceUnit == "player".
 -- Entries whose duration is unknown show as full bars until the combat log
 -- removes them or a scan pins them down; a 40s fallback prunes strays that
 -- expire out of combat-log range.
@@ -17,6 +19,10 @@ local DRAW_THROTTLE = 0.1
 -- Fallback prune for entries whose expiration was never pinned by a scan;
 -- generous because unscanned curses/DoTs can legitimately run 2 minutes
 local UNKNOWN_MAX_AGE = 120
+-- Circular alpha mask (generated, ships with the addon) that rounds the
+-- portraits; and the class-icon sheet indexed by CLASS_ICON_TCOORDS
+local PORTRAIT_MASK = "Interface\\AddOns\\Commander_Afflictions\\Textures\\CircleMask.png"
+local CLASS_ICON_TEXTURE = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
 
 local active = {}   -- key destGUID..spellID -> entry
 local playerGUID    -- cached at login: CLEU compares this dozens of times/sec
@@ -85,12 +91,29 @@ local function AcquireRow(index)
     -- icon underneath.
     row.portraitBack = timerHolder:CreateTexture(nil, "OVERLAY", nil, 1)
     row.portraitBack:SetTexture("Interface\\Buttons\\WHITE8X8")
-    row.portraitBack:SetVertexColor(0, 0, 0, 0.9)
+    row.portraitBack:SetVertexColor(0, 0, 0, 1)
     row.portraitBack:Hide()
     row.portrait = timerHolder:CreateTexture(nil, "OVERLAY", nil, 2)
     -- Crop the model shot's fuzzy edges so the face fills the frame
     row.portrait:SetTexCoord(0.12, 0.88, 0.12, 0.88)
     row.portrait:Hide()
+    -- Round both the portrait and its black backing with a circular alpha mask.
+    -- The backing sits one pixel proud of the portrait (see ApplyRowGeometry),
+    -- so its rim reads as a thin black outline around the circle. Wrapped in a
+    -- guard + pcall so a client without mask textures just keeps square
+    -- portraits instead of breaking row creation.
+    if timerHolder.CreateMaskTexture and row.portrait.AddMaskTexture then
+        pcall(function()
+            local pMask = timerHolder:CreateMaskTexture()
+            pMask:SetTexture(PORTRAIT_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            pMask:SetAllPoints(row.portrait)
+            row.portrait:AddMaskTexture(pMask)
+            local bMask = timerHolder:CreateMaskTexture()
+            bMask:SetTexture(PORTRAIT_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            bMask:SetAllPoints(row.portraitBack)
+            row.portraitBack:AddMaskTexture(bMask)
+        end)
+    end
 
     -- Full debuff tooltip on hover (test entries and unresolvable spells
     -- fall back to the text line); hover-only so chrome drags pass
@@ -186,7 +209,7 @@ local function Key(destGUID, spellID)
     return destGUID .. ":" .. tostring(spellID)
 end
 
-local function AddOrRefresh(destGUID, destName, spellID, spellName)
+local function AddOrRefresh(destGUID, destName, spellID, spellName, isBuff)
     local key = Key(destGUID, spellID)
     local entry = active[key]
     if not entry then
@@ -195,12 +218,14 @@ local function AddOrRefresh(destGUID, destName, spellID, spellName)
             targetName = destName,
             spellID = spellID,
             spellName = spellName,
+            isBuff = isBuff or false,
             icon = GetSpellTexture and GetSpellTexture(spellID) or nil,
             seen = GetTime(),
         }
         active[key] = entry
     else
         entry.seen = GetTime()
+        entry.isBuff = isBuff or false
         -- A refresh invalidates any previously scanned expiration; a new
         -- scan will re-pin it
         entry.expiration = nil
@@ -224,41 +249,91 @@ end
 -- proper icon, and removal of anything the scan proves is gone
 local scanFound = {}   -- scratch, reused across scans
 
-local function ScanUnit(unit)
-    if not (C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex and UnitGUID) then return end
-    local guid = UnitGUID(unit)
-    if not guid then return end
-    local found = scanFound
-    wipe(found)
+-- One pass over one aura channel. The PLAYER filter only materializes aura
+-- tables for the player's own auras — the unfiltered scan allocated one per
+-- aura from EVERYONE in a group just to discard them at the source check.
+-- Returns true if it added an entry or moved a known expiration.
+local function ScanChannel(unit, guid, found, getter, filter, isBuff)
+    if not getter then return false end
+    local changed = false
     for i = 1, 40 do
-        -- PLAYER filter: only materialize aura tables for the player's own
-        -- debuffs — the unfiltered scan allocated one per debuff from
-        -- EVERYONE in a group just to discard them at the source check
-        local aura = C_UnitAuras.GetDebuffDataByIndex(unit, i, "HARMFUL|PLAYER")
+        local aura = getter(unit, i, filter)
         if not aura then break end
         if aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") then
             local key = Key(guid, aura.spellId)
             found[key] = true
             local entry = active[key]
             if not entry then
-                AddOrRefresh(guid, UnitName(unit), aura.spellId, aura.name)
+                AddOrRefresh(guid, UnitName(unit), aura.spellId, aura.name, isBuff)
                 entry = active[key]
+                changed = true
             end
+            entry.isBuff = isBuff
             entry.spellName = aura.name or entry.spellName
             entry.icon = aura.icon or entry.icon
             if aura.expirationTime and aura.expirationTime > 0 then
+                if entry.expiration ~= aura.expirationTime then changed = true end
                 entry.expiration = aura.expirationTime
                 entry.duration = aura.duration
             end
         end
     end
-    -- The scan is authoritative for this GUID: entries it did not see are
-    -- gone (dispelled before we ever caught a removal, or misattributed)
-    for key, entry in pairs(active) do
-        if entry.destGUID == guid and not found[key] then
-            active[key] = nil
+    return changed
+end
+
+-- reliable = the unit's aura data can be trusted right now (it is in front of
+-- us: target/focus/mouseover/player). Only then do we run the authoritative
+-- prune. Group members may be out of range with no readable auras, where an
+-- empty scan would wrongly wipe live buffs — those clear via the combat log or
+-- their own expiration instead. Returns true if anything changed.
+local function ScanUnit(unit, reliable)
+    if not (C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex and UnitGUID) then return false end
+    local guid = UnitGUID(unit)
+    if not guid then return false end
+    -- Skip self entirely when the user only wants to track others
+    if CommanderAfflictionsDB.ExcludeSelf and guid == playerGUID then return false end
+    local found = scanFound
+    wipe(found)
+    local changed = ScanChannel(unit, guid, found, C_UnitAuras.GetDebuffDataByIndex, "HARMFUL|PLAYER", false)
+    -- Ally buffs share the board when opted in; scanning both channels keeps
+    -- the authoritative prune below correct for friendly targets too
+    if CommanderAfflictionsDB and CommanderAfflictionsDB.IncludeBuffs then
+        if ScanChannel(unit, guid, found, C_UnitAuras.GetBuffDataByIndex, "HELPFUL|PLAYER", true) then
+            changed = true
         end
     end
+    if reliable then
+        for key, entry in pairs(active) do
+            if entry.destGUID == guid and not found[key] then
+                active[key] = nil
+                changed = true
+            end
+        end
+    end
+    return changed
+end
+
+-- Party/raid unit tokens we watch for our own buffs, so ally-buff timers get
+-- pinned without ever targeting the ally
+local GROUP_UNITS = {}
+for i = 1, 4 do GROUP_UNITS["party" .. i] = true end
+for i = 1, 40 do GROUP_UNITS["raid" .. i] = true end
+
+-- Sweep the whole group once (roster change, zone-in, enabling buffs) to catch
+-- buffs already up before we started watching. Group members are unreliable
+-- (may be out of range), the player is reliable.
+local function ScanGroup()
+    if not (CommanderAfflictionsDB and CommanderAfflictionsDB.IncludeBuffs) then return end
+    if IsInRaid and IsInRaid() then
+        for i = 1, 40 do
+            if UnitExists("raid" .. i) then ScanUnit("raid" .. i, false) end
+        end
+    elseif IsInGroup and IsInGroup() then
+        for i = 1, 4 do
+            if UnitExists("party" .. i) then ScanUnit("party" .. i, false) end
+        end
+    end
+    ScanUnit("player", true)
 end
 
 -- Queue scratch reused across draws — same churn cut as Production: a
@@ -309,6 +384,7 @@ local function ResolveUnit(guid)
         PutUnit("target")
         PutUnit("focus")
         PutUnit("mouseover")
+        PutUnit("player")
         if C_NamePlate and C_NamePlate.GetNamePlates then
             for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
                 local unit = plate.namePlateUnitToken
@@ -324,6 +400,8 @@ end
 
 local function Draw()
     local now = GetTime()
+    -- Long ally buffs stay off the board until this much time remains
+    local buffThreshold = CommanderAfflictionsDB.BuffHideThreshold or 0
     wipe(queue)
     for key, entry in pairs(active) do
         local remaining
@@ -335,8 +413,15 @@ local function Draw()
         elseif not entry.expiration and (now - entry.seen) > UNKNOWN_MAX_AGE then
             active[key] = nil
         else
-            local it = NextQueueItem()
-            it.key, it.entry, it.remaining = key, entry, remaining
+            -- A buff whose full duration exceeds the threshold is hidden while
+            -- more than the threshold remains (needs a pinned duration to know)
+            local hideLong = entry.isBuff and buffThreshold > 0
+                and entry.duration and entry.duration > buffThreshold
+                and remaining and remaining >= buffThreshold
+            if not hideLong then
+                local it = NextQueueItem()
+                it.key, it.entry, it.remaining = key, entry, remaining
+            end
         end
     end
     table.sort(queue, QueueCompare)
@@ -346,6 +431,7 @@ local function Draw()
     local layout = LayoutMode()
     local barWidth = BarWidth()
     local showPortraits = CommanderAfflictionsDB.ShowPortraits and true or false
+    local classIcons = CommanderAfflictionsDB.PortraitClassIcons and true or false
     unitMapBuilt = false
     local geometrySig = layout .. barWidth .. (showPortraits and "P" or "")
     for i = 1, shown do
@@ -360,6 +446,16 @@ local function Draw()
         local entry = item.entry
         local overlay = CommanderAfflictionsDB.DrainOverlay or "BAR"
         row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        -- Ally buffs drain green, afflictions purple; recolor only on change
+        local isBuff = entry.isBuff and true or false
+        if row.shownIsBuff ~= isBuff then
+            row.shownIsBuff = isBuff
+            if isBuff then
+                row.bar:SetVertexColor(0.3, 0.9, 0.45, 0.9)
+            else
+                row.bar:SetVertexColor(0.7, 0.35, 1, 0.9)
+            end
+        end
         local hasTimes = item.remaining and entry.duration and entry.duration > 0
         -- The slim underbar is an overlay choice in the icon strip; the
         -- big bar is the row itself in the bar layouts and always stays
@@ -412,15 +508,34 @@ local function Draw()
             end
             row.tipText = text
         end
-        if showPortraits and row.portraitGUID ~= entry.destGUID then
-            local unit = ResolveUnit(entry.destGUID)
-            if unit and SetPortraitTexture then
-                SetPortraitTexture(row.portrait, unit)
-                row.portraitGUID = entry.destGUID
-                row.portraitFallback = nil
-            elseif not row.portraitFallback then
-                row.portrait:SetTexture("Interface\\CharacterFrame\\TempPortrait")
-                row.portraitFallback = true
+        if showPortraits and (row.portraitGUID ~= entry.destGUID or row.portraitClassMode ~= classIcons) then
+            row.portraitClassMode = classIcons
+            local resolved = false
+            -- A player target's class icon comes straight from the GUID — no
+            -- live unit token needed, so it resolves even for off-screen allies
+            if classIcons and GetPlayerInfoByGUID and CLASS_ICON_TCOORDS then
+                local _, classToken = GetPlayerInfoByGUID(entry.destGUID)
+                local coords = classToken and CLASS_ICON_TCOORDS[classToken]
+                if coords then
+                    row.portrait:SetTexture(CLASS_ICON_TEXTURE)
+                    row.portrait:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                    row.portraitGUID = entry.destGUID
+                    row.portraitFallback = nil
+                    resolved = true
+                end
+            end
+            if not resolved then
+                local unit = ResolveUnit(entry.destGUID)
+                if unit and SetPortraitTexture then
+                    SetPortraitTexture(row.portrait, unit)
+                    row.portrait:SetTexCoord(0.12, 0.88, 0.12, 0.88)
+                    row.portraitGUID = entry.destGUID
+                    row.portraitFallback = nil
+                elseif not row.portraitFallback then
+                    row.portrait:SetTexture("Interface\\CharacterFrame\\TempPortrait")
+                    row.portrait:SetTexCoord(0.12, 0.88, 0.12, 0.88)
+                    row.portraitFallback = true
+                end
             end
         end
         row.spellID = entry.spellID
@@ -476,6 +591,22 @@ function CommanderAfflictions_Test()
         icon = "Interface\\Icons\\INV_Misc_QuestionMark",
         seen = now - (UNKNOWN_MAX_AGE - 10),
     }
+    -- A sample ally buff so the green bars can be previewed with the option on.
+    -- Uses your own GUID/name so the round portrait and class icon resolve on
+    -- the test board (you count as an ally you can buff).
+    if CommanderAfflictionsDB.IncludeBuffs then
+        active["testboard:buff"] = {
+            destGUID = (UnitGUID and UnitGUID("player")) or "testboard",
+            targetName = (UnitName and UnitName("player")) or "Squadmate",
+            spellID = -50,
+            spellName = "Test Blessing",
+            icon = "Interface\\Icons\\Spell_Holy_GreaterBlessingofKings",
+            seen = now,
+            expiration = now + 25,
+            duration = 25,
+            isBuff = true,
+        }
+    end
     Draw()
     print("Commander Afflictions: test board injected — bars drain and clear themselves")
 end
@@ -514,11 +645,18 @@ local function OnCombatLog()
         return
     end
     if AURA_ADD_EVENTS[subevent] then
-        -- arg15 is the aura type; buffs and HoTs the player casts on
-        -- friends are not afflictions
-        if sourceGUID == (playerGUID or UnitGUID("player")) and arg15 == "DEBUFF" then
-            AddOrRefresh(destGUID, destName, spellID, spellName)
-            Draw()
+        -- arg15 is the aura type. Debuffs are always afflictions; buffs the
+        -- player lands on allies join the board only when opted in. Exclude
+        -- Self drops anything landing on the player so only others are tracked.
+        if sourceGUID == (playerGUID or UnitGUID("player"))
+            and not (CommanderAfflictionsDB.ExcludeSelf and destGUID == playerGUID) then
+            if arg15 == "DEBUFF" then
+                AddOrRefresh(destGUID, destName, spellID, spellName, false)
+                Draw()
+            elseif arg15 == "BUFF" and CommanderAfflictionsDB.IncludeBuffs then
+                AddOrRefresh(destGUID, destName, spellID, spellName, true)
+                Draw()
+            end
         end
     elseif AURA_REMOVE_EVENTS[subevent] then
         if subevent == "SPELL_DISPEL" or subevent == "SPELL_STOLEN" then
@@ -535,10 +673,24 @@ end
 
 local function Apply()
     if CommanderAfflictionsDB and CommanderAfflictionsDB.EnableAfflictions then
+        -- Turning ally buffs off clears any that are still on the board
+        if not CommanderAfflictionsDB.IncludeBuffs then
+            for key, entry in pairs(active) do
+                if entry.isBuff then active[key] = nil end
+            end
+        end
+        -- Exclude Self: drop anything currently tracked on the player
+        if CommanderAfflictionsDB.ExcludeSelf and playerGUID then
+            for key, entry in pairs(active) do
+                if entry.destGUID == playerGUID then active[key] = nil end
+            end
+        end
         Commander.UI.ApplyHudChrome(root, CommanderAfflictionsDB, "Hud", {
             title = "Afflictions",
             defaultPoint = { point = "LEFT", x = 14, y = 120 },
         })
+        -- Pin ally buffs that were already up (e.g. right after enabling them)
+        ScanGroup()
         Draw()
     else
         wipe(active)
@@ -551,6 +703,8 @@ events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 events:RegisterEvent("PLAYER_TARGET_CHANGED")
 events:RegisterEvent("UNIT_AURA")
+events:RegisterEvent("GROUP_ROSTER_UPDATE")
+events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:SetScript("OnEvent", function(self, event, arg1)
     if not (CommanderAfflictionsDB and CommanderAfflictionsDB.EnableAfflictions) then
         if event == "PLAYER_LOGIN" then
@@ -566,12 +720,23 @@ events:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         OnCombatLog()
     elseif event == "PLAYER_TARGET_CHANGED" then
-        ScanUnit("target")
+        ScanUnit("target", true)
         Draw()
     elseif event == "UNIT_AURA" then
-        if arg1 == "target" or arg1 == "mouseover" then
-            ScanUnit(arg1)
+        if arg1 == "target" or arg1 == "mouseover" or arg1 == "focus" then
+            ScanUnit(arg1, true)
             Draw()
+        elseif arg1 == "player" then
+            -- Your own auras change constantly in combat; only redraw when one
+            -- we actually track moved
+            if ScanUnit("player", true) then Draw() end
+        elseif CommanderAfflictionsDB.IncludeBuffs and GROUP_UNITS[arg1] then
+            -- Pin ally-buff timers without targeting them; only redraw when the
+            -- scan actually changed something so idle raid traffic stays quiet
+            if ScanUnit(arg1, false) then Draw() end
         end
+    elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+        ScanGroup()
+        Draw()
     end
 end)

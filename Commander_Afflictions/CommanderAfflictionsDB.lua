@@ -9,6 +9,10 @@ local DefaultSettings = {
     MaxBars = 6,
     ShowTargetNames = true,
     ShowPortraits = false,
+    PortraitClassIcons = false,
+    IncludeBuffs = false,
+    ExcludeSelf = false,
+    BuffHideThreshold = 60,
     AlwaysShow = false,
     FixedHeight = false,
     Layout = "BARS_DOWN",
@@ -34,7 +38,7 @@ local function CreateOptionsPanel()
         key = "Afflictions",
         title = "Afflictions",
         addonName = "Commander_Afflictions",
-        description = "Your afflictions as a live operations board. Every debuff you land — DoTs, curses, diseases, stuns — becomes a draining bar, and the board stays truthful: dispels, immunities, and target deaths remove bars the moment they happen, not when a timer guesses.",
+        description = "Your afflictions as a live operations board: every debuff you land becomes a draining bar, and dispels, immunities, and deaths clear it the instant they happen. Can also track the buffs you cast on allies.",
         event = COMMANDER_AFFLICTIONS_EVENTS.UPDATE,
         slash = { "/caff" },
         slashHandlers = {
@@ -56,11 +60,30 @@ local function CreateOptionsPanel()
         set = function(value) CommanderAfflictionsDB.ShowTargetNames = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Show Target Portraits",
-        tooltip = "Put the afflicted target's 2D portrait on each entry — leading the bar in the bar layouts, a corner badge on the icon strip. Portraits paint when the unit is your target, focus, mouseover, or has a visible nameplate, and stick for the entry's lifetime; until then a silhouette stands in.",
+        tooltip = "Put the afflicted target's round portrait on each entry — leading the bar in the bar layouts, a corner badge on the icon strip — with a thin black outline. Portraits paint when the unit is your target, focus, mouseover, self, or has a visible nameplate, and stick for the entry's lifetime; until then a silhouette stands in.",
         get = function() return CommanderAfflictionsDB.ShowPortraits end,
         set = function(value) CommanderAfflictionsDB.ShowPortraits = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    }, {
+        label = "Use Class Icons (Players)",
+        tooltip = "When a portrait's target is a player, show their class icon instead of the 2D model portrait (rounded to match). Non-players keep their model portrait. Requires Show Target Portraits.",
+        get = function() return CommanderAfflictionsDB.PortraitClassIcons end,
+        set = function(value) CommanderAfflictionsDB.PortraitClassIcons = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions and CommanderAfflictionsDB.ShowPortraits end,
+    })
+    panel:AddCheckboxPair({
+        label = "Include Ally Buffs",
+        tooltip = "Also track the buffs you cast on allies — HoTs, blessings, shields — as green bars alongside your afflictions. The board stays just as truthful: a buff clears the moment it fades, is dispelled, or its target dies. Party and raid buffs get exact timers without needing to target the ally.",
+        get = function() return CommanderAfflictionsDB.IncludeBuffs end,
+        set = function(value) CommanderAfflictionsDB.IncludeBuffs = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    }, {
+        label = "Exclude Self",
+        tooltip = "Only track auras on others — drop anything you cast on yourself. Useful when you want the board to show just what is on your allies and targets.",
+        get = function() return CommanderAfflictionsDB.ExcludeSelf end,
+        set = function(value) CommanderAfflictionsDB.ExcludeSelf = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
     })
     panel:AddCheckboxPair({
@@ -118,6 +141,20 @@ local function CreateOptionsPanel()
         get = function() return CommanderAfflictionsDB.MaxBars end,
         set = function(value) CommanderAfflictionsDB.MaxBars = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    })
+    panel:AddSlider({
+        label = "Hide Long Buffs Until",
+        tooltip = "For ally buffs whose full duration is longer than this, keep them off the board until this much time remains — so long blessings and hour-long buffs only appear when they are about to run out. Off shows every buff for its whole duration. Requires Include Ally Buffs.",
+        min = 0, max = 300, step = 15,
+        format = function(value)
+            if not value or value <= 0 then return "Off" end
+            return string.format("%ds", value)
+        end,
+        get = function() return CommanderAfflictionsDB.BuffHideThreshold end,
+        set = function(value) CommanderAfflictionsDB.BuffHideThreshold = value end,
+        isEnabled = function()
+            return CommanderAfflictionsDB.EnableAfflictions and CommanderAfflictionsDB.IncludeBuffs
+        end,
     })
     panel:AddButtonRow({
         {
