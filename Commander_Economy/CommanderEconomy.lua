@@ -14,6 +14,12 @@ local deadNow = false   -- PLAYER_DEAD re-fires in odd rez flows; count once
 local hourlyTicker = nil
 local lootCount, lootRarePlus = 0, 0
 local lootedItems = {}         -- itemIDs in loot order, session-long
+local kills = 0                -- kill credits from combat XP messages
+local lootValue = 0            -- summed vendor value of looted items
+local maxGain, maxSpend = 0, 0 -- biggest single money swing each way
+local bestFindID, bestFindQuality, bestFindValue = nil, nil, 0
+local segmentHistory = {}      -- completed instance segments, newest last
+local SEGMENT_HISTORY_CAP = 5
 local instanceSnap = nil       -- counters snapshotted at instance entry
 local lastInstanceReport = nil -- deltas from the most recent completed instance
 local session                  -- reload-resilient mirror of all of the above
@@ -24,6 +30,12 @@ local function SyncCounters()
     session.xpGained = xpGained
     session.quests, session.deaths = questsTurnedIn, deaths
     session.lootCount, session.lootRare = lootCount, lootRarePlus
+    session.kills = kills
+    session.lootValue = lootValue
+    session.maxGain, session.maxSpend = maxGain, maxSpend
+    session.bestFindID = bestFindID or false
+    session.bestFindQuality = bestFindQuality or false
+    session.bestFindValue = bestFindValue
 end
 
 local function Coins(copper)
@@ -46,6 +58,15 @@ local function SessionDuration()
         return string.format("%dh %02dm", hours, minutes), elapsed
     end
     return string.format("%dm", minutes), elapsed
+end
+
+local function DurationString(elapsed)
+    local hours = math.floor(elapsed / 3600)
+    local minutes = math.floor((elapsed % 3600) / 60)
+    if hours > 0 then
+        return string.format("%dh %02dm", hours, minutes)
+    end
+    return string.format("%dm", minutes)
 end
 
 function CommanderEconomy_Report()
@@ -73,11 +94,11 @@ end
 -- chat scroll. Shows either the full session or the most recent instance
 -- segment; instance segments are detected automatically.
 -- ---------------------------------------------------------------------------
-local AAR_LINES = 6
+local AAR_LINES = 9
 local AAR_ICONS = 12
 
 local aar = CreateFrame("Frame", "CommanderEconomyAAR", UIParent)
-aar:SetSize(420, 282)
+aar:SetSize(420, 348)
 aar:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
 aar:SetFrameStrata("DIALOG")
 aar:SetMovable(true)
@@ -126,7 +147,7 @@ local aarLines = {}
 for i = 1, AAR_LINES do
     local line = aar:CreateFontString(nil, "OVERLAY")
     line:SetFontObject(GameFontHighlight)
-    line:SetPoint("TOPLEFT", aar, "TOPLEFT", 26, -62 - (i - 1) * 24)
+    line:SetPoint("TOPLEFT", aar, "TOPLEFT", 26, -58 - (i - 1) * 22)
     line:SetPoint("RIGHT", aar, "RIGHT", -26, 0)
     line:SetJustifyH("LEFT")
     -- Truncate rather than wrap: a wrapped line would overlap the next row
@@ -150,18 +171,30 @@ local function ShareChannel()
     end
 end
 
-function CommanderEconomy_ShareReport()
-    if not aarCurrent then
-        print("Commander Economy: open a report first (/ceco aar)")
-        return
-    end
+-- Declared HERE, above every reader: the original Share button read a
+-- global aarCurrent that was forever nil because this local used to be
+-- declared 180 lines below the share function — the button never worked
+local aarCurrent     -- what the window is currently showing (share/print)
+local aarHistoryPos = 0   -- 0 = live view; N = Nth-newest completed run
+
+local function ReportIsEmpty(d)
+    return (d.goldEarned or 0) == 0 and (d.goldSpent or 0) == 0
+        and (d.xpGained or 0) == 0 and (d.kills or 0) == 0
+        and (d.quests or 0) == 0 and (d.loot or 0) == 0
+        and (d.deaths or 0) == 0
+end
+
+local function ShareReportData(subtitle, d)
     local channel = ShareChannel()
     if not channel then
         print("Commander Economy: no group to share the report with")
         return
     end
-    local d = aarCurrent.data
-    SendChatMessage(string.format("Commander AAR — %s (%s)", aarCurrent.subtitle, d.duration), channel)
+    if ReportIsEmpty(d) then
+        print("Commander Economy: this report recorded nothing — not sharing an empty page")
+        return
+    end
+    SendChatMessage(string.format("Commander AAR — %s (%s)", subtitle, d.duration), channel)
     SendChatMessage(string.format("Gold: %s earned, %s spent (net %s)",
         Coins(d.goldEarned), Coins(d.goldSpent), Coins(d.goldEarned - d.goldSpent)), channel)
     local xpText
@@ -170,24 +203,84 @@ function CommanderEconomy_ShareReport()
     else
         xpText = tostring(d.xpGained)
     end
-    SendChatMessage(string.format("XP: %s | Quests: %d | Deaths: %d | Loot: %d items (%d uncommon+)",
-        xpText, d.quests, d.deaths, d.loot, d.lootRare), channel)
+    SendChatMessage(string.format("XP: %s | Kills: %d | Quests: %d | Deaths: %d | Loot: %d items (%d uncommon+)",
+        xpText, d.kills or 0, d.quests, d.deaths, d.loot, d.lootRare), channel)
+end
+
+function CommanderEconomy_ShareReport()
+    if not aarCurrent then
+        print("Commander Economy: open a report first (/ceco aar)")
+        return
+    end
+    ShareReportData(aarCurrent.subtitle, aarCurrent.data)
+end
+
+local function PrintReportData(subtitle, d)
+    print(string.format("Commander AAR — %s (%s)", subtitle, d.duration))
+    print(string.format("  Gold: %s earned, %s spent (net %s)",
+        Coins(d.goldEarned), Coins(d.goldSpent), Coins(d.goldEarned - d.goldSpent)))
+    print(string.format("  XP: %d | Kills: %d | Quests: %d | Deaths: %d",
+        d.xpGained, d.kills or 0, d.quests, d.deaths))
+    local lootLine = string.format("  Loot: %d item%s (%d uncommon+)",
+        d.loot, d.loot == 1 and "" or "s", d.lootRare)
+    if (d.lootValue or 0) > 0 then
+        lootLine = lootLine .. string.format(", worth ~%s", Coins(d.lootValue))
+    end
+    print(lootLine)
+end
+
+function CommanderEconomy_PrintReport()
+    if not aarCurrent then
+        print("Commander Economy: open a report first (/ceco aar)")
+        return
+    end
+    PrintReportData(aarCurrent.subtitle, aarCurrent.data)
 end
 
 local aarShare = CreateFrame("Button", nil, aar, "UIPanelButtonTemplate")
-aarShare:SetSize(90, 20)
+aarShare:SetSize(62, 20)
 aarShare:SetPoint("BOTTOMLEFT", aar, "BOTTOMLEFT", 24, 14)
 aarShare:SetText("Share")
 aarShare:SetScript("OnClick", function()
     CommanderEconomy_ShareReport()
 end)
 
+local aarPrint = CreateFrame("Button", nil, aar, "UIPanelButtonTemplate")
+aarPrint:SetSize(56, 20)
+aarPrint:SetPoint("LEFT", aarShare, "RIGHT", 6, 0)
+aarPrint:SetText("Print")
+aarPrint:SetScript("OnClick", function()
+    CommanderEconomy_PrintReport()
+end)
+Commander.UI.AttachTooltip(aarPrint, "Print",
+    "Print this report to your chat window — a local copy, nothing sent to the group.")
+
+local aarHistory = CreateFrame("Button", nil, aar, "UIPanelButtonTemplate")
+aarHistory:SetSize(68, 20)
+aarHistory:SetPoint("LEFT", aarPrint, "RIGHT", 6, 0)
+aarHistory:SetText("History")
+aarHistory:SetScript("OnClick", function()
+    if CommanderEconomy_CycleHistory then CommanderEconomy_CycleHistory() end
+end)
+Commander.UI.AttachTooltip(aarHistory, "Run History",
+    "Cycle through this session's completed dungeon and raid runs, newest first, then back to the full session.")
+
+local aarNewMission = CreateFrame("Button", nil, aar, "UIPanelButtonTemplate")
+aarNewMission:SetSize(100, 20)
+aarNewMission:SetPoint("LEFT", aarHistory, "RIGHT", 6, 0)
+aarNewMission:SetText("New Mission")
+aarNewMission:SetScript("OnClick", function()
+    if CommanderEconomy_NewMission then CommanderEconomy_NewMission() end
+end)
+Commander.UI.AttachTooltip(aarNewMission, "New Mission",
+    "Zero every session counter and start the books fresh — gold, XP, kills, loot, runs, records (also: /ceco newmission).")
+
 -- Icon strip: the report's spoils, hoverable for full item tooltips
 local aarIcons = {}
 for i = 1, AAR_ICONS do
     local icon = CreateFrame("Button", nil, aar)
     icon:SetSize(24, 24)
-    icon:SetPoint("TOPLEFT", aar, "TOPLEFT", 26 + (i - 1) * 28, -212)
+    icon:SetPoint("TOPLEFT", aar, "TOPLEFT", 26 + (i - 1) * 28, -262)
     icon.texture = icon:CreateTexture(nil, "ARTWORK")
     icon.texture:SetAllPoints()
     icon:SetScript("OnEnter", function(self)
@@ -332,25 +425,66 @@ if hooksecurefunc then
     pcall(hooksecurefunc, "OpenBag", DeferredApply)
 end
 
-local aarCurrent   -- what the window is currently showing, for sharing
-
 local function FillReport(subtitle, data)
     aarCurrent = { subtitle = subtitle, data = data }
     aarSubtitle:SetText(subtitle)
-    aarLines[1]:SetText(string.format("Gold:  %s earned   %s spent   (net %s)",
-        Coins(data.goldEarned), Coins(data.goldSpent), Coins(data.goldEarned - data.goldSpent)))
-    if data.elapsed >= 60 and data.xpGained > 0 then
-        aarLines[2]:SetText(string.format("Experience:  %d gained  (%d per hour)",
-            data.xpGained, math.floor(data.xpGained / (data.elapsed / 3600))))
-    else
-        aarLines[2]:SetText(string.format("Experience:  %d gained", data.xpGained))
+
+    local goldLine = string.format("Gold:  %s earned   %s spent   (net %s)",
+        Coins(data.goldEarned), Coins(data.goldSpent), Coins(data.goldEarned - data.goldSpent))
+    if (data.elapsed or 0) >= 60 then
+        goldLine = goldLine .. string.format("  ·  %s/hr",
+            Coins(math.floor((data.goldEarned - data.goldSpent) / (data.elapsed / 3600))))
     end
-    aarLines[3]:SetText(string.format("Quests turned in:  %d", data.quests))
-    aarLines[4]:SetText(string.format("Casualties:  %d", data.deaths))
-    aarLines[5]:SetText(string.format("Supplies:  %d item%s looted  (%d uncommon+)",
-        data.loot, data.loot == 1 and "" or "s", data.lootRare))
-    aarLines[6]:SetText(string.format("Duration:  %s", data.duration))
+    aarLines[1]:SetText(goldLine)
+
+    local xpLine
+    if data.elapsed >= 60 and data.xpGained > 0 then
+        xpLine = string.format("Experience:  %d gained  (%d per hour)",
+            data.xpGained, math.floor(data.xpGained / (data.elapsed / 3600)))
+    else
+        xpLine = string.format("Experience:  %d gained", data.xpGained)
+    end
+    if data.levelIn then
+        xpLine = xpLine .. string.format("  ·  level up in ~%s", data.levelIn)
+    end
+    aarLines[2]:SetText(xpLine)
+
+    if (data.kills or 0) > 0 and data.elapsed >= 60 then
+        aarLines[3]:SetText(string.format("Kills:  %d  (%d per hour)",
+            data.kills, math.floor(data.kills / (data.elapsed / 3600))))
+    else
+        aarLines[3]:SetText(string.format("Kills:  %d", data.kills or 0))
+    end
+
+    aarLines[4]:SetText(string.format("Quests turned in:  %d", data.quests))
+    aarLines[5]:SetText(string.format("Casualties:  %d", data.deaths))
+
+    local supplyLine = string.format("Supplies:  %d item%s looted  (%d uncommon+)",
+        data.loot, data.loot == 1 and "" or "s", data.lootRare)
+    if (data.lootValue or 0) > 0 then
+        supplyLine = supplyLine .. string.format("  ·  worth ~%s", Coins(data.lootValue))
+    end
+    aarLines[6]:SetText(supplyLine)
+
+    if data.bestFindID and C_Item and C_Item.GetItemInfo then
+        local _, link = C_Item.GetItemInfo(data.bestFindID)
+        aarLines[7]:SetText("Best find:  " .. (link or "(item data loading — reopen in a moment)"))
+    else
+        aarLines[7]:SetText("Best find:  —")
+    end
+
+    if data.maxGain then
+        aarLines[8]:SetText(string.format("Biggest haul:  +%s   Biggest expense:  -%s",
+            Coins(data.maxGain), Coins(data.maxSpend or 0)))
+    else
+        aarLines[8]:SetText("")
+    end
+
+    aarLines[9]:SetText(string.format("Duration:  %s", data.duration))
+
     FillReportIcons(data.items)
+    -- The Share button only lights up when there is a group to receive it
+    aarShare:SetEnabled(ShareChannel() ~= nil)
     ApplyAarLook()
     aar:Show()
     -- Bag glow arms exactly once per report display
@@ -362,6 +496,7 @@ function CommanderEconomy_ShowReport(kind)
         print("Commander Economy: module is disabled (enable it in settings or /ceco)")
         return
     end
+    aarHistoryPos = 0
     if kind == "instance" then
         if not lastInstanceReport then
             print("Commander Economy: no completed instance segment this session yet")
@@ -371,6 +506,17 @@ function CommanderEconomy_ShowReport(kind)
         return
     end
     local duration, elapsed = SessionDuration()
+    -- At the current XP pace, when does the next level land? Only shown
+    -- once the pace means something (5+ minutes, some XP, not capped)
+    local levelIn
+    if xpGained > 0 and elapsed >= 300 and UnitXP and UnitXPMax then
+        local xpMax = UnitXPMax("player") or 0
+        local remaining = xpMax - (UnitXP("player") or 0)
+        local rate = xpGained / elapsed
+        if xpMax > 0 and remaining > 0 and rate > 0 then
+            levelIn = DurationString(remaining / rate)
+        end
+    end
     -- Only the newest items: arming a glow for hours of loot would light
     -- up the whole bag, defeating spot-the-spoils
     local recent = {}
@@ -381,29 +527,47 @@ function CommanderEconomy_ShowReport(kind)
         goldEarned = goldEarned, goldSpent = goldSpent, xpGained = xpGained,
         quests = questsTurnedIn, deaths = deaths,
         loot = lootCount, lootRare = lootRarePlus,
+        kills = kills, lootValue = lootValue,
+        bestFindID = bestFindID,
+        maxGain = maxGain, maxSpend = maxSpend,
+        levelIn = levelIn,
         duration = duration, elapsed = elapsed,
         items = recent,
     })
 end
 
+function CommanderEconomy_CycleHistory()
+    if #segmentHistory == 0 then
+        print("Commander Economy: no completed runs recorded yet this session")
+        return
+    end
+    local nextPos = aarHistoryPos + 1
+    if nextPos > #segmentHistory then
+        CommanderEconomy_ShowReport("session")
+        return
+    end
+    local entry = segmentHistory[#segmentHistory - nextPos + 1]
+    FillReport(string.format("%s  —  run %d of %d, newest first",
+        entry.name or "Instance", nextPos, #segmentHistory), entry)
+    aarHistoryPos = nextPos
+end
+
+-- CommanderEconomy_NewMission is defined AFTER the instance-segment
+-- section below: it writes pendingExit and calls SyncSegments and
+-- CheckInstanceSegment, and a definition up here would compile those as
+-- globals instead of the locals declared later (the same forward-
+-- reference class of bug that silenced the original Share button)
+
 -- ---------------------------------------------------------------------------
 -- Instance segments
 -- ---------------------------------------------------------------------------
-local function DurationString(elapsed)
-    local hours = math.floor(elapsed / 3600)
-    local minutes = math.floor((elapsed % 3600) / 60)
-    if hours > 0 then
-        return string.format("%dh %02dm", hours, minutes)
-    end
-    return string.format("%dm", minutes)
-end
-
 -- A dungeon run is not over just because the player briefly left the
 -- instance: ghost releases, meeting-stone summons, and BG queue pops all
 -- exit and return. The segment only finalizes after a grace period spent
 -- genuinely outside (or when a different instance begins).
 local EXIT_GRACE = 180
 local pendingExit = nil   -- { snap, at }
+local pendingAutoShow = false   -- auto-report deferred until combat ends
 
 local function FinalizeSegment(snap)
     -- Epoch-based: segment durations stay correct across /reload and even
@@ -414,6 +578,17 @@ local function FinalizeSegment(snap)
     for i = (snap.itemWatermark or 0) + 1, #lootedItems do
         segmentItems[#segmentItems + 1] = lootedItems[i]
     end
+    -- Best find within this run alone
+    local segBestID, segBestQuality, segBestValue
+    if C_Item and C_Item.GetItemInfo then
+        for i = 1, #segmentItems do
+            local _, _, quality, _, _, _, _, _, _, _, sellPrice = C_Item.GetItemInfo(segmentItems[i])
+            if quality and (quality > (segBestQuality or -1)
+                or (quality == segBestQuality and (sellPrice or 0) > (segBestValue or 0))) then
+                segBestID, segBestQuality, segBestValue = segmentItems[i], quality, sellPrice or 0
+            end
+        end
+    end
     lastInstanceReport = {
         name = snap.name,
         goldEarned = goldEarned - snap.goldEarned,
@@ -423,13 +598,35 @@ local function FinalizeSegment(snap)
         deaths = deaths - snap.deaths,
         loot = lootCount - snap.loot,
         lootRare = lootRarePlus - snap.lootRare,
+        kills = kills - (snap.kills or 0),
+        lootValue = lootValue - (snap.lootValue or 0),
+        bestFindID = segBestID,
         duration = DurationString(elapsed),
         elapsed = elapsed,
         items = segmentItems,
     }
-    if session then session.lastInstanceReport = lastInstanceReport end
-    if CommanderEconomyDB.EnableEconomy and CommanderEconomyDB.AutoInstanceReport then
-        CommanderEconomy_ShowReport("instance")
+    segmentHistory[#segmentHistory + 1] = lastInstanceReport
+    while #segmentHistory > SEGMENT_HISTORY_CAP do
+        table.remove(segmentHistory, 1)
+    end
+    if session then
+        session.lastInstanceReport = lastInstanceReport
+        session.segmentHistory = segmentHistory
+    end
+    -- Empty runs (walked in, walked out) never pop a window or say a word
+    if not (CommanderEconomyDB.EnableEconomy) or ReportIsEmpty(lastInstanceReport) then
+        return
+    end
+    if CommanderEconomyDB.AutoInstanceReport then
+        if UnitAffectingCombat and UnitAffectingCombat("player") then
+            -- Never ambush mid-pull: the report waits for the fight to end
+            pendingAutoShow = true
+        else
+            CommanderEconomy_ShowReport("instance")
+        end
+    end
+    if CommanderEconomyDB.AutoShare then
+        ShareReportData(lastInstanceReport.name, lastInstanceReport)
     end
 end
 
@@ -472,6 +669,7 @@ local function CheckInstanceSegment()
                 goldEarned = goldEarned, goldSpent = goldSpent, xpGained = xpGained,
                 quests = questsTurnedIn, deaths = deaths,
                 loot = lootCount, lootRare = lootRarePlus,
+                kills = kills, lootValue = lootValue,
                 itemWatermark = #lootedItems,
             }
         end
@@ -483,6 +681,36 @@ local function CheckInstanceSegment()
         instanceSnap = nil
         SyncSegments()
         ArmExitGraceTimer(EXIT_GRACE)
+    end
+end
+
+-- Zero every session counter and start the books fresh. Defined below the
+-- segment section on purpose: it writes pendingExit and calls SyncSegments
+-- and CheckInstanceSegment, which must resolve as locals.
+function CommanderEconomy_NewMission()
+    goldEarned, goldSpent, xpGained = 0, 0, 0
+    questsTurnedIn, deaths, kills = 0, 0, 0
+    lootCount, lootRarePlus, lootValue = 0, 0, 0
+    maxGain, maxSpend = 0, 0
+    bestFindID, bestFindQuality, bestFindValue = nil, nil, 0
+    wipe(lootedItems)
+    wipe(segmentHistory)
+    lastInstanceReport = nil
+    instanceSnap, pendingExit = nil, nil
+    aarHistoryPos = 0
+    sessionStart = GetTime()
+    lastMoney = GetMoney()
+    if session then
+        session.startEpoch = time()
+        session.lastInstanceReport = false
+        SyncCounters()
+        SyncSegments()
+    end
+    -- Mid-instance reset: open a fresh segment for the rest of this run
+    CheckInstanceSegment()
+    print("Commander Economy: new mission — the books start fresh")
+    if aar:IsShown() then
+        CommanderEconomy_ShowReport("session")
     end
 end
 
@@ -508,6 +736,19 @@ local function OnLootMessage(message)
     local itemID = tonumber(message:match("|Hitem:(%d+)"))
     if itemID then
         lootedItems[#lootedItems + 1] = itemID
+        -- Vendor-value running total and session best find. Item data may
+        -- not be cached on first sight; those items simply don't count
+        -- toward the estimate (hence the "~").
+        if C_Item and C_Item.GetItemInfo then
+            local _, _, quality, _, _, _, _, _, _, _, sellPrice = C_Item.GetItemInfo(itemID)
+            if sellPrice then
+                lootValue = lootValue + sellPrice
+            end
+            if quality and (quality > (bestFindQuality or -1)
+                or (quality == bestFindQuality and (sellPrice or 0) > bestFindValue)) then
+                bestFindID, bestFindQuality, bestFindValue = itemID, quality, sellPrice or 0
+            end
+        end
     end
 end
 
@@ -533,8 +774,10 @@ local function OnMoney()
         local delta = money - lastMoney
         if delta > 0 then
             goldEarned = goldEarned + delta
+            if delta > maxGain then maxGain = delta end
         elseif delta < 0 then
             goldSpent = goldSpent - delta
+            if -delta > maxSpend then maxSpend = -delta end
         end
     end
     lastMoney = money
@@ -574,6 +817,12 @@ events:RegisterEvent("BAG_UPDATE_DELAYED")
 if not C_EventUtils or C_EventUtils.IsEventValid("QUEST_TURNED_IN") then
     pcall(events.RegisterEvent, events, "QUEST_TURNED_IN")
 end
+-- Kill credit rides the combat XP message ("X dies, you gain N experience.")
+-- — free compared to a combat-log listener; guarded the same way
+if not C_EventUtils or C_EventUtils.IsEventValid("CHAT_MSG_COMBAT_XP_GAIN") then
+    pcall(events.RegisterEvent, events, "CHAT_MSG_COMBAT_XP_GAIN")
+end
+events:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 events:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
@@ -584,7 +833,9 @@ events:SetScript("OnEvent", function(self, event, arg1)
             startEpoch = time(),
             goldEarned = 0, goldSpent = 0, xpGained = 0,
             quests = 0, deaths = 0, lootCount = 0, lootRare = 0,
-            lootedItems = {},
+            kills = 0, lootValue = 0, maxGain = 0, maxSpend = 0,
+            bestFindID = false, bestFindQuality = false, bestFindValue = 0,
+            lootedItems = {}, segmentHistory = {},
             lastInstanceReport = false, instanceSnap = false, pendingExit = false,
         })
         if fresh then
@@ -594,7 +845,16 @@ events:SetScript("OnEvent", function(self, event, arg1)
         xpGained = session.xpGained
         questsTurnedIn, deaths = session.quests, session.deaths
         lootCount, lootRarePlus = session.lootCount, session.lootRare
+        -- `or` guards: sessions written by older versions miss these keys
+        kills = session.kills or 0
+        lootValue = session.lootValue or 0
+        maxGain, maxSpend = session.maxGain or 0, session.maxSpend or 0
+        bestFindID = session.bestFindID or nil
+        bestFindQuality = session.bestFindQuality or nil
+        bestFindValue = session.bestFindValue or 0
         lootedItems = session.lootedItems
+        segmentHistory = session.segmentHistory or {}
+        session.segmentHistory = segmentHistory
         lastInstanceReport = session.lastInstanceReport or nil
         sessionStart = GetTime() - (time() - session.startEpoch)
         if session.instanceSnap then
@@ -638,6 +898,17 @@ events:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "QUEST_TURNED_IN" then
         questsTurnedIn = questsTurnedIn + 1
         SyncCounters()
+    elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
+        -- Plain quest XP messages carry no "dies," — only kill credit does
+        if type(arg1) == "string" and arg1:find("dies,", 1, true) then
+            kills = kills + 1
+            SyncCounters()
+        end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if pendingAutoShow then
+            pendingAutoShow = false
+            CommanderEconomy_ShowReport("instance")
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         CheckInstanceSegment()
     elseif event == "CHAT_MSG_LOOT" then
