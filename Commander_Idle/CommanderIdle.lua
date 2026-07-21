@@ -30,6 +30,12 @@ button:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Idle", 1, 1, 1)
     GameTooltip:AddLine("Your character is standing around. Click to review your orders (quest log).", nil, nil, nil, true)
+    -- A line of class flavor from the shared identity layer, in class color
+    local info = Commander.GetClassInfo and Commander.GetClassInfo()
+    if info and info.line then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(info.line, info.color[1], info.color[2], info.color[3], true)
+    end
     GameTooltip:Show()
 end)
 button:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -81,6 +87,18 @@ local function HideAlert()
     end
 end
 
+-- Opt-in class flavor: one short class-appropriate emote when the alert first
+-- appears (default off; it is a visible /emote). Idle alerts only fire out of
+-- combat, so DoEmote is always safe here; pcall guards an unknown token.
+local function IdleEmote()
+    if not (CommanderIdleDB and CommanderIdleDB.RPEmote) then return end
+    if not (Commander.GetClassInfo and DoEmote) then return end
+    local info = Commander.GetClassInfo()
+    if info and info.emote then
+        pcall(DoEmote, info.emote)
+    end
+end
+
 local ticker
 
 local function Check()
@@ -97,6 +115,7 @@ local function Check()
             if CommanderIdleDB.IdleSound then
                 PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
             end
+            IdleEmote()
         end
     else
         idleSince = nil
@@ -117,6 +136,7 @@ function CommanderIdle_Test()
     if CommanderIdleDB.IdleSound then
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
     end
+    IdleEmote()
     print("Commander Idle: test alert — click the pocket watch or start moving to dismiss")
 end
 

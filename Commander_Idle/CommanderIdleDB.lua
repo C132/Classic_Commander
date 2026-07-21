@@ -9,6 +9,7 @@ local DefaultSettings = {
     IdleSeconds = 30,
     IdleSound = true,
     IdleWhileResting = false,
+    RPEmote = false,
 }
 
 local frame = CreateFrame("FRAME");
@@ -64,6 +65,13 @@ local function CreateOptionsPanel()
         tooltip = "Also alert inside inns and cities. Off by default — parking in an inn is usually intentional.",
         get = function() return CommanderIdleDB.IdleWhileResting end,
         set = function(value) CommanderIdleDB.IdleWhileResting = value end,
+        isEnabled = function() return CommanderIdleDB.EnableIdle end,
+    })
+    panel:AddCheckbox({
+        label = "Idle RP Emote",
+        tooltip = "When the alert appears, perform a short class-appropriate emote in character — an Arcanist ponders, a Vanguard flexes, a Shadowblade glances about. This is a visible /emote seen by nearby players, so it is off by default.",
+        get = function() return CommanderIdleDB.RPEmote end,
+        set = function(value) CommanderIdleDB.RPEmote = value end,
         isEnabled = function() return CommanderIdleDB.EnableIdle end,
     })
 
