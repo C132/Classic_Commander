@@ -5,12 +5,21 @@ COMMANDER_CONSOLE_EVENTS = {
 }
 
 -- Shared with CommanderConsole.lua (this file loads first). The console
--- strip's height is fixed by the artwork (a fullscreen overlay whose art
--- band ends 150 UI units up), so height is deliberately not a setting —
--- but the art itself, its tint, and its opacity are.
+-- strip's height is fixed (its top meets the raised world edge 150 UI units
+-- up), so height is deliberately not a setting — but the fill, its tint, and
+-- its opacity are. Each style has a `kind`:
+--   ART      full-screen console artwork (bottom band is the console)
+--   SOLID    the strip filled flat with the Console Color
+--   GRADIENT the strip filled with a vertical gradient built from the color
+--   TEX      a generated strip texture (greyscale, tinted by the color)
 CommanderConsole_Styles = {
-    { text = "Full Console", value = "FULL", file = "Console3.png" },
-    { text = "Low Profile", value = "LOW_PROFILE", file = "Console3_LowProfile.png" },
+    { text = "Full Console", value = "FULL", kind = "ART", file = "Console3.png" },
+    { text = "Low Profile", value = "LOW_PROFILE", kind = "ART", file = "Console3_LowProfile.png" },
+    { text = "Solid Bar", value = "SOLID", kind = "SOLID" },
+    { text = "Gradient — Fade Up", value = "GRAD_FADE", kind = "GRADIENT", fade = true },
+    { text = "Gradient — Steel Sheen", value = "GRAD_SHEEN", kind = "GRADIENT", fade = false },
+    { text = "Brushed Steel", value = "TEX_BRUSHED", kind = "TEX", file = "StripBrushed.png" },
+    { text = "Gradient Panel", value = "TEX_GRADIENT", kind = "TEX", file = "StripGradient.png" },
 }
 
 CommanderConsole_Colors = {
@@ -20,6 +29,11 @@ CommanderConsole_Colors = {
     { text = "Frost", value = "FROST", r = 0.6, g = 0.8, b = 1 },
     { text = "Arcane", value = "ARCANE", r = 0.8, g = 0.6, b = 1 },
     { text = "Gold", value = "GOLD", r = 1, g = 0.85, b = 0.5 },
+    { text = "Crimson", value = "CRIMSON", r = 0.85, g = 0.2, b = 0.24 },
+    { text = "Command Blue", value = "COMMAND", r = 0.25, g = 0.5, b = 0.95 },
+    { text = "Void", value = "VOID", r = 0.16, g = 0.16, b = 0.2 },
+    -- Resolved live from your class in CommanderConsole.lua (no fixed rgb)
+    { text = "Class Color", value = "CLASS" },
 }
 
 local DefaultSettings = {
@@ -70,19 +84,19 @@ local function CreateOptionsPanel()
         set = function(value) CommanderConsoleDB.ShowConsole = value end,
     })
 
-    panel:AddSection("Appearance", "Pick the console's silhouette, metal tint, and how solid it appears over the world.")
+    panel:AddSection("Appearance", "Pick the console's fill, its color, and how solid it appears over the world.")
     panel:AddDropdown({
         label = "Console Style",
-        tooltip = "Full Console includes the raised side towers; Low Profile trims everything to one flat rail across the bottom.",
+        tooltip = "The console's fill. Full Console and Low Profile are the armored artwork. Solid Bar paints the strip flat in the Console Color. The two Gradient styles fade the color up into the world (Fade Up) or light it like brushed metal (Steel Sheen). Brushed Steel and Gradient Panel are generated metal textures the Console Color tints.",
         options = BuildOptions(CommanderConsole_Styles),
-        width = 160,
+        width = 170,
         get = function() return CommanderConsoleDB.ConsoleStyle end,
         set = function(value) CommanderConsoleDB.ConsoleStyle = value end,
         isEnabled = function() return CommanderConsoleDB.ShowConsole end,
     })
     panel:AddDropdown({
         label = "Console Color",
-        tooltip = "Tint applied to the console metal. Steel is the untinted artwork.",
+        tooltip = "Color of the console. On the artwork styles it tints the metal (Steel is untinted); on the solid, gradient, and texture styles it is the fill itself.",
         options = BuildOptions(CommanderConsole_Colors),
         width = 160,
         get = function() return CommanderConsoleDB.ConsoleColor end,
