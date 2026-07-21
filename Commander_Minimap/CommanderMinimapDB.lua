@@ -11,6 +11,7 @@ local defaultSettings = {
     LockMinimap = false,
     TidyAddonButtons = true,
     TidyFadedOpacity = 0,
+    BoardStyle = "NONE",
 }
 
 local XP_DISPLAY_MODES = {
@@ -52,6 +53,18 @@ local function CreateOptionsPanel()
         format = Commander.UI.FormatPercent,
         get = function() return CommanderMinimapDB.MinimapScale end,
         set = function(value) CommanderMinimapDB.MinimapScale = value end,
+    })
+    panel:AddDropdown({
+        label = "Board Style",
+        tooltip = "Frame the square minimap in the suite's board styling — the same Classic Plate and Dark Panel the command card and HUD modules use. None leaves the map bare.",
+        options = {
+            { text = "None", value = "NONE" },
+            { text = "Classic Plate", value = "CLASSIC" },
+            { text = "Dark Panel", value = "DARK" },
+        },
+        width = 150,
+        get = function() return CommanderMinimapDB.BoardStyle end,
+        set = function(value) CommanderMinimapDB.BoardStyle = value end,
     })
     panel:AddCheckbox({
         label = "Lock Minimap",

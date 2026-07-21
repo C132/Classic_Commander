@@ -18,6 +18,25 @@ local function ApplyMinimapScale()
     Minimap:SetScale((CommanderMinimapDB and CommanderMinimapDB.MinimapScale) or 1.37)
 end
 
+-- Board chrome: frame the square minimap in the suite's shared board styling —
+-- the same Classic and Dark panels the HUD modules use — via
+-- Commander.UI.ApplyStyleBackdrop on a frame padded just outside the map. The
+-- board sits below the Minimap so its border rings the map while blips and the
+-- map itself draw on top; NONE hides it.
+local BOARD_PAD = 12
+local minimapBoard
+local function ApplyMinimapBoard()
+    local style = (CommanderMinimapDB and CommanderMinimapDB.BoardStyle) or "NONE"
+    if not minimapBoard then
+        if style == "NONE" then return end
+        minimapBoard = CreateFrame("Frame", "CommanderMinimapBoard", Minimap)
+        minimapBoard:SetFrameLevel(math.max((Minimap:GetFrameLevel() or 1) - 2, 0))
+        minimapBoard:SetPoint("TOPLEFT", Minimap, "TOPLEFT", -BOARD_PAD, BOARD_PAD)
+        minimapBoard:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", BOARD_PAD, -BOARD_PAD)
+    end
+    Commander.UI.ApplyStyleBackdrop(minimapBoard, style)
+end
+
 local ApplyTidy -- defined below; referenced by the event handler above it
 
 -- Hide default minimap art and elements
@@ -54,7 +73,9 @@ frame:SetScript("OnEvent", function(self, event, addonName)
         -- CommanderMinimapDB.lua loads first and merges defaults in its own
         -- ADDON_LOADED handler, so the saved scale is available here
         ApplyMinimapScale()
+        ApplyMinimapBoard()
         Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, ApplyMinimapScale)
+        Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, ApplyMinimapBoard)
         Commander.AddListener(COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP, ApplyTidy)
 
         -- Update zone text
