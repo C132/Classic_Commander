@@ -139,3 +139,53 @@ local sessionStamper = CreateFrame("Frame")
 sessionStamper:RegisterEvent("PLAYER_LOGOUT")
 sessionStamper:SetScript("OnEvent", StampSessions)
 C_Timer.NewTicker(60, StampSessions)
+
+-- ---------------------------------------------------------------------------
+-- Class identity: a shared per-class flavor layer so every module can give
+-- each class its own colors, an RTS/RP unit title, a signature emote, and a
+-- line of flavor — the throughline that makes each class feel like a distinct
+-- unit across the suite. Commander.GetClassInfo() defaults to the player's
+-- class and always returns a table (a neutral "Commander" fallback for
+-- unknown tokens), memoized so callers on hot paths do not churn.
+-- ---------------------------------------------------------------------------
+local CLASS_IDENTITY = {
+    WARRIOR = { title = "Vanguard",    emote = "FLEX",     line = "The Vanguard leans on his blade, itching for the horn of battle." },
+    PALADIN = { title = "Templar",     emote = "SALUTE",   line = "The Templar keeps a silent vigil, armor gleaming, awaiting the call." },
+    HUNTER  = { title = "Ranger",      emote = "WHISTLE",  line = "The Ranger checks her snares and scans the treeline for movement." },
+    ROGUE   = { title = "Shadowblade", emote = "SHIFTY",   line = "The Shadowblade melts into the corner, coin and dagger in hand." },
+    PRIEST  = { title = "Confessor",   emote = "PRAY",     line = "The Confessor bows her head, murmuring for those not yet fallen." },
+    SHAMAN  = { title = "Farseer",     emote = "MEDITATE", line = "The Farseer listens to the elements whispering of distant storms." },
+    MAGE    = { title = "Arcanist",    emote = "PONDER",   line = "The Arcanist traces idle runes, the weave humming at his fingertips." },
+    WARLOCK = { title = "Diabolist",   emote = "CACKLE",   line = "The Diabolist trades whispers with something unseen, and it laughs." },
+    DRUID   = { title = "Keeper",      emote = "ROAR",     line = "The Keeper breathes with the wilds, half-dreaming of fang and bark." },
+}
+
+local CLASS_ICON_SHEET = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
+local classInfoCache = {}
+
+-- Returns a table for the given class token (defaults to the player's class):
+--   token, title, color {r,g,b}, colorMixin, emote (DoEmote token or nil),
+--   line (RP flavor), icon (class-sheet path), iconCoords (CLASS_ICON_TCOORDS
+--   entry or nil). Safe to call from PLAYER_LOGIN onward.
+function Commander.GetClassInfo(classToken)
+    if not classToken then
+        local _, token = UnitClass("player")
+        classToken = token or "UNKNOWN"
+    end
+    local cached = classInfoCache[classToken]
+    if cached then return cached end
+    local identity = CLASS_IDENTITY[classToken]
+    local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
+    local info = {
+        token = classToken,
+        title = identity and identity.title or "Commander",
+        emote = identity and identity.emote,
+        line = identity and identity.line or "Awaiting orders, commander.",
+        color = color and { color.r, color.g, color.b } or { 1, 1, 1 },
+        colorMixin = color,
+        icon = CLASS_ICON_SHEET,
+        iconCoords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classToken],
+    }
+    classInfoCache[classToken] = info
+    return info
+end
