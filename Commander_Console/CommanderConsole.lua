@@ -44,6 +44,15 @@ local function CreateConsoleBackdrop()
     strip:Hide()
     backdrop.strip = strip
 
+    -- Optional decorative border around the console band: its own
+    -- BackdropTemplate frame over the strip. Backdrop edges draw inward, so
+    -- only the top and sides show (the bottom is off-screen). Guarded for
+    -- clients without the backdrop mixin.
+    local trimFrame = CreateFrame("Frame", nil, stripFrame, "BackdropTemplate")
+    trimFrame:SetAllPoints(stripFrame)
+    trimFrame:Hide()
+    backdrop.trimFrame = trimFrame
+
     backdrop:Hide()  -- Hidden by default; ApplyConsoleState shows it when enabled
 
     return backdrop
@@ -120,6 +129,49 @@ local function ClearStripGradient(tex)
     end
 end
 
+-- Tile a material across the strip. REPEAT wrap + texcoords > 1 repeat the
+-- texture; the tile count comes from the strip width and the Texture Scale (a
+-- base tile is one strip-height square). Blizzard tiling textures and our
+-- 128px generated tiles are power-of-two, so REPEAT is valid. Width and the
+-- strip height share the strip's coordinate space, so the ratio holds at any
+-- resolution; a 12-tile fallback covers the first frame before layout.
+local function ApplyStripTiling(strip, stripFrame, path, tileScale)
+    local scale = (tileScale and tileScale > 0) and tileScale or 1
+    local tilePx = CONSOLE_STRIP_PX * scale
+    local w = (stripFrame.GetWidth and stripFrame:GetWidth()) or 0
+    local tilesX = (w > 0) and math.max(1, math.floor(w / tilePx + 0.5))
+        or math.max(1, math.floor((CONSOLE_STRIP_PX * 12) / tilePx + 0.5))
+    local tilesY = CONSOLE_STRIP_PX / tilePx
+    strip:SetTexture(path, "REPEAT", "REPEAT")
+    strip:SetTexCoord(0, tilesX, 0, tilesY)
+end
+
+local function CurrentTrim()
+    local value = CommanderConsoleDB and CommanderConsoleDB.TrimStyle
+    for _, trim in ipairs(CommanderConsole_Trims or {}) do
+        if trim.value == value then return trim end
+    end
+    return nil
+end
+
+-- Draw (or hide) the optional decorative border around the console band
+local function ApplyTrim()
+    local trimFrame = consoleBackdrop.trimFrame
+    if not (trimFrame and trimFrame.SetBackdrop) then return end
+    local trim = CurrentTrim()
+    if not trim or trim.value == "NONE" or not trim.edgeFile then
+        trimFrame:Hide()
+        return
+    end
+    if trimFrame._trimKey ~= trim.value then
+        trimFrame._trimKey = trim.value
+        trimFrame:SetBackdrop({ edgeFile = trim.edgeFile, edgeSize = trim.edgeSize, tile = false })
+    end
+    local tr, tg, tb = ResolveColor(CommanderConsoleDB.TrimColor or "STEEL")
+    trimFrame:SetBackdropBorderColor(tr, tg, tb, CommanderConsoleDB.ConsoleOpacity or 1)
+    trimFrame:Show()
+end
+
 local function ApplyConsoleAppearance()
     local style = CurrentStyle()
     local kind = style.kind or "ART"
@@ -146,7 +198,13 @@ local function ApplyConsoleAppearance()
             strip:SetTexture("Interface\\Buttons\\WHITE8X8")
             strip:SetTexCoord(0, 1, 0, 1)
             ApplyStripGradient(strip, style.fade, r, g, b, opacity)
-        else  -- TEX: generated greyscale strip, tinted by the color
+        elseif kind == "TILE" then
+            ClearStripGradient(strip)
+            local path = style.blizz and style.file or (TEXTURE_DIR .. (style.file or "TileStone.png"))
+            ApplyStripTiling(strip, consoleBackdrop.stripFrame, path, CommanderConsoleDB.TextureScale)
+            strip:SetVertexColor(r, g, b)
+            strip:SetAlpha(opacity)
+        else  -- TEX: generated greyscale strip, stretched, tinted by the color
             ClearStripGradient(strip)
             strip:SetTexture(TEXTURE_DIR .. (style.file or "StripBrushed.png"))
             strip:SetTexCoord(0, 1, 0, 1)
@@ -155,6 +213,7 @@ local function ApplyConsoleAppearance()
         end
         strip:Show()
     end
+    ApplyTrim()
 end
 
 local function SaveWorldFramePoints()
