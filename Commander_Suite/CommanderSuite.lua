@@ -121,10 +121,47 @@ local function AddModuleRow(panel, anchor, module)
     return row
 end
 
-local SCROLL_HEIGHT = 330
+-- Reduced from 330 to make room for the class banner above, so the Suite
+-- section anchored to the scroll's bottom keeps its position
+local SCROLL_HEIGHT = 280
 local CONTENT_WIDTH = 560
 
+-- Class identity banner: the player's class emblem, RTS/RP title in class
+-- color, and a line of flavor — the dashboard's nod to who is in command.
+-- Pure cosmetic, always shown; the impactful class wiring elsewhere is opt-in.
+local function BuildClassBanner(panel, anchor)
+    local info = Commander.GetClassInfo and Commander.GetClassInfo()
+    if not info then return anchor end
+
+    local banner = CreateFrame("Frame", nil, panel)
+    banner:SetHeight(40)
+    banner:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+    banner:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
+
+    local emblem = banner:CreateTexture(nil, "ARTWORK")
+    emblem:SetSize(38, 38)
+    emblem:SetPoint("LEFT", banner, "LEFT", 2, 0)
+    if info.icon then emblem:SetTexture(info.icon) end
+    if info.iconCoords then
+        emblem:SetTexCoord(info.iconCoords[1], info.iconCoords[2], info.iconCoords[3], info.iconCoords[4])
+    end
+
+    local name = banner:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    name:SetPoint("TOPLEFT", emblem, "TOPRIGHT", 12, -1)
+    name:SetText((UnitName("player") or "Commander") .. ", the " .. info.title)
+    name:SetTextColor(info.color[1], info.color[2], info.color[3])
+
+    local flavor = banner:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    flavor:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
+    flavor:SetPoint("RIGHT", banner, "RIGHT", -4, 0)
+    flavor:SetJustifyH("LEFT")
+    flavor:SetText(info.line)
+
+    return banner
+end
+
 local function BuildDashboard(panel, anchor)
+    anchor = BuildClassBanner(panel, anchor)
     anchor = AddSectionHeader(panel, anchor, "Modules")
 
     -- The directory long outgrew the page: 30+ modules overflow the canvas,
