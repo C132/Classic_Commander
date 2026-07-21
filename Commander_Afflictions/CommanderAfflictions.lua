@@ -78,6 +78,20 @@ local function AcquireRow(index)
     row.timer:SetPoint("CENTER", row.icon, "CENTER", 0, 0)
     row.timer:Hide()
 
+    -- Optional 2D portrait of the afflicted target. Lives on the timer
+    -- holder so it renders above the radial sweep in the icon strip; the
+    -- dark backdrop sits one sublevel below the portrait and one pixel
+    -- proud of it, framing the face so it reads apart from the debuff
+    -- icon underneath.
+    row.portraitBack = timerHolder:CreateTexture(nil, "OVERLAY", nil, 1)
+    row.portraitBack:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.portraitBack:SetVertexColor(0, 0, 0, 0.9)
+    row.portraitBack:Hide()
+    row.portrait = timerHolder:CreateTexture(nil, "OVERLAY", nil, 2)
+    -- Crop the model shot's fuzzy edges so the face fills the frame
+    row.portrait:SetTexCoord(0.12, 0.88, 0.12, 0.88)
+    row.portrait:Hide()
+
     -- Full debuff tooltip on hover (test entries and unresolvable spells
     -- fall back to the text line); hover-only so chrome drags pass
     if row.EnableMouseMotion then
@@ -106,12 +120,16 @@ end
 
 -- Same layout system as Commander_Production: bars growing down or up, or
 -- the SC2-style icon strip with a slim drain bar under each icon
-local function ApplyRowGeometry(row, index, layout, barWidth)
+local function ApplyRowGeometry(row, index, layout, barWidth, portraits)
     row:ClearAllPoints()
     row.icon:ClearAllPoints()
     row.barBG:ClearAllPoints()
     row.bar:ClearAllPoints()
     row.label:ClearAllPoints()
+    row.portrait:ClearAllPoints()
+    row.portraitBack:ClearAllPoints()
+    row.portraitBack:SetPoint("TOPLEFT", row.portrait, "TOPLEFT", -1, 1)
+    row.portraitBack:SetPoint("BOTTOMRIGHT", row.portrait, "BOTTOMRIGHT", 1, -1)
     if layout == "ICONS" then
         row:SetSize(ICON_SIZE, ICON_SIZE + ICON_BAR_HEIGHT + 2)
         row:SetPoint("TOPLEFT", root, "TOPLEFT", (index - 1) * (ICON_SIZE + ICON_GAP), 0)
@@ -122,24 +140,46 @@ local function ApplyRowGeometry(row, index, layout, barWidth)
         row.bar:SetSize(1, ICON_BAR_HEIGHT)
         row.bar:SetPoint("LEFT", row.barBG, "LEFT", 0, 0)
         row.label:Hide()
+        if portraits then
+            -- Corner badge overlapping the spell icon's bottom-left
+            row.portrait:SetSize(ICON_SIZE * 0.55, ICON_SIZE * 0.55)
+            row.portrait:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMLEFT", -3, -3)
+            row.portrait:Show()
+            row.portraitBack:Show()
+        else
+            row.portrait:Hide()
+            row.portraitBack:Hide()
+        end
     else
-        row:SetSize(barWidth + 20, BAR_HEIGHT)
+        -- With portraits on, the target's face leads the row and everything
+        -- else shifts right by one icon slot
+        local offset = portraits and (BAR_HEIGHT + 2) or 0
+        row:SetSize(barWidth + 20 + offset, BAR_HEIGHT)
         if layout == "BARS_UP" then
             row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * (BAR_HEIGHT + ROW_GAP))
         else
             row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -(index - 1) * (BAR_HEIGHT + ROW_GAP))
         end
+        if portraits then
+            row.portrait:SetSize(BAR_HEIGHT, BAR_HEIGHT)
+            row.portrait:SetPoint("LEFT", row, "LEFT", 1, 0)
+            row.portrait:Show()
+            row.portraitBack:Show()
+        else
+            row.portrait:Hide()
+            row.portraitBack:Hide()
+        end
         row.icon:SetSize(BAR_HEIGHT, BAR_HEIGHT)
-        row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row.icon:SetPoint("LEFT", row, "LEFT", offset, 0)
         row.barBG:SetSize(barWidth, BAR_HEIGHT)
-        row.barBG:SetPoint("LEFT", row, "LEFT", BAR_HEIGHT + 4, 0)
+        row.barBG:SetPoint("LEFT", row, "LEFT", offset + BAR_HEIGHT + 4, 0)
         row.bar:SetSize(1, BAR_HEIGHT)
         row.bar:SetPoint("LEFT", row.barBG, "LEFT", 0, 0)
         row.label:SetPoint("LEFT", row.barBG, "LEFT", 3, 0)
         row.label:SetPoint("RIGHT", row.barBG, "RIGHT", -3, 0)
         row.label:Show()
     end
-    row.geometrySig = layout .. barWidth
+    row.geometrySig = layout .. barWidth .. (portraits and "P" or "")
 end
 
 local function Key(destGUID, spellID)
@@ -244,6 +284,44 @@ local function QueueCompare(a, b)
     return a.key < b.key
 end
 
+-- SetPortraitTexture needs a live unit token, but entries are tracked by
+-- GUID — so portraits resolve through whatever tokens currently point at
+-- the afflicted unit (target, focus, mouseover, nameplates). The map is
+-- built lazily at most once per draw; a row keeps its last painted
+-- portrait while its entry lives and shows a silhouette until the unit
+-- becomes resolvable (test-board entries stay silhouettes).
+local unitMap = {}
+local unitMapBuilt = false
+
+local function PutUnit(unit)
+    if UnitExists and UnitExists(unit) then
+        local guid = UnitGUID(unit)
+        if guid and not unitMap[guid] then
+            unitMap[guid] = unit
+        end
+    end
+end
+
+local function ResolveUnit(guid)
+    if not unitMapBuilt then
+        unitMapBuilt = true
+        wipe(unitMap)
+        PutUnit("target")
+        PutUnit("focus")
+        PutUnit("mouseover")
+        if C_NamePlate and C_NamePlate.GetNamePlates then
+            for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
+                local unit = plate.namePlateUnitToken
+                    or (plate.UnitFrame and plate.UnitFrame.unit)
+                if unit then
+                    PutUnit(unit)
+                end
+            end
+        end
+    end
+    return unitMap[guid]
+end
+
 local function Draw()
     local now = GetTime()
     wipe(queue)
@@ -267,11 +345,13 @@ local function Draw()
     local shown = math.min(#queue, maxBars)
     local layout = LayoutMode()
     local barWidth = BarWidth()
-    local geometrySig = layout .. barWidth
+    local showPortraits = CommanderAfflictionsDB.ShowPortraits and true or false
+    unitMapBuilt = false
+    local geometrySig = layout .. barWidth .. (showPortraits and "P" or "")
     for i = 1, shown do
         local row = AcquireRow(i)
         if row.geometrySig ~= geometrySig then
-            ApplyRowGeometry(row, i, layout, barWidth)
+            ApplyRowGeometry(row, i, layout, barWidth, showPortraits)
             -- Layout switches change which widgets carry the text — force
             -- the next content write through the dirty-check below
             row.shownKey = nil
@@ -332,6 +412,17 @@ local function Draw()
             end
             row.tipText = text
         end
+        if showPortraits and row.portraitGUID ~= entry.destGUID then
+            local unit = ResolveUnit(entry.destGUID)
+            if unit and SetPortraitTexture then
+                SetPortraitTexture(row.portrait, unit)
+                row.portraitGUID = entry.destGUID
+                row.portraitFallback = nil
+            elseif not row.portraitFallback then
+                row.portrait:SetTexture("Interface\\CharacterFrame\\TempPortrait")
+                row.portraitFallback = true
+            end
+        end
         row.spellID = entry.spellID
         row:Show()
     end
@@ -344,7 +435,8 @@ local function Draw()
     if layout == "ICONS" then
         root:SetSize(slots * (ICON_SIZE + ICON_GAP) - ICON_GAP, ICON_SIZE + ICON_BAR_HEIGHT + 2)
     else
-        root:SetSize(barWidth + 20, slots * (BAR_HEIGHT + ROW_GAP))
+        root:SetSize(barWidth + 20 + (showPortraits and (BAR_HEIGHT + 2) or 0),
+            slots * (BAR_HEIGHT + ROW_GAP))
     end
     root:SetShown(shown > 0 or CommanderAfflictionsDB.AlwaysShow
         or Commander.UI.HudUnlocked(CommanderAfflictionsDB, "Hud"))
