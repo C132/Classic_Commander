@@ -94,11 +94,24 @@ local function ApplyMicroMenu()
     end
 end
 
+-- Every bag-related frame the client might show. "Show Bag Buttons = off"
+-- force-hides the whole set so nothing bag-related lingers (some are only
+-- ever hidden, never repositioned, to preserve the default look when on).
+-- Guarded by existence: absent frames (e.g. reagent bag on TBC) are skipped.
+local BAG_ALL_FRAMES = {
+    "MainMenuBarBackpackButton",
+    "CharacterBag0Slot", "CharacterBag1Slot", "CharacterBag2Slot", "CharacterBag3Slot",
+    "CharacterReagentBag0Slot",
+    "KeyRingButton",
+    "BagBarExpandToggle",
+}
+
 local function ApplyBagButtons()
+    local show = DB().showBagButtons
     for i = 0, 3 do
         local bagButton = _G["CharacterBag" .. i .. "Slot"]
         if bagButton then
-            bagButton:SetShown(DB().showBagButtons)
+            bagButton:SetShown(show)
             if bagButton:IsShown() then
                 bagButton:SetScale(DB().bagButtonScale or 1)
                 bagButton:ClearAllPoints()
@@ -115,12 +128,58 @@ local function ApplyBagButtons()
             end
         end
     end
+    -- Keyring rides with the bag bar: it needs bags shown as well as its own toggle
     local keyring = _G["KeyRingButton"]
     if keyring then
-        keyring:SetShown(DB().showKeyring)
+        keyring:SetShown(show and DB().showKeyring)
         if keyring:IsShown() then
             keyring:ClearAllPoints()
             keyring:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -300, 178)
+        end
+    end
+    -- Master off: completely hide everything bag-related, including frames the
+    -- positioning code above does not touch (backpack, reagent bag, expand toggle)
+    if not show then
+        for _, name in ipairs(BAG_ALL_FRAMES) do
+            local f = _G[name]
+            if f and f.Hide then f:Hide() end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Extra bars: the action bars the grid does not fold in — the bottom-right bar
+-- always, plus the bottom-left bar (unless Include Bottom-Left is on) and the
+-- two side bars (unless Include Right Bars is on). Leave them at their default
+-- UI position, or hide them. Hiding uses the same taint-free SetParent parking
+-- as the stance bar -- Hide() on these EditMode bars taints.
+-- ---------------------------------------------------------------------------
+local EXTRA_BARS = { "MultiBarBottomRight", "MultiBarBottomLeft", "MultiBarRight", "MultiBarLeft" }
+local function BarIsGridOwned(name)
+    if name == "MultiBarBottomLeft" then
+        return DB().includeBottomLeft ~= false
+    elseif name == "MultiBarRight" or name == "MultiBarLeft" then
+        return DB().includeRightBars and true or false
+    end
+    return false  -- the bottom-right bar is never folded into the grid
+end
+local function ApplyExtraBars()
+    local hide = (DB().extraBars == "HIDDEN")
+    for _, name in ipairs(EXTRA_BARS) do
+        local bar = _G[name]
+        if bar then
+            -- Never park a bar whose buttons the grid is actively positioning
+            local gridOwned = BarIsGridOwned(name)
+            if bar.__cmdOrigParent == nil then
+                bar.__cmdOrigParent = bar:GetParent() or UIParent
+            end
+            if hide and not gridOwned then
+                if bar:GetParent() ~= hiddenHolder then
+                    bar:SetParent(hiddenHolder)
+                end
+            elseif bar:GetParent() == hiddenHolder then
+                bar:SetParent(bar.__cmdOrigParent)
+            end
         end
     end
 end
@@ -145,6 +204,7 @@ local function HideDefaults()
     end
     ApplyMicroMenu()
     ApplyBagButtons()
+    ApplyExtraBars()
 end
 
 -- ---------------------------------------------------------------------------
@@ -283,6 +343,44 @@ local PUSHED_COLORS = {
     RED = { 1, 0.25, 0.2, 0.35 },
 }
 
+-- Keep a button's art tracking its size. Classic action buttons draw their
+-- slot border (the NormalTexture, UI-Quickslot2) at a FIXED ~66px anchored by
+-- its CENTER, not to the button edges -- so once we shrink a button into the
+-- grid the border keeps its full size, swallowing the icon (the reported
+-- "buttons nearly hidden") and leaving the hover / checked highlight visibly
+-- offset. Rescale the border to the button (ratio captured once at native
+-- size) and pin the overlay textures so they cover the button exactly. On
+-- retail-style buttons the border is edge-anchored and SetSize is ignored, so
+-- this is a harmless no-op there.
+local BORDER_RATIO_FALLBACK = 66 / 36
+local function PinToButton(tex, button)
+    if tex and tex.SetAllPoints then
+        tex:ClearAllPoints()
+        tex:SetAllPoints(button)
+    end
+end
+local function NormalizeButtonArt(button, buttonSize)
+    local native = button.__cmdNativeSize or 36
+    local normal = button.GetNormalTexture and button:GetNormalTexture()
+    if normal then
+        -- Capture the border/button size ratio the first time, before we have
+        -- ever resized the border, so GetWidth still reports the native size
+        if button.__cmdBorderRatio == nil then
+            local nw = (normal.GetWidth and normal:GetWidth()) or 0
+            if nw > 0 and native > 0 then
+                button.__cmdBorderRatio = nw / native
+            end
+        end
+        local ratio = button.__cmdBorderRatio or BORDER_RATIO_FALLBACK
+        if normal.SetSize then
+            normal:SetSize(buttonSize * ratio, buttonSize * ratio)
+        end
+    end
+    PinToButton(button.GetHighlightTexture and button:GetHighlightTexture(), button)
+    PinToButton(button.GetCheckedTexture and button:GetCheckedTexture(), button)
+    PinToButton(button.GetPushedTexture and button:GetPushedTexture(), button)
+end
+
 local function MoveActionButtons()
     -- Action buttons are protected; Show/SetPoint on them is blocked in combat
     if InCombatLockdown() then
@@ -312,9 +410,16 @@ local function MoveActionButtons()
     for _, button in ipairs(managedButtons) do
         if button then
             index = index + 1
+            -- Record the button's native size once, BEFORE our first SetSize,
+            -- so the border-ratio math has the real starting dimensions
+            if button.__cmdNativeSize == nil then
+                local w = (button.GetWidth and button:GetWidth()) or 0
+                button.__cmdNativeSize = (w > 0) and w or 36
+            end
             button:ClearAllPoints()
             button:SetScale(cardScale)
             button:SetSize(buttonSize, buttonSize)
+            NormalizeButtonArt(button, buttonSize)
             local row = math.ceil(index / perRow)
             if reverse then
                 row = rows - row + 1
@@ -326,9 +431,15 @@ local function MoveActionButtons()
             button:Show()
             local pushedTexture = button:GetPushedTexture()
             if pushedTexture then
-                local flash = PUSHED_COLORS[DB().pushedFlash or "CYAN"]
-                if flash then
-                    pushedTexture:SetColorTexture(flash[1], flash[2], flash[3], flash[4])
+                local flashKey = DB().pushedFlash or "CYAN"
+                if flashKey == "CLASS" and Commander.GetClassInfo then
+                    local c = Commander.GetClassInfo().color
+                    pushedTexture:SetColorTexture(c[1], c[2], c[3], 0.35)
+                else
+                    local flash = PUSHED_COLORS[flashKey]
+                    if flash then
+                        pushedTexture:SetColorTexture(flash[1], flash[2], flash[3], flash[4])
+                    end
                 end
             end
         end

@@ -50,6 +50,7 @@ local DefaultSettings = {
     petBarScale = 0.7,
     showKeyring = false,
     showStanceBar = false,
+    extraBars = "DEFAULT",
 }
 
 local frame = CreateFrame("FRAME");
@@ -97,7 +98,7 @@ local function CreateOptionsPanel()
         set = function(value) db().locked = value end,
     }, {
         label = "Show Bag Buttons",
-        tooltip = "Show the four bag slot buttons (position and scale on the Action Bar Buttons page).",
+        tooltip = "Master switch for the bag bar — the bag slots plus the keyring, and any backpack/reagent/expand buttons the client shows. Uncheck to hide every bag button completely. Position and scale are on the Action Bar Buttons page.",
         get = function() return db().showBagButtons end,
         set = function(value) db().showBagButtons = value end,
     })
@@ -274,12 +275,13 @@ local function CreateButtonsPanel()
     })
     panel:AddDropdownPair({
         label = "Pushed Flash",
-        tooltip = "Color of the press-flash on buttons.",
+        tooltip = "Color of the press-flash on buttons. Class Color uses your class color, matching the Class border tint.",
         options = {
             { text = "Cyan", value = "CYAN" },
             { text = "Gold", value = "GOLD" },
             { text = "Green", value = "GREEN" },
             { text = "Red", value = "RED" },
+            { text = "Class Color", value = "CLASS" },
         },
         get = function() return db().pushedFlash end,
         set = function(value) db().pushedFlash = value end,
@@ -334,7 +336,16 @@ local function CreateButtonsPanel()
         },
         get = function() return db().petBarPosition end,
         set = function(value) db().petBarPosition = value end,
-    }, nil)
+    }, {
+        label = "Extra Bars",
+        tooltip = "The action bars the grid does not fold in — the bottom-right bar, plus the two side bars when Include Right Bars is off. Leave them at their default UI position, or hide them entirely.",
+        options = {
+            { text = "Leave Default", value = "DEFAULT" },
+            { text = "Hidden", value = "HIDDEN" },
+        },
+        get = function() return db().extraBars end,
+        set = function(value) db().extraBars = value end,
+    })
     panel:AddSliderPair({
         label = "Pet Bar Scale",
         tooltip = "Size of the pet bar.",
