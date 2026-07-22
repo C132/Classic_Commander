@@ -1,0 +1,12 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Rank Check
+## Author: Devin
+## Version: 2.1.0
+## Notes: Unit-test your action bars and macros for out-of-date spell ranks — run it from /crank or the spellbook window.
+## IconTexture: Interface\Icons\Spell_ChargePositive
+## SavedVariables: CommanderRankCheckDB
+## RequiredDeps: Commander_Events
+
+CommanderRankCheckDB.lua
+CommanderRankCheck.lua
