@@ -96,9 +96,13 @@ local function CheckMacros(maxRank, issues, stats)
     end
 end
 
-function CommanderRankCheck_Run()
+-- quiet suppresses the "disabled" and clean PASS lines (used by the auto login
+-- run, so it stays silent unless something is actually out of date).
+function CommanderRankCheck_Run(quiet)
     if not (CommanderRankCheckDB and CommanderRankCheckDB.EnableRankCheck) then
-        Print("module is disabled — enable it in settings (/crank settings).")
+        if not quiet then
+            Print("module is disabled — enable it in settings (/crank settings).")
+        end
         return
     end
     local maxRank = BuildMaxRanks()
@@ -107,7 +111,7 @@ function CommanderRankCheck_Run()
     if CommanderRankCheckDB.CheckMacros then CheckMacros(maxRank, issues, stats) end
 
     if #issues == 0 then
-        if CommanderRankCheckDB.AnnounceClean then
+        if CommanderRankCheckDB.AnnounceClean and not quiet then
             Print(string.format("|cff33ff33PASS|r — all %d ranked reference%s on your bars and macros are current.",
                 stats.checked, stats.checked == 1 and "" or "s"))
         end
@@ -166,6 +170,14 @@ events:SetScript("OnEvent", function(self, event, addonName)
     if event == "PLAYER_LOGIN" then
         Commander.AddListener(COMMANDER_RANKCHECK_EVENTS.UPDATE, ApplyButton)
         ApplyButton()
+        -- Auto-run a few seconds after login, once the spellbook and action
+        -- bars have populated. Quiet unless something is out of date.
+        if CommanderRankCheckDB and CommanderRankCheckDB.EnableRankCheck
+            and CommanderRankCheckDB.RunOnLogin and C_Timer then
+            C_Timer.After(5, function()
+                if CommanderRankCheck_Run then CommanderRankCheck_Run(true) end
+            end)
+        end
     elseif event == "ADDON_LOADED"
         and (addonName == "Blizzard_SpellBookFrame" or addonName == "Blizzard_PlayerSpells") then
         -- Spellbook is load-on-demand on some clients; attach once it exists

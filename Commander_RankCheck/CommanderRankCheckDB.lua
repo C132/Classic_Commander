@@ -10,6 +10,7 @@ local DefaultSettings = {
     CheckActionBars = true,
     CheckMacros = true,
     AnnounceClean = true,
+    RunOnLogin = true,
 }
 
 local frame = CreateFrame("FRAME")
@@ -62,11 +63,17 @@ local function CreateOptionsPanel()
         set = function(value) CommanderRankCheckDB.CheckMacros = value end,
         isEnabled = function() return CommanderRankCheckDB.EnableRankCheck end,
     })
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Announce When Clean",
-        tooltip = "Print a PASS line when everything is up to date. Off prints only when issues are found.",
+        tooltip = "Print a PASS line when everything is up to date. Off prints only when issues are found. (Manual runs only — the login run is always quiet when clean.)",
         get = function() return CommanderRankCheckDB.AnnounceClean end,
         set = function(value) CommanderRankCheckDB.AnnounceClean = value end,
+        isEnabled = function() return CommanderRankCheckDB.EnableRankCheck end,
+    }, {
+        label = "Run on Login",
+        tooltip = "Automatically run the check a few seconds after you log in. It stays silent when everything is current and only speaks up if a bar or macro is on an out-of-date rank.",
+        get = function() return CommanderRankCheckDB.RunOnLogin end,
+        set = function(value) CommanderRankCheckDB.RunOnLogin = value end,
         isEnabled = function() return CommanderRankCheckDB.EnableRankCheck end,
     })
 
