@@ -75,6 +75,7 @@ local DefaultSettings = {
     -- of the unit frame underneath that you cannot see.
     Aperture = "NONE",             -- NONE | ICON | TIME | HEALTH
     ApertureOpacity = 0.85,
+    ApertureIconSize = 0.85,       -- share of the hole; over 100% spills over the arc
 
     -- Global cooldown ring, on its own radius
     ShowGCD = false,
@@ -102,7 +103,7 @@ local DefaultSettings = {
     -- SetCursor reports nothing back and silently ignores a cursor it does not
     -- like, so which argument form works is a question only the live client can
     -- answer. Every plausible form is selectable; /creticle cursor walks them.
-    CursorHideMethod = "TGA",      -- PNG | TGA | NO_EXT | EMPTY | CLEAR
+    CursorHideMethod = "BLP",      -- BLP | TGA | PNG | NO_EXT | EMPTY | CLEAR
     CursorReapply = 0.05,
 
     -- Outside the ring
@@ -189,6 +190,12 @@ local function CreateCorePanel()
             demo = function() if CommanderReticle_Demo then CommanderReticle_Demo() end end,
             cursor = function()
                 if CommanderReticle_CursorProbe then CommanderReticle_CursorProbe() end
+            end,
+            control = function()
+                if CommanderReticle_CursorControl then CommanderReticle_CursorControl() end
+            end,
+            probe = function()
+                if CommanderReticle_ApiProbe then CommanderReticle_ApiProbe() end
             end,
         },
     })
@@ -433,7 +440,7 @@ local function CreateCorePanel()
         set = function(value) CommanderReticleDB.Aperture = value end,
         isEnabled = Enabled,
     }, nil)
-    panel:AddSlider({
+    panel:AddSliderPair({
         label = "Center Opacity",
         tooltip = "How solid the center content is. Low values keep the unit frame underneath readable through it.",
         min = 0.1, max = 1, step = 0.05,
@@ -441,6 +448,14 @@ local function CreateCorePanel()
         get = function() return CommanderReticleDB.ApertureOpacity end,
         set = function(value) CommanderReticleDB.ApertureOpacity = value end,
         isEnabled = function() return Enabled() and CommanderReticleDB.Aperture ~= "NONE" end,
+    }, {
+        label = "Spell Icon Size",
+        tooltip = "Size of the spell icon, as a share of the hole in the middle of the ring — so it keeps its proportions when you resize the reticle. At 100% it exactly fills the hole; past that it deliberately spills over the arc, for when you want the icon to be the reticle.",
+        min = 0.4, max = 2, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderReticleDB.ApertureIconSize end,
+        set = function(value) CommanderReticleDB.ApertureIconSize = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.Aperture == "ICON" end,
     })
 
     panel:AddButtonRow({
@@ -610,11 +625,14 @@ local function CreateExtrasPanel()
         label = "Hiding Method",
         tooltip = "How the arrow is asked to go away. The client neither documents nor reports which form of cursor it will accept, so all five ship and you find out by looking: Transparent TGA is the format the game has always read, Transparent PNG matches the rest of this addon's art, Path without suffix lets the client pick the file, Empty path and Clear the cursor are the two ways of asking for nothing at all.",
         options = {
+            { text = "Transparent BLP", value = "BLP" },
             { text = "Transparent TGA", value = "TGA" },
             { text = "Transparent PNG", value = "PNG" },
             { text = "Path, no suffix", value = "NO_EXT" },
             { text = "Empty path", value = "EMPTY" },
             { text = "Clear cursor", value = "CLEAR" },
+            { text = "(test) Crosshair", value = "CONTROL_PATH" },
+            { text = "(test) Named cursor", value = "CONTROL_NAME" },
         },
         width = 140,
         get = function() return CommanderReticleDB.CursorHideMethod end,
@@ -637,13 +655,30 @@ local function CreateExtrasPanel()
     })
     panel:AddButtonRow({
         {
+            label = "Control Test",
+            width = 120,
+            tooltip = "Start here. Sets a cursor that is obviously not the arrow — if the pointer visibly changes shape, this client does allow the cursor to be replaced and only the blank art is being refused. If nothing happens, no amount of fiddling with the texture will help (also: /creticle control).",
+            onClick = function()
+                if CommanderReticle_CursorControl then CommanderReticle_CursorControl() end
+            end,
+            isEnabled = Enabled,
+        },
+        {
             label = "Try Next Method",
-            width = 150,
-            tooltip = "Switch to the next hiding method and apply it right now, reporting whether the client raised an error. Keep pressing until the arrow disappears — or until you have been through all five, which means this client will not give it up (also: /creticle cursor).",
+            width = 130,
+            tooltip = "Switch to the next hiding method and apply it right now, reporting whether the client raised an error. Keep pressing until the arrow disappears (also: /creticle cursor).",
             onClick = function()
                 if CommanderReticle_CursorProbe then CommanderReticle_CursorProbe() end
             end,
             isEnabled = Enabled,
+        },
+        {
+            label = "Dump API",
+            width = 100,
+            tooltip = "Print every cursor-related function and console variable this client actually has, rather than guessing at them. Useful to paste back when nothing else works (also: /creticle probe).",
+            onClick = function()
+                if CommanderReticle_ApiProbe then CommanderReticle_ApiProbe() end
+            end,
         },
     })
 

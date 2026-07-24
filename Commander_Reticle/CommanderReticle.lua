@@ -309,7 +309,7 @@ end
 -- Layout: only touches the frames when a geometry setting actually changed
 -- ---------------------------------------------------------------------------
 
-local laidSize, laidThickness, laidAperture = -1, -1, nil
+local laidSize, laidThickness, laidAperture, laidIconScale = -1, -1, nil, -1
 
 local function RingTexture(size, thickness)
     local outer = size * RING_OUTER
@@ -327,10 +327,13 @@ local function Layout()
     local size = DB("RingSize", 38)
     local thickness = DB("RingThickness", 5)
     local aperture = DB("Aperture", "NONE")
-    if laidSize == size and laidThickness == thickness and laidAperture == aperture then
+    local iconScale = DB("ApertureIconSize", 0.85)
+    if laidSize == size and laidThickness == thickness and laidAperture == aperture
+        and laidIconScale == iconScale then
         return
     end
     laidSize, laidThickness, laidAperture = size, thickness, aperture
+    laidIconScale = iconScale
 
     root:SetSize(size, size)
 
@@ -340,8 +343,12 @@ local function Layout()
 
     -- Everything in the middle is sized off the hole, never off the ring, so
     -- a thicker arc never pushes content out over the rim
+    -- Icon size is a share of the hole, so it tracks ring size on its own;
+    -- past 100% it deliberately spills over the arc for people who want the
+    -- icon to be the reticle
     local hole = size * RING_OUTER * 2 * ratio
-    apertureIcon:SetSize(hole * 0.84, hole * 0.84)
+    local icon = math.max(4, hole * iconScale)
+    apertureIcon:SetSize(icon, icon)
     local fontSize = math.max(7, math.floor(hole * 0.5))
     apertureText:SetFont(FONT, fontSize, "OUTLINE")
 end
@@ -410,11 +417,21 @@ end
 -- one actually works. Nothing here is load-bearing -- if none of them land,
 -- the arrow stays and the rest of the module still does its job.
 local CURSOR_METHODS = {
-    { key = "PNG",    label = "Transparent PNG",      arg = TEXTURES .. "Blank.png" },
+    { key = "BLP",    label = "Transparent BLP",      arg = TEXTURES .. "Blank.blp" },
     { key = "TGA",    label = "Transparent TGA",      arg = TEXTURES .. "Blank.tga" },
+    { key = "PNG",    label = "Transparent PNG",      arg = TEXTURES .. "Blank.png" },
     { key = "NO_EXT", label = "Path without suffix",  arg = TEXTURES .. "Blank" },
     { key = "EMPTY",  label = "Empty path",           arg = "" },
     { key = "CLEAR",  label = "Clear the cursor",     arg = nil, useNil = true },
+    -- Controls. Neither hides anything: they answer the prior question of
+    -- whether SetCursor can change the cursor on this client AT ALL. If the
+    -- crosshair shows up, paths work and only our blank art is being refused;
+    -- if nothing happens for either, the call is inert here and no amount of
+    -- fiddling with the texture will help.
+    { key = "CONTROL_PATH", label = "(test) Game crosshair",
+      arg = "Interface\\CURSOR\\Crosshairs", control = true },
+    { key = "CONTROL_NAME", label = "(test) Named cast cursor",
+      arg = "CAST_CURSOR", control = true },
 }
 
 local function CursorMethod(key)
@@ -425,6 +442,27 @@ local function CursorMethod(key)
 end
 
 local lastCursorError
+
+-- A texture the client has never loaded may simply not be available to become
+-- a cursor, so every blank variant is force-resident at login: assigned once to
+-- an off-screen texture, which is enough to pull the file in.
+local preloader = CreateFrame("Frame", nil, UIParent)
+preloader:SetSize(1, 1)
+preloader:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -100, -100)
+preloader:Hide()
+
+local function PreloadCursorArt()
+    for i = 1, #CURSOR_METHODS do
+        local method = CURSOR_METHODS[i]
+        if type(method.arg) == "string" and method.arg ~= ""
+            and not method.arg:find("_CURSOR") then
+            local texture = preloader:CreateTexture(nil, "BACKGROUND")
+            texture:SetTexture(method.arg)
+            texture:SetAllPoints(preloader)
+            texture:SetAlpha(0)
+        end
+    end
+end
 
 local function HideSystemCursor()
     if not SetCursor then
@@ -1347,6 +1385,66 @@ function CommanderReticle_CursorProbe()
     end
 end
 
+-- Before asking "which blank cursor works", answer "can this client change the
+-- cursor at all". Sets a cursor that is obviously not the arrow: if the pointer
+-- visibly changes, SetCursor works and the problem is our art; if it does not,
+-- the call is inert here and the arrow cannot be replaced this way.
+function CommanderReticle_CursorControl()
+    if not SetCursor then
+        print("|cff66ccffCommander Reticle|r: this client has no SetCursor at all.")
+        return
+    end
+    local ok, err = pcall(SetCursor, "Interface\\CURSOR\\Crosshairs")
+    local okNamed, errNamed = pcall(SetCursor, "CAST_CURSOR")
+    print("|cff66ccffCommander Reticle|r: control test — the pointer should have just changed shape.")
+    print(string.format("  path form  (Interface\\CURSOR\\Crosshairs): %s",
+        ok and "no error" or ("error: " .. tostring(err))))
+    print(string.format("  named form (CAST_CURSOR): %s",
+        okNamed and "no error" or ("error: " .. tostring(errNamed))))
+    print("  |cffffd100Did the pointer change?|r If YES, SetCursor works and only the blank art is being refused — keep walking /creticle cursor. If NO, SetCursor cannot replace the pointer on this client and the arrow is here to stay.")
+    if ResetCursor then pcall(ResetCursor) end
+end
+
+-- Dump whatever this client actually offers around the cursor, rather than
+-- guessing from memory. Paste the output back if none of the methods land.
+function CommanderReticle_ApiProbe()
+    print("|cff66ccffCommander Reticle|r: cursor API on this client —")
+
+    local found = {}
+    for name, value in pairs(_G) do
+        if type(name) == "string" and name:lower():find("cursor") then
+            found[#found + 1] = name .. " |cff888888(" .. type(value) .. ")|r"
+        end
+    end
+    table.sort(found)
+    if #found == 0 then
+        print("  no globals mention the cursor at all")
+    else
+        local line = "  "
+        for i = 1, #found do
+            line = line .. found[i] .. "   "
+            if i % 3 == 0 or i == #found then
+                print(line)
+                line = "  "
+            end
+        end
+    end
+
+    local cvars = {
+        "cursorSizePreferred", "hardwareCursor", "useHardwareCursor",
+        "cursorSize", "showCursor", "hideCursor", "cursorFreelook",
+    }
+    local getCVar = C_CVar and C_CVar.GetCVar or GetCVar
+    if getCVar then
+        for i = 1, #cvars do
+            local ok, value = pcall(getCVar, cvars[i])
+            if ok and value ~= nil then
+                print(string.format("  cvar %s = %s", cvars[i], tostring(value)))
+            end
+        end
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- Wiring
 -- ---------------------------------------------------------------------------
@@ -1420,6 +1518,7 @@ events:RegisterEvent("UI_ERROR_MESSAGE")
 events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if event == "PLAYER_LOGIN" then
         BuildErrorSet()
+        PreloadCursorArt()
         Commander.AddListener(COMMANDER_RETICLE_EVENTS.UPDATE, Apply)
         Apply()
         -- Logging in or reloading mid-cast still gets an arc
