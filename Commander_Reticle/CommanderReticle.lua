@@ -365,8 +365,16 @@ local function ApplyLayer()
     laidLayer = layer
     root:SetFrameStrata(layer)
     hot:SetFrameStrata(layer)
-    -- The click point always draws over the ring reporting on it
-    hot:SetFrameLevel((root:GetFrameLevel() or 1) + 20)
+    -- Changing strata re-sorts levels, so the stack is pinned again from the
+    -- root's new level: arc, dial, cooldown, markers, center, and the click
+    -- point above all of it.
+    local base = root:GetFrameLevel() or 1
+    castArc:SetFrameLevel(base + 1)
+    dial:SetFrameLevel(base + 2)
+    gcdArc:SetFrameLevel(base + 3)
+    markers:SetFrameLevel(base + 4)
+    overlay:SetFrameLevel(base + 10)
+    hot:SetFrameLevel(base + 20)
 end
 
 local function ApplyGeometry()
@@ -437,7 +445,7 @@ local function ApplyArc()
     else
         fill = DB("CastFill", true)
     end
-    castArc:SetReverse(fill and true or false)
+    if castArc.SetReverse then castArc:SetReverse(fill and true or false) end
     local r, g, b = ArcColor()
     if castArc.SetSwipeColor then castArc:SetSwipeColor(r, g, b, 1) end
     if castArc.SetDrawEdge then castArc:SetDrawEdge(DB("CastEdge", true) and true or false) end
@@ -675,7 +683,8 @@ local function ApplyGCD()
         return
     end
     LayoutGCD()
-    gcdArc:SetReverse(false)    -- it is a cooldown; it should unwind like one
+    -- It is a cooldown; it should unwind like one
+    if gcdArc.SetReverse then gcdArc:SetReverse(false) end
     local r, g, b = Color(DB("GCDColor", "STEEL"))
     if gcdArc.SetSwipeColor then gcdArc:SetSwipeColor(r, g, b, 1) end
     gcdArc:SetCooldown(gcdStart, gcdDuration)
@@ -851,19 +860,35 @@ local function DodgeOffset(cx, cy, radius)
     return -bestValue, 0
 end
 
+-- Where the ring is trying to stand, refreshed on the data tick rather than
+-- every frame: GetMouseFoci hands back a fresh table per call, and the ring
+-- eases toward the answer anyway, so asking twelve times a second is both
+-- cheaper and indistinguishable.
+local dodgeTargetX, dodgeTargetY = 0, 0
+local lastCursorX, lastCursorY = 0, 0
+local dodgeStale = true
+
+local function UpdateDodgeTarget()
+    dodgeTargetX, dodgeTargetY = DodgeOffset(lastCursorX, lastCursorY, OuterReach())
+end
+
 local function Follow(elapsed)
     local uiScale = UIParent:GetEffectiveScale()
     if not uiScale or uiScale <= 0 then uiScale = 1 end
     local cx, cy = GetCursorPosition()
     if not cx then return end
     cx, cy = cx / uiScale, cy / uiScale
+    lastCursorX, lastCursorY = cx, cy
+    if dodgeStale then
+        dodgeStale = false
+        UpdateDodgeTarget()
+    end
 
-    local wantX, wantY = DodgeOffset(cx, cy, OuterReach())
     -- Ease into the dodge so the ring steps aside instead of snapping
     local step = (elapsed or 1) * DODGE_SPEED
     if step >= 1 then step = 1 end
-    dodgeX = dodgeX + (wantX - dodgeX) * step
-    dodgeY = dodgeY + (wantY - dodgeY) * step
+    dodgeX = dodgeX + (dodgeTargetX - dodgeX) * step
+    dodgeY = dodgeY + (dodgeTargetY - dodgeY) * step
 
     -- A failed cast can shove the ring around a little. Driven off GetTime so
     -- it is deterministic and needs no random source.
@@ -900,6 +925,7 @@ local function Follow(elapsed)
 end
 
 local function Tick()
+    UpdateDodgeTarget()
     if cast.test and cast.active and GetTime() >= cast.finish then
         cast.active, cast.test = false, false
         ApplyArc()
@@ -980,6 +1006,7 @@ local function Wake()
     ApplyGeometry()
     sinceData = DATA_INTERVAL      -- first frame reads live data, not stale
     smoothX, smoothY = nil, nil    -- snap, never sweep in from the last spot
+    dodgeStale = true              -- and stand where this pointer wants it now
     root:Show()
     root:SetAlpha(alpha)
     if HotspotStyle() ~= "NONE" then
