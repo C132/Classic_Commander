@@ -201,6 +201,34 @@ dial:SetFrameLevel((root:GetFrameLevel() or 1) + 2)
 dial:Hide()
 local pips = {}
 
+-- The global cooldown gets its own radius: "can I act yet" is a different
+-- question from "how far along is this cast", so it never shares an arc.
+local gcdArc = CreateFrame("Cooldown", nil, root, "CooldownFrameTemplate")
+gcdArc:SetPoint("CENTER", root, "CENTER")
+gcdArc:EnableMouse(false)
+gcdArc:SetFrameLevel((root:GetFrameLevel() or 1) + 3)
+if gcdArc.SetHideCountdownNumbers then gcdArc:SetHideCountdownNumbers(true) end
+if gcdArc.SetDrawBling then gcdArc:SetDrawBling(false) end
+if gcdArc.SetDrawEdge then gcdArc:SetDrawEdge(false) end
+if gcdArc.SetSwipeTexture then gcdArc:SetSwipeTexture(RING_FILES[1]) end
+gcdArc:Hide()
+
+-- Markers sit on the arc itself: single ticks at a computed angle
+local markers = CreateFrame("Frame", nil, root)
+markers:SetAllPoints(root)
+markers:SetFrameLevel((root:GetFrameLevel() or 1) + 4)
+
+local latencyTick = markers:CreateTexture(nil, "OVERLAY")
+latencyTick:SetTexture(TEXTURES .. "Pip.png")
+latencyTick:Hide()
+
+-- Feedback halo: one soft donut, tinted and grown per event
+local glow = overlay:CreateTexture(nil, "OVERLAY")
+glow:SetTexture(TEXTURES .. "RingGlow.png")
+glow:SetBlendMode("ADD")
+glow:SetPoint("CENTER", root, "CENTER")
+glow:Hide()
+
 -- ---------------------------------------------------------------------------
 -- Cast state
 -- ---------------------------------------------------------------------------
@@ -221,6 +249,17 @@ local alpha, alphaTarget = 0, 0
 local innerRatio = RING_RATIOS[3]
 local sinceData = 0
 local lastApertureText = ""
+
+local gcdStart, gcdDuration = 0, 0
+
+-- One halo, four meanings. Shake is only honored for the kinds that set it.
+local FLASH_KINDS = {
+    SUCCESS  = { color = "VERDANT", duration = 0.35, grow = 0.55 },
+    FAIL     = { color = "BLOOD",   duration = 0.50, grow = 0.25, shake = true },
+    PUSHBACK = { color = "EMBER",   duration = 0.30, grow = 0.15 },
+    ERROR    = { color = "BLOOD",   duration = 0.40, grow = 0.20, shake = true },
+}
+local flashKind, flashStart = nil, 0
 
 -- ---------------------------------------------------------------------------
 -- Layout: only touches the frames when a geometry setting actually changed
@@ -495,6 +534,122 @@ local function UpdateDial()
 end
 
 -- ---------------------------------------------------------------------------
+-- Global cooldown, latency, and feedback
+-- ---------------------------------------------------------------------------
+
+local laidGCD = { size = -1, ring = -1, thickness = -1, place = nil, reach = -1 }
+
+local function OuterReach()
+    local reach = DB("RingSize", 38) * RING_OUTER
+    if DB("ShowUnitDial", true) then
+        reach = reach + DB("DialGap", 2) + DB("DialLength", 5)
+    end
+    return reach
+end
+
+local function LayoutGCD()
+    local size = DB("RingSize", 38)
+    local ring = DB("RingThickness", 5)
+    local thickness = DB("GCDThickness", 3)
+    local place = DB("GCDPlacement", "INSIDE")
+    local reach = OuterReach()
+    if laidGCD.size == size and laidGCD.ring == ring and laidGCD.thickness == thickness
+        and laidGCD.place == place and laidGCD.reach == reach then
+        return
+    end
+    laidGCD.size, laidGCD.ring, laidGCD.thickness = size, ring, thickness
+    laidGCD.place, laidGCD.reach = place, reach
+
+    -- Both cases come down to "where should this ring's outer edge land"; the
+    -- weight of art is then chosen for the requested pixel thickness.
+    local frameSize
+    if place == "OUTSIDE" then
+        frameSize = (reach + 2 + thickness) / RING_OUTER
+    else
+        local holeRadius = size * RING_OUTER * innerRatio
+        frameSize = math.max(6, (holeRadius - 1) / RING_OUTER)
+    end
+    gcdArc:SetSize(frameSize, frameSize)
+    if gcdArc.SetSwipeTexture then
+        gcdArc:SetSwipeTexture((RingTexture(frameSize, thickness)))
+    end
+end
+
+local function GCDActive()
+    return gcdDuration > 0 and (GetTime() - gcdStart) < gcdDuration
+end
+
+local function ApplyGCD()
+    if not (DB("ShowGCD", false) and GCDActive()) then
+        if gcdArc.Clear then gcdArc:Clear() end
+        gcdArc:Hide()
+        return
+    end
+    LayoutGCD()
+    gcdArc:SetReverse(false)    -- it is a cooldown; it should unwind like one
+    local r, g, b = Color(DB("GCDColor", "STEEL"))
+    if gcdArc.SetSwipeColor then gcdArc:SetSwipeColor(r, g, b, 1) end
+    gcdArc:SetCooldown(gcdStart, gcdDuration)
+    gcdArc:Show()
+end
+
+-- UNIT_SPELLCAST_SUCCEEDED carries the spell that just went off, and its
+-- cooldown is the global cooldown whenever it is short enough to be one.
+local function ReadGCD(spellID)
+    if not (spellID and GetSpellCooldown) then return end
+    local ok, start, duration = pcall(GetSpellCooldown, spellID)
+    if not ok or not start or not duration then return end
+    if duration > 0 and duration <= 1.5 then
+        gcdStart, gcdDuration = start, duration
+        ApplyGCD()
+        return true
+    end
+    return false
+end
+
+-- The point in the cast where the next one can already be queued
+local function UpdateLatency()
+    if not (DB("ShowLatency", false) and cast.active and not cast.channel) then
+        latencyTick:Hide()
+        return
+    end
+    local duration = cast.finish - cast.start
+    local latency = 0
+    if GetNetStats then
+        local _, _, _, world = GetNetStats()
+        latency = (world or 0) / 1000
+    end
+    if duration <= 0 or latency <= 0 or latency >= duration then
+        latencyTick:Hide()
+        return
+    end
+    local theta = (1 - latency / duration) * math.pi * 2
+    local thickness = DB("RingThickness", 5)
+    local radius = DB("RingSize", 38) * RING_OUTER - thickness / 2
+    local r, g, b = Color("BONE")
+    latencyTick:SetSize(2, thickness + 4)
+    latencyTick:SetPoint("CENTER", markers, "CENTER",
+        math.sin(theta) * radius, math.cos(theta) * radius)
+    latencyTick:SetRotation(-theta)
+    latencyTick:SetVertexColor(r, g, b, 1)
+    latencyTick:Show()
+end
+
+local function RenderFlash()
+    if not flashKind then return end
+    local spec = FLASH_KINDS[flashKind]
+    local progress = (GetTime() - flashStart) / spec.duration
+    if progress >= 1 then
+        flashKind = nil
+        glow:Hide()
+        return
+    end
+    local size = DB("RingSize", 38) * (1.3 + spec.grow * progress)
+    glow:SetSize(size, size)
+    glow:SetAlpha((1 - progress) * 0.85)
+end
+
+-- ---------------------------------------------------------------------------
 -- Visibility
 -- ---------------------------------------------------------------------------
 
@@ -503,15 +658,20 @@ local function ShouldShow()
     if DB("HideMouselooking", true) and IsMouselooking and IsMouselooking() then
         return false
     end
+    -- A flash is a deliberate signal: never fade out mid-message
+    if flashKind then return true end
     if DB("CombatOnly", false) and not UnitAffectingCombat("player") then
         return false
     end
     local when = DB("ShowWhen", "CASTING_OR_UNIT")
     if when == "ALWAYS" then return true end
-    if when == "CASTING" then return cast.active end
+    -- With the global cooldown ring on, "busy" includes waiting on the GCD --
+    -- that ring is useless if it is hidden for the whole of the wait
+    local busy = cast.active or (DB("ShowGCD", false) and GCDActive())
+    if when == "CASTING" then return busy end
     local hovering = UnitExists("mouseover") and true or false
     if when == "UNIT" then return hovering end
-    return cast.active or hovering
+    return busy or hovering
 end
 
 -- ---------------------------------------------------------------------------
@@ -597,18 +757,28 @@ local function Follow(elapsed)
     if not cx then return end
     cx, cy = cx / uiScale, cy / uiScale
 
-    local reach = DB("RingSize", 38) * RING_OUTER
-    if DB("ShowUnitDial", true) then
-        reach = reach + DB("DialGap", 2) + DB("DialLength", 5)
-    end
-    local wantX, wantY = DodgeOffset(cx, cy, reach)
+    local wantX, wantY = DodgeOffset(cx, cy, OuterReach())
     -- Ease into the dodge so the ring steps aside instead of snapping
     local step = (elapsed or 1) * DODGE_SPEED
     if step >= 1 then step = 1 end
     dodgeX = dodgeX + (wantX - dodgeX) * step
     dodgeY = dodgeY + (wantY - dodgeY) * step
 
-    root:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx + dodgeX, cy + dodgeY)
+    -- A failed cast can shove the ring around a little. Driven off GetTime so
+    -- it is deterministic and needs no random source.
+    local shakeX, shakeY = 0, 0
+    if flashKind and DB("FailShake", false) then
+        local spec = FLASH_KINDS[flashKind]
+        local progress = (GetTime() - flashStart) / spec.duration
+        if spec.shake and progress < 1 then
+            local amplitude = (1 - progress) * 4
+            shakeX = math.sin(GetTime() * 70) * amplitude
+            shakeY = math.cos(GetTime() * 91) * amplitude
+        end
+    end
+
+    root:SetPoint("CENTER", UIParent, "BOTTOMLEFT",
+        cx + dodgeX + shakeX, cy + dodgeY + shakeY)
 end
 
 local function Tick()
@@ -616,7 +786,12 @@ local function Tick()
         cast.active, cast.test = false, false
         ApplyArc()
     end
+    if gcdDuration > 0 and not GCDActive() then
+        gcdDuration = 0
+        ApplyGCD()
+    end
     UpdateDial()
+    UpdateLatency()
     UpdateAperture()
 end
 
@@ -630,6 +805,7 @@ end
 
 local function DriverUpdate(_, elapsed)
     Follow(elapsed)
+    RenderFlash()
 
     sinceData = sinceData + elapsed
     if sinceData >= DATA_INTERVAL then
@@ -660,6 +836,17 @@ local function Wake()
     root:SetAlpha(alpha)
     driver:SetScript("OnUpdate", DriverUpdate)
     Follow(1)   -- snap into place rather than easing in from the last spot
+end
+
+local function Flash(kind)
+    local spec = FLASH_KINDS[kind]
+    if not spec then return end
+    flashKind, flashStart = kind, GetTime()
+    local r, g, b = Color(spec.color)
+    glow:SetVertexColor(r, g, b, 1)
+    glow:SetAlpha(0.85)
+    glow:Show()
+    Wake()
 end
 
 -- ---------------------------------------------------------------------------
@@ -735,10 +922,29 @@ local function Watch()
     if ShouldShow() then Wake() end
 end
 
+-- Cast-relevant UI errors, resolved from the client's own localized strings so
+-- the match is locale-safe. Anything not in here is somebody else's problem.
+local CAST_ERRORS = {}
+
+local function BuildErrorSet()
+    local keys = {
+        "SPELL_FAILED_OUT_OF_RANGE", "SPELL_FAILED_LINE_OF_SIGHT",
+        "SPELL_FAILED_UNIT_NOT_INFRONT", "SPELL_FAILED_BAD_TARGETS",
+        "SPELL_FAILED_TARGETS_DEAD", "SPELL_FAILED_NOT_BEHIND",
+        "SPELL_FAILED_NO_POWER", "ERR_OUT_OF_MANA", "ERR_OUT_OF_RAGE",
+        "ERR_OUT_OF_ENERGY", "SPELL_FAILED_CASTER_AURASTATE",
+    }
+    for i = 1, #keys do
+        local text = _G[keys[i]]
+        if type(text) == "string" then CAST_ERRORS[text] = true end
+    end
+end
+
 local function Apply()
     if DB("EnableReticle", true) then
         Layout()
         ApplyArc()
+        ApplyGCD()
         if not watchTicker then
             watchTicker = C_Timer.NewTicker(WATCH_INTERVAL, Watch)
         end
@@ -764,10 +970,13 @@ events:RegisterEvent("UNIT_SPELLCAST_DELAYED")
 events:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
 events:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 events:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+events:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 events:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+events:RegisterEvent("UI_ERROR_MESSAGE")
 
-events:SetScript("OnEvent", function(_, event, unit)
+events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if event == "PLAYER_LOGIN" then
+        BuildErrorSet()
         Commander.AddListener(COMMANDER_RETICLE_EVENTS.UPDATE, Apply)
         Apply()
         -- Logging in or reloading mid-cast still gets an arc
@@ -780,13 +989,30 @@ events:SetScript("OnEvent", function(_, event, unit)
         if not awake and ShouldShow() then Wake() end
         return
     end
-    if unit ~= "player" then return end
+    if event == "UI_ERROR_MESSAGE" then
+        if DB("ErrorFlash", false) and CAST_ERRORS[arg2] then Flash("ERROR") end
+        return
+    end
+    if arg1 ~= "player" then return end
 
     if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
         SnapshotCastUnit()
         ReadCast()
         if not awake then Wake() end
-    else
-        ReadCast()
+        return
     end
+
+    -- Feedback reads the state the cast was in BEFORE this event resolves it.
+    -- Channels announce themselves as succeeded the moment they start, so they
+    -- are excluded; instants never had an arc to celebrate.
+    local wasCasting = cast.active and not cast.test and not cast.channel
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        ReadGCD(arg3)
+        if wasCasting and DB("SuccessPop", true) then Flash("SUCCESS") end
+    elseif event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED" then
+        if wasCasting and DB("FailFlash", true) then Flash("FAIL") end
+    elseif event == "UNIT_SPELLCAST_DELAYED" then
+        if wasCasting and DB("PushbackFlash", true) then Flash("PUSHBACK") end
+    end
+    ReadCast()
 end)

@@ -73,6 +73,22 @@ local DefaultSettings = {
     -- of the unit frame underneath that you cannot see.
     Aperture = "NONE",             -- NONE | ICON | TIME | HEALTH
     ApertureOpacity = 0.85,
+
+    -- Global cooldown ring, on its own radius
+    ShowGCD = false,
+    GCDColor = "STEEL",
+    GCDPlacement = "INSIDE",       -- INSIDE (in the hole) | OUTSIDE (past the dial)
+    GCDThickness = 3,
+
+    -- Timing markers on the arc
+    ShowLatency = false,
+
+    -- Feedback flashes
+    SuccessPop = true,
+    FailFlash = true,
+    FailShake = false,
+    PushbackFlash = true,
+    ErrorFlash = false,
 }
 
 local frame = CreateFrame("FRAME")
@@ -387,6 +403,102 @@ local function CreateCorePanel()
     finishScroll()
 end
 
+local function CreateExtrasPanel()
+    local panel = Commander.UI.NewPanel({
+        key = "ReticleExtras",
+        title = "Reticle Extras",
+        addonName = "Commander_Reticle",
+        description = "The rest of what a cursor-sized ring can tell you: a global cooldown ring on its own radius, the point in a cast where the next one can already be queued, and the flashes that report how the cast ended.",
+        event = COMMANDER_RETICLE_EVENTS.UPDATE,
+    })
+    local finishScroll = MakeScrollable(panel, "CommanderReticleExtrasScroll")
+
+    panel:AddSection("Global Cooldown", "A second, thinner ring answering a different question: not how far along this cast is, but whether you can act at all yet. With this on, the reticle stays up for the length of the cooldown in the casting-only display modes.")
+    panel:AddCheckbox({
+        label = "Show Global Cooldown Ring",
+        tooltip = "Sweep a thin ring for the global cooldown after every spell.",
+        get = function() return CommanderReticleDB.ShowGCD end,
+        set = function(value) CommanderReticleDB.ShowGCD = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddDropdownPair({
+        label = "Placement",
+        tooltip = "Inside puts it in the hole in the middle, which costs no extra footprint; Outside puts it beyond everything else, including the unit dial.",
+        options = {
+            { text = "Inside", value = "INSIDE" },
+            { text = "Outside", value = "OUTSIDE" },
+        },
+        get = function() return CommanderReticleDB.GCDPlacement end,
+        set = function(value) CommanderReticleDB.GCDPlacement = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowGCD end,
+    }, {
+        label = "Ring Color",
+        tooltip = "Color of the global cooldown sweep. Keep it away from your cast arc color so the two never read as one thing.",
+        options = COLOR_OPTIONS,
+        get = function() return CommanderReticleDB.GCDColor end,
+        set = function(value) CommanderReticleDB.GCDColor = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowGCD end,
+    })
+    panel:AddSlider({
+        label = "Cooldown Thickness",
+        tooltip = "Weight of the global cooldown ring. Thinner than the cast arc keeps the hierarchy obvious.",
+        min = 1, max = 10, step = 1,
+        format = "%d px",
+        get = function() return CommanderReticleDB.GCDThickness end,
+        set = function(value) CommanderReticleDB.GCDThickness = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowGCD end,
+    })
+
+    panel:AddSection("Timing", "Marks on the arc itself.")
+    panel:AddCheckbox({
+        label = "Latency Marker",
+        tooltip = "Put a tick on the arc where your world latency says the next cast can already be queued — once the sweep passes it, pressing the next spell loses nothing.",
+        get = function() return CommanderReticleDB.ShowLatency end,
+        set = function(value) CommanderReticleDB.ShowLatency = value end,
+        isEnabled = Enabled,
+    })
+
+    panel:AddSection("Feedback", "How the cast ended, said in one flash of the ring. The reticle stays visible for the length of a flash even in the casting-only display modes, so the message is never cut off.")
+    panel:AddCheckboxPair({
+        label = "Success Pop",
+        tooltip = "Green halo when the cast lands.",
+        get = function() return CommanderReticleDB.SuccessPop end,
+        set = function(value) CommanderReticleDB.SuccessPop = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Failure Flash",
+        tooltip = "Red halo when the cast is interrupted or fails.",
+        get = function() return CommanderReticleDB.FailFlash end,
+        set = function(value) CommanderReticleDB.FailFlash = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddCheckboxPair({
+        label = "Pushback Flash",
+        tooltip = "Amber halo when a hit pushes your cast back — the arc visibly retreats at the same moment.",
+        get = function() return CommanderReticleDB.PushbackFlash end,
+        set = function(value) CommanderReticleDB.PushbackFlash = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Error Flash",
+        tooltip = "Flash on the cast errors that come from the game itself: out of range, out of line of sight, facing the wrong way, out of power.",
+        get = function() return CommanderReticleDB.ErrorFlash end,
+        set = function(value) CommanderReticleDB.ErrorFlash = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddCheckbox({
+        label = "Shake on Failure",
+        tooltip = "Let a failed cast shove the ring around for a moment. Off keeps the pointer perfectly still.",
+        get = function() return CommanderReticleDB.FailShake end,
+        set = function(value) CommanderReticleDB.FailShake = value end,
+        isEnabled = function()
+            return Enabled() and (CommanderReticleDB.FailFlash or CommanderReticleDB.ErrorFlash)
+        end,
+    })
+
+    panel:Finalize({ onDefaults = Reset })
+    finishScroll()
+end
+
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" then
         -- SavedVariables replace the global table after the file runs, so
@@ -398,6 +510,7 @@ local function OnEvent(self, event, addonName)
         end
     elseif event == "PLAYER_LOGIN" then
         CreateCorePanel()
+        CreateExtrasPanel()
     end
 end
 
