@@ -100,10 +100,12 @@ local DefaultSettings = {
     HotspotSize = 10,
     HotspotColor = "BONE",
     HideSystemCursor = false,
-    -- SetCursor reports nothing back and silently ignores a cursor it does not
-    -- like, so which argument form works is a question only the live client can
-    -- answer. Every plausible form is selectable; /creticle cursor walks them.
-    CursorHideMethod = "BLP",      -- BLP | TGA | PNG | NO_EXT | EMPTY | CLEAR
+    -- SetCursor is documented to have NO EFFECT over WorldFrame: the engine
+    -- locks the world cursor to whatever you are pointing at. So the arrow can
+    -- only be taken away over the UI -- which happens to include every unit
+    -- frame, the one case this module exists for. Hence the scope.
+    CursorHideScope = "UNIT_FRAMES",  -- UNIT_FRAMES | UI | ALWAYS
+    CursorHideMethod = "MISSING",     -- MISSING | BLP | TGA | PNG | NO_EXT | EMPTY | CLEAR
     CursorReapply = 0.05,
 
     -- Outside the ring
@@ -615,16 +617,30 @@ local function CreateExtrasPanel()
         end,
     })
     panel:AddCheckbox({
-        label = "Hide System Cursor (experimental)",
-        tooltip = "Swap the game's arrow for a transparent one, so the hotspot is your whole pointer and nothing opaque is ever parked on a health bar. Genuinely experimental: the client accepts or silently ignores a cursor swap without telling anyone, so if the arrow is still there, work through the methods below. The arrow also carries the attack, loot, and talk shapes, and you lose those cues. The hotspot is forced on while this is enabled so you are never left with no pointer at all.",
+        label = "Hide System Cursor",
+        tooltip = "Take the game's arrow away so the hotspot is your whole pointer and nothing opaque sits on the health bar. The engine only allows this over the interface — while the pointer is on the 3D world it locks the cursor to whatever you are pointing at, and no addon can override that — but unit frames are interface, so the case this module exists for is covered. The hotspot is forced on wherever the arrow is hidden, so you are never left with no pointer at all.",
         get = function() return CommanderReticleDB.HideSystemCursor end,
         set = function(value) CommanderReticleDB.HideSystemCursor = value end,
         isEnabled = Enabled,
     })
+    panel:AddDropdown({
+        label = "Hide It Where",
+        tooltip = "On Unit Frames takes the arrow away only when the pointer is on a frame belonging to a unit — exactly when it would be covering a health bar, and nowhere else. Anywhere in the Interface also clears it over bags, chat, and every other panel. Everywhere additionally asks for it over the 3D world, which the engine will refuse; it is here for completeness, not because it works.",
+        options = {
+            { text = "On Unit Frames", value = "UNIT_FRAMES" },
+            { text = "Anywhere in the Interface", value = "UI" },
+            { text = "Everywhere (world will refuse)", value = "ALWAYS" },
+        },
+        width = 220,
+        get = function() return CommanderReticleDB.CursorHideScope end,
+        set = function(value) CommanderReticleDB.CursorHideScope = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.HideSystemCursor end,
+    })
     panel:AddDropdownPair({
         label = "Hiding Method",
-        tooltip = "How the arrow is asked to go away. The client neither documents nor reports which form of cursor it will accept, so all five ship and you find out by looking: Transparent TGA is the format the game has always read, Transparent PNG matches the rest of this addon's art, Path without suffix lets the client pick the file, Empty path and Clear the cursor are the two ways of asking for nothing at all.",
+        tooltip = "How the arrow is asked to go away. A non-existent path is documented to hide the cursor outright and needs no art at all, which is why it is the default; the transparent textures ship in all three formats because the cursor loader is not necessarily the loader that reads ordinary art (the game's own cursors are uncompressed BLP). The two test entries do not hide anything — they prove whether this client will change the cursor at all.",
         options = {
+            { text = "Non-existent path", value = "MISSING" },
             { text = "Transparent BLP", value = "BLP" },
             { text = "Transparent TGA", value = "TGA" },
             { text = "Transparent PNG", value = "PNG" },
@@ -678,6 +694,14 @@ local function CreateExtrasPanel()
             tooltip = "Print every cursor-related function and console variable this client actually has, rather than guessing at them. Useful to paste back when nothing else works (also: /creticle probe).",
             onClick = function()
                 if CommanderReticle_ApiProbe then CommanderReticle_ApiProbe() end
+            end,
+        },
+        {
+            label = "Toggle Software Cursor",
+            width = 180,
+            tooltip = "Flip the game's gxCursor setting between the hardware pointer and the software one. Some cursor art is documented to work only with a software cursor, so this is worth one try if the swap is being refused. This is a real graphics setting and it persists — put it back with /console gxCursor 1. Nothing here changes it unless you press this.",
+            onClick = function()
+                if CommanderReticle_SoftwareCursor then CommanderReticle_SoftwareCursor() end
             end,
         },
     })

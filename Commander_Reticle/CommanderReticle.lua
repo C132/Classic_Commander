@@ -409,14 +409,24 @@ local function ApplyGeometry()
     ApplyLayer()
 end
 
--- Swapping the system arrow for a transparent texture is the only lever this
--- client offers for taking it off the screen, and which argument SetCursor is
--- willing to accept is not something the API documents or reports back: it
--- returns nothing, and a rejected cursor is silently ignored. So every
--- plausible form ships as a selectable method and the player can watch which
--- one actually works. Nothing here is load-bearing -- if none of them land,
--- the arrow stays and the rest of the module still does its job.
+-- Taking the arrow away, and the one hard rule about it:
+--
+--   "If the cursor is hovering over WorldFrame, the SetCursor function will
+--    have no effect - cursor is locked to reflect what the player is
+--    currently pointing at."
+--
+-- That is the engine, not something an addon can out-argue, and it is why the
+-- arrow always comes back the moment the pointer leaves the UI. It is also
+-- why it does not matter much: mouseover casting happens on unit FRAMES,
+-- which are UI, and the swap works perfectly there. So the default scope only
+-- takes the arrow away where it was in the way in the first place.
+--
+-- Which argument form SetCursor accepts is also undocumented in practice --
+-- it returns nothing useful and ignores a cursor it dislikes in silence -- so
+-- every plausible form ships as a selectable method.
 local CURSOR_METHODS = {
+    -- Documented to hide the cursor outright, and needs no art at all
+    { key = "MISSING", label = "Non-existent path",   arg = TEXTURES .. "NoSuchCursor" },
     { key = "BLP",    label = "Transparent BLP",      arg = TEXTURES .. "Blank.blp" },
     { key = "TGA",    label = "Transparent TGA",      arg = TEXTURES .. "Blank.tga" },
     { key = "PNG",    label = "Transparent PNG",      arg = TEXTURES .. "Blank.png" },
@@ -966,6 +976,31 @@ local function RenderFlash()
 end
 
 -- ---------------------------------------------------------------------------
+-- What the pointer is over. GetMouseFoci allocates a table per call, so the
+-- answer is taken once per data tick and shared by everything that needs it:
+-- the dodge, and the decision about whether the arrow may be hidden here.
+-- ---------------------------------------------------------------------------
+
+local MouseFocusFrame   -- defined with the follow loop, below
+local cachedFocus
+
+local function RefreshMouseFocus()
+    cachedFocus = MouseFocusFrame and MouseFocusFrame() or nil
+end
+
+-- Where the arrow is allowed to be taken away. Over the world the engine
+-- overrules us whatever we do, so the only scopes that can work are UI ones --
+-- and the default is the one that matters: the pointer sitting on a unit
+-- frame, which is the whole reason this module exists.
+local function CursorScopeAllows()
+    local scope = DB("CursorHideScope", "UNIT_FRAMES")
+    if scope == "ALWAYS" then return true end
+    if not cachedFocus then return false end
+    if scope == "UI" then return true end
+    return UnitExists("mouseover") and true or false
+end
+
+-- ---------------------------------------------------------------------------
 -- Visibility
 -- ---------------------------------------------------------------------------
 
@@ -999,7 +1034,9 @@ local function ShouldShowHotspot(ringVisible)
     if DB("HideMouselooking", true) and IsMouselooking and IsMouselooking() then
         return false
     end
-    if DB("HideSystemCursor", false) then return true end
+    -- With the arrow gone, the hotspot is the only pointer there is -- but
+    -- only where it is actually gone, or you get two pointers at once
+    if DB("HideSystemCursor", false) and CursorScopeAllows() then return true end
     return ringVisible
 end
 
@@ -1014,7 +1051,7 @@ local dodgeX, dodgeY = 0, 0
 -- The frame under the pointer, or nil. GetMouseFoci is this framework's
 -- version and returns a list; GetMouseFocus is the older single-frame call.
 -- Both are guarded: neither is worth an error inside a per-frame loop.
-local function MouseFocusFrame()
+MouseFocusFrame = function()
     local focus
     if GetMouseFoci then
         local ok, result = pcall(GetMouseFoci)
@@ -1029,6 +1066,7 @@ local function MouseFocusFrame()
     return focus
 end
 
+
 -- How far to step the ring off whatever it is sitting on. The hotspot itself
 -- never moves -- only the ring gets out of the way, so aim is untouched.
 local function DodgeOffset(cx, cy, radius)
@@ -1042,7 +1080,7 @@ local function DodgeOffset(cx, cy, radius)
     if mode == "RIGHT" then return distance, 0 end
 
     -- AUTO: leave by the nearest edge of the frame under the pointer
-    local focus = MouseFocusFrame()
+    local focus = cachedFocus
     if not focus or not focus.GetRect then return 0, distance end
     local ok, left, bottom, width, height = pcall(focus.GetRect, focus)
     if not ok or not left or not width or width <= 0 or not height then
@@ -1100,6 +1138,7 @@ local function Follow(elapsed)
     lastCursorX, lastCursorY = cx, cy
     if dodgeStale then
         dodgeStale = false
+        RefreshMouseFocus()
         UpdateDodgeTarget()
     end
 
@@ -1144,6 +1183,7 @@ local function Follow(elapsed)
 end
 
 local function Tick()
+    RefreshMouseFocus()
     UpdateDodgeTarget()
 
     -- Demo mode drives a pretend unit down from full and cycles combo points,
@@ -1221,8 +1261,11 @@ local function DriverUpdate(_, elapsed)
     end
 
     -- The client re-asserts the cursor on every focus change, so the swap has
-    -- to be re-applied while it is meant to be gone
-    if hotWants and DB("HideSystemCursor", false) then
+    -- to be re-applied while it is meant to be gone. Never while something is
+    -- being dragged: that cursor is carrying an item or a spell and blanking
+    -- it would hide what you are holding.
+    if hotWants and DB("HideSystemCursor", false) and CursorScopeAllows()
+        and not (GetCursorInfo and GetCursorInfo()) then
         sinceCursor = sinceCursor + elapsed
         if sinceCursor >= DB("CursorReapply", 0.05) then
             sinceCursor = 0
@@ -1403,6 +1446,30 @@ function CommanderReticle_CursorControl()
         okNamed and "no error" or ("error: " .. tostring(errNamed))))
     print("  |cffffd100Did the pointer change?|r If YES, SetCursor works and only the blank art is being refused — keep walking /creticle cursor. If NO, SetCursor cannot replace the pointer on this client and the arrow is here to stay.")
     if ResetCursor then pcall(ResetCursor) end
+end
+
+-- The client draws the pointer as a hardware cursor by default. The cursor
+-- documentation notes that some art "will only work for software cursors", so
+-- flipping gxCursor is the one remaining lever worth pulling if the swap is
+-- being refused. This is a graphics setting and it persists, so it is only
+-- ever changed by the player pressing the button, never automatically.
+function CommanderReticle_SoftwareCursor()
+    local get = (C_CVar and C_CVar.GetCVar) or GetCVar
+    local set = (C_CVar and C_CVar.SetCVar) or SetCVar
+    if not (get and set) then
+        print("|cff66ccffCommander Reticle|r: this client exposes no console variables to change.")
+        return
+    end
+    local ok, current = pcall(get, "gxCursor")
+    if not ok then current = nil end
+    local target = (tostring(current) == "1") and "0" or "1"
+    local setOk, err = pcall(set, "gxCursor", target)
+    if not setOk then
+        print("|cff66ccffCommander Reticle|r: could not change gxCursor — " .. tostring(err))
+        return
+    end
+    print(string.format("|cff66ccffCommander Reticle|r: gxCursor %s -> |cffffd100%s|r (%s cursor). This is a graphics setting and it sticks; put it back with |cffffd100/console gxCursor %s|r.",
+        tostring(current), target, target == "0" and "software" or "hardware", tostring(current)))
 end
 
 -- Dump whatever this client actually offers around the cursor, rather than
