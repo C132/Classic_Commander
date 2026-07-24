@@ -102,6 +102,27 @@ Two settings pages, matching the Shield / Shield Extras precedent.
 - Motion: follow smoothing, offset X/Y, frame layer.
 - Extras: spell-name label, health percentage text, combo-point pips.
 
+## What shipped against this brief
+
+Built as written, with these deltas:
+
+- **Health percentage text** landed as a center-aperture mode rather than a separate
+  option — same information, one fewer switch.
+- **Pushback** is reported as a flash plus the arc's own retreat (the sweep jumps back
+  when the end time moves), not as a separate tick. The tick had nothing to mark: on a
+  radial, the original end is always twelve o'clock.
+- **Hide System Cursor does not work** with a transparent PNG on the live 2.5.6 client.
+  Since `SetCursor` returns nothing and ignores a cursor it dislikes without complaint,
+  all five plausible call forms ship as a selectable **Hiding Method** (TGA, PNG, path
+  without suffix, empty path, clear) with a re-apply rate, and `/creticle cursor` walks
+  them one press at a time. Treat "none of the five work" as a real possible outcome —
+  in which case Smart Dodge is the answer and the arrow stays.
+- Added beyond the brief: **demo mode** (`/creticle demo`), which fakes a looping cast
+  and a draining target for twenty seconds so every option can be judged from the
+  settings page without a target or a fight; and **Dial Style** (segmented vs solid) and
+  **Dial Placement** (outside the arc vs inside the hole), which were choices the first
+  pass made unilaterally and are better made by looking.
+
 ## Technical constraints (TBC Anniversary 2.5.5 / 2.5.6)
 
 - Radial fills come from `Cooldown` frames (`CooldownFrameTemplate`) with a donut swipe
