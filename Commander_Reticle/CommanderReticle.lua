@@ -190,6 +190,14 @@ apertureText:SetPoint("CENTER")
 apertureText:SetFont(FONT, 11, "OUTLINE")
 apertureText:Hide()
 
+-- Outside the ring: the spell's name, and a row of combo points
+local spellLabel = overlay:CreateFontString(nil, "OVERLAY")
+spellLabel:SetFont(FONT, 10, "OUTLINE")
+spellLabel:Hide()
+
+local MAX_COMBO = 5
+local comboPips = {}
+
 -- The unit dial rides just outside the cast arc: a segmented gauge, so it can
 -- never be mistaken for the continuous sweep it surrounds.
 local PIP_FILE = TEXTURES .. "Pip.png"
@@ -285,6 +293,17 @@ local hotAlpha, hotAlphaTarget = 0, 0
 local smoothX, smoothY
 local cursorHidden = false
 local sinceCursor = 0
+
+-- Demo mode: a standing pretend cast and a pretend unit draining from full, so
+-- every option on both pages can be judged from the settings panel instead of
+-- requiring a real target and a real fight to look at.
+local DEMO_DURATION = 20
+local demoUntil, demoHealth, demoCombo = 0, 1, 0
+local StartTestCast   -- forward declaration; the tester defines it below
+
+local function DemoActive()
+    return demoUntil > GetTime()
+end
 
 -- ---------------------------------------------------------------------------
 -- Layout: only touches the frames when a geometry setting actually changed
@@ -383,14 +402,45 @@ local function ApplyGeometry()
     ApplyLayer()
 end
 
--- Swapping the system arrow for a fully transparent texture is the only way
--- this client offers to take it off the screen, and the client re-asserts the
--- cursor whenever mouse focus changes -- hence the periodic re-apply. Both
--- calls are guarded: an unsupported client just keeps its arrow.
+-- Swapping the system arrow for a transparent texture is the only lever this
+-- client offers for taking it off the screen, and which argument SetCursor is
+-- willing to accept is not something the API documents or reports back: it
+-- returns nothing, and a rejected cursor is silently ignored. So every
+-- plausible form ships as a selectable method and the player can watch which
+-- one actually works. Nothing here is load-bearing -- if none of them land,
+-- the arrow stays and the rest of the module still does its job.
+local CURSOR_METHODS = {
+    { key = "PNG",    label = "Transparent PNG",      arg = TEXTURES .. "Blank.png" },
+    { key = "TGA",    label = "Transparent TGA",      arg = TEXTURES .. "Blank.tga" },
+    { key = "NO_EXT", label = "Path without suffix",  arg = TEXTURES .. "Blank" },
+    { key = "EMPTY",  label = "Empty path",           arg = "" },
+    { key = "CLEAR",  label = "Clear the cursor",     arg = nil, useNil = true },
+}
+
+local function CursorMethod(key)
+    for i = 1, #CURSOR_METHODS do
+        if CURSOR_METHODS[i].key == key then return CURSOR_METHODS[i], i end
+    end
+    return CURSOR_METHODS[1], 1
+end
+
+local lastCursorError
+
 local function HideSystemCursor()
-    if not SetCursor then return end
-    pcall(SetCursor, TEXTURES .. "Blank.png")
+    if not SetCursor then
+        lastCursorError = "SetCursor does not exist on this client"
+        return false
+    end
+    local method = CursorMethod(DB("CursorHideMethod", "TGA"))
+    local ok, err
+    if method.useNil then
+        ok, err = pcall(SetCursor, nil)
+    else
+        ok, err = pcall(SetCursor, method.arg)
+    end
+    lastCursorError = (not ok) and tostring(err) or nil
     cursorHidden = true
+    return ok
 end
 
 local function RestoreSystemCursor()
@@ -487,11 +537,15 @@ local function UpdateAperture()
             text = string.format("%.1f", remaining)
         end
     elseif mode == "HEALTH" then
-        local unit = DialUnit()
-        if unit and UnitExists(unit) then
-            local max = UnitHealthMax(unit) or 0
-            if max > 0 then
-                text = string.format("%d", (UnitHealth(unit) or 0) / max * 100 + 0.5)
+        if DemoActive() then
+            text = string.format("%d", demoHealth * 100 + 0.5)
+        else
+            local unit = DialUnit()
+            if unit and UnitExists(unit) then
+                local max = UnitHealthMax(unit) or 0
+                if max > 0 then
+                    text = string.format("%d", (UnitHealth(unit) or 0) / max * 100 + 0.5)
+                end
             end
         end
     end
@@ -530,16 +584,21 @@ local function InRange(unit)
     return true
 end
 
+-- unit may be nil in demo mode, where the player's own class stands in
 local function DialColor(unit, frac)
     if DB("DialClassColor", false) then
-        if UnitIsPlayer and UnitIsPlayer(unit) then
-            local _, token = UnitClass(unit)
-            local info = token and Commander.GetClassInfo and Commander.GetClassInfo(token)
+        if not unit or (UnitIsPlayer and UnitIsPlayer(unit)) then
+            local token
+            if unit then
+                local _, classToken = UnitClass(unit)
+                token = classToken
+            end
+            local info = Commander.GetClassInfo and Commander.GetClassInfo(token)
             if info and info.color then
                 return info.color[1], info.color[2], info.color[3]
             end
         end
-        if UnitCanAttack("player", unit) then return Color("BLOOD") end
+        if unit and UnitCanAttack("player", unit) then return Color("BLOOD") end
         return Color("VERDANT")
     end
     -- Health gradient: verdant through amber to blood
@@ -550,22 +609,41 @@ local function DialColor(unit, frac)
 end
 
 local laidSegments, laidPipLength, laidPipWidth, laidGap, laidDialSize = -1, -1, -1, -1, -1
+local laidDialStyle, laidDialPlace
 
 local function LayoutDial()
-    local segments = DB("DialSegments", 20)
+    local style = DB("DialStyle", "SEGMENTED")
+    local segments = style == "SOLID" and MAX_PIPS or DB("DialSegments", 20)
     if segments < 4 then segments = 4 elseif segments > MAX_PIPS then segments = MAX_PIPS end
     local length = DB("DialLength", 5)
     local width = DB("DialWidth", 3)
     local gap = DB("DialGap", 2)
     local size = DB("RingSize", 38)
+    local place = DB("DialPlacement", "OUTSIDE")
     if laidSegments == segments and laidPipLength == length and laidPipWidth == width
-        and laidGap == gap and laidDialSize == size then
+        and laidGap == gap and laidDialSize == size and laidDialStyle == style
+        and laidDialPlace == place then
         return segments
     end
     laidSegments, laidPipLength, laidPipWidth = segments, length, width
     laidGap, laidDialSize = gap, size
+    laidDialStyle, laidDialPlace = style, place
 
-    local radius = size * RING_OUTER + gap + length / 2
+    local radius
+    if place == "INSIDE" then
+        -- Tuck the dial into the hole instead of ringing the arc; keeps the
+        -- whole reticle inside the cursor's own footprint
+        radius = size * RING_OUTER * innerRatio - gap - length / 2
+        if radius < length then radius = length end
+    else
+        radius = size * RING_OUTER + gap + length / 2
+    end
+    if style == "SOLID" then
+        -- Widen each pip to its full share of the circumference, so the gauge
+        -- reads as one continuous band rather than a row of ticks
+        width = math.max(2, (2 * math.pi * radius) / segments + 1)
+    end
+
     for i = 1, segments do
         local pip = pips[i]
         if not pip then
@@ -593,25 +671,28 @@ local function UpdateDial()
         if dial:IsShown() then dial:Hide() end
         return
     end
-    local unit = DialUnit()
-    if not unit or not UnitExists(unit) then
-        if dial:IsShown() then dial:Hide() end
-        return
+    local unit, frac, dead
+    if DemoActive() then
+        frac, dead = demoHealth, false
+    else
+        unit = DialUnit()
+        if not unit or not UnitExists(unit) then
+            if dial:IsShown() then dial:Hide() end
+            return
+        end
+        local maxHealth = UnitHealthMax(unit) or 0
+        frac = maxHealth > 0 and ((UnitHealth(unit) or 0) / maxHealth) or 0
+        dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)
     end
-
-    local segments = LayoutDial()
-    local maxHealth = UnitHealthMax(unit) or 0
-    local frac = 0
-    if maxHealth > 0 then frac = (UnitHealth(unit) or 0) / maxHealth end
     if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
 
-    local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)
+    local segments = LayoutDial()
     local lit = dead and 0 or math.floor(frac * segments + 0.5)
     -- Never round a living unit down to nothing: an empty dial means dead
     if lit < 1 and not dead and frac > 0 then lit = 1 end
 
     local r, g, b = DialColor(unit, frac)
-    if DB("DialRangeDim", true) and not InRange(unit) then
+    if unit and DB("DialRangeDim", true) and not InRange(unit) then
         r, g, b = r * 0.4, g * 0.4, b * 0.4
     end
 
@@ -638,7 +719,7 @@ local laidGCD = { size = -1, ring = -1, thickness = -1, place = nil, reach = -1 
 
 local function OuterReach()
     local reach = DB("RingSize", 38) * RING_OUTER
-    if DB("ShowUnitDial", true) then
+    if DB("ShowUnitDial", true) and DB("DialPlacement", "OUTSIDE") ~= "INSIDE" then
         reach = reach + DB("DialGap", 2) + DB("DialLength", 5)
     end
     return reach
@@ -733,6 +814,105 @@ local function UpdateLatency()
     latencyTick:Show()
 end
 
+-- The spell's name and your combo points both hang below the ring, so the
+-- label reserves room for the pips whenever they are switched on.
+local laidLabelSize, laidLabelPlace, laidLabelPips = -1, nil, nil
+
+local function LayoutSpellLabel()
+    local size = DB("RingSize", 38)
+    local place = DB("SpellNamePlace", "BELOW")
+    local pips = DB("ShowComboPips", false) and true or false
+    if laidLabelSize == size and laidLabelPlace == place and laidLabelPips == pips then
+        return
+    end
+    laidLabelSize, laidLabelPlace, laidLabelPips = size, place, pips
+    spellLabel:SetFont(FONT, math.max(8, math.floor(size * 0.26)), "OUTLINE")
+    spellLabel:ClearAllPoints()
+    if place == "ABOVE" then
+        spellLabel:SetPoint("BOTTOM", root, "TOP", 0, 3)
+    else
+        local drop = pips and (math.max(3, size * 0.14) + 5) or 3
+        spellLabel:SetPoint("TOP", root, "BOTTOM", 0, -drop)
+    end
+end
+
+local lastSpellLabel = ""
+
+local function UpdateSpellLabel()
+    if not (DB("ShowSpellName", false) and cast.active and cast.name) then
+        spellLabel:Hide()
+        lastSpellLabel = ""
+        return
+    end
+    LayoutSpellLabel()
+    local text = cast.name
+    local limit = DB("SpellNameMax", 14)
+    if limit > 0 and #text > limit then
+        text = text:sub(1, limit)
+    end
+    if text ~= lastSpellLabel then
+        lastSpellLabel = text
+        spellLabel:SetText(text)
+    end
+    local r, g, b = ArcColor()
+    spellLabel:SetTextColor(r, g, b, 1)
+    spellLabel:Show()
+end
+
+local laidComboSize = -1
+local lastCombo = -1
+
+local function UpdateCombo()
+    if not DB("ShowComboPips", false) then
+        if lastCombo ~= 0 then
+            lastCombo = 0
+            for i = 1, #comboPips do comboPips[i]:Hide() end
+        end
+        return
+    end
+
+    local points = 0
+    if DemoActive() then
+        points = demoCombo
+    elseif GetComboPoints then
+        local ok, value = pcall(GetComboPoints, "player", "target")
+        if ok then points = value or 0 end
+    end
+
+    local size = DB("RingSize", 38)
+    local dot = math.max(3, math.floor(size * 0.14))
+    if laidComboSize ~= size then
+        laidComboSize = size
+        local spacing = dot + 2
+        for i = 1, MAX_COMBO do
+            local pip = comboPips[i]
+            if not pip then
+                pip = overlay:CreateTexture(nil, "OVERLAY")
+                pip:SetTexture(HOTSPOT_FILES.DOT)
+                comboPips[i] = pip
+            end
+            pip:SetSize(dot, dot)
+            pip:ClearAllPoints()
+            pip:SetPoint("TOP", root, "BOTTOM",
+                (i - (MAX_COMBO + 1) / 2) * spacing, -3)
+        end
+        lastCombo = -1
+    end
+
+    if points == lastCombo then return end
+    lastCombo = points
+    for i = 1, MAX_COMBO do
+        local pip = comboPips[i]
+        if i <= points then
+            -- Cool at one point, hot at five
+            pip:SetVertexColor(1, 1 - (i - 1) / MAX_COMBO * 0.9, 0.2, 1)
+            pip:Show()
+        else
+            pip:Hide()
+        end
+    end
+end
+
 local function RenderFlash()
     if not flashKind then return end
     local spec = FLASH_KINDS[flashKind]
@@ -758,6 +938,7 @@ local function ShouldShowRing()
     end
     -- A flash is a deliberate signal: never fade out mid-message
     if flashKind then return true end
+    if DemoActive() then return true end
     if DB("CombatOnly", false) and not UnitAffectingCombat("player") then
         return false
     end
@@ -926,10 +1107,24 @@ end
 
 local function Tick()
     UpdateDodgeTarget()
+
+    -- Demo mode drives a pretend unit down from full and cycles combo points,
+    -- so every option can be judged without a target or a fight
+    if DemoActive() then
+        local remaining = demoUntil - GetTime()
+        demoHealth = 0.08 + 0.92 * (remaining / DEMO_DURATION)
+        demoCombo = math.floor((DEMO_DURATION - remaining) / 2.5) % (MAX_COMBO + 1)
+    end
+
     if cast.test and cast.active and GetTime() >= cast.finish then
         cast.active, cast.test = false, false
         ApplyArc()
     end
+    -- Keep the pretend cast looping for the length of the demo
+    if DemoActive() and not cast.active and StartTestCast then
+        StartTestCast()
+    end
+
     if gcdDuration > 0 and not GCDActive() then
         gcdDuration = 0
         ApplyGCD()
@@ -937,6 +1132,8 @@ local function Tick()
     UpdateDial()
     UpdateLatency()
     UpdateAperture()
+    UpdateSpellLabel()
+    UpdateCombo()
 end
 
 local function Sleep()
@@ -989,7 +1186,7 @@ local function DriverUpdate(_, elapsed)
     -- to be re-applied while it is meant to be gone
     if hotWants and DB("HideSystemCursor", false) then
         sinceCursor = sinceCursor + elapsed
-        if sinceCursor >= 0.05 then
+        if sinceCursor >= DB("CursorReapply", 0.05) then
             sinceCursor = 0
             HideSystemCursor()
         end
@@ -1072,11 +1269,8 @@ local TEST_SPELLS = {
 }
 local testIndex = 0
 
-function CommanderReticle_Test()
-    if not DB("EnableReticle", true) then
-        print("Commander Reticle: the reticle is disabled (enable it in settings or /creticle)")
-        return
-    end
+-- Assigns the forward-declared local so the demo loop can restart it
+StartTestCast = function()
     testIndex = testIndex % #TEST_SPELLS + 1
     local spell = TEST_SPELLS[testIndex]
     cast.active, cast.test, cast.channel = true, true, false
@@ -1084,9 +1278,73 @@ function CommanderReticle_Test()
     cast.start = GetTime()
     cast.finish = cast.start + TEST_DURATION
     ApplyArc()
+    return spell
+end
+
+function CommanderReticle_Test()
+    if not DB("EnableReticle", true) then
+        print("Commander Reticle: the reticle is disabled (enable it in settings or /creticle)")
+        return
+    end
+    local spell = StartTestCast()
     Wake()
     print(string.format("Commander Reticle: test cast — %s, %.1f seconds. Move the pointer over a unit frame to see it in place.",
         spell[1], TEST_DURATION))
+end
+
+-- Everything at once, for as long as it takes to make up your mind: a looping
+-- pretend cast, a pretend unit bleeding from full to nearly dead, and combo
+-- points cycling. Lets every option be judged from the settings page itself.
+function CommanderReticle_Demo()
+    if not DB("EnableReticle", true) then
+        print("Commander Reticle: the reticle is disabled (enable it in settings or /creticle)")
+        return
+    end
+    demoUntil = GetTime() + DEMO_DURATION
+    demoHealth, demoCombo = 1, 0
+    StartTestCast()
+    Wake()
+    print(string.format("|cff66ccffCommander Reticle|r: demo running for %d seconds — pretend cast, pretend target draining from full. Change any setting and watch it take effect live.",
+        DEMO_DURATION))
+end
+
+function CommanderReticle_DemoStop()
+    demoUntil = 0
+    if cast.test then
+        cast.active, cast.test = false, false
+        ApplyArc()
+    end
+end
+
+-- Walk the cursor-hiding methods one at a time. SetCursor reports nothing back
+-- and a rejected cursor fails silently, so the only honest test is to apply
+-- one and look at the screen -- this makes that a two-second loop instead of a
+-- settings expedition.
+function CommanderReticle_CursorProbe()
+    if not SetCursor then
+        print("|cff66ccffCommander Reticle|r: this client has no SetCursor at all — the arrow cannot be hidden. Smart Dodge is the next best thing.")
+        return
+    end
+    if not CommanderReticleDB.HideSystemCursor then
+        CommanderReticleDB.HideSystemCursor = true
+        print("|cff66ccffCommander Reticle|r: turned Hide System Cursor on for the test.")
+    end
+
+    local _, index = CursorMethod(DB("CursorHideMethod", "TGA"))
+    index = index % #CURSOR_METHODS + 1
+    local method = CURSOR_METHODS[index]
+    CommanderReticleDB.CursorHideMethod = method.key
+    cursorHidden = false
+    local ok = HideSystemCursor()
+    Commander.Notify(COMMANDER_RETICLE_EVENTS.UPDATE)
+
+    print(string.format("|cff66ccffCommander Reticle|r: cursor method %d of %d — |cffffd100%s|r — %s",
+        index, #CURSOR_METHODS, method.label,
+        ok and "accepted without error" or ("rejected: " .. tostring(lastCursorError))))
+    print("  Is the arrow gone? If yes, you are done. If not, run |cffffd100/creticle cursor|r for the next method.")
+    if not ResetCursor then
+        print("  |cffff8080Note|r: this client has no ResetCursor, so turning the option back off may need a /reload.")
+    end
 end
 
 -- ---------------------------------------------------------------------------

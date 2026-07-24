@@ -58,6 +58,8 @@ local DefaultSettings = {
     -- reporting that health bar.
     ShowUnitDial = true,
     DialSource = "SMART",          -- MOUSEOVER | TARGET | CAST_TARGET | SMART
+    DialStyle = "SEGMENTED",       -- SEGMENTED (pips) | SOLID (continuous band)
+    DialPlacement = "OUTSIDE",     -- OUTSIDE the arc | INSIDE the hole
     DialSegments = 20,
     DialLength = 5,
     DialWidth = 3,
@@ -97,6 +99,17 @@ local DefaultSettings = {
     HotspotSize = 10,
     HotspotColor = "BONE",
     HideSystemCursor = false,
+    -- SetCursor reports nothing back and silently ignores a cursor it does not
+    -- like, so which argument form works is a question only the live client can
+    -- answer. Every plausible form is selectable; /creticle cursor walks them.
+    CursorHideMethod = "TGA",      -- PNG | TGA | NO_EXT | EMPTY | CLEAR
+    CursorReapply = 0.05,
+
+    -- Outside the ring
+    ShowSpellName = false,
+    SpellNamePlace = "BELOW",      -- BELOW | ABOVE
+    SpellNameMax = 14,
+    ShowComboPips = false,
 
     -- Motion and layering
     Smoothing = 0,                 -- 0 = locked to the pointer
@@ -173,6 +186,10 @@ local function CreateCorePanel()
         slash = { "/creticle", "/cret" },
         slashHandlers = {
             test = function() if CommanderReticle_Test then CommanderReticle_Test() end end,
+            demo = function() if CommanderReticle_Demo then CommanderReticle_Demo() end end,
+            cursor = function()
+                if CommanderReticle_CursorProbe then CommanderReticle_CursorProbe() end
+            end,
         },
     })
     local finishScroll = MakeScrollable(panel, "CommanderReticleCoreScroll")
@@ -319,6 +336,27 @@ local function CreateCorePanel()
         set = function(value) CommanderReticleDB.DialSource = value end,
         isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
     }, nil)
+    panel:AddDropdownPair({
+        label = "Dial Style",
+        tooltip = "Segmented draws the health as discrete pips, which cannot be confused with the continuous cast sweep inside it. Solid closes the gaps into one band — easier to read as a level, harder to tell apart from the arc.",
+        options = {
+            { text = "Segmented", value = "SEGMENTED" },
+            { text = "Solid", value = "SOLID" },
+        },
+        get = function() return CommanderReticleDB.DialStyle end,
+        set = function(value) CommanderReticleDB.DialStyle = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    }, {
+        label = "Dial Placement",
+        tooltip = "Outside rings the cast arc. Inside tucks the dial into the hole in the middle, keeping the whole reticle inside the cursor's own footprint — smaller, but it costs you the empty center.",
+        options = {
+            { text = "Outside", value = "OUTSIDE" },
+            { text = "Inside", value = "INSIDE" },
+        },
+        get = function() return CommanderReticleDB.DialPlacement end,
+        set = function(value) CommanderReticleDB.DialPlacement = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    })
     panel:AddSliderPair({
         label = "Dial Segments",
         tooltip = "How many pips make up the dial. Fewer reads faster at a glance; more is finer grained.",
@@ -412,6 +450,12 @@ local function CreateCorePanel()
             tooltip = "Run a two and a half second pretend cast through the reticle without casting anything (also: /creticle test).",
             onClick = function() if CommanderReticle_Test then CommanderReticle_Test() end end,
         },
+        {
+            label = "Demo (20s)",
+            width = 120,
+            tooltip = "Hold everything on screen for twenty seconds: a looping pretend cast, a pretend target draining from full to nearly dead, and combo points cycling. Change any setting while it runs and watch it take effect — no target and no fight needed (also: /creticle demo).",
+            onClick = function() if CommanderReticle_Demo then CommanderReticle_Demo() end end,
+        },
     })
 
     panel:Finalize({ onDefaults = Reset })
@@ -427,6 +471,15 @@ local function CreateExtrasPanel()
         event = COMMANDER_RETICLE_EVENTS.UPDATE,
     })
     local finishScroll = MakeScrollable(panel, "CommanderReticleExtrasScroll")
+
+    panel:AddButtonRow({
+        {
+            label = "Demo (20s)",
+            width = 120,
+            tooltip = "Hold everything on screen for twenty seconds — looping pretend cast, pretend target draining from full, combo points cycling — so every option on this page can be judged live from right here (also: /creticle demo).",
+            onClick = function() if CommanderReticle_Demo then CommanderReticle_Demo() end end,
+        },
+    })
 
     panel:AddSection("Global Cooldown", "A second, thinner ring answering a different question: not how far along this cast is, but whether you can act at all yet. With this on, the reticle stays up for the length of the cooldown in the casting-only display modes.")
     panel:AddCheckbox({
@@ -548,10 +601,85 @@ local function CreateExtrasPanel()
     })
     panel:AddCheckbox({
         label = "Hide System Cursor (experimental)",
-        tooltip = "Swap the game's arrow for a fully transparent one, so the hotspot is your whole pointer and nothing opaque is ever parked on a health bar. Experimental: the arrow also carries the attack, loot, and talk shapes, and you lose those cues. The hotspot is forced on while this is enabled so you are never left with no pointer at all; turn it back off and the arrow returns immediately.",
+        tooltip = "Swap the game's arrow for a transparent one, so the hotspot is your whole pointer and nothing opaque is ever parked on a health bar. Genuinely experimental: the client accepts or silently ignores a cursor swap without telling anyone, so if the arrow is still there, work through the methods below. The arrow also carries the attack, loot, and talk shapes, and you lose those cues. The hotspot is forced on while this is enabled so you are never left with no pointer at all.",
         get = function() return CommanderReticleDB.HideSystemCursor end,
         set = function(value) CommanderReticleDB.HideSystemCursor = value end,
         isEnabled = Enabled,
+    })
+    panel:AddDropdownPair({
+        label = "Hiding Method",
+        tooltip = "How the arrow is asked to go away. The client neither documents nor reports which form of cursor it will accept, so all five ship and you find out by looking: Transparent TGA is the format the game has always read, Transparent PNG matches the rest of this addon's art, Path without suffix lets the client pick the file, Empty path and Clear the cursor are the two ways of asking for nothing at all.",
+        options = {
+            { text = "Transparent TGA", value = "TGA" },
+            { text = "Transparent PNG", value = "PNG" },
+            { text = "Path, no suffix", value = "NO_EXT" },
+            { text = "Empty path", value = "EMPTY" },
+            { text = "Clear cursor", value = "CLEAR" },
+        },
+        width = 140,
+        get = function() return CommanderReticleDB.CursorHideMethod end,
+        set = function(value) CommanderReticleDB.CursorHideMethod = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.HideSystemCursor end,
+    }, {
+        label = "Re-apply Every",
+        tooltip = "The client re-asserts its own cursor whenever the mouse moves between frames, so the swap has to be re-applied. Faster holds it more stubbornly; if the arrow flickers back into view, try the fastest setting.",
+        options = {
+            { text = "Every frame", value = 0 },
+            { text = "0.02 s", value = 0.02 },
+            { text = "0.05 s", value = 0.05 },
+            { text = "0.10 s", value = 0.1 },
+            { text = "0.25 s", value = 0.25 },
+        },
+        width = 140,
+        get = function() return CommanderReticleDB.CursorReapply end,
+        set = function(value) CommanderReticleDB.CursorReapply = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.HideSystemCursor end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Try Next Method",
+            width = 150,
+            tooltip = "Switch to the next hiding method and apply it right now, reporting whether the client raised an error. Keep pressing until the arrow disappears — or until you have been through all five, which means this client will not give it up (also: /creticle cursor).",
+            onClick = function()
+                if CommanderReticle_CursorProbe then CommanderReticle_CursorProbe() end
+            end,
+            isEnabled = Enabled,
+        },
+    })
+
+    panel:AddSection("Outside the Ring", "Two readouts that live just beyond the reticle, for when the ring itself has run out of room.")
+    panel:AddCheckboxPair({
+        label = "Show Spell Name",
+        tooltip = "Put the name of the spell being cast under the ring, colored to match the arc. Costs screen real estate right where you are looking, which is why it is off by default.",
+        get = function() return CommanderReticleDB.ShowSpellName end,
+        set = function(value) CommanderReticleDB.ShowSpellName = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Combo Points",
+        tooltip = "A row of dots under the ring for your combo points, cool at one and hot at five. Rogues and cat-form Druids only.",
+        get = function() return CommanderReticleDB.ShowComboPips end,
+        set = function(value) CommanderReticleDB.ShowComboPips = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddDropdownPair({
+        label = "Name Position",
+        tooltip = "Which side of the ring the spell name sits on. Below leaves room for the combo points when those are on.",
+        options = {
+            { text = "Below", value = "BELOW" },
+            { text = "Above", value = "ABOVE" },
+        },
+        get = function() return CommanderReticleDB.SpellNamePlace end,
+        set = function(value) CommanderReticleDB.SpellNamePlace = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowSpellName end,
+    }, nil)
+    panel:AddSlider({
+        label = "Name Length",
+        tooltip = "Trim the spell name to this many characters, so a long name does not stretch halfway across the screen.",
+        min = 4, max = 30, step = 1,
+        format = "%d",
+        get = function() return CommanderReticleDB.SpellNameMax end,
+        set = function(value) CommanderReticleDB.SpellNameMax = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowSpellName end,
     })
 
     panel:AddSection("Motion", "How the ring travels, and what it draws over.")
