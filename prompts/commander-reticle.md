@@ -111,12 +111,24 @@ Built as written, with these deltas:
 - **Pushback** is reported as a flash plus the arc's own retreat (the sweep jumps back
   when the end time moves), not as a separate tick. The tick had nothing to mark: on a
   radial, the original end is always twelve o'clock.
-- **Hide System Cursor does not work** with a transparent PNG on the live 2.5.6 client.
-  Since `SetCursor` returns nothing and ignores a cursor it dislikes without complaint,
-  all five plausible call forms ship as a selectable **Hiding Method** (TGA, PNG, path
-  without suffix, empty path, clear) with a re-apply rate, and `/creticle cursor` walks
-  them one press at a time. Treat "none of the five work" as a real possible outcome —
-  in which case Smart Dodge is the answer and the arrow stays.
+- **Hide System Cursor works only over the interface, and that is an engine rule.**
+  `SetCursor` is documented to have no effect while the pointer is over `WorldFrame`:
+  "cursor is locked to reflect what the player is currently pointing at." Field
+  behaviour matches exactly — the arrow vanishes over settings panels and never over
+  the game world, and any world interaction restores it. No addon can override this.
+
+  It costs less than it sounds, because **unit frames are interface**: the case this
+  module exists for is the case that works. So the swap is scoped — *On Unit Frames*
+  by default (arrow gone precisely when it would cover a health bar), *Anywhere in the
+  Interface*, or *Everywhere* which the world will refuse. The hotspot follows the same
+  scope so there is never a dot and an arrow at once, and the swap is suppressed while
+  an item or spell is on the cursor.
+
+  Method notes worth keeping: a **non-existent path is documented to hide the cursor**
+  outright and needs no art (the default); custom cursor art must be **uncompressed
+  BLP**, since compressed BLP works only for software cursors; `gxCursor` toggles the
+  hardware pointer and is exposed as a button, never set automatically. For the world,
+  Smart Dodge is the answer, not the cursor swap.
 - Added beyond the brief: **demo mode** (`/creticle demo`), which fakes a looping cast
   and a draining target for twenty seconds so every option can be judged from the
   settings page without a target or a fight; and **Dial Style** (segmented vs solid) and
