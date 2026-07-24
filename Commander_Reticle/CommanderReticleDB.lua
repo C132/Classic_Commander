@@ -89,6 +89,21 @@ local DefaultSettings = {
     FailShake = false,
     PushbackFlash = true,
     ErrorFlash = false,
+
+    -- The pointer itself. Hiding the system cursor is the literal reading of
+    -- "replace the cursor": the arrow is the occluder, so it goes, and a few
+    -- pixels of hotspot take its place.
+    HotspotStyle = "NONE",         -- NONE | DOT | CROSS | PLUS
+    HotspotSize = 10,
+    HotspotColor = "BONE",
+    HideSystemCursor = false,
+
+    -- Motion and layering
+    Smoothing = 0,                 -- 0 = locked to the pointer
+    OffsetX = 0,
+    OffsetY = 0,
+    FadeSpeed = 14,
+    Layer = "TOOLTIP",
 }
 
 local frame = CreateFrame("FRAME")
@@ -493,6 +508,99 @@ local function CreateExtrasPanel()
         isEnabled = function()
             return Enabled() and (CommanderReticleDB.FailFlash or CommanderReticleDB.ErrorFlash)
         end,
+    })
+
+    panel:AddSection("The Pointer", "The arrow is the thing covering the health bar. This is where you can take it off the screen and leave a few pixels of hotspot in its place — the literal version of replacing the cursor with a cast bar.")
+    panel:AddDropdownPair({
+        label = "Hotspot",
+        tooltip = "A small mark drawn at the exact click point, under the middle of the ring. Unlike the ring it never smooths, offsets, or dodges — it is your aim.",
+        options = {
+            { text = "None", value = "NONE" },
+            { text = "Dot", value = "DOT" },
+            { text = "Cross", value = "CROSS" },
+            { text = "Plus", value = "PLUS" },
+        },
+        get = function() return CommanderReticleDB.HotspotStyle end,
+        set = function(value) CommanderReticleDB.HotspotStyle = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Hotspot Color",
+        tooltip = "Color of the hotspot mark. Every shape is drawn with a dark outline, so it stays readable on snow and in shadow alike.",
+        options = COLOR_OPTIONS,
+        get = function() return CommanderReticleDB.HotspotColor end,
+        set = function(value) CommanderReticleDB.HotspotColor = value end,
+        isEnabled = function()
+            return Enabled() and (CommanderReticleDB.HotspotStyle ~= "NONE"
+                or CommanderReticleDB.HideSystemCursor)
+        end,
+    })
+    panel:AddSlider({
+        label = "Hotspot Size",
+        tooltip = "Size of the hotspot mark in pixels. Small is the point: a three pixel dot occludes nothing.",
+        min = 4, max = 32, step = 1,
+        format = "%d px",
+        get = function() return CommanderReticleDB.HotspotSize end,
+        set = function(value) CommanderReticleDB.HotspotSize = value end,
+        isEnabled = function()
+            return Enabled() and (CommanderReticleDB.HotspotStyle ~= "NONE"
+                or CommanderReticleDB.HideSystemCursor)
+        end,
+    })
+    panel:AddCheckbox({
+        label = "Hide System Cursor (experimental)",
+        tooltip = "Swap the game's arrow for a fully transparent one, so the hotspot is your whole pointer and nothing opaque is ever parked on a health bar. Experimental: the arrow also carries the attack, loot, and talk shapes, and you lose those cues. The hotspot is forced on while this is enabled so you are never left with no pointer at all; turn it back off and the arrow returns immediately.",
+        get = function() return CommanderReticleDB.HideSystemCursor end,
+        set = function(value) CommanderReticleDB.HideSystemCursor = value end,
+        isEnabled = Enabled,
+    })
+
+    panel:AddSection("Motion", "How the ring travels, and what it draws over.")
+    panel:AddSliderPair({
+        label = "Smoothing",
+        tooltip = "Let the ring trail the pointer instead of being welded to it. Zero is locked. The hotspot never smooths, so your aim is exact either way.",
+        min = 0, max = 0.9, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderReticleDB.Smoothing end,
+        set = function(value) CommanderReticleDB.Smoothing = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Fade Speed",
+        tooltip = "How quickly the reticle fades in and out.",
+        min = 2, max = 30, step = 1,
+        format = "%d",
+        get = function() return CommanderReticleDB.FadeSpeed end,
+        set = function(value) CommanderReticleDB.FadeSpeed = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddSliderPair({
+        label = "Offset X",
+        tooltip = "Shift the ring sideways from the pointer. A permanent version of Smart Dodge, for a fixed preference.",
+        min = -60, max = 60, step = 1,
+        format = "%d px",
+        get = function() return CommanderReticleDB.OffsetX end,
+        set = function(value) CommanderReticleDB.OffsetX = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Offset Y",
+        tooltip = "Shift the ring up or down from the pointer.",
+        min = -60, max = 60, step = 1,
+        format = "%d px",
+        get = function() return CommanderReticleDB.OffsetY end,
+        set = function(value) CommanderReticleDB.OffsetY = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddDropdown({
+        label = "Layer",
+        tooltip = "Which layer the reticle draws on. Tooltip is the top of the stack, which is what a cursor should be; drop it lower if you would rather tooltips and dialogs cover it.",
+        options = {
+            { text = "Tooltip (top)", value = "TOOLTIP" },
+            { text = "Fullscreen Dialog", value = "FULLSCREEN_DIALOG" },
+            { text = "Dialog", value = "DIALOG" },
+            { text = "High", value = "HIGH" },
+        },
+        get = function() return CommanderReticleDB.Layer end,
+        set = function(value) CommanderReticleDB.Layer = value end,
+        isEnabled = Enabled,
     })
 
     panel:Finalize({ onDefaults = Reset })

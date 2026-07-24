@@ -229,6 +229,26 @@ glow:SetBlendMode("ADD")
 glow:SetPoint("CENTER", root, "CENTER")
 glow:Hide()
 
+-- The pointer itself, kept deliberately separate from the ring assembly: it
+-- marks the true click point, so it never smooths, offsets, or dodges. With
+-- Hide System Cursor on, this IS the mouse pointer -- three pixels of it.
+local HOTSPOT_FILES = {
+    DOT = TEXTURES .. "Dot.png",
+    CROSS = TEXTURES .. "Cross.png",
+    PLUS = TEXTURES .. "Plus.png",
+}
+
+local hot = CreateFrame("Frame", "CommanderReticleHotspot", UIParent)
+hot:SetFrameStrata("TOOLTIP")
+hot:SetSize(10, 10)
+hot:EnableMouse(false)
+hot:SetAlpha(0)
+hot:Hide()
+
+local hotTexture = hot:CreateTexture(nil, "OVERLAY")
+hotTexture:SetAllPoints(hot)
+hotTexture:SetTexture(HOTSPOT_FILES.DOT)
+
 -- ---------------------------------------------------------------------------
 -- Cast state
 -- ---------------------------------------------------------------------------
@@ -260,6 +280,11 @@ local FLASH_KINDS = {
     ERROR    = { color = "BLOOD",   duration = 0.40, grow = 0.20, shake = true },
 }
 local flashKind, flashStart = nil, 0
+
+local hotAlpha, hotAlphaTarget = 0, 0
+local smoothX, smoothY
+local cursorHidden = false
+local sinceCursor = 0
 
 -- ---------------------------------------------------------------------------
 -- Layout: only touches the frames when a geometry setting actually changed
@@ -300,6 +325,70 @@ local function Layout()
     apertureIcon:SetSize(hole * 0.84, hole * 0.84)
     local fontSize = math.max(7, math.floor(hole * 0.5))
     apertureText:SetFont(FONT, fontSize, "OUTLINE")
+end
+
+-- Taking the system arrow away and drawing nothing in its place would leave
+-- the player with no pointer at all, so the dot is forced on in that case.
+local function HotspotStyle()
+    local style = DB("HotspotStyle", "NONE")
+    if style == "NONE" and DB("HideSystemCursor", false) then return "DOT" end
+    return style
+end
+
+local laidHotStyle, laidHotSize, laidHotColor = nil, -1, nil
+
+local function LayoutHotspot()
+    local style = HotspotStyle()
+    local size = DB("HotspotSize", 10)
+    local color = DB("HotspotColor", "BONE")
+    if laidHotStyle == style and laidHotSize == size and laidHotColor == color then
+        return style
+    end
+    laidHotStyle, laidHotSize, laidHotColor = style, size, color
+    if style == "NONE" then
+        hotTexture:Hide()
+        return style
+    end
+    hotTexture:SetTexture(HOTSPOT_FILES[style] or HOTSPOT_FILES.DOT)
+    local r, g, b = Color(color, "BONE")
+    hotTexture:SetVertexColor(r, g, b, 1)
+    hot:SetSize(size, size)
+    hotTexture:Show()
+    return style
+end
+
+local laidLayer
+
+local function ApplyLayer()
+    local layer = DB("Layer", "TOOLTIP")
+    if laidLayer == layer then return end
+    laidLayer = layer
+    root:SetFrameStrata(layer)
+    hot:SetFrameStrata(layer)
+    -- The click point always draws over the ring reporting on it
+    hot:SetFrameLevel((root:GetFrameLevel() or 1) + 20)
+end
+
+local function ApplyGeometry()
+    Layout()
+    LayoutHotspot()
+    ApplyLayer()
+end
+
+-- Swapping the system arrow for a fully transparent texture is the only way
+-- this client offers to take it off the screen, and the client re-asserts the
+-- cursor whenever mouse focus changes -- hence the periodic re-apply. Both
+-- calls are guarded: an unsupported client just keeps its arrow.
+local function HideSystemCursor()
+    if not SetCursor then return end
+    pcall(SetCursor, TEXTURES .. "Blank.png")
+    cursorHidden = true
+end
+
+local function RestoreSystemCursor()
+    if not cursorHidden then return end
+    cursorHidden = false
+    if ResetCursor then pcall(ResetCursor) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -653,7 +742,7 @@ end
 -- Visibility
 -- ---------------------------------------------------------------------------
 
-local function ShouldShow()
+local function ShouldShowRing()
     if not DB("EnableReticle", true) then return false end
     if DB("HideMouselooking", true) and IsMouselooking and IsMouselooking() then
         return false
@@ -672,6 +761,18 @@ local function ShouldShow()
     local hovering = UnitExists("mouseover") and true or false
     if when == "UNIT" then return hovering end
     return busy or hovering
+end
+
+-- The hotspot outlives the ring: once the system arrow is gone, the dot has to
+-- be on screen whenever the pointer is, whatever the ring is doing.
+local function ShouldShowHotspot(ringVisible)
+    if not DB("EnableReticle", true) then return false end
+    if HotspotStyle() == "NONE" then return false end
+    if DB("HideMouselooking", true) and IsMouselooking and IsMouselooking() then
+        return false
+    end
+    if DB("HideSystemCursor", false) then return true end
+    return ringVisible
 end
 
 -- ---------------------------------------------------------------------------
@@ -777,8 +878,25 @@ local function Follow(elapsed)
         end
     end
 
-    root:SetPoint("CENTER", UIParent, "BOTTOMLEFT",
-        cx + dodgeX + shakeX, cy + dodgeY + shakeY)
+    -- The click point, exactly: no offset, no dodge, no smoothing
+    hot:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx, cy)
+
+    local wantsX = cx + dodgeX + shakeX + DB("OffsetX", 0)
+    local wantsY = cy + dodgeY + shakeY + DB("OffsetY", 0)
+    local smoothing = DB("Smoothing", 0)
+    if smoothing > 0 and smoothX and elapsed and elapsed < 1 then
+        -- Higher smoothing = slower chase. Exponential so it is frame-rate
+        -- independent rather than tied to however fast the client is drawing.
+        local speed = 30 * (1 - smoothing) + 1.5
+        local step = elapsed * speed
+        if step >= 1 then step = 1 end
+        smoothX = smoothX + (wantsX - smoothX) * step
+        smoothY = smoothY + (wantsY - smoothY) * step
+    else
+        smoothX, smoothY = wantsX, wantsY
+    end
+
+    root:SetPoint("CENTER", UIParent, "BOTTOMLEFT", smoothX, smoothY)
 end
 
 local function Tick()
@@ -799,8 +917,20 @@ local function Sleep()
     awake = false
     driver:SetScript("OnUpdate", nil)
     alpha, alphaTarget = 0, 0
+    hotAlpha, hotAlphaTarget = 0, 0
     root:SetAlpha(0)
     root:Hide()
+    hot:SetAlpha(0)
+    hot:Hide()
+    RestoreSystemCursor()
+end
+
+local function Fade(current, target, elapsed)
+    local step = elapsed * DB("FadeSpeed", FADE_SPEED)
+    if step >= 1 then return target end
+    current = current + (target - current) * step
+    if math.abs(current - target) < 0.01 then return target end
+    return current
 end
 
 local function DriverUpdate(_, elapsed)
@@ -813,29 +943,51 @@ local function DriverUpdate(_, elapsed)
         Tick()
     end
 
-    alphaTarget = ShouldShow() and DB("Opacity", 0.95) or 0
+    local opacity = DB("Opacity", 0.95)
+    local ringWants = ShouldShowRing()
+    local hotWants = ShouldShowHotspot(ringWants)
+    alphaTarget = ringWants and opacity or 0
+    hotAlphaTarget = hotWants and opacity or 0
+
     if alpha ~= alphaTarget then
-        local step = elapsed * FADE_SPEED
-        if step >= 1 then
-            alpha = alphaTarget
-        else
-            alpha = alpha + (alphaTarget - alpha) * step
-        end
-        if math.abs(alpha - alphaTarget) < 0.01 then alpha = alphaTarget end
+        alpha = Fade(alpha, alphaTarget, elapsed)
         root:SetAlpha(alpha)
-        if alpha <= 0 then Sleep() end
     end
+    if hotAlpha ~= hotAlphaTarget then
+        hotAlpha = Fade(hotAlpha, hotAlphaTarget, elapsed)
+        hot:SetAlpha(hotAlpha)
+        hot:SetShown(hotAlpha > 0)
+    end
+
+    -- The client re-asserts the cursor on every focus change, so the swap has
+    -- to be re-applied while it is meant to be gone
+    if hotWants and DB("HideSystemCursor", false) then
+        sinceCursor = sinceCursor + elapsed
+        if sinceCursor >= 0.05 then
+            sinceCursor = 0
+            HideSystemCursor()
+        end
+    elseif cursorHidden then
+        RestoreSystemCursor()
+    end
+
+    if alpha <= 0 and hotAlpha <= 0 then Sleep() end
 end
 
 local function Wake()
     if awake then return end
     awake = true
-    Layout()
+    ApplyGeometry()
     sinceData = DATA_INTERVAL      -- first frame reads live data, not stale
+    smoothX, smoothY = nil, nil    -- snap, never sweep in from the last spot
     root:Show()
     root:SetAlpha(alpha)
+    if HotspotStyle() ~= "NONE" then
+        hot:Show()
+        hot:SetAlpha(hotAlpha)
+    end
     driver:SetScript("OnUpdate", DriverUpdate)
-    Follow(1)   -- snap into place rather than easing in from the last spot
+    Follow(1)
 end
 
 local function Flash(kind)
@@ -919,7 +1071,8 @@ local watchTicker
 local function Watch()
     if not DB("EnableReticle", true) then return end
     if awake then return end
-    if ShouldShow() then Wake() end
+    local ringWants = ShouldShowRing()
+    if ringWants or ShouldShowHotspot(ringWants) then Wake() end
 end
 
 -- Cast-relevant UI errors, resolved from the client's own localized strings so
@@ -942,13 +1095,18 @@ end
 
 local function Apply()
     if DB("EnableReticle", true) then
-        Layout()
+        ApplyGeometry()
         ApplyArc()
         ApplyGCD()
+        -- Turning the swap off in settings has to hand the arrow straight back
+        if not DB("HideSystemCursor", false) then
+            RestoreSystemCursor()
+        end
         if not watchTicker then
             watchTicker = C_Timer.NewTicker(WATCH_INTERVAL, Watch)
         end
-        if ShouldShow() then
+        local ringWants = ShouldShowRing()
+        if ringWants or ShouldShowHotspot(ringWants) then
             Wake()
         end
     else
@@ -986,7 +1144,7 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if not DB("EnableReticle", true) then return end
 
     if event == "UPDATE_MOUSEOVER_UNIT" then
-        if not awake and ShouldShow() then Wake() end
+        if not awake and ShouldShowRing() then Wake() end
         return
     end
     if event == "UI_ERROR_MESSAGE" then
