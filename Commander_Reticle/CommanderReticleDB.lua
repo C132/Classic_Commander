@@ -53,6 +53,22 @@ local DefaultSettings = {
     CastColor = "GOLD",            -- used by FIXED
     CastEdge = true,               -- bright leading edge on the sweep
 
+    -- Unit dial: the hovered unit's health, drawn as pips around the arc.
+    -- The pointer covering a health bar stops mattering once the pointer is
+    -- reporting that health bar.
+    ShowUnitDial = true,
+    DialSource = "SMART",          -- MOUSEOVER | TARGET | CAST_TARGET | SMART
+    DialSegments = 20,
+    DialLength = 5,
+    DialWidth = 3,
+    DialGap = 2,
+    DialClassColor = false,        -- lit pips take class / reaction color
+    DialRangeDim = true,           -- dim the dial when the unit is out of reach
+
+    -- Smart dodge: step the ring off whatever it is hovering
+    DodgeMode = "OFF",             -- OFF | AUTO | UP | DOWN | LEFT | RIGHT
+    DodgeDistance = 26,
+
     -- Center of the ring. Empty by default: every pixel drawn here is a pixel
     -- of the unit frame underneath that you cannot see.
     Aperture = "NONE",             -- NONE | ICON | TIME | HEALTH
@@ -73,6 +89,49 @@ local function Enabled()
     return CommanderReticleDB.EnableReticle
 end
 
+-- This module's pages carry more options than the Settings canvas is tall, so
+-- their rows flow into a scroll frame. AddRow is overridden on the panel
+-- INSTANCE only -- the shared framework and every other module's page are
+-- untouched. Same pattern as Commander_Shield's extras page. Returns the
+-- function to call once Finalize has added the footer.
+local function MakeScrollable(panel, frameName)
+    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", function(self, delta)
+        local target = self:GetVerticalScroll() - delta * 28
+        local maxScroll = self:GetVerticalScrollRange()
+        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
+        self:SetVerticalScroll(target)
+    end)
+
+    local scrollChild = CreateFrame("Frame", nil, scroll)
+    scrollChild:SetSize(1, 1)
+    scroll:SetScrollChild(scrollChild)
+    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
+
+    local seed = CreateFrame("Frame", nil, scrollChild)
+    seed:SetHeight(1)
+    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
+    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
+    panel._anchor = seed
+    panel._contentHeight = 0
+    panel.AddRow = function(self, height, spacing)
+        local row = CreateFrame("Frame", nil, scrollChild)
+        row:SetHeight(height)
+        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
+        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
+        self._anchor = row
+        self._contentHeight = self._contentHeight + height + (spacing or 8)
+        return row
+    end
+
+    return function()
+        scrollChild:SetHeight(panel._contentHeight + 24)
+    end
+end
+
 local function CreateCorePanel()
     local panel = Commander.UI.NewPanel({
         key = "Reticle",
@@ -85,6 +144,7 @@ local function CreateCorePanel()
             test = function() if CommanderReticle_Test then CommanderReticle_Test() end end,
         },
     })
+    local finishScroll = MakeScrollable(panel, "CommanderReticleCoreScroll")
 
     panel:AddCheckboxPair({
         label = "Enable Reticle",
@@ -193,6 +253,103 @@ local function CreateCorePanel()
         end,
     })
 
+    panel:AddSection("Unit Dial", "The hovered unit's health, drawn as pips just outside the arc. Segmented on purpose: it can never be mistaken for the sweep it surrounds. This is what makes the pointer covering a health bar stop costing you anything.")
+    panel:AddCheckboxPair({
+        label = "Show Unit Dial",
+        tooltip = "Ring the reticle with the unit's health, so you can read it without seeing the health bar under the pointer.",
+        get = function() return CommanderReticleDB.ShowUnitDial end,
+        set = function(value) CommanderReticleDB.ShowUnitDial = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Class Colored",
+        tooltip = "Color the lit pips by the unit's class (or red and green by reaction, for anything that is not a player) instead of by how much health is left.",
+        get = function() return CommanderReticleDB.DialClassColor end,
+        set = function(value) CommanderReticleDB.DialClassColor = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    })
+    panel:AddCheckboxPair({
+        label = "Dim Out of Range",
+        tooltip = "Fade the dial when the unit is out of reach — of the spell you are casting, or of the 40 yard party range when you are not.",
+        get = function() return CommanderReticleDB.DialRangeDim end,
+        set = function(value) CommanderReticleDB.DialRangeDim = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    }, nil)
+    panel:AddDropdownPair({
+        label = "Dial Reports On",
+        tooltip = "Smart follows the pointer, falls back to whoever the current cast is aimed at, then to your target — the right answer for mouseover casting. The others pin the dial to one source. The center readout and the Hostility arc color follow this setting too.",
+        options = {
+            { text = "Smart", value = "SMART" },
+            { text = "Mouseover", value = "MOUSEOVER" },
+            { text = "Target", value = "TARGET" },
+            { text = "Cast Target", value = "CAST_TARGET" },
+        },
+        width = 130,
+        get = function() return CommanderReticleDB.DialSource end,
+        set = function(value) CommanderReticleDB.DialSource = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    }, nil)
+    panel:AddSliderPair({
+        label = "Dial Segments",
+        tooltip = "How many pips make up the dial. Fewer reads faster at a glance; more is finer grained.",
+        min = 4, max = 36, step = 1,
+        format = "%d",
+        get = function() return CommanderReticleDB.DialSegments end,
+        set = function(value) CommanderReticleDB.DialSegments = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    }, {
+        label = "Dial Gap",
+        tooltip = "Space between the cast arc and the dial.",
+        min = 0, max = 12, step = 1,
+        format = "%d px",
+        get = function() return CommanderReticleDB.DialGap end,
+        set = function(value) CommanderReticleDB.DialGap = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    })
+    panel:AddSliderPair({
+        label = "Pip Length",
+        tooltip = "How far each pip reaches outward.",
+        min = 2, max = 16, step = 1,
+        format = "%d px",
+        get = function() return CommanderReticleDB.DialLength end,
+        set = function(value) CommanderReticleDB.DialLength = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    }, {
+        label = "Pip Width",
+        tooltip = "How wide each pip is.",
+        min = 1, max = 10, step = 1,
+        format = "%d px",
+        get = function() return CommanderReticleDB.DialWidth end,
+        set = function(value) CommanderReticleDB.DialWidth = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.ShowUnitDial end,
+    })
+
+    panel:AddSection("Smart Dodge", "For the last of the occlusion: when the pointer is over a unit, the ring can step aside so even its rim is off the frame. Your aim never moves — only the ring does.")
+    panel:AddDropdown({
+        label = "Dodge",
+        tooltip = "Auto leaves by the nearest edge of the frame under the pointer, which is usually the shortest way off a health bar. The fixed directions always step the same way. Off keeps the ring centered on the pointer.",
+        options = {
+            { text = "Off", value = "OFF" },
+            { text = "Auto", value = "AUTO" },
+            { text = "Up", value = "UP" },
+            { text = "Down", value = "DOWN" },
+            { text = "Left", value = "LEFT" },
+            { text = "Right", value = "RIGHT" },
+        },
+        get = function() return CommanderReticleDB.DodgeMode end,
+        set = function(value) CommanderReticleDB.DodgeMode = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddSlider({
+        label = "Dodge Distance",
+        tooltip = "How far the ring steps aside — and, in Auto, the furthest it is ever allowed to travel.",
+        min = 8, max = 80, step = 2,
+        format = "%d px",
+        get = function() return CommanderReticleDB.DodgeDistance end,
+        set = function(value) CommanderReticleDB.DodgeDistance = value end,
+        isEnabled = function() return Enabled() and CommanderReticleDB.DodgeMode ~= "OFF" end,
+    })
+
+
     panel:AddSection("Center", "What sits in the hole. Empty is the default for a reason: anything drawn here is a piece of the unit frame you can no longer see.")
     panel:AddDropdownPair({
         label = "Center Shows",
@@ -227,6 +384,7 @@ local function CreateCorePanel()
     })
 
     panel:Finalize({ onDefaults = Reset })
+    finishScroll()
 end
 
 local function OnEvent(self, event, addonName)

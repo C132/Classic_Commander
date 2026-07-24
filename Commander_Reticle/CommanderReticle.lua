@@ -139,6 +139,21 @@ local function ReticleUnit()
     return nil
 end
 
+-- Everything that reports on a unit -- the dial, the hostility color, the
+-- center health readout -- goes through one source setting, so they can never
+-- disagree about who they are describing.
+local function DialUnit()
+    local source = DB("DialSource", "SMART")
+    if source == "MOUSEOVER" then
+        return UnitExists("mouseover") and "mouseover" or nil
+    elseif source == "TARGET" then
+        return UnitExists("target") and "target" or nil
+    elseif source == "CAST_TARGET" then
+        return CastUnit()
+    end
+    return ReticleUnit()
+end
+
 -- ---------------------------------------------------------------------------
 -- Frames
 -- ---------------------------------------------------------------------------
@@ -174,6 +189,17 @@ local apertureText = overlay:CreateFontString(nil, "OVERLAY")
 apertureText:SetPoint("CENTER")
 apertureText:SetFont(FONT, 11, "OUTLINE")
 apertureText:Hide()
+
+-- The unit dial rides just outside the cast arc: a segmented gauge, so it can
+-- never be mistaken for the continuous sweep it surrounds.
+local PIP_FILE = TEXTURES .. "Pip.png"
+local MAX_PIPS = 36
+
+local dial = CreateFrame("Frame", nil, root)
+dial:SetAllPoints(root)
+dial:SetFrameLevel((root:GetFrameLevel() or 1) + 2)
+dial:Hide()
+local pips = {}
 
 -- ---------------------------------------------------------------------------
 -- Cast state
@@ -252,7 +278,7 @@ local function ArcColor()
         end
         return Color("BONE")
     elseif mode == "HOSTILITY" then
-        local unit = ReticleUnit()
+        local unit = DialUnit()
         if unit then
             if UnitCanAttack("player", unit) then
                 return Color("BLOOD")
@@ -325,7 +351,7 @@ local function UpdateAperture()
             text = string.format("%.1f", remaining)
         end
     elseif mode == "HEALTH" then
-        local unit = ReticleUnit()
+        local unit = DialUnit()
         if unit and UnitExists(unit) then
             local max = UnitHealthMax(unit) or 0
             if max > 0 then
@@ -346,6 +372,126 @@ local function UpdateAperture()
     end
     apertureText:SetAlpha(opacity)
     apertureText:Show()
+end
+
+-- ---------------------------------------------------------------------------
+-- The unit dial. This is the half of the module that makes occlusion stop
+-- mattering: whatever the pointer is covering, that unit's health is on the
+-- pointer. Pips are pooled and only recolored when the reading changes.
+-- ---------------------------------------------------------------------------
+
+local function InRange(unit)
+    -- While casting, the spell itself is the authority
+    if cast.active and cast.name and IsSpellInRange then
+        local ok, result = pcall(IsSpellInRange, cast.name, unit)
+        if ok and result ~= nil then return result == 1 end
+    end
+    -- Otherwise the 40yd party check, which is the one that matters to a healer
+    if UnitInRange then
+        local ok, inRange, checked = pcall(UnitInRange, unit)
+        if ok and checked then return inRange and true or false end
+    end
+    return true
+end
+
+local function DialColor(unit, frac)
+    if DB("DialClassColor", false) then
+        if UnitIsPlayer and UnitIsPlayer(unit) then
+            local _, token = UnitClass(unit)
+            local info = token and Commander.GetClassInfo and Commander.GetClassInfo(token)
+            if info and info.color then
+                return info.color[1], info.color[2], info.color[3]
+            end
+        end
+        if UnitCanAttack("player", unit) then return Color("BLOOD") end
+        return Color("VERDANT")
+    end
+    -- Health gradient: verdant through amber to blood
+    if frac > 0.5 then
+        return (1 - frac) * 2, 1, 0.15
+    end
+    return 1, frac * 2, 0.15
+end
+
+local laidSegments, laidPipLength, laidPipWidth, laidGap, laidDialSize = -1, -1, -1, -1, -1
+
+local function LayoutDial()
+    local segments = DB("DialSegments", 20)
+    if segments < 4 then segments = 4 elseif segments > MAX_PIPS then segments = MAX_PIPS end
+    local length = DB("DialLength", 5)
+    local width = DB("DialWidth", 3)
+    local gap = DB("DialGap", 2)
+    local size = DB("RingSize", 38)
+    if laidSegments == segments and laidPipLength == length and laidPipWidth == width
+        and laidGap == gap and laidDialSize == size then
+        return segments
+    end
+    laidSegments, laidPipLength, laidPipWidth = segments, length, width
+    laidGap, laidDialSize = gap, size
+
+    local radius = size * RING_OUTER + gap + length / 2
+    for i = 1, segments do
+        local pip = pips[i]
+        if not pip then
+            pip = dial:CreateTexture(nil, "ARTWORK")
+            pip:SetTexture(PIP_FILE)
+            pips[i] = pip
+        end
+        -- Angles run clockwise from twelve o'clock, matching the sweep inside
+        local theta = (i - 1) / segments * (math.pi * 2)
+        pip:SetSize(width, length)
+        pip:SetPoint("CENTER", dial, "CENTER", math.sin(theta) * radius, math.cos(theta) * radius)
+        pip:SetRotation(-theta)
+        pip:Show()
+    end
+    for i = segments + 1, #pips do
+        pips[i]:Hide()
+    end
+    return segments
+end
+
+local lastLit, lastDialR, lastDialG, lastDialB, lastDialSegments = -1, -1, -1, -1, -1
+
+local function UpdateDial()
+    if not DB("ShowUnitDial", true) then
+        if dial:IsShown() then dial:Hide() end
+        return
+    end
+    local unit = DialUnit()
+    if not unit or not UnitExists(unit) then
+        if dial:IsShown() then dial:Hide() end
+        return
+    end
+
+    local segments = LayoutDial()
+    local maxHealth = UnitHealthMax(unit) or 0
+    local frac = 0
+    if maxHealth > 0 then frac = (UnitHealth(unit) or 0) / maxHealth end
+    if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+
+    local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)
+    local lit = dead and 0 or math.floor(frac * segments + 0.5)
+    -- Never round a living unit down to nothing: an empty dial means dead
+    if lit < 1 and not dead and frac > 0 then lit = 1 end
+
+    local r, g, b = DialColor(unit, frac)
+    if DB("DialRangeDim", true) and not InRange(unit) then
+        r, g, b = r * 0.4, g * 0.4, b * 0.4
+    end
+
+    if lit ~= lastLit or r ~= lastDialR or g ~= lastDialG or b ~= lastDialB
+        or segments ~= lastDialSegments then
+        lastLit, lastDialR, lastDialG, lastDialB = lit, r, g, b
+        lastDialSegments = segments
+        for i = 1, segments do
+            if i <= lit then
+                pips[i]:SetVertexColor(r, g, b, 1)
+            else
+                pips[i]:SetVertexColor(0.18, 0.18, 0.20, 0.75)
+            end
+        end
+    end
+    if not dial:IsShown() then dial:Show() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -373,14 +519,96 @@ end
 -- ---------------------------------------------------------------------------
 
 local driver = CreateFrame("Frame")
+local DODGE_SPEED = 12
+local dodgeX, dodgeY = 0, 0
 
-local function Follow()
+-- The frame under the pointer, or nil. GetMouseFoci is this framework's
+-- version and returns a list; GetMouseFocus is the older single-frame call.
+-- Both are guarded: neither is worth an error inside a per-frame loop.
+local function MouseFocusFrame()
+    local focus
+    if GetMouseFoci then
+        local ok, result = pcall(GetMouseFoci)
+        if not ok then return nil end
+        focus = type(result) == "table" and result[1] or result
+    elseif GetMouseFocus then
+        local ok, result = pcall(GetMouseFocus)
+        if not ok then return nil end
+        focus = result
+    end
+    if not focus or focus == WorldFrame or focus == UIParent then return nil end
+    return focus
+end
+
+-- How far to step the ring off whatever it is sitting on. The hotspot itself
+-- never moves -- only the ring gets out of the way, so aim is untouched.
+local function DodgeOffset(cx, cy, radius)
+    local mode = DB("DodgeMode", "OFF")
+    if mode == "OFF" or not UnitExists("mouseover") then return 0, 0 end
+
+    local distance = DB("DodgeDistance", 26)
+    if mode == "UP" then return 0, distance end
+    if mode == "DOWN" then return 0, -distance end
+    if mode == "LEFT" then return -distance, 0 end
+    if mode == "RIGHT" then return distance, 0 end
+
+    -- AUTO: leave by the nearest edge of the frame under the pointer
+    local focus = MouseFocusFrame()
+    if not focus or not focus.GetRect then return 0, distance end
+    local ok, left, bottom, width, height = pcall(focus.GetRect, focus)
+    if not ok or not left or not width or width <= 0 or not height then
+        return 0, distance
+    end
+    local relative = 1
+    if focus.GetEffectiveScale then
+        local focusScale = focus:GetEffectiveScale()
+        local uiScale = UIParent:GetEffectiveScale()
+        if focusScale and uiScale and uiScale > 0 then relative = focusScale / uiScale end
+    end
+    left, bottom = left * relative, bottom * relative
+    width, height = width * relative, height * relative
+
+    local up = (bottom + height) - cy + radius
+    local down = cy - bottom + radius
+    local right = (left + width) - cx + radius
+    local leftward = cx - left + radius
+    if up < 0 then up = 0 end
+    if down < 0 then down = 0 end
+    if right < 0 then right = 0 end
+    if leftward < 0 then leftward = 0 end
+
+    local best, bestValue = "UP", up
+    if down < bestValue then best, bestValue = "DOWN", down end
+    if right < bestValue then best, bestValue = "RIGHT", right end
+    if leftward < bestValue then best, bestValue = "LEFT", leftward end
+    -- Nudge, never teleport: a huge frame under the pointer just gets a nudge
+    if bestValue > distance then bestValue = distance end
+
+    if best == "UP" then return 0, bestValue end
+    if best == "DOWN" then return 0, -bestValue end
+    if best == "RIGHT" then return bestValue, 0 end
+    return -bestValue, 0
+end
+
+local function Follow(elapsed)
     local uiScale = UIParent:GetEffectiveScale()
     if not uiScale or uiScale <= 0 then uiScale = 1 end
     local cx, cy = GetCursorPosition()
     if not cx then return end
     cx, cy = cx / uiScale, cy / uiScale
-    root:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx, cy)
+
+    local reach = DB("RingSize", 38) * RING_OUTER
+    if DB("ShowUnitDial", true) then
+        reach = reach + DB("DialGap", 2) + DB("DialLength", 5)
+    end
+    local wantX, wantY = DodgeOffset(cx, cy, reach)
+    -- Ease into the dodge so the ring steps aside instead of snapping
+    local step = (elapsed or 1) * DODGE_SPEED
+    if step >= 1 then step = 1 end
+    dodgeX = dodgeX + (wantX - dodgeX) * step
+    dodgeY = dodgeY + (wantY - dodgeY) * step
+
+    root:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx + dodgeX, cy + dodgeY)
 end
 
 local function Tick()
@@ -388,6 +616,7 @@ local function Tick()
         cast.active, cast.test = false, false
         ApplyArc()
     end
+    UpdateDial()
     UpdateAperture()
 end
 
@@ -400,7 +629,7 @@ local function Sleep()
 end
 
 local function DriverUpdate(_, elapsed)
-    Follow()
+    Follow(elapsed)
 
     sinceData = sinceData + elapsed
     if sinceData >= DATA_INTERVAL then
@@ -430,7 +659,7 @@ local function Wake()
     root:Show()
     root:SetAlpha(alpha)
     driver:SetScript("OnUpdate", DriverUpdate)
-    Follow()
+    Follow(1)   -- snap into place rather than easing in from the last spot
 end
 
 -- ---------------------------------------------------------------------------
