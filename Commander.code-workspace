@@ -109,6 +109,10 @@
             "path": "Commander_Resources"
         },
         {
+            "name": "Commander_Reticle",
+            "path": "Commander_Reticle"
+        },
+        {
             "name": "Commander_Spoils",
             "path": "Commander_Spoils"
         },

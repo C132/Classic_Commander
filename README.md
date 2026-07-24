@@ -82,6 +82,7 @@ its command, and what it does.
 | Commander_Vitals | `/cvitals` | A little wireframe of your armor, like a damaged unit picture in an RTS. Slots turn yellow, then red, as your gear wears down. |
 | Commander_Nameplate | `/cplate` | A personal plate near your character with your health, mana, and cast bar — so you never have to look at the corner of the screen mid-fight. |
 | Commander_Casting | `/ccast` | The edges of the screen glow brighter as your spell cast completes — you can feel the cast finish without staring at a bar. Can color the glow by spell school (frost = blue, fire = red...). |
+| Commander_Reticle | `/creticle` | Your mouse pointer becomes the cast bar. A hollow, cursor-sized ring sweeps around the pointer as you cast — and rings itself with the health of whatever you are hovering, so mouseover casting stops hiding the health bar you are aiming at. Can add a global cooldown ring, a latency mark for queueing the next cast, and even take the arrow off the screen entirely, leaving a few pixels of hotspot in its place. |
 | Commander_Resources | `/cres` | For mana users: tracks the "five-second rule" so you know exactly when your mana starts flowing back. |
 
 ### 🎉 Feedback & Alerts — the game celebrates you
