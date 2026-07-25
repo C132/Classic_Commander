@@ -127,8 +127,26 @@ Built as written, with these deltas:
   Method notes worth keeping: a **non-existent path is documented to hide the cursor**
   outright and needs no art (the default); custom cursor art must be **uncompressed
   BLP**, since compressed BLP works only for software cursors; `gxCursor` toggles the
-  hardware pointer and is exposed as a button, never set automatically. For the world,
-  Smart Dodge is the answer, not the cursor swap.
+  hardware pointer. For the world, Smart Dodge is the answer, not the cursor swap.
+
+## Final shape (post-defeat cleanup)
+
+After live testing showed the arrow always returns over the game world — the documented
+`WorldFrame` lock, not a fixable bug — the cursor feature was stripped to only what
+holds up, and the two settings pages became one:
+
+- **One page.** Reticle Extras folded into Reticle; the whole module is a single
+  scrollable settings page. (Shield / Shield Extras got the same treatment in the same
+  pass.)
+- **Cursor-hiding is one fixed path, not a menu.** The selectable hiding method, the
+  re-apply-rate, the scope dropdown, the control-cursor probes, the `gxCursor` toggle,
+  the API dump, and the four `Blank.*` textures are all gone. What remains: SetCursor at
+  a non-existent path, re-applied every frame, anywhere the pointer is over an interface
+  frame. Over the world it releases and the arrow returns — expected and correct.
+- A latent bug fell out of the cleanup: `MouseFocusFrame` handed back the empty focus
+  list itself as a bogus "frame" when the pointer was over nothing (`result[1]`, not
+  `result or`). Fixed. And the idle watcher now samples mouse focus while the reticle is
+  asleep, so enabling Hide System Cursor can wake it over a UI frame.
 - Added beyond the brief: **demo mode** (`/creticle demo`), which fakes a looping cast
   and a draining target for twenty seconds so every option can be judged from the
   settings page without a target or a fight; and **Dial Style** (segmented vs solid) and
