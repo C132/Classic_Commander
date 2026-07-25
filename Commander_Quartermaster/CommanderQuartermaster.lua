@@ -16,6 +16,7 @@ local me                      -- this character's record (always exists; only
 local loaded = false
 local bankOpen = false
 local mailOpen = false
+local inboxSeen = false       -- true once MAIL_INBOX_UPDATE delivered real data
 
 -- ---------------------------------------------------------------------------
 -- Database index
@@ -69,19 +70,21 @@ end
 -- Ledger
 -- ---------------------------------------------------------------------------
 
+local function CharToken(realm, char)
+    return realm .. "\001" .. char
+end
+
 local function LinkCharacter()
-    -- Create or detach this character's ledger entry per the tracking flags.
-    -- `me` itself always exists so live scans (mail counts for tooltips)
-    -- work even for untracked characters.
+    -- File this character and mark visibility. Records are NEVER deleted
+    -- here: the opt-out is a per-character `hidden` flag (kept in the
+    -- account-wide UntrackedChars map, so unticking it on a bank alt can
+    -- only ever affect that alt), and actual deletion belongs solely to
+    -- the explicit Forget Character button. A settings toggle must always
+    -- be reversible.
     ledger[realmKey] = ledger[realmKey] or {}
-    if db.EnableQuartermaster and db.TrackThisCharacter then
-        ledger[realmKey][charKey] = me
-    else
-        ledger[realmKey][charKey] = nil
-        if next(ledger[realmKey]) == nil then
-            ledger[realmKey] = nil
-        end
-    end
+    ledger[realmKey][charKey] = me
+    local untracked = db.UntrackedChars and db.UntrackedChars[CharToken(realmKey, charKey)]
+    me.hidden = untracked and true or nil
 end
 
 local function ScanContainer(bagID, into)
@@ -118,6 +121,10 @@ end
 
 local function ScanMail()
     if not (db and db.EnableQuartermaster and db.TrackMail and mailOpen) then return end
+    -- Inbox contents are server-side and arrive with the first
+    -- MAIL_INBOX_UPDATE; scanning before that would wipe a real snapshot
+    -- and record an empty mailbox
+    if not inboxSeen then return end
     wipe(me.mail)
     local numItems = (GetInboxNumItems and GetInboxNumItems()) or 0
     for i = 1, numItems do
@@ -136,6 +143,14 @@ local function ScanMail()
     me.mailAt = time()
 end
 
+-- Memoized per-item counts: CountsFor is called per row, per badge, and per
+-- tooltip — the cache turns a 481-item sidebar pass into table lookups.
+-- Invalidated whenever the ledger, live inventory, or scope settings move.
+local countsCache = {}
+local function InvalidateCounts()
+    wipe(countsCache)
+end
+
 -- Coalesce scan bursts (looting fires BAG_UPDATE per stack moved)
 local scanQueued = false
 local dirtyBags, dirtyBank, dirtyMail = false, false, false
@@ -146,6 +161,7 @@ local function RunQueuedScans()
     if dirtyBags then dirtyBags = false; ScanBags() end
     if dirtyBank then dirtyBank = false; ScanBank() end
     if dirtyMail then dirtyMail = false; ScanMail() end
+    InvalidateCounts()
     Commander.Notify(Events.LEDGER)
     if RefreshBrowserSoon then RefreshBrowserSoon() end
 end
@@ -171,26 +187,35 @@ end
 
 -- bags, bank, mail, alts, total for one item. The current character reads
 -- LIVE from the client (GetItemCount knows the bank even when closed); the
--- ledger speaks only for everyone else.
+-- ledger speaks only for everyone else. Ledger-sourced layers are gated on
+-- their Track* setting so a disabled tracker's frozen snapshot can never
+-- double-count against live data; hidden (untracked) characters are
+-- skipped. Results are memoized in countsCache until invalidated.
 local function CountsFor(itemID)
+    local cached = countsCache[itemID]
+    if cached then
+        return cached[1], cached[2], cached[3], cached[4], cached[5]
+    end
     local bags = LiveCount(itemID, false)
     local bank = LiveCount(itemID, true) - bags
     if bank < 0 then bank = 0 end
-    local mail = (me and me.mail[itemID]) or 0
+    local mail = (db.TrackMail and me and me.mail[itemID]) or 0
     local alts = 0
     for realmName, chars in pairs(ledger) do
         if (not db.CurrentRealmOnly) or realmName == realmKey then
             for charName, rec in pairs(chars) do
-                if not (realmName == realmKey and charName == charKey) then
+                if not (realmName == realmKey and charName == charKey) and not rec.hidden then
                     alts = alts
                         + ((rec.bags and rec.bags[itemID]) or 0)
-                        + ((rec.bank and rec.bank[itemID]) or 0)
-                        + ((rec.mail and rec.mail[itemID]) or 0)
+                        + ((db.TrackBank and rec.bank and rec.bank[itemID]) or 0)
+                        + ((db.TrackMail and rec.mail and rec.mail[itemID]) or 0)
                 end
             end
         end
     end
-    return bags, bank, mail, alts, bags + bank + mail + alts
+    local total = bags + bank + mail + alts
+    countsCache[itemID] = { bags, bank, mail, alts, total }
+    return bags, bank, mail, alts, total
 end
 
 local function ClassColorHex(classToken)
@@ -205,10 +230,10 @@ local function BreakdownFor(itemID)
     for realmName, chars in pairs(ledger) do
         if (not db.CurrentRealmOnly) or realmName == realmKey then
             for charName, rec in pairs(chars) do
-                if not (realmName == realmKey and charName == charKey) then
+                if not (realmName == realmKey and charName == charKey) and not rec.hidden then
                     local bags = (rec.bags and rec.bags[itemID]) or 0
-                    local bank = (rec.bank and rec.bank[itemID]) or 0
-                    local mail = (rec.mail and rec.mail[itemID]) or 0
+                    local bank = (db.TrackBank and rec.bank and rec.bank[itemID]) or 0
+                    local mail = (db.TrackMail and rec.mail and rec.mail[itemID]) or 0
                     if bags + bank + mail > 0 then
                         rows[#rows + 1] = {
                             name = charName, realm = realmName,
@@ -628,7 +653,12 @@ local function FullRefresh()
     browser.viewLoadout:SetEnabled(db.BrowserView ~= "LOADOUT")
     local loadout = db.BrowserView == "LOADOUT"
     if browser.searchBox then browser.searchBox:SetShown(not loadout) end
-    if browser.ownedCheck then browser.ownedCheck:SetShown(not loadout) end
+    if browser.ownedCheck then
+        browser.ownedCheck:SetShown(not loadout)
+        -- The settings panel mirrors this flag; resync so a change made
+        -- there (or Restore Defaults) reaches an already-open browser
+        browser.ownedCheck:SetChecked(db.OwnedOnly and true or false)
+    end
     if browser.classDrop then browser.classDrop:SetShown(loadout) end
     if browser.classDrop and loadout then
         local token = CurrentClass()
@@ -639,16 +669,26 @@ local function FullRefresh()
     end
 end
 
--- Coalesced refresh for scan/iteminfo bursts while the browser is open
+-- Coalesced refresh for scan/iteminfo bursts while the browser is open.
+-- Item-info arrivals only need the visible rows re-bound (names/quality);
+-- ledger changes need the full pass with sidebar badges.
+local refreshFull = false
 local function RunQueuedRefresh()
     refreshQueued = false
+    local full = refreshFull
+    refreshFull = false
     if browser and browser:IsShown() then
-        FullRefresh()
+        if full then
+            FullRefresh()
+        else
+            RefreshList()
+        end
     end
 end
 
-RefreshBrowserSoon = function()
+RefreshBrowserSoon = function(light)
     if not (browser and browser:IsShown()) then return end
+    if not light then refreshFull = true end
     if refreshQueued then return end
     refreshQueued = true
     C_Timer.After(0.1, RunQueuedRefresh)
@@ -675,6 +715,9 @@ local function ApplyPosition()
     if not browser then return end
     local scale = db.BrowserScale or 1
     browser:SetScale(scale)
+    -- Never re-anchor mid-drag: a throttled settings notify would snap the
+    -- window out of the user's hand (same guard as the suite's HUD chrome)
+    if browser._dragging then return end
     browser:ClearAllPoints()
     local pos = db.BrowserPos
     if pos and pos.point then
@@ -707,16 +750,20 @@ local function CreateRow(parent, index)
     row.nameFS:SetJustifyH("LEFT")
     row.nameFS:SetWordWrap(false)
 
+    -- The tag owns a fixed band and the note clips against it, so a long
+    -- effect note can never render under the source tag
+    row.tagFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    row.tagFS:SetPoint("RIGHT", row, "RIGHT", COL_BAGS - COL_W - 14, 0)
+    row.tagFS:SetWidth(70)
+    row.tagFS:SetJustifyH("RIGHT")
+    row.tagFS:SetWordWrap(false)
+
     row.noteFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     row.noteFS:SetPoint("LEFT", row, "LEFT", 204, 0)
-    row.noteFS:SetPoint("RIGHT", row, "RIGHT", COL_BAGS - COL_W - 12, 0)
+    row.noteFS:SetPoint("RIGHT", row.tagFS, "LEFT", -6, 0)
     row.noteFS:SetJustifyH("LEFT")
     row.noteFS:SetWordWrap(false)
     row.noteFS:SetTextColor(0.66, 0.66, 0.66)
-
-    row.tagFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    row.tagFS:SetPoint("RIGHT", row, "RIGHT", COL_BAGS - COL_W - 14, 0)
-    row.tagFS:SetJustifyH("RIGHT")
 
     local function CountColumn(x)
         local fs = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -813,9 +860,13 @@ local function EnsureBrowser()
     drag:SetHeight(24)
     drag:EnableMouse(true)
     drag:RegisterForDrag("LeftButton")
-    drag:SetScript("OnDragStart", function() browser:StartMoving() end)
+    drag:SetScript("OnDragStart", function()
+        browser._dragging = true
+        browser:StartMoving()
+    end)
     drag:SetScript("OnDragStop", function()
         browser:StopMovingOrSizing()
+        browser._dragging = false
         local point, _, _, x, y = browser:GetPoint(1)
         if point then
             local scale = browser:GetScale() or 1
@@ -866,12 +917,15 @@ local function EnsureBrowser()
         self:SetText("")
         searchText = ""
         self:ClearFocus()
+        offset = 0
         BuildList()
         RefreshSidebar()
         RefreshList()
     end)
     browser.searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    local searchLabel = toolbar:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    -- Placeholder lives ON the edit box so hiding the box (Loadout view)
+    -- hides the ghost text with it
+    local searchLabel = browser.searchBox:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     searchLabel:SetPoint("LEFT", browser.searchBox, "LEFT", 2, 0)
     searchLabel:SetText("Search…")
     browser.searchBox:HookScript("OnTextChanged", function(self)
@@ -1032,6 +1086,7 @@ function CommanderQuartermaster_Scan()
     ScanBags()
     ScanBank()
     ScanMail()
+    InvalidateCounts()
     Commander.Notify(Events.LEDGER)
     if RefreshBrowserSoon then RefreshBrowserSoon() end
     local kinds = 0
@@ -1092,6 +1147,7 @@ function CommanderQuartermaster_ForgetCharacter(realmName, charName)
     if next(ledger[realmName]) == nil then
         ledger[realmName] = nil
     end
+    InvalidateCounts()
     Commander.Notify(Events.LEDGER)
     if RefreshBrowserSoon then RefreshBrowserSoon() end
     print(("Commander Quartermaster: forgot %s — %s"):format(charName, realmName))
@@ -1104,6 +1160,8 @@ end
 local function ApplySettings()
     if not loaded then return end
     LinkCharacter()
+    -- Scope and tracking settings all change what CountsFor answers
+    InvalidateCounts()
     if browser then
         ApplyFraming()
         ApplyPosition()
@@ -1164,20 +1222,42 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         bankOpen = true
         QueueScan(false, true, false)
     elseif event == "BANKFRAME_CLOSED" then
+        -- Flush a scan still sitting in the 0.25s coalesce window: the
+        -- bank cache is readable during this dispatch, and dropping the
+        -- scan would freeze a pre-withdrawal snapshot that double-counts
+        if dirtyBank then
+            dirtyBank = false
+            ScanBank()
+            InvalidateCounts()
+        end
         bankOpen = false
     elseif event == "PLAYERBANKSLOTS_CHANGED" then
         QueueScan(false, true, false)
     elseif event == "MAIL_SHOW" then
+        -- Do NOT scan yet: inbox data arrives with MAIL_INBOX_UPDATE;
+        -- scanning now would record an empty mailbox over a real snapshot
         mailOpen = true
-        QueueScan(false, false, true)
+        inboxSeen = false
     elseif event == "MAIL_INBOX_UPDATE" then
+        inboxSeen = true
         QueueScan(false, false, true)
     elseif event == "MAIL_CLOSED" then
+        -- Same flush as the bank: 'take attachment, close' inside the
+        -- coalesce window must not leave collected items counted in mail
+        if dirtyMail then
+            dirtyMail = false
+            ScanMail()
+            InvalidateCounts()
+        end
         mailOpen = false
     elseif event == "PLAYER_LEVEL_UP" then
         me.level = tonumber(arg1) or me.level
     elseif event == "GET_ITEM_INFO_RECEIVED" then
-        -- Names/quality resolve lazily; refresh visible rows when they land
-        if RefreshBrowserSoon then RefreshBrowserSoon() end
+        -- Names/quality resolve lazily; re-bind visible rows when one of
+        -- OUR items lands (arg1 = itemID; anything else is other addons'
+        -- traffic and none of our rows can have changed)
+        if byID[arg1] and RefreshBrowserSoon then
+            RefreshBrowserSoon(true)
+        end
     end
 end)

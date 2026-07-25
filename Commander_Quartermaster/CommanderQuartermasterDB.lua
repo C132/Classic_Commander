@@ -8,7 +8,10 @@ COMMANDER_QUARTERMASTER_EVENTS = {
 
 local DefaultSettings = {
     EnableQuartermaster = true,
-    TrackThisCharacter = true,  -- opt-out for bank alts you don't want listed
+    -- Per-character listing opt-outs, keyed "<realm>\001<char>". A hidden
+    -- character's records stay in the ledger (reversible); only the
+    -- explicit Forget button deletes.
+    UntrackedChars = {},
     TrackBank = true,
     TrackMail = true,
     TooltipCounts = true,       -- append holdings to consumable tooltips
@@ -39,6 +42,57 @@ local function Reset()
     print("Commander Quartermaster: settings restored to defaults")
 end
 
+-- The one setting that is genuinely about THIS character. Stored as a keyed
+-- map in the account-wide DB so toggling it on a bank alt can never affect
+-- any other character (an account-wide boolean here once meant logging in
+-- with it off deleted every character's ledger record in turn).
+local function MyCharToken()
+    return ((GetRealmName and GetRealmName()) or "Unknown")
+        .. "\001" .. ((UnitName and UnitName("player")) or "Unknown")
+end
+
+-- This page carries more rows than the Settings canvas is tall, so its rows
+-- flow into a scroll frame — the Reticle/Shield pattern: AddRow is
+-- overridden on this panel INSTANCE only, the shared framework is untouched.
+-- Returns the function to call once Finalize has added the footer.
+local function MakeScrollable(panel, frameName)
+    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", function(self, delta)
+        local target = self:GetVerticalScroll() - delta * 28
+        local maxScroll = self:GetVerticalScrollRange()
+        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
+        self:SetVerticalScroll(target)
+    end)
+
+    local scrollChild = CreateFrame("Frame", nil, scroll)
+    scrollChild:SetSize(1, 1)
+    scroll:SetScrollChild(scrollChild)
+    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
+
+    local seed = CreateFrame("Frame", nil, scrollChild)
+    seed:SetHeight(1)
+    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
+    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
+    panel._anchor = seed
+    panel._contentHeight = 0
+    panel.AddRow = function(self, height, spacing)
+        local row = CreateFrame("Frame", nil, scrollChild)
+        row:SetHeight(height)
+        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
+        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
+        self._anchor = row
+        self._contentHeight = self._contentHeight + height + (spacing or 8)
+        return row
+    end
+
+    return function()
+        scrollChild:SetHeight(panel._contentHeight + 24)
+    end
+end
+
 local function CreatePanel()
     local panel = Commander.UI.NewPanel({
         key = "Quartermaster",
@@ -53,6 +107,7 @@ local function CreatePanel()
             report = function() if CommanderQuartermaster_Report then CommanderQuartermaster_Report() end end,
         },
     })
+    local FinishScroll = MakeScrollable(panel, "CommanderQuartermasterSettingsScroll")
 
     local function Enabled()
         return CommanderQuartermasterDB.EnableQuartermaster
@@ -66,9 +121,19 @@ local function CreatePanel()
         set = function(value) CommanderQuartermasterDB.EnableQuartermaster = value end,
     }, {
         label = "Include This Character",
-        tooltip = "File this character's inventory into the ledger so your other characters can see it. Turn off on characters you don't want listed.",
-        get = function() return CommanderQuartermasterDB.TrackThisCharacter end,
-        set = function(value) CommanderQuartermasterDB.TrackThisCharacter = value end,
+        tooltip = "List this character's holdings for your other characters. Applies to this character only — turning it off hides (never deletes) its records, so it's the right switch for bank alts you don't want in the Alts column.",
+        get = function()
+            local map = CommanderQuartermasterDB.UntrackedChars
+            return not (map and map[MyCharToken()])
+        end,
+        set = function(value)
+            local map = CommanderQuartermasterDB.UntrackedChars
+            if not map then
+                map = {}
+                CommanderQuartermasterDB.UntrackedChars = map
+            end
+            map[MyCharToken()] = (not value) and true or nil
+        end,
         isEnabled = Enabled,
     })
     panel:AddCheckboxPair({
@@ -206,6 +271,7 @@ local function CreatePanel()
     })
 
     panel:Finalize({ onDefaults = Reset })
+    FinishScroll()
 end
 
 frame:SetScript("OnEvent", function(self, event, arg1)
