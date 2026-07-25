@@ -292,7 +292,6 @@ local flashKind, flashStart = nil, 0
 local hotAlpha, hotAlphaTarget = 0, 0
 local smoothX, smoothY
 local cursorHidden = false
-local sinceCursor = 0
 
 -- Demo mode: a standing pretend cast and a pretend unit draining from full, so
 -- every option on both pages can be judged from the settings panel instead of
@@ -416,79 +415,16 @@ end
 --    currently pointing at."
 --
 -- That is the engine, not something an addon can out-argue, and it is why the
--- arrow always comes back the moment the pointer leaves the UI. It is also
--- why it does not matter much: mouseover casting happens on unit FRAMES,
--- which are UI, and the swap works perfectly there. So the default scope only
--- takes the arrow away where it was in the way in the first place.
---
--- Which argument form SetCursor accepts is also undocumented in practice --
--- it returns nothing useful and ignores a cursor it dislikes in silence -- so
--- every plausible form ships as a selectable method.
-local CURSOR_METHODS = {
-    -- Documented to hide the cursor outright, and needs no art at all
-    { key = "MISSING", label = "Non-existent path",   arg = TEXTURES .. "NoSuchCursor" },
-    { key = "BLP",    label = "Transparent BLP",      arg = TEXTURES .. "Blank.blp" },
-    { key = "TGA",    label = "Transparent TGA",      arg = TEXTURES .. "Blank.tga" },
-    { key = "PNG",    label = "Transparent PNG",      arg = TEXTURES .. "Blank.png" },
-    { key = "NO_EXT", label = "Path without suffix",  arg = TEXTURES .. "Blank" },
-    { key = "EMPTY",  label = "Empty path",           arg = "" },
-    { key = "CLEAR",  label = "Clear the cursor",     arg = nil, useNil = true },
-    -- Controls. Neither hides anything: they answer the prior question of
-    -- whether SetCursor can change the cursor on this client AT ALL. If the
-    -- crosshair shows up, paths work and only our blank art is being refused;
-    -- if nothing happens for either, the call is inert here and no amount of
-    -- fiddling with the texture will help.
-    { key = "CONTROL_PATH", label = "(test) Game crosshair",
-      arg = "Interface\\CURSOR\\Crosshairs", control = true },
-    { key = "CONTROL_NAME", label = "(test) Named cast cursor",
-      arg = "CAST_CURSOR", control = true },
-}
-
-local function CursorMethod(key)
-    for i = 1, #CURSOR_METHODS do
-        if CURSOR_METHODS[i].key == key then return CURSOR_METHODS[i], i end
-    end
-    return CURSOR_METHODS[1], 1
-end
-
-local lastCursorError
-
--- A texture the client has never loaded may simply not be available to become
--- a cursor, so every blank variant is force-resident at login: assigned once to
--- an off-screen texture, which is enough to pull the file in.
-local preloader = CreateFrame("Frame", nil, UIParent)
-preloader:SetSize(1, 1)
-preloader:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -100, -100)
-preloader:Hide()
-
-local function PreloadCursorArt()
-    for i = 1, #CURSOR_METHODS do
-        local method = CURSOR_METHODS[i]
-        if type(method.arg) == "string" and method.arg ~= ""
-            and not method.arg:find("_CURSOR") then
-            local texture = preloader:CreateTexture(nil, "BACKGROUND")
-            texture:SetTexture(method.arg)
-            texture:SetAllPoints(preloader)
-            texture:SetAlpha(0)
-        end
-    end
-end
+-- arrow always comes back the moment the pointer leaves the UI. It also does
+-- not matter much: mouseover casting happens on unit FRAMES, which are UI, and
+-- the swap works there. Pointing SetCursor at a path that does not resolve is
+-- the documented way to hide the cursor outright, so it needs no art at all.
+local MISSING_CURSOR = TEXTURES .. "NoSuchCursor"
 
 local function HideSystemCursor()
-    if not SetCursor then
-        lastCursorError = "SetCursor does not exist on this client"
-        return false
-    end
-    local method = CursorMethod(DB("CursorHideMethod", "TGA"))
-    local ok, err
-    if method.useNil then
-        ok, err = pcall(SetCursor, nil)
-    else
-        ok, err = pcall(SetCursor, method.arg)
-    end
-    lastCursorError = (not ok) and tostring(err) or nil
+    if not SetCursor then return end
+    pcall(SetCursor, MISSING_CURSOR)
     cursorHidden = true
-    return ok
 end
 
 local function RestoreSystemCursor()
@@ -988,16 +924,12 @@ local function RefreshMouseFocus()
     cachedFocus = MouseFocusFrame and MouseFocusFrame() or nil
 end
 
--- Where the arrow is allowed to be taken away. Over the world the engine
--- overrules us whatever we do, so the only scopes that can work are UI ones --
--- and the default is the one that matters: the pointer sitting on a unit
--- frame, which is the whole reason this module exists.
+-- Where the arrow is allowed to be taken away: anywhere over the interface.
+-- Over the world the engine overrules us whatever we do (cachedFocus is nil
+-- there, since WorldFrame/UIParent are filtered out), so there is nothing to
+-- decide -- if the pointer is on a real UI frame, the swap can land.
 local function CursorScopeAllows()
-    local scope = DB("CursorHideScope", "UNIT_FRAMES")
-    if scope == "ALWAYS" then return true end
-    if not cachedFocus then return false end
-    if scope == "UI" then return true end
-    return UnitExists("mouseover") and true or false
+    return cachedFocus ~= nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -1056,7 +988,14 @@ MouseFocusFrame = function()
     if GetMouseFoci then
         local ok, result = pcall(GetMouseFoci)
         if not ok then return nil end
-        focus = type(result) == "table" and result[1] or result
+        -- GetMouseFoci returns a LIST: the first entry, or nil for an empty
+        -- list (pointer over nothing). Take result[1] rather than `result or`,
+        -- which would hand back the empty list itself as a bogus focus.
+        if type(result) == "table" then
+            focus = result[1]
+        else
+            focus = result
+        end
     elseif GetMouseFocus then
         local ok, result = pcall(GetMouseFocus)
         if not ok then return nil end
@@ -1260,17 +1199,13 @@ local function DriverUpdate(_, elapsed)
         hot:SetShown(hotAlpha > 0)
     end
 
-    -- The client re-asserts the cursor on every focus change, so the swap has
-    -- to be re-applied while it is meant to be gone. Never while something is
-    -- being dragged: that cursor is carrying an item or a spell and blanking
-    -- it would hide what you are holding.
+    -- The client re-asserts the cursor on every focus change, so the swap is
+    -- re-applied every frame while it is meant to be gone. Never while
+    -- something is being dragged: that cursor is carrying an item or a spell,
+    -- and blanking it would hide what you are holding.
     if hotWants and DB("HideSystemCursor", false) and CursorScopeAllows()
         and not (GetCursorInfo and GetCursorInfo()) then
-        sinceCursor = sinceCursor + elapsed
-        if sinceCursor >= DB("CursorReapply", 0.05) then
-            sinceCursor = 0
-            HideSystemCursor()
-        end
+        HideSystemCursor()
     elseif cursorHidden then
         RestoreSystemCursor()
     end
@@ -1397,121 +1332,6 @@ function CommanderReticle_DemoStop()
     end
 end
 
--- Walk the cursor-hiding methods one at a time. SetCursor reports nothing back
--- and a rejected cursor fails silently, so the only honest test is to apply
--- one and look at the screen -- this makes that a two-second loop instead of a
--- settings expedition.
-function CommanderReticle_CursorProbe()
-    if not SetCursor then
-        print("|cff66ccffCommander Reticle|r: this client has no SetCursor at all — the arrow cannot be hidden. Smart Dodge is the next best thing.")
-        return
-    end
-    if not CommanderReticleDB.HideSystemCursor then
-        CommanderReticleDB.HideSystemCursor = true
-        print("|cff66ccffCommander Reticle|r: turned Hide System Cursor on for the test.")
-    end
-
-    local _, index = CursorMethod(DB("CursorHideMethod", "TGA"))
-    index = index % #CURSOR_METHODS + 1
-    local method = CURSOR_METHODS[index]
-    CommanderReticleDB.CursorHideMethod = method.key
-    cursorHidden = false
-    local ok = HideSystemCursor()
-    Commander.Notify(COMMANDER_RETICLE_EVENTS.UPDATE)
-
-    print(string.format("|cff66ccffCommander Reticle|r: cursor method %d of %d — |cffffd100%s|r — %s",
-        index, #CURSOR_METHODS, method.label,
-        ok and "accepted without error" or ("rejected: " .. tostring(lastCursorError))))
-    print("  Is the arrow gone? If yes, you are done. If not, run |cffffd100/creticle cursor|r for the next method.")
-    if not ResetCursor then
-        print("  |cffff8080Note|r: this client has no ResetCursor, so turning the option back off may need a /reload.")
-    end
-end
-
--- Before asking "which blank cursor works", answer "can this client change the
--- cursor at all". Sets a cursor that is obviously not the arrow: if the pointer
--- visibly changes, SetCursor works and the problem is our art; if it does not,
--- the call is inert here and the arrow cannot be replaced this way.
-function CommanderReticle_CursorControl()
-    if not SetCursor then
-        print("|cff66ccffCommander Reticle|r: this client has no SetCursor at all.")
-        return
-    end
-    local ok, err = pcall(SetCursor, "Interface\\CURSOR\\Crosshairs")
-    local okNamed, errNamed = pcall(SetCursor, "CAST_CURSOR")
-    print("|cff66ccffCommander Reticle|r: control test — the pointer should have just changed shape.")
-    print(string.format("  path form  (Interface\\CURSOR\\Crosshairs): %s",
-        ok and "no error" or ("error: " .. tostring(err))))
-    print(string.format("  named form (CAST_CURSOR): %s",
-        okNamed and "no error" or ("error: " .. tostring(errNamed))))
-    print("  |cffffd100Did the pointer change?|r If YES, SetCursor works and only the blank art is being refused — keep walking /creticle cursor. If NO, SetCursor cannot replace the pointer on this client and the arrow is here to stay.")
-    if ResetCursor then pcall(ResetCursor) end
-end
-
--- The client draws the pointer as a hardware cursor by default. The cursor
--- documentation notes that some art "will only work for software cursors", so
--- flipping gxCursor is the one remaining lever worth pulling if the swap is
--- being refused. This is a graphics setting and it persists, so it is only
--- ever changed by the player pressing the button, never automatically.
-function CommanderReticle_SoftwareCursor()
-    local get = (C_CVar and C_CVar.GetCVar) or GetCVar
-    local set = (C_CVar and C_CVar.SetCVar) or SetCVar
-    if not (get and set) then
-        print("|cff66ccffCommander Reticle|r: this client exposes no console variables to change.")
-        return
-    end
-    local ok, current = pcall(get, "gxCursor")
-    if not ok then current = nil end
-    local target = (tostring(current) == "1") and "0" or "1"
-    local setOk, err = pcall(set, "gxCursor", target)
-    if not setOk then
-        print("|cff66ccffCommander Reticle|r: could not change gxCursor — " .. tostring(err))
-        return
-    end
-    print(string.format("|cff66ccffCommander Reticle|r: gxCursor %s -> |cffffd100%s|r (%s cursor). This is a graphics setting and it sticks; put it back with |cffffd100/console gxCursor %s|r.",
-        tostring(current), target, target == "0" and "software" or "hardware", tostring(current)))
-end
-
--- Dump whatever this client actually offers around the cursor, rather than
--- guessing from memory. Paste the output back if none of the methods land.
-function CommanderReticle_ApiProbe()
-    print("|cff66ccffCommander Reticle|r: cursor API on this client —")
-
-    local found = {}
-    for name, value in pairs(_G) do
-        if type(name) == "string" and name:lower():find("cursor") then
-            found[#found + 1] = name .. " |cff888888(" .. type(value) .. ")|r"
-        end
-    end
-    table.sort(found)
-    if #found == 0 then
-        print("  no globals mention the cursor at all")
-    else
-        local line = "  "
-        for i = 1, #found do
-            line = line .. found[i] .. "   "
-            if i % 3 == 0 or i == #found then
-                print(line)
-                line = "  "
-            end
-        end
-    end
-
-    local cvars = {
-        "cursorSizePreferred", "hardwareCursor", "useHardwareCursor",
-        "cursorSize", "showCursor", "hideCursor", "cursorFreelook",
-    }
-    local getCVar = C_CVar and C_CVar.GetCVar or GetCVar
-    if getCVar then
-        for i = 1, #cvars do
-            local ok, value = pcall(getCVar, cvars[i])
-            if ok and value ~= nil then
-                print(string.format("  cvar %s = %s", cvars[i], tostring(value)))
-            end
-        end
-    end
-end
-
 -- ---------------------------------------------------------------------------
 -- Wiring
 -- ---------------------------------------------------------------------------
@@ -1521,6 +1341,11 @@ local watchTicker
 local function Watch()
     if not DB("EnableReticle", true) then return end
     if awake then return end
+    -- Hiding the arrow over the interface means waking wherever the pointer is
+    -- over a UI frame -- which only the mouse-focus tells us, and the driver
+    -- that normally refreshes it is asleep. So sample it here while idle, but
+    -- only when the feature that needs it is on.
+    if DB("HideSystemCursor", false) then RefreshMouseFocus() end
     local ringWants = ShouldShowRing()
     if ringWants or ShouldShowHotspot(ringWants) then Wake() end
 end
@@ -1585,7 +1410,6 @@ events:RegisterEvent("UI_ERROR_MESSAGE")
 events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if event == "PLAYER_LOGIN" then
         BuildErrorSet()
-        PreloadCursorArt()
         Commander.AddListener(COMMANDER_RETICLE_EVENTS.UPDATE, Apply)
         Apply()
         -- Logging in or reloading mid-cast still gets an arc

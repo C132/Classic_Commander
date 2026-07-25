@@ -99,14 +99,11 @@ local DefaultSettings = {
     HotspotStyle = "NONE",         -- NONE | DOT | CROSS | PLUS
     HotspotSize = 10,
     HotspotColor = "BONE",
+    -- Take the arrow away over the interface (a non-existent cursor path, the
+    -- documented way to hide it, re-applied every frame). The engine keeps the
+    -- world cursor no matter what, but unit frames are interface, so the case
+    -- this module exists for is covered.
     HideSystemCursor = false,
-    -- SetCursor is documented to have NO EFFECT over WorldFrame: the engine
-    -- locks the world cursor to whatever you are pointing at. So the arrow can
-    -- only be taken away over the UI -- which happens to include every unit
-    -- frame, the one case this module exists for. Hence the scope.
-    CursorHideScope = "UNIT_FRAMES",  -- UNIT_FRAMES | UI | ALWAYS
-    CursorHideMethod = "MISSING",     -- MISSING | BLP | TGA | PNG | NO_EXT | EMPTY | CLEAR
-    CursorReapply = 0.05,
 
     -- Outside the ring
     ShowSpellName = false,
@@ -184,21 +181,12 @@ local function CreateCorePanel()
         key = "Reticle",
         title = "Reticle",
         addonName = "Commander_Reticle",
-        description = "Turns the mouse pointer into a cast bar. A hollow ring the size of the cursor follows the pointer and sweeps as you cast, so mouseover casting no longer parks an opaque arrow on top of the health bar you are aiming at — the middle of the ring stays empty, and the ring reports the cast where your eyes already are. See Reticle Extras for the global cooldown ring, cursor replacement, and feedback flashes.",
+        description = "Turns the mouse pointer into a cast bar. A hollow ring the size of the cursor follows the pointer and sweeps as you cast, so mouseover casting no longer parks an opaque arrow on top of the health bar you are aiming at — the middle of the ring stays empty, and the ring reports the cast, the hovered unit's health, the global cooldown, and how the cast ended, all where your eyes already are.",
         event = COMMANDER_RETICLE_EVENTS.UPDATE,
         slash = { "/creticle", "/cret" },
         slashHandlers = {
             test = function() if CommanderReticle_Test then CommanderReticle_Test() end end,
             demo = function() if CommanderReticle_Demo then CommanderReticle_Demo() end end,
-            cursor = function()
-                if CommanderReticle_CursorProbe then CommanderReticle_CursorProbe() end
-            end,
-            control = function()
-                if CommanderReticle_CursorControl then CommanderReticle_CursorControl() end
-            end,
-            probe = function()
-                if CommanderReticle_ApiProbe then CommanderReticle_ApiProbe() end
-            end,
         },
     })
     local finishScroll = MakeScrollable(panel, "CommanderReticleCoreScroll")
@@ -470,30 +458,7 @@ local function CreateCorePanel()
         {
             label = "Demo (20s)",
             width = 120,
-            tooltip = "Hold everything on screen for twenty seconds: a looping pretend cast, a pretend target draining from full to nearly dead, and combo points cycling. Change any setting while it runs and watch it take effect — no target and no fight needed (also: /creticle demo).",
-            onClick = function() if CommanderReticle_Demo then CommanderReticle_Demo() end end,
-        },
-    })
-
-    panel:Finalize({ onDefaults = Reset })
-    finishScroll()
-end
-
-local function CreateExtrasPanel()
-    local panel = Commander.UI.NewPanel({
-        key = "ReticleExtras",
-        title = "Reticle Extras",
-        addonName = "Commander_Reticle",
-        description = "The rest of what a cursor-sized ring can tell you: a global cooldown ring on its own radius, the point in a cast where the next one can already be queued, and the flashes that report how the cast ended.",
-        event = COMMANDER_RETICLE_EVENTS.UPDATE,
-    })
-    local finishScroll = MakeScrollable(panel, "CommanderReticleExtrasScroll")
-
-    panel:AddButtonRow({
-        {
-            label = "Demo (20s)",
-            width = 120,
-            tooltip = "Hold everything on screen for twenty seconds — looping pretend cast, pretend target draining from full, combo points cycling — so every option on this page can be judged live from right here (also: /creticle demo).",
+            tooltip = "Hold everything on screen for twenty seconds: a looping pretend cast, a pretend target draining from full to nearly dead, and combo points cycling. Change any setting further down the page while it runs and watch it take effect — no target and no fight needed (also: /creticle demo).",
             onClick = function() if CommanderReticle_Demo then CommanderReticle_Demo() end end,
         },
     })
@@ -618,92 +583,10 @@ local function CreateExtrasPanel()
     })
     panel:AddCheckbox({
         label = "Hide System Cursor",
-        tooltip = "Take the game's arrow away so the hotspot is your whole pointer and nothing opaque sits on the health bar. The engine only allows this over the interface — while the pointer is on the 3D world it locks the cursor to whatever you are pointing at, and no addon can override that — but unit frames are interface, so the case this module exists for is covered. The hotspot is forced on wherever the arrow is hidden, so you are never left with no pointer at all.",
+        tooltip = "Take the game's arrow away over the interface, so the hotspot is your whole pointer and nothing opaque sits on the health bar. It comes back over the 3D world — the engine locks the world cursor to whatever you are pointing at and no addon can override that — but unit frames are interface, so the case this module exists for is covered. The hotspot is forced on wherever the arrow is hidden, so you are never left with no pointer at all.",
         get = function() return CommanderReticleDB.HideSystemCursor end,
         set = function(value) CommanderReticleDB.HideSystemCursor = value end,
         isEnabled = Enabled,
-    })
-    panel:AddDropdown({
-        label = "Hide It Where",
-        tooltip = "On Unit Frames takes the arrow away only when the pointer is on a frame belonging to a unit — exactly when it would be covering a health bar, and nowhere else. Anywhere in the Interface also clears it over bags, chat, and every other panel. Everywhere additionally asks for it over the 3D world, which the engine will refuse; it is here for completeness, not because it works.",
-        options = {
-            { text = "On Unit Frames", value = "UNIT_FRAMES" },
-            { text = "Anywhere in the Interface", value = "UI" },
-            { text = "Everywhere (world will refuse)", value = "ALWAYS" },
-        },
-        width = 220,
-        get = function() return CommanderReticleDB.CursorHideScope end,
-        set = function(value) CommanderReticleDB.CursorHideScope = value end,
-        isEnabled = function() return Enabled() and CommanderReticleDB.HideSystemCursor end,
-    })
-    panel:AddDropdownPair({
-        label = "Hiding Method",
-        tooltip = "How the arrow is asked to go away. A non-existent path is documented to hide the cursor outright and needs no art at all, which is why it is the default; the transparent textures ship in all three formats because the cursor loader is not necessarily the loader that reads ordinary art (the game's own cursors are uncompressed BLP). The two test entries do not hide anything — they prove whether this client will change the cursor at all.",
-        options = {
-            { text = "Non-existent path", value = "MISSING" },
-            { text = "Transparent BLP", value = "BLP" },
-            { text = "Transparent TGA", value = "TGA" },
-            { text = "Transparent PNG", value = "PNG" },
-            { text = "Path, no suffix", value = "NO_EXT" },
-            { text = "Empty path", value = "EMPTY" },
-            { text = "Clear cursor", value = "CLEAR" },
-            { text = "(test) Crosshair", value = "CONTROL_PATH" },
-            { text = "(test) Named cursor", value = "CONTROL_NAME" },
-        },
-        width = 140,
-        get = function() return CommanderReticleDB.CursorHideMethod end,
-        set = function(value) CommanderReticleDB.CursorHideMethod = value end,
-        isEnabled = function() return Enabled() and CommanderReticleDB.HideSystemCursor end,
-    }, {
-        label = "Re-apply Every",
-        tooltip = "The client re-asserts its own cursor whenever the mouse moves between frames, so the swap has to be re-applied. Faster holds it more stubbornly; if the arrow flickers back into view, try the fastest setting.",
-        options = {
-            { text = "Every frame", value = 0 },
-            { text = "0.02 s", value = 0.02 },
-            { text = "0.05 s", value = 0.05 },
-            { text = "0.10 s", value = 0.1 },
-            { text = "0.25 s", value = 0.25 },
-        },
-        width = 140,
-        get = function() return CommanderReticleDB.CursorReapply end,
-        set = function(value) CommanderReticleDB.CursorReapply = value end,
-        isEnabled = function() return Enabled() and CommanderReticleDB.HideSystemCursor end,
-    })
-    panel:AddButtonRow({
-        {
-            label = "Control Test",
-            width = 120,
-            tooltip = "Start here. Sets a cursor that is obviously not the arrow — if the pointer visibly changes shape, this client does allow the cursor to be replaced and only the blank art is being refused. If nothing happens, no amount of fiddling with the texture will help (also: /creticle control).",
-            onClick = function()
-                if CommanderReticle_CursorControl then CommanderReticle_CursorControl() end
-            end,
-            isEnabled = Enabled,
-        },
-        {
-            label = "Try Next Method",
-            width = 130,
-            tooltip = "Switch to the next hiding method and apply it right now, reporting whether the client raised an error. Keep pressing until the arrow disappears (also: /creticle cursor).",
-            onClick = function()
-                if CommanderReticle_CursorProbe then CommanderReticle_CursorProbe() end
-            end,
-            isEnabled = Enabled,
-        },
-        {
-            label = "Dump API",
-            width = 100,
-            tooltip = "Print every cursor-related function and console variable this client actually has, rather than guessing at them. Useful to paste back when nothing else works (also: /creticle probe).",
-            onClick = function()
-                if CommanderReticle_ApiProbe then CommanderReticle_ApiProbe() end
-            end,
-        },
-        {
-            label = "Toggle Software Cursor",
-            width = 180,
-            tooltip = "Flip the game's gxCursor setting between the hardware pointer and the software one. Some cursor art is documented to work only with a software cursor, so this is worth one try if the swap is being refused. This is a real graphics setting and it persists — put it back with /console gxCursor 1. Nothing here changes it unless you press this.",
-            onClick = function()
-                if CommanderReticle_SoftwareCursor then CommanderReticle_SoftwareCursor() end
-            end,
-        },
     })
 
     panel:AddSection("Outside the Ring", "Two readouts that live just beyond the reticle, for when the ring itself has run out of room.")
@@ -805,7 +688,6 @@ local function OnEvent(self, event, addonName)
         end
     elseif event == "PLAYER_LOGIN" then
         CreateCorePanel()
-        CreateExtrasPanel()
     end
 end
 
