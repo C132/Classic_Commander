@@ -1,0 +1,13 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Threat
+## Author: Devin
+## Version: 2.1.0
+## Notes: Role-adaptive threat meter. Pick Tank, Damage, or Healer and the board reshapes: distance-to-pull bars and aggro warnings for damage and healers, grip and chaser watch with loose-mob counts for tanks. Full bar width is the pull point.
+## IconTexture: Interface\Icons\Ability_Physical_Taunt
+## SavedVariables: CommanderThreatDB
+## RequiredDeps: Commander_Events
+
+CommanderThreatDB.lua
+CommanderThreatEngine.lua
+CommanderThreat.lua
