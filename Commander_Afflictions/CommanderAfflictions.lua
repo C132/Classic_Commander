@@ -43,6 +43,11 @@ local function LayoutMode()
     return (CommanderAfflictionsDB and CommanderAfflictionsDB.Layout) or "BARS_DOWN"
 end
 
+-- Both strip directions share every icon-strip code path except row anchoring
+local function IsIconStrip(layout)
+    return layout == "ICONS" or layout == "ICONS_RTL"
+end
+
 local function AcquireRow(index)
     local row = rowPool[index]
     if row then return row end
@@ -153,9 +158,13 @@ local function ApplyRowGeometry(row, index, layout, barWidth, portraits)
     row.portraitBack:ClearAllPoints()
     row.portraitBack:SetPoint("TOPLEFT", row.portrait, "TOPLEFT", -1, 1)
     row.portraitBack:SetPoint("BOTTOMRIGHT", row.portrait, "BOTTOMRIGHT", 1, -1)
-    if layout == "ICONS" then
+    if IsIconStrip(layout) then
         row:SetSize(ICON_SIZE, ICON_SIZE + ICON_BAR_HEIGHT + 2)
-        row:SetPoint("TOPLEFT", root, "TOPLEFT", (index - 1) * (ICON_SIZE + ICON_GAP), 0)
+        if layout == "ICONS_RTL" then
+            row:SetPoint("TOPRIGHT", root, "TOPRIGHT", -((index - 1) * (ICON_SIZE + ICON_GAP)), 0)
+        else
+            row:SetPoint("TOPLEFT", root, "TOPLEFT", (index - 1) * (ICON_SIZE + ICON_GAP), 0)
+        end
         row.icon:SetSize(ICON_SIZE, ICON_SIZE)
         row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
         row.barBG:SetSize(ICON_SIZE, ICON_BAR_HEIGHT)
@@ -459,11 +468,11 @@ local function Draw()
         local hasTimes = item.remaining and entry.duration and entry.duration > 0
         -- The slim underbar is an overlay choice in the icon strip; the
         -- big bar is the row itself in the bar layouts and always stays
-        local showBar = layout ~= "ICONS" or overlay == "BAR" or overlay == "BOTH"
+        local showBar = not IsIconStrip(layout) or overlay == "BAR" or overlay == "BOTH"
         row.barBG:SetShown(showBar)
         row.bar:SetShown(showBar)
-        local fillWidth = (layout == "ICONS") and ICON_SIZE or barWidth
-        local fillHeight = (layout == "ICONS") and ICON_BAR_HEIGHT or BAR_HEIGHT
+        local fillWidth = IsIconStrip(layout) and ICON_SIZE or barWidth
+        local fillHeight = IsIconStrip(layout) and ICON_BAR_HEIGHT or BAR_HEIGHT
         if hasTimes then
             local progress = item.remaining / entry.duration
             row.bar:SetSize(math.max(fillWidth * progress, 1), fillHeight)
@@ -500,7 +509,7 @@ local function Draw()
             if item.remaining then
                 text = string.format("%s  %ds", text, secs)
             end
-            if layout ~= "ICONS" then
+            if not IsIconStrip(layout) then
                 row.label:SetText(text)
             end
             if hasTimes and overlay == "TEXT" then
@@ -547,7 +556,7 @@ local function Draw()
     -- Fixed size keeps a stable footprint for the styled backdrop
     local slots = CommanderAfflictionsDB.FixedHeight
         and (CommanderAfflictionsDB.MaxBars or 6) or math.max(shown, 1)
-    if layout == "ICONS" then
+    if IsIconStrip(layout) then
         root:SetSize(slots * (ICON_SIZE + ICON_GAP) - ICON_GAP, ICON_SIZE + ICON_BAR_HEIGHT + 2)
     else
         root:SetSize(barWidth + 20 + (showPortraits and (BAR_HEIGHT + 2) or 0),

@@ -101,11 +101,12 @@ local function CreateOptionsPanel()
     })
     panel:AddDropdownPair({
         label = "Layout",
-        tooltip = "Bars list afflictions with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching left to right (hover for the full debuff tooltip).",
+        tooltip = "Bars list afflictions with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching out in either direction (hover for the full debuff tooltip). Right to left sits best parked on the right side of the screen, or with Fixed Frame Size on.",
         options = {
             { text = "Bars — grow down", value = "BARS_DOWN" },
             { text = "Bars — grow up", value = "BARS_UP" },
-            { text = "Icon Strip", value = "ICONS" },
+            { text = "Icon Strip — left to right", value = "ICONS" },
+            { text = "Icon Strip — right to left", value = "ICONS_RTL" },
         },
         get = function() return CommanderAfflictionsDB.Layout end,
         set = function(value) CommanderAfflictionsDB.Layout = value end,
@@ -131,7 +132,9 @@ local function CreateOptionsPanel()
         get = function() return CommanderAfflictionsDB.BarWidth end,
         set = function(value) CommanderAfflictionsDB.BarWidth = value end,
         isEnabled = function()
-            return CommanderAfflictionsDB.EnableAfflictions and CommanderAfflictionsDB.Layout ~= "ICONS"
+            local layout = CommanderAfflictionsDB.Layout
+            return CommanderAfflictionsDB.EnableAfflictions
+                and layout ~= "ICONS" and layout ~= "ICONS_RTL"
         end,
     }, {
         label = "Board Length",
