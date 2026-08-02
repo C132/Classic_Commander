@@ -37,6 +37,11 @@ local function LayoutMode()
     return (CommanderProductionDB and CommanderProductionDB.Layout) or "BARS_DOWN"
 end
 
+-- Both strip directions share every icon-strip code path except row anchoring
+local function IsIconStrip(layout)
+    return layout == "ICONS" or layout == "ICONS_RTL"
+end
+
 local function AcquireRow(index)
     local row = rowPool[index]
     if row then return row end
@@ -112,11 +117,15 @@ local function ApplyRowGeometry(row, index, layout, barWidth)
     row.barBG:ClearAllPoints()
     row.bar:ClearAllPoints()
     row.label:ClearAllPoints()
-    if layout == "ICONS" then
-        -- SC2 replay production tab: icons marching right, a slim
-        -- progress bar under each
+    if IsIconStrip(layout) then
+        -- SC2 replay production tab: icons marching out from the anchored
+        -- edge in either direction, a slim progress bar under each
         row:SetSize(ICON_SIZE, ICON_SIZE + ICON_BAR_HEIGHT + 2)
-        row:SetPoint("TOPLEFT", root, "TOPLEFT", (index - 1) * (ICON_SIZE + ICON_GAP), 0)
+        if layout == "ICONS_RTL" then
+            row:SetPoint("TOPRIGHT", root, "TOPRIGHT", -((index - 1) * (ICON_SIZE + ICON_GAP)), 0)
+        else
+            row:SetPoint("TOPLEFT", root, "TOPLEFT", (index - 1) * (ICON_SIZE + ICON_GAP), 0)
+        end
         row.icon:SetSize(ICON_SIZE, ICON_SIZE)
         row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
         row.barBG:SetSize(ICON_SIZE, ICON_BAR_HEIGHT)
@@ -151,13 +160,91 @@ local function FormatRemaining(seconds)
     return string.format("%ds", math.ceil(seconds))
 end
 
-local function ReadyAlert(name)
-    if CommanderProductionDB.ReadyAlert then
-        if CommanderProductionDB.ReadyChat ~= false then
-            print(string.format("Commander Production: %s ready", name))
-        end
-        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB, "Master")
+-- Ready Callout banner: a top-center announcement in the queue's READY
+-- green. Same generation-token pattern as Commander_Adjutant's banner (an
+-- earlier banner's uncancellable hold callback must not start fading a
+-- later one), parked 40px below Adjutant's slot so the two never overlap.
+local BANNER_HOLD = 3.0
+local BANNER_FADE_STEP = 0.06
+
+local banner = CreateFrame("Frame", "CommanderProductionBanner", UIParent)
+banner:SetSize(600, 30)
+banner:SetPoint("TOP", UIParent, "TOP", 0, -180)
+banner:SetFrameStrata("HIGH")
+banner:Hide()
+
+local bannerText = banner:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+bannerText:SetPoint("CENTER")
+bannerText:SetTextColor(0.3, 1, 0.4)
+
+local bannerTicker
+local bannerGeneration = 0
+
+local function StopBannerFade()
+    if bannerTicker then
+        bannerTicker:Cancel()
+        bannerTicker = nil
     end
+end
+
+local function ShowReadyBanner(text)
+    StopBannerFade()
+    bannerGeneration = bannerGeneration + 1
+    local generation = bannerGeneration
+    bannerText:SetText(text)
+    banner:SetAlpha(1)
+    banner:Show()
+    C_Timer.After(BANNER_HOLD, function()
+        if generation ~= bannerGeneration then return end
+        StopBannerFade()
+        bannerTicker = C_Timer.NewTicker(0.05, function()
+            local alpha = banner:GetAlpha() - BANNER_FADE_STEP
+            if alpha <= 0 then
+                banner:Hide()
+                banner:SetAlpha(1)
+                StopBannerFade()
+            else
+                banner:SetAlpha(alpha)
+            end
+        end)
+    end)
+end
+
+-- Every kit here is already in service elsewhere in the suite, so all are
+-- known-good on this client
+local READY_SOUNDS = {
+    CLICK = SOUNDKIT.IG_CHARACTER_INFO_TAB,
+    READY_CHECK = SOUNDKIT.READY_CHECK,
+    QUEST = SOUNDKIT.IG_QUEST_LIST_COMPLETE,
+    WARNING = SOUNDKIT.RAID_WARNING,
+}
+
+local function ReadyAlert(name)
+    if not CommanderProductionDB.ReadyAlert then return end
+    local callout = CommanderProductionDB.ReadyCallout or "CHAT"
+    if callout == "CHAT" or callout == "BOTH" then
+        print(string.format("Commander Production: %s ready", name))
+    end
+    if callout == "BANNER" or callout == "BOTH" then
+        ShowReadyBanner(string.format("%s ready", name))
+    end
+    local sound = READY_SOUNDS[CommanderProductionDB.ReadySound or "CLICK"]
+    if sound then
+        PlaySound(sound, "Master")
+    end
+end
+
+-- Settings-panel previews: picking a sound or a banner callout plays the
+-- result immediately instead of costing a 30-second test cooldown
+function CommanderProduction_PreviewReadySound(value)
+    local sound = READY_SOUNDS[value]
+    if sound then
+        PlaySound(sound, "Master")
+    end
+end
+
+function CommanderProduction_PreviewReadyBanner()
+    ShowReadyBanner("Production ready")
 end
 
 -- Scratch tables reused across sweeps: `scanned` holds every spellbook
@@ -305,7 +392,7 @@ local function Draw()
         row.icon:SetTexture(item.entry.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
         -- In the icon strip the slim bar is itself an overlay choice; in
         -- the bar layouts the big bar is the row and always stays
-        local showBar = layout ~= "ICONS" or overlay == "BAR" or overlay == "BOTH"
+        local showBar = not IsIconStrip(layout) or overlay == "BAR" or overlay == "BOTH"
         row.barBG:SetShown(showBar)
         row.bar:SetShown(showBar)
         if item.ready then
@@ -313,14 +400,14 @@ local function Draw()
             -- Text content is static per item (secs key -1) — only the
             -- first draw after a change pays the format
             row.bar:SetVertexColor(0.3, 1, 0.4, 0.9)
-            if layout == "ICONS" then
+            if IsIconStrip(layout) then
                 row.bar:SetSize(ICON_SIZE, ICON_BAR_HEIGHT)
             else
                 row.bar:SetSize(barWidth, BAR_HEIGHT)
             end
             if row.shownName ~= item.name or row.shownSecs ~= -1 then
                 row.shownName, row.shownSecs = item.name, -1
-                if layout ~= "ICONS" then
+                if not IsIconStrip(layout) then
                     row.label:SetText(string.format("%s  READY", item.name))
                 end
                 row.tipText = string.format("%s — ready", item.name)
@@ -332,7 +419,7 @@ local function Draw()
         else
             local progress = 1 - (item.remaining / item.entry.duration)
             row.bar:SetVertexColor(0.35, 0.65, 1, 0.9)
-            if layout == "ICONS" then
+            if IsIconStrip(layout) then
                 row.bar:SetSize(math.max(ICON_SIZE * progress, 1), ICON_BAR_HEIGHT)
             else
                 row.bar:SetSize(math.max(barWidth * progress, 1), BAR_HEIGHT)
@@ -343,7 +430,7 @@ local function Draw()
             if row.shownName ~= item.name or row.shownSecs ~= secs
                 or row.shownOverlay ~= overlay then
                 row.shownName, row.shownSecs, row.shownOverlay = item.name, secs, overlay
-                if layout ~= "ICONS" then
+                if not IsIconStrip(layout) then
                     row.label:SetText(string.format("%s  %s", item.name, FormatRemaining(item.remaining)))
                 end
                 if overlay == "TEXT" then
@@ -380,7 +467,7 @@ local function Draw()
     -- Unlocked or Always Show keeps the frame visible with an empty queue.
     local slots = CommanderProductionDB.FixedHeight
         and (CommanderProductionDB.MaxBars or 5) or math.max(shown, 1)
-    if layout == "ICONS" then
+    if IsIconStrip(layout) then
         root:SetSize(slots * (ICON_SIZE + ICON_GAP) - ICON_GAP, ICON_SIZE + ICON_BAR_HEIGHT + 2)
     else
         root:SetSize(barWidth + 20, slots * (BAR_HEIGHT + ROW_GAP))

@@ -9,7 +9,8 @@ local DefaultSettings = {
     MinDuration = 10,
     MaxBars = 5,
     ReadyAlert = true,
-    ReadyChat = true,
+    ReadySound = "CLICK",
+    ReadyCallout = "CHAT",
     LingerReady = false,
     AlwaysShow = false,
     FixedHeight = false,
@@ -36,7 +37,7 @@ local function CreateOptionsPanel()
         key = "Production",
         title = "Production",
         addonName = "Commander_Production",
-        description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar filling toward ready — like watching units build in an RTS — stacked at the left edge of the screen, longest waits at the bottom, with an optional callout the moment something finishes.",
+        description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar filling toward ready — like watching units build in an RTS — stacked at the left edge of the screen, longest waits at the bottom, with a sound and callout of your choice the moment something finishes.",
         event = COMMANDER_PRODUCTION_EVENTS.UPDATE,
         slash = { "/cprod" },
         slashHandlers = {
@@ -60,11 +61,12 @@ local function CreateOptionsPanel()
     })
     panel:AddDropdownPair({
         label = "Layout",
-        tooltip = "Bars list spells with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching left to right (hover an icon for the full spell tooltip).",
+        tooltip = "Bars list spells with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching out in either direction (hover an icon for the full spell tooltip). Right to left sits best parked on the right side of the screen, or with Fixed Frame Size on.",
         options = {
             { text = "Bars — grow down", value = "BARS_DOWN" },
             { text = "Bars — grow up", value = "BARS_UP" },
-            { text = "Icon Strip", value = "ICONS" },
+            { text = "Icon Strip — left to right", value = "ICONS" },
+            { text = "Icon Strip — right to left", value = "ICONS_RTL" },
         },
         get = function() return CommanderProductionDB.Layout end,
         set = function(value) CommanderProductionDB.Layout = value end,
@@ -90,7 +92,9 @@ local function CreateOptionsPanel()
         get = function() return CommanderProductionDB.BarWidth end,
         set = function(value) CommanderProductionDB.BarWidth = value end,
         isEnabled = function()
-            return CommanderProductionDB.EnableProduction and CommanderProductionDB.Layout ~= "ICONS"
+            local layout = CommanderProductionDB.Layout
+            return CommanderProductionDB.EnableProduction
+                and layout ~= "ICONS" and layout ~= "ICONS_RTL"
         end,
     })
     panel:AddSliderPair({
@@ -112,7 +116,7 @@ local function CreateOptionsPanel()
     })
     panel:AddCheckboxPair({
         label = "Ready Alert",
-        tooltip = "Play a click (and optionally a chat callout) when a tracked cooldown finishes.",
+        tooltip = "Master switch for completion alerts — the Ready Sound and Ready Callout below fire the moment a tracked cooldown finishes.",
         get = function() return CommanderProductionDB.ReadyAlert end,
         set = function(value) CommanderProductionDB.ReadyAlert = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
@@ -123,15 +127,46 @@ local function CreateOptionsPanel()
         set = function(value) CommanderProductionDB.FixedHeight = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
-    panel:AddCheckboxPair({
-        label = "Ready Chat Message",
-        tooltip = "Include the chat line in ready alerts; uncheck for the click sound alone.",
-        get = function() return CommanderProductionDB.ReadyChat end,
-        set = function(value) CommanderProductionDB.ReadyChat = value end,
-        isEnabled = function()
-            return CommanderProductionDB.EnableProduction and CommanderProductionDB.ReadyAlert
+    local alertsEnabled = function()
+        return CommanderProductionDB.EnableProduction and CommanderProductionDB.ReadyAlert
+    end
+    panel:AddDropdownPair({
+        label = "Ready Sound",
+        tooltip = "Sound played when something finishes: Click is the original subtle tab-click, Quest Complete and Ready Check are more distinct chimes, Raid Warning is the loud klaxon. Picking one plays it.",
+        options = {
+            { text = "None", value = "NONE" },
+            { text = "Click", value = "CLICK" },
+            { text = "Ready Check", value = "READY_CHECK" },
+            { text = "Quest Complete", value = "QUEST" },
+            { text = "Raid Warning", value = "WARNING" },
+        },
+        get = function() return CommanderProductionDB.ReadySound end,
+        set = function(value) CommanderProductionDB.ReadySound = value end,
+        isEnabled = alertsEnabled,
+        onSelect = function(value)
+            if CommanderProduction_PreviewReadySound then
+                CommanderProduction_PreviewReadySound(value)
+            end
         end,
     }, {
+        label = "Ready Callout",
+        tooltip = "Where the completion callout appears: a chat line, a big top-center screen banner, both, or neither for sound alone. Picking a banner option previews it.",
+        options = {
+            { text = "None", value = "NONE" },
+            { text = "Chat Message", value = "CHAT" },
+            { text = "Screen Banner", value = "BANNER" },
+            { text = "Chat + Banner", value = "BOTH" },
+        },
+        get = function() return CommanderProductionDB.ReadyCallout end,
+        set = function(value) CommanderProductionDB.ReadyCallout = value end,
+        isEnabled = alertsEnabled,
+        onSelect = function(value)
+            if (value == "BANNER" or value == "BOTH") and CommanderProduction_PreviewReadyBanner then
+                CommanderProduction_PreviewReadyBanner()
+            end
+        end,
+    })
+    panel:AddCheckbox({
         label = "Linger When Ready",
         tooltip = "Finished cooldowns stay on the queue as a green READY entry for a minute, then fade out over 30 seconds — a running record of what came available. Casting the spell puts it straight back on the clock.",
         get = function() return CommanderProductionDB.LingerReady end,
@@ -160,6 +195,13 @@ end
 
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Production" then
+        -- One-time migration: the pre-2.2 Ready Chat checkbox became the
+        -- Ready Callout dropdown — carry an explicit chat opt-out across
+        -- (the sound kept playing for those users, so NONE matches exactly)
+        if CommanderProductionDB.ReadyCallout == nil and CommanderProductionDB.ReadyChat == false then
+            CommanderProductionDB.ReadyCallout = "NONE"
+        end
+        CommanderProductionDB.ReadyChat = nil
         Commander.UI.ApplyDefaults(CommanderProductionDB, DefaultSettings)
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
