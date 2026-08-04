@@ -397,7 +397,8 @@ local playerClass = "WARRIOR"
 function UnitClass(u) if u == "player" then return "Warrior", playerClass end end
 function UnitName(u) if u == "player" then return "Devinp" end end
 function UnitLevel() return 70 end
-function IsShiftKeyDown() return false end
+local shiftDown = false
+function IsShiftKeyDown() return shiftDown end
 function ChatEdit_InsertLink() return true end
 function InCombatLockdown() return false end
 
@@ -755,6 +756,149 @@ PopupAccept()
 CHECK(#CommanderTalentsCustom.WARRIOR == 0, "custom build deleted")
 CHECK(SidebarRow("none saved yet") ~= nil, "empty state row returns")
 CHECK(#harnessFailedErrors == 0, "custom build cycle clean", harnessFailedErrors[1])
+
+-- ===========================================================================
+-- Shift-click bulk, tree reset, search, undo
+-- ===========================================================================
+
+-- Shift-left fills a talent to max in one click; shift-right empties it
+do
+    calc.clearBtn.__scripts.OnClick(calc.clearBtn)
+    local iDeflect = IdxOf(1, "Deflection")   -- row 1, max 5
+    shiftDown = true
+    ClickTalent(1, iDeflect, "LeftButton")
+    CHECK(E.Rank(state, 1, iDeflect) == 5, "shift-click fills to max rank",
+        E.Rank(state, 1, iDeflect))
+    ClickTalent(1, iDeflect, "RightButton")
+    CHECK(E.Rank(state, 1, iDeflect) == 0, "shift-right-click empties the talent")
+    shiftDown = false
+    ClickTalent(1, iDeflect, "LeftButton")
+    CHECK(E.Rank(state, 1, iDeflect) == 1, "plain click still adds exactly one")
+end
+
+-- Shift-fill stops at the cap instead of overshooting
+do
+    SidebarRow("Arms").__scripts.OnClick(SidebarRow("Arms"), "LeftButton")
+    local iRoom2
+    for i in ipairs(CommanderTalentsData.Classes.WARRIOR.trees[1].talents) do
+        local b = E.AddBlock(state, 1, i)
+        if b and b.type == "CAP" then iRoom2 = i break end
+    end
+    shiftDown = true
+    ClickTalent(1, iRoom2, "LeftButton")
+    shiftDown = false
+    CHECK(E.TotalSpent(state) == 61, "shift-fill respects the 61 cap", E.TotalSpent(state))
+end
+
+-- Shift-clear stops where removal becomes illegal, keeping the build legal
+do
+    calc.clearBtn.__scripts.OnClick(calc.clearBtn)
+    local iHeroic3 = IdxOf(1, "Improved Heroic Strike")
+    local iDeflect3 = IdxOf(1, "Deflection")
+    local iCharge3 = IdxOf(1, "Improved Charge")
+    shiftDown = true
+    ClickTalent(1, iHeroic3, "LeftButton")     -- 3
+    ClickTalent(1, iDeflect3, "LeftButton")    -- 5 -> 8 total
+    shiftDown = false
+    ClickTalent(1, iCharge3, "LeftButton")     -- row 2 needs 5 above
+    shiftDown = true
+    ClickTalent(1, iDeflect3, "RightButton")
+    shiftDown = false
+    CHECK(E.PointsAboveRow(state, 1, 2) >= 5,
+        "shift-clear stops before breaking tier support", E.PointsAboveRow(state, 1, 2))
+    CHECK(E.Rank(state, 1, iCharge3) == 1, "the dependent point survived")
+end
+
+-- Right-clicking a tree header clears just that tree
+do
+    local prot = SidebarRow("Protection")
+    prot.__scripts.OnClick(prot, "LeftButton")
+    local beforeT1 = E.Spent(state, 1)
+    CHECK(E.Spent(state, 3) > 0, "protection tree has points")
+    calc.panes[3].headerBtn.__scripts.OnClick(calc.panes[3].headerBtn, "RightButton")
+    CHECK(E.Spent(state, 3) == 0, "tree header right-click clears that tree")
+    CHECK(E.Spent(state, 1) == beforeT1, "other trees untouched", E.Spent(state, 1))
+    -- header tooltip reports the tree
+    calc.panes[1].headerBtn.__scripts.OnEnter(calc.panes[1].headerBtn)
+    CHECK(GameTooltip.__lines and #GameTooltip.__lines > 0, "tree header tooltip built")
+end
+
+-- Undo restores the cleared tree, then disables itself
+do
+    CHECK(calc.undoBtn.__enabled == true, "undo offered after a clear")
+    calc.undoBtn.__scripts.OnClick(calc.undoBtn)
+    CHECK(E.Spent(state, 3) > 0, "undo restores the cleared tree", E.Spent(state, 3))
+    CHECK(calc.undoBtn.__enabled == false, "undo empties after use")
+    calc.undoBtn.__scripts.OnClick(calc.undoBtn)   -- second press is a no-op
+    CHECK(#harnessFailedErrors == 0, "undo with nothing to undo is safe",
+        harnessFailedErrors[1])
+end
+
+-- Undo also covers loading a different build
+do
+    local prot = SidebarRow("Protection")
+    prot.__scripts.OnClick(prot, "LeftButton")
+    local protSig = E.Signature(state)
+    local arms = SidebarRow("Arms")
+    arms.__scripts.OnClick(arms, "LeftButton")
+    CHECK(E.Signature(state) ~= protSig, "loading a preset replaced the build")
+    calc.undoBtn.__scripts.OnClick(calc.undoBtn)
+    CHECK(E.Signature(state) == protSig, "undo restores the previous build",
+        E.Signature(state))
+    CHECK(CommanderTalentsDB.SelBuildKey == "PROTECTION",
+        "undo restores the sidebar selection too", CommanderTalentsDB.SelBuildKey)
+end
+
+-- A failed import leaves both the build and the undo slot alone
+do
+    local sigBefore = E.Signature(state)
+    local undoBefore = state.undo
+    calc.importBtn.__scripts.OnClick(calc.importBtn)
+    PopupAccept(nil, "99999999999")
+    CHECK(E.Signature(state) == sigBefore, "failed import preserves the build")
+    CHECK(state.undo == undoBefore, "failed import does not consume the undo slot")
+    CHECK(calc.flashFS.__text ~= "", "failed import explains itself")
+end
+
+-- Talent search lights up matches and reports the count
+do
+    local box = calc.searchBox
+    box:SetText("mortal")
+    box.__scripts.OnTextChanged(box, true)
+    CHECK(calc.searchFS.__text:find("match"), "search reports a match count",
+        calc.searchFS.__text)
+    local iMS2 = IdxOf(1, "Mortal Strike")
+    CHECK(calc.panes[1].buttons[iMS2].icon.__alpha == 1, "matching talent stays bright")
+    local iDefl = IdxOf(1, "Deflection")
+    CHECK(calc.panes[1].buttons[iDefl].icon.__alpha < 0.5, "non-matching talent recedes",
+        calc.panes[1].buttons[iDefl].icon.__alpha)
+    -- matches across trees are counted together (Improved Mortal Strike too)
+    CHECK(calc.searchFS.__text:find("2 matches") ~= nil, "all matches counted",
+        calc.searchFS.__text)
+
+    -- A term present in every tree proves the count spans all three panes
+    box:SetText("improved")
+    box.__scripts.OnTextChanged(box, true)
+    local expected = 0
+    for ti = 1, 3 do
+        for _, t in ipairs(CommanderTalentsData.Classes.WARRIOR.trees[ti].talents) do
+            if t.name:lower():find("improved", 1, true) then expected = expected + 1 end
+        end
+    end
+    CHECK(expected > 3, "fixture spans multiple trees", expected)
+    CHECK(calc.searchFS.__text:find(tostring(expected) .. " matches") ~= nil,
+        "match count spans all three trees", calc.searchFS.__text .. " want " .. expected)
+
+    box:SetText("zzzznotathing")
+    box.__scripts.OnTextChanged(box, true)
+    CHECK(calc.searchFS.__text:find("no match"), "empty search result reported",
+        calc.searchFS.__text)
+
+    box.__scripts.OnEscapePressed(box)
+    CHECK(calc.searchFS.__text == "", "escape clears the search")
+    CHECK(calc.panes[1].buttons[iDefl].icon.__alpha > 0.5, "colours restored after clearing")
+    CHECK(#harnessFailedErrors == 0, "search clean", harnessFailedErrors[1])
+end
 
 -- A long build list must never push the save row off the sidebar
 do

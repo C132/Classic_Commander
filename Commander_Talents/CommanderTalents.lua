@@ -45,6 +45,7 @@ local RIM = {
     open    = { 0.72, 0.60, 0.05 },
     partial = { 0.10, 0.85, 0.10 },
     maxed   = { 1.00, 0.82, 0.00 },
+    hit     = { 0.20, 0.90, 1.00 },   -- search match
 }
 
 local BRANCH_TEX = "Interface\\TalentFrame\\UI-TalentBranches"
@@ -71,6 +72,7 @@ local CORNER_COORDS = {
 
 local calc                    -- the window, created lazily
 local states = {}             -- classToken -> engine state (session scratch)
+local searchText = ""         -- talent-name filter (session only, never saved)
 -- Per-class UI status rides ON the engine state (state.edited: allocation
 -- deviates from the selection; state.liveLabel: "My Talents"/"Imported"
 -- transient), so switching classes never leaks one class's status to another
@@ -259,6 +261,33 @@ local UpdateAll, RefreshSidebar, BindBriefing, BindPanes
 local RefreshBriefSoon
 
 -- ---------------------------------------------------------------------------
+-- Undo — one slot per class, covering every operation that replaces the whole
+-- allocation (clears, preset and saved-build loads, imports, live import).
+-- Single-point clicks are not stacked: they undo themselves with a click.
+-- ---------------------------------------------------------------------------
+
+local function PushUndo(state, label)
+    if not state then return end
+    if E.TotalSpent(state) == 0 and not state.undo then return end
+    state.undo = {
+        points = E.SerializePoints(state),
+        label = label,
+        kind = db.SelBuildKind, key = db.SelBuildKey,
+        edited = state.edited, liveLabel = state.liveLabel,
+    }
+end
+
+local function PopUndo(state)
+    local slot = state and state.undo
+    if not slot then return nil end
+    state.undo = nil
+    E.ApplyRaw(state, slot.points)
+    db.SelBuildKind, db.SelBuildKey = slot.kind, slot.key
+    state.edited, state.liveLabel = slot.edited, slot.liveLabel
+    return slot.label
+end
+
+-- ---------------------------------------------------------------------------
 -- Selection / mutation entry points
 -- ---------------------------------------------------------------------------
 
@@ -278,6 +307,7 @@ local function SelectPreset(key)
     local build = PresetByKey(token, key)
     local state = ClassState(token)
     if not (build and state) then return end
+    PushUndo(state, "loading " .. build.name)
     db.SelBuildKind, db.SelBuildKey = "PRESET", key
     state.edited, state.liveLabel = false, false
     ApplyTargetsWithReport(state, build)
@@ -289,6 +319,7 @@ local function SelectCustom(name)
     local build = CustomByName(token, name)
     local state = ClassState(token)
     if not (build and state) then return end
+    PushUndo(state, "loading " .. name)
     db.SelBuildKind, db.SelBuildKey = "CUSTOM", name
     state.edited, state.liveLabel = false, false
     ApplyTargetsWithReport(state, build)
@@ -360,6 +391,7 @@ local function ImportMyTalents()
     end
     local state = ClassState(token)
     if not state then return end
+    PushUndo(state, "loading your talents")
     local unknown = E.ApplyRaw(state, targets)
     db.SelBuildKind, db.SelBuildKey = false, false
     state.edited, state.liveLabel = false, "My Talents"
@@ -491,8 +523,14 @@ local function DoImportString(text)
     local token = CurrentClass()
     local state = ClassState(token)
     if not state then return end
+    -- Snapshot BEFORE the import: a failed parse must leave both the build
+    -- and the undo slot exactly as they were
+    local restore = E.SerializePoints(state)
+    PushUndo(state, "importing a build")
     local ok, err = E.Import(state, text or "")
     if not ok then
+        E.ApplyRaw(state, restore)
+        state.undo = nil
         FlashError(err or "Import failed")
         return
     end
@@ -556,11 +594,19 @@ local function TalentOnEnter(self)
         GameTooltip:AddLine(" ")
     end
     if canAdd then
-        GameTooltip:AddLine("Left-click to add a point", 0.1, 1, 0.1)
+        if talent.max > 1 and rank < talent.max - 1 then
+            GameTooltip:AddLine("Left-click to add a point  |cff999999(shift: fill)|r", 0.1, 1, 0.1)
+        else
+            GameTooltip:AddLine("Left-click to add a point", 0.1, 1, 0.1)
+        end
     end
     if rank > 0 then
         if not removeBlock then
-            GameTooltip:AddLine("Right-click to remove a point", 0.1, 1, 0.1)
+            if rank > 1 then
+                GameTooltip:AddLine("Right-click to remove a point  |cff999999(shift: clear)|r", 0.1, 1, 0.1)
+            else
+                GameTooltip:AddLine("Right-click to remove a point", 0.1, 1, 0.1)
+            end
         else
             local why = RemoveBlockText(removeBlock)
             if why then
@@ -576,25 +622,43 @@ local function TalentOnClick(self, mouseButton)
     local state = ClassState(CurrentClass())
     if not (state and self.talentIdx) then return end
     local t = pane.treeIdx
+    -- Shift runs the click to its limit: fill to max rank, or empty the
+    -- talent. Both stop at the first refusal and report it, so a shift-click
+    -- can never leave an illegal build behind.
+    local bulk = IsShiftKeyDown and IsShiftKeyDown()
+    local moved = 0
+
     if mouseButton == "RightButton" then
-        local block = E.RemoveBlock(state, t, self.talentIdx)
-        if block then
-            local why = RemoveBlockText(block)
-            if why then FlashError(why) end
-            return
-        end
-        E.Remove(state, t, self.talentIdx)
-        state.edited = true
+        repeat
+            local block = E.RemoveBlock(state, t, self.talentIdx)
+            if block then
+                if moved == 0 then
+                    local why = RemoveBlockText(block)
+                    if why then FlashError(why) end
+                    return
+                end
+                break
+            end
+            E.Remove(state, t, self.talentIdx)
+            moved = moved + 1
+        until not bulk or E.Rank(state, t, self.talentIdx) == 0
     else
-        local block = E.AddBlock(state, t, self.talentIdx)
-        if block then
-            local why = AddBlockText(state, t, block)
-            if why then FlashError(why) end
-            return
-        end
-        E.Add(state, t, self.talentIdx)
-        state.edited = true
+        repeat
+            local block = E.AddBlock(state, t, self.talentIdx)
+            if block then
+                if moved == 0 then
+                    local why = AddBlockText(state, t, block)
+                    if why then FlashError(why) end
+                    return
+                end
+                break
+            end
+            E.Add(state, t, self.talentIdx)
+            moved = moved + 1
+        until not bulk
     end
+
+    if moved > 0 then state.edited = true end
     UpdateAll()
     if GameTooltip:GetOwner() == self then
         TalentOnEnter(self)
@@ -685,6 +749,36 @@ local function CreatePane(parent, index)
 
     pane.headerFS = pane:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     pane.headerFS:SetPoint("CENTER", pane.headerBack, "CENTER", 0, 0)
+
+    -- The header doubles as a per-tree reset: right-click empties just this
+    -- tree, which is how you swap an off-spec splash without starting over.
+    pane.headerBtn = CreateFrame("Button", nil, pane)
+    pane.headerBtn:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, 0)
+    pane.headerBtn:SetPoint("TOPRIGHT", pane, "TOPRIGHT", 0, 0)
+    pane.headerBtn:SetHeight(TREE_HEADER_H)
+    pane.headerBtn:RegisterForClicks("RightButtonUp")
+    pane.headerBtn:SetScript("OnClick", function()
+        local state = ClassState(CurrentClass())
+        if not (state and pane.treeIdx) then return end
+        if E.Spent(state, pane.treeIdx) == 0 then return end
+        PushUndo(state, "clearing " .. state.class.trees[pane.treeIdx].name)
+        E.Clear(state, pane.treeIdx)
+        state.edited = true
+        FlashError("")
+        UpdateAll()
+    end)
+    pane.headerBtn:SetScript("OnEnter", function(self)
+        local state = ClassState(CurrentClass())
+        if not (state and pane.treeIdx) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(state.class.trees[pane.treeIdx].name, 1, 1, 1)
+        GameTooltip:AddLine(("%d points spent"):format(E.Spent(state, pane.treeIdx)), 1, 0.82, 0)
+        if E.Spent(state, pane.treeIdx) > 0 then
+            GameTooltip:AddLine("Right-click to clear this tree", 0.1, 1, 0.1)
+        end
+        GameTooltip:Show()
+    end)
+    pane.headerBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     pane.buttons = {}          -- talentIdx -> button
     pane.branchRecs = {}       -- { line, arrow, dep, req }
@@ -842,11 +936,13 @@ end
 
 local function UpdatePaneStates(pane)
     local state = ClassState(CurrentClass())
-    if not (state and pane.treeIdx) then return end
+    if not (state and pane.treeIdx) then return 0 end
     local t = pane.treeIdx
     local tree = state.class.trees[t]
     pane.headerFS:SetText(("%s |cffffd200(%d)|r"):format(tree.name, E.Spent(state, t)))
 
+    local searching = searchText ~= ""
+    local hits = 0
     for i, btn in pairs(pane.buttons) do
         local talent = tree.talents[i]
         local rank = E.Rank(state, t, i)
@@ -860,6 +956,17 @@ local function UpdatePaneStates(pane)
             rim, desat, iconAlpha = RIM.open, false, 0.92
         else
             rim, desat, iconAlpha = RIM.locked, true, 0.55
+        end
+        -- Search overrides the state colours: matches light up, everything
+        -- else recedes, so a name can be found across all three trees at once
+        if searching then
+            if talent.name:lower():find(searchText, 1, true) then
+                rim, desat, iconAlpha = RIM.hit, false, 1
+                hits = hits + 1
+            else
+                desat, iconAlpha = true, 0.18
+                rim = RIM.locked
+            end
         end
         btn.rim:SetVertexColor(rim[1], rim[2], rim[3], 1)
         btn.icon:SetDesaturated(desat)
@@ -888,6 +995,7 @@ local function UpdatePaneStates(pane)
         local a = ARROW_COORDS[rec.arrowDir][onoff]
         rec.arrow:SetTexCoord(a[1], a[2], a[3], a[4])
     end
+    return hits
 end
 
 -- ---------------------------------------------------------------------------
@@ -1242,6 +1350,7 @@ local function UpdateChrome()
             ("|c%s%s|r"):format(ClassColorHex(token), ClassLabel(token)))
     end
     calc.myTalentsBtn:SetEnabled(token == PlayerClassToken())
+    calc.undoBtn:SetEnabled(state.undo ~= nil)
 
     local hasData = Data.Classes[token] ~= nil
     calc.noDataFS:SetShown(not hasData)
@@ -1252,8 +1361,19 @@ end
 
 UpdateAll = function()
     if not calc then return end
+    local hits = 0
     for _, pane in ipairs(calc.panes) do
-        UpdatePaneStates(pane)
+        hits = hits + (UpdatePaneStates(pane) or 0)
+    end
+    if searchText ~= "" then
+        if hits > 0 then
+            calc.searchFS:SetText(("|cff33ccff%d match%s|r"):format(
+                hits, hits == 1 and "" or "es"))
+        else
+            calc.searchFS:SetText("|cffff4040no match|r")
+        end
+    else
+        calc.searchFS:SetText("")
     end
     UpdateChrome()
     RefreshSidebar()
@@ -1379,15 +1499,48 @@ local function EnsureCalculator()
     calc.clearBtn:SetScript("OnClick", function()
         local state = ClassState(CurrentClass())
         if not state then return end
+        PushUndo(state, "clearing the build")
         E.Clear(state)
         state.edited = true
         FlashError("")
         UpdateAll()
     end)
+    calc.clearBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Clear", 1, 1, 1)
+        GameTooltip:AddLine("Empty all three trees. Undo brings it back; right-clicking a tree header clears just that tree.", nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    calc.clearBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    calc.undoBtn = CreateFrame("Button", nil, toolbar, "UIPanelButtonTemplate")
+    calc.undoBtn:SetSize(52, 22)
+    calc.undoBtn:SetPoint("RIGHT", calc.clearBtn, "LEFT", -4, 0)
+    calc.undoBtn:SetText("Undo")
+    calc.undoBtn:SetScript("OnClick", function()
+        local state = ClassState(CurrentClass())
+        local label = PopUndo(state)
+        if not label then return end
+        FlashError("")
+        UpdateAll()
+        print(("|cff33ff99Commander Talents:|r undid %s"):format(label))
+    end)
+    calc.undoBtn:SetScript("OnEnter", function(self)
+        local state = ClassState(CurrentClass())
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Undo", 1, 1, 1)
+        if state and state.undo then
+            GameTooltip:AddLine(("Undo %s."):format(state.undo.label), nil, nil, nil, true)
+        else
+            GameTooltip:AddLine("Reverses the last clear, load, or import.", nil, nil, nil, true)
+        end
+        GameTooltip:Show()
+    end)
+    calc.undoBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     calc.exportBtn = CreateFrame("Button", nil, toolbar, "UIPanelButtonTemplate")
     calc.exportBtn:SetSize(58, 22)
-    calc.exportBtn:SetPoint("RIGHT", calc.clearBtn, "LEFT", -4, 0)
+    calc.exportBtn:SetPoint("RIGHT", calc.undoBtn, "LEFT", -4, 0)
     calc.exportBtn:SetText("Export")
     calc.exportBtn:SetScript("OnClick", function()
         local state = ClassState(CurrentClass())
@@ -1421,8 +1574,43 @@ local function EnsureCalculator()
     end)
     calc.myTalentsBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    -- Talent search: names light up across all three trees at once
+    calc.searchBox = CreateFrame("EditBox", "CommanderTalentsSearch", toolbar, "InputBoxTemplate")
+    calc.searchBox:SetSize(130, 20)
+    calc.searchBox:SetPoint("LEFT", calc.classDrop or toolbar, "RIGHT",
+        calc.classDrop and 6 or 0, calc.classDrop and 2 or 0)
+    calc.searchBox:SetAutoFocus(false)
+    calc.searchBox:SetMaxLetters(40)
+    local function ApplySearch(self)
+        searchText = (self:GetText() or ""):lower()
+        UpdateAll()
+    end
+    calc.searchBox:SetScript("OnTextChanged", function(self, userInput)
+        if not userInput then return end
+        ApplySearch(self)
+    end)
+    calc.searchBox:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+        searchText = ""
+        UpdateAll()
+    end)
+    calc.searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    -- Placeholder lives ON the edit box so it travels with it
+    local searchLabel = calc.searchBox:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    searchLabel:SetPoint("LEFT", calc.searchBox, "LEFT", 2, 0)
+    searchLabel:SetText("Find talent…")
+    calc.searchBox:HookScript("OnTextChanged", function(self)
+        searchLabel:SetShown((self:GetText() or "") == "")
+    end)
+
+    calc.searchFS = calc:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    calc.searchFS:SetPoint("LEFT", calc.searchBox, "RIGHT", 6, 0)
+    calc.searchFS:SetWidth(78)
+    calc.searchFS:SetJustifyH("LEFT")
+
     calc.summaryFS = calc:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    calc.summaryFS:SetPoint("LEFT", calc.classDrop or toolbar, "RIGHT", calc.classDrop and -6 or 0, calc.classDrop and 2 or 0)
+    calc.summaryFS:SetPoint("LEFT", calc.searchFS, "RIGHT", 6, 0)
     calc.summaryFS:SetPoint("RIGHT", calc.myTalentsBtn, "LEFT", -8, 0)
     calc.summaryFS:SetJustifyH("LEFT")
     calc.summaryFS:SetWordWrap(false)

@@ -33,7 +33,10 @@ and the settings mirror). Bare `/ctalents` (or `/ctal`) toggles it.
   drawn with Blizzard's branch/arrow textures, rank badges, gold-when-maxed,
   desaturated-when-locked. Left click adds a point, right click removes one —
   removal is validated (tier support and prerequisites), and the tooltip
-  explains every lock in Blizzard's own red phrasing.
+  explains every lock in Blizzard's own red phrasing. **Shift** runs a click
+  to its limit (fill to max / empty the talent), stopping at the first
+  refusal so a bulk click can never leave an illegal build. Right-clicking a
+  **tree header** clears just that tree.
 - **Right briefing panel (~210px):** the selected loadout's identity — name,
   role, the 17/44/0 signature — then STAT PRIORITY as a numbered list, NOTES,
   and CONSUMABLES pulled live from Commander_Quartermaster's recommendation
@@ -55,6 +58,14 @@ and the settings mirror). Bare `/ctalents` (or `/ctal`) toggles it.
   URL paste. Copyable out of and into an EditBox popup.
 - "Load My Talents" imports the character's live talents (own class; both
   GetTalentInfo shapes handled defensively, matched by talent name).
+- **Undo**, one slot per class, covering every operation that replaces the
+  whole allocation — clears, tree clears, preset and saved-build loads,
+  imports, live import — and restoring the sidebar selection with it. Single
+  point clicks are not stacked: a click already undoes itself. A failed
+  import must leave both the build and the undo slot untouched.
+- **Talent search** (toolbar box): matching talents light up cyan across all
+  three trees at once while everything else recedes, with a live match count.
+  Wowhead has no equivalent.
 
 ## Data
 
@@ -110,4 +121,6 @@ position reset, open button; view state is widget-less session memory).
 ## Out of scope (backlog)
 
 Build compare diffing, per-talent spell links, PvP variants beyond the one
-canonical build per spec, glyph-era niceties, in-window respec cost math.
+canonical build per spec, glyph-era niceties, in-window respec cost math,
+multi-level undo, a scrollable build sidebar (the list reserves the save row
+and announces overflow instead).
