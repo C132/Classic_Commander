@@ -136,7 +136,7 @@ end
 -- This module's pages carry more options than the Settings canvas is tall, so
 -- their rows flow into a scroll frame. AddRow is overridden on the panel
 -- INSTANCE only -- the shared framework and every other module's page are
--- untouched. Same pattern as Commander_Shield's extras page. Returns the
+-- untouched. Same pattern as Commander_PartyFrames' extras page. Returns the
 -- function to call once Finalize has added the footer.
 local function MakeScrollable(panel, frameName)
     local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
