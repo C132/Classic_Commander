@@ -320,6 +320,11 @@ local function BuildIcon(parent, named)
     icon.cd:SetAllPoints(icon)
     if icon.cd.SetDrawEdge then icon.cd:SetDrawEdge(false) end
     if icon.cd.SetHideCountdownNumbers then icon.cd:SetHideCountdownNumbers(true) end
+    -- Inverted on purpose: a cooldown swipe starts full and unwinds, which
+    -- reads backwards on a buff — the icon would be brightest at the moment
+    -- it is about to fall off. Reversed, the shade GROWS as time runs out,
+    -- so "dark" always means "about to expire".
+    if icon.cd.SetReverse then icon.cd:SetReverse(true) end
 
     icon.count = icon:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
     icon.count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, 0)
@@ -646,6 +651,8 @@ local function AcquireSlot(index)
     if slot.ring.SetHideCountdownNumbers then slot.ring:SetHideCountdownNumbers(true) end
     if slot.ring.SetDrawEdge then slot.ring:SetDrawEdge(false) end
     if slot.ring.SetSwipeTexture then slot.ring:SetSwipeTexture(RING) end
+    -- Same inversion as the block icons: the sweep fills as the aura dies.
+    if slot.ring.SetReverse then slot.ring:SetReverse(true) end
     slot.timer:ClearAllPoints()
     slot.timer:SetPoint("TOP", slot, "BOTTOM", 0, -2)
     sentinelSlots[index] = slot
