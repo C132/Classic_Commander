@@ -352,7 +352,7 @@ CommanderTalentsData.Classes.PRIEST = {
                   ranks = {
                       "Afflicts your target with Shadow energy that causes all party members to be healed for 15% of any Shadow spell damage you deal for 1 min.",
                   } },
-                { name = "Improved Vampiric Embrace", icon = "spell_shadow_improvedvampiricembrace", row = 5, col = 3, max = 2, req = "Vampiric Embrace",
+                { name = "Improved Vampiric Embrace", icon = "spell_shadow_improvedvampiricembrace", row = 5, col = 3, max = 2,
                   ranks = {
                       "Increases the percentage healed by Vampiric Embrace by an additional 5%.",
                       "Increases the percentage healed by Vampiric Embrace by an additional 10%.",

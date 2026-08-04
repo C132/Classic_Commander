@@ -41,7 +41,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Increases your chance to resist Stun and Charm effects by an additional 12%.",
                     "Increases your chance to resist Stun and Charm effects by an additional 15%.",
                   } },
-                { name = "Improved Thunder Clap", icon = "spell_nature_thunderclap", row = 2, col = 3, max = 3,
+                { name = "Improved Thunder Clap", icon = "ability_thunderclap", row = 2, col = 3, max = 3,
                   ranks = {
                     "Reduces the cost of your Thunder Clap ability by 1 rage point and increases the damage by 40% and the slowing effect by an additional 4%.",
                     "Reduces the cost of your Thunder Clap ability by 2 rage points and increases the damage by 70% and the slowing effect by an additional 7%.",
@@ -56,13 +56,13 @@ CommanderTalentsData.Classes.WARRIOR = {
                   ranks = {
                     "Generates 1 rage per 3 sec while in combat.",
                   } },
-                { name = "Deep Wounds", icon = "ability_backstab", row = 3, col = 3, max = 3, req = "Improved Rend",
+                { name = "Deep Wounds", icon = "ability_backstab", row = 3, col = 3, max = 3,
                   ranks = {
                     "Your critical strikes cause the opponent to bleed, dealing 20% of your melee weapon's average damage over 12 sec.",
                     "Your critical strikes cause the opponent to bleed, dealing 40% of your melee weapon's average damage over 12 sec.",
                     "Your critical strikes cause the opponent to bleed, dealing 60% of your melee weapon's average damage over 12 sec.",
                   } },
-                { name = "Two-Handed Weapon Specialization", icon = "inv_axe_09", row = 4, col = 1, max = 5,
+                { name = "Two-Handed Weapon Specialization", icon = "inv_axe_09", row = 4, col = 2, max = 5,
                   ranks = {
                     "Increases the damage you deal with two-handed melee weapons by 1%.",
                     "Increases the damage you deal with two-handed melee weapons by 2%.",
@@ -114,33 +114,33 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Gives your Hamstring ability a 10% chance to immobilize the target for 5 sec.",
                     "Gives your Hamstring ability a 15% chance to immobilize the target for 5 sec.",
                   } },
-                { name = "Improved Disciplines", icon = "spell_nature_enchantarmor", row = 6, col = 4, max = 3,
+                { name = "Improved Disciplines", icon = "ability_warrior_improveddisciplines", row = 6, col = 4, max = 3,
                   ranks = {
-                    "Reduces the cooldown of your Retaliation, Recklessness and Shield Wall abilities by 4 min.",
-                    "Reduces the cooldown of your Retaliation, Recklessness and Shield Wall abilities by 7 min.",
-                    "Reduces the cooldown of your Retaliation, Recklessness and Shield Wall abilities by 10 min.",
+                    "Reduces the cooldown of your Retaliation, Recklessness and Shield Wall abilities by 4 min and increases their duration by 2 sec.",
+                    "Reduces the cooldown of your Retaliation, Recklessness and Shield Wall abilities by 7 min and increases their duration by 4 sec.",
+                    "Reduces the cooldown of your Retaliation, Recklessness and Shield Wall abilities by 10 min and increases their duration by 6 sec.",
                   } },
-                { name = "Second Wind", icon = "ability_hunter_harass", row = 7, col = 1, max = 2,
-                  ranks = {
-                    "Whenever you are struck by a Stun or Immobilize effect you will generate 10 rage and 5% of your total health over 10 sec.",
-                    "Whenever you are struck by a Stun or Immobilize effect you will generate 20 rage and 10% of your total health over 10 sec.",
-                  } },
-                { name = "Mortal Strike", icon = "ability_warrior_savageblow", row = 7, col = 2, max = 1,
-                  ranks = {
-                    "A vicious strike that deals weapon damage plus 85 and wounds the target, reducing the effectiveness of any healing by 50% for 10 sec.",
-                  } },
-                { name = "Blood Frenzy", icon = "ability_warrior_bloodfrenzy", row = 7, col = 3, max = 2,
+                { name = "Blood Frenzy", icon = "ability_warrior_bloodfrenzy", row = 7, col = 1, max = 2,
                   ranks = {
                     "Your Rend and Deep Wounds abilities also increase all physical damage caused to that target by 2%.",
                     "Your Rend and Deep Wounds abilities also increase all physical damage caused to that target by 4%.",
                   } },
+                { name = "Mortal Strike", icon = "ability_warrior_savageblow", row = 7, col = 2, max = 1, req = "Death Wish",
+                  ranks = {
+                    "A vicious strike that deals weapon damage plus 85 and wounds the target, reducing the effectiveness of any healing by 50% for 10 sec.",
+                  } },
+                { name = "Second Wind", icon = "ability_hunter_harass", row = 7, col = 3, max = 2,
+                  ranks = {
+                    "Whenever you are struck by a Stun or Immobilize effect you will generate 10 rage and 5% of your total health over 10 sec.",
+                    "Whenever you are struck by a Stun or Immobilize effect you will generate 20 rage and 10% of your total health over 10 sec.",
+                  } },
                 { name = "Improved Mortal Strike", icon = "ability_warrior_savageblow", row = 8, col = 2, max = 5, req = "Mortal Strike",
                   ranks = {
-                    "Reduces the cooldown of your Mortal Strike ability by 0.1 sec and increases the damage it causes by 1%.",
-                    "Reduces the cooldown of your Mortal Strike ability by 0.2 sec and increases the damage it causes by 2%.",
-                    "Reduces the cooldown of your Mortal Strike ability by 0.3 sec and increases the damage it causes by 3%.",
-                    "Reduces the cooldown of your Mortal Strike ability by 0.4 sec and increases the damage it causes by 4%.",
-                    "Reduces the cooldown of your Mortal Strike ability by 0.5 sec and increases the damage it causes by 5%.",
+                    "Reduces the cooldown of your Mortal Strike ability by 0.2 sec and increases the damage it causes by 1%.",
+                    "Reduces the cooldown of your Mortal Strike ability by 0.4 sec and increases the damage it causes by 2%.",
+                    "Reduces the cooldown of your Mortal Strike ability by 0.6 sec and increases the damage it causes by 3%.",
+                    "Reduces the cooldown of your Mortal Strike ability by 0.8 sec and increases the damage it causes by 4%.",
+                    "Reduces the cooldown of your Mortal Strike ability by 1 sec and increases the damage it causes by 5%.",
                   } },
                 { name = "Endless Rage", icon = "ability_warrior_endlessrage", row = 9, col = 2, max = 1,
                   ranks = {
@@ -230,14 +230,14 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Improved Slam", icon = "ability_warrior_decisivestrike", row = 5, col = 1, max = 2,
                   ranks = {
-                    "Decreases the swing time of your Slam by 0.25 sec.",
-                    "Decreases the swing time of your Slam by 0.5 sec.",
+                    "Decreases the casting time of your Slam ability by 0.5 sec.",
+                    "Decreases the casting time of your Slam ability by 1 sec.",
                   } },
                 { name = "Sweeping Strikes", icon = "ability_rogue_slicedice", row = 5, col = 2, max = 1,
                   ranks = {
                     "Your next 10 melee attacks strike an additional nearby opponent.",
                   } },
-                { name = "Weapon Mastery", icon = "ability_weaponmastery", row = 5, col = 4, max = 2,
+                { name = "Weapon Mastery", icon = "ability_warrior_weaponmastery", row = 5, col = 4, max = 2,
                   ranks = {
                     "Reduces the chance for your attacks to be dodged by 1% and reduces the duration of all Disarm effects used against you by 25%.",
                     "Reduces the chance for your attacks to be dodged by 2% and reduces the duration of all Disarm effects used against you by 50%.",
@@ -261,14 +261,14 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Increases your chance to hit with melee weapons by 2%.",
                     "Increases your chance to hit with melee weapons by 3%.",
                   } },
-                { name = "Bloodthirst", icon = "spell_nature_bloodlust", row = 7, col = 2, max = 1,
+                { name = "Bloodthirst", icon = "spell_nature_bloodlust", row = 7, col = 2, max = 1, req = "Sweeping Strikes",
                   ranks = {
                     "Instantly attack the target causing damage equal to 45% of your attack power. In addition, the next 5 successful melee attacks will restore 10 health. This effect lasts 8 sec.",
                   } },
-                { name = "Improved Whirlwind", icon = "ability_whirlwind", row = 7, col = 4, max = 2,
+                { name = "Improved Whirlwind", icon = "ability_whirlwind", row = 7, col = 3, max = 2,
                   ranks = {
-                    "Reduces the cost of your Whirlwind ability by 1 rage point.",
-                    "Reduces the cost of your Whirlwind ability by 2 rage points.",
+                    "Reduces the cooldown of your Whirlwind ability by 1 sec.",
+                    "Reduces the cooldown of your Whirlwind ability by 2 sec.",
                   } },
                 { name = "Improved Berserker Stance", icon = "ability_racial_avatar", row = 8, col = 3, max = 5,
                   ranks = {
@@ -278,9 +278,9 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Increases attack power by 8% and reduces threat caused by 8% while in Berserker Stance.",
                     "Increases attack power by 10% and reduces threat caused by 10% while in Berserker Stance.",
                   } },
-                { name = "Rampage", icon = "ability_warrior_rampage", row = 9, col = 2, max = 1,
+                { name = "Rampage", icon = "ability_warrior_rampage", row = 9, col = 2, max = 1, req = "Bloodthirst",
                   ranks = {
-                    "Enrages you, increasing your attack power by 30 for 30 sec. Your successful melee attacks have a chance to increase your attack power by an additional 30, stacking up to 5 times. This ability can only be used after scoring a critical hit.",
+                    "Warrior goes on a rampage, increasing attack power by 30 and causing most successful melee attacks to increase attack power by an additional 30. This effect will stack up to 5 times. Lasts 30 sec. This ability can only be used after scoring a critical hit.",
                   } },
             },
         },
@@ -326,7 +326,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                   ranks = {
                     "When activated, this ability temporarily grants you 30% of your maximum health for 20 sec. After the effect expires, the health is lost.",
                   } },
-                { name = "Improved Shield Block", icon = "ability_defend", row = 3, col = 2, max = 1,
+                { name = "Improved Shield Block", icon = "ability_defend", row = 3, col = 2, max = 1, req = "Shield Specialization",
                   ranks = {
                     "Allows your Shield Block ability to block an additional attack and increases the duration by 1 sec.",
                   } },
@@ -393,7 +393,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Reduces all spell damage taken while in Defensive Stance by 4%.",
                     "Reduces all spell damage taken while in Defensive Stance by 6%.",
                   } },
-                { name = "Shield Slam", icon = "inv_shield_05", row = 7, col = 2, max = 1,
+                { name = "Shield Slam", icon = "inv_shield_05", row = 7, col = 2, max = 1, req = "Concussion Blow",
                   ranks = {
                     "Slam the target with your shield, causing 225 to 235 damage, modified by your shield block value, and has a 50% chance of dispelling 1 magic effect on the target. Also causes a high amount of threat.",
                   } },

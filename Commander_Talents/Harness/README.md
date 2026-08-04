@@ -21,6 +21,20 @@ cd Commander_Talents
   generation agents loop against; spec-key CSVs per class live in
   `talents_harness.lua`'s EXPECTED_SPECS table.
 
+There is also a structural cross-checker against DBC-derived reference data:
+
+```
+python3 Harness/crosscheck_wowsims.py
+```
+
+It diffs every class's grid — talent roster, position, max rank, and
+prerequisite edges — against the pinned wowsims/tbc talent configs in
+`Harness/wowsims/` (fetched 2026-08-04 from
+`raw.githubusercontent.com/wowsims/tbc/master/ui/core/talents/<class>.ts`).
+All nine classes are clean as of that date; "(name-variance)" lines are
+wowsims-side typos ('deterrance', 'improvedSayaad'), not our errors. Re-fetch
+the snapshots only when deliberately re-baselining.
+
 The engine is pure Lua (no WoW API), so failures here are real logic bugs,
 not mock artifacts. UI smoke coverage is backlog — see the suite's
 `shield_panel_harness` pattern when adding it.

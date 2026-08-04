@@ -68,9 +68,9 @@ CommanderTalentsData.Classes.SHAMAN = {
                   } },
                 { name = "Eye of the Storm", icon = "spell_shadow_soulleech_2", row = 4, col = 2, max = 3,
                   ranks = {
-                      "Gives you a 33% chance to avoid interruption caused by damage while casting Lightning Bolt, Chain Lightning and Shock spells.",
-                      "Gives you a 66% chance to avoid interruption caused by damage while casting Lightning Bolt, Chain Lightning and Shock spells.",
-                      "Gives you a 100% chance to avoid interruption caused by damage while casting Lightning Bolt, Chain Lightning and Shock spells.",
+                      "Gives you a 33% chance to gain the Focused Casting effect that lasts for 6 sec after being the victim of a melee or ranged critical strike. The Focused Casting effect prevents you from losing casting time on Shaman spells when taking damage.",
+                      "Gives you a 66% chance to gain the Focused Casting effect that lasts for 6 sec after being the victim of a melee or ranged critical strike. The Focused Casting effect prevents you from losing casting time on Shaman spells when taking damage.",
+                      "Gives you a 100% chance to gain the Focused Casting effect that lasts for 6 sec after being the victim of a melee or ranged critical strike. The Focused Casting effect prevents you from losing casting time on Shaman spells when taking damage.",
                   } },
                 { name = "Elemental Devastation", icon = "spell_fire_elementaldevastation", row = 4, col = 4, max = 3,
                   ranks = {
@@ -101,7 +101,7 @@ CommanderTalentsData.Classes.SHAMAN = {
                       "Increases your chance to hit with Fire, Frost and Nature spells by 4% and reduces the threat caused by Fire, Frost and Nature spells by 7%.",
                       "Increases your chance to hit with Fire, Frost and Nature spells by 6% and reduces the threat caused by Fire, Frost and Nature spells by 10%.",
                   } },
-                { name = "Lightning Mastery", icon = "spell_lightning_lightningbolt01", row = 6, col = 3, max = 5,
+                { name = "Lightning Mastery", icon = "spell_lightning_lightningbolt01", row = 6, col = 3, max = 5, req = "Call of Thunder",
                   ranks = {
                       "Reduces the cast time of your Lightning Bolt and Chain Lightning spells by 0.1 sec.",
                       "Reduces the cast time of your Lightning Bolt and Chain Lightning spells by 0.2 sec.",
@@ -113,7 +113,7 @@ CommanderTalentsData.Classes.SHAMAN = {
                   ranks = {
                       "When activated, this spell gives your next Fire, Frost, or Nature damage spell a 100% critical strike chance and reduces the mana cost by 100%.",
                   } },
-                { name = "Elemental Shields", icon = "spell_nature_skinofearth", row = 7, col = 3, max = 3,
+                { name = "Elemental Shields", icon = "spell_nature_elementalshields", row = 7, col = 3, max = 3,
                   ranks = {
                       "Reduces the chance you will be critically hit by melee and ranged attacks by 2%.",
                       "Reduces the chance you will be critically hit by melee and ranged attacks by 4%.",
@@ -127,7 +127,7 @@ CommanderTalentsData.Classes.SHAMAN = {
                       "Gives your Lightning Bolt and Chain Lightning spells a 16% chance to cast a second, similar spell on the same target at no additional cost that causes half damage and no threat.",
                       "Gives your Lightning Bolt and Chain Lightning spells a 20% chance to cast a second, similar spell on the same target at no additional cost that causes half damage and no threat.",
                   } },
-                { name = "Totem of Wrath", icon = "spell_fire_totemofwrath", row = 9, col = 2, max = 1,
+                { name = "Totem of Wrath", icon = "spell_fire_totemofwrath", row = 9, col = 2, max = 1, req = "Lightning Overload",
                   ranks = {
                       "Summons a Totem of Wrath with 5 health at the feet of the caster. The totem increases the chance to hit and critically strike with spells by 3% for all party members within 20 yards. Lasts 2 min.",
                   } },
@@ -185,11 +185,13 @@ CommanderTalentsData.Classes.SHAMAN = {
                   ranks = {
                       "After landing a melee critical strike, you enter a Focused state. The Focused state reduces the mana cost of your next Shock spell by 60%.",
                   } },
-                { name = "Anticipation", icon = "spell_nature_mirrorimage", row = 3, col = 4, max = 3,
+                { name = "Anticipation", icon = "spell_nature_mirrorimage", row = 3, col = 4, max = 5,
                   ranks = {
                       "Increases your chance to dodge by an additional 1%.",
                       "Increases your chance to dodge by an additional 2%.",
                       "Increases your chance to dodge by an additional 3%.",
+                      "Increases your chance to dodge by an additional 4%.",
+                      "Increases your chance to dodge by an additional 5%.",
                   } },
                 { name = "Flurry", icon = "ability_ghoulfrenzy", row = 4, col = 2, max = 5, req = "Thundering Strikes",
                   ranks = {
@@ -242,13 +244,13 @@ CommanderTalentsData.Classes.SHAMAN = {
                       "Increases your chance to hit while dual wielding by an additional 4%.",
                       "Increases your chance to hit while dual wielding by an additional 6%.",
                   } },
-                { name = "Dual Wield", icon = "ability_dualwield", row = 7, col = 2, max = 1,
+                { name = "Dual Wield", icon = "ability_dualwield", row = 7, col = 2, max = 1, req = "Spirit Weapons",
                   ranks = {
                       "Allows one-hand and off-hand weapons to be equipped in the off-hand.",
                   } },
-                { name = "Stormstrike", icon = "spell_holy_sealofmight", row = 7, col = 3, max = 1,
+                { name = "Stormstrike", icon = "ability_shaman_stormstrike", row = 7, col = 3, max = 1, req = "Elemental Weapons",
                   ranks = {
-                      "Instantly attack with both weapons. In addition, the next 2 sources of Nature damage dealt to the target from the Shaman are increased by 20%. Lasts 12 sec.",
+                      "Instantly attack with both weapons. In addition, the next 2 sources of Nature damage dealt to the target are increased by 20%. Lasts 12 sec.",
                   } },
                 { name = "Unleashed Rage", icon = "spell_nature_unleashedrage", row = 8, col = 2, max = 5,
                   ranks = {
@@ -358,14 +360,6 @@ CommanderTalentsData.Classes.SHAMAN = {
                       "Increases your chance to resist Silence and Interrupt mechanics by an additional 10%.",
                       "Increases your chance to resist Silence and Interrupt mechanics by an additional 15%.",
                   } },
-                { name = "Nature's Guardian", icon = "spell_nature_natureguardian", row = 6, col = 1, max = 5,
-                  ranks = {
-                      "While below 30% health, you have a 10% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
-                      "While below 30% health, you have a 20% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
-                      "While below 30% health, you have a 30% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
-                      "While below 30% health, you have a 40% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
-                      "While below 30% health, you have a 50% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
-                  } },
                 { name = "Purification", icon = "spell_frost_wizardmark", row = 6, col = 3, max = 5,
                   ranks = {
                       "Increases the effectiveness of your healing spells by 2%.",
@@ -378,10 +372,13 @@ CommanderTalentsData.Classes.SHAMAN = {
                   ranks = {
                       "Summons a Mana Tide Totem with 5 health at the feet of the caster for 12 sec that restores 6% of total mana every 3 seconds to group members within 20 yards.",
                   } },
-                { name = "Improved Chain Heal", icon = "spell_nature_healingwavegreater", row = 7, col = 3, max = 2,
+                { name = "Nature's Guardian", icon = "spell_nature_natureguardian", row = 7, col = 3, max = 5,
                   ranks = {
-                      "Increases the amount healed by your Chain Heal spell by 10%.",
-                      "Increases the amount healed by your Chain Heal spell by 20%.",
+                      "While below 30% health, you have a 10% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
+                      "While below 30% health, you have a 20% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
+                      "While below 30% health, you have a 30% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
+                      "While below 30% health, you have a 40% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
+                      "While below 30% health, you have a 50% chance when hit by a melee or ranged attack to heal for 10% of your total health and reduce your threat level toward the attacker. 5 second cooldown.",
                   } },
                 { name = "Nature's Blessing", icon = "spell_nature_natureblessing", row = 8, col = 2, max = 3,
                   ranks = {
@@ -389,9 +386,14 @@ CommanderTalentsData.Classes.SHAMAN = {
                       "Increases your spell damage and healing by an amount equal to 20% of your Intellect.",
                       "Increases your spell damage and healing by an amount equal to 30% of your Intellect.",
                   } },
-                { name = "Earth Shield", icon = "spell_nature_skinofearth", row = 9, col = 2, max = 1,
+                { name = "Improved Chain Heal", icon = "spell_nature_healingwavegreater", row = 8, col = 3, max = 2,
                   ranks = {
-                      "Protects the target with an earthen shield, reducing casting or channeling time lost when damaged by 30% and causing attacks to heal the shielded target for 150. This effect can only occur once every few seconds. 10 charges. Lasts 10 min. Earth Shield can only be placed on one target at a time and only one Elemental Shield can be active on a target at a time.",
+                      "Increases the amount healed by your Chain Heal spell by 10%.",
+                      "Increases the amount healed by your Chain Heal spell by 20%.",
+                  } },
+                { name = "Earth Shield", icon = "spell_nature_skinofearth", row = 9, col = 2, max = 1, req = "Nature's Blessing",
+                  ranks = {
+                      "Protects the target with an earthen shield, giving a 30% chance of ignoring spell interruption when damaged and causing attacks to heal the shielded target for 150. This effect can only occur once every few seconds. 6 charges. Lasts 10 min. Earth Shield can only be placed on one target at a time and only one Elemental Shield can be active on a target at a time.",
                   } },
             },
         },
@@ -435,19 +437,20 @@ CommanderTalentsData.Classes.SHAMAN = {
         { key = "ENHANCEMENT", name = "Enhancement", role = "MELEE",
           points = {
               [1] = {
-                  ["Convection"] = 5,
+                  ["Convection"] = 2,
                   ["Concussion"] = 5,
-                  ["Elemental Focus"] = 1,
+                  ["Call of Flame"] = 3,
                   ["Reverberation"] = 5,
+                  ["Improved Fire Totems"] = 2,
               },
               [2] = {
                   ["Ancestral Knowledge"] = 5,
+                  ["Guardian Totems"] = 2,
                   ["Thundering Strikes"] = 5,
-                  ["Improved Ghost Wolf"] = 2,
                   ["Enhancing Totems"] = 2,
                   ["Shamanistic Focus"] = 1,
                   ["Flurry"] = 5,
-                  ["Improved Weapon Totems"] = 2,
+                  ["Improved Weapon Totems"] = 1,
                   ["Spirit Weapons"] = 1,
                   ["Elemental Weapons"] = 3,
                   ["Mental Quickness"] = 3,
@@ -467,7 +470,7 @@ CommanderTalentsData.Classes.SHAMAN = {
               "Haste rating",
               "Stamina",
           },
-          notes = "The 16/45/0 dual-wield raid build. Windfury on two slow weapons, Stormstrike and Earth Shock on cooldown, and Windfury Totem twisted with Grace of Air for the melee group; Shamanistic Rage sustains mana and doubles as a 30% damage-reduction wall. The Improved Ghost Wolf points are flex - Anticipation, Toughness or Improved Lightning Shield are common swaps." },
+          notes = "The 17/44/0 dual-wield raid build. Windfury on two slow weapons, Stormstrike and Earth Shock on cooldown, and Windfury Totem twisted with Grace of Air for the melee group; Shamanistic Rage sustains mana and doubles as a 30% damage-reduction wall. Call of Flame and Improved Fire Totems back Fire Nova twisting - the Guardian Totems and second Improved Weapon Totems points are flex, with Improved Ghost Wolf, Anticipation or Toughness the common swaps." },
         { key = "RESTORATION", name = "Restoration", role = "HEALER",
           points = {
               [2] = {

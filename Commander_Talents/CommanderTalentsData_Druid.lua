@@ -20,7 +20,7 @@ CommanderTalentsData.Classes.DRUID = {
                   ranks = {
                       "While active, any time an enemy strikes the caster they have a 35% chance to become afflicted by Entangling Roots (Rank 1). Only useable outdoors. 1 charge. Lasts 45 sec.",
                   } },
-                { name = "Improved Nature's Grasp", icon = "spell_nature_natureswrath", row = 1, col = 3, max = 4,
+                { name = "Improved Nature's Grasp", icon = "spell_nature_natureswrath", row = 1, col = 3, max = 4, req = "Nature's Grasp",
                   req = "Nature's Grasp",
                   ranks = {
                       "Increases the chance for your Nature's Grasp to entangle an enemy by 15%.",
@@ -59,7 +59,7 @@ CommanderTalentsData.Classes.DRUID = {
                       "Increases the range of your Balance spells and Faerie Fire (Feral) ability by 10%.",
                       "Increases the range of your Balance spells and Faerie Fire (Feral) ability by 20%.",
                   } },
-                { name = "Vengeance", icon = "spell_nature_purge", row = 4, col = 2, max = 5,
+                { name = "Vengeance", icon = "spell_nature_purge", row = 4, col = 2, max = 5, req = "Focused Starlight",
                   req = "Focused Starlight",
                   ranks = {
                       "Increases the critical strike damage bonus of your Starfire, Moonfire, and Wrath spells by 20%.",
@@ -90,7 +90,7 @@ CommanderTalentsData.Classes.DRUID = {
                       "Reduces the Mana cost of your Moonfire, Starfire, Wrath, Healing Touch, Regrowth and Rejuvenation spells by 6%.",
                       "Reduces the Mana cost of your Moonfire, Starfire, Wrath, Healing Touch, Regrowth and Rejuvenation spells by 9%.",
                   } },
-                { name = "Moonfury", icon = "spell_nature_moonglow", row = 6, col = 2, max = 5,
+                { name = "Moonfury", icon = "spell_nature_moonglow", row = 6, col = 2, max = 5, req = "Nature's Grace",
                   req = "Nature's Grace",
                   ranks = {
                       "Increases the damage done by your Starfire, Moonfire and Wrath spells by 2%.",
@@ -216,7 +216,7 @@ CommanderTalentsData.Classes.DRUID = {
                       "Increases your healing spells by up to 50% of your Agility, and increases healing done to you by 10% while in Cat form.",
                       "Increases your healing spells by up to 100% of your Agility, and increases healing done to you by 20% while in Cat form.",
                   } },
-                { name = "Heart of the Wild", icon = "spell_holy_blessingofagility", row = 6, col = 2, max = 5,
+                { name = "Heart of the Wild", icon = "spell_holy_blessingofagility", row = 6, col = 2, max = 5, req = "Predatory Strikes",
                   req = "Predatory Strikes",
                   ranks = {
                       "Increases your Intellect by 4%. In addition, while in Bear or Dire Bear Form your Stamina is increased by 4% and while in Cat Form your attack power is increased by 2%.",
@@ -241,7 +241,7 @@ CommanderTalentsData.Classes.DRUID = {
                   ranks = {
                       "While in Cat, Bear or Dire Bear Form, the Leader of the Pack increases ranged and melee critical chance of all party members within 45 yards by 5%.",
                   } },
-                { name = "Improved Leader of the Pack", icon = "spell_nature_unyeildingstamina", row = 7, col = 3, max = 2,
+                { name = "Improved Leader of the Pack", icon = "spell_nature_unyeildingstamina", row = 7, col = 3, max = 2, req = "Leader of the Pack",
                   req = "Leader of the Pack",
                   ranks = {
                       "Your Leader of the Pack ability also causes affected targets to have a 100% chance to heal themselves for 2% of their total health when they critically hit with a melee or ranged attack. The healing effect cannot occur more than once every 6 sec.",
@@ -255,7 +255,7 @@ CommanderTalentsData.Classes.DRUID = {
                       "While in Cat Form, Bear Form, or Dire Bear Form, increases your damage from melee critical strikes by 8% and your chance to avoid area effect attacks by 12%.",
                       "While in Cat Form, Bear Form, or Dire Bear Form, increases your damage from melee critical strikes by 10% and your chance to avoid area effect attacks by 15%.",
                   } },
-                { name = "Mangle", icon = "ability_druid_mangle2", row = 9, col = 2, max = 1,
+                { name = "Mangle", icon = "ability_druid_mangle2", row = 9, col = 2, max = 1, req = "Leader of the Pack",
                   req = "Leader of the Pack",
                   ranks = {
                       "Mangle the target, inflicting damage and causing the target to take additional damage from bleed effects for 12 sec. This ability can be used in Cat Form or Dire Bear Form.",
@@ -335,7 +335,7 @@ CommanderTalentsData.Classes.DRUID = {
                       "Increases the effect of your Rejuvenation spell by 10%.",
                       "Increases the effect of your Rejuvenation spell by 15%.",
                   } },
-                { name = "Nature's Swiftness", icon = "spell_nature_ravenform", row = 5, col = 1, max = 1,
+                { name = "Nature's Swiftness", icon = "spell_nature_ravenform", row = 5, col = 1, max = 1, req = "Intensity",
                   req = "Intensity",
                   ranks = {
                       "When activated, your next Nature spell becomes an instant cast spell.",
@@ -358,7 +358,7 @@ CommanderTalentsData.Classes.DRUID = {
                       "Your Healing Touch spell gains an additional 10% of your bonus healing effects.",
                       "Your Healing Touch spell gains an additional 20% of your bonus healing effects.",
                   } },
-                { name = "Improved Regrowth", icon = "spell_nature_resistnature", row = 6, col = 3, max = 5,
+                { name = "Improved Regrowth", icon = "spell_nature_resistnature", row = 6, col = 3, max = 5, req = "Improved Rejuvenation",
                   req = "Improved Rejuvenation",
                   ranks = {
                       "Increases the critical effect chance of your Regrowth spell by 10%.",
@@ -373,7 +373,7 @@ CommanderTalentsData.Classes.DRUID = {
                       "Increases your total Spirit by 10%.",
                       "Increases your total Spirit by 15%.",
                   } },
-                { name = "Swiftmend", icon = "inv_relics_idolofrejuvenation", row = 7, col = 2, max = 1,
+                { name = "Swiftmend", icon = "inv_relics_idolofrejuvenation", row = 7, col = 2, max = 1, req = "Gift of Nature",
                   req = "Gift of Nature",
                   ranks = {
                       "Consumes a Rejuvenation or Regrowth effect on a friendly target to instantly heal them an amount equal to 12 sec. of Rejuvenation or 18 sec. of Regrowth.",
