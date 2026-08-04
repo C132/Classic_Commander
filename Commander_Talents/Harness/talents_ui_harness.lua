@@ -82,6 +82,19 @@ local NewWidget
 local WidgetMT = {}
 WidgetMT.__index = function(self, key)
     if type(key) ~= "string" then return nil end
+    if key == "GetWidth" then
+        local fn = function(s) return s.__w or NUMERIC_GETTERS.GetWidth end
+        rawset(self, key, fn); return fn
+    end
+    if key == "GetHeight" then
+        local fn = function(s) return s.__h or NUMERIC_GETTERS.GetHeight end
+        rawset(self, key, fn); return fn
+    end
+    if key == "GetStringHeight" then
+        -- Overridable so a test can simulate text that wraps to many lines
+        local fn = function(s) return s.__strH or NUMERIC_GETTERS.GetStringHeight end
+        rawset(self, key, fn); return fn
+    end
     if NUMERIC_GETTERS[key] ~= nil then
         local v = NUMERIC_GETTERS[key]
         local fn = function() return v end
@@ -184,7 +197,18 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn); return fn
     end
     if key == "SetVertexColor" then
-        local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
+        local fn = function(s, r, g, b, a)
+            s.__color = { r, g, b, a }
+            s.__vertex = { r, g, b, a }
+        end
+        rawset(self, key, fn); return fn
+    end
+    if key == "SetScale" then
+        local fn = function(s, v) s.__scale = v end
+        rawset(self, key, fn); return fn
+    end
+    if key == "GetScale" then
+        local fn = function(s) return s.__scale or 1 end
         rawset(self, key, fn); return fn
     end
     if key == "SetDesaturated" then
@@ -303,6 +327,9 @@ function CreateFrame(frameType, name, parent, template)
 end
 
 UIParent = NewWidget("Frame", "UIParent")
+-- A realistic UIParent: ~1024x768 units is the common case, and the window
+-- has to fit inside it
+UIParent.__w, UIParent.__h = 1024, 768
 GameTooltip = NewWidget("GameTooltip", "GameTooltip")
 WorldFrame = NewWidget("Frame", "WorldFrame")
 UISpecialFrames = {}
@@ -473,7 +500,15 @@ CommanderQuartermasterData = {
     SlotNames = { FLASK = "Flask", FOOD = "Food", ELIXIR = "Elixir" },
     Recommendations = {
         WARRIOR = { specs = {
+            -- A real Quartermaster loadout carries ~8 slots; the briefing has
+            -- to cope with more rows than its panel is tall
             { key = "PROTECTION", name = "Protection", role = "TANK", picks = {
+                { slot = "FLASK", entries = { { id = 22861, name = "Flask of Fortification" } } },
+                { slot = "FOOD", entries = { { id = 27657, name = "Warp Burger" } } },
+                { slot = "ELIXIR", entries = { { id = 22851, name = "Elixir of Major Fortitude" } } },
+                { slot = "FLASK", entries = { { id = 22861, name = "Flask of Fortification" } } },
+                { slot = "FOOD", entries = { { id = 27657, name = "Warp Burger" } } },
+                { slot = "ELIXIR", entries = { { id = 22851, name = "Elixir of Major Fortitude" } } },
                 { slot = "FLASK", entries = { { id = 22861, name = "Flask of Fortification" } } },
                 { slot = "FOOD", entries = { { id = 27657, name = "Warp Burger" } } },
             } },
@@ -628,6 +663,83 @@ end
 local function ClickTalent(paneIdx, talentIdx, button)
     local btn = calc.panes[paneIdx].buttons[talentIdx]
     btn.__scripts.OnClick(btn, button or "LeftButton")
+end
+
+-- ---------------------------------------------------------------------------
+-- Regressions from the first in-game look (2026-08-04)
+-- ---------------------------------------------------------------------------
+
+-- The tree background art must be sized, not left at the texture's native
+-- width: an unsized left-hand piece is 256 wide and paints over whatever
+-- sits to its right (it ate the briefing panel).
+do
+    local pane = calc.panes[1]
+    local paneW = pane.__w
+    for _, part in ipairs({ "bgTL", "bgBL" }) do
+        local tex = pane[part]
+        CHECK(type(tex.__w) == "number" and tex.__w > 0,
+            part .. " has an explicit width", tostring(tex.__w))
+        CHECK((tex.__w or 999) <= paneW,
+            part .. " fits inside the pane", tostring(tex.__w) .. "/" .. tostring(paneW))
+    end
+end
+
+-- With the budget spent, a talent you hold no points in must READ as
+-- unavailable — Blizzard's own forceDesaturated rule. This is what made a
+-- finished build look like every talent was still open.
+do
+    CHECK(E.TotalSpent(state) == 61, "fixture is a full build", E.TotalSpent(state))
+    -- Arms preset: tree 3 (Protection) is untouched, so all of it is 0-rank
+    CHECK(E.Spent(state, 3) == 0, "third tree is empty in this build")
+    local emptyBtn = next(calc.panes[3].buttons) and calc.panes[3].buttons[1]
+    CHECK(emptyBtn ~= nil, "third tree has buttons")
+    CHECK(emptyBtn.icon.__desat == true, "0-rank talent greys out at full budget")
+    CHECK(emptyBtn.icon.__vertex and emptyBtn.icon.__vertex[1] < 1,
+        "greyed icon is tinted down, not just desaturated",
+        emptyBtn.icon.__vertex and emptyBtn.icon.__vertex[1])
+
+    -- A talent you DO hold points in stays lit even at full budget
+    local spentIdx
+    for i, rank in pairs(state.pts[1]) do
+        if rank > 0 then spentIdx = i break end
+    end
+    local spentBtn = calc.panes[1].buttons[spentIdx]
+    CHECK(spentBtn.icon.__desat == false, "invested talent stays lit at full budget")
+    CHECK(spentBtn.icon.__vertex == nil or spentBtn.icon.__vertex[1] == 1,
+        "invested talent is not tinted down")
+end
+
+-- At full budget a structurally locked talent must still report the REAL
+-- reason, not "no points remaining" — the budget check runs last
+do
+    local deepIdx
+    for i, t in ipairs(CommanderTalentsData.Classes.WARRIOR.trees[3].talents) do
+        if t.row == 9 then deepIdx = i break end
+    end
+    CHECK(deepIdx ~= nil, "third tree has a 41-point talent")
+    local block = E.AddBlock(state, 3, deepIdx)
+    CHECK(block and block.type == "TIER",
+        "structural lock outranks the budget", block and block.type)
+    ClickTalent(3, deepIdx, "LeftButton")
+    CHECK(calc.flashFS.__text:find("Requires"),
+        "click names the tier requirement at full budget", calc.flashFS.__text)
+    CHECK(not calc.flashFS.__text:find("remaining"),
+        "click does not blame the budget for a locked talent", calc.flashFS.__text)
+end
+
+-- The window must fit the screen: at 1024 units wide it cannot render at 100%
+do
+    local shown = calc.__scale
+    CHECK(type(shown) == "number", "window scale applied", tostring(shown))
+    CHECK(shown < 1, "scale clamps to fit a 1024-wide UIParent", shown)
+    CHECK(shown >= 0.5, "clamp never collapses the window", shown)
+    -- On a wide screen the user's own scale is honoured untouched
+    UIParent.__w, UIParent.__h = 2560, 1440
+    Commander.Notify(COMMANDER_TALENTS_EVENTS.UPDATE)
+    CHECK(calc.__scale == CommanderTalentsDB.BrowserScale,
+        "wide screens keep the user's scale", calc.__scale)
+    UIParent.__w, UIParent.__h = 1024, 768
+    Commander.Notify(COMMANDER_TALENTS_EVENTS.UPDATE)
 end
 
 -- At 61/61 every add must be refused by the cap. Pick a talent the preset
@@ -1160,11 +1272,61 @@ CHECK(brief.notesFS.__text ~= "", "notes rendered")
 -- Quartermaster consumables for the same spec
 local consShown = 0
 for _, row in ipairs(brief.consRows) do if row.__shown then consShown = consShown + 1 end end
-CHECK(consShown == 2, "quartermaster consumables listed", consShown)
+CHECK(consShown == 8, "quartermaster consumables listed", consShown)
 CHECK(brief.consRows[1].nameFS.__text:find("Flask of Fortification"),
     "consumable name resolved", brief.consRows[1].nameFS.__text)
 CHECK(brief.consRows[1].slotFS.__text:find("Flask"), "consumable slot labelled")
 CHECK(brief.qmBtn.__shown == true, "Open in Quartermaster offered")
+
+-- Nothing in the briefing may hang below the panel. With a long stat list
+-- AND long notes there is not room for eight consumables plus the jump
+-- button — the rows must give way, not run off the bottom of the window.
+do
+    local BRIEF_H = 590 - 64 - 34
+    local function LowestY()
+        local low = 0
+        local function note(w)
+            if w and w.__shown and w.__points and w.__points[1] then
+                low = math.min(low, w.__points[1].y)
+            end
+        end
+        note(brief.qmBtn)
+        for _, r in ipairs(brief.consRows) do note(r) end
+        note(brief.consHintFS)
+        return low
+    end
+    CHECK(-LowestY() <= BRIEF_H, "briefing fits its panel at normal text size",
+        -LowestY())
+
+    -- A realistically tall loadout: 8 stat lines and a few sentences of notes
+    brief.statsFS.__strH = 150
+    brief.notesFS.__strH = 90
+    Commander.Notify(COMMANDER_TALENTS_EVENTS.UPDATE)
+    local visible = 0
+    for _, r in ipairs(brief.consRows) do if r.__shown then visible = visible + 1 end end
+    CHECK(visible < 8, "consumable rows give way when the text is long", visible)
+    CHECK(visible > 0, "some consumables still shown", visible)
+    CHECK(brief.consHintFS.__shown and brief.consHintFS.__text:find("more"),
+        "dropped consumables are announced", brief.consHintFS.__text)
+    CHECK(-LowestY() <= BRIEF_H, "briefing still fits with long text", -LowestY())
+    CHECK(brief.qmBtn.__points and brief.qmBtn.__points[1].point == "BOTTOMLEFT",
+        "jump button is pinned to the panel bottom, never below it",
+        brief.qmBtn.__points and brief.qmBtn.__points[1].point)
+
+    -- Pathologically long text must still not escape the panel, even though
+    -- there is then no room for the rows or the note about them
+    brief.statsFS.__strH = 260
+    brief.notesFS.__strH = 200
+    Commander.Notify(COMMANDER_TALENTS_EVENTS.UPDATE)
+    CHECK(-LowestY() <= BRIEF_H, "saturated briefing still cannot overflow",
+        -LowestY())
+
+    brief.statsFS.__strH, brief.notesFS.__strH = nil, nil
+    Commander.Notify(COMMANDER_TALENTS_EVENTS.UPDATE)
+    local restored = 0
+    for _, r in ipairs(brief.consRows) do if r.__shown then restored = restored + 1 end end
+    CHECK(restored == 8, "all consumables return at normal text size", restored)
+end
 
 -- The jump sets Quartermaster's view to this exact loadout
 brief.qmBtn.__scripts.OnClick(brief.qmBtn)
