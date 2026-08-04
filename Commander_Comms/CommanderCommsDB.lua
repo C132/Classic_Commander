@@ -17,6 +17,8 @@ local DefaultSettings = {
     AutoCharge = false,
     AutoChargeThreshold = 8,
     DispelCallouts = true,
+    CCBreakCallouts = true,
+    CCBreakAll = false,
 }
 
 local frame = CreateFrame("FRAME");
@@ -141,6 +143,21 @@ local function CreateOptionsPanel()
         get = function() return CommanderCommsDB.DispelCallouts end,
         set = function(value) CommanderCommsDB.DispelCallouts = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms end,
+    })
+
+    panel:AddSection("Crowd Control", "The \"who broke my sheep?\" alarm. Polymorphs, traps, saps, fears and friends are watched in the combat log, and an early break is announced with the breaker named — including which group member's pet did it.")
+    panel:AddCheckboxPair({
+        label = "CC Break Callouts",
+        tooltip = "Announce when your own crowd control is broken early: who broke it, on which target, and with what (\"Levira broke my Polymorph on Pillager (Cleave).\"). Melee breaks say (melee); your own pet's CC counts as yours. Group channels only; never fires solo.",
+        get = function() return CommanderCommsDB.CCBreakCallouts end,
+        set = function(value) CommanderCommsDB.CCBreakCallouts = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms end,
+    }, {
+        label = "All CC Breaks",
+        tooltip = "Widen the watch from your own CC to any crowd control broken near you (combat-log range): every group member's sheep, trap, or sap, with the owner named when known (\"Levira broke Moonkin's Polymorph on Pillager (Cleave).\"). Off, only your own CC is announced.",
+        get = function() return CommanderCommsDB.CCBreakAll end,
+        set = function(value) CommanderCommsDB.CCBreakAll = value end,
+        isEnabled = function() return CommanderCommsDB.EnableComms and CommanderCommsDB.CCBreakCallouts end,
     })
 
     panel:Finalize({ onDefaults = Reset })

@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Party Frames
 ## Author: Devin
-## Version: 4.0.0
+## Version: 4.2.0
 ## Notes: Combat-first party frames built for arena: per-class layers that surface shields, shield uptime, dispels, and CC status at a glance. Priests get the Power Word: Shield board; Mages get health/mana rows with total-absorb tracking, decurse and CC alarms, and a personal upkeep banner.
 ## IconTexture: Interface\Icons\INV_Shield_06
 ## SavedVariables: CommanderPartyFramesDB

@@ -149,3 +149,29 @@ No spec API in TBC — infer, and degrade gracefully:
    grammar, test board states.
 4. **Polish**: overflow eviction order (kind priority: DEF > CC > KICK >
    OFF > UTIL), tooltips on icons, adversarial review pass.
+
+## Phase 5 — Tracked Abilities window (landed 2026-08-04, v4.1.0)
+
+The book roughly doubled: every class gained opt-in extras (Frost Nova,
+Ice Barrier, Avenging Wrath, Charge/Disarm/Sweeping Strikes, Feign Death,
+Misdirection, Earth Shock, elemental totems, Swiftmend, Soulshatter, more
+racials...) flagged `off = true` — present in the book but untracked by
+default, so the curated default strip is pixel-identical until the user
+opts in. "Intelligent first, complete never" now means the DEFAULT is
+curated and completeness is a per-ability choice.
+
+- A standalone movable window (`/cpf abilities`, or the Tracked Abilities…
+  button in the settings' Party Ability Bar section) lists one row per
+  class plus an "Everyone — racials & trinket" row: class icon, colored
+  name, a live "n of m" tracked count, and a Choose… dropdown.
+- Each dropdown lists that class's full book as stay-open checkboxes
+  (`isNotRadio` + `keepShownOnClick`) with icon, name, and cooldown, a
+  hover tooltip (kind, tier behavior, spec gate), and three quick-sets:
+  Track all / Track none / Book defaults.
+- Overrides persist account-wide in `AbilityTrack` keyed `entry.tok`
+  ("CLASS:KEY", "*:KEY" for shared), storing only deviations from the book
+  default — untouched abilities follow any later re-curation. The engine
+  honors them in `StripConsider` (hoisted `stripTrack`).
+- Untracked abilities still record casts in `abilityState` (and still feed
+  spec inference), so enabling one mid-session shows any cooldown already
+  observed.

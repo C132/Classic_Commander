@@ -308,10 +308,145 @@ local function OnDispel(destName, dispelName, removedName, auraType)
     SendChatMessage(message, PickChannel())
 end
 
+-- ---------------------------------------------------------------------------
+-- CC break callouts: the "who broke my sheep?" alarm. The combat log's
+-- SPELL_AURA_BROKEN(_SPELL) events name the breaker but not who owned the
+-- aura, so applications of known crowd control are remembered per victim;
+-- when one breaks early the announcement can say whose CC died, who killed
+-- it, and with what. Two scopes: your own CC only (default), or every CC
+-- broken in combat-log range. Group channels only, same as the rest.
+-- ---------------------------------------------------------------------------
+
+-- Name-keyed so every rank matches. Only CC that damage can actually break
+-- is listed — stuns just run their course and Banish can't take hits, so
+-- neither ever emits a BROKEN event. Freezing Trap's debuff is named
+-- "Freezing Trap Effect" on this client; both names stay in case a patch
+-- normalizes it.
+local CC_AURAS = {
+    ["Polymorph"] = true, ["Polymorph: Pig"] = true, ["Polymorph: Turtle"] = true,
+    ["Sap"] = true, ["Blind"] = true, ["Gouge"] = true,
+    ["Fear"] = true, ["Howl of Terror"] = true, ["Seduction"] = true,
+    ["Psychic Scream"] = true, ["Intimidating Shout"] = true,
+    ["Freezing Trap"] = true, ["Freezing Trap Effect"] = true,
+    ["Scare Beast"] = true, ["Wyvern Sting"] = true, ["Hibernate"] = true,
+    ["Shackle Undead"] = true, ["Repentance"] = true,
+    ["Turn Evil"] = true, ["Turn Undead"] = true,
+    ["Entangling Roots"] = true, ["Frost Nova"] = true,
+}
+
+local MAX_CC_AGE = 60   -- longest breakable TBC CC (PvE Polymorph) runs 50s
+local trackedCC = {}    -- destGUID -> { [auraName] = { caster, mine, at } }
+
+local function SweepTrackedCC(now)
+    for guid, auras in pairs(trackedCC) do
+        for auraName, cc in pairs(auras) do
+            if now - cc.at > MAX_CC_AGE then auras[auraName] = nil end
+        end
+        if not next(auras) then trackedCC[guid] = nil end
+    end
+end
+
+local function TrackCC(sourceGUID, sourceName, destGUID, auraName)
+    if not CommanderCommsDB.CCBreakCallouts then return end
+    local now = GetTime()
+    -- The table stays tiny (one entry per live CC), so aging it out on
+    -- each new application is cheaper than owning a ticker
+    SweepTrackedCC(now)
+    -- The succubus casts Seduction, not the warlock: my pet's CC is mine
+    local mine = sourceGUID ~= nil
+        and (sourceGUID == (playerGUID or UnitGUID("player"))
+            or sourceGUID == UnitGUID("pet"))
+    trackedCC[destGUID] = trackedCC[destGUID] or {}
+    trackedCC[destGUID][auraName] = { caster = sourceName, mine = mine, at = now }
+end
+
+local function UntrackCC(destGUID, auraName)
+    local auras = trackedCC[destGUID]
+    if not auras then return end
+    auras[auraName] = nil
+    if not next(auras) then trackedCC[destGUID] = nil end
+end
+
+-- A pet's own name is useless for blame ("Fluffy broke..."), so a pet
+-- breaker resolves to its owner when a group member's pet matches
+local function ResolveBreaker(sourceGUID, sourceName, sourceFlags)
+    if not sourceName then return "Something" end
+    if not (sourceFlags and bit.band(sourceFlags, COMBATLOG_OBJECT_TYPE_PET) > 0) then
+        return sourceName
+    end
+    if UnitGUID("pet") == sourceGUID then return "My pet" end
+    local prefix, count = "party", GetNumSubgroupMembers()
+    if IsInRaid() then prefix, count = "raid", GetNumGroupMembers() end
+    for i = 1, count do
+        if UnitGUID(prefix .. "pet" .. i) == sourceGUID then
+            local owner = UnitName(prefix .. i)
+            if owner then return owner .. "'s pet" end
+            break
+        end
+    end
+    return sourceName .. " (pet)"
+end
+
+local lastCCBreakAnnounce = -math.huge
+
+local function OnCCBroken(sourceGUID, sourceName, sourceFlags, destGUID, destName,
+        destFlags, auraName, breakerSpell)
+    if not CommanderCommsDB.CCBreakCallouts then return end
+    -- Only CC parked on enemies is guarded: a mob's fear breaking off a
+    -- teammate is good news and needs no blame
+    if destFlags and bit.band(destFlags, COMBATLOG_OBJECT_REACTION_FRIENDLY) > 0 then
+        UntrackCC(destGUID, auraName)
+        return
+    end
+    local cc = trackedCC[destGUID] and trackedCC[destGUID][auraName]
+    -- An entry older than any real CC belongs to an application whose
+    -- removal was missed — its owner can't be trusted
+    if cc and GetTime() - cc.at > MAX_CC_AGE then cc = nil end
+    UntrackCC(destGUID, auraName)
+    local mine = cc and cc.mine
+    if not (mine or CommanderCommsDB.CCBreakAll) then return end
+    if not InAnyGroup() then return end
+    if GetTime() - lastCCBreakAnnounce < ANNOUNCE_COOLDOWN then return end
+    lastCCBreakAnnounce = GetTime()
+
+    local me = playerGUID or UnitGUID("player")
+    local breaker = (sourceGUID == me) and "I"
+        or ResolveBreaker(sourceGUID, sourceName, sourceFlags)
+    local whose
+    if mine then
+        whose = (sourceGUID == me) and "my own " or "my "
+    elseif cc and cc.caster then
+        whose = (cc.caster == sourceName) and "their own " or (cc.caster .. "'s ")
+    else
+        whose = ""
+    end
+    local how = breakerSpell and (" (" .. breakerSpell .. ")") or " (melee)"
+    SendChatMessage(string.format("%s broke %s%s on %s%s.", breaker, whose,
+        auraName, destName or "the target", how), PickChannel())
+end
+
 local function OnCombatLog()
     if not (CommanderCommsDB and CommanderCommsDB.EnableComms) then return end
-    local _, subevent, _, sourceGUID, _, _, _, _, destName, _, _,
+    local _, subevent, _, sourceGUID, sourceName, sourceFlags, _, destGUID, destName, destFlags, _,
         _, actionName, _, _, extraName, _, auraType = CombatLogGetCurrentEventInfo()
+
+    -- CC bookkeeping watches everyone's events, not just the player's —
+    -- the whole point is catching OTHER people's breaks
+    if actionName and CC_AURAS[actionName] then
+        if subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_AURA_REFRESH" then
+            TrackCC(sourceGUID, sourceName, destGUID, actionName)
+        elseif subevent == "SPELL_AURA_REMOVED" then
+            UntrackCC(destGUID, actionName)
+        elseif subevent == "SPELL_AURA_BROKEN" or subevent == "SPELL_AURA_BROKEN_SPELL" then
+            -- Plain BROKEN is a melee-swing break and carries no extra
+            -- spell (arg16 is nil there anyway, but be explicit)
+            OnCCBroken(sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags,
+                actionName, subevent == "SPELL_AURA_BROKEN_SPELL" and extraName or nil)
+        end
+    elseif subevent == "UNIT_DIED" or subevent == "UNIT_DESTROYED" then
+        trackedCC[destGUID] = nil
+    end
+
     if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
     -- Team comms only: solo callouts have no audience
     if not InAnyGroup() then return end

@@ -2,7 +2,8 @@
 -- PARTY_KILL with the player as source) push the streak up and refill the
 -- drain bar; when the bar empties the streak is gone. Colors escalate at
 -- milestones. Shown only while a streak of 2+ is alive, so the HUD stays
--- clean between pulls.
+-- clean between pulls. Best chains persist per zone/instance, and the end
+-- of a session-best chain recaps how it stacks against those records.
 
 local BAR_WIDTH = 120
 local BAR_HEIGHT = 8
@@ -17,6 +18,15 @@ local testFeeding = false   -- the tester never sends public emotes
 local streakIsTest = false  -- chain fed only by the tester: no break lament
 local session   -- reload-resilient mirror of the state above
 
+-- Chain record bookkeeping: which zone the live chain is scoring in and
+-- what the records were before it started, so the end-of-chain recap can
+-- tell "broke the record" from "the record stands".
+local chainZone            -- zone/instance name of the chain's latest kill
+local chainZoneBase = 0    -- that zone's record before this chain touched it
+local chainAllTimeBase = 0 -- the all-time high before this chain began
+local chainAllTimeBaseZone -- ...and the zone that held it
+local chainBasesCaptured = false
+
 local function SyncSession()
     if session then
         session.streak = streak
@@ -26,7 +36,59 @@ local function SyncSession()
         session.bestStreak = bestStreak
         session.streakStartEpoch = (streak > 0)
             and (time() - math.floor(GetTime() - streakStart)) or 0
+        session.chainZone = chainZone or false
+        session.chainZoneBase = chainZoneBase
+        session.chainAllTimeBase = chainAllTimeBase
+        session.chainAllTimeBaseZone = chainAllTimeBaseZone or false
+        session.chainBasesCaptured = chainBasesCaptured
     end
+end
+
+-- ---------------------------------------------------------------------------
+-- Zone records: the best chain ever landed in each zone or instance, kept
+-- in CommanderMomentumDB.Records — deliberately outside DefaultSettings so
+-- a settings reset never erases history. Written live on each kill (a
+-- crash can't eat a record); the celebration waits for the chain to end.
+-- ---------------------------------------------------------------------------
+
+local function Records()
+    if not CommanderMomentumDB.Records then
+        CommanderMomentumDB.Records = {}
+    end
+    return CommanderMomentumDB.Records
+end
+
+-- Instances score under their instance name; the open world under the zone
+-- the player is standing in (GetInstanceInfo only knows the continent there)
+local function RecordZoneName()
+    local name, instanceType = GetInstanceInfo()
+    if instanceType and instanceType ~= "none" and name and name ~= "" then
+        return name
+    end
+    local zone = GetRealZoneText()
+    if zone and zone ~= "" then
+        return zone
+    end
+    return name or "Parts Unknown"
+end
+
+local function ZoneBest(zone)
+    local rec = zone and CommanderMomentumDB.Records
+        and CommanderMomentumDB.Records[zone]
+    return (rec and tonumber(rec.best)) or 0
+end
+
+-- Highest recorded chain across every zone; ties go to whoever held it first
+local function AllTimeRecord()
+    local best, zone, when = 0, nil, math.huge
+    for name, rec in pairs(CommanderMomentumDB.Records or {}) do
+        local b = tonumber(rec and rec.best) or 0
+        local w = tonumber(rec and rec.when) or math.huge
+        if b > best or (b == best and b > 0 and w < when) then
+            best, zone, when = b, name, w
+        end
+    end
+    return best, zone
 end
 
 local root = CreateFrame("Frame", "CommanderMomentumFrame", UIParent)
@@ -193,27 +255,87 @@ end
 -- x10 are worth announcing, and only chains over x15 earn the audible
 -- /cry sob (sent after the lament so the chat log reads in order)
 local BREAK_LINES = {
-    "loses momentum — the x%d chain is broken! (%d kills this session, best chain x%d)",
-    "watches a x%d streak slip away... (%d kills this session, best chain x%d)",
+    "loses momentum — the x%d chain is broken! (%s)",
+    "watches a x%d streak slip away... (%s)",
 }
 
 local function EndStreak(announceBreak)
     local endedStreak = streak
     streak = 0
     announcedMilestone = 0
-    SyncSession()
     local wasTestChain = streakIsTest
     streakIsTest = false
+    local enabled = CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
+    -- Local record recap when a milestone-worthy chain ends: broken records
+    -- always report; otherwise the session's best chain gets the standing —
+    -- zone record and all-time high — as its epitaph. Record claims compare
+    -- against pre-chain baselines and require the chain to actually hold the
+    -- written record, so test-inflated chains can never take credit.
+    local newAllTime = false
+    if enabled and not wasTestChain and endedStreak >= 5 then
+        local zone = chainZone or RecordZoneName()
+        local zoneBest = ZoneBest(zone)
+        local atBest, atZone = AllTimeRecord()
+        -- A chain restored from a pre-records session never captured its
+        -- baselines; treat the current records as the baseline (no claims)
+        local zoneBase = chainBasesCaptured and chainZoneBase or zoneBest
+        local atBase = chainBasesCaptured and chainAllTimeBase or atBest
+        local atBaseZone = chainBasesCaptured and chainAllTimeBaseZone or atZone
+        newAllTime = endedStreak == atBest and endedStreak > atBase
+        local standing
+        if newAllTime then
+            if atBase >= 2 and atBaseZone then
+                standing = string.format("NEW ALL-TIME HIGH in %s! (previous x%d — %s)",
+                    zone, atBase, atBaseZone == zone and "set right here" or atBaseZone)
+            else
+                standing = string.format("a new all-time high — the record books open in %s", zone)
+            end
+        elseif endedStreak == zoneBest and endedStreak > zoneBase then
+            if zoneBase >= 2 then
+                standing = string.format("new record for %s (was x%d) — all-time high x%d (%s)",
+                    zone, zoneBase, atBest, atZone)
+            else
+                standing = string.format("first record for %s — all-time high x%d (%s)",
+                    zone, atBest, atZone)
+            end
+        elseif endedStreak == bestStreak and zoneBest >= 2 then
+            if atZone == zone then
+                standing = string.format("%s record x%d is the all-time high", zone, zoneBest)
+            else
+                standing = string.format("%s record x%d, all-time high x%d (%s)",
+                    zone, zoneBest, atBest, atZone)
+            end
+        end
+        if standing then
+            print(string.format("|cffffb830Commander Momentum:|r %sx%d chain ends — %s",
+                endedStreak == bestStreak and "session best " or "", endedStreak, standing))
+        end
+    end
     if announceBreak and not wasTestChain
-        and CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
+        and enabled
         and CommanderMomentumDB.BreakEmotes
         and endedStreak > 10 then
+        local atBest = AllTimeRecord()
+        local stats = string.format("%d kills this session, best chain x%d",
+            totalKills, bestStreak)
+        if newAllTime then
+            stats = string.format("%s, a NEW all-time high x%d", stats, atBest)
+        elseif atBest >= 2 then
+            stats = string.format("%s, all-time high x%d", stats, atBest)
+        end
         SendChatMessage(string.format(BREAK_LINES[math.random(#BREAK_LINES)],
-            endedStreak, totalKills, bestStreak), "EMOTE")
+            endedStreak, stats), "EMOTE")
         if endedStreak > 15 then
             DoEmote("CRY")
         end
     end
+    -- Chain bookkeeping dies with the chain; the next one recaptures fresh
+    chainZone = nil
+    chainZoneBase = 0
+    chainAllTimeBase = 0
+    chainAllTimeBaseZone = nil
+    chainBasesCaptured = false
+    SyncSession()
     local keepShown = CommanderMomentumDB and CommanderMomentumDB.EnableMomentum
         and DisplayMode() == "HUD"
         and (CommanderMomentumDB.AlwaysShow
@@ -306,6 +428,10 @@ local function OnKill()
     if GetTime() - lastKill > window then
         streak = 0
         announcedMilestone = 0
+        -- A chain of 1 dies silently (no EndStreak); scrub its bookkeeping
+        -- here so the new chain recaptures fresh baselines
+        chainZone = nil
+        chainBasesCaptured = false
     end
     warnedThisWindow = false
     if streak == 0 then
@@ -322,6 +448,28 @@ local function OnKill()
         bestStreak = streak
     end
     lastKill = GetTime()
+    -- Zone-record bookkeeping: baselines captured on the chain's first real
+    -- kill (before this kill can move a record), then records written live.
+    -- Test kills never touch the books.
+    if not testFeeding then
+        if not chainBasesCaptured then
+            chainBasesCaptured = true
+            chainAllTimeBase, chainAllTimeBaseZone = AllTimeRecord()
+        end
+        local zone = RecordZoneName()
+        if zone ~= chainZone then
+            chainZone = zone
+            chainZoneBase = ZoneBest(zone)
+        end
+        if streak >= 2 and streak > ZoneBest(zone) then
+            local rec = Records()[zone]
+            if rec then
+                rec.best, rec.when = streak, time()
+            else
+                Records()[zone] = { best = streak, when = time() }
+            end
+        end
+    end
     SyncSession()
     if streak >= 2 then
         if DisplayMode() == "PORTRAIT" then
@@ -360,10 +508,58 @@ end
 
 -- Standard suite report and tester
 function CommanderMomentum_Report()
+    local zone = RecordZoneName()
+    local zoneBest = ZoneBest(zone)
+    local atBest, atZone = AllTimeRecord()
+    local standing
+    if atBest < 2 then
+        standing = "no zone records on the books yet"
+    elseif zone == atZone then
+        standing = string.format("%s record x%d is the all-time high", zone, zoneBest)
+    elseif zoneBest >= 2 then
+        standing = string.format("%s record x%d, all-time high x%d (%s)",
+            zone, zoneBest, atBest, atZone)
+    else
+        standing = string.format("no record for %s yet — all-time high x%d (%s)",
+            zone, atBest, atZone)
+    end
     print(string.format(
-        "Commander Momentum: %d kill%s this session, best chain x%d%s",
+        "Commander Momentum: %d kill%s this session, best chain x%d%s — %s",
         totalKills, totalKills == 1 and "" or "s", bestStreak,
-        streak >= 2 and string.format(" (live streak x%d)", streak) or ""))
+        streak >= 2 and string.format(" (live streak x%d)", streak) or "",
+        standing))
+end
+
+-- The record books: every zone's best chain, top score first
+function CommanderMomentum_Records()
+    local list = {}
+    for name, rec in pairs(CommanderMomentumDB.Records or {}) do
+        local best = tonumber(rec and rec.best) or 0
+        if best >= 2 then
+            list[#list + 1] = { zone = name, best = best, when = tonumber(rec.when) }
+        end
+    end
+    if #list == 0 then
+        print("Commander Momentum: no zone records yet — chain two kills somewhere and the books open")
+        return
+    end
+    table.sort(list, function(a, b)
+        if a.best ~= b.best then return a.best > b.best end
+        return (a.when or math.huge) < (b.when or math.huge)
+    end)
+    print(string.format("|cffffb830Commander Momentum:|r zone records (%d zone%s)",
+        #list, #list == 1 and "" or "s"))
+    local shown = math.min(#list, 15)
+    for i = 1, shown do
+        local entry = list[i]
+        print(string.format("  x%d — %s%s%s",
+            entry.best, entry.zone,
+            entry.when and date(" (%m/%d/%y)", entry.when) or "",
+            i == 1 and " |cffffb830— all-time high|r" or ""))
+    end
+    if #list > shown then
+        print(string.format("  ...and %d more", #list - shown))
+    end
 end
 
 function CommanderMomentum_Test()
@@ -483,6 +679,9 @@ events:SetScript("OnEvent", function(self, event)
             streak = 0, milestone = 0, lastKillEpoch = 0,
             totalKills = 0, bestStreak = 0, streakStartEpoch = 0,
             zoneKey = false,
+            chainZone = false, chainZoneBase = 0,
+            chainAllTimeBase = 0, chainAllTimeBaseZone = false,
+            chainBasesCaptured = false,
         })
         totalKills = session.totalKills or 0
         bestStreak = session.bestStreak or 0
@@ -493,6 +692,13 @@ events:SetScript("OnEvent", function(self, event)
             if session.streakStartEpoch > 0 then
                 streakStart = GetTime() - math.max(time() - session.streakStartEpoch, 0)
             end
+            -- Record bookkeeping rides along so a /reload mid-chain still
+            -- knows what the chain has to beat
+            chainZone = session.chainZone or nil
+            chainZoneBase = session.chainZoneBase or 0
+            chainAllTimeBase = session.chainAllTimeBase or 0
+            chainAllTimeBaseZone = session.chainAllTimeBaseZone or nil
+            chainBasesCaptured = session.chainBasesCaptured or false
         end
         Commander.AddListener(COMMANDER_MOMENTUM_EVENTS.UPDATE, Apply)
         -- Nothing notifies at startup: Always Show / unlocked-at-reload
