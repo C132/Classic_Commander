@@ -711,7 +711,7 @@ local function CreateCorePanel()
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         }, {
             label = "Mana Gem",
-            tooltip = "Add a mana gem button: left-click uses the best gem in your bags, right-click (or holding your modifier and left-clicking) conjures the best rank you know. Counter over the icon shows how many gems you are carrying.",
+            tooltip = "Add a mana gem button: left-click uses the best gem in your bags, right-click (or holding your modifier and left-clicking) steps a castsequence through every gem you know — Ruby, Citrine, Jade, Agate — so four presses leave you carrying one of each. Ten seconds off the button restarts the sequence at the top rank. Counter over the icon shows how many gems you are carrying.",
             get = function() return CommanderPartyFramesDB.ShowGemButton end,
             set = function(value) CommanderPartyFramesDB.ShowGemButton = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,

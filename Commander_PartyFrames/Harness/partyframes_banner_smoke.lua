@@ -507,26 +507,49 @@ local drink = consume:GetAttribute("macrotext1")
 local eat = consume:GetAttribute("macrotext2")
 CHECK(drink:find("item:30703", 1, true) ~= nil, "left-click drinks the best water", drink)
 CHECK(drink:find("item:22019", 1, true) == nil, "left-click does NOT eat", drink)
-CHECK(eat:find("item:22019", 1, true) ~= nil, "right-click eats food", eat)
-CHECK(eat:find("item:8079", 1, true) == nil, "right-click does NOT reach for water-only ranks", eat)
 -- The Manna Biscuit is food AND drink, so it heads both lists: pressing
 -- left and right together on a biscuit-only mage must still do both
-CHECK(drink:find("item:30703", 1, true) ~= nil and eat:find("item:30703", 1, true) ~= nil,
-    "the dual-purpose biscuit is reachable from both clicks")
--- Lower ranks ride along so a click still works when the best runs dry
-CHECK(drink:find("item:8079", 1, true) ~= nil, "drink falls through to the next water rank", drink)
+CHECK(eat:find("item:30703", 1, true) ~= nil,
+    "right-click eats the best food rank held — the dual-purpose biscuit", eat)
+CHECK(eat:find("item:8079", 1, true) == nil, "right-click does NOT reach for water-only ranks", eat)
+-- One item per click. Food and drink share no cooldown, so every /use line
+-- landed and a cascade swallowed one of EVERY rank held on a single press.
+CHECK(drink:find("item:8079", 1, true) == nil,
+    "drink stops at the best rank instead of downing the whole cascade", drink)
+CHECK(select(2, drink:gsub("/use", "")) == 1, "left-click is exactly one /use", drink)
+CHECK(select(2, eat:gsub("/use", "")) == 1, "right-click is exactly one /use", eat)
+-- ...and the cap costs nothing, because the bind re-aims at the next rank the
+-- moment the best one runs dry. Biscuits gone: drink and eat split apart.
+local savedBiscuits = bags[30703]
+bags[30703] = nil
+Fire("BAG_UPDATE_DELAYED")
+CHECK(consume:GetAttribute("macrotext1") == "/use item:8079",
+    "drink falls to the next water rank once the best is gone",
+    consume:GetAttribute("macrotext1"))
+CHECK(consume:GetAttribute("macrotext2") == "/use item:22019",
+    "eat falls to the next food rank once the best is gone",
+    consume:GetAttribute("macrotext2"))
+bags[30703] = savedBiscuits
+Fire("BAG_UPDATE_DELAYED")
 
 -- Conjure unchanged: left water, right food
 CHECK(conjure:GetAttribute("spell1") == "Conjure Water", "conjure left = water")
 CHECK(conjure:GetAttribute("spell2") == "Conjure Food", "conjure right = food")
 
--- Gem: the macro's shape — [mod] conjures, [nomod] uses, right-click conjures
+-- Gem: the hand-written macro's shape — [mod] steps the conjure sequence,
+-- [nomod] uses, right-click steps the same sequence
 local gemUse = gem:GetAttribute("macrotext1")
-CHECK(gemUse:find("[mod] Conjure Mana Ruby", 1, true) ~= nil,
-    "gem: modifier conjures the best KNOWN rank (Emerald untrained)", gemUse)
+local gemSeq = "reset=10 Conjure Mana Ruby, Conjure Mana Citrine, Conjure Mana Jade, Conjure Mana Agate"
+CHECK(gemUse:find("/castsequence [mod] " .. gemSeq, 1, true) ~= nil,
+    "gem: modifier walks the sequence over the KNOWN ranks (Emerald untrained)", gemUse)
 CHECK(gemUse:find("/use [nomod] item:8008", 1, true) ~= nil, "gem: plain click uses the gem held", gemUse)
-CHECK(gem:GetAttribute("macrotext2") == "/cast Conjure Mana Ruby", "gem: right-click conjures",
-    gem:GetAttribute("macrotext2"))
+CHECK(gem:GetAttribute("macrotext2") == "/castsequence " .. gemSeq,
+    "gem: right-click walks the same sequence", gem:GetAttribute("macrotext2"))
+-- Identical sequence text on both lines: the client keys a castsequence's
+-- position on that text, so left+modifier and right-click stay in step
+CHECK(gemUse:find(gemSeq, 1, true) ~= nil
+    and gem:GetAttribute("macrotext2"):find(gemSeq, 1, true) ~= nil,
+    "gem: both clicks share one sequence definition")
 
 -- Bandage: friendly target else self, best rank first
 local bandMacro = bandage:GetAttribute("macrotext1")

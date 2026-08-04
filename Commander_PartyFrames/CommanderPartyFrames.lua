@@ -145,7 +145,10 @@ SDATA.CONJURED_FOOD  = { 30703, 22019, 22895, 8076, 8075, 1487, 1114, 1113, 5349
 SDATA.CONJURE_WATER_ID, SDATA.CONJURE_FOOD_ID = 5504, 587
 -- Mana gems, best rank first: the conjure spell and the item it makes. The
 -- button mirrors the classic castsequence macro — plain click uses the best
--- gem in the bags, modifier or right-click conjures the best one you know.
+-- gem in the bags, modifier or right-click walks a reset=10 castsequence over
+-- every rank you know. Each gem is its own unique item, so the sequence is
+-- what fills the bags: re-casting the top rank on a mage already holding one
+-- only earns "you already have that item".
 SDATA.MANA_GEMS = {
     { spell = 27101, item = 22044 },   -- Mana Emerald
     { spell = 10054, item = 8008 },    -- Mana Ruby
@@ -988,23 +991,37 @@ function util.ScanItems(list, out)
     return best, total
 end
 
-function util.UseLines(ids, cond)
+-- `limit` caps how many ranks the macro reaches for. Every /use line in a
+-- macro fires, so a cascade is only safe when the items share a cooldown (mana
+-- gems do — the first usable one wins and the rest are skipped). Food and
+-- drink share nothing, so an uncapped cascade ate one of EVERY rank held on a
+-- single click; those callers pass 1.
+function util.UseLines(ids, cond, limit)
     local text = ""
-    for _, id in ipairs(ids) do
+    for i, id in ipairs(ids) do
+        if limit and i > limit then break end
         text = text .. (text ~= "" and "\n" or "")
             .. "/use " .. (cond and (cond .. " ") or "") .. "item:" .. id
     end
     return text
 end
 
--- Highest known spell in a best-first list (nil when none is trained)
-function util.BestKnown(ids)
-    if not GetSpellInfo then return nil end
-    for _, id in ipairs(ids) do
-        local n = GetSpellInfo(id)
-        if (n and knownSpells[n]) or (IsSpellKnown and IsSpellKnown(id)) then return n, id end
+-- The mage's own conjure castsequence, best rank first and only the ranks
+-- trained: "reset=10 Conjure Mana Ruby, Conjure Mana Citrine, ...". Returned
+-- without the /castsequence prefix so both the modifier line and the
+-- right-click line can share it — identical sequence text means the client
+-- keeps ONE position for the pair, so the two ways of pressing it stay in
+-- step. nil when no gem spell is trained.
+function util.GemSequence()
+    local names = {}
+    for _, id in ipairs(util.gemSpells or {}) do
+        local n = GetSpellInfo and GetSpellInfo(id)
+        if n and (knownSpells[n] or (IsSpellKnown and IsSpellKnown(id))) then
+            names[#names + 1] = n
+        end
     end
-    return nil
+    if #names == 0 then return nil end
+    return "reset=10 " .. table.concat(names, ", ")
 end
 
 -- Bag tallies behind both the counters and the /use lines. Cheap enough to
@@ -1135,32 +1152,41 @@ local function BindMageUtilityButtons()
 
     -- Consume: left = drink, right = eat. Kept separate on purpose — hitting
     -- both buttons is how you ask for both, and that beats a combined click
-    -- that always burns one of each.
+    -- that always burns one of each. Best rank only, one item per click: the
+    -- rank cascade belongs on cooldown-sharing items, and food and drink share
+    -- no cooldown, so every line landed and a click swallowed one of each rank
+    -- in the bags. Nothing is lost by capping it — you cannot eat or drink in
+    -- combat anyway, and BAG_UPDATE_DELAYED re-aims the button on the next
+    -- rank the moment the best one runs dry.
     consumeBtn:SetAttribute("type1", "macro")
-    consumeBtn:SetAttribute("macrotext1", util.UseLines(c.waterIds))
+    consumeBtn:SetAttribute("macrotext1", util.UseLines(c.waterIds, nil, 1))
     consumeBtn:SetAttribute("type2", "macro")
-    consumeBtn:SetAttribute("macrotext2", util.UseLines(c.foodIds))
+    consumeBtn:SetAttribute("macrotext2", util.UseLines(c.foodIds, nil, 1))
     consumeBtn.icon:SetTexture(util.ItemIcon(c.water) or util.ItemIcon(c.food)
         or "Interface\\Icons\\INV_Drink_18")
     consumeBtn.icon:SetDesaturated(not (c.food or c.water))
 
-    -- Mana gem: the castsequence macro's shape, minus the sequencing —
-    -- plain click uses the best gem held, modifier or right-click conjures
-    -- the best rank known (no reset window to get out of step with).
+    -- Mana gem: the hand-written castsequence macro, line for line. Left-click
+    -- consumes — the /use cascade is safe here because every gem shares one
+    -- two-minute cooldown, so the first usable rank fires and the rest are
+    -- skipped. Modifier + left, or right-click, walks the conjure sequence:
+    -- Ruby, Citrine, Jade, Agate, one per press, so a run of clicks ends with
+    -- one of every gem rather than four failed re-casts of the top rank.
     if gemBtn then
-        local conjureName = util.BestKnown(util.gemSpells)
+        local seq = util.GemSequence()
         local useText = util.UseLines(c.gemIds, "[nomod]")
-        if conjureName then
-            useText = "/cast [mod] " .. conjureName .. (useText ~= "" and "\n" or "") .. useText
+        if seq then
+            useText = "/castsequence [mod] " .. seq
+                .. (useText ~= "" and "\n" or "") .. useText
         end
         gemBtn:SetAttribute("type1", "macro")
         gemBtn:SetAttribute("macrotext1", useText)
         gemBtn:SetAttribute("type2", "macro")
-        gemBtn:SetAttribute("macrotext2", conjureName and ("/cast " .. conjureName) or "")
+        gemBtn:SetAttribute("macrotext2", seq and ("/castsequence " .. seq) or "")
         gemBtn.icon:SetTexture(util.ItemIcon(c.gem) or "Interface\\Icons\\INV_Misc_Gem_Emerald_01")
         gemBtn.icon:SetDesaturated(not c.gem)
         gemBtn.wanted = DB("ShowGemButton", true)
-            and (c.gem ~= nil or util.BestKnown(util.gemSpells) ~= nil) or false
+            and (c.gem ~= nil or seq ~= nil) or false
     end
 
     -- Portals & teleports: two rows of known destinations
@@ -1255,6 +1281,7 @@ function util.Paint(now)
         gemBtn.tip1 = (c.gemN or 0) > 0
             and string.format("Left-click: use your best gem  (%d held)", c.gemN)
             or "Left-click: no gem in your bags"
+        gemBtn.tip2 = "Right-click (or modifier + left): conjure the next gem in the sequence"
     end
     if not (bandageBtn and bandageBtn.wanted) then return end
     put(bandageBtn.count, c.bandN)
@@ -1430,7 +1457,8 @@ local function EnsureMageUtilButtons()
             "Left-click: Conjure Water", "Right-click: Conjure Food")
         conjureBtn.count = mkCount(conjureBtn, "BOTTOMRIGHT", 0.45, 0.75, 1)
         gemBtn = mkBtn("CommanderPartyFramesGem", "Mana Gem",
-            "Left-click: use your best gem", "Right-click (or modifier + left): conjure one")
+            "Left-click: use your best gem",
+            "Right-click (or modifier + left): conjure the next gem in the sequence")
         gemBtn.count = mkCount(gemBtn, "BOTTOMRIGHT", 1, 1, 1)
         util.portalBtn = mkBtn("CommanderPartyFramesPortal", "Portals & Teleports",
             "Click: open the destination list", "Top row teleports, bottom row portals")
