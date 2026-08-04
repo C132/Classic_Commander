@@ -1061,17 +1061,30 @@ CHECK(not browser:IsShown(), "K: crate click toggles closed")
 -- ===========================================================================
 
 local FRINGE = {
-    PALADIN = "SHOCKADIN", PRIEST = "SMITE", ROGUE = "SUBTLETY",
-    WARLOCK = "TANK", DRUID = "DREAMSTATE",
+    { class = "WARRIOR", key = "PROT_PVP" },
+    { class = "PALADIN", key = "SHOCKADIN" },
+    { class = "HUNTER", key = "MELEE" },
+    { class = "ROGUE", key = "SUBTLETY" },
+    { class = "PRIEST", key = "SMITE" },
+    { class = "SHAMAN", key = "TANK" },
+    { class = "MAGE", key = "KROSH" },
+    { class = "WARLOCK", key = "TANK" },
+    { class = "WARLOCK", key = "SLSL" },
+    { class = "DRUID", key = "DREAMSTATE" },
 }
 local function FindSpec(classToken, key)
     for _, spec in ipairs(Data.Recommendations[classToken].specs) do
         if spec.key == key then return spec end
     end
 end
-for classToken, key in pairs(FRINGE) do
-    CHECK(FindSpec(classToken, key) ~= nil, "L: fringe spec present " .. classToken .. "/" .. key)
+local fringeClasses = {}
+for _, f in ipairs(FRINGE) do
+    CHECK(FindSpec(f.class, f.key) ~= nil, "L: fringe spec present " .. f.class .. "/" .. f.key)
+    fringeClasses[f.class] = true
 end
+local classCount = 0
+for _ in pairs(fringeClasses) do classCount = classCount + 1 end
+CHECK(classCount == 9, "L: every class fields a fringe spec", classCount)
 
 -- House rule: fringe picks may only use item IDs the generated database
 -- already verified (categories or v1 recommendations)
@@ -1080,7 +1093,7 @@ for _, cat in ipairs(Data.Categories) do
     for _, entry in ipairs(cat.items) do allowed[entry.id] = true end
 end
 local fringeKeys = {}
-for classToken, key in pairs(FRINGE) do fringeKeys[classToken .. "/" .. key] = true end
+for _, f in ipairs(FRINGE) do fringeKeys[f.class .. "/" .. f.key] = true end
 for classToken, rec in pairs(Data.Recommendations) do
     for _, spec in ipairs(rec.specs) do
         if not fringeKeys[classToken .. "/" .. spec.key] then
@@ -1091,14 +1104,32 @@ for classToken, rec in pairs(Data.Recommendations) do
     end
 end
 local fringeBad = nil
-for classToken, key in pairs(FRINGE) do
-    for _, pick in ipairs(FindSpec(classToken, key).picks) do
+for _, f in ipairs(FRINGE) do
+    for _, pick in ipairs(FindSpec(f.class, f.key).picks) do
         for _, e in ipairs(pick.entries) do
-            if not allowed[e.id] then fringeBad = classToken .. "/" .. key .. ":" .. e.id end
+            if not allowed[e.id] then fringeBad = f.class .. "/" .. f.key .. ":" .. e.id end
         end
     end
 end
 CHECK(fringeBad == nil, "L: every fringe id already verified by the generator", fringeBad)
+
+-- An empty-entry slot (Tank Shaman's WEAPON: Rockbiter is the consumable)
+-- renders its note but stays OUT of the readiness denominator
+local shamTank = FindSpec("SHAMAN", "TANK")
+local gradeable = 0
+for _, pick in ipairs(shamTank.picks) do
+    if #pick.entries > 0 then gradeable = gradeable + 1 end
+end
+CHECK(gradeable == #shamTank.picks - 1, "L: shaman weapon slot carries no entries", gradeable)
+db.BrowserClass, db.BrowserSpec = "SHAMAN", "TANK"
+browser.viewLoadout.__scripts.OnClick(browser.viewLoadout)
+CHECK(list[1].text:find("/" .. gradeable .. " carried", 1, true),
+    "L: readiness denominator skips the empty slot", list[1].text)
+local weaponHeaderSeen = false
+for _, item in ipairs(list) do
+    if item.kind == "header" and item.text:find("Rockbiter", 1, true) then weaponHeaderSeen = true end
+end
+CHECK(weaponHeaderSeen, "L: empty slot still renders its note header")
 
 -- A fringe loadout renders end-to-end with readiness grades
 db.BrowserClass, db.BrowserSpec = "PALADIN", "SHOCKADIN"

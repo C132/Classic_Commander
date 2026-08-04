@@ -232,15 +232,22 @@ paths, both talent-API shapes, and the Inventory button's installed/absent gate.
 ## Batch 2 follow-ups (same day)
 
 **Fringe loadouts.** The generated database stays generated; a new hand-curated
-`CommanderQuartermasterFringe.lua` appends off-meta specs at load — Shockadin
-(Paladin, CASTER), Smite (Priest, CASTER), Subtlety (Rogue, MELEE, PvP-flavored),
-Demo Tank (Warlock, TANK — the Leotheras/Illidan niche), and Dreamstate (Druid,
-HEALER, the int-regen arena battery). House rule, harness-enforced: fringe picks may
-only reference item IDs that already exist in the verified database, so hand
-curation never dilutes the generator's ID guarantees. Tab-3 Rogues now auto-detect
-into the real Subtlety loadout; fringe specs sharing a tree with a mainstream spec
-(Shockadin/Holy, Smite/Holy, Demo Tank/Demonology, Dreamstate/Balance) keep the
-mainstream auto-detect default and are picked by hand.
+`CommanderQuartermasterFringe.lua` appends off-meta specs at load. Every class
+fields one: Prot PvP (Warrior — the Season 1 shield-slam cheese), Shockadin
+(Paladin), Melee (Hunter — the forbidden spec, Bogling Root included), Subtlety
+(Rogue, PvP), Smite (Priest), Tank (Shaman — no taunt, all heart, plus a
+Masterwork Target Dummy), Krosh Tank (Mage — the Gruul's Lair Spellsteal
+contract), Demo Tank + SL/SL (Warlock — the Leotheras/Illidan niche and the arena
+drain-tank), and Dreamstate (Druid, the int-regen arena battery). House rule,
+harness-enforced: fringe picks may only reference item IDs that already exist in
+the verified database, so hand curation never dilutes the generator's ID
+guarantees. A slot may carry a note and NO entries (Tank Shaman's weapon slot:
+Rockbiter is the consumable) — it renders as advice and stays out of the
+readiness denominator. Tab-3 Rogues now auto-detect into the real Subtlety
+loadout; fringe specs sharing a tree with a mainstream spec (Shockadin/Holy,
+Smite/Holy, Demo Tank/Demonology, Dreamstate/Balance, Prot PvP/Protection, Tank
+Shaman/Enhancement-adjacent) keep the mainstream auto-detect default and are
+picked by hand.
 
 **Item level column.** A fifth sortable column, Lvl, left of the counts (a property,
 not a holding — the window widened 800→850 to pay for it honestly). Values come from
