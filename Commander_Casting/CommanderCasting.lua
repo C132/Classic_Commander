@@ -10,39 +10,10 @@ local function CreateFullScreenGlow()
     return glow
 end
 
--- Spell school keyword tables (file scope so they aren't rebuilt every OnUpdate frame)
-local frostKeywords = {"frost", "ice", "freeze", "blizzard", "frostbolt", "cone of cold"}
-local holyKeywords = {"holy", "light", "heal", "smite", "flash", "prayer", "resurrection", "exorcism", "consecration"}
-local fireKeywords = {"fire", "flame", "immolate", "scorch", "pyroblast", "blast wave", "flamestrike", "searing", "incinerate"}
-local natureKeywords = {"nature", "lightning", "wrath", "bolt", "starfire", "hurricane", "tranquility", "healing", "touch"}
-local shadowKeywords = {"shadow", "mind", "psychic", "flay", "blast", "mana burn", "devouring plague"}
-local arcaneKeywords = {"arcane", "mana", "magic", "polymorph", "missiles", "explosion", "conjure", "evocation", "counterspell"}
-
--- Parse spell school from the spell name
-local function getSpellSchool(spellName)
-    spellName = string.lower(spellName)
-
-    for _, keyword in ipairs(frostKeywords) do
-        if string.find(spellName, keyword) then return "Frost" end
-    end
-    for _, keyword in ipairs(natureKeywords) do
-        if string.find(spellName, keyword) then return "Nature" end
-    end
-    for _, keyword in ipairs(holyKeywords) do
-        if string.find(spellName, keyword) then return "Holy" end
-    end
-    for _, keyword in ipairs(fireKeywords) do
-        if string.find(spellName, keyword) then return "Fire" end
-    end
-    for _, keyword in ipairs(shadowKeywords) do
-        if string.find(spellName, keyword) then return "Shadow" end
-    end
-    for _, keyword in ipairs(arcaneKeywords) do
-        if string.find(spellName, keyword) then return "Arcane" end
-    end
-
-    return "Unknown"
-end
+-- Spell school is parsed from the spell's name (no TBC API reports it) by the
+-- memoized resolver in CommanderCastingDB.lua, shared with the portrait rings
+-- so the two displays can never disagree about what school a spell is.
+local getSpellSchool = CommanderCasting_SchoolOf
 
 local function UpdateCastingGlow(glow)
     -- Update texture if it changed in DB

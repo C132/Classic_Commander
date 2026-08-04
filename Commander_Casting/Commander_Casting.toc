@@ -1,12 +1,13 @@
 ## Interface: 20506
 ## Category: Commander
 ## Title: Commander Casting
-## Notes: Casting module for Commander
+## Notes: Casting module for Commander: a fullscreen glow that rises with the cast, and radial cast bars around the player and target portraits
 ## Author: Devin
-## Version: 2.1.0
+## Version: 2.2.0
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderCastingDB
 ## RequiredDeps: Commander_Events
 
 CommanderCastingDB.lua
 CommanderCasting.lua
+CommanderCastingPortrait.lua
