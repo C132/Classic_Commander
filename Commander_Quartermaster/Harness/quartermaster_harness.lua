@@ -423,11 +423,19 @@ C_Container = {
     GetItemCooldown = function() return 0, 0, false end,
 }
 
+-- Client item-cache mock: only these ids are "cached", with an item level —
+-- everything else returns nil so curated-name rendering keeps getting hit
+local ILVL = { [33208] = 100, [22861] = 92 }
+
 C_Item = {
     GetItemInfoInstant = function(id)
         return id, "type", "sub", "loc", 134400, ITEM_CLASS[id] or 0, 0
     end,
-    GetItemInfo = function() return nil end,          -- never cached: curated names render
+    GetItemInfo = function(id)
+        local ilvl = ILVL[id]
+        if not ilvl then return nil end
+        return "X" .. id, "|Hitem:" .. id .. ":0|h[x]|h", 1, ilvl
+    end,
     GetItemIconByID = function() return 134400 end,
     GetItemCount = function(id, includeBank)
         local total = 0
@@ -542,6 +550,7 @@ CommanderQuartermasterLedger = {
 
 if MODE ~= "noqm" then
     Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterData.lua")
+    Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterFringe.lua")
     Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterDB.lua")
     Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermaster.lua")
 end
@@ -1046,6 +1055,111 @@ CIItemGrid.qmButton.__scripts.OnClick(CIItemGrid.qmButton)
 CHECK(browser:IsShown(), "K: crate click opens the browser")
 CIItemGrid.qmButton.__scripts.OnClick(CIItemGrid.qmButton)
 CHECK(not browser:IsShown(), "K: crate click toggles closed")
+
+-- ===========================================================================
+-- L: fringe loadouts (hand-curated file over the generated database)
+-- ===========================================================================
+
+local FRINGE = {
+    PALADIN = "SHOCKADIN", PRIEST = "SMITE", ROGUE = "SUBTLETY",
+    WARLOCK = "TANK", DRUID = "DREAMSTATE",
+}
+local function FindSpec(classToken, key)
+    for _, spec in ipairs(Data.Recommendations[classToken].specs) do
+        if spec.key == key then return spec end
+    end
+end
+for classToken, key in pairs(FRINGE) do
+    CHECK(FindSpec(classToken, key) ~= nil, "L: fringe spec present " .. classToken .. "/" .. key)
+end
+
+-- House rule: fringe picks may only use item IDs the generated database
+-- already verified (categories or v1 recommendations)
+local allowed = {}
+for _, cat in ipairs(Data.Categories) do
+    for _, entry in ipairs(cat.items) do allowed[entry.id] = true end
+end
+local fringeKeys = {}
+for classToken, key in pairs(FRINGE) do fringeKeys[classToken .. "/" .. key] = true end
+for classToken, rec in pairs(Data.Recommendations) do
+    for _, spec in ipairs(rec.specs) do
+        if not fringeKeys[classToken .. "/" .. spec.key] then
+            for _, pick in ipairs(spec.picks) do
+                for _, e in ipairs(pick.entries) do allowed[e.id] = true end
+            end
+        end
+    end
+end
+local fringeBad = nil
+for classToken, key in pairs(FRINGE) do
+    for _, pick in ipairs(FindSpec(classToken, key).picks) do
+        for _, e in ipairs(pick.entries) do
+            if not allowed[e.id] then fringeBad = classToken .. "/" .. key .. ":" .. e.id end
+        end
+    end
+end
+CHECK(fringeBad == nil, "L: every fringe id already verified by the generator", fringeBad)
+
+-- A fringe loadout renders end-to-end with readiness grades
+db.BrowserClass, db.BrowserSpec = "PALADIN", "SHOCKADIN"
+browser.viewLoadout.__scripts.OnClick(browser.viewLoadout)
+CHECK(list[1].kind == "header" and list[1].text:find("Readiness", 1, true), "L: Shockadin loadout grades")
+CHECK(ListHas(22861), "L: Blinding Light is the Shockadin flask")
+local shockSelected = false
+for _, btn in ipairs(sidebar) do
+    if btn.__shown and btn.key == "SHOCKADIN" and btn.selectedTex.__shown then shockSelected = true end
+end
+CHECK(shockSelected, "L: sidebar selects the fringe spec")
+db.BrowserClass, db.BrowserSpec = false, false
+
+-- ===========================================================================
+-- M: item level column + sort
+-- ===========================================================================
+
+browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
+sidebarByKey("FLASKS").onClick()
+local lvlCol
+for _, col in ipairs(browser.colBtns) do
+    if col.key == "LEVEL" then lvlCol = col end
+end
+CHECK(lvlCol ~= nil, "M: Lvl column head exists")
+
+-- Rows show the cached level, dash when unknown
+local wonderRow, fortRow
+for _, row in ipairs(rows) do
+    if row.item and row.item.kind == "item" then
+        if row.item.id == 33208 then wonderRow = row end
+        if row.item.id == 22851 then fortRow = row end
+    end
+end
+CHECK(wonderRow and wonderRow.c0.__text:find("100", 1, true), "M: cached item level rendered",
+    wonderRow and wonderRow.c0.__text)
+CHECK(fortRow and fortRow.c0.__text:find("–", 1, true), "M: uncached level renders a dash",
+    fortRow and fortRow.c0.__text)
+
+lvlCol.btn.__scripts.OnClick(lvlCol.btn)
+CHECK(list[1].id == 33208 and list[2].id == 22861, "M: Lvl desc puts cached highest first",
+    tostring(list[1].id) .. "," .. tostring(list[2].id))
+CHECK(lvlCol.fs.__text == "Lvl v", "M: sort marker on the Lvl head")
+lvlCol.btn.__scripts.OnClick(lvlCol.btn)
+CHECK(list[1].id == 13513, "M: Lvl asc floats the uncached, name-sorted", list[1].id)
+CHECK(list[#list].id == 33208, "M: highest level sinks to the bottom ascending")
+lvlCol.btn.__scripts.OnClick(lvlCol.btn)
+CHECK(list[1].id == 22851, "M: third click restores curated order")
+
+-- Roster: the same column is character level
+browser.viewChars.__scripts.OnClick(browser.viewChars)
+local meRow2
+for _, row in ipairs(rows) do
+    if row.item and row.item.kind == "char" and row.item.name == "Devinq" then meRow2 = row end
+end
+CHECK(meRow2 and meRow2.c0.__text:find("70", 1, true), "M: roster Lvl cell shows character level")
+lvlCol.btn.__scripts.OnClick(lvlCol.btn)
+CHECK(list[2].kind == "char" and list[2].name == "Devinq" and list[3].name == "Banker",
+    "M: roster Lvl desc sorts 70 above 30")
+lvlCol.btn.__scripts.OnClick(lvlCol.btn)
+CHECK(list[2].kind == "char" and list[2].name == "Banker", "M: roster Lvl asc flips")
+lvlCol.btn.__scripts.OnClick(lvlCol.btn)
 
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 

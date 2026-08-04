@@ -6,9 +6,15 @@ Quartermaster files, and Commander_Inventory (for the crate-button integration)
 under a permissive WoW mock. Run both modes before shipping any change:
 
 ```
-/opt/homebrew/bin/luajit quartermaster_harness.lua        # full run (~100 checks)
+/opt/homebrew/bin/luajit quartermaster_harness.lua        # full run (~120 checks)
 /opt/homebrew/bin/luajit quartermaster_harness.lua noqm   # Inventory without Quartermaster
 ```
+
+The full run also loads `CommanderQuartermasterFringe.lua` and enforces its house
+rule: fringe-spec picks (Shockadin, Smite, Subtlety, Demo Tank, Dreamstate) may only
+reference item IDs the generated database already verified. The Lvl column is
+covered in both faces — client item level in item lists, character level in the
+Roster — including the sort-order correction when item info arrives late.
 
 Coverage: login + ledger filing, the v1 close-race flushes (bank withdrawal
 inside the coalesce window, the mail inbox-seen gate), tooltip count scoping

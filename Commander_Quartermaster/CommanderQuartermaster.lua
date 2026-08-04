@@ -493,15 +493,19 @@ end
 -- Browser window
 -- ---------------------------------------------------------------------------
 
-local FRAME_W, FRAME_H = 800, 560
+-- 850 (was 800): the Lvl column bought its width honestly instead of
+-- eating the note band
+local FRAME_W, FRAME_H = 850, 560
 local SIDEBAR_W = 190
 local ROW_H, VISIBLE_ROWS = 30, 15
 local SIDEBAR_ROW_H = 22
 local MAX_SIDEBAR_ROWS = 20
 
--- Count column left edges within a row (right-aligned, 40 wide each)
+-- Count column left edges within a row (right-aligned, 40 wide each).
+-- LEVEL sits left of the counts: it is a property, not a holding.
 local COL_W = 40
 local COL_TOTAL, COL_ALTS, COL_BANK, COL_BAGS = -44, -90, -136, -182
+local COL_LEVEL = -228
 
 local browser            -- the window frame, created lazily
 local sidebarButtons = {}
@@ -547,13 +551,15 @@ local function CurrentClass()
 end
 
 -- Talent-tab index → loadout spec key. Feral (tab 2) can't tell Bear from
--- Cat, so it defaults to Cat and tanks pick Bear by hand; there is no
--- Subtlety loadout, so a tab-3 Rogue gets Assassination's list.
+-- Cat, so it defaults to Cat and tanks pick Bear by hand. Fringe specs that
+-- share a tree with a mainstream spec (Shockadin/Holy, Smite/Holy, Demo
+-- Tank/Demonology, Dreamstate/Balance) keep the mainstream default — pick
+-- the fringe loadout by hand.
 local SPEC_BY_TAB = {
     WARRIOR = { "ARMS", "FURY", "PROTECTION" },
     PALADIN = { "HOLY", "PROTECTION", "RETRIBUTION" },
     HUNTER = { "BEAST_MASTERY", "MARKSMANSHIP", "SURVIVAL" },
-    ROGUE = { "ASSASSINATION", "COMBAT", "ASSASSINATION" },
+    ROGUE = { "ASSASSINATION", "COMBAT", "SUBTLETY" },
     PRIEST = { "DISCIPLINE", "HOLY", "SHADOW" },
     SHAMAN = { "ELEMENTAL", "ENHANCEMENT", "RESTORATION" },
     MAGE = { "ARCANE", "FIRE", "FROST" },
@@ -653,6 +659,21 @@ end
 local function ItemIcon(id)
     local ok, icon = pcall(C_Item.GetItemIconByID, id)
     return (ok and icon) or "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
+-- Item level from the client cache, memoized once known. Uncached items
+-- report 0 (rendered as a dash) and fill in as GET_ITEM_INFO_RECEIVED
+-- lands — never cache the miss, or the arrival couldn't correct it.
+local ilvlCache = {}
+local function ItemLevelOf(id)
+    local cached = ilvlCache[id]
+    if cached then return cached end
+    local ok, _, _, _, ilvl = pcall(C_Item.GetItemInfo, id)
+    if ok and type(ilvl) == "number" and ilvl > 0 then
+        ilvlCache[id] = ilvl
+        return ilvl
+    end
+    return 0
 end
 
 local function FormatCount(n)
@@ -794,6 +815,7 @@ end
 -- ------------------------------------------------------------------
 
 local function ItemSortValue(itemID, key)
+    if key == "LEVEL" then return ItemLevelOf(itemID) end
     local bags, bank, _, alts, total = CountsFor(itemID)
     if key == "BAGS" then return bags end
     if key == "BANK" then return bank end
@@ -1049,7 +1071,17 @@ local function MapSum(map)
 end
 
 local function SortChars(chars)
-    if sortKey then
+    if sortKey == "LEVEL" then
+        local asc = sortAsc
+        table.sort(chars, function(a, b)
+            local va, vb = a.rec.level or 0, b.rec.level or 0
+            if va ~= vb then
+                if asc then return va < vb end
+                return va > vb
+            end
+            return a.name < b.name
+        end)
+    elseif sortKey then
         local field = sortKey == "BAGS" and "bags" or sortKey == "BANK" and "bank"
             or sortKey == "ALTS" and "mail" or "total"
         local asc = sortAsc
@@ -1128,12 +1160,12 @@ local function BindRow(row, item)
         row.headerFS:SetText(item.text)
         row.headerFS:Show()
         row.icon:Hide(); row.nameFS:Hide(); row.noteFS:Hide(); row.tagFS:Hide()
-        row.c1:Hide(); row.c2:Hide(); row.c3:Hide(); row.c4:Hide()
+        row.c0:Hide(); row.c1:Hide(); row.c2:Hide(); row.c3:Hide(); row.c4:Hide()
         return
     end
     row.headerFS:Hide()
     row.icon:Show(); row.nameFS:Show(); row.noteFS:Show(); row.tagFS:Show()
-    row.c1:Show(); row.c2:Show(); row.c3:Show(); row.c4:Show()
+    row.c0:Show(); row.c1:Show(); row.c2:Show(); row.c3:Show(); row.c4:Show()
 
     if item.kind == "char" then
         local rec = item.rec
@@ -1153,10 +1185,13 @@ local function BindRow(row, item)
             marker = marker .. " |cffff4040(hidden)|r"
         end
         row.nameFS:SetText(("|c%s%s|r%s"):format(ClassColorHex(rec.class), item.name, marker))
-        row.noteFS:SetText(("Lv %d · %dg · seen %s"):format(
-            rec.level or 0, math.floor((rec.money or 0) / 10000), AgoText(rec.lastSeen)))
+        -- Character level lives in the Lvl column; the note keeps gold + seen
+        row.noteFS:SetText(("%dg · seen %s"):format(
+            math.floor((rec.money or 0) / 10000), AgoText(rec.lastSeen)))
         row.tagFS:SetText(("|cff777777bank %s|r"):format(Ago(rec.bankAt)))
         local sums = item.sums
+        row.c0:SetText(rec.level and rec.level > 0
+            and ("|cffaaaaaa%d|r"):format(rec.level) or FormatCount(0))
         row.c1:SetText(FormatCount(sums.bags))
         row.c2:SetText(FormatCount(sums.bank))
         row.c3:SetText(FormatCount(sums.mail))
@@ -1179,6 +1214,8 @@ local function BindRow(row, item)
     row.nameFS:SetText(nameText)
     local note = item.why or entry.note or ""
     row.noteFS:SetText(note)
+    local ilvl = ItemLevelOf(item.id)
+    row.c0:SetText(ilvl > 0 and ("|cffaaaaaa%d|r"):format(ilvl) or FormatCount(0))
     local src = entry.src
     if src then
         local color = SOURCE_COLORS[src] or "ffffffff"
@@ -1468,7 +1505,7 @@ local function CreateRow(parent, index)
     -- The tag owns a fixed band and the note clips against it, so a long
     -- effect note can never render under the source tag
     row.tagFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    row.tagFS:SetPoint("RIGHT", row, "RIGHT", COL_BAGS - COL_W - 14, 0)
+    row.tagFS:SetPoint("RIGHT", row, "RIGHT", COL_LEVEL - COL_W - 14, 0)
     row.tagFS:SetWidth(70)
     row.tagFS:SetJustifyH("RIGHT")
     row.tagFS:SetWordWrap(false)
@@ -1487,6 +1524,7 @@ local function CreateRow(parent, index)
         fs:SetJustifyH("RIGHT")
         return fs
     end
+    row.c0 = CountColumn(COL_LEVEL)
     row.c1 = CountColumn(COL_BAGS)
     row.c2 = CountColumn(COL_BANK)
     row.c3 = CountColumn(COL_ALTS)
@@ -1855,6 +1893,7 @@ local function EnsureBrowser()
         browser.colBtns[#browser.colBtns + 1] = { key = key, fs = fs, base = text, btn = btn }
         return btn
     end
+    HeaderButton(COL_LEVEL, "LEVEL", "Lvl")
     HeaderButton(COL_BAGS, "BAGS", "Bags")
     HeaderButton(COL_BANK, "BANK", "Bank")
     HeaderButton(COL_ALTS, "ALTS", "Alts")
@@ -2360,9 +2399,10 @@ frame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         -- Names/quality resolve lazily; re-bind visible rows when one of
         -- OUR items lands (arg1 = itemID; anything else is other addons'
-        -- traffic and none of our rows can have changed)
+        -- traffic and none of our rows can have changed). While sorted by
+        -- item level the ORDER itself depends on arrivals — full rebuild.
         if byID[arg1] and RefreshBrowserSoon then
-            RefreshBrowserSoon(true)
+            RefreshBrowserSoon(sortKey ~= "LEVEL")
         end
     end
 end)

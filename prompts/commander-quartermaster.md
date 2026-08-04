@@ -228,3 +228,22 @@ The offline harness moves in-repo to `Commander_Quartermaster/Harness/` (the
 Meters/Momentum convention) and grows checks for every feature above, including the
 bank/mail close-race flushes from v1's review, the transit commit/supersede/discard
 paths, both talent-API shapes, and the Inventory button's installed/absent gate.
+
+## Batch 2 follow-ups (same day)
+
+**Fringe loadouts.** The generated database stays generated; a new hand-curated
+`CommanderQuartermasterFringe.lua` appends off-meta specs at load — Shockadin
+(Paladin, CASTER), Smite (Priest, CASTER), Subtlety (Rogue, MELEE, PvP-flavored),
+Demo Tank (Warlock, TANK — the Leotheras/Illidan niche), and Dreamstate (Druid,
+HEALER, the int-regen arena battery). House rule, harness-enforced: fringe picks may
+only reference item IDs that already exist in the verified database, so hand
+curation never dilutes the generator's ID guarantees. Tab-3 Rogues now auto-detect
+into the real Subtlety loadout; fringe specs sharing a tree with a mainstream spec
+(Shockadin/Holy, Smite/Holy, Demo Tank/Demonology, Dreamstate/Balance) keep the
+mainstream auto-detect default and are picked by hand.
+
+**Item level column.** A fifth sortable column, Lvl, left of the counts (a property,
+not a holding — the window widened 800→850 to pay for it honestly). Values come from
+the client item cache, memoized, dash until known; while sorted by Lvl an item-info
+arrival triggers a full rebuild so the order corrects itself. In the Roster view the
+same column shows and sorts character level.
