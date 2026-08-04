@@ -532,6 +532,37 @@ local function CreateCorePanel()
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.SelfShieldRows end,
         })
 
+        panel:AddSection("Party Ability Bar", "A curated cooldown strip under every player: match-deciders always visible (lit = ready, swept = cooling), trinkets/racials surfacing only once spent, a red rim for lockouts (Hypothermia, Forbearance), and a gold pip when Cold Snap or Preparation can refund a cooldown. Learned from the combat log; spec-gated abilities appear once the spec is known.")
+        panel:AddCheckboxPair({
+            label = "Show Ability Bar",
+            tooltip = "Master switch for the per-player cooldown strips.",
+            get = function() return CommanderPartyFramesDB.ShowAbilityBar end,
+            set = function(value) CommanderPartyFramesDB.ShowAbilityBar = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Include Your Row",
+            tooltip = "Also show the strip under your own row — you know your cooldowns, but under pressure the sanity check is free.",
+            get = function() return CommanderPartyFramesDB.AbilityBarSelf end,
+            set = function(value) CommanderPartyFramesDB.AbilityBarSelf = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddSlider({
+            label = "Max Ability Icons",
+            tooltip = "Most icons per strip; overflow evicts utility first, defensives last.",
+            min = 3, max = 8, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.AbilityMaxIcons end,
+            set = function(value) CommanderPartyFramesDB.AbilityMaxIcons = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddCheckbox({
+            label = "Cooldown Text",
+            tooltip = "Show remaining time on cooling icons (hidden under 10s — the sweep carries it).",
+            get = function() return CommanderPartyFramesDB.AbilityCdText end,
+            set = function(value) CommanderPartyFramesDB.AbilityCdText = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+
         Commander.UI.AddHudChromeOptions(panel, CommanderPartyFramesDB, "Hud", {
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
             onChanged = function() Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE) end,
@@ -877,6 +908,37 @@ local function CreateCorePanel()
         get = function() return CommanderPartyFramesDB.RenewRefreshAt end,
         set = function(value) CommanderPartyFramesDB.RenewRefreshAt = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.RenewTrack end,
+    })
+
+    panel:AddSection("Party Ability Bar", "A curated cooldown strip under every player: match-deciders always visible (lit = ready, swept = cooling), trinkets/racials surfacing only once spent, a red rim for lockouts (Hypothermia, Forbearance), and a gold pip when Cold Snap or Preparation can refund a cooldown. Learned from the combat log; spec-gated abilities appear once the spec is known.")
+    panel:AddCheckboxPair({
+        label = "Show Ability Bar",
+        tooltip = "Master switch for the per-player cooldown strips.",
+        get = function() return CommanderPartyFramesDB.ShowAbilityBar end,
+        set = function(value) CommanderPartyFramesDB.ShowAbilityBar = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    }, {
+        label = "Include Your Row",
+        tooltip = "Also show the strip under your own row — you know your cooldowns, but under pressure the sanity check is free.",
+        get = function() return CommanderPartyFramesDB.AbilityBarSelf end,
+        set = function(value) CommanderPartyFramesDB.AbilityBarSelf = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+    })
+    panel:AddSlider({
+        label = "Max Ability Icons",
+        tooltip = "Most icons per strip; overflow evicts utility first, defensives last.",
+        min = 3, max = 8, step = 1,
+        format = "%.0f",
+        get = function() return CommanderPartyFramesDB.AbilityMaxIcons end,
+        set = function(value) CommanderPartyFramesDB.AbilityMaxIcons = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+    })
+    panel:AddCheckbox({
+        label = "Cooldown Text",
+        tooltip = "Show remaining time on cooling icons (hidden under 10s — the sweep carries it).",
+        get = function() return CommanderPartyFramesDB.AbilityCdText end,
+        set = function(value) CommanderPartyFramesDB.AbilityCdText = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
     })
 
     -- Chrome last, per the suite convention

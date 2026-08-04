@@ -578,6 +578,9 @@ SDATA.ABILITY_SHARED = {
       cd = 120, tier = 2, kind = "KICK" },
 }
 SDATA.HYPO_ID, SDATA.FORB_ID = 41425, 25771   -- Hypothermia, Forbearance
+SDATA.ABILITY_H = 16            -- ability strip height (icons are H-2)
+SDATA.MAX_ABILITY_CELLS = 8
+SDATA.KIND_RANK = { DEF = 1, CC = 2, KICK = 3, OFF = 4, UTIL = 5 }
 local abilityByName = {}    -- localized name -> { [classToken] = entry } ("*" = shared)
 local abilityState = {}     -- guid -> { [entry.key] = cdEnd }
 local lockNames = {}        -- localized lockout debuff name -> "hypo"/"forb"
@@ -593,7 +596,10 @@ local function ResolveAbilityBook()
         slot[class] = entry
     end
     for class, list in pairs(SDATA.ABILITY_BOOK) do
-        for _, entry in ipairs(list) do
+        local byKey = {}
+        for i, entry in ipairs(list) do
+            entry.ord = i
+            byKey[entry.key] = entry
             local n, _, ic = nil, nil, nil
             if entry.id and GetSpellInfo then n, _, ic = GetSpellInfo(entry.id) end
             entry.dispName = n or entry.name
@@ -601,6 +607,18 @@ local function ResolveAbilityBook()
             register(entry.dispName, class, entry)
             if entry.name ~= entry.dispName then register(entry.name, class, entry) end
         end
+        -- Reverse reset links: the target icon wears the gold pip while its
+        -- resetter is ready
+        for _, entry in ipairs(list) do
+            if entry.resets then
+                for _, tk in ipairs(entry.resets) do
+                    if byKey[tk] then byKey[tk].resetBy = entry end
+                end
+            end
+        end
+    end
+    for i, entry in ipairs(SDATA.ABILITY_SHARED) do
+        entry.ord = 50 + i
     end
     for _, entry in ipairs(SDATA.ABILITY_SHARED) do
         local n, _, ic = nil, nil, nil
@@ -1970,6 +1988,50 @@ local function AcquirePersonalRow(index)
     return row
 end
 
+-- Ability strips: one insecure row of icon cells under each player row.
+-- Each cell = icon + cooldown sweep + red lockout rim + gold reset pip +
+-- remaining-time text.
+local abilityRowPool = {}
+local function AcquireAbilityRow(index)
+    local row = abilityRowPool[index]
+    if row then return row end
+    row = CreateFrame("Frame", nil, root)
+    row:SetSize(FrameWidth(), SDATA.ABILITY_H)
+    row.cells = {}
+    for n = 1, SDATA.MAX_ABILITY_CELLS do
+        local c = {}
+        local x = STRIPE_W + 3 + (n - 1) * (SDATA.ABILITY_H - 1)
+        c.rim = row:CreateTexture(nil, "BACKGROUND")
+        c.rim:SetTexture("Interface\\Buttons\\WHITE8X8")
+        c.rim:SetVertexColor(0.95, 0.2, 0.2, 0.95)
+        c.rim:SetSize(SDATA.ABILITY_H, SDATA.ABILITY_H)
+        c.rim:SetPoint("TOPLEFT", row, "TOPLEFT", x - 1, 0)
+        c.rim:Hide()
+        c.icon = row:CreateTexture(nil, "ARTWORK")
+        c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        c.icon:SetSize(SDATA.ABILITY_H - 2, SDATA.ABILITY_H - 2)
+        c.icon:SetPoint("TOPLEFT", row, "TOPLEFT", x, -1)
+        c.icon:Hide()
+        c.cd = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
+        if c.cd.SetHideCountdownNumbers then c.cd:SetHideCountdownNumbers(true) end
+        if c.cd.SetDrawEdge then c.cd:SetDrawEdge(false) end
+        c.cd:SetAllPoints(c.icon)
+        c.cd:Hide()
+        c.pip = row:CreateTexture(nil, "OVERLAY")
+        c.pip:SetTexture("Interface\\Buttons\\WHITE8X8")
+        c.pip:SetVertexColor(1, 0.85, 0.25, 1)
+        c.pip:SetSize(5, 5)
+        c.pip:SetPoint("TOPRIGHT", c.icon, "TOPRIGHT", 1, 1)
+        c.pip:Hide()
+        c.txt = row:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+        c.txt:SetPoint("CENTER", c.icon, "CENTER", 0, 0)
+        c.txt:Hide()
+        row.cells[n] = c
+    end
+    abilityRowPool[index] = row
+    return row
+end
+
 -- Lay out a row's inner pieces for the current settings. Horizontal flow packs
 -- only the enabled identity elements (spell icon, class icon / portrait, name);
 -- the bar fills the rest. Cached by a signature so it runs only on change.
@@ -2130,12 +2192,29 @@ local function LayoutSig(width)
         .. "|" .. DB("DispelIconSize", 16) .. "|" .. tostring(DB("ShowManaBar", true))
 end
 
+-- Player rows stride taller when each carries an ability strip beneath it
+local function RowStride()
+    local s = ROW_H + ROW_GAP
+    if DB("ShowAbilityBar", true) then s = s + SDATA.ABILITY_H + 1 end
+    return s
+end
+
 local function PositionRow(row, index, topOffset, grow)
     row:ClearAllPoints()
     if grow == "UP" then
-        row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * (ROW_H + ROW_GAP))
+        local lift = DB("ShowAbilityBar", true) and (SDATA.ABILITY_H + 1) or 0
+        row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * RowStride() + lift)
     else
-        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -topOffset - (index - 1) * (ROW_H + ROW_GAP))
+        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -topOffset - (index - 1) * RowStride())
+    end
+end
+
+local function PositionAbilityRow(row, index, topOffset, grow)
+    row:ClearAllPoints()
+    if grow == "UP" then
+        row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * RowStride())
+    else
+        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -topOffset - (index - 1) * RowStride() - ROW_H - 1)
     end
 end
 
@@ -2668,7 +2747,7 @@ local function SetupSecureRows()
         rowPool[i]:Hide()
     end
     local slots = DB("FixedHeight", false) and DB("MaxRows", 6) or math.max(#secureTokens, 1)
-    root:SetSize(width, topOffset + math.max(slots * (ROW_H + ROW_GAP) - ROW_GAP, ROW_H))
+    root:SetSize(width, topOffset + math.max(slots * RowStride() - ROW_GAP, ROW_H))
 end
 
 -- ---------------------------------------------------------------------------
@@ -2915,7 +2994,7 @@ end
 
 -- Drop every injected test entry from the shared state tables
 local function ClearTestState()
-    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, targeters }) do
+    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters }) do
         for guid in pairs(t) do
             if type(guid) == "string" and guid:find("^cshieldtest") then t[guid] = nil end
         end
@@ -2943,17 +3022,115 @@ local function AppendLivePersonalRows(now)
     end
 end
 
-local function PaintPersonalRows(now, baseIndex, topOffset, grow, width, sig)
+-- Personal rows sit in a tight block after the (taller-strided) player rows
+local function PaintPersonalRows(now, shownPlayers, topOffset, grow, width, sig)
+    local base = shownPlayers * RowStride()
     for i = 1, #personalRows do
         local row = AcquirePersonalRow(i)
         if row._sig ~= sig then LayoutRow(row, width, sig) end
-        PositionRow(row, baseIndex + i, topOffset, grow)
+        local off = base + (i - 1) * (ROW_H + ROW_GAP)
+        row:ClearAllPoints()
+        if grow == "UP" then
+            row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, off)
+        else
+            row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -topOffset - off)
+        end
         local r = personalRows[i]
-        CheckExposeAlert(r, baseIndex + i, now)
-        PaintRow(row, r, now, baseIndex + i)
+        CheckExposeAlert(r, shownPlayers + i, now)
+        PaintRow(row, r, now, shownPlayers + i)
         row:Show()
     end
     for i = #personalRows + 1, #personalPool do personalPool[i]:Hide() end
+end
+
+-- Strip ordering: match-deciders first, then the book's own order
+local stripScratch = {}
+local function StripOrder(a, b)
+    local ka = SDATA.KIND_RANK[a.e.kind] or 9
+    local kb = SDATA.KIND_RANK[b.e.kind] or 9
+    if ka ~= kb then return ka < kb end
+    return (a.e.ord or 99) < (b.e.ord or 99)
+end
+
+-- Fill one ability strip from the book + live state. Tier 1 shows always;
+-- tier 2 only while cooling; spec-gated entries appear once the spec is
+-- known. Lockouts (Hypothermia/Forbearance) wear the red rim and extend the
+-- sweep; a ready resetter (Cold Snap/Prep) pips its cooling targets gold.
+local function PaintAbilityStrip(arow, r, now)
+    local n = 0
+    local guid, class = r.guid, r.class
+    if guid and class and r.state ~= "EMPTY"
+        and (not r.isSelf or DB("AbilityBarSelf", true)) then
+        wipe(stripScratch)
+        local spec = specState[guid]
+        local st = abilityState[guid]
+        local ls = lockState[guid]
+        local function consider(entry)
+            if entry.spec and entry.spec ~= spec then return end
+            local cdEnd = st and st[entry.key]
+            if cdEnd and cdEnd <= now then cdEnd = nil; st[entry.key] = nil end
+            local lockExp = entry.lock and ls and ls[entry.lock]
+            if lockExp and lockExp <= now then lockExp = nil end
+            if entry.tier == 1 or cdEnd or lockExp then
+                stripScratch[#stripScratch + 1] = { e = entry, cdEnd = cdEnd, lockExp = lockExp }
+            end
+        end
+        local list = SDATA.ABILITY_BOOK[class]
+        if list then for _, e in ipairs(list) do consider(e) end end
+        for _, e in ipairs(SDATA.ABILITY_SHARED) do consider(e) end
+        table.sort(stripScratch, StripOrder)
+
+        local maxIcons = math.min(DB("AbilityMaxIcons", 6), SDATA.MAX_ABILITY_CELLS)
+        local showTxt = DB("AbilityCdText", true)
+        for i = 1, math.min(#stripScratch, maxIcons) do
+            n = n + 1
+            local cell = arow.cells[n]
+            local s = stripScratch[i]
+            local e = s.e
+            cell.icon:SetTexture(e.dispIcon)
+            local effEnd, effDur = s.cdEnd, e.cd
+            if s.lockExp and (not effEnd or s.lockExp > effEnd) then
+                effEnd = s.lockExp
+                effDur = (e.lock == "hypo") and 30 or 60
+            end
+            if effEnd then
+                if cell.icon.SetDesaturated then cell.icon:SetDesaturated(true) end
+                cell.icon:SetVertexColor(0.75, 0.75, 0.75, 0.9)
+                if cell._end ~= effEnd then
+                    cell._end = effEnd
+                    cell.cd:SetCooldown(effEnd - effDur, effDur)
+                end
+                cell.cd:Show()
+                local left = effEnd - now
+                if showTxt and left >= 10 then
+                    cell.txt:SetText(left >= 90 and string.format("%dm", math.floor(left / 60 + 0.5))
+                        or tostring(math.floor(left)))
+                    cell.txt:Show()
+                else
+                    cell.txt:Hide()
+                end
+            else
+                if cell.icon.SetDesaturated then cell.icon:SetDesaturated(false) end
+                cell.icon:SetVertexColor(1, 1, 1, 1)
+                cell._end = nil
+                cell.cd:Hide()
+                cell.txt:Hide()
+            end
+            if s.lockExp then cell.rim:Show() else cell.rim:Hide() end
+            local rb = e.resetBy
+            local pip = false
+            if rb and s.cdEnd and not (rb.spec and rb.spec ~= spec) then
+                local rbEnd = st and st[rb.key]
+                if not rbEnd or rbEnd <= now then pip = true end
+            end
+            if pip then cell.pip:Show() else cell.pip:Hide() end
+            cell.icon:Show()
+        end
+    end
+    for i = n + 1, SDATA.MAX_ABILITY_CELLS do
+        local cell = arow.cells[i]
+        cell.icon:Hide(); cell.cd:Hide(); cell.rim:Hide(); cell.pip:Hide(); cell.txt:Hide()
+    end
 end
 
 local function Draw()
@@ -2981,14 +3158,23 @@ local function Draw()
     -- ---- Secure mode: fixed token rows, visuals only in combat ----
     if securePool and testUntil == 0 then
         if secureDirty and not InCombat() then SetupSecureRows() end
+        local barsOn = DB("ShowAbilityBar", true)
         for i, token in ipairs(secureTokens) do
             local row = rowPool[i]
             if row then
                 local r = UnitExists(token) and ResolveRow(token, now) or { state = "EMPTY" }
                 if r.guid then CheckExposeAlert(r, i, now) end
                 PaintRow(row, r, now, i)
+                if barsOn then
+                    -- Ability strips are insecure: positionable mid-combat
+                    local ar = AcquireAbilityRow(i)
+                    PositionAbilityRow(ar, i, topOffset, grow)
+                    PaintAbilityStrip(ar, r, now)
+                    ar:Show()
+                end
             end
         end
+        for i = (barsOn and #secureTokens or 0) + 1, #abilityRowPool do abilityRowPool[i]:Hide() end
         -- Personal rows ride below the secure block from their own insecure
         -- pool — Click-Cast must not cost the mage their own rows
         wipe(personalRows)
@@ -2998,9 +3184,10 @@ local function Draw()
         -- Root resizes for personal rows out of combat only (protected rows
         -- anchor to it; not worth the mid-combat taint risk)
         if not InCombat() then
-            local slots = (DB("FixedHeight", false) and DB("MaxRows", 6)
-                or math.max(#secureTokens, 1)) + #personalRows
-            root:SetSize(width, topOffset + math.max(slots * (ROW_H + ROW_GAP) - ROW_GAP, ROW_H))
+            local mainSlots = DB("FixedHeight", false) and DB("MaxRows", 6)
+                or math.max(#secureTokens, 1)
+            local bodyH = mainSlots * RowStride() + #personalRows * (ROW_H + ROW_GAP) - ROW_GAP
+            root:SetSize(width, topOffset + math.max(bodyH, ROW_H))
         end
         root:SetShown(not combatHidden and (#secureTokens > 0 or #personalRows > 0
             or DB("AlwaysShow", false)
@@ -3064,6 +3251,7 @@ local function Draw()
     for i = #rowData, maxRows + 1, -1 do rowData[i] = nil end
 
     local shown = #rowData
+    local barsOn = DB("ShowAbilityBar", true)
     for i = 1, shown do
         local row = AcquireRow(i)
         if row._sig ~= sig then LayoutRow(row, width, sig) end
@@ -3072,17 +3260,23 @@ local function Draw()
         CheckExposeAlert(r, i, now)
         PaintRow(row, r, now, i)
         row:Show()
+        if barsOn then
+            local ar = AcquireAbilityRow(i)
+            PositionAbilityRow(ar, i, topOffset, grow)
+            PaintAbilityStrip(ar, r, now)
+            ar:Show()
+        end
     end
     for i = shown + 1, #rowPool do rowPool[i]:Hide() end
+    for i = (barsOn and shown or 0) + 1, #abilityRowPool do abilityRowPool[i]:Hide() end
     PaintPersonalRows(now, shown, topOffset, grow, width, sig)
 
     DrawHeader(now, showHeader)
 
-    local totalRows = shown + #personalRows
-    local slots = DB("FixedHeight", false) and (maxRows + #personalRows) or math.max(totalRows, 1)
-    local bodyH = slots * (ROW_H + ROW_GAP) - ROW_GAP
+    local mainSlots = DB("FixedHeight", false) and math.max(maxRows, shown) or shown
+    local bodyH = mainSlots * RowStride() + #personalRows * (ROW_H + ROW_GAP) - ROW_GAP
     root:SetSize(width, topOffset + math.max(bodyH, ROW_H))
-    root:SetShown(not combatHidden and (totalRows > 0 or DB("AlwaysShow", false)
+    root:SetShown(not combatHidden and (shown + #personalRows > 0 or DB("AlwaysShow", false)
         or Commander.UI.HudUnlocked(CommanderPartyFramesDB, "Hud")))
 end
 
@@ -3140,6 +3334,13 @@ function CommanderPartyFrames_Test()
         specState["cshieldtest2"] = "DISC"
         specState["cshieldtest3"] = "RESTORATION"
         specState["cshieldtest5"] = "PROTECTION"
+        -- Ability strips: Mage2 shows the whole grammar (Ice Block cooling
+        -- under Hypothermia's red rim with Cold Snap's gold pip), the priest
+        -- a spent Fear + trinket (tier 2 surfacing), the warrior Last Stand
+        abilityState["cshieldtest1"] = { BLOCK = now + 120, CS = now + 12 }
+        lockState["cshieldtest1"] = { hypo = now + 18 }
+        abilityState["cshieldtest2"] = { FEAR = now + 14, TRINKET = now + 80 }
+        abilityState["cshieldtest5"] = { LASTSTAND = now + 60, PUMMEL = now + 4 }
         testRows = {
             { guid = "cshieldtest1", name = "Mage2", class = "MAGE", manaUser = true, health = 0.9, mana = 0.55, hpMax = 3800 },
             { guid = "cshieldtest2", name = "Priest", class = "PRIEST", manaUser = true, health = 0.85, mana = 0.7, hpMax = 4100 },
@@ -3185,6 +3386,11 @@ function CommanderPartyFrames_Test()
     specState["cshieldtest2"] = "SUBTLETY"
     specState["cshieldtest3"] = "FROST"
     specState["cshieldtest4"] = "RESTORATION"
+    -- Ability strips (priest board gets them too — chassis)
+    abilityState["cshieldtest1"] = { LASTSTAND = now + 90 }
+    abilityState["cshieldtest2"] = { VANISH = now + 45, BLIND = now + 120 }
+    abilityState["cshieldtest3"] = { BLOCK = now + 100 }
+    lockState["cshieldtest3"] = { hypo = now + 20 }
 
     local cap = myShieldValue > 0 and myShieldValue or 1265
     shieldState["cshieldtest1"] = { spellId = 25218, expire = now + 24, mine = true, absorbed = cap * 0.1, capacity = cap }
