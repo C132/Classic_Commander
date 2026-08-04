@@ -348,7 +348,7 @@ local function CreateCorePanel()
         })
         panel:AddCheckboxPair({
             label = "Status Icons",
-            tooltip = "Show the two team-synergy icons on the left of each row: Arcane Intellect state (lit / amber when a rebuff is due / ghost when missing; hidden for rage and energy classes) and the ally's biggest shield with a sweep for its remaining time. The row's number is their TOTAL shielding — Power Word: Shield, Ice Barrier, Mana Shield, wards, Sacrifice, whoever cast them.",
+            tooltip = "Show the two team-synergy icons on the left of each row: Arcane Intellect only when it needs you (ghost when missing, amber inside the rebuff window — hidden while healthy) and the ally's biggest shield with a sweep for its remaining time. The row's number is their TOTAL shielding — Power Word: Shield, Ice Barrier, Mana Shield, wards, Sacrifice, whoever cast them.",
             get = function() return CommanderPartyFramesDB.ShowSpellIcon end,
             set = function(value) CommanderPartyFramesDB.ShowSpellIcon = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,

@@ -2316,20 +2316,21 @@ local function PaintRow(row, r, now, index)
     -- Everything else: the spell icon, desaturated when no shield is up.
     if DB("ShowSpellIcon", true) then
         if layer == "INT" and not r.selfSpell then
-            if r.manaUser then
+            -- Int icon only when ACTIONABLE: ghost when missing, amber inside
+            -- the rebuff window (IntRefreshAt, default 5 min). A healthy buff
+            -- earns no pixels.
+            if r.manaUser and (not r.intUp or r.intDue) then
                 row.spellIcon:SetTexture(AI_ICON)
                 row.spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 if row.spellIcon.SetDesaturated then row.spellIcon:SetDesaturated(not r.intUp) end
                 if not r.intUp then
                     row.spellIcon:SetVertexColor(1, 1, 1, 0.35)      -- ghost: cast Int
-                elseif r.intDue then
-                    row.spellIcon:SetVertexColor(1, 0.65, 0.3, 1)    -- amber: rebuff soon
                 else
-                    row.spellIcon:SetVertexColor(1, 1, 1, 1)
+                    row.spellIcon:SetVertexColor(1, 0.65, 0.3, 1)    -- amber: rebuff soon
                 end
                 row.spellIcon:Show()
             else
-                row.spellIcon:Hide()   -- no Int slot for rage/energy allies
+                row.spellIcon:Hide()   -- healthy buff, or a rage/energy ally
             end
             row._swExp = nil
             row.swipe:Hide()
