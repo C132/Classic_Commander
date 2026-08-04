@@ -1,0 +1,24 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Talents
+## Author: Devin
+## Version: 2.1.0
+## Notes: The war academy — a full TBC talent calculator for every class: preset builds for each specialization with stat priorities and Quartermaster consumables, plus your own saved loadouts.
+## IconTexture: Interface\Icons\INV_Misc_Book_11
+## SavedVariables: CommanderTalentsDB, CommanderTalentsCustom
+## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Quartermaster
+
+CommanderTalentsData.lua
+CommanderTalentsData_Warrior.lua
+CommanderTalentsData_Paladin.lua
+CommanderTalentsData_Hunter.lua
+CommanderTalentsData_Rogue.lua
+CommanderTalentsData_Priest.lua
+CommanderTalentsData_Shaman.lua
+CommanderTalentsData_Mage.lua
+CommanderTalentsData_Warlock.lua
+CommanderTalentsData_Druid.lua
+CommanderTalentsEngine.lua
+CommanderTalentsDB.lua
+CommanderTalents.lua
