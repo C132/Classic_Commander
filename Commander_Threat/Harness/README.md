@@ -12,9 +12,18 @@ mob-change re-arm, silent adoption, contested-list loss, healer inbound).
 `threat_ui_harness.lua` loads the real settings framework plus all three
 addon files, then walks login, the panel, role switching, live sampling in
 all three roles, the pinned-self row, warnings (klaxon counts), the test
-fight per role, visibility rules, Restore Defaults keeping roles, and the
+fight per role, visibility rules, Restore Defaults keeping roles, the
 Meters embed cycle (registration, board retirement, provider rows,
-warnings-while-embedded, graceful degradation with Meters absent).
+warnings-while-embedded, graceful degradation with Meters absent), the
+three board layouts (Full ⇄ Compact height and dropped header text, Hidden
+beating both Only In Combat and the unlock override, warnings unaffected by
+all three), and the target-frame readout (each of Off/Bar/Text/Both, the
+fill fraction against Blizzard's real 119px health bar, AGGRO, the tank's
+chaser reading, the alert wash and its decay, and the hide rules for an
+unattackable or absent target).
+
+Both harnesses resolve the AddOns root from their own location, so they test
+the tree they live in — a git worktree included.
 
 The Meters side of the embed contract is pinned in
 `Commander_Meters/Harness/meters_ui_harness.lua` (its external-mode
