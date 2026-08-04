@@ -1795,13 +1795,17 @@ local function EleRow(now)
         eleRow = true,
         icon = eleIcon,
         state = (left and left <= 10) and "REFRESH" or "SHIELDED",
-        ratio = left and math.min(left / SDATA.ELE_DURATION, 1) or nil,
+        -- Main bar = the pet's HEALTH; the lifespan runs on the thin drain
+        -- strip below, exactly like Ice Barrier's cooldown on My Shields
+        healthMain = true,
+        health = hp,
+        ratio = hp or 1,
+        wsLeft = left,
+        lockMax = SDATA.ELE_DURATION,
         rightText = left and string.format("%ds", math.ceil(left)) or "",
         mainText = "",
         tLeft = left,
-        eleHealth = hp,
         freezeMark = math.min(lastFreezeDur / SDATA.ELE_DURATION, 1),
-        eleUrgent = (left and left <= lastFreezeDur) or false,
     }
     local fcd, fdur, fstart = FreezeCooldown()
     if fdur and fdur > 1.5 then lastFreezeDur = fdur end
@@ -2511,14 +2515,6 @@ local function PaintRow(row, r, now, index)
             -- Health-colored main bar: green at full through amber to red
             local h = r.ratio
             row.bar:SetVertexColor(math.min(1, 1.6 - h * 1.4), math.min(0.75, 0.15 + h * 0.75), 0.2, 0.9)
-        elseif r.eleRow then
-            -- Lifespan bar: elemental blue while a double-Freeze still fits,
-            -- amber once only one more cast can land before despawn
-            if r.eleUrgent then
-                row.bar:SetVertexColor(0.88, 0.58, 0.25, 0.95)
-            else
-                row.bar:SetVertexColor(0.45, 0.70, 0.90, 0.95)
-            end
         elseif r.state == "OTHER" then
             row.bar:SetVertexColor(0.45, 0.5, 0.7, 0.9)
         else
@@ -2561,10 +2557,6 @@ local function PaintRow(row, r, now, index)
         row.healthBar:SetVertexColor(0.25, 0.5, 0.95, 0.9)
         row.healthBar:SetWidth(math.max((row._barW or 100) * r.mana, 1))
         row.healthBar:Show()
-    elseif r.eleRow and r.eleHealth and DB("ShowManaBar", true) then
-        row.healthBar:SetVertexColor(0.2, 0.7, 0.3, 0.9)
-        row.healthBar:SetWidth(math.max((row._barW or 100) * r.eleHealth, 1))
-        row.healthBar:Show()
     else
         row.healthBar:Hide()
     end
@@ -2580,13 +2572,14 @@ local function PaintRow(row, r, now, index)
         row.raidMark:Hide()
     end
 
-    -- Freeze-window tick (elemental row only): sits at the point on the
-    -- lifespan bar where a Freeze cast stops leaving room for a second one
+    -- Freeze-window tick (elemental row only): rides the lifespan DRAIN
+    -- strip at the point where a Freeze cast stops leaving room for a
+    -- second one before despawn
     if r.eleRow and r.freezeMark and row._barW then
         local x = math.max(0, math.min((row._barW or 100) - 2, (row._barW or 100) * r.freezeMark))
         row.markTick:ClearAllPoints()
-        row.markTick:SetPoint("TOPLEFT", row.barBG, "TOPLEFT", x, 0)
-        row.markTick:SetSize(2, BAR_H)
+        row.markTick:SetPoint("CENTER", row.wsBar, "LEFT", x, 0)
+        row.markTick:SetSize(2, WS_H + 4)
         row.markTick:Show()
     else
         row.markTick:Hide()
@@ -3468,13 +3461,15 @@ function CommanderPartyFrames_Test()
                 class = playerClass, isSelf = true, selfSpell = true, icon = defs.FWARD.icon,
                 duration = 30, lockMax = 30 }
         end
-        -- Elemental sample row: portrait slot, lifespan bar with the gold
-        -- double-Freeze tick, health underlay, Freeze mid-cooldown
+        -- Elemental sample row: portrait slot, health as the main bar, the
+        -- lifespan on the drain strip with the gold double-Freeze tick,
+        -- Freeze mid-cooldown
         testRows[#testRows + 1] = { guid = "cshieldtestE", name = "Elemental",
             class = playerClass, isSelf = true, selfSpell = true, eleRow = true,
             icon = eleIcon or "Interface\\Icons\\Spell_Frost_SummonWaterElemental_2",
-            state = "SHIELDED", ratio = 0.7, rightText = "31s", mainText = "",
-            eleHealth = 0.85, freezeMark = 25 / 45, eleUrgent = false,
+            state = "SHIELDED", healthMain = true, health = 0.85, ratio = 0.85,
+            wsLeft = 31, lockMax = 45, rightText = "31s", mainText = "",
+            freezeMark = 25 / 45,
             freezeCd = 9, freezeDur = 25, freezeStart = now - 16 }
         Draw()
         print("Commander Party Frames: test board injected — rows drain and clear themselves")
