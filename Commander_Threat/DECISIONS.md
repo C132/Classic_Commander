@@ -182,6 +182,14 @@ outline alone was carrying the whole legibility burden; it sizes itself from
 repaints 4×/s. ONE placement at a time, not both: the two are alternatives
 for the same number, and the mode names carry the placement so the
 surface-map table stays a pure on/off. No portrait resolvable → the plate
-falls back to the old health-bar anchor rather than vanishing. The vocabulary
+falls back to the old health-bar anchor rather than vanishing. Z-order is a
+suite question, not a Blizzard one: Commander_Casting rings THIS portrait
+(holder at `TargetFrameTextureFrame` +5, glow and spell label at +15), so
+the plate levels off that same source at +20. A threat number is an alarm
+and a cast ring is information — the alarm takes the z-order, and the
+harness asserts the inequality so a future ring change surfaces as a failed
+check rather than a number that vanishes mid-cast. The plate still COVERS a
+slice of the ring's arc at both placements; that is the accepted cost of the
+two positions, and Bar-only avoids it entirely. The vocabulary
 change (`TEXT`/`BOTH` → `BELOW`/`BAR_BELOW`) rides a real DB migration
 (v1 → v2) instead of a silent reset: the old names had nowhere to say WHERE.

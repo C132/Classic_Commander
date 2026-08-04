@@ -993,7 +993,13 @@ local function BuildTargetReadout()
     local tag = CreateFrame("Frame", "CommanderThreatTargetTag", host)
     tag:EnableMouse(false)
     tag:SetSize(TAG_MIN_W, TAG_H)
-    tag:SetFrameLevel((host:GetFrameLevel() or 1) + 4)
+    -- Levelled off TargetFrameTextureFrame, where Blizzard's border art
+    -- actually lives, and high enough to clear Commander_Casting's portrait
+    -- ring (holder at that same source +5, glow/label overlay at +15 — it
+    -- rings THIS portrait). A threat number is an alarm and a cast ring is
+    -- information, so the alarm takes the z-order.
+    local levelSource = _G.TargetFrameTextureFrame or host
+    tag:SetFrameLevel(((levelSource.GetFrameLevel and levelSource:GetFrameLevel()) or 1) + 20)
     tag.fill = tag:CreateTexture(nil, "BACKGROUND")
     tag.fill:SetTexture(WHITE)
     tag.fill:SetVertexColor(0.02, 0.03, 0.04, 0.78)
