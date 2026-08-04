@@ -327,6 +327,68 @@ local ccState = {}        -- guid -> { expire, duration, icon, name } first CC d
 -- Live header tallies for the INT layer, rebuilt every draw pass
 local intCurses, intCCs = 0, 0
 
+-- ---------------------------------------------------------------------------
+-- Specialization inference (chassis, both layers). TBC has no spec API for
+-- other players, so specs are learned from spec-defining spells: CLEU
+-- SPELL_CAST_SUCCESS from group members and marker auras seen in our own
+-- scans (Shadowform, Moonkin/Tree, …). Names resolve at login (locale- and
+-- rank-safe); first marker stamps the spec, later conflicting markers
+-- overwrite (respec). Session-local by design.
+-- ---------------------------------------------------------------------------
+local SPEC_MARKER_IDS = {
+    -- Mage
+    [31687] = "FROST", [11426] = "FROST", [12472] = "FROST",   -- Elemental, Ice Barrier, Icy Veins
+    [11129] = "FIRE", [31661] = "FIRE", [11113] = "FIRE",      -- Combustion, Dragon's Breath, Blast Wave
+    [12043] = "ARCANE", [12042] = "ARCANE", [31589] = "ARCANE",-- PoM, Arcane Power, Slow
+    -- Priest
+    [33206] = "DISC", [10060] = "DISC", [14751] = "DISC",      -- Pain Suppression, Power Infusion, Inner Focus
+    [15473] = "SHADOW", [15286] = "SHADOW", [15487] = "SHADOW",-- Shadowform, Vampiric Embrace, Silence
+    [724] = "HOLY", [34861] = "HOLY",                          -- Lightwell, Circle of Healing
+    -- Warlock
+    [30108] = "AFFLICTION", [18220] = "AFFLICTION",            -- Unstable Affliction, Dark Pact
+    [30146] = "DEMONOLOGY", [19028] = "DEMONOLOGY",            -- Summon Felguard, Soul Link
+    [30283] = "DESTRUCTION", [17962] = "DESTRUCTION",          -- Shadowfury, Conflagrate
+    -- Druid
+    [33891] = "RESTORATION", [18562] = "RESTORATION", [17116] = "RESTORATION", -- Tree, Swiftmend, NS
+    [24858] = "BALANCE", [33831] = "BALANCE", [5570] = "BALANCE",              -- Moonkin, Treants, Insect Swarm
+    [33878] = "FERAL", [33876] = "FERAL", [16979] = "FERAL",                   -- Mangle x2, Feral Charge
+    -- Rogue
+    [1329] = "ASSASSINATION", [14177] = "ASSASSINATION",       -- Mutilate, Cold Blood
+    [13877] = "COMBAT", [13750] = "COMBAT",                    -- Blade Flurry, Adrenaline Rush
+    [36554] = "SUBTLETY", [14185] = "SUBTLETY", [16511] = "SUBTLETY", -- Shadowstep, Preparation, Hemorrhage
+    -- Warrior
+    [12294] = "ARMS", [12328] = "ARMS",                        -- Mortal Strike, Sweeping Strikes
+    [23881] = "FURY", [29801] = "FURY", [12292] = "FURY",      -- Bloodthirst, Rampage, Death Wish
+    [23922] = "PROTECTION", [20243] = "PROTECTION", [12975] = "PROTECTION", -- Shield Slam, Devastate, Last Stand
+    -- Paladin
+    [20473] = "HOLY", [20216] = "HOLY", [31842] = "HOLY",      -- Holy Shock, Divine Favor, Divine Illumination
+    [20925] = "PROTECTION", [31935] = "PROTECTION",            -- Holy Shield, Avenger's Shield
+    [35395] = "RETRIBUTION", [20066] = "RETRIBUTION",          -- Crusader Strike, Repentance
+    -- Hunter
+    [19574] = "BEASTMASTERY", [19577] = "BEASTMASTERY",        -- Bestial Wrath, Intimidation
+    [19506] = "MARKSMANSHIP", [34490] = "MARKSMANSHIP",        -- Trueshot Aura, Silencing Shot
+    [19386] = "SURVIVAL", [19306] = "SURVIVAL",                -- Wyvern Sting, Counterattack
+    -- Shaman
+    [16166] = "ELEMENTAL", [30706] = "ELEMENTAL",              -- Elemental Mastery, Totem of Wrath
+    [17364] = "ENHANCEMENT", [30823] = "ENHANCEMENT",          -- Stormstrike, Shamanistic Rage
+    [16190] = "RESTORATION", [16188] = "RESTORATION", [974] = "RESTORATION", -- Mana Tide, NS, Earth Shield
+}
+-- Talent-tab icons per class+spec (the Specialization display modes)
+local SPEC_ICONS = {
+    MAGE    = { ARCANE = "Interface\\Icons\\Spell_Holy_MagicalSentry", FIRE = "Interface\\Icons\\Spell_Fire_FireBolt02", FROST = "Interface\\Icons\\Spell_Frost_FrostBolt02" },
+    PRIEST  = { DISC = "Interface\\Icons\\Spell_Holy_WordFortitude", HOLY = "Interface\\Icons\\Spell_Holy_HolyBolt", SHADOW = "Interface\\Icons\\Spell_Shadow_ShadowWordPain" },
+    WARLOCK = { AFFLICTION = "Interface\\Icons\\Spell_Shadow_DeathCoil", DEMONOLOGY = "Interface\\Icons\\Spell_Shadow_Metamorphosis", DESTRUCTION = "Interface\\Icons\\Spell_Shadow_RainOfFire" },
+    DRUID   = { BALANCE = "Interface\\Icons\\Spell_Nature_StarFall", FERAL = "Interface\\Icons\\Ability_Racial_BearForm", RESTORATION = "Interface\\Icons\\Spell_Nature_HealingTouch" },
+    ROGUE   = { ASSASSINATION = "Interface\\Icons\\Ability_Rogue_Eviscerate", COMBAT = "Interface\\Icons\\Ability_BackStab", SUBTLETY = "Interface\\Icons\\Ability_Stealth" },
+    WARRIOR = { ARMS = "Interface\\Icons\\Ability_Warrior_SavageBlow", FURY = "Interface\\Icons\\Ability_Warrior_InnerRage", PROTECTION = "Interface\\Icons\\Ability_Warrior_DefensiveStance" },
+    PALADIN = { HOLY = "Interface\\Icons\\Spell_Holy_HolyBolt", PROTECTION = "Interface\\Icons\\Spell_Holy_DevotionAura", RETRIBUTION = "Interface\\Icons\\Spell_Holy_AuraOfLight" },
+    HUNTER  = { BEASTMASTERY = "Interface\\Icons\\Ability_Hunter_BeastTaming", MARKSMANSHIP = "Interface\\Icons\\Ability_Marksmanship", SURVIVAL = "Interface\\Icons\\Ability_Hunter_SwiftStrike" },
+    SHAMAN  = { ELEMENTAL = "Interface\\Icons\\Spell_Nature_Lightning", ENHANCEMENT = "Interface\\Icons\\Spell_Nature_LightningShield", RESTORATION = "Interface\\Icons\\Spell_Nature_MagicImmunity" },
+}
+local specMarkerNames = {}  -- localized marker spell name -> spec token
+local specState = {}        -- guid -> spec token (session cache, never pruned)
+local groupGuids = {}       -- guid -> true for the current roster (CLEU filter)
+
 -- Classes whose members run on mana (TBC): the INT layer's buff targets.
 -- Judged by class, not live power type, so a shapeshifted druid stays a
 -- target instead of flapping between target and not each form change.
@@ -825,6 +887,10 @@ local function ScanUnit(unit, reliable)
         elseif intOn and isPlayer and not armorFound and armorNames[aura.name] then
             armorFound = { icon = armorNames[aura.name], expire = aura.expirationTime }
         end
+        -- Spec inference from visible marker auras (Shadowform, forms, Tree…)
+        if specMarkerNames[aura.name] then
+            specState[guid] = specMarkerNames[aura.name]
+        end
         -- Aggregate shielding: catch every named absorb aura, whoever cast it
         -- (PW:S lands in the branch above, so this is a separate check).
         -- No early break: absorbs (and armor) can sit anywhere in the list.
@@ -1029,15 +1095,25 @@ for i = 1, 40 do GROUP_UNITS["raid" .. i] = true end
 local LOOK_UNITS = { target = true, focus = true, mouseover = true }
 
 local function ScanGroup()
+    wipe(groupGuids)
+    if playerGUID then groupGuids[playerGUID] = true end
     if IsInRaid and IsInRaid() then
         for i = 1, 40 do
             local u = "raid" .. i
-            if UnitExists(u) then ScanUnit(u, IsReliable(u)) end
+            if UnitExists(u) then
+                local g = UnitGUID and UnitGUID(u)
+                if g then groupGuids[g] = true end
+                ScanUnit(u, IsReliable(u))
+            end
         end
     elseif IsInGroup and IsInGroup() then
         for i = 1, 4 do
             local u = "party" .. i
-            if UnitExists(u) then ScanUnit(u, IsReliable(u)) end
+            if UnitExists(u) then
+                local g = UnitGUID and UnitGUID(u)
+                if g then groupGuids[g] = true end
+                ScanUnit(u, IsReliable(u))
+            end
         end
     end
     ScanUnit("player", true)
@@ -1047,8 +1123,17 @@ end
 local function OnCombatLog()
     local _, subevent, _, sourceGUID, _, _, _, destGUID, _, _, _,
         a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11 = CombatLogGetCurrentEventInfo()
+    if subevent == "SPELL_CAST_SUCCESS" then
+        -- Spec inference: a group member casting a spec-defining spell
+        -- (a2 = spellName — rank- and locale-safe via the name table)
+        if sourceGUID and groupGuids[sourceGUID] and a2 then
+            local spec = specMarkerNames[a2]
+            if spec then specState[sourceGUID] = spec end
+        end
+        return
+    end
     if subevent == "SPELL_SUMMON" then
-        -- Water Elemental lifespan clock (banner segment)
+        -- Water Elemental lifespan clock (elemental row)
         if layer == "INT" and sourceGUID == playerGUID and a1 == WATER_ELE_ID then
             eleExpire = GetTime() + ELE_DURATION
         end
@@ -1454,6 +1539,18 @@ local function ShortName(name, maxc)
     return name
 end
 
+-- Spec icon when the spec has been learned, class icon until then
+local function SetSpecOrClassIcon(tex, r)
+    local spec = r.guid and specState[r.guid]
+    local icon = spec and r.class and SPEC_ICONS[r.class] and SPEC_ICONS[r.class][spec]
+    if icon then
+        tex:SetTexture(icon)
+        tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        return
+    end
+    SetClassIcon(tex, r.class, r.guid)
+end
+
 
 -- ---------------------------------------------------------------------------
 -- Row widgets. Rows are secure unit buttons when Click-Cast was on at load
@@ -1630,8 +1727,8 @@ local function LayoutRow(row, width, sig)
         showHealth = false
     end
     local showUnitIcon = (mode == "CLASS_ICON" or mode == "PORTRAIT" or mode == "ICON_NAME"
-        or mode == "ICON_PORTRAIT")
-    local showUnitIcon2 = (mode == "ICON_PORTRAIT")
+        or mode == "ICON_PORTRAIT" or mode == "SPEC" or mode == "SPEC_PORTRAIT")
+    local showUnitIcon2 = (mode == "ICON_PORTRAIT" or mode == "SPEC_PORTRAIT")
     local showName = (mode == "NAME" or mode == "ICON_NAME")
 
     row:SetSize(width, ROW_H)
@@ -1936,6 +2033,20 @@ local function PaintRow(row, r, now, index)
             row.unitIcon2:SetTexCoord(0.12, 0.88, 0.12, 0.88)
         else
             SetClassIcon(row.unitIcon2, r.class, r.guid)
+        end
+        row.unitIcon2:Show()
+    elseif mode == "SPEC" then
+        SetSpecOrClassIcon(row.unitIcon, r)
+        row.unitIcon:Show()
+        row.unitIcon2:Hide()
+    elseif mode == "SPEC_PORTRAIT" then
+        SetSpecOrClassIcon(row.unitIcon, r)
+        row.unitIcon:Show()
+        if r.unit and UnitExists(r.unit) and SetPortraitTexture then
+            SetPortraitTexture(row.unitIcon2, r.unit)
+            row.unitIcon2:SetTexCoord(0.12, 0.88, 0.12, 0.88)
+        else
+            SetSpecOrClassIcon(row.unitIcon2, r)
         end
         row.unitIcon2:Show()
     elseif mode == "CLASS_ICON" or mode == "ICON_NAME" then
@@ -2546,7 +2657,7 @@ end
 
 -- Drop every injected test entry from the shared state tables
 local function ClearTestState()
-    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, targeters }) do
+    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, targeters }) do
         for guid in pairs(t) do
             if type(guid) == "string" and guid:find("^cshieldtest") then t[guid] = nil end
         end
@@ -2766,6 +2877,11 @@ function CommanderPartyFrames_Test()
         ccState["cshieldtest4"] = { expire = now + 7, duration = 10, name = "Test Polymorph",
             icon = "Interface\\Icons\\Spell_Nature_Polymorph" }
         targeters["cshieldtest5"] = 2
+        -- Learned specs, so the Specialization display modes preview
+        specState["cshieldtest1"] = "FROST"
+        specState["cshieldtest2"] = "DISC"
+        specState["cshieldtest3"] = "RESTORATION"
+        specState["cshieldtest5"] = "PROTECTION"
         testRows = {
             { guid = "cshieldtest1", name = "Mage2", class = "MAGE", manaUser = true, health = 0.9, mana = 0.55, hpMax = 3800 },
             { guid = "cshieldtest2", name = "Priest", class = "PRIEST", manaUser = true, health = 0.85, mana = 0.7, hpMax = 4100 },
@@ -2806,6 +2922,11 @@ function CommanderPartyFrames_Test()
     targeters["cshieldtest1"] = 3
     targeters["cshieldtest2"] = 1
     targeters["cshieldtest4"] = 2
+    -- Learned specs for the Specialization display modes
+    specState["cshieldtest1"] = "PROTECTION"
+    specState["cshieldtest2"] = "SUBTLETY"
+    specState["cshieldtest3"] = "FROST"
+    specState["cshieldtest4"] = "RESTORATION"
 
     local cap = myShieldValue > 0 and myShieldValue or 1265
     shieldState["cshieldtest1"] = { spellId = 25218, expire = now + 24, mine = true, absorbed = cap * 0.1, capacity = cap }
@@ -3015,6 +3136,11 @@ events:SetScript("OnEvent", function(self, event, arg1)
             RegisterAbsorb(543, 4, { 0.95, 0.55, 0.30 })    -- Fire Ward: soft ember
             RegisterAbsorb(6143, 5, { 0.62, 0.84, 0.95 })   -- Frost Ward: pale ice
             RegisterAbsorb(SAC_ID, 6, { 0.42, 0.42, 0.46 }) -- Sacrifice: slight dark grey
+            -- Spec-marker names (chassis: both layers drive spec displays)
+            for id, spec in pairs(SPEC_MARKER_IDS) do
+                local n = GetSpellInfo(id)
+                if n then specMarkerNames[n] = spec end
+            end
         end
         if GetSpellInfo then
             for _, id in ipairs(CC_SPELL_IDS) do

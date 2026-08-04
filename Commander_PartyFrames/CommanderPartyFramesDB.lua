@@ -58,6 +58,12 @@ local DefaultSettings = {
     MageClickMiddle = "TARGET", -- mage row middle-click = target the ally
     MageClickModLeft = 1008,    -- mage row mod+left     = Amplify Magic
     SelfShieldRows = true,      -- append your own shields under the ally rows
+
+    -- Party Ability Bar (engine lands in phases; keys reserved now)
+    ShowAbilityBar = true,      -- cooldown strip under every player row
+    AbilityMaxIcons = 6,        -- most ability icons per strip (3-8)
+    AbilityBarSelf = true,      -- include your own row's strip
+    AbilityCdText = true,       -- remaining-time text on cooling icons
     TrackManaShield = true,     -- Mana Shield row in the self-shield extra
     TrackWards = true,          -- Fire Ward / Frost Ward rows in the extra
 
@@ -313,13 +319,15 @@ local function CreateCorePanel()
         panel:AddSection("Identity & Icons")
         panel:AddDropdownPair({
             label = "Show Unit As",
-            tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait.",
+            tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
             options = {
                 { text = "Class Icon", value = "CLASS_ICON" },
                 { text = "Portrait", value = "PORTRAIT" },
                 { text = "Name", value = "NAME" },
                 { text = "Icon + Name", value = "ICON_NAME" },
                 { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
+                { text = "Specialization", value = "SPEC" },
+                { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
             },
             get = function() return CommanderPartyFramesDB.UnitDisplay end,
             set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
@@ -643,13 +651,15 @@ local function CreateCorePanel()
     panel:AddSection("Identity & Icons")
     panel:AddDropdownPair({
         label = "Show Unit As",
-        tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait.",
+        tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
         options = {
             { text = "Class Icon", value = "CLASS_ICON" },
             { text = "Portrait", value = "PORTRAIT" },
             { text = "Name", value = "NAME" },
             { text = "Icon + Name", value = "ICON_NAME" },
             { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
+            { text = "Specialization", value = "SPEC" },
+            { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
         },
         get = function() return CommanderPartyFramesDB.UnitDisplay end,
         set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
