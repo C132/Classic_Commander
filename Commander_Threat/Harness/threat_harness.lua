@@ -7,7 +7,17 @@
 --
 --   /opt/homebrew/bin/luajit threat_harness.lua
 
-local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
+-- Resolve the AddOns root from this file's own location so the harness runs
+-- in a git worktree as well as the live AddOns directory (the Talents pattern)
+local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]+$")) or "."
+if HERE:sub(1, 1) ~= "/" then
+    HERE = (os.getenv("PWD") or ".") .. "/" .. HERE
+end
+-- Invoked by bare filename, HERE ends up ".../Harness/." — normalize, or the
+-- match below misses and the live AddOns copy loads instead of this tree's
+HERE = HERE:gsub("/%./", "/"):gsub("/%.$", "")
+local ADDONS = HERE:match("^(.*)/[^/]+/Harness$") or
+    "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
 local checks, fails = 0, 0
 local function CHECK(cond, label, detail)

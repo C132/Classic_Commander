@@ -9,7 +9,17 @@
 --
 --   /opt/homebrew/bin/luajit threat_ui_harness.lua
 
-local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
+-- Resolve the AddOns root from this file's own location so the harness runs
+-- in a git worktree as well as the live AddOns directory (the Talents pattern)
+local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]+$")) or "."
+if HERE:sub(1, 1) ~= "/" then
+    HERE = (os.getenv("PWD") or ".") .. "/" .. HERE
+end
+-- Invoked by bare filename, HERE ends up ".../Harness/." — normalize, or the
+-- match below misses and the live AddOns copy loads instead of this tree's
+HERE = HERE:gsub("/%./", "/"):gsub("/%.$", "")
+local ADDONS = HERE:match("^(.*)/[^/]+/Harness$") or
+    "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
 local checks, fails = 0, 0
 local function CHECK(cond, label, detail)
@@ -55,6 +65,7 @@ local VALID_FLAGS = { [""] = true, OUTLINE = true, THICKOUTLINE = true, MONOCHRO
     ["OUTLINE, MONOCHROME"] = true }
 
 local allFontStrings = {}
+local allTextures = {}
 local frames = {}
 local eventRegistry = {}
 
@@ -87,7 +98,12 @@ WidgetMT.__index = function(self, key)
         return fn
     end
     if key == "CreateTexture" then
-        local fn = function(s) local t = NewWidget("Texture"); t.__parent = s; return t end
+        local fn = function(s)
+            local t = NewWidget("Texture")
+            t.__parent = s
+            allTextures[#allTextures + 1] = t
+            return t
+        end
         rawset(self, key, fn)
         return fn
     end
@@ -261,6 +277,12 @@ end
 UIParent = NewWidget("Frame", "UIParent")
 GameTooltip = NewWidget("GameTooltip", "GameTooltip")
 WorldFrame = NewWidget("Frame", "WorldFrame")
+-- Blizzard's target frame, as the readout finds it: the global health bar
+-- under a protected Button parent (TargetFrame.xml, classic_anniversary)
+TargetFrame = NewWidget("Button", "TargetFrame")
+TargetFrameHealthBar = NewWidget("StatusBar", "TargetFrameHealthBar")
+TargetFrameHealthBar.GetWidth = function() return 119 end -- Blizzard's own width
+TargetFrame.HealthBar = TargetFrameHealthBar
 UISpecialFrames = {}
 tinsert = table.insert
 wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
@@ -877,6 +899,174 @@ do
     Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
 end
 CHECK(#harnessFailedErrors == 0, "C: embed cycle clean", harnessFailedErrors[1])
+
+-- ===========================================================================
+-- Board Layout: Full / Compact / Hidden
+-- ===========================================================================
+
+-- Still the live damage-role party fight from the embed section
+CHECK(root.__shown == true, "C: board up before the layout switch")
+local fullHeight = root.__h
+CHECK(type(fullHeight) == "number" and fullHeight > 0, "C: full board has a height", fullHeight)
+
+do
+    -- The header's static title and the mob name are the two things compact
+    -- gives up; find them by their content before the switch hides them
+    local titleFs, mobFs
+    for _, fs in ipairs(allFontStrings) do
+        if fs.__text == "THREAT" then titleFs = fs end
+        if fs.__text == "DEVIATE GUARDIAN" then mobFs = fs end
+    end
+    CHECK(titleFs ~= nil and mobFs ~= nil, "C: header title + mob name found in Full")
+
+    CommanderThreatDB.BoardLayout = "COMPACT"
+    Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+    Advance(1)
+    CHECK(#harnessFailedErrors == 0, "C: compact switch clean", harnessFailedErrors[1])
+    CHECK(root.__shown == true, "C: compact board still shown")
+    CHECK(root.__h < fullHeight, "C: compact board is shorter",
+        tostring(root.__h) .. " vs " .. tostring(fullHeight))
+    CHECK(titleFs.__shown == false and mobFs.__shown == false,
+        "C: compact drops the header title and the mob name")
+    CHECK(TextShownSomewhere("85%"), "C: compact still paints the headline percentage")
+    CHECK(TextShownSomewhere("TO PULL"), "C: compact still paints the headline label")
+    CHECK(TextMatching("HOLDER · ") ~= nil, "C: compact still paints the footer fact")
+    CHECK(TextShownSomewhere("Brakk"), "C: compact still paints the bar rows")
+
+    -- Warnings are unchanged by the layout
+    before = KlaxonCount()
+    Advance(3)
+    SetThreat("player", "target", false, 0, 40, 44, 44000)
+    Advance(2)
+    SetThreat("player", "target", false, 1, 88, 96, 96000)
+    Advance(1)
+    CHECK(KlaxonCount() == before + 1, "C: compact board still warns")
+
+    CommanderThreatDB.BoardLayout = "FULL"
+    Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+    Advance(1)
+    CHECK(root.__h == fullHeight, "C: Full restores the original height")
+    CHECK(titleFs.__shown == true and mobFs.__shown == true,
+        "C: Full restores the header title and the mob name")
+end
+
+-- Hidden retires the board, warnings and all other surfaces keep running
+CommanderThreatDB.BoardLayout = "HIDDEN"
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+Advance(1)
+CHECK(root.__shown == false, "C: Hidden retires the board mid-combat")
+CommanderThreatDB.CombatOnly = false
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+CHECK(root.__shown == false, "C: Hidden beats Only In Combat off")
+CommanderThreatDB.CombatOnly = true
+CommanderThreatDB.HudLocked = false
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+CHECK(root.__shown == false, "C: Hidden board is not force-shown by unlocking")
+CommanderThreatDB.HudLocked = true
+before = KlaxonCount()
+Advance(3)
+SetThreat("player", "target", false, 0, 40, 44, 44000)
+Advance(2)
+SetThreat("player", "target", false, 1, 90, 99, 99000)
+Advance(1)
+CHECK(KlaxonCount() == before + 1, "C: Hidden board still warns")
+CommanderThreatDB.BoardLayout = "FULL"
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+Advance(1)
+CHECK(root.__shown == true, "C: board returns from Hidden")
+CHECK(#harnessFailedErrors == 0, "C: layout cycle clean", harnessFailedErrors[1])
+
+-- ===========================================================================
+-- Target-frame readout: Off / Bar / Text / Both
+-- ===========================================================================
+
+local tgtBar = _G.CommanderThreatTargetBar
+local tgtText = _G.CommanderThreatTargetText
+CHECK(tgtBar ~= nil and tgtText ~= nil, "C: target-frame readout built on TargetFrame")
+
+local tgtFs
+for _, fs in ipairs(allFontStrings) do
+    if fs.__parent == tgtText then tgtFs = fs end
+end
+CHECK(tgtFs ~= nil, "C: target readout fontstring found")
+
+-- Its alert wash is the only texture parented straight to TargetFrame
+local tgtFlash
+for _, t in ipairs(allTextures) do
+    if t.__parent == _G.TargetFrame then tgtFlash = t end
+end
+CHECK(tgtFlash ~= nil, "C: target readout flash found")
+
+ClearThreat()
+SetThreat("party1", "target", true, 3, 100, 100, 100000)
+SetThreat("player", "target", false, 0, 55, 60, 60000)
+Advance(2)
+CHECK(tgtBar.__shown == false and tgtText.__shown == false,
+    "C: readout Off draws nothing")
+
+CommanderThreatDB.TargetEmbed = "BAR"
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+Advance(1)
+CHECK(tgtBar.__shown == true and tgtText.__shown == false, "C: Bar draws only the bar")
+CHECK(math.abs((tgtBar.fill.__w or 0) - 0.55 * 119) < 0.5,
+    "C: bar fill is the scaled % of the health bar's width", tgtBar.fill.__w)
+
+CommanderThreatDB.TargetEmbed = "TEXT"
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+Advance(1)
+CHECK(tgtBar.__shown == false and tgtText.__shown == true, "C: Text draws only the text")
+CHECK(tgtFs.__text == "55%", "C: readout text is the player's pull percentage", tgtFs.__text)
+
+CommanderThreatDB.TargetEmbed = "BOTH"
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+Advance(1)
+CHECK(tgtBar.__shown == true and tgtText.__shown == true, "C: Bar + Text draws both")
+
+-- Taking the mob reads AGGRO, and the alert washes the health bar
+tgtFlash.__shown = false
+before = KlaxonCount()
+Advance(3)
+SetThreat("player", "target", true, 3, 100, 115, 115000)
+SetThreat("party1", "target", false, 0, 80, 87, 100000)
+Advance(1)
+CHECK(tgtFs.__text == "AGGRO", "C: readout reads AGGRO once the mob is yours", tgtFs.__text)
+CHECK(KlaxonCount() == before + 1, "C: aggro alert fired with the readout up")
+CHECK(tgtFlash.__shown == true, "C: the alert washes the target's health bar")
+
+-- The wash decays away
+for _, f in ipairs(frames) do
+    if f.__scripts.OnUpdate then f.__scripts.OnUpdate(f, 1.0) end
+end
+CHECK(tgtFlash.__shown == false, "C: target wash decays off")
+
+-- A tank reads the CHASER's climb, not their own
+SlashCmdList.COMMANDERUI_THREAT("tank")
+ClearThreat()
+SetThreat("player", "target", true, 3, 100, 100, 120000)
+SetThreat("party1", "target", false, 0, 62, 68, 79000)
+Advance(2)
+CHECK(tgtFs.__text == "62%", "C: tank readout shows the chaser's climb", tgtFs.__text)
+SlashCmdList.COMMANDERUI_THREAT("damage")
+
+-- A friendly target means the list came from target-of-target: not this frame's number
+units.target = { guid = "P-tank", name = "Brakk", class = "WARRIOR", inGroup = true }
+Advance(1)
+CHECK(tgtBar.__shown == false and tgtText.__shown == false,
+    "C: readout hides for an unattackable target")
+units.target = nil
+Advance(1)
+CHECK(tgtBar.__shown == false and tgtText.__shown == false,
+    "C: readout hides with no target at all")
+
+-- Restore Defaults returns both new options to their defaults
+CommanderThreatDB.BoardLayout = "COMPACT"
+SlashCmdList.COMMANDERUI_THREAT("reset")
+CHECK(CommanderThreatDB.BoardLayout == "FULL" and CommanderThreatDB.TargetEmbed == "OFF",
+    "C: reset restores the layout and readout options")
+CHECK(#harnessFailedErrors == 0, "C: readout cycle clean", harnessFailedErrors[1])
+
+-- Blizzard's target frame missing: the module loads and runs without it
+CHECK(_G.CommanderThreatTargetBar ~= nil, "C: readout survives the whole run")
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

@@ -25,9 +25,6 @@ local db
 
 local THEME = {
     font = "Fonts\\ARIALN.TTF", -- condensed, uniform digit widths (no jitter)
-    fontSize = 11,
-    fontSizeSmall = 10,
-    fontSizeBig = 20,           -- the headline percentage
 
     bg      = { 0.045, 0.055, 0.065, 0.92 }, -- board fill
     chrome  = { 0.09, 0.11, 0.13, 1 },       -- header strip
@@ -46,13 +43,34 @@ local THEME = {
     statHot    = { 0.95, 0.55, 0.20 },
     statDanger = { 0.85, 0.25, 0.20 },
 
-    headerH = 20,
-    headlineH = 30,
-    rowH = 16,
     rowGap = 1,
-    footerH = 16,
-    bottomPad = 4,
 }
+
+-- Density: every metric that differs between the two board layouts, in one
+-- table each, so the layout is a lookup and never a branch in the painters.
+-- COMPACT keeps every FACT the full board shows except the mob name (the
+-- target frame already says it) — the headline block folds up into the
+-- header strip at reading size and the rows tighten. HIDDEN draws no board
+-- at all and reuses FULL's numbers so nothing divides by a missing metric.
+local DENSITY = {
+    FULL = {
+        headerH = 20, headlineH = 30, rowH = 16, footerH = 16,
+        bottomPad = 4, footPad = 5,
+        normal = 11, small = 10, big = 20,
+        rankW = 16, tpsW = 44, pctW = 40,
+        nameRight = -92, nameRightNoTps = -46, nameLeft = 22,
+    },
+    COMPACT = {
+        headerH = 18, headlineH = 0.001, rowH = 13, footerH = 14,
+        bottomPad = 3, footPad = 4,
+        normal = 10, small = 9, big = 13,
+        rankW = 14, tpsW = 38, pctW = 34,
+        nameRight = -80, nameRightNoTps = -40, nameLeft = 19,
+    },
+}
+DENSITY.HIDDEN = DENSITY.FULL
+
+local M = DENSITY.FULL -- current metrics; re-pointed by ApplyDensity
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 
@@ -123,12 +141,19 @@ local function EscOf(c)
         c[1] * 255 + 0.5, c[2] * 255 + 0.5, c[3] * 255 + 0.5)
 end
 
-local function MakeText(parent, size, justify)
+-- Every fontstring the board owns is registered with its SIZE KIND, never a
+-- number: the density switch re-fonts the whole board in one pass instead of
+-- hunting anchors, and rows built later inherit the current density for free.
+local fontKinds = {} -- array of { fs = <fontstring>, kind = "normal"|... }
+
+local function MakeText(parent, kind, justify)
     local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(THEME.font, size or THEME.fontSize, "")
+    kind = kind or "normal"
+    fs:SetFont(THEME.font, M[kind], "")
     fs:SetJustifyH(justify or "LEFT")
     fs:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
     fs:SetWordWrap(false)
+    fontKinds[#fontKinds + 1] = { fs = fs, kind = kind }
     return fs
 end
 
@@ -338,7 +363,7 @@ end
 -- Frames (created once at PLAYER_LOGIN)
 -- ---------------------------------------------------------------------------
 
-local root, headerFrame, headFlash, mobText, roleBtn
+local root, headerFrame, headFlash, headerTitle, mobText, roleBtn
 local headlineFrame, bigText, labelText, statusText
 local rowsFrame, footerText
 local boardRows = {}
@@ -346,6 +371,7 @@ local menuFrame, menuBuilder
 local view = { offset = 0 }
 local testStart, testUntil = 0, 0
 local Tick -- forward: the sampler/painter driven by the ticker
+local FlashTarget -- forward: the target-frame readout's alert pulse
 
 local flashAlpha = 0
 local function FlashDecay(_, elapsed)
@@ -367,6 +393,7 @@ end
 
 local function OnAlert(kind)
     FlashHeader()
+    if FlashTarget then FlashTarget() end
     if db.WarnSound then
         pcall(PlaySound, (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959, "Master")
     end
@@ -414,7 +441,6 @@ local function BuildRows()
         local row = boardRows[i]
         if not row then
             row = CreateFrame("Frame", nil, rowsFrame)
-            row:SetHeight(THEME.rowH)
             row.track = row:CreateTexture(nil, "BACKGROUND")
             row.track:SetTexture(WHITE)
             row.track:SetAllPoints()
@@ -432,25 +458,34 @@ local function BuildRows()
             row.stripe:SetPoint("BOTTOMLEFT")
             row.stripe:Hide()
             -- Fixed columns; only digits and bar order ever change
-            row.rank = MakeText(row, THEME.fontSizeSmall, "RIGHT")
-            row.rank:SetPoint("LEFT", row, "LEFT", 2, 0)
-            row.rank:SetWidth(16)
+            row.rank = MakeText(row, "small", "RIGHT")
             row.rank:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
-            row.name = MakeText(row, THEME.fontSize, "LEFT")
-            row.name:SetPoint("LEFT", row, "LEFT", 22, 0)
-            row.tps = MakeText(row, THEME.fontSize, "RIGHT")
-            row.tps:SetPoint("RIGHT", row, "RIGHT", -46, 0)
-            row.tps:SetWidth(44)
+            row.name = MakeText(row, "normal", "LEFT")
+            row.tps = MakeText(row, "normal", "RIGHT")
             row.tps:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
-            row.pct = MakeText(row, THEME.fontSize, "RIGHT")
-            row.pct:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-            row.pct:SetWidth(40)
+            row.pct = MakeText(row, "normal", "RIGHT")
             boardRows[i] = row
         end
+        -- Column geometry is re-applied every call, not just at creation: the
+        -- density switch runs through here
+        row:SetHeight(M.rowH)
+        row.rank:ClearAllPoints()
+        row.rank:SetPoint("LEFT", row, "LEFT", 2, 0)
+        row.rank:SetWidth(M.rankW)
+        row.name:ClearAllPoints()
+        row.name:SetPoint("LEFT", row, "LEFT", M.nameLeft, 0)
+        row.tps:ClearAllPoints()
+        row.tps:SetPoint("RIGHT", row, "RIGHT", M.nameRightNoTps, 0)
+        row.tps:SetWidth(M.tpsW)
+        row.pct:ClearAllPoints()
+        row.pct:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.pct:SetWidth(M.pctW)
         -- The name column keeps whatever room the TPS column releases
-        row.name:SetPoint("RIGHT", row, "RIGHT", db.ShowTPS and -92 or -46, 0)
+        row.name:SetPoint("RIGHT", row, "RIGHT",
+            db.ShowTPS and M.nameRight or M.nameRightNoTps, 0)
         row.tps:SetShown(db.ShowTPS and true or false)
-        row:SetPoint("TOPLEFT", rowsFrame, "TOPLEFT", 0, -((i - 1) * (THEME.rowH + THEME.rowGap)))
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", rowsFrame, "TOPLEFT", 0, -((i - 1) * (M.rowH + THEME.rowGap)))
         row:SetPoint("RIGHT", rowsFrame, "RIGHT", 0, 0)
         row:Show()
     end
@@ -461,10 +496,56 @@ end
 
 local function Layout()
     local slots = db.BarRows
-    local rowsHeight = slots * (THEME.rowH + THEME.rowGap)
+    local rowsHeight = slots * (M.rowH + THEME.rowGap)
     root:SetSize(db.FrameWidth,
-        THEME.headerH + THEME.headlineH + rowsHeight + THEME.footerH + THEME.bottomPad)
+        M.headerH + M.headlineH + rowsHeight + M.footerH + M.bottomPad)
     rowsFrame:SetHeight(rowsHeight)
+end
+
+-- Re-point every metric-dependent widget at the current density. Runs on
+-- login and on any settings change, so Full ⇄ Compact is instant — no
+-- /reload note, because nothing here is baked at creation (the accent is).
+local function ApplyDensity()
+    local compact = (db.BoardLayout == "COMPACT")
+    for i = 1, #fontKinds do
+        local e = fontKinds[i]
+        e.fs:SetFont(THEME.font, M[e.kind], "")
+    end
+
+    headerFrame:SetHeight(M.headerH)
+    headlineFrame:SetHeight(M.headlineH)
+    roleBtn:SetHeight(M.headerH)
+
+    -- Compact folds the headline trio up into the header strip: the static
+    -- THREAT word and the mob name yield the room (the title is decoration,
+    -- and the mob's name is on the target frame you are already looking at)
+    headerTitle:SetShown(not compact)
+    mobText:SetShown(not compact)
+
+    bigText:ClearAllPoints()
+    labelText:ClearAllPoints()
+    statusText:ClearAllPoints()
+    if compact then
+        bigText:SetParent(headerFrame)
+        labelText:SetParent(headerFrame)
+        statusText:SetParent(headerFrame)
+        bigText:SetPoint("LEFT", headerFrame, "LEFT", 6, 0)
+        statusText:SetPoint("RIGHT", roleBtn, "LEFT", -4, 0)
+        labelText:SetPoint("LEFT", bigText, "RIGHT", 6, 0)
+        labelText:SetPoint("RIGHT", statusText, "LEFT", -6, 0)
+    else
+        bigText:SetParent(headlineFrame)
+        labelText:SetParent(headlineFrame)
+        statusText:SetParent(headlineFrame)
+        bigText:SetPoint("LEFT", headlineFrame, "LEFT", 6, 0)
+        statusText:SetPoint("RIGHT", headlineFrame, "RIGHT", -6, 0)
+        labelText:SetPoint("LEFT", bigText, "RIGHT", 8, -1)
+        labelText:SetPoint("RIGHT", statusText, "LEFT", -6, 0)
+    end
+
+    footerText:ClearAllPoints()
+    footerText:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 6, M.footPad)
+    footerText:SetPoint("RIGHT", root, "RIGHT", -6, 0)
 end
 
 local function BuildBoard()
@@ -478,7 +559,7 @@ local function BuildBoard()
     MakeEdge(root)
 
     headerFrame = CreateFrame("Frame", nil, root)
-    headerFrame:SetHeight(THEME.headerH)
+    headerFrame:SetHeight(M.headerH)
     headerFrame:SetPoint("TOPLEFT")
     headerFrame:SetPoint("TOPRIGHT")
     headerFrame.fill = headerFrame:CreateTexture(nil, "BACKGROUND")
@@ -492,14 +573,16 @@ local function BuildBoard()
     rule:SetPoint("BOTTOMLEFT")
     rule:SetPoint("BOTTOMRIGHT")
 
-    local title = MakeText(headerFrame, THEME.fontSizeSmall, "LEFT")
-    title:SetPoint("LEFT", headerFrame, "LEFT", 6, 0)
-    title:SetText("THREAT")
-    title:SetTextColor(THEME.accent[1], THEME.accent[2], THEME.accent[3])
+    headerTitle = MakeText(headerFrame, "small", "LEFT")
+    headerTitle:SetPoint("LEFT", headerFrame, "LEFT", 6, 0)
+    headerTitle:SetText("THREAT")
+    headerTitle:SetTextColor(THEME.accent[1], THEME.accent[2], THEME.accent[3])
 
     -- Alert flash over the whole strip; fades on the header's OnUpdate
-    -- (Textures cannot carry OnUpdate scripts on this client)
-    headFlash = headerFrame:CreateTexture(nil, "OVERLAY")
+    -- (Textures cannot carry OnUpdate scripts on this client). Kept UNDER
+    -- the OVERLAY text: compact parks the headline percentage in this strip,
+    -- and an alert must never wash out the number it is alerting about.
+    headFlash = headerFrame:CreateTexture(nil, "ARTWORK", nil, 7)
     headFlash:SetTexture(WHITE)
     headFlash:SetVertexColor(THEME.statDanger[1], THEME.statDanger[2], THEME.statDanger[3], 1)
     headFlash:SetAllPoints()
@@ -508,10 +591,10 @@ local function BuildBoard()
     -- The role tag: the board-side face of the role dropdown
     roleBtn = CreateFrame("Button", nil, headerFrame)
     roleBtn.headerRole = "role" -- how the headless harness finds it
-    roleBtn:SetHeight(THEME.headerH)
+    roleBtn:SetHeight(M.headerH)
     roleBtn:SetWidth(58)
     roleBtn:SetPoint("RIGHT", headerFrame, "RIGHT", 0, 0)
-    roleBtn.text = MakeText(roleBtn, THEME.fontSizeSmall, "RIGHT")
+    roleBtn.text = MakeText(roleBtn, "small", "RIGHT")
     roleBtn.text:SetPoint("RIGHT", roleBtn, "RIGHT", -6, 0)
     roleBtn.text:SetTextColor(THEME.accent[1], THEME.accent[2], THEME.accent[3])
     roleBtn.hover = roleBtn:CreateTexture(nil, "HIGHLIGHT")
@@ -524,22 +607,20 @@ local function BuildBoard()
     Commander.UI.AttachTooltip(roleBtn, "Role",
         "Which side of threat this character manages — the whole board reshapes around it. Click to switch (kept per character; also /cthreat tank, damage, healer).")
 
-    mobText = MakeText(headerFrame, THEME.fontSizeSmall, "LEFT")
-    mobText:SetPoint("LEFT", title, "RIGHT", 8, 0)
+    mobText = MakeText(headerFrame, "small", "LEFT")
+    mobText:SetPoint("LEFT", headerTitle, "RIGHT", 8, 0)
     mobText:SetPoint("RIGHT", roleBtn, "LEFT", -4, 0)
     mobText:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
 
     headlineFrame = CreateFrame("Frame", nil, root)
-    headlineFrame:SetHeight(THEME.headlineH)
+    headlineFrame:SetHeight(M.headlineH)
     headlineFrame:SetPoint("TOPLEFT", headerFrame, "BOTTOMLEFT", 0, 0)
     headlineFrame:SetPoint("RIGHT", root, "RIGHT", 0, 0)
-    bigText = MakeText(headlineFrame, THEME.fontSizeBig, "LEFT")
-    bigText:SetPoint("LEFT", headlineFrame, "LEFT", 6, 0)
-    statusText = MakeText(headlineFrame, THEME.fontSize, "RIGHT")
-    statusText:SetPoint("RIGHT", headlineFrame, "RIGHT", -6, 0)
-    labelText = MakeText(headlineFrame, THEME.fontSizeSmall, "LEFT")
-    labelText:SetPoint("LEFT", bigText, "RIGHT", 8, -1)
-    labelText:SetPoint("RIGHT", statusText, "LEFT", -6, 0)
+    -- The headline trio is re-parented and re-anchored by ApplyDensity (into
+    -- the header strip when compact); only its content is painted below
+    bigText = MakeText(headlineFrame, "big", "LEFT")
+    statusText = MakeText(headlineFrame, "normal", "RIGHT")
+    labelText = MakeText(headlineFrame, "small", "LEFT")
     labelText:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
 
     rowsFrame = CreateFrame("Frame", nil, root)
@@ -551,9 +632,7 @@ local function BuildBoard()
         if Tick then Tick() end
     end)
 
-    footerText = MakeText(root, THEME.fontSizeSmall, "LEFT")
-    footerText:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 6, 5)
-    footerText:SetPoint("RIGHT", root, "RIGHT", -6, 0)
+    footerText = MakeText(root, "small", "LEFT")
     footerText:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
 
     menuFrame = CreateFrame("Frame", "CommanderThreatMenu", UIParent, "UIDropDownMenuTemplate")
@@ -845,26 +924,186 @@ function CommanderThreat_EmbedToggled(on)
 end
 
 -- ---------------------------------------------------------------------------
+-- Target-frame readout: the same role-adaptive number drawn on Blizzard's
+-- target frame, so it sits where your eyes already are. Two surfaces, freely
+-- combined — a slim BAR along the bottom of the target's health bar (full
+-- width IS the pull point: the board's encoding, unchanged) and the
+-- percentage as TEXT above that bar's right end. Purely additive: the board,
+-- the Meters embed, the engine, and every warning are untouched by it, and
+-- everything here soft-fails if Blizzard's frame is not where we expect.
+-- ---------------------------------------------------------------------------
+
+local TARGET_BAR_H = 4
+local TARGET_BAR_W = 119 -- Blizzard's target health bar width, if it reads 0
+
+local tgt -- built once at login, nil if the target frame could not be found
+
+local function TargetHealthBar()
+    return _G.TargetFrameHealthBar
+        or (_G.TargetFrame and (_G.TargetFrame.HealthBar or _G.TargetFrame.healthbar))
+end
+
+local function BuildTargetReadout()
+    local host = _G.TargetFrame
+    local hb = TargetHealthBar()
+    if not host or not hb then return end
+
+    -- Mouse stays off every piece: the target frame is protected and its
+    -- clicks are load-bearing (the Resources player-frame precedent)
+    local bar = CreateFrame("Frame", "CommanderThreatTargetBar", host)
+    bar:EnableMouse(false)
+    bar:SetHeight(TARGET_BAR_H)
+    bar:SetPoint("BOTTOMLEFT", hb, "BOTTOMLEFT", 0, 0)
+    bar:SetPoint("BOTTOMRIGHT", hb, "BOTTOMRIGHT", 0, 0)
+    bar:SetFrameLevel((hb:GetFrameLevel() or 2) + 3)
+    bar.track = bar:CreateTexture(nil, "ARTWORK")
+    bar.track:SetTexture(WHITE)
+    bar.track:SetVertexColor(0, 0, 0, 0.55)
+    bar.track:SetAllPoints()
+    bar.fill = bar:CreateTexture(nil, "OVERLAY")
+    bar.fill:SetTexture(WHITE)
+    bar.fill:SetPoint("TOPLEFT")
+    bar.fill:SetPoint("BOTTOMLEFT")
+    bar:Hide()
+
+    -- Outlined, not the board's plain face: this text lands on Blizzard's
+    -- own art, which has no dark panel behind it
+    local textHost = CreateFrame("Frame", "CommanderThreatTargetText", host)
+    textHost:EnableMouse(false)
+    textHost:SetSize(60, 12)
+    textHost:SetPoint("BOTTOMRIGHT", hb, "TOPRIGHT", 0, 1)
+    textHost:SetFrameLevel((hb:GetFrameLevel() or 2) + 3)
+    local text = textHost:CreateFontString(nil, "OVERLAY")
+    text:SetFont(THEME.font, 12, "OUTLINE")
+    text:SetJustifyH("RIGHT")
+    text:SetWordWrap(false)
+    text:SetAllPoints()
+    textHost:Hide()
+
+    -- The alert pulse washes the whole health bar, so it reads the same
+    -- whether the user runs Bar, Text, or both
+    local flash = host:CreateTexture(nil, "OVERLAY")
+    flash:SetTexture(WHITE)
+    flash:SetVertexColor(THEME.statDanger[1], THEME.statDanger[2], THEME.statDanger[3], 1)
+    flash:SetBlendMode("ADD")
+    flash:SetPoint("TOPLEFT", hb, "TOPLEFT", 0, 0)
+    flash:SetPoint("BOTTOMRIGHT", hb, "BOTTOMRIGHT", 0, 0)
+    flash:SetAlpha(0)
+    flash:Hide()
+
+    tgt = { bar = bar, fill = bar.fill, textHost = textHost, text = text,
+            flash = flash, healthBar = hb, live = false }
+end
+
+local tgtFlashAlpha = 0
+local tgtFlashDriver = CreateFrame("Frame")
+
+local function TargetFlashDecay(_, elapsed)
+    tgtFlashAlpha = tgtFlashAlpha - elapsed * 1.4
+    if tgtFlashAlpha <= 0 then
+        tgtFlashAlpha = 0
+        tgt.flash:Hide()
+        tgtFlashDriver:SetScript("OnUpdate", nil)
+        return
+    end
+    tgt.flash:SetAlpha(tgtFlashAlpha)
+end
+
+-- Only pulses when the readout is actually showing a number: a wash over an
+-- empty target frame would be a warning about nothing
+FlashTarget = function()
+    if not tgt or not tgt.live then return end
+    tgtFlashAlpha = 0.45
+    tgt.flash:SetAlpha(tgtFlashAlpha)
+    tgt.flash:Show()
+    tgtFlashDriver:SetScript("OnUpdate", TargetFlashDecay)
+end
+
+-- The number, read through the role, for the targeted mob: Damage and Healer
+-- see their own climb (AGGRO once it is theirs); a tank sees the chaser's
+-- climb while holding, and their own climb to take it back when not. nil
+-- means there is nothing honest to show.
+local function TargetReading()
+    local p = E.PlayerRow()
+    if not p then return nil end
+    if E.GetRole() == "TANK" then
+        if p.tanking then
+            local chase = E.ChaserScaled()
+            return chase, BandColor(chase), false
+        end
+        return math.min(p.scaled, 999), THEME.statDanger, false
+    end
+    if p.tanking then
+        return 100, THEME.statDanger, true
+    end
+    return math.min(p.scaled, 999), BandColor(p.scaled), false
+end
+
+local function PaintTarget()
+    if not tgt then return end
+    local mode = db.TargetEmbed
+    local pct, color, aggro
+    -- Attackable target only: an unattackable one means the engine's list
+    -- came from target-of-target (Omen's fallback, D1), and that mob's
+    -- number does not belong on THIS frame
+    if db.EnableThreat and mode ~= "OFF"
+        and UnitExists("target") and UnitCanAttack("player", "target") then
+        pct, color, aggro = TargetReading()
+    end
+    if not pct then
+        tgt.live = false
+        tgt.bar:Hide()
+        tgt.textHost:Hide()
+        return
+    end
+    tgt.live = true
+    if mode == "BAR" or mode == "BOTH" then
+        local frac = pct / 100
+        if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+        local width = tgt.healthBar:GetWidth() or 0
+        if width <= 0 then width = TARGET_BAR_W end
+        tgt.fill:SetWidth(math.max(0.001, frac * width))
+        tgt.fill:SetVertexColor(color[1], color[2], color[3], 0.9)
+        tgt.bar:Show()
+    else
+        tgt.bar:Hide()
+    end
+    if mode == "TEXT" or mode == "BOTH" then
+        tgt.text:SetText(aggro and "AGGRO" or format("%d%%", math.min(pct, 999) + 0.5))
+        tgt.text:SetTextColor(color[1], color[2], color[3])
+        tgt.textHost:Show()
+    else
+        tgt.textHost:Hide()
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Visibility + apply
 -- ---------------------------------------------------------------------------
 
+-- The standalone board draws only when it is the chosen surface: a Hidden
+-- layout or a live Meters embed retires it outright
+local function BoardActive()
+    return (db.EnableThreat and db.BoardLayout ~= "HIDDEN" and not EmbedActive()) or false
+end
+
 local function UpdateVisibility()
     if not root then return end
-    -- Embedded into Meters: the standalone board retires outright — no
-    -- unlock exception, there is nothing to place while Meters hosts the
-    -- list (warnings keep firing from the tick regardless)
-    if EmbedActive() then
+    -- The target-frame readout is an independent surface, so it repaints on
+    -- every tick path — including the ones that return before Paint()
+    PaintTarget()
+    -- No unlock exception for a retired board: there is nothing to place,
+    -- and the warnings plus the target readout keep running from the tick
+    if not BoardActive() then
         root:SetShown(false)
         return
     end
     local show = false
-    if db.EnableThreat then
-        if not db.CombatOnly then
-            show = true
-        else
-            local _, n = E.Rows()
-            show = InCombatLockdown() or n > 0 or testStart > 0
-        end
+    if not db.CombatOnly then
+        show = true
+    else
+        local _, n = E.Rows()
+        show = InCombatLockdown() or n > 0 or testStart > 0
     end
     if Commander.UI.HudUnlocked(db, "Hud") then
         show = true
@@ -876,6 +1115,8 @@ local function Apply()
     if not root then return end
     E.SetRole(CommanderThreat_GetRole())
     SyncEmbedRegistration()
+    M = DENSITY[db.BoardLayout] or DENSITY.FULL
+    ApplyDensity()
     Layout()
     BuildRows()
     Commander.UI.ApplyHudChrome(root, db, "Hud", {
@@ -1000,9 +1241,11 @@ Tick = function()
             RunTestFight(now)
             -- Embedded: Meters' own repaint reads the provider — the
             -- hidden standalone board skips its paint, alerts still fire
-            if not EmbedActive() then Paint() end
-            DrainAlerts()
+            if BoardActive() then Paint() end
+            -- Surfaces first, alerts second: an alert pulse needs the target
+            -- readout to already know whether it is showing anything
             UpdateVisibility()
+            DrainAlerts()
             return
         end
     end
@@ -1026,9 +1269,9 @@ Tick = function()
     end
     local n = mobUnit and ScanMob(mobUnit) or 0
     E.Ingest(obs, n, now)
-    if not EmbedActive() then Paint() end
-    DrainAlerts()
+    if BoardActive() then Paint() end
     UpdateVisibility()
+    DrainAlerts()
 end
 
 -- ---------------------------------------------------------------------------
@@ -1050,6 +1293,7 @@ local function OnEvent(_, event)
         ResolveThemeOverrides()
         E.Init(db, CommanderThreat_GetRole())
         BuildBoard()
+        BuildTargetReadout()
         RefreshRoster()
         events:RegisterEvent("PLAYER_TARGET_CHANGED")
         events:RegisterEvent("GROUP_ROSTER_UPDATE")
