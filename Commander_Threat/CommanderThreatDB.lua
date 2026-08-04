@@ -9,9 +9,18 @@ COMMANDER_THREAT_EVENTS = {
 -- rename or retype keys without ever losing a user's setup.
 -- ---------------------------------------------------------------------------
 
-local DB_VERSION = 1
+local DB_VERSION = 2
 local MIGRATIONS = {
-    -- v1 is the original release; future reshapes slot in here.
+    -- v1 is the original release. v2 re-spelled TargetEmbed when the readout
+    -- gained portrait placements: the old OFF/BAR/TEXT/BOTH vocabulary had no
+    -- room to say WHERE the text goes, so TEXT/BOTH became the below-portrait
+    -- pair. Keys added without a vocabulary change need no step here —
+    -- ApplyDefaults fills them.
+    [1] = function(db)
+        local renamed = { TEXT = "BELOW", BOTH = "BAR_BELOW" }
+        local now = renamed[db.TargetEmbed]
+        if now then db.TargetEmbed = now end
+    end,
 }
 
 local function Migrate(db)
@@ -41,8 +50,11 @@ local DefaultSettings = {
     CombatOnly = true,     -- board shows only in combat / while threat exists
     BoardLayout = "FULL",  -- FULL | COMPACT | HIDDEN — the standalone board's
                            -- density, or no standalone board at all
-    TargetEmbed = "OFF",   -- OFF | BAR | TEXT | BOTH — the role-adaptive
-                           -- readout drawn on Blizzard's target frame
+    TargetEmbed = "OFF",   -- the role-adaptive readout drawn on Blizzard's
+                           -- target frame: OFF | BAR | BELOW | BAR_BELOW |
+                           -- PORTRAIT | BAR_PORTRAIT (BAR is the health-bar
+                           -- overlay; BELOW/PORTRAIT place the percentage
+                           -- plate under or on the portrait)
     MetersEmbed = false,   -- render inside Commander_Meters as a live THREAT
                            -- pane instead of the standalone board
     AccentColor = "AMBER", -- AMBER | CYAN | GREEN | RED | WHITE, or any
@@ -229,7 +241,7 @@ local function CreateCorePanel()
         isEnabled = Enabled,
     })
 
-    panel:AddDropdownPair({
+    panel:AddDropdown({
         label = "Board Layout",
         tooltip = "How much board to draw. Full is the standard one: the big headline percentage, its label (your chaser as a tank, your peak mob as a healer), the mob name, the bars, and the footer fact. Compact folds that headline up into the header strip at reading size and tightens every row — about a third less height for the same facts, minus the mob name (your target frame already says it). Hidden retires the board outright and leaves the warnings and the target-frame readout to carry the module.",
         options = {
@@ -240,14 +252,18 @@ local function CreateCorePanel()
         get = function() return CommanderThreatDB.BoardLayout end,
         set = function(value) CommanderThreatDB.BoardLayout = value end,
         isEnabled = Enabled,
-    }, {
+    })
+
+    panel:AddDropdown({
         label = "Target Frame",
-        tooltip = "Also draw your threat number on Blizzard's target frame, where you are already looking. Bar is a slim fill along the bottom of the target's health bar — full width IS the pull point, exactly like the board's bars. Text is the percentage above the health bar's right end, reading AGGRO once the mob is yours. Bar + Text draws both. It is role-adaptive like everything else: Damage and Healer see their own climb, a tank sees the chaser's climb while holding and their own climb to take it back when not. Shown only for an attackable target you actually have a threat list on.",
+        tooltip = "Also draw your threat number on Blizzard's target frame, where you are already looking. Two surfaces, in any combination. Bar is a slim fill along the bottom of the target's health bar — full width IS the pull point, exactly like the board's bars. Below Portrait and On Portrait both place the percentage on its own small plate, centred on the target's portrait: just under it, or just inside its top edge. The plate reads AGGRO once the mob is yours. Role-adaptive like everything else: Damage and Healer see their own climb, a tank sees the chaser's climb while holding and their own climb to take it back when not. Shown only for an attackable target you actually have a threat list on.",
         options = {
             { text = "Off", value = "OFF" },
             { text = "Bar", value = "BAR" },
-            { text = "Text", value = "TEXT" },
-            { text = "Bar + Text", value = "BOTH" },
+            { text = "Below Portrait", value = "BELOW" },
+            { text = "Bar + Below Portrait", value = "BAR_BELOW" },
+            { text = "On Portrait", value = "PORTRAIT" },
+            { text = "Bar + On Portrait", value = "BAR_PORTRAIT" },
         },
         get = function() return CommanderThreatDB.TargetEmbed end,
         set = function(value) CommanderThreatDB.TargetEmbed = value end,

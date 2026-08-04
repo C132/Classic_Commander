@@ -234,6 +234,22 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    -- Anchors are recorded, not resolved: enough to assert WHERE a widget was
+    -- told to sit (the target readout's two portrait placements)
+    if key == "SetPoint" then
+        local fn = function(s, point, rel, relPoint, x, y)
+            s.__points = s.__points or {}
+            s.__points[#s.__points + 1] =
+                { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "ClearAllPoints" then
+        local fn = function(s) s.__points = nil end
+        rawset(self, key, fn)
+        return fn
+    end
     if key == "GetThumbTexture" then
         local fn = function(s) return NewWidget("Texture") end
         rawset(self, key, fn)
@@ -283,6 +299,8 @@ TargetFrame = NewWidget("Button", "TargetFrame")
 TargetFrameHealthBar = NewWidget("StatusBar", "TargetFrameHealthBar")
 TargetFrameHealthBar.GetWidth = function() return 119 end -- Blizzard's own width
 TargetFrame.HealthBar = TargetFrameHealthBar
+TargetFramePortrait = NewWidget("Texture", "TargetFramePortrait")
+TargetFrame.portrait = TargetFramePortrait
 UISpecialFrames = {}
 tinsert = table.insert
 wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
@@ -480,9 +498,12 @@ CommanderConsole_Colors = {
 }
 -- Saved variables from a "previous session": a suite accent key + a role
 -- for another character, so login resolves the accent through Console and
--- this character still defaults to DAMAGE
+-- this character still defaults to DAMAGE. TargetEmbed carries the v1
+-- vocabulary, so the migration ladder has something real to rewrite.
 CommanderThreatDB = {
+    DBVersion = 1,
     AccentColor = "FEL",
+    TargetEmbed = "BOTH",
     RoleByChar = { ["Oldalt-TestRealm"] = "HEALER" },
 }
 
@@ -530,7 +551,11 @@ Fire("PLAYER_LOGIN")
 CHECK(#harnessFailedErrors == 0, "C: login clean", harnessFailedErrors[1])
 CHECK(CommanderThreatDB.EnableThreat == true and CommanderThreatDB.WarnAt == 80,
     "C: defaults applied")
-CHECK(CommanderThreatDB.DBVersion == 1, "C: schema version stamped")
+CHECK(CommanderThreatDB.DBVersion == 2, "C: schema version stamped",
+    CommanderThreatDB.DBVersion)
+CHECK(CommanderThreatDB.TargetEmbed == "BAR_BELOW",
+    "C: v1 TargetEmbed vocabulary migrated to the placement names",
+    CommanderThreatDB.TargetEmbed)
 CHECK(CommanderThreatDB.AccentColor == "FEL", "C: saved suite accent survives")
 CHECK(CommanderThreatDB.RoleByChar["Oldalt-TestRealm"] == "HEALER",
     "C: other characters' roles untouched")
@@ -981,14 +1006,20 @@ CHECK(#harnessFailedErrors == 0, "C: layout cycle clean", harnessFailedErrors[1]
 -- ===========================================================================
 
 local tgtBar = _G.CommanderThreatTargetBar
-local tgtText = _G.CommanderThreatTargetText
-CHECK(tgtBar ~= nil and tgtText ~= nil, "C: target-frame readout built on TargetFrame")
+local tgtTag = _G.CommanderThreatTargetTag
+CHECK(tgtBar ~= nil and tgtTag ~= nil, "C: target-frame readout built on TargetFrame")
 
 local tgtFs
 for _, fs in ipairs(allFontStrings) do
-    if fs.__parent == tgtText then tgtFs = fs end
+    if fs.__parent == tgtTag then tgtFs = fs end
 end
 CHECK(tgtFs ~= nil, "C: target readout fontstring found")
+
+local function TagAnchor()
+    local p = tgtTag.__points and tgtTag.__points[1]
+    if not p then return "?", "?" end
+    return tostring(p.rel and p.rel.__name or "?"), tostring(p.relPoint)
+end
 
 -- Its alert wash is the only texture parented straight to TargetFrame
 local tgtFlash
@@ -1001,26 +1032,56 @@ ClearThreat()
 SetThreat("party1", "target", true, 3, 100, 100, 100000)
 SetThreat("player", "target", false, 0, 55, 60, 60000)
 Advance(2)
-CHECK(tgtBar.__shown == false and tgtText.__shown == false,
+CHECK(tgtBar.__shown == false and tgtTag.__shown == false,
     "C: readout Off draws nothing")
 
 CommanderThreatDB.TargetEmbed = "BAR"
 Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
 Advance(1)
-CHECK(tgtBar.__shown == true and tgtText.__shown == false, "C: Bar draws only the bar")
+CHECK(tgtBar.__shown == true and tgtTag.__shown == false, "C: Bar draws only the bar")
 CHECK(math.abs((tgtBar.fill.__w or 0) - 0.55 * 119) < 0.5,
     "C: bar fill is the scaled % of the health bar's width", tgtBar.fill.__w)
 
-CommanderThreatDB.TargetEmbed = "TEXT"
+CommanderThreatDB.TargetEmbed = "BELOW"
 Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
 Advance(1)
-CHECK(tgtBar.__shown == false and tgtText.__shown == true, "C: Text draws only the text")
+CHECK(tgtBar.__shown == false and tgtTag.__shown == true,
+    "C: Below Portrait draws only the plate")
 CHECK(tgtFs.__text == "55%", "C: readout text is the player's pull percentage", tgtFs.__text)
+do
+    local rel, relPoint = TagAnchor()
+    CHECK(rel == "TargetFramePortrait" and relPoint == "BOTTOM",
+        "C: Below Portrait hangs off the portrait's bottom edge", rel .. "/" .. relPoint)
+end
+CHECK((tgtTag.__w or 0) >= 30, "C: plate is sized for its string", tgtTag.__w)
 
-CommanderThreatDB.TargetEmbed = "BOTH"
+CommanderThreatDB.TargetEmbed = "PORTRAIT"
 Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
 Advance(1)
-CHECK(tgtBar.__shown == true and tgtText.__shown == true, "C: Bar + Text draws both")
+CHECK(tgtBar.__shown == false and tgtTag.__shown == true,
+    "C: On Portrait draws only the plate")
+do
+    local rel, relPoint = TagAnchor()
+    CHECK(rel == "TargetFramePortrait" and relPoint == "TOP",
+        "C: On Portrait sits inside the portrait's top edge", rel .. "/" .. relPoint)
+end
+
+CommanderThreatDB.TargetEmbed = "BAR_BELOW"
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+Advance(1)
+CHECK(tgtBar.__shown == true and tgtTag.__shown == true,
+    "C: Bar + Below Portrait draws both")
+
+CommanderThreatDB.TargetEmbed = "BAR_PORTRAIT"
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+Advance(1)
+CHECK(tgtBar.__shown == true and tgtTag.__shown == true,
+    "C: Bar + On Portrait draws both")
+do
+    local rel, relPoint = TagAnchor()
+    CHECK(rel == "TargetFramePortrait" and relPoint == "TOP",
+        "C: the paired mode keeps the on-portrait placement", rel .. "/" .. relPoint)
+end
 
 -- Taking the mob reads AGGRO, and the alert washes the health bar
 tgtFlash.__shown = false
@@ -1051,11 +1112,11 @@ SlashCmdList.COMMANDERUI_THREAT("damage")
 -- A friendly target means the list came from target-of-target: not this frame's number
 units.target = { guid = "P-tank", name = "Brakk", class = "WARRIOR", inGroup = true }
 Advance(1)
-CHECK(tgtBar.__shown == false and tgtText.__shown == false,
+CHECK(tgtBar.__shown == false and tgtTag.__shown == false,
     "C: readout hides for an unattackable target")
 units.target = nil
 Advance(1)
-CHECK(tgtBar.__shown == false and tgtText.__shown == false,
+CHECK(tgtBar.__shown == false and tgtTag.__shown == false,
     "C: readout hides with no target at all")
 
 -- Restore Defaults returns both new options to their defaults

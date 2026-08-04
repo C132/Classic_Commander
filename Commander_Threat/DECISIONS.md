@@ -141,11 +141,12 @@ one question), and a compact mode that dropped the footer instead of the mob
 name — the tank's LOOSE count is the footer's whole reason to exist.
 
 **D15 — Target-frame readout is additive, and shows the number only for the
-targeted mob (2026-08-04, ceiling 12 → 13).** Off / Bar / Text / Bar + Text,
-drawn on Blizzard's own target frame: BAR is a 4px fill along the bottom of
-`TargetFrameHealthBar` (the board's D2 encoding unchanged — full width IS
-the pull point), TEXT is the percentage above that bar's right end, reading
-AGGRO once the mob is yours. Role-adaptive like everything else: Damage and
+targeted mob (2026-08-04, ceiling 12 → 13).** Six modes over two surfaces:
+Off / Bar / Below Portrait / Bar + Below Portrait / On Portrait / Bar + On
+Portrait. BAR is a 4px fill along the bottom of `TargetFrameHealthBar` (the
+board's D2 encoding unchanged — full width IS the pull point); the other two
+place the percentage on a small plate reading AGGRO once the mob is yours.
+Role-adaptive like everything else: Damage and
 Healer see their own climb, a tank sees the chaser's climb while holding and
 their own climb to take it back when not. Unlike the Meters embed this
 RETIRES nothing — it is a second surface for the same tick, so the board,
@@ -156,11 +157,31 @@ from target-of-target (Omen's fallback, D1) and that mob's number does not
 belong on this frame; and nothing it creates takes the mouse, because the
 target frame is protected and its clicks are load-bearing (the
 Commander_Resources player-frame precedent). Alerts wash the whole health
-bar red rather than flashing one surface, so the cue reads the same in all
-three modes. Blizzard's own `TargetFrameNumericalThreat` is left alone: it
+bar red rather than flashing one surface, so the cue reads the same in every
+mode. Blizzard's own `TargetFrameNumericalThreat` is left alone: it
 is CVar-gated, off by default, sits above the frame, and is not
 role-aware — suppressing it would need a hook on
 `UnitFrame_UpdateThreatIndicator` to buy nothing. Rejected: reusing its frame
 as the surface (its position and art are not ours to redefine), and putting
 the bar under the mana bar (it would land on frame art whose geometry we
 have not verified; the health bar's rect is known).
+
+**D15a — The percentage anchors to the PORTRAIT, on its own plate (revised
+2026-08-04, same day, on Devin's read of it in game).** It first shipped as
+bare outlined text above the health bar's right end; that lives in the name
+band, which a long name or a rare/elite border can crowd, and it read as
+loose text rather than a readout. Both replacements key off
+`TargetFramePortrait` instead: centred and hung 1px under its bottom edge,
+or centred 2px inside its top edge. The portrait is the target frame's one
+landmark whose rect never moves with a name, a level, or a border variant,
+which makes it the only honest anchor on that frame. The plate is the
+board's own language — dark fill plus the same 1px steel edge from
+`MakeEdge` — because the number now lands ON portrait art, where the
+outline alone was carrying the whole legibility burden; it sizes itself from
+`GetStringWidth`, and only when the string actually changes, since this
+repaints 4×/s. ONE placement at a time, not both: the two are alternatives
+for the same number, and the mode names carry the placement so the
+surface-map table stays a pure on/off. No portrait resolvable → the plate
+falls back to the old health-bar anchor rather than vanishing. The vocabulary
+change (`TEXT`/`BOTH` → `BELOW`/`BAR_BELOW`) rides a real DB migration
+(v1 → v2) instead of a silent reset: the old names had nowhere to say WHERE.

@@ -928,19 +928,39 @@ end
 -- target frame, so it sits where your eyes already are. Two surfaces, freely
 -- combined — a slim BAR along the bottom of the target's health bar (full
 -- width IS the pull point: the board's encoding, unchanged) and the
--- percentage as TEXT above that bar's right end. Purely additive: the board,
--- the Meters embed, the engine, and every warning are untouched by it, and
+-- percentage on a small PLATE centred on the target's portrait, hung either
+-- just under it or just inside its top edge. Purely additive: the board, the
+-- Meters embed, the engine, and every warning are untouched by it, and
 -- everything here soft-fails if Blizzard's frame is not where we expect.
 -- ---------------------------------------------------------------------------
 
 local TARGET_BAR_H = 4
 local TARGET_BAR_W = 119 -- Blizzard's target health bar width, if it reads 0
+local TAG_H = 16
+local TAG_MIN_W = 30
+
+-- Which surfaces each mode draws. The tag's PLACEMENT is read from the mode
+-- name itself in ApplyTargetPlacement, so this table stays a pure on/off map.
+local TARGET_MODES = {
+    OFF          = { bar = false, tag = false },
+    BAR          = { bar = true,  tag = false },
+    BELOW        = { bar = false, tag = true },
+    BAR_BELOW    = { bar = true,  tag = true },
+    PORTRAIT     = { bar = false, tag = true },
+    BAR_PORTRAIT = { bar = true,  tag = true },
+}
 
 local tgt -- built once at login, nil if the target frame could not be found
 
 local function TargetHealthBar()
     return _G.TargetFrameHealthBar
         or (_G.TargetFrame and (_G.TargetFrame.HealthBar or _G.TargetFrame.healthbar))
+end
+
+-- Blizzard names it globally and UnitFrame_Initialize also parks it on the
+-- frame; take either
+local function TargetPortrait()
+    return _G.TargetFramePortrait or (_G.TargetFrame and _G.TargetFrame.portrait)
 end
 
 local function BuildTargetReadout()
@@ -966,19 +986,25 @@ local function BuildTargetReadout()
     bar.fill:SetPoint("BOTTOMLEFT")
     bar:Hide()
 
-    -- Outlined, not the board's plain face: this text lands on Blizzard's
-    -- own art, which has no dark panel behind it
-    local textHost = CreateFrame("Frame", "CommanderThreatTargetText", host)
-    textHost:EnableMouse(false)
-    textHost:SetSize(60, 12)
-    textHost:SetPoint("BOTTOMRIGHT", hb, "TOPRIGHT", 0, 1)
-    textHost:SetFrameLevel((hb:GetFrameLevel() or 2) + 3)
-    local text = textHost:CreateFontString(nil, "OVERLAY")
+    -- The percentage rides its own small plate — dark fill and the board's
+    -- thin steel edge — because it lands on Blizzard's portrait art, where
+    -- bare text has nothing behind it to read against. Outlined type on top
+    -- of the plate for the same reason.
+    local tag = CreateFrame("Frame", "CommanderThreatTargetTag", host)
+    tag:EnableMouse(false)
+    tag:SetSize(TAG_MIN_W, TAG_H)
+    tag:SetFrameLevel((host:GetFrameLevel() or 1) + 4)
+    tag.fill = tag:CreateTexture(nil, "BACKGROUND")
+    tag.fill:SetTexture(WHITE)
+    tag.fill:SetVertexColor(0.02, 0.03, 0.04, 0.78)
+    tag.fill:SetAllPoints()
+    MakeEdge(tag)
+    local text = tag:CreateFontString(nil, "OVERLAY")
     text:SetFont(THEME.font, 12, "OUTLINE")
-    text:SetJustifyH("RIGHT")
+    text:SetJustifyH("CENTER")
+    text:SetPoint("CENTER", tag, "CENTER", 0, 0)
     text:SetWordWrap(false)
-    text:SetAllPoints()
-    textHost:Hide()
+    tag:Hide()
 
     -- The alert pulse washes the whole health bar, so it reads the same
     -- whether the user runs Bar, Text, or both
@@ -991,8 +1017,39 @@ local function BuildTargetReadout()
     flash:SetAlpha(0)
     flash:Hide()
 
-    tgt = { bar = bar, fill = bar.fill, textHost = textHost, text = text,
+    tgt = { bar = bar, fill = bar.fill, tag = tag, text = text,
             flash = flash, healthBar = hb, live = false }
+end
+
+-- Re-anchor the plate for the current mode: hung just under the portrait, or
+-- just inside its top edge, centred on it either way. The portrait is the
+-- target frame's one landmark that never moves with a name, a level, or a
+-- rare/elite border, which is why both placements key off it.
+local function ApplyTargetPlacement()
+    if not tgt then return end
+    local tag = tgt.tag
+    tag:ClearAllPoints()
+    local portrait = TargetPortrait()
+    if not portrait then
+        -- No portrait to hang off: the number still gets somewhere honest
+        tag:SetPoint("BOTTOMRIGHT", tgt.healthBar, "TOPRIGHT", 0, 1)
+        return
+    end
+    if db.TargetEmbed == "PORTRAIT" or db.TargetEmbed == "BAR_PORTRAIT" then
+        tag:SetPoint("TOP", portrait, "TOP", 0, -2)
+    else
+        tag:SetPoint("TOP", portrait, "BOTTOM", 0, -1)
+    end
+end
+
+-- The plate grows to whatever the string needs, but only when the string
+-- actually changes: this runs 4×/s
+local function SetTagText(value)
+    if tgt.lastTagText == value then return end
+    tgt.lastTagText = value
+    tgt.text:SetText(value)
+    local width = tgt.text:GetStringWidth() or 0
+    tgt.tag:SetWidth(math.max(TAG_MIN_W, width + 10))
 end
 
 local tgtFlashAlpha = 0
@@ -1041,23 +1098,23 @@ end
 
 local function PaintTarget()
     if not tgt then return end
-    local mode = db.TargetEmbed
+    local spec = TARGET_MODES[db.TargetEmbed] or TARGET_MODES.OFF
     local pct, color, aggro
     -- Attackable target only: an unattackable one means the engine's list
     -- came from target-of-target (Omen's fallback, D1), and that mob's
     -- number does not belong on THIS frame
-    if db.EnableThreat and mode ~= "OFF"
+    if db.EnableThreat and (spec.bar or spec.tag)
         and UnitExists("target") and UnitCanAttack("player", "target") then
         pct, color, aggro = TargetReading()
     end
     if not pct then
         tgt.live = false
         tgt.bar:Hide()
-        tgt.textHost:Hide()
+        tgt.tag:Hide()
         return
     end
     tgt.live = true
-    if mode == "BAR" or mode == "BOTH" then
+    if spec.bar then
         local frac = pct / 100
         if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
         local width = tgt.healthBar:GetWidth() or 0
@@ -1068,12 +1125,12 @@ local function PaintTarget()
     else
         tgt.bar:Hide()
     end
-    if mode == "TEXT" or mode == "BOTH" then
-        tgt.text:SetText(aggro and "AGGRO" or format("%d%%", math.min(pct, 999) + 0.5))
+    if spec.tag then
+        SetTagText(aggro and "AGGRO" or format("%d%%", math.min(pct, 999) + 0.5))
         tgt.text:SetTextColor(color[1], color[2], color[3])
-        tgt.textHost:Show()
+        tgt.tag:Show()
     else
-        tgt.textHost:Hide()
+        tgt.tag:Hide()
     end
 end
 
@@ -1115,6 +1172,7 @@ local function Apply()
     if not root then return end
     E.SetRole(CommanderThreat_GetRole())
     SyncEmbedRegistration()
+    ApplyTargetPlacement()
     M = DENSITY[db.BoardLayout] or DENSITY.FULL
     ApplyDensity()
     Layout()

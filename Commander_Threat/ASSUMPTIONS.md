@@ -56,13 +56,18 @@ fact, never to a wrong warning.
     through a fallback chain (`TargetFrame.HealthBar` / `.healthbar`) and a
     miss simply means no readout is ever built — the board and the warnings
     do not notice.
-    *Test:* with Target Frame set to Bar + Text, pull a mob: a slim colored
-    fill should sit on the bottom edge of the target's health bar and the
-    percentage above its right end, both tracking the board's number.
-12. **The right end of the target frame's name band is free of Blizzard
-    art and text.** The readout's percentage is anchored there
-    (`BOTTOMRIGHT` of the health bar's `TOPRIGHT`). The name fontstring is
-    centred well to the left, but this is a visual judgement, not an API
-    fact.
-    *Test:* target an elite with a long name and a rare/elite dragon border;
-    if the number collides, Bar-only still gives the full reading.
+    *Test:* with Target Frame set to Bar + Below Portrait, pull a mob: a slim
+    colored fill should sit on the bottom edge of the target's health bar and
+    the percentage plate under the portrait, both tracking the board's number.
+12. **`TargetFramePortrait` exists (or `TargetFrame.portrait` does), is the
+    64×64 texture anchored `TOPRIGHT` at (-24, -16), and both of its edges
+    are clear enough to hang a ~16px plate on** — under the bottom edge, and
+    just inside the top. Same XML source as assumption 11;
+    `UnitFrame_Initialize` also parks it on the frame, either lookup accepted.
+    Neither resolving means the plate falls back to the health bar's
+    top-right rather than disappearing. Where the plate sits relative to the
+    frame's border art is a visual judgement, not an API fact.
+    *Test:* target an elite (dragon border) and then a rare: with On
+    Portrait the plate should sit on the portrait without covering its face,
+    and with Below Portrait it should clear the frame's bottom edge and the
+    aura rows underneath. Bar-only still gives the full reading either way.
