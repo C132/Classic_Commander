@@ -981,8 +981,16 @@ RefreshSidebar = function()
 
     row({ text = "|cffffd200MY BUILDS|r" })
     local list = CustomList(token)
+    -- The save row is never allowed to fall off the bottom: it is the only
+    -- way to add a build, so a long list must lose a build row instead
+    local customBudget = MAX_SIDEBAR_ROWS - used - 1
+    local hidden = 0
+    if list and #list > customBudget then
+        hidden = #list - customBudget + 1   -- the extra row spent saying so
+    end
     if list and #list > 0 then
-        for _, build in ipairs(list) do
+        for shown, build in ipairs(list) do
+            if hidden > 0 and shown > customBudget - 1 then break end
             local name = build.name
             row({
                 text = "|cff69ccf0" .. name .. "|r",
@@ -1004,6 +1012,13 @@ RefreshSidebar = function()
         end
     else
         row({ text = "|cff666666(none saved yet)|r" })
+    end
+    if hidden > 0 then
+        row({
+            text = ("|cff666666…and %d more|r"):format(hidden),
+            tooltipTitle = "More saved builds",
+            tooltip = ("%d more builds are saved for this class than the list can show. Delete one you no longer need to bring the rest back into view."):format(hidden),
+        })
     end
     row({
         text = "|cff1eff00+ Save Current Build…|r",
