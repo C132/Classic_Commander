@@ -30,7 +30,10 @@ and the settings mirror). Bare `/ctalents` (or `/ctal`) toggles it.
   toolbar dropdown, class-colored, defaulting to your own class.
 - **Center: all three talent trees side by side**, each on its proper
   `Interface\TalentFrame\<bg>` four-piece art, 4×9 grid, prerequisite arrows
-  drawn with Blizzard's branch/arrow textures, rank badges, gold-when-maxed,
+  drawn with Blizzard's own branch/arrow texture coordinates (taken from
+  `TalentFrameBase_Shared.lua` on the `classic_anniversary` branch of
+  Gethe/wow-ui-source — this client's UI source), rank badges,
+  gold-when-maxed,
   desaturated-when-locked. Left click adds a point, right click removes one —
   removal is validated (tier support and prerequisites), and the tooltip
   explains every lock in Blizzard's own red phrasing. **Shift** runs a click
@@ -43,6 +46,15 @@ and the settings mirror). Bare `/ctalents` (or `/ctal`) toggles it.
   for the same class+spec key (soft-fail when Quartermaster is absent: the
   section explains itself and nothing errors). An "Open in Quartermaster"
   button jumps the crate window to that exact loadout.
+
+Grid geometry follows Blizzard's relationships rather than its literal
+numbers: Blizzard uses 32px buttons on a 63px pitch, so the gap between cells
+equals the button size, and that gap is exactly what the connector art is
+drawn to fill (each branch quad is button-sized, each arrow fills its gap).
+We show all three trees at once instead of one scrolling tree, so the pitch
+is tighter — but never so tight that the connectors stop reading. The UI
+harness asserts the grid fits its pane by reading back the real `SetPoint`
+offsets, so a future tightening cannot silently overflow.
 
 ## Rules of the game (the engine, pure Lua, harness-tested)
 

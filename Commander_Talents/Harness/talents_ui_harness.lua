@@ -159,6 +159,10 @@ WidgetMT.__index = function(self, key)
         local fn = function(s, w, h) s.__w, s.__h = w, h end
         rawset(self, key, fn); return fn
     end
+    if key == "SetHeight" then
+        local fn = function(s, h) s.__h = h end
+        rawset(self, key, fn); return fn
+    end
     if key == "SetWidth" then
         local fn = function(s, w) s.__w = w end
         rawset(self, key, fn); return fn
@@ -220,6 +224,21 @@ WidgetMT.__index = function(self, key)
     end
     if key == "GetChecked" then
         local fn = function(s) return s.__checked end
+        rawset(self, key, fn); return fn
+    end
+    if key == "SetPoint" then
+        -- Record placements so geometry can be asserted against the real
+        -- offsets the addon computes, not a re-derivation of its constants
+        local fn = function(s, point, rel, relPoint, x, y)
+            s.__points = s.__points or {}
+            if type(rel) == "string" then rel, relPoint, x, y = nil, rel, relPoint, x end
+            s.__points[#s.__points + 1] =
+                { point = point, x = tonumber(x) or 0, y = tonumber(y) or 0 }
+        end
+        rawset(self, key, fn); return fn
+    end
+    if key == "ClearAllPoints" then
+        local fn = function(s) s.__points = nil end
         rawset(self, key, fn); return fn
     end
     if key == "GetPoint" then
@@ -564,6 +583,31 @@ CHECK(#pane1.branchRecs > 0, "prerequisite branches drawn", #pane1.branchRecs)
 CHECK(pane1.bgTL.__texture == "Interface\\TalentFrame\\WarriorArms-TopLeft",
     "tree art bound", pane1.bgTL.__texture)
 CHECK(pane1.headerFS.__text:find("Arms"), "pane header names the tree")
+
+-- Geometry: every talent button must land inside its pane, and the three
+-- panes must not run into the briefing. Read back from the real SetPoint
+-- offsets rather than re-deriving the constants.
+do
+    local paneW = calc.panes[1].__w or 0
+    local paneMaxX, paneMaxY = 0, 0
+    for _, pane in ipairs(calc.panes) do
+        for _, btn in pairs(pane.buttons) do
+            local p = btn.__points and btn.__points[1]
+            if p then
+                paneMaxX = math.max(paneMaxX, p.x + (btn.__w or 0))
+                paneMaxY = math.max(paneMaxY, -p.y + (btn.__h or 0))
+            end
+        end
+    end
+    CHECK(paneW > 0, "pane has a width", paneW)
+    CHECK(paneMaxX > 0 and paneMaxX <= paneW,
+        "talent grid fits its pane horizontally", paneMaxX .. "/" .. paneW)
+    -- 492 is the tree area height at the default frame height
+    CHECK(paneMaxY > 0 and paneMaxY <= 492,
+        "talent grid fits its pane vertically", paneMaxY)
+    CHECK(#calc.panes * (paneW + 6) - 6 + 180 + 18 + 222 + 24 <= 1060 + 8,
+        "three panes plus sidebar and briefing fit the window")
+end
 
 -- Icons resolve to real icon paths
 local anyIcon

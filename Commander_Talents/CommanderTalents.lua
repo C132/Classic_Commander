@@ -19,18 +19,29 @@ local loaded = false
 -- Layout constants
 -- ---------------------------------------------------------------------------
 
-local FRAME_W, FRAME_H = 1010, 590
+local FRAME_W, FRAME_H = 1060, 590
 local SIDEBAR_W = 180
 local SIDEBAR_ROW_H, MAX_SIDEBAR_ROWS = 22, 19
 local BRIEF_W = 222
 
-local TREE_W = 186
+-- Blizzard's own talent grid is 32px buttons on a 63px pitch, so the gap
+-- between cells equals the button size — that gap is what the branch and
+-- arrow art is drawn to fill. We show all three trees at once instead of one
+-- scrolling tree, so the pitch is tighter than Blizzard's; it still has to
+-- leave the connectors room to read, which is what these numbers buy.
+local TREE_W = 200
 local TREE_GAP = 6
 local TREE_HEADER_H = 24
 local BTN = 30
-local PITCH_X, PITCH_Y = 40, 50
+local PITCH_X, PITCH_Y = 48, 50
 local GRID_X0 = (TREE_W - (3 * PITCH_X + BTN)) / 2
 local GRID_Y0 = TREE_HEADER_H + 10
+-- Connector art: Blizzard sizes each branch quad to the button and each
+-- arrow to the gap it sits in. The branch textures are straight lines inside
+-- a mostly-transparent square, so stretching one along the run is safe; the
+-- cross-axis must stay at button size or the line renders too thin.
+local BRANCH_THICK = BTN
+local ARROW_V, ARROW_H = PITCH_Y - BTN, PITCH_X - BTN
 
 local CLASS_ORDER = Data.ClassOrder
 
@@ -48,19 +59,28 @@ local RIM = {
     hit     = { 0.20, 0.90, 1.00 },   -- search match
 }
 
+-- Texture coordinates below are Blizzard's own, verified 2026-08-04 against
+-- TALENT_BRANCH_TEXTURECOORDS / TALENT_ARROW_TEXTURECOORDS in
+-- Interface/AddOns/Blizzard_FrameXML/Classic/TalentFrameBase_Shared.lua on the
+-- classic_anniversary branch of Gethe/wow-ui-source — this client's own UI
+-- source. `on` is Blizzard's [1] (prerequisite satisfied), `off` its [-1].
 local BRANCH_TEX = "Interface\\TalentFrame\\UI-TalentBranches"
 local ARROW_TEX = "Interface\\TalentFrame\\UI-TalentArrows"
 local BRANCH_COORDS = {
+    -- Blizzard "up" (vertical run) and "left"/"right" (horizontal run, same
+    -- coordinates for both directions)
     v = { on = { 0.12890625, 0.25390625, 0, 0.484375 }, off = { 0.12890625, 0.25390625, 0.515625, 1 } },
     h = { on = { 0.2578125, 0.3828125, 0, 0.5 }, off = { 0.2578125, 0.3828125, 0.5, 1 } },
 }
 local ARROW_COORDS = {
+    -- Blizzard "top" is the arrow that points DOWN into a talent from above
     down  = { on = { 0, 0.5, 0, 0.5 }, off = { 0, 0.5, 0.5, 1 } },
     right = { on = { 1, 0.5, 0, 0.5 }, off = { 1, 0.5, 0.5, 1 } },
     left  = { on = { 0.5, 1, 0, 0.5 }, off = { 0.5, 1, 0.5, 1 } },
 }
 -- Corner pieces for bent arrows (down from the prereq, then across into the
--- dependent). Named by the sides the elbow connects: up+right / up+left.
+-- dependent). Named by the sides the elbow connects; these are Blizzard's
+-- "topright" and "topleft" (note its topleft mirrors by swapping u1/u2).
 local CORNER_COORDS = {
     upright = { on = { 0.515625, 0.640625, 0, 0.5 }, off = { 0.515625, 0.640625, 0.5, 1 } },
     upleft  = { on = { 0.640625, 0.515625, 0, 0.5 }, off = { 0.640625, 0.515625, 0.5, 1 } },
@@ -929,60 +949,64 @@ local function BindPane(pane, treeIdx)
                 local arrow = AcquireTex(pane, pane.arrowPool, "ARTWORK")
                 line:SetTexture(BRANCH_TEX)
                 arrow:SetTexture(ARROW_TEX)
-                arrow:SetSize(16, 16)
                 arrow:ClearAllPoints()
                 line:ClearAllPoints()
                 local kind, arrowDir, cornerDir
                 local line2, corner
                 if req.col == talent.col then
                     kind, arrowDir = "v", "down"
-                    arrow:SetPoint("BOTTOM", depBtn, "TOP", 0, -3)
-                    line:SetWidth(14)
-                    line:SetPoint("TOP", reqBtn, "BOTTOM", 0, 2)
-                    line:SetPoint("BOTTOM", arrow, "TOP", 0, -2)
+                    arrow:SetSize(ARROW_V, ARROW_V)
+                    arrow:SetPoint("BOTTOM", depBtn, "TOP", 0, -1)
+                    line:SetWidth(BRANCH_THICK)
+                    line:SetPoint("TOP", reqBtn, "BOTTOM", 0, 1)
+                    line:SetPoint("BOTTOM", arrow, "TOP", 0, -1)
                 elseif req.row == talent.row then
                     kind = "h"
-                    line:SetHeight(14)
+                    arrow:SetSize(ARROW_H, ARROW_H)
+                    line:SetHeight(BRANCH_THICK)
                     if req.col < talent.col then
                         arrowDir = "right"
-                        arrow:SetPoint("RIGHT", depBtn, "LEFT", 3, 0)
-                        line:SetPoint("LEFT", reqBtn, "RIGHT", -2, 0)
-                        line:SetPoint("RIGHT", arrow, "LEFT", 2, 0)
+                        arrow:SetPoint("RIGHT", depBtn, "LEFT", 1, 0)
+                        line:SetPoint("LEFT", reqBtn, "RIGHT", -1, 0)
+                        line:SetPoint("RIGHT", arrow, "LEFT", 1, 0)
                     else
                         arrowDir = "left"
-                        arrow:SetPoint("LEFT", depBtn, "RIGHT", -3, 0)
-                        line:SetPoint("RIGHT", reqBtn, "LEFT", 2, 0)
-                        line:SetPoint("LEFT", arrow, "RIGHT", -2, 0)
+                        arrow:SetPoint("LEFT", depBtn, "RIGHT", -1, 0)
+                        line:SetPoint("RIGHT", reqBtn, "LEFT", 1, 0)
+                        line:SetPoint("LEFT", arrow, "RIGHT", -1, 0)
                     end
                 else
                     -- Bent arrow (TBC ships one: Serrated Blades -> Hemorrhage):
                     -- drop from the prereq to the dependent's row, elbow, then
                     -- run across into its near side
                     kind = "l"
+                    arrow:SetSize(ARROW_H, ARROW_H)
                     corner = AcquireTex(pane, pane.branchPool)
                     corner:SetTexture(BRANCH_TEX)
-                    corner:SetSize(16, 16)
+                    corner:SetSize(BRANCH_THICK, BRANCH_THICK)
                     corner:ClearAllPoints()
+                    -- The elbow occupies the whole cell below the prerequisite
+                    -- and beside the dependent, exactly as Blizzard places it
                     local rx = GRID_X0 + (req.col - 1) * PITCH_X + BTN / 2
                     local dy = -(GRID_Y0 + (talent.row - 1) * PITCH_Y) - BTN / 2
                     corner:SetPoint("CENTER", pane, "TOPLEFT", rx, dy)
-                    line:SetWidth(14)
-                    line:SetPoint("TOP", reqBtn, "BOTTOM", 0, 2)
-                    line:SetPoint("BOTTOM", corner, "TOP", 0, -2)
+                    line:SetWidth(BRANCH_THICK)
+                    line:SetPoint("TOP", reqBtn, "BOTTOM", 0, 1)
+                    line:SetPoint("BOTTOM", corner, "TOP", 0, -1)
                     line2 = AcquireTex(pane, pane.branchPool)
                     line2:SetTexture(BRANCH_TEX)
                     line2:ClearAllPoints()
-                    line2:SetHeight(14)
+                    line2:SetHeight(BRANCH_THICK)
                     if req.col < talent.col then
                         arrowDir, cornerDir = "right", "upright"
-                        arrow:SetPoint("RIGHT", depBtn, "LEFT", 3, 0)
-                        line2:SetPoint("LEFT", corner, "RIGHT", -2, 0)
-                        line2:SetPoint("RIGHT", arrow, "LEFT", 2, 0)
+                        arrow:SetPoint("RIGHT", depBtn, "LEFT", 1, 0)
+                        line2:SetPoint("LEFT", corner, "RIGHT", -1, 0)
+                        line2:SetPoint("RIGHT", arrow, "LEFT", 1, 0)
                     else
                         arrowDir, cornerDir = "left", "upleft"
-                        arrow:SetPoint("LEFT", depBtn, "RIGHT", -3, 0)
-                        line2:SetPoint("RIGHT", corner, "LEFT", 2, 0)
-                        line2:SetPoint("LEFT", arrow, "RIGHT", -2, 0)
+                        arrow:SetPoint("LEFT", depBtn, "RIGHT", -1, 0)
+                        line2:SetPoint("RIGHT", corner, "LEFT", 1, 0)
+                        line2:SetPoint("LEFT", arrow, "RIGHT", -1, 0)
                     end
                 end
                 pane.branchRecs[#pane.branchRecs + 1] = {
