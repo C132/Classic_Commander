@@ -59,6 +59,8 @@ local DefaultSettings = {
     ShowTimers = true,
     IconSweep = false,
     MineRim = true,
+    RoundBlockIcons = false,
+    BlockOpacity = 1,
     BlockFilter = "ALL",               -- ALL | RULES | SCORED
     RightClickCancel = true,
 
@@ -71,6 +73,8 @@ local DefaultSettings = {
     PortraitY = 0,
     SlotSpacing = 3,
     SweepStyle = "RING",               -- RING | WEDGE
+    RoundSentinel = true,              -- circular alpha mask on the icon
+    PortraitOpacity = 1,
     PortraitStacks = true,
     PortraitTimer = false,
     PulseUnder = 3,
@@ -309,6 +313,14 @@ local function CreatePanel()
         isEnabled = BlockOn,
     })
 
+    panel:AddCheckbox({
+        label = "Round Icons",
+        tooltip = "Cut every block icon into a disc with a circular alpha mask, with a matching circular rim. Off by default because the square grid is what mirrors the target frame — but if you turn Icon Sweep on, round icons make the sweep read as a real radial timer instead of a wedge across a square.",
+        get = function() return CommanderBuffsDB.RoundBlockIcons end,
+        set = function(value) CommanderBuffsDB.RoundBlockIcons = value end,
+        isEnabled = BlockOn,
+    })
+
     panel:AddSliderPair({
         label = "Icons Per Row",
         tooltip = "How many icons before the block wraps to the next row.",
@@ -338,6 +350,16 @@ local function CreatePanel()
         min = 12, max = 40, step = 1, format = "%d",
         get = function() return CommanderBuffsDB.DebuffSize end,
         set = function(value) CommanderBuffsDB.DebuffSize = value end,
+        isEnabled = BlockOn,
+    })
+
+    panel:AddSlider({
+        label = "Block Opacity",
+        tooltip = "How solid the whole block is. Icons, rims, counts, and timers fade together — the block is meant to be readable at a glance and invisible the rest of the time, and this is the dial for that.",
+        min = 0.1, max = 1, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderBuffsDB.BlockOpacity end,
+        set = function(value) CommanderBuffsDB.BlockOpacity = value end,
         isEnabled = BlockOn,
     })
 
@@ -374,11 +396,27 @@ local function CreatePanel()
         isEnabled = PortraitOn,
     })
 
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Show Remaining Time",
         tooltip = "Remaining time in text under the sentinel as well as the ring. The ring already carries it — text is for people who want the number.",
         get = function() return CommanderBuffsDB.PortraitTimer end,
         set = function(value) CommanderBuffsDB.PortraitTimer = value end,
+        isEnabled = PortraitOn,
+    }, {
+        label = "Round Icon",
+        tooltip = "Cut the icon into a disc with a circular alpha mask so it reads as one shape with the ring around it, and give it a circular rim to match. A square icon inside a round timer is two objects fighting over the same few pixels. Clients without mask textures quietly keep square icons.",
+        get = function() return CommanderBuffsDB.RoundSentinel end,
+        set = function(value) CommanderBuffsDB.RoundSentinel = value end,
+        isEnabled = PortraitOn,
+    })
+
+    panel:AddSlider({
+        label = "Sentinel Opacity",
+        tooltip = "How solid the sentinel is. The icon, its ring, its rim, and the expiry pulse all fade together, so a low value gives you a ghost that only announces itself when something is about to run out.",
+        min = 0.1, max = 1, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderBuffsDB.PortraitOpacity end,
+        set = function(value) CommanderBuffsDB.PortraitOpacity = value end,
         isEnabled = PortraitOn,
     })
 

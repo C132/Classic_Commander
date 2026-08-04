@@ -78,3 +78,16 @@ column.
 it) but only walks the block's countdown text — a full re-layout ten times
 a second would churn a SetPoint per icon for text that changes once a
 second. The editor's trace runs its own 5 Hz repaint while open.
+
+**D15. The sentinel icon is cut into a disc, and opacity rides the
+container.** A square icon inside a round timer is two objects fighting over
+the same 26 pixels, so the icon wears a circular alpha mask
+(`CreateMaskTexture` + `AddMaskTexture`, the Afflictions portrait pattern)
+and a circular rim to match — and the rim only goes circular if the mask
+actually took, so a client without mask textures keeps square icons rather
+than a round rim around a square face. The block gets the same option,
+defaulted OFF because the square grid is what mirrors the target frame.
+Opacity is set on the block frame and the sentinel container rather than
+per-region: icon, ring, rim, count, and timer fade together, and the expiry
+pulse keeps setting slot alpha in the 0.45–1 range because child alpha
+multiplies with the parent's.

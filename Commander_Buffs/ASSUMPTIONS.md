@@ -58,6 +58,13 @@ icon.** Verified at reticle sizes; unverified this small. If the ring reads
 as mush at 26px, raise Icon Size or switch Duration Style to Wedge. *Test:*
 eyeball the sentinel with a 10-second buff.
 
+**A9b. `CreateMaskTexture` + `Texture:AddMaskTexture` work here.** Used to
+cut the sentinel icon (and optionally the block icons) into a disc. Verified
+in the suite by Commander_Afflictions' round portraits, so this is the
+safest of the lot; the guard means a failure keeps square icons AND a square
+rim, never a round rim around a square face. *Test:* the sentinel icon
+should be a circle sitting inside its ring.
+
 **A10. Nothing else is drawing where the sentinel lands.** Commander
 Momentum's streak ring uses the same portrait. The sentinel's Anchor and
 offsets exist for exactly this; the default is dead center. *Test:* run both

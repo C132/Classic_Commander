@@ -104,6 +104,14 @@ enabled — the module must never leave you with no auras at all):
 - Up to `Slots` (1–3, default 1) icons on the player portrait. Slot 1 sits
   where the option says (`Anchor` + offsets, default dead center over the
   portrait); slots 2 and 3 trail beside it at `SlotSpacing`.
+- The icon is **cut into a disc** by a circular alpha mask (`RoundSentinel`,
+  default on) with a matching circular rim, so it reads as one shape with
+  the ring around it rather than a square fighting a round timer. The block
+  gets the same option, defaulted off — its square grid is the thing that
+  mirrors the target frame.
+- **Opacity** (`PortraitOpacity`, and `BlockOpacity` for the block) rides
+  the container, so icon, ring, rim, count, and timer fade together and the
+  expiry pulse keeps working on top of it.
 - Each icon: the aura's texture, a **radial duration** drawn by a
   `CooldownFrameTemplate` — `SweepStyle` = `RING` (our generated donut
   swipe texture: a true progress ring that never covers the face) or

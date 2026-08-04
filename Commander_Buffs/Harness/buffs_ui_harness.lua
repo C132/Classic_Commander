@@ -364,6 +364,34 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    -- Mask textures: the shared preamble would hand back a no-op returning
+    -- nil, which exercises only the DEGRADED path. Model them for real so
+    -- the round-icon code is actually tested, and record the texture paths
+    -- so the harness can prove the rim swaps with the mask.
+    if key == "CreateMaskTexture" then
+        local fn = function(s)
+            local mask = NewWidget("MaskTexture")
+            mask.__parent = s
+            return mask
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "AddMaskTexture" then
+        local fn = function(s, mask) s.__mask = mask end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "RemoveMaskTexture" then
+        local fn = function(s) s.__mask = nil end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetTexture" then
+        local fn = function(s, path) s.__texture = path end
+        rawset(self, key, fn)
+        return fn
+    end
     return baseIndex(self, key)
 end
 
@@ -662,6 +690,25 @@ CommanderBuffsDB.EnableBlock = true
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 CHECK(_G.CommanderBuffsBlock.__shown, "B: block comes back")
 
+-- Opacity rides the container so icons, rims, counts, and timers fade together
+CommanderBuffsDB.BlockOpacity = 0.4
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(_G.CommanderBuffsBlock.__alpha == 0.4, "B: block opacity is applied",
+    _G.CommanderBuffsBlock.__alpha)
+CommanderBuffsDB.BlockOpacity = 1
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(_G.CommanderBuffsBlock.__alpha == 1, "B: block opacity goes back to solid")
+
+-- Round icons: a client without mask textures must keep square icons rather
+-- than break the layout (the mock has no CreateMaskTexture worth the name).
+CommanderBuffsDB.RoundBlockIcons = true
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(#harnessFailedErrors == 0, "B: round block icons degrade cleanly without masks",
+    harnessFailedErrors[1])
+CHECK(_G.CommanderBuffsIcon1.__shown, "B: the block still draws with rounding on")
+CommanderBuffsDB.RoundBlockIcons = false
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+
 -- ===========================================================================
 -- Buffs On Top, mirrored from the target frame
 -- ===========================================================================
@@ -784,6 +831,37 @@ Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 CHECK(_G.CommanderBuffsSentinel.__shown, "S: a floor of zero is never empty")
 CommanderBuffsDB.MinScore = 40
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+
+CommanderBuffsDB.PortraitOpacity = 0.35
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(_G.CommanderBuffsSentinel.__alpha == 0.35, "S: sentinel opacity is applied",
+    _G.CommanderBuffsSentinel.__alpha)
+CHECK(_G.CommanderBuffsSentinel1.__shown,
+    "S: a faded sentinel is still drawn — opacity is not a hide")
+CommanderBuffsDB.PortraitOpacity = 1
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+
+-- Round icons: the alpha mask that makes the icon match its ring
+CHECK(CommanderBuffsDB.RoundSentinel == true, "S: the sentinel rounds by default")
+do
+    local slot = _G.CommanderBuffsSentinel1
+    CHECK(slot.mask ~= nil, "S: the circular mask is created")
+    CHECK(slot.texture.__mask == slot.mask, "S: and applied to the icon texture")
+    CHECK(type(slot.rim.__texture) == "string" and slot.rim.__texture:find("CircleRim"),
+        "S: the rim goes circular with it", slot.rim.__texture)
+
+    CommanderBuffsDB.RoundSentinel = false
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    CHECK(slot.texture.__mask == nil, "S: turning it off removes the mask")
+    CHECK(slot.rim.__texture:find("Rim.png"), "S: and restores the square rim",
+        slot.rim.__texture)
+    CHECK(slot.__shown, "S: square icons still draw")
+
+    CommanderBuffsDB.RoundSentinel = true
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    CHECK(slot.texture.__mask == slot.mask, "S: and back on again reuses the same mask")
+end
+CHECK(#harnessFailedErrors == 0, "S: the rounding path is clean", harnessFailedErrors[1])
 
 CommanderBuffsDB.EnablePortrait = false
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)

@@ -20,6 +20,8 @@ local db
 local TEXTURES = "Interface\\AddOns\\Commander_Buffs\\Textures\\"
 local RING = TEXTURES .. "Ring.png"
 local RIM = TEXTURES .. "Rim.png"
+local CIRCLE_MASK = TEXTURES .. "CircleMask.png"
+local CIRCLE_RIM = TEXTURES .. "CircleRim.png"
 
 local MAX_BUFFS, MAX_DEBUFFS = 40, 40
 
@@ -406,6 +408,36 @@ local function PaintIcon(icon, entry, size, opts)
     icon:Show()
 end
 
+-- Cut the sentinel icon into a disc with a circular alpha mask so it reads
+-- as one shape with the ring around it — a square icon inside a round timer
+-- is two different objects fighting for the same 26 pixels. The Afflictions
+-- portrait pattern: guarded and pcall'd, so a client without mask textures
+-- simply keeps square icons instead of breaking the sentinel. The rim only
+-- goes circular if the mask actually took.
+local function ApplyRound(slot, round)
+    if slot.round == round then return end
+    slot.round = round
+    if round then
+        if not slot.mask and slot.CreateMaskTexture and slot.texture.AddMaskTexture then
+            pcall(function()
+                local mask = slot:CreateMaskTexture()
+                mask:SetTexture(CIRCLE_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+                mask:SetAllPoints(slot.texture)
+                slot.mask = mask
+            end)
+        end
+        if slot.mask then
+            pcall(slot.texture.AddMaskTexture, slot.texture, slot.mask)
+            slot.rim:SetTexture(CIRCLE_RIM)
+        end
+    else
+        if slot.mask and slot.texture.RemoveMaskTexture then
+            pcall(slot.texture.RemoveMaskTexture, slot.texture, slot.mask)
+        end
+        slot.rim:SetTexture(RIM)
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- The block
 -- ---------------------------------------------------------------------------
@@ -473,6 +505,7 @@ local function LayoutGroup(startSlot, list, count, size, top, opts)
         local row = math.floor((i - 1) / perRow)
         rows = row + 1
         local icon = AcquireBlockIcon(slot)
+        ApplyRound(icon, opts.round)
         PaintIcon(icon, entry, size, opts)
         icon:ClearAllPoints()
         local x = col * (size + gap)
@@ -517,6 +550,7 @@ local function LayoutBlock()
         sweep = db.IconSweep,
         mineRim = db.MineRim,
         growLeft = db.GrowLeft,
+        round = db.RoundBlockIcons == true,
     }
 
     local slot, top = 1, 0
@@ -547,6 +581,7 @@ local function LayoutBlock()
     local widest = math.max(db.BuffSize or 21, db.DebuffSize or 21)
     local width = opts.perRow * (widest + opts.gap)
     block:SetSize(math.max(width, 1), math.max(usedHeight, 1))
+    block:SetAlpha(db.BlockOpacity or 1)
 
     -- Anchor last: the block grows downward from its own top edge, so a
     -- block placed ABOVE the frame anchors by its bottom and one placed
@@ -637,6 +672,10 @@ local function UpdateSentinel()
     local pair = SENTINEL_ANCHORS[db.PortraitAnchor or "CENTER"] or SENTINEL_ANCHORS.CENTER
     sentinel:ClearAllPoints()
     sentinel:SetPoint(pair[1], anchorTo, pair[2], db.PortraitX or 0, db.PortraitY or 0)
+    -- Opacity rides the CONTAINER, so the icon, its ring, its rim, and the
+    -- expiry pulse all fade together and the pulse math stays untouched
+    -- (child alpha multiplies with the parent's).
+    sentinel:SetAlpha(db.PortraitOpacity or 1)
     sentinel:Show()
 
     local size = db.PortraitSize or 26
@@ -648,6 +687,7 @@ local function UpdateSentinel()
     for index = 1, slots do
         local entry = ranked[index]
         local slot = AcquireSlot(index)
+        ApplyRound(slot, db.RoundSentinel ~= false)
         if entry then
             PaintIcon(slot, entry.aura, size, {
                 timers = db.PortraitTimer,
