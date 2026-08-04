@@ -347,11 +347,21 @@ function UIDropDownMenu_SetSelectedValue() end
 function UIDropDownMenu_SetText(frame, text) frame.__dropText = text end
 function UIDropDownMenu_EnableDropDown() end
 function UIDropDownMenu_DisableDropDown() end
+-- Real signature is (level, value, dropDownFrame, anchorName, xOffset,
+-- yOffset, menuList, button, autoHideDelay) — accept and ignore the tail
 function ToggleDropDownMenu(level, value, frame)
     menuCaptured = {}
     local init = dropdownInits[frame]
     if init then init(frame) end
     return menuCaptured
+end
+local function MenuEntries(frame)
+    return ToggleDropDownMenu(1, nil, frame)
+end
+local function MenuPick(frame, label)
+    for _, info in ipairs(MenuEntries(frame)) do
+        if info.text == label and info.func then info.func() return true end
+    end
 end
 
 -- Static popups: the mock keeps the last shown dialog so tests can drive it
@@ -530,6 +540,12 @@ CHECK(UISpecialFrames[#UISpecialFrames] == "CommanderTalentsFrame", "escape-clos
 CHECK(#calc.panes == 3, "three tree panes")
 
 -- Own class landed on its first preset (Warrior/Arms), 61 points placed
+local function PickClass(token)
+    for _, info in ipairs(ToggleDropDownMenu(1, nil, calc.classDrop)) do
+        if info.value == token then info.func({ value = token }) return true end
+    end
+end
+
 local state = calc._state()
 CHECK(state ~= nil, "engine state bound")
 CHECK(CommanderTalentsEngine.TotalSpent(state) == 61, "preset auto-loaded to 61 points",
@@ -900,6 +916,133 @@ do
     CHECK(#harnessFailedErrors == 0, "search clean", harnessFailedErrors[1])
 end
 
+-- ===========================================================================
+-- Build compare
+-- ===========================================================================
+
+do
+    -- Load Arms, then compare against Protection
+    SidebarRow("Arms").__scripts.OnClick(SidebarRow("Arms"), "LeftButton")
+    CHECK(calc.compareBtn.__text == "Compare", "compare button idle label")
+    CHECK(calc.compareFS.__text == "", "no compare summary when idle")
+
+    local entries = MenuEntries(calc.compareDrop)
+    CHECK(#entries > 0, "compare menu populated", #entries)
+    local hasPresetsTitle, hasProt, hasMine = false, false, false
+    for _, info in ipairs(entries) do
+        if info.isTitle and info.text == "Presets" then hasPresetsTitle = true end
+        if info.text == "Protection" then hasProt = true end
+        if info.text == "My Talents" then hasMine = true end
+    end
+    CHECK(hasPresetsTitle, "compare menu groups presets")
+    CHECK(hasProt, "compare menu lists each preset")
+    CHECK(hasMine, "compare menu offers your live talents on your own class")
+
+    CHECK(MenuPick(calc.compareDrop, "Protection"), "compare target selected")
+    CHECK(calc.compareBtn.__text == "Stop", "button becomes Stop while comparing")
+    CHECK(calc.compareFS.__text:find("Protection"), "footer names the compared build",
+        calc.compareFS.__text)
+    CHECK(calc.compareFS.__text:find("differ"), "footer reports the distance",
+        calc.compareFS.__text)
+
+    -- Arms vs Protection: deltas must appear in both directions
+    local plus, minus = 0, 0
+    for _, pane in ipairs(calc.panes) do
+        for _, btn in pairs(pane.buttons) do
+            if btn.deltaFS.__shown and type(btn.deltaFS.__text) == "string" then
+                if btn.deltaFS.__text:find("+") then plus = plus + 1
+                elseif btn.deltaFS.__text:find("-") then minus = minus + 1 end
+            end
+        end
+    end
+    CHECK(plus > 0, "talents you have more of are badged +", plus)
+    CHECK(minus > 0, "talents you have fewer of are badged -", minus)
+
+    -- A talent unique to Arms shows a positive delta equal to its rank
+    local iMS3 = IdxOf(1, "Mortal Strike")
+    local msBtn = calc.panes[1].buttons[iMS3]
+    CHECK(msBtn.deltaFS.__shown and msBtn.deltaFS.__text:find("+1"),
+        "Arms-only talent badged +1 against Protection", msBtn.deltaFS.__text)
+
+    -- Comparing a build against itself reports identical, no badges
+    CHECK(MenuPick(calc.compareDrop, "Arms"), "re-target the comparison")
+    local anyBadge = false
+    for _, pane in ipairs(calc.panes) do
+        for _, btn in pairs(pane.buttons) do
+            if btn.deltaFS.__shown then anyBadge = true end
+        end
+    end
+    CHECK(not anyBadge, "no badges when the builds match")
+    CHECK(calc.compareFS.__text:find("Identical"), "identical builds say so",
+        calc.compareFS.__text)
+
+    -- Editing while comparing updates the distance live
+    local iMovable
+    for i, rank in pairs(state.pts[1]) do
+        if rank > 0 and E.CanRemove(state, 1, i) then iMovable = i break end
+    end
+    CHECK(iMovable ~= nil, "a removable point exists to perturb the build")
+    local before = calc.compareFS.__text
+    ClickTalent(1, iMovable, "RightButton")
+    CHECK(calc.compareFS.__text ~= before, "editing updates the compare summary",
+        calc.compareFS.__text)
+    CHECK(calc.compareFS.__text:find("1 point differs"), "singular point wording",
+        calc.compareFS.__text)
+
+    -- Stop via the menu, then via the button
+    CHECK(MenuPick(calc.compareDrop, "Stop Comparing"), "menu offers stop while active")
+    CHECK(calc.compareFS.__text == "", "compare summary cleared")
+    CHECK(calc.compareBtn.__text == "Compare", "button label restored")
+    MenuPick(calc.compareDrop, "Protection")
+    calc.compareBtn.__scripts.OnClick(calc.compareBtn)
+    CHECK(calc.compareFS.__text == "", "button click stops an active comparison")
+
+    -- Compare against live talents
+    CHECK(MenuPick(calc.compareDrop, "My Talents"), "live talents comparable")
+    CHECK(calc.compareFS.__text:find("My Talents"), "footer names the live comparison",
+        calc.compareFS.__text)
+    calc.compareBtn.__scripts.OnClick(calc.compareBtn)
+
+    -- Compare state is per class and does not leak
+    MenuPick(calc.compareDrop, "Protection")
+    CHECK(calc.compareFS.__text ~= "", "warrior comparing")
+    PickClass("MAGE")
+    CHECK(calc.compareFS.__text == "", "compare does not leak across classes")
+    local mageEntries = MenuEntries(calc.compareDrop)
+    local mageHasMine = false
+    for _, info in ipairs(mageEntries) do
+        if info.text == "My Talents" then mageHasMine = true end
+    end
+    CHECK(not mageHasMine, "live talents not offered off-class")
+    PickClass("WARRIOR")
+    CHECK(calc.compareFS.__text:find("Protection"), "warrior comparison survives the round trip",
+        calc.compareFS.__text)
+    calc.compareBtn.__scripts.OnClick(calc.compareBtn)
+
+    -- Search takes visual precedence over compare badges
+    MenuPick(calc.compareDrop, "Protection")
+    local box2 = calc.searchBox
+    box2:SetText("mortal")
+    box2.__scripts.OnTextChanged(box2, true)
+    local badgedWhileSearching = false
+    for _, pane in ipairs(calc.panes) do
+        for _, btn in pairs(pane.buttons) do
+            if btn.deltaFS.__shown then badgedWhileSearching = true end
+        end
+    end
+    CHECK(not badgedWhileSearching, "search suppresses compare badges")
+    box2.__scripts.OnEscapePressed(box2)
+    local badgedAfter = false
+    for _, pane in ipairs(calc.panes) do
+        for _, btn in pairs(pane.buttons) do
+            if btn.deltaFS.__shown then badgedAfter = true end
+        end
+    end
+    CHECK(badgedAfter, "compare badges return when the search clears")
+    calc.compareBtn.__scripts.OnClick(calc.compareBtn)
+    CHECK(#harnessFailedErrors == 0, "compare clean", harnessFailedErrors[1])
+end
+
 -- A long build list must never push the save row off the sidebar
 do
     local snapshot = E.SerializePoints(state)
@@ -1025,12 +1168,6 @@ CHECK(brief.__shown == true, "briefing returns when re-enabled")
 
 local infos = ToggleDropDownMenu(nil, nil, calc.classDrop)
 CHECK(#infos == 9, "class dropdown lists nine classes", #infos)
-local function PickClass(token)
-    for _, info in ipairs(ToggleDropDownMenu(nil, nil, calc.classDrop)) do
-        if info.value == token then info.func({ value = token }) return true end
-    end
-end
-
 CHECK(PickClass("DRUID"), "druid selectable")
 CHECK(CommanderTalentsDB.SelClass == "DRUID", "class selection remembered")
 local druidState = calc._state()

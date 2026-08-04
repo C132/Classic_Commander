@@ -288,6 +288,41 @@ local function PopUndo(state)
 end
 
 -- ---------------------------------------------------------------------------
+-- Compare — hold another build up against the one on screen. state.compare is
+-- { label, points = { [tree] = { [name] = rank } } }; the trees then badge
+-- each talent with the difference. This is the question Wowhead cannot even
+-- ask: "how does what I'm running differ from the recommended build?"
+-- ---------------------------------------------------------------------------
+
+local function CompareDelta(state, t, talentName)
+    local target = state.compare and state.compare.points[t]
+    if not target then return 0 end
+    local info = state.class._idx[t].byName[talentName]
+    local mine = info and E.Rank(state, t, info) or 0
+    return mine - (target[talentName] or 0)
+end
+
+-- Total points that would have to move to reach the compared build
+local function CompareDistance(state)
+    if not state.compare then return 0 end
+    local diff = 0
+    for t = 1, 3 do
+        local tree = state.class.trees[t]
+        for _, talent in ipairs(tree.talents) do
+            local d = CompareDelta(state, t, talent.name)
+            if d > 0 then diff = diff + d end
+        end
+        -- points the target has that we lack count too
+        for name, rank in pairs(state.compare.points[t] or {}) do
+            local info = state.class._idx[t].byName[name]
+            local mine = info and E.Rank(state, t, info) or 0
+            if rank > mine then diff = diff + (rank - mine) end
+        end
+    end
+    return diff
+end
+
+-- ---------------------------------------------------------------------------
 -- Selection / mutation entry points
 -- ---------------------------------------------------------------------------
 
@@ -347,6 +382,20 @@ local function SelectClass(token)
         end
     end
     BindPanes()
+    UpdateAll()
+end
+
+local function SetCompare(label, points)
+    local state = ClassState(CurrentClass())
+    if not state then return end
+    state.compare = { label = label, points = points }
+    UpdateAll()
+end
+
+local function ClearCompare()
+    local state = ClassState(CurrentClass())
+    if not (state and state.compare) then return end
+    state.compare = nil
     UpdateAll()
 end
 
@@ -699,6 +748,18 @@ local function CreateTalentButton(pane)
     btn.rankFS = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     btn.rankFS:SetPoint("CENTER", btn.rankBack, "CENTER", 0, 0)
 
+    -- Compare delta, opposite corner from the rank badge so both can show
+    btn.deltaBack = btn:CreateTexture(nil, "OVERLAY", nil, 0)
+    btn.deltaBack:SetSize(22, 12)
+    btn.deltaBack:SetPoint("TOPLEFT", btn, "TOPLEFT", -5, 5)
+    btn.deltaBack:SetTexture("Interface\\Buttons\\WHITE8X8")
+    btn.deltaBack:SetVertexColor(0, 0, 0, 0.82)
+    btn.deltaBack:Hide()
+
+    btn.deltaFS = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.deltaFS:SetPoint("CENTER", btn.deltaBack, "CENTER", 0, 0)
+    btn.deltaFS:Hide()
+
     btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     btn:SetScript("OnClick", TalentOnClick)
     btn:SetScript("OnEnter", TalentOnEnter)
@@ -976,6 +1037,19 @@ local function UpdatePaneStates(pane)
         elseif rank > 0 then rankColor = "|cff1eff00"
         else rankColor = "|cff808080" end
         btn.rankFS:SetText(("%s%d/%d|r"):format(rankColor, rank, talent.max))
+
+        -- Compare badge (search takes visual precedence when both are on)
+        local delta = (not searching) and state.compare and CompareDelta(state, t, talent.name) or 0
+        if delta ~= 0 then
+            btn.deltaFS:SetText(delta > 0
+                and ("|cff1eff00+%d|r"):format(delta)
+                or ("|cffff4040%d|r"):format(delta))
+            btn.deltaFS:Show()
+            btn.deltaBack:Show()
+        else
+            btn.deltaFS:Hide()
+            btn.deltaBack:Hide()
+        end
     end
 
     for _, rec in ipairs(pane.branchRecs) do
@@ -1345,6 +1419,20 @@ local function UpdateChrome()
         calc.levelFS:SetText("")
     end
 
+    if state.compare then
+        local diff = CompareDistance(state)
+        if diff == 0 then
+            calc.compareFS:SetText(("|cff1eff00Identical to %s|r"):format(state.compare.label))
+        else
+            calc.compareFS:SetText(("Comparing |cffffd200%s|r — |cff33ccff%s|r"):format(
+                state.compare.label,
+                diff == 1 and "1 point differs" or ("%d points differ"):format(diff)))
+        end
+    else
+        calc.compareFS:SetText("")
+    end
+    calc.compareBtn:SetText(state.compare and "Stop" or "Compare")
+
     if UIDropDownMenu_SetText and calc.classDrop then
         UIDropDownMenu_SetText(calc.classDrop,
             ("|c%s%s|r"):format(ClassColorHex(token), ClassLabel(token)))
@@ -1561,9 +1649,101 @@ local function EnsureCalculator()
         StaticPopup_Show("COMMANDER_TALENTS_IMPORT")
     end)
 
+    -- Compare: hold another build up against this one
+    calc.compareDrop = CreateFrame("Frame", "CommanderTalentsCompareDrop", calc, "UIDropDownMenuTemplate")
+    calc.compareDrop:Hide()
+    if UIDropDownMenu_Initialize then
+        UIDropDownMenu_Initialize(calc.compareDrop, function()
+            local token = CurrentClass()
+            local state = ClassState(token)
+            if not state then return end
+
+            if state.compare then
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = "Stop Comparing"
+                info.notCheckable = true
+                info.func = function() ClearCompare() end
+                UIDropDownMenu_AddButton(info)
+            end
+
+            if token == PlayerClassToken() then
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = "My Talents"
+                info.notCheckable = true
+                info.func = function()
+                    local targets = ReadLiveTalents()
+                    if not targets then
+                        FlashError("Could not read your talents")
+                        return
+                    end
+                    SetCompare("My Talents", targets)
+                end
+                UIDropDownMenu_AddButton(info)
+            end
+
+            local presets = Presets(token)
+            if #presets > 0 then
+                local head = UIDropDownMenu_CreateInfo()
+                head.text = "Presets"
+                head.isTitle = true
+                head.notCheckable = true
+                UIDropDownMenu_AddButton(head)
+                for _, build in ipairs(presets) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = build.name
+                    info.notCheckable = true
+                    info.func = function() SetCompare(build.name, build.points) end
+                    UIDropDownMenu_AddButton(info)
+                end
+            end
+
+            local list = CustomList(token)
+            if list and #list > 0 then
+                local head = UIDropDownMenu_CreateInfo()
+                head.text = "My Builds"
+                head.isTitle = true
+                head.notCheckable = true
+                UIDropDownMenu_AddButton(head)
+                for _, build in ipairs(list) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = build.name
+                    info.notCheckable = true
+                    info.func = function() SetCompare(build.name, build.points) end
+                    UIDropDownMenu_AddButton(info)
+                end
+            end
+        end, "MENU")
+    end
+
+    calc.compareBtn = CreateFrame("Button", nil, toolbar, "UIPanelButtonTemplate")
+    calc.compareBtn:SetSize(72, 22)
+    calc.compareBtn:SetPoint("RIGHT", calc.importBtn, "LEFT", -4, 0)
+    calc.compareBtn:SetText("Compare")
+    calc.compareBtn:SetScript("OnClick", function(self)
+        local state = ClassState(CurrentClass())
+        if state and state.compare then
+            ClearCompare()
+        elseif ToggleDropDownMenu then
+            ToggleDropDownMenu(1, nil, calc.compareDrop, self, 0, 0)
+        end
+    end)
+    calc.compareBtn:SetScript("OnEnter", function(self)
+        local state = ClassState(CurrentClass())
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Compare", 1, 1, 1)
+        if state and state.compare then
+            GameTooltip:AddLine(("Comparing against %s. Click to stop."):format(
+                state.compare.label), nil, nil, nil, true)
+        else
+            GameTooltip:AddLine("Hold another build up against this one: every talent badges the difference, so you can see exactly what to change.", nil, nil, nil, true)
+        end
+        GameTooltip:Show()
+    end)
+    calc.compareBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     calc.myTalentsBtn = CreateFrame("Button", nil, toolbar, "UIPanelButtonTemplate")
     calc.myTalentsBtn:SetSize(86, 22)
-    calc.myTalentsBtn:SetPoint("RIGHT", calc.importBtn, "LEFT", -4, 0)
+    calc.myTalentsBtn:SetPoint("RIGHT", calc.compareBtn, "LEFT", -4, 0)
     calc.myTalentsBtn:SetText("My Talents")
     calc.myTalentsBtn:SetScript("OnClick", ImportMyTalents)
     calc.myTalentsBtn:SetScript("OnEnter", function(self)
@@ -1576,7 +1756,7 @@ local function EnsureCalculator()
 
     -- Talent search: names light up across all three trees at once
     calc.searchBox = CreateFrame("EditBox", "CommanderTalentsSearch", toolbar, "InputBoxTemplate")
-    calc.searchBox:SetSize(130, 20)
+    calc.searchBox:SetSize(112, 20)
     calc.searchBox:SetPoint("LEFT", calc.classDrop or toolbar, "RIGHT",
         calc.classDrop and 6 or 0, calc.classDrop and 2 or 0)
     calc.searchBox:SetAutoFocus(false)
@@ -1606,7 +1786,7 @@ local function EnsureCalculator()
 
     calc.searchFS = calc:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     calc.searchFS:SetPoint("LEFT", calc.searchBox, "RIGHT", 6, 0)
-    calc.searchFS:SetWidth(78)
+    calc.searchFS:SetWidth(66)
     calc.searchFS:SetJustifyH("LEFT")
 
     calc.summaryFS = calc:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -1732,6 +1912,12 @@ local function EnsureCalculator()
     calc.flashFS:SetPoint("RIGHT", footer, "RIGHT", -4, 0)
     calc.flashFS:SetJustifyH("RIGHT")
     calc.flashFS:SetTextColor(1, 0.25, 0.25)
+
+    calc.compareFS = footer:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    calc.compareFS:SetPoint("LEFT", calc.levelFS, "RIGHT", 18, 0)
+    calc.compareFS:SetPoint("RIGHT", calc.flashFS, "LEFT", -8, 0)
+    calc.compareFS:SetJustifyH("LEFT")
+    calc.compareFS:SetWordWrap(false)
 
     calc:SetScript("OnShow", function()
         -- A fresh, untouched state should open showing something worth

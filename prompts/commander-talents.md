@@ -66,6 +66,14 @@ and the settings mirror). Bare `/ctalents` (or `/ctal`) toggles it.
 - **Talent search** (toolbar box): matching talents light up cyan across all
   three trees at once while everything else recedes, with a live match count.
   Wowhead has no equivalent.
+- **Compare**: hold any other build — a preset, one of your saves, or your
+  live talents — up against what's on screen. Every talent badges the
+  difference (`+2` green where you have more, `-1` red where you have fewer)
+  in the corner opposite the rank badge, and the footer reports the distance
+  ("Comparing Protection — 14 points differ" / "Identical to Arms"). This is
+  the question a web calculator cannot ask, because it does not know your
+  character. Search takes visual precedence when both are active; compare
+  state is per class and never leaks across a class switch.
 
 ## Data
 
@@ -120,7 +128,7 @@ position reset, open button; view state is widget-less session memory).
 
 ## Out of scope (backlog)
 
-Build compare diffing, per-talent spell links, PvP variants beyond the one
+Per-talent spell links, PvP variants beyond the one
 canonical build per spec, glyph-era niceties, in-window respec cost math,
 multi-level undo, a scrollable build sidebar (the list reserves the save row
 and announces overflow instead).
