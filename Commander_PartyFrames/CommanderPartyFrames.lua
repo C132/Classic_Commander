@@ -44,17 +44,18 @@
 -- names resolve without hardcoding a locale; the rank table feeds the capacity
 -- estimate for shields we cannot tooltip-scan (an out-of-range ally we buffed).
 -- ---------------------------------------------------------------------------
-local PWS_RANKS = {
+local SDATA = {}   -- cold spell-data constants (one local: Lua's 200-local chunk cap)
+SDATA.PWS_RANKS = {
     [17]    = 44,   [592]   = 88,   [600]   = 158,  [3747]  = 234,
     [6065]  = 301,  [6066]  = 381,  [10898] = 484,  [10899] = 605,
     [10900] = 763,  [10901] = 942,  [25217] = 1125, [25218] = 1265,
 }
-local SP_COEFF = 0.1            -- TBC PW:S bonus-healing coefficient (estimate)
-local SHIELD_DURATION = 30      -- fallback only; the aura's real expiration wins
-local WEAKENED_SOUL_MAX = 15    -- Weakened Soul duration, for the drain bar scale
-local PWS_ICON = "Interface\\Icons\\Spell_Holy_PowerWordShield"
-local RENEW_ICON = "Interface\\Icons\\Spell_Holy_Renew"
-local RENEW_DURATION = 15       -- Renew HoT duration, for the sweep scale
+SDATA.SP_COEFF = 0.1            -- TBC PW:S bonus-healing coefficient (estimate)
+SDATA.SHIELD_DURATION = 30      -- fallback only; the aura's real expiration wins
+SDATA.WEAKENED_SOUL_MAX = 15    -- Weakened Soul duration, for the drain bar scale
+SDATA.PWS_ICON = "Interface\\Icons\\Spell_Holy_PowerWordShield"
+SDATA.RENEW_ICON = "Interface\\Icons\\Spell_Holy_Renew"
+SDATA.RENEW_DURATION = 15       -- Renew HoT duration, for the sweep scale
 
 -- IDs 17 / 6788 / 139 are stable everywhere, so the localized names resolve
 -- without a locale table.
@@ -79,7 +80,7 @@ local CLASS_ICON_TEXTURE = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREAT
 -- Base absorb values are trainer-tooltip numbers per rank; they only feed the
 -- fallback capacity — a live tooltip read of the actual aura always wins.
 -- ---------------------------------------------------------------------------
-local MAGE_SPELLS = {
+SDATA.MAGE_SPELLS = {
     { key = "BARRIER", label = "Barrier", baseId = 11426, duration = 60, cooldown = 30,
       school = 5, coeff = 0.1, icon = "Interface\\Icons\\Spell_Ice_Lament",
       ranks = { [11426] = 438, [13031] = 549, [13032] = 678, [13033] = 818,
@@ -99,7 +100,7 @@ local MAGE_SPELLS = {
 }
 local CLASS_PROFILES = {
     PRIEST = { layer = "PWS" },
-    MAGE   = { layer = "INT", selfSpells = MAGE_SPELLS },
+    MAGE   = { layer = "INT", selfSpells = SDATA.MAGE_SPELLS },
 }
 local profile               -- resolved at login; nil = unsupported class (module inert)
 local layer                 -- the active profile's layer ("PWS" / "INT"), nil when inert
@@ -110,15 +111,15 @@ local SELF_KEY = "cself"    -- shieldState/wsState key prefix for self-spell row
 
 -- Mage buff layer: Arcane Intellect (single) and Arcane Brilliance (group)
 -- both satisfy "buffed"; names resolve from stable base IDs at login.
-local AI_ID, BRILLIANCE_ID = 1459, 23028
+SDATA.AI_ID, SDATA.BRILLIANCE_ID = 1459, 23028
 local AI_NAME, BRILLIANCE_NAME
 local AI_ICON = "Interface\\Icons\\Spell_Holy_MagicalSentry"
-local AI_DURATION = 1800    -- fallback scale; the aura's real duration wins
+SDATA.AI_DURATION = 1800    -- fallback scale; the aura's real duration wins
 
 -- Self armor (Frost/Ice/Mage/Molten Armor): the upkeep banner's first segment
 -- AND the armor-switch popout. Ranks listed best-first per line; a line whose
 -- superseding line is known (Frost once Ice exists) stays out of the popout.
-local ARMOR_LINES = {
+SDATA.ARMOR_LINES = {
     { key = "MOLTEN", ids = { 30482 } },
     { key = "MAGE",   ids = { 27125, 22783, 22782, 6117 } },
     { key = "ICE",    ids = { 27124, 10220, 10219, 7320, 7302 } },
@@ -130,15 +131,15 @@ local barrierDef        -- Ice Barrier's tracked-spell def once known (debug inf
 
 -- Water Elemental (frost talent): lifespan + Freeze cooldown on the banner
 -- while it is in play
-local WATER_ELE_ID, FREEZE_ID = 31687, 33395
-local ELE_DURATION = 45
+SDATA.WATER_ELE_ID, SDATA.FREEZE_ID = 31687, 33395
+SDATA.ELE_DURATION = 45
 local eleKnown, eleIcon, freezeName, freezeIcon
 local eleExpire = 0             -- lifespan clock, armed by SPELL_SUMMON
 
 -- Conjured consumables, best rank first (banner conjure/consume buttons)
-local CONJURED_WATER = { 30703, 8079, 8078, 8077, 3772, 2136, 2288, 5350 }
-local CONJURED_FOOD  = { 22019, 22895, 8076, 8075, 1487, 1114, 1113, 5349 }
-local CONJURE_WATER_ID, CONJURE_FOOD_ID = 5504, 587
+SDATA.CONJURED_WATER = { 30703, 8079, 8078, 8077, 3772, 2136, 2288, 5350 }
+SDATA.CONJURED_FOOD  = { 22019, 22895, 8076, 8075, 1487, 1114, 1113, 5349 }
+SDATA.CONJURE_WATER_ID, SDATA.CONJURE_FOOD_ID = 5504, 587
 local mageUtil, conjureBtn, consumeBtn, armorPop, armorBtn
 local armorButtons = {}
 local mageBtnsDirty = false     -- attribute binds queued for after combat
@@ -149,23 +150,23 @@ local settingsBtn               -- header gear opening the settings page (any cl
 -- summed per ally and EMBEDDED into the health bar as colored segments.
 -- Capacity comes from a tooltip read when the unit is addressable, else the
 -- rank tables; SPELL_ABSORBED drains it live.
-local SAC_ID = 7812             -- warlock Sacrifice (absorb bubble)
+SDATA.SAC_ID = 7812             -- warlock Sacrifice (absorb bubble)
 local absorbNames = {}          -- localized absorb-aura name -> true
 local allyAbsorbs = {}          -- guid -> { [name] = {expire, duration, icon, capacity, absorbed} }
 local scanAbsorbs = {}          -- per-scan scratch: name -> {expire, duration, icon, spellId, index}
-local SHIELD_COLORS = {}        -- localized absorb name -> segment tint
-local SHIELD_ORDER = {}         -- localized absorb name -> fixed segment order
-local SHIELD_COLOR_DEFAULT = { 0.55, 0.55, 0.58 }
-local SHIELD_UNIFORM = { 0.93, 0.90, 0.82 }   -- one-color mode: classic cream absorb
-local MAX_SHIELD_SEGS = 5
+SDATA.SHIELD_COLORS = {}        -- localized absorb name -> segment tint
+SDATA.SHIELD_ORDER = {}         -- localized absorb name -> fixed segment order
+SDATA.SHIELD_COLOR_DEFAULT = { 0.55, 0.55, 0.58 }
+SDATA.SHIELD_UNIFORM = { 0.93, 0.90, 0.82 }   -- one-color mode: classic cream absorb
+SDATA.MAX_SHIELD_SEGS = 5
 
 -- Fallback capacity per rank for EVERY tracked absorb, layer-independent —
 -- the aggregate tracker and the own-shield tracker must never disagree just
 -- because one of them lacked a rank table.
-local ABSORB_RANKS = {}
-for id, base in pairs(PWS_RANKS) do ABSORB_RANKS[id] = base end
-for _, def in ipairs(MAGE_SPELLS) do
-    for id, base in pairs(def.ranks) do ABSORB_RANKS[id] = base end
+SDATA.ABSORB_RANKS = {}
+for id, base in pairs(SDATA.PWS_RANKS) do SDATA.ABSORB_RANKS[id] = base end
+for _, def in ipairs(SDATA.MAGE_SPELLS) do
+    for id, base in pairs(def.ranks) do SDATA.ABSORB_RANKS[id] = base end
 end
 
 -- The settings panel builds per-class too; it lives in the other file, so it
@@ -335,7 +336,7 @@ local intCurses, intCCs = 0, 0
 -- rank-safe); first marker stamps the spec, later conflicting markers
 -- overwrite (respec). Session-local by design.
 -- ---------------------------------------------------------------------------
-local SPEC_MARKER_IDS = {
+SDATA.SPEC_MARKER_IDS = {
     -- Mage
     [31687] = "FROST", [11426] = "FROST", [12472] = "FROST",   -- Elemental, Ice Barrier, Icy Veins
     [11129] = "FIRE", [31661] = "FIRE", [11113] = "FIRE",      -- Combustion, Dragon's Breath, Blast Wave
@@ -374,7 +375,7 @@ local SPEC_MARKER_IDS = {
     [16190] = "RESTORATION", [16188] = "RESTORATION", [974] = "RESTORATION", -- Mana Tide, NS, Earth Shield
 }
 -- Talent-tab icons per class+spec (the Specialization display modes)
-local SPEC_ICONS = {
+SDATA.SPEC_ICONS = {
     MAGE    = { ARCANE = "Interface\\Icons\\Spell_Holy_MagicalSentry", FIRE = "Interface\\Icons\\Spell_Fire_FireBolt02", FROST = "Interface\\Icons\\Spell_Frost_FrostBolt02" },
     PRIEST  = { DISC = "Interface\\Icons\\Spell_Holy_WordFortitude", HOLY = "Interface\\Icons\\Spell_Holy_HolyBolt", SHADOW = "Interface\\Icons\\Spell_Shadow_ShadowWordPain" },
     WARLOCK = { AFFLICTION = "Interface\\Icons\\Spell_Shadow_DeathCoil", DEMONOLOGY = "Interface\\Icons\\Spell_Shadow_Metamorphosis", DESTRUCTION = "Interface\\Icons\\Spell_Shadow_RainOfFire" },
@@ -387,7 +388,251 @@ local SPEC_ICONS = {
 }
 local specMarkerNames = {}  -- localized marker spell name -> spec token
 local specState = {}        -- guid -> spec token (session cache, never pruned)
-local groupGuids = {}       -- guid -> true for the current roster (CLEU filter)
+local groupGuids = {}       -- guid -> classToken for the current roster (CLEU filter)
+
+-- ---------------------------------------------------------------------------
+-- Party Ability Bar: the curated cooldown book (see
+-- prompts/commander-party-ability-bar.md). Tier 1 = always on the strip;
+-- tier 2 = only while cooling down. kind ranks eviction: DEF > CC > KICK >
+-- OFF > UTIL. spec limits an entry to a known spec (nil = whole class).
+-- lock = "hypo"/"forb" ties the icon to that debuff (red rim, longer sweep).
+-- resets = keys this ability refunds when cast (Cold Snap, Preparation).
+-- Cooldowns are BASE values; talent reductions self-correct on the next
+-- observed cast. Matching is by localized NAME (rank-safe); `id` resolves
+-- the name/icon at login with the literal fallbacks for safety.
+-- ---------------------------------------------------------------------------
+SDATA.ABILITY_BOOK = {
+    MAGE = {
+        { key = "BLOCK", id = 45438, name = "Ice Block", icon = "Interface\\Icons\\Spell_Frost_Frost",
+          cd = 300, tier = 1, kind = "DEF", lock = "hypo" },
+        { key = "COLDSNAP", id = 11958, name = "Cold Snap", icon = "Interface\\Icons\\Spell_Frost_WizardMark",
+          cd = 480, tier = 1, kind = "UTIL", spec = "FROST", resets = { "BLOCK", "WATERELE" } },
+        { key = "CS", id = 2139, name = "Counterspell", icon = "Interface\\Icons\\Spell_Frost_IceShock",
+          cd = 24, tier = 1, kind = "KICK" },
+        { key = "BLINK", id = 1953, name = "Blink", icon = "Interface\\Icons\\Spell_Arcane_Blink",
+          cd = 15, tier = 1, kind = "DEF" },
+        { key = "WATERELE", id = 31687, name = "Summon Water Elemental", icon = "Interface\\Icons\\Spell_Frost_SummonWaterElemental_2",
+          cd = 180, tier = 1, kind = "OFF", spec = "FROST" },
+        { key = "COMBUST", id = 11129, name = "Combustion", icon = "Interface\\Icons\\Spell_Fire_SealOfFire",
+          cd = 180, tier = 1, kind = "OFF", spec = "FIRE" },
+        { key = "DBREATH", id = 31661, name = "Dragon's Breath", icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+          cd = 20, tier = 1, kind = "CC", spec = "FIRE" },
+        { key = "POM", id = 12043, name = "Presence of Mind", icon = "Interface\\Icons\\Spell_Nature_EnchantArmor",
+          cd = 180, tier = 1, kind = "UTIL", spec = "ARCANE" },
+        { key = "AP", id = 12042, name = "Arcane Power", icon = "Interface\\Icons\\Spell_Nature_Lightning",
+          cd = 180, tier = 1, kind = "OFF", spec = "ARCANE" },
+        { key = "EVOC", id = 12051, name = "Evocation", icon = "Interface\\Icons\\Spell_Nature_Purge",
+          cd = 480, tier = 2, kind = "UTIL" },
+    },
+    PRIEST = {
+        { key = "FEAR", id = 8122, name = "Psychic Scream", icon = "Interface\\Icons\\Spell_Shadow_PsychicScream",
+          cd = 30, tier = 1, kind = "CC" },
+        { key = "PAINSUP", id = 33206, name = "Pain Suppression", icon = "Interface\\Icons\\Spell_Holy_PainSupression",
+          cd = 120, tier = 1, kind = "DEF", spec = "DISC" },
+        { key = "PI", id = 10060, name = "Power Infusion", icon = "Interface\\Icons\\Spell_Holy_PowerInfusion",
+          cd = 180, tier = 1, kind = "OFF", spec = "DISC" },
+        { key = "FEARWARD", id = 6346, name = "Fear Ward", icon = "Interface\\Icons\\Spell_Holy_Excorcism",
+          cd = 180, tier = 1, kind = "DEF" },
+        { key = "SILENCE", id = 15487, name = "Silence", icon = "Interface\\Icons\\Spell_Shadow_ImpPhaseShift",
+          cd = 45, tier = 1, kind = "KICK", spec = "SHADOW" },
+        { key = "FIEND", id = 34433, name = "Shadowfiend", icon = "Interface\\Icons\\Spell_Shadow_Shadowfiend",
+          cd = 300, tier = 2, kind = "UTIL" },
+        { key = "IF", id = 14751, name = "Inner Focus", icon = "Interface\\Icons\\Spell_Frost_WindWalkOn",
+          cd = 180, tier = 2, kind = "UTIL" },
+    },
+    ROGUE = {
+        { key = "VANISH", id = 1856, name = "Vanish", icon = "Interface\\Icons\\Ability_Vanish",
+          cd = 300, tier = 1, kind = "DEF" },
+        { key = "BLIND", id = 2094, name = "Blind", icon = "Interface\\Icons\\Spell_Shadow_MindSteal",
+          cd = 300, tier = 1, kind = "CC" },
+        { key = "KICK", id = 1766, name = "Kick", icon = "Interface\\Icons\\Ability_Kick",
+          cd = 10, tier = 1, kind = "KICK" },
+        { key = "EVASION", id = 5277, name = "Evasion", icon = "Interface\\Icons\\Spell_Shadow_ShadowWard",
+          cd = 300, tier = 1, kind = "DEF" },
+        { key = "CLOAK", id = 31224, name = "Cloak of Shadows", icon = "Interface\\Icons\\Spell_Shadow_NetherCloak",
+          cd = 60, tier = 1, kind = "DEF" },
+        { key = "PREP", id = 14185, name = "Preparation", icon = "Interface\\Icons\\Spell_Shadow_AntiShadow",
+          cd = 600, tier = 1, kind = "UTIL", spec = "SUBTLETY", resets = { "VANISH", "EVASION", "SPRINT" } },
+        { key = "SPRINT", id = 2983, name = "Sprint", icon = "Interface\\Icons\\Ability_Rogue_Sprint",
+          cd = 300, tier = 2, kind = "UTIL" },
+        { key = "SSTEP", id = 36554, name = "Shadowstep", icon = "Interface\\Icons\\Ability_Rogue_Shadowstep",
+          cd = 30, tier = 1, kind = "UTIL", spec = "SUBTLETY" },
+        { key = "AR", id = 13750, name = "Adrenaline Rush", icon = "Interface\\Icons\\Spell_Shadow_ShadowWordDominate",
+          cd = 300, tier = 1, kind = "OFF", spec = "COMBAT" },
+        { key = "CB", id = 14177, name = "Cold Blood", icon = "Interface\\Icons\\Spell_Ice_Lament",
+          cd = 180, tier = 2, kind = "OFF", spec = "ASSASSINATION" },
+    },
+    PALADIN = {
+        { key = "BUBBLE", id = 642, name = "Divine Shield", icon = "Interface\\Icons\\Spell_Holy_DivineIntervention",
+          cd = 300, tier = 1, kind = "DEF", lock = "forb" },
+        { key = "BOP", id = 1022, name = "Blessing of Protection", icon = "Interface\\Icons\\Spell_Holy_SealOfProtection",
+          cd = 300, tier = 1, kind = "DEF", lock = "forb" },
+        { key = "HOJ", id = 853, name = "Hammer of Justice", icon = "Interface\\Icons\\Spell_Holy_SealOfMight",
+          cd = 60, tier = 1, kind = "CC" },
+        { key = "FREEDOM", id = 1044, name = "Blessing of Freedom", icon = "Interface\\Icons\\Spell_Holy_SealOfValor",
+          cd = 25, tier = 1, kind = "UTIL" },
+        { key = "REPENT", id = 20066, name = "Repentance", icon = "Interface\\Icons\\Spell_Holy_PrayerOfHealing",
+          cd = 60, tier = 1, kind = "CC", spec = "RETRIBUTION" },
+        { key = "DFAVOR", id = 20216, name = "Divine Favor", icon = "Interface\\Icons\\Spell_Holy_Heal",
+          cd = 120, tier = 2, kind = "UTIL", spec = "HOLY" },
+        { key = "LOH", id = 633, name = "Lay on Hands", icon = "Interface\\Icons\\Spell_Holy_LayOnHands",
+          cd = 3600, tier = 2, kind = "UTIL" },
+    },
+    WARRIOR = {
+        { key = "INTERCEPT", id = 20252, name = "Intercept", icon = "Interface\\Icons\\Ability_Rogue_Sprint",
+          cd = 30, tier = 1, kind = "CC" },
+        { key = "PUMMEL", id = 6552, name = "Pummel", icon = "Interface\\Icons\\INV_Gauntlets_04",
+          cd = 10, tier = 1, kind = "KICK" },
+        { key = "BERSRAGE", id = 18499, name = "Berserker Rage", icon = "Interface\\Icons\\Spell_Nature_AncestralGuardian",
+          cd = 30, tier = 1, kind = "UTIL" },
+        { key = "INTIM", id = 5246, name = "Intimidating Shout", icon = "Interface\\Icons\\Ability_GolemThunderClap",
+          cd = 180, tier = 1, kind = "CC" },
+        { key = "REFLECT", id = 23920, name = "Spell Reflection", icon = "Interface\\Icons\\Ability_Warrior_ShieldReflection",
+          cd = 10, tier = 1, kind = "DEF" },
+        { key = "DEATHWISH", id = 12292, name = "Death Wish", icon = "Interface\\Icons\\Spell_Shadow_DeathPact",
+          cd = 180, tier = 1, kind = "OFF", spec = "FURY" },
+        { key = "LASTSTAND", id = 12975, name = "Last Stand", icon = "Interface\\Icons\\Spell_Holy_AshesToAshes",
+          cd = 480, tier = 1, kind = "DEF", spec = "PROTECTION" },
+        { key = "SWALL", id = 871, name = "Shield Wall", icon = "Interface\\Icons\\Ability_Warrior_ShieldWall",
+          cd = 1800, tier = 2, kind = "DEF" },
+        { key = "RECK", id = 1719, name = "Recklessness", icon = "Interface\\Icons\\Ability_CriticalStrike",
+          cd = 1800, tier = 2, kind = "OFF" },
+    },
+    DRUID = {
+        { key = "BASH", id = 5211, name = "Bash", icon = "Interface\\Icons\\Ability_Druid_Bash",
+          cd = 60, tier = 1, kind = "CC" },
+        { key = "FCHARGE", id = 16979, name = "Feral Charge", icon = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+          cd = 15, tier = 1, kind = "KICK", spec = "FERAL" },
+        { key = "NS", id = 17116, name = "Nature's Swiftness", icon = "Interface\\Icons\\Spell_Nature_RavenForm",
+          cd = 180, tier = 1, kind = "UTIL", spec = "RESTORATION" },
+        { key = "INNERVATE", id = 29166, name = "Innervate", icon = "Interface\\Icons\\Spell_Nature_Lightning",
+          cd = 360, tier = 1, kind = "UTIL" },
+        { key = "BARKSKIN", id = 22812, name = "Barkskin", icon = "Interface\\Icons\\Spell_Nature_StoneClawTotem",
+          cd = 60, tier = 1, kind = "DEF" },
+        { key = "REBIRTH", id = 20484, name = "Rebirth", icon = "Interface\\Icons\\Spell_Nature_Reincarnation",
+          cd = 1200, tier = 2, kind = "UTIL" },
+        { key = "FRENZIED", id = 22842, name = "Frenzied Regeneration", icon = "Interface\\Icons\\Ability_BullRush",
+          cd = 180, tier = 2, kind = "DEF", spec = "FERAL" },
+    },
+    WARLOCK = {
+        { key = "COIL", id = 6789, name = "Death Coil", icon = "Interface\\Icons\\Spell_Shadow_DeathCoil",
+          cd = 120, tier = 1, kind = "CC" },
+        { key = "HOWL", id = 5484, name = "Howl of Terror", icon = "Interface\\Icons\\Spell_Shadow_DeathScream",
+          cd = 40, tier = 1, kind = "CC" },
+        { key = "SHADOWFURY", id = 30283, name = "Shadowfury", icon = "Interface\\Icons\\Spell_Shadow_Shadowfury",
+          cd = 20, tier = 1, kind = "CC", spec = "DESTRUCTION" },
+        { key = "FELDOM", id = 18708, name = "Fel Domination", icon = "Interface\\Icons\\Spell_Nature_RemoveCurse",
+          cd = 900, tier = 2, kind = "UTIL", spec = "DEMONOLOGY" },
+    },
+    HUNTER = {
+        { key = "SCATTER", id = 19503, name = "Scatter Shot", icon = "Interface\\Icons\\Ability_GolemStormBolt",
+          cd = 30, tier = 1, kind = "CC", spec = "MARKSMANSHIP" },
+        { key = "SILSHOT", id = 34490, name = "Silencing Shot", icon = "Interface\\Icons\\Ability_TheBlackArrow",
+          cd = 20, tier = 1, kind = "KICK", spec = "MARKSMANSHIP" },
+        { key = "INTIMID", id = 19577, name = "Intimidation", icon = "Interface\\Icons\\Ability_Devour",
+          cd = 60, tier = 1, kind = "CC", spec = "BEASTMASTERY" },
+        { key = "BW", id = 19574, name = "Bestial Wrath", icon = "Interface\\Icons\\Ability_Druid_FerociousBite",
+          cd = 120, tier = 1, kind = "OFF", spec = "BEASTMASTERY" },
+        { key = "TRAP", id = 1499, name = "Freezing Trap", icon = "Interface\\Icons\\Spell_Frost_ChainsOfIce",
+          cd = 30, tier = 1, kind = "CC" },
+        { key = "WYVERN", id = 19386, name = "Wyvern Sting", icon = "Interface\\Icons\\INV_Spear_02",
+          cd = 180, tier = 1, kind = "CC", spec = "SURVIVAL" },
+        { key = "DETER", id = 19263, name = "Deterrence", icon = "Interface\\Icons\\Ability_Whirlwind",
+          cd = 300, tier = 1, kind = "DEF", spec = "SURVIVAL" },
+        { key = "RAPID", id = 3045, name = "Rapid Fire", icon = "Interface\\Icons\\Ability_Hunter_RunningShot",
+          cd = 300, tier = 2, kind = "OFF" },
+    },
+    SHAMAN = {
+        { key = "GROUNDING", id = 8177, name = "Grounding Totem", icon = "Interface\\Icons\\Spell_Nature_GroundingTotem",
+          cd = 15, tier = 1, kind = "DEF" },
+        { key = "NS", id = 16188, name = "Nature's Swiftness", icon = "Interface\\Icons\\Spell_Nature_RavenForm",
+          cd = 180, tier = 1, kind = "UTIL", spec = "RESTORATION" },
+        { key = "ELEMASTERY", id = 16166, name = "Elemental Mastery", icon = "Interface\\Icons\\Spell_Nature_WispHeal",
+          cd = 180, tier = 1, kind = "OFF", spec = "ELEMENTAL" },
+        { key = "HEROISM", id = 32182, name = "Heroism", icon = "Interface\\Icons\\Ability_Shaman_Heroism",
+          cd = 600, tier = 1, kind = "OFF" },
+        { key = "BLOODLUST", id = 2825, name = "Bloodlust", icon = "Interface\\Icons\\Spell_Nature_BloodLust",
+          cd = 600, tier = 1, kind = "OFF" },
+        { key = "MANATIDE", id = 16190, name = "Mana Tide Totem", icon = "Interface\\Icons\\Spell_Frost_SummonWaterElemental",
+          cd = 300, tier = 2, kind = "UTIL", spec = "RESTORATION" },
+        { key = "SHAMRAGE", id = 30823, name = "Shamanistic Rage", icon = "Interface\\Icons\\Spell_Nature_ShamanRage",
+          cd = 120, tier = 2, kind = "DEF", spec = "ENHANCEMENT" },
+    },
+}
+-- Entries every class gets: the PvP trinket (several item-effect names) and
+-- the meaningful racials — tier 2, so they surface only once spent.
+SDATA.ABILITY_SHARED = {
+    { key = "TRINKET", name = "PvP Trinket", icon = "Interface\\Icons\\INV_Jewelry_TrinketPVP_01",
+      cd = 120, tier = 2, kind = "UTIL",
+      names = { "PvP Trinket", "Medallion of the Alliance", "Medallion of the Horde",
+                "Insignia of the Alliance", "Insignia of the Horde" } },
+    { key = "WOTF", id = 7744, name = "Will of the Forsaken", icon = "Interface\\Icons\\Spell_Shadow_RaiseDead",
+      cd = 120, tier = 2, kind = "UTIL" },
+    { key = "STONEFORM", id = 20594, name = "Stoneform", icon = "Interface\\Icons\\Spell_Shadow_UnholyStrength",
+      cd = 180, tier = 2, kind = "DEF" },
+    { key = "BLOODFURY", id = 20572, name = "Blood Fury", icon = "Interface\\Icons\\Racial_Orc_BerserkerStrength",
+      cd = 120, tier = 2, kind = "OFF" },
+    { key = "WARSTOMP", id = 20549, name = "War Stomp", icon = "Interface\\Icons\\Ability_WarStomp",
+      cd = 120, tier = 2, kind = "CC" },
+    { key = "TORRENT", id = 28730, name = "Arcane Torrent", icon = "Interface\\Icons\\Spell_Shadow_Teleport",
+      cd = 120, tier = 2, kind = "KICK" },
+}
+SDATA.HYPO_ID, SDATA.FORB_ID = 41425, 25771   -- Hypothermia, Forbearance
+local abilityByName = {}    -- localized name -> { [classToken] = entry } ("*" = shared)
+local abilityState = {}     -- guid -> { [entry.key] = cdEnd }
+local lockNames = {}        -- localized lockout debuff name -> "hypo"/"forb"
+local lockState = {}        -- guid -> { hypo = expire, forb = expire }
+
+-- Resolve display names/icons and build the name index (login + respec)
+local function ResolveAbilityBook()
+    wipe(abilityByName)
+    local function register(name, class, entry)
+        if not name then return end
+        local slot = abilityByName[name]
+        if not slot then slot = {}; abilityByName[name] = slot end
+        slot[class] = entry
+    end
+    for class, list in pairs(SDATA.ABILITY_BOOK) do
+        for _, entry in ipairs(list) do
+            local n, _, ic = nil, nil, nil
+            if entry.id and GetSpellInfo then n, _, ic = GetSpellInfo(entry.id) end
+            entry.dispName = n or entry.name
+            entry.dispIcon = ic or entry.icon
+            register(entry.dispName, class, entry)
+            if entry.name ~= entry.dispName then register(entry.name, class, entry) end
+        end
+    end
+    for _, entry in ipairs(SDATA.ABILITY_SHARED) do
+        local n, _, ic = nil, nil, nil
+        if entry.id and GetSpellInfo then n, _, ic = GetSpellInfo(entry.id) end
+        entry.dispName = n or entry.name
+        entry.dispIcon = ic or entry.icon
+        register(entry.dispName, "*", entry)
+        if entry.names then
+            for _, alias in ipairs(entry.names) do register(alias, "*", entry) end
+        end
+    end
+    wipe(lockNames)
+    local hn = GetSpellInfo and GetSpellInfo(SDATA.HYPO_ID)
+    lockNames[hn or "Hypothermia"] = "hypo"
+    local fn = GetSpellInfo and GetSpellInfo(SDATA.FORB_ID)
+    lockNames[fn or "Forbearance"] = "forb"
+end
+
+-- A group member cast something: stamp its cooldown, apply its resets
+local function NoteAbilityCast(guid, class, spellName, now)
+    local slot = abilityByName[spellName]
+    if not slot then return end
+    local entry = (class and slot[class]) or slot["*"]
+    if not entry then return end
+    local st = abilityState[guid]
+    if not st then st = {}; abilityState[guid] = st end
+    st[entry.key] = now + entry.cd
+    -- The reset link is literal: Cold Snap/Preparation REFUND the linked CDs
+    if entry.resets then
+        for _, tk in ipairs(entry.resets) do st[tk] = nil end
+    end
+end
 
 -- Classes whose members run on mana (TBC): the INT layer's buff targets.
 -- Judged by class, not live power type, so a shapeshifted druid stays a
@@ -459,9 +704,9 @@ local function ReadAbsorbFromAura(unit, index)
 end
 
 local function ComputeCapacity(spellId)
-    local base = PWS_RANKS[spellId] or myShieldValue
+    local base = SDATA.PWS_RANKS[spellId] or myShieldValue
     local sp = (GetSpellBonusHealing and GetSpellBonusHealing()) or 0
-    return base + sp * SP_COEFF
+    return base + sp * SDATA.SP_COEFF
 end
 
 local function CapacityFor(spellId, mine, unit, index)
@@ -478,14 +723,14 @@ end
 
 local function UpdateMyShieldValue()
     local best = 0
-    for id, base in pairs(PWS_RANKS) do
+    for id, base in pairs(SDATA.PWS_RANKS) do
         if base > best and (not IsSpellKnown or IsSpellKnown(id)) then best = base end
     end
     if best == 0 then
-        for _, base in pairs(PWS_RANKS) do best = math.max(best, base) end
+        for _, base in pairs(SDATA.PWS_RANKS) do best = math.max(best, base) end
     end
     local sp = (GetSpellBonusHealing and GetSpellBonusHealing()) or 0
-    myShieldValue = best + sp * SP_COEFF
+    myShieldValue = best + sp * SDATA.SP_COEFF
 end
 
 -- ---------------------------------------------------------------------------
@@ -517,14 +762,14 @@ end
 local function ResolveEleInfo()
     eleKnown = false
     if layer ~= "INT" or not GetSpellInfo then return end
-    local _, _, ic = GetSpellInfo(WATER_ELE_ID)
+    local _, _, ic = GetSpellInfo(SDATA.WATER_ELE_ID)
     eleIcon = ic or "Interface\\Icons\\Spell_Frost_SummonWaterElemental_2"
-    local fn, _, fic = GetSpellInfo(FREEZE_ID)
+    local fn, _, fic = GetSpellInfo(SDATA.FREEZE_ID)
     freezeName = fn
     freezeIcon = fic or "Interface\\Icons\\Spell_Frost_FrostShock"
-    local eleName = GetSpellInfo(WATER_ELE_ID)
+    local eleName = GetSpellInfo(SDATA.WATER_ELE_ID)
     eleKnown = (eleName and knownSpells[eleName])
-        or (IsSpellKnown and IsSpellKnown(WATER_ELE_ID)) or false
+        or (IsSpellKnown and IsSpellKnown(SDATA.WATER_ELE_ID)) or false
 end
 
 -- Freeze's cooldown off the pet action bar (only meaningful while the
@@ -569,8 +814,8 @@ local function BindMageUtilityButtons()
     mageBtnsDirty = false
 
     -- Conjure: left = water, right = food (cast by name = highest rank)
-    local cwName, _, cwIcon = GetSpellInfo(CONJURE_WATER_ID)
-    local cfName = GetSpellInfo(CONJURE_FOOD_ID)
+    local cwName, _, cwIcon = GetSpellInfo(SDATA.CONJURE_WATER_ID)
+    local cfName = GetSpellInfo(SDATA.CONJURE_FOOD_ID)
     conjureBtn:SetAttribute("type1", "spell")
     conjureBtn:SetAttribute("spell1", cwName)
     conjureBtn:SetAttribute("type2", "spell")
@@ -579,8 +824,8 @@ local function BindMageUtilityButtons()
 
     -- Consume: left = eat AND drink (both /use lines fire together),
     -- right = drink only
-    local water = FindConjured(CONJURED_WATER)
-    local food = FindConjured(CONJURED_FOOD)
+    local water = FindConjured(SDATA.CONJURED_WATER)
+    local food = FindConjured(SDATA.CONJURED_FOOD)
     local both = ""
     if food then both = "/use item:" .. food end
     if water then both = both .. (both ~= "" and "\n" or "") .. "/use item:" .. water end
@@ -601,7 +846,7 @@ local function BindMageUtilityButtons()
     -- Armor popout: one secure cast button per known armor line
     local shown = 0
     local known = {}
-    for _, line in ipairs(ARMOR_LINES) do
+    for _, line in ipairs(SDATA.ARMOR_LINES) do
         for _, id in ipairs(line.ids) do
             local n = GetSpellInfo(id)
             if (n and knownSpells[n]) or (IsSpellKnown and IsSpellKnown(id)) then
@@ -610,7 +855,7 @@ local function BindMageUtilityButtons()
             end
         end
     end
-    for _, line in ipairs(ARMOR_LINES) do
+    for _, line in ipairs(SDATA.ARMOR_LINES) do
         local bestId = known[line.key]
         if bestId and not (line.supersededBy and known[line.supersededBy]) then
             shown = shown + 1
@@ -935,14 +1180,14 @@ local function ScanUnit(unit, reliable)
                     end
                 end
                 if not cap and hit.spellId then
-                    cap = capObserved[hit.spellId] or ABSORB_RANKS[hit.spellId]
+                    cap = capObserved[hit.spellId] or SDATA.ABSORB_RANKS[hit.spellId]
                 end
                 rec[name] = { expire = hit.expire, duration = hit.duration,
                     icon = hit.icon, capacity = cap, absorbed = 0 }
             elseif not e.capacity and reliable then
                 -- Late calibration: the aura outlived an out-of-range cast
                 e.capacity = ReadAbsorbFromAura(unit, hit.index)
-                    or (hit.spellId and (capObserved[hit.spellId] or ABSORB_RANKS[hit.spellId]))
+                    or (hit.spellId and (capObserved[hit.spellId] or SDATA.ABSORB_RANKS[hit.spellId]))
                     or nil
             end
         end
@@ -970,6 +1215,7 @@ local function ScanUnit(unit, reliable)
     local showImportant = DB("DispelShowImportant", true)
     local curseExpire, curseDuration
     local ccExpire, ccDuration, ccIcon, ccName
+    local hypoExpire, forbExpire
     local list, dispelCount = nil, 0
     if dispelOn then
         list = dispelState[guid]
@@ -1000,6 +1246,13 @@ local function ScanUnit(unit, reliable)
             ccDuration = aura.duration
             ccIcon = aura.icon
             ccName = aura.name
+        end
+        -- Ability-bar lockout debuffs (Hypothermia / Forbearance) — chassis
+        local lockKind = lockNames[aura.name]
+        if lockKind == "hypo" then
+            hypoExpire = aura.expirationTime or 0
+        elseif lockKind == "forb" then
+            forbExpire = aura.expirationTime or 0
         end
         if dispelOn and dispelCount < MAX_DISPEL_ICONS then
             local dt = aura.dispelName
@@ -1096,13 +1349,13 @@ local LOOK_UNITS = { target = true, focus = true, mouseover = true }
 
 local function ScanGroup()
     wipe(groupGuids)
-    if playerGUID then groupGuids[playerGUID] = true end
+    if playerGUID then groupGuids[playerGUID] = playerClass or true end
     if IsInRaid and IsInRaid() then
         for i = 1, 40 do
             local u = "raid" .. i
             if UnitExists(u) then
                 local g = UnitGUID and UnitGUID(u)
-                if g then groupGuids[g] = true end
+                if g then groupGuids[g] = select(2, UnitClass(u)) or true end
                 ScanUnit(u, IsReliable(u))
             end
         end
@@ -1111,7 +1364,7 @@ local function ScanGroup()
             local u = "party" .. i
             if UnitExists(u) then
                 local g = UnitGUID and UnitGUID(u)
-                if g then groupGuids[g] = true end
+                if g then groupGuids[g] = select(2, UnitClass(u)) or true end
                 ScanUnit(u, IsReliable(u))
             end
         end
@@ -1123,19 +1376,24 @@ end
 local function OnCombatLog()
     local _, subevent, _, sourceGUID, _, _, _, destGUID, _, _, _,
         a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11 = CombatLogGetCurrentEventInfo()
-    if subevent == "SPELL_CAST_SUCCESS" then
-        -- Spec inference: a group member casting a spec-defining spell
-        -- (a2 = spellName — rank- and locale-safe via the name table)
-        if sourceGUID and groupGuids[sourceGUID] and a2 then
+    if subevent == "SPELL_CAST_SUCCESS" or subevent == "SPELL_AURA_APPLIED" then
+        -- Group member activity (a2 = spellName, rank- and locale-safe):
+        -- spec inference plus ability-bar cooldown stamping. AURA_APPLIED is
+        -- the fallback for the few abilities whose cast event is unreliable;
+        -- double-stamping the same cast is harmless (same cd, same second).
+        local class = sourceGUID and groupGuids[sourceGUID]
+        if class and a2 then
             local spec = specMarkerNames[a2]
             if spec then specState[sourceGUID] = spec end
+            NoteAbilityCast(sourceGUID, class, a2, GetTime())
         end
-        return
+        if subevent == "SPELL_CAST_SUCCESS" then return end
+        -- AURA_APPLIED falls through: SPELL_ABSORBED filtering below ignores it
     end
     if subevent == "SPELL_SUMMON" then
         -- Water Elemental lifespan clock (elemental row)
-        if layer == "INT" and sourceGUID == playerGUID and a1 == WATER_ELE_ID then
-            eleExpire = GetTime() + ELE_DURATION
+        if layer == "INT" and sourceGUID == playerGUID and a1 == SDATA.WATER_ELE_ID then
+            eleExpire = GetTime() + SDATA.ELE_DURATION
         end
         return
     end
@@ -1201,13 +1459,13 @@ local function ResolveAbsorbSegs(r, now)
             if rem > bestRem then bestRem = rem; best = e end
             if rem > 0 then
                 if not segs then segs = {}; r.segs = segs end
-                segs[#segs + 1] = { amount = rem, name = name, order = SHIELD_ORDER[name] or 9 }
+                segs[#segs + 1] = { amount = rem, name = name, order = SDATA.SHIELD_ORDER[name] or 9 }
             end
         end
     end
     if best then
         r.inShieldExpire = best.expire
-        r.inShieldDuration = (best.duration and best.duration > 0) and best.duration or SHIELD_DURATION
+        r.inShieldDuration = (best.duration and best.duration > 0) and best.duration or SDATA.SHIELD_DURATION
         r.inShieldIcon = best.icon
         if total > 0 then r.shieldTotal = total end
     end
@@ -1273,7 +1531,7 @@ local function ResolveShieldState(r, now)
         return r
     end
 
-    local tLeft = st.expire and (st.expire - now) or (st.duration or SHIELD_DURATION)
+    local tLeft = st.expire and (st.expire - now) or (st.duration or SDATA.SHIELD_DURATION)
     r.tLeft = tLeft
     r.rightText = string.format("%ds", math.max(0, math.ceil(tLeft)))
     r.shieldUp = true
@@ -1500,12 +1758,12 @@ local function EleRow(now)
         eleRow = true,
         icon = eleIcon,
         state = (left and left <= 10) and "REFRESH" or "SHIELDED",
-        ratio = left and math.min(left / ELE_DURATION, 1) or nil,
+        ratio = left and math.min(left / SDATA.ELE_DURATION, 1) or nil,
         rightText = left and string.format("%ds", math.ceil(left)) or "",
         mainText = "",
         tLeft = left,
         eleHealth = hp,
-        freezeMark = math.min(lastFreezeDur / ELE_DURATION, 1),
+        freezeMark = math.min(lastFreezeDur / SDATA.ELE_DURATION, 1),
         eleUrgent = (left and left <= lastFreezeDur) or false,
     }
     local fcd, fdur, fstart = FreezeCooldown()
@@ -1542,7 +1800,7 @@ end
 -- Spec icon when the spec has been learned, class icon until then
 local function SetSpecOrClassIcon(tex, r)
     local spec = r.guid and specState[r.guid]
-    local icon = spec and r.class and SPEC_ICONS[r.class] and SPEC_ICONS[r.class][spec]
+    local icon = spec and r.class and SDATA.SPEC_ICONS[r.class] and SDATA.SPEC_ICONS[r.class][spec]
     if icon then
         tex:SetTexture(icon)
         tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -1615,7 +1873,7 @@ local function BuildRowWidgets(row)
     -- Embedded shield segments: colored slices chained off the health fill's
     -- right edge, one per absorb type, widths set every paint
     row.shieldSegs = {}
-    for n = 1, MAX_SHIELD_SEGS do
+    for n = 1, SDATA.MAX_SHIELD_SEGS do
         local t = row:CreateTexture(nil, "ARTWORK")
         t:SetTexture("Interface\\Buttons\\WHITE8X8")
         t:SetSize(1, BAR_H)
@@ -1892,7 +2150,7 @@ local function PaintRow(row, r, now, index)
         row.inShield:Hide(); row.inShieldCd:Hide()
         row.bar:Hide(); row.barBG:Hide(); row.healthBar:Hide(); row.wsBar:Hide()
         row.markTick:Hide()
-        for i = 1, MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
+        for i = 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
         row.left:SetText(""); row.right:SetText(""); row.glow:Hide(); row.flash:Hide()
         row.tgtCount:Hide()
         row.stripe:SetAlpha(0)
@@ -1928,11 +2186,11 @@ local function PaintRow(row, r, now, index)
             row._swExp = nil
             row.swipe:Hide()
             if r.inShield and r.inShieldExpire then
-                row.inShield:SetTexture(r.inShieldIcon or PWS_ICON)
+                row.inShield:SetTexture(r.inShieldIcon or SDATA.PWS_ICON)
                 row.inShield:Show()
                 if row._inExp ~= r.inShieldExpire then
                     row._inExp = r.inShieldExpire
-                    local dur = r.inShieldDuration or SHIELD_DURATION
+                    local dur = r.inShieldDuration or SDATA.SHIELD_DURATION
                     row.inShieldCd:SetCooldown(r.inShieldExpire - dur, dur)
                 end
                 row.inShieldCd:Show()
@@ -1974,7 +2232,7 @@ local function PaintRow(row, r, now, index)
                 row.inShield:Hide(); row.inShieldCd:Hide()
             end
         else
-            row.spellIcon:SetTexture(r.icon or PWS_ICON)
+            row.spellIcon:SetTexture(r.icon or SDATA.PWS_ICON)
             row.spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             row.spellIcon:SetVertexColor(1, 1, 1, 1)
             if row.spellIcon.SetDesaturated then row.spellIcon:SetDesaturated(not (r.shieldUp and r.mine)) end
@@ -1986,7 +2244,7 @@ local function PaintRow(row, r, now, index)
             if DB("ShieldSwipe", false) and r.shieldUp and r.mine and st and st.expire then
                 if row._swExp ~= st.expire then
                     row._swExp = st.expire
-                    local dur = st.duration or SHIELD_DURATION
+                    local dur = st.duration or SDATA.SHIELD_DURATION
                     row.swipe:SetCooldown(st.expire - dur, dur)
                 end
                 row.swipe:Show()
@@ -2132,21 +2390,21 @@ local function PaintRow(row, r, now, index)
         for i = 1, #r.segs do
             local s = r.segs[i]
             local w = barW * (s.amount / r.segScale)
-            if w >= 1 and nSegs < MAX_SHIELD_SEGS then
+            if w >= 1 and nSegs < SDATA.MAX_SHIELD_SEGS then
                 nSegs = nSegs + 1
                 local tex = row.shieldSegs[nSegs]
                 -- Per-type tints, or one classic cream when the minute
                 -- differences between shields aren't wanted
                 local c = DB("ColorShieldTypes", true)
-                    and (SHIELD_COLORS[s.name] or SHIELD_COLOR_DEFAULT)
-                    or SHIELD_UNIFORM
+                    and (SDATA.SHIELD_COLORS[s.name] or SDATA.SHIELD_COLOR_DEFAULT)
+                    or SDATA.SHIELD_UNIFORM
                 tex:SetVertexColor(c[1], c[2], c[3], 0.95)
                 tex:SetWidth(w)
                 tex:Show()
             end
         end
     end
-    for i = nSegs + 1, MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
+    for i = nSegs + 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
 
     -- Underlay strip: MANA on the mage board's ally rows, the elemental's
     -- HEALTH on its row (health is the main bar everywhere else now)
@@ -2177,7 +2435,7 @@ local function PaintRow(row, r, now, index)
     -- Recast-lockout drain: Weakened Soul on ally rows, the spell's own
     -- cooldown on self-spell rows (r.lockMax carries that spell's full CD)
     if r.wsLeft and r.wsLeft > 0 then
-        local lockMax = (r.lockMax and r.lockMax > 0) and r.lockMax or WEAKENED_SOUL_MAX
+        local lockMax = (r.lockMax and r.lockMax > 0) and r.lockMax or SDATA.WEAKENED_SOUL_MAX
         row.wsBar:SetWidth(math.max((row._barW or 100) * math.min(r.wsLeft / lockMax, 1), 1))
         row.wsBar:Show()
     else
@@ -2191,13 +2449,13 @@ local function PaintRow(row, r, now, index)
     -- when it is about to fall off, a dim ghost icon when it is missing.
     -- Priest-only; the shared account DB can carry the flag onto a Mage.
     if DB("RenewTrack", false) and layer == "PWS" and r.state ~= "EMPTY" and not r.dead then
-        row.renewIcon:SetTexture(RENEW_ICON)
+        row.renewIcon:SetTexture(SDATA.RENEW_ICON)
         local rl = r.renewLeft or 0
         if rl > 0 and r.renewExpire then
             if row.renewIcon.SetDesaturated then row.renewIcon:SetDesaturated(false) end
             if row._rnExp ~= r.renewExpire then
                 row._rnExp = r.renewExpire
-                row.renewSwipe:SetCooldown(r.renewExpire - RENEW_DURATION, RENEW_DURATION)
+                row.renewSwipe:SetCooldown(r.renewExpire - SDATA.RENEW_DURATION, SDATA.RENEW_DURATION)
             end
             row.renewSwipe:Show()
             local expiring = rl <= DB("RenewRefreshAt", 4)
@@ -2892,7 +3150,7 @@ function CommanderPartyFrames_Test()
         }
         if DB("SelfShieldRows", true) then
             local defs = {}
-            for _, def in ipairs(MAGE_SPELLS) do defs[def.key] = def end
+            for _, def in ipairs(SDATA.MAGE_SPELLS) do defs[def.key] = def end
             shieldState["cshieldtestB"] = { spellId = 33405, expire = now + 42, mine = true,
                 absorbed = 260, capacity = 1075, duration = 60 }
             wsState["cshieldtestB"] = now + 14      -- Barrier up, cooldown draining
@@ -3007,6 +3265,15 @@ function CommanderPartyFrames_Debug()
             tostring(barrierDef and barrierDef.name or "unknown"),
             tostring(eleKnown), tostring(selfArmor and "up" or "none/unseen")))
     end
+    local bookNames = 0
+    for _ in pairs(abilityByName) do bookNames = bookNames + 1 end
+    local watched = 0
+    for guid, st in pairs(abilityState) do
+        for _, cdEnd in pairs(st) do
+            if cdEnd > GetTime() then watched = watched + 1 end
+        end
+    end
+    print(string.format("  abilityBook=%d names  cooldownsRunning=%d", bookNames, watched))
 end
 
 -- Session shield-coverage report (/cpf report)
@@ -3094,8 +3361,8 @@ events:SetScript("OnEvent", function(self, event, arg1)
         PWS_NAME = (GetSpellInfo and GetSpellInfo(17)) or "Power Word: Shield"
         WS_NAME = (GetSpellInfo and GetSpellInfo(6788)) or "Weakened Soul"
         RENEW_NAME = (GetSpellInfo and GetSpellInfo(139)) or "Renew"
-        AI_NAME = (GetSpellInfo and GetSpellInfo(AI_ID)) or "Arcane Intellect"
-        BRILLIANCE_NAME = (GetSpellInfo and GetSpellInfo(BRILLIANCE_ID)) or "Arcane Brilliance"
+        AI_NAME = (GetSpellInfo and GetSpellInfo(SDATA.AI_ID)) or "Arcane Intellect"
+        BRILLIANCE_NAME = (GetSpellInfo and GetSpellInfo(SDATA.BRILLIANCE_ID)) or "Arcane Brilliance"
         -- Which layer (if any) this class gets, what we can dispel, and the
         -- CC names worth glowing
         local _, classToken = UnitClass("player")
@@ -3107,7 +3374,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
         EnsureSettingsButton()
         -- Armor names/icons for the upkeep banner (INT layer only)
         if layer == "INT" and GetSpellInfo then
-            for _, line in ipairs(ARMOR_LINES) do
+            for _, line in ipairs(SDATA.ARMOR_LINES) do
                 for _, id in ipairs(line.ids) do
                     local n, _, icon = GetSpellInfo(id)
                     if n and not armorNames[n] then
@@ -3126,8 +3393,8 @@ events:SetScript("OnEvent", function(self, event, arg1)
                 local n = GetSpellInfo(id)
                 if n then
                     absorbNames[n] = true
-                    SHIELD_ORDER[n] = order
-                    SHIELD_COLORS[n] = color
+                    SDATA.SHIELD_ORDER[n] = order
+                    SDATA.SHIELD_COLORS[n] = color
                 end
             end
             RegisterAbsorb(17, 1, { 0.93, 0.90, 0.82 })     -- PW:S: light cream grey
@@ -3135,12 +3402,14 @@ events:SetScript("OnEvent", function(self, event, arg1)
             RegisterAbsorb(1463, 3, { 0.55, 0.62, 0.74 })   -- Mana Shield: muted soft blue-grey
             RegisterAbsorb(543, 4, { 0.95, 0.55, 0.30 })    -- Fire Ward: soft ember
             RegisterAbsorb(6143, 5, { 0.62, 0.84, 0.95 })   -- Frost Ward: pale ice
-            RegisterAbsorb(SAC_ID, 6, { 0.42, 0.42, 0.46 }) -- Sacrifice: slight dark grey
+            RegisterAbsorb(SDATA.SAC_ID, 6, { 0.42, 0.42, 0.46 }) -- Sacrifice: slight dark grey
             -- Spec-marker names (chassis: both layers drive spec displays)
-            for id, spec in pairs(SPEC_MARKER_IDS) do
+            for id, spec in pairs(SDATA.SPEC_MARKER_IDS) do
                 local n = GetSpellInfo(id)
                 if n then specMarkerNames[n] = spec end
             end
+            -- The ability book (party ability bar) resolves alongside
+            ResolveAbilityBook()
         end
         if GetSpellInfo then
             for _, id in ipairs(CC_SPELL_IDS) do
