@@ -9,5 +9,6 @@
 ## RequiredDeps: Commander_Events
 
 CommanderQuartermasterData.lua
+CommanderQuartermasterFringe.lua
 CommanderQuartermasterDB.lua
 CommanderQuartermaster.lua

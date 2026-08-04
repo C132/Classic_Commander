@@ -32,6 +32,13 @@ but tanks, damage, and healers manage *opposite sides* of threat. The role
 dropdown (per character; panel + board header tag + slash) reshapes the
 headline, footer, warnings, and status colors around the selected role.
 
+**One engine, four surfaces.** The board (Full or Compact), the
+Commander_Meters pane, and the target-frame readout are all painters over
+the same 4 Hz tick — none of them owns data, and turning any of them off
+never quiets a warning. Omen shipped one window and TinyThreat shipped one
+list; the choice of *where the number lives* was never a setting in that
+lineage, and it is the one axis this addon's options actually cover.
+
 **Nameplate facts.** `C_NamePlate.GetNamePlates()` / `namePlateUnitToken`
 is field-proved on this client by Commander_Radar and Commander_Shield's
 targeter counter, which makes two things possible that Omen's era could not
@@ -56,3 +63,10 @@ means little to a healer).
   the color threat danger wants.
 - The Meters RTS visual contract (ARIALN, fixed geometry, class colors as
   data, one accent) and its in-addon harness pattern.
+- Commander_Resources' five-second-rule bar for the Blizzard-unit-frame
+  attachment rules: parent to the frame, `EnableMouse(false)` so a child can
+  never eat a click meant for the protected unit button, and read the real
+  bar's width instead of hardcoding it.
+- The Commander_Talents harness path resolution (derive the AddOns root from
+  the harness's own location) so both Threat harnesses run in a git
+  worktree, not just the live AddOns directory.

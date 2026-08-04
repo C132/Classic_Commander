@@ -1,8 +1,9 @@
 -- Commander Production: active spell cooldowns rendered as an RTS build
 -- queue. SPELL_UPDATE_COOLDOWN triggers a spellbook sweep (classic-style
 -- spellbook API); anything on a cooldown longer than the configured minimum
--- joins the queue as a bar filling toward ready. Keyed by spell name so
--- multiple ranks sharing a cooldown collapse into one entry.
+-- joins the queue as a bar draining toward ready — full at cooldown start,
+-- empty the moment it comes back. Keyed by spell name so multiple ranks
+-- sharing a cooldown collapse into one entry.
 
 local BOOKTYPE = "spell"
 local BAR_HEIGHT = 12
@@ -417,12 +418,13 @@ local function Draw()
             row.timer:Hide()
             row:SetAlpha(item.alpha or 1)
         else
-            local progress = 1 - (item.remaining / item.entry.duration)
+            -- Drain style: full at cooldown start, empty at ready
+            local fill = item.remaining / item.entry.duration
             row.bar:SetVertexColor(0.35, 0.65, 1, 0.9)
             if IsIconStrip(layout) then
-                row.bar:SetSize(math.max(ICON_SIZE * progress, 1), ICON_BAR_HEIGHT)
+                row.bar:SetSize(math.max(ICON_SIZE * fill, 1), ICON_BAR_HEIGHT)
             else
-                row.bar:SetSize(math.max(barWidth * progress, 1), BAR_HEIGHT)
+                row.bar:SetSize(math.max(barWidth * fill, 1), BAR_HEIGHT)
             end
             -- Text changes once per second; the bar resizes every draw.
             -- Skip the format+SetText+tipText churn on unchanged seconds.

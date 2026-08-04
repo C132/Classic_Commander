@@ -39,6 +39,10 @@ local DefaultSettings = {
     BarRows = 8,           -- bar rows on the board (Meters' Bar Rows)
     FrameWidth = 240,      -- board width in pixels (Meters' Window Width)
     CombatOnly = true,     -- board shows only in combat / while threat exists
+    BoardLayout = "FULL",  -- FULL | COMPACT | HIDDEN — the standalone board's
+                           -- density, or no standalone board at all
+    TargetEmbed = "OFF",   -- OFF | BAR | TEXT | BOTH — the role-adaptive
+                           -- readout drawn on Blizzard's target frame
     MetersEmbed = false,   -- render inside Commander_Meters as a live THREAT
                            -- pane instead of the standalone board
     AccentColor = "AMBER", -- AMBER | CYAN | GREEN | RED | WHITE, or any
@@ -148,7 +152,7 @@ local function CreateCorePanel()
         key = "Threat",
         title = "Threat",
         addonName = "Commander_Threat",
-        description = "Role-adaptive threat meter. Pick your role and the board reshapes around it: damage dealers and healers watch their distance to pulling aggro (full bar width IS the pull point — the 110% melee / 130% ranged thresholds are already folded in), tanks watch their grip, the closest chaser, and how many engaged mobs they actually hold. Warnings are edge-triggered: one klaxon at the threshold, a louder one when aggro actually moves.",
+        description = "Role-adaptive threat meter. Pick your role and the board reshapes around it: damage dealers and healers watch their distance to pulling aggro (full bar width IS the pull point — the 110% melee / 130% ranged thresholds are already folded in), tanks watch their grip, the closest chaser, and how many engaged mobs they actually hold. Warnings are edge-triggered: one klaxon at the threshold, a louder one when aggro actually moves. Where it draws is yours to pick — the full board, a compact one, a readout on your target frame, a pane inside Commander Meters, or nothing but the warnings.",
         event = COMMANDER_THREAT_EVENTS.UPDATE,
         slash = { "/cthreat", "/ct" },
         slashHandlers = {
@@ -219,9 +223,34 @@ local function CreateCorePanel()
         isEnabled = Enabled,
     }, {
         label = "Only In Combat",
-        tooltip = "Show the board only while you are in combat or a threat list still exists. Off keeps it on screen all the time. An unlocked board always shows so you can place it.",
+        tooltip = "Show the board only while you are in combat or a threat list still exists. Off keeps it on screen all the time. An unlocked board always shows so you can place it (a Hidden board stays hidden — there is nothing to place).",
         get = function() return CommanderThreatDB.CombatOnly end,
         set = function(value) CommanderThreatDB.CombatOnly = value end,
+        isEnabled = Enabled,
+    })
+
+    panel:AddDropdownPair({
+        label = "Board Layout",
+        tooltip = "How much board to draw. Full is the standard one: the big headline percentage, its label (your chaser as a tank, your peak mob as a healer), the mob name, the bars, and the footer fact. Compact folds that headline up into the header strip at reading size and tightens every row — about a third less height for the same facts, minus the mob name (your target frame already says it). Hidden retires the board outright and leaves the warnings and the target-frame readout to carry the module.",
+        options = {
+            { text = "Full", value = "FULL" },
+            { text = "Compact", value = "COMPACT" },
+            { text = "Hidden", value = "HIDDEN" },
+        },
+        get = function() return CommanderThreatDB.BoardLayout end,
+        set = function(value) CommanderThreatDB.BoardLayout = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Target Frame",
+        tooltip = "Also draw your threat number on Blizzard's target frame, where you are already looking. Bar is a slim fill along the bottom of the target's health bar — full width IS the pull point, exactly like the board's bars. Text is the percentage above the health bar's right end, reading AGGRO once the mob is yours. Bar + Text draws both. It is role-adaptive like everything else: Damage and Healer see their own climb, a tank sees the chaser's climb while holding and their own climb to take it back when not. Shown only for an attackable target you actually have a threat list on.",
+        options = {
+            { text = "Off", value = "OFF" },
+            { text = "Bar", value = "BAR" },
+            { text = "Text", value = "TEXT" },
+            { text = "Bar + Text", value = "BOTH" },
+        },
+        get = function() return CommanderThreatDB.TargetEmbed end,
+        set = function(value) CommanderThreatDB.TargetEmbed = value end,
         isEnabled = Enabled,
     })
 

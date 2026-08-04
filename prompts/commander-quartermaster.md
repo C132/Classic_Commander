@@ -141,3 +141,116 @@ One settings page ("Quartermaster", `/cquartermaster`, `/cqm`).
 4. Search finds "healing potion" across categories instantly, at every rank.
 5. Turning the master switch off stops all scanning and tooltip additions; the ledger
    survives untouched.
+
+---
+
+# Batch 2 — from ledger to quartermaster (2026-08-03)
+
+v1 answers "what exists" and "what do I hold." Batch 2 makes the module earn its rank:
+a quartermaster doesn't just count supplies, he tells you whether you're ready to march,
+what to buy, and where the convoy is. Ten majors, plus one piece of suite integration.
+
+## The ten
+
+1. **Readiness engine.** The Loadout view stops being a list and becomes a verdict.
+   Every slot is graded from the ranked picks: **CARRIED** (a pick is in your bags),
+   **IN BANK** (reachable, go withdraw), **ON ALTS** (somewhere in the ledger — mail,
+   transit, or another character), **MISSING** (buy it). The grade rides the slot
+   header; a summary row tops the view ("Readiness: 5/8 carried · 1 in bank · 2
+   missing"). `/cqm ready` prints the same verdict to chat. Readiness for reports and
+   warnings always grades **your own class**, with your manual spec pick honored only
+   when it belongs to your class — browsing a Mage loadout on your Warrior never
+   changes what "ready" means.
+2. **Raid-entry supply check.** Zoning into a raid instance runs the readiness check
+   automatically: one chat summary (green confirmation or a list of gaps), a warning
+   sound when something's missing, once per instance per half hour (ghost releases and
+   corpse runs don't re-trigger it). Off-switch and sound toggle in settings.
+3. **Watchlist with restock targets.** Right-click any item row to set "keep N on this
+   character" (bags + bank). A Watchlist entry pins to the top of the Browse sidebar
+   with a short-count badge; its view lists watched items deficit-first with have/want
+   in the note column. Watched rows wear a gold `*` everywhere (red when short), and
+   the item tooltip gains a "Restock: have/target" line. Targets are per-character
+   (keyed like UntrackedChars), live outside the defaults table so Restore Defaults
+   keeps them, and export as macro-friendly globals
+   (`CommanderQuartermaster_SetWatchTarget/GetWatchTarget`).
+4. **Shopping list.** One button (and `/cqm shop`) turns gaps into an errand list in a
+   copyable export window: loadout slots graded BUY / move-from-bank / mail-from-alt
+   with the top pick named, then watchlist deficits with exact buy counts. Refresh and
+   Select All buttons; escape closes.
+5. **Roster view.** A third view alongside Browse and Loadout: every ledger character —
+   class-colored, level, gold, tracked-item totals per location (Bags/Bank/Mail/Total
+   columns), "seen 2h ago", and per-location freshness stamps in the tooltip — the
+   brief's "data is stamped with when it was last true" finally rendered. Click a row
+   to hide/unhide a character from counts (the UntrackedChars map, immediate); right-
+   click to Forget (confirm popup; the character you're on can only be hidden).
+   Sidebar filters by realm.
+6. **Deep search.** The search box tokenizes on whitespace and every token must match
+   across name, effect note, category, source tag, and restriction text — "spell
+   damage food" finds the Blackened Basilisk row, "level 65 vendor" finds the
+   Shattrath flasks.
+7. **Filters.** A Filter menu on the Browse toolbar: era (All / TBC / Vanilla) and
+   source (All / AH / Vendor / Created / Quest / Drop / BoP / Event), single-level
+   menu, persisted, button label flags the active state. Composes with search and
+   Owned Only.
+8. **Sortable columns.** The Bags/Bank/Alts/Total column headers are buttons: click
+   sorts descending, again ascending, a third time restores curated order. Sorting
+   flattens category headers (it's a leaderboard now); the Roster view sorts by the
+   same columns re-labeled Bags/Bank/Mail/Total.
+9. **Mail in transit.** The classic ledger hole: flasks mailed to the raid main vanish
+   from every count until the recipient logs in. Now sending mail snapshots the
+   attachments (hooked fail-safe, committed on MAIL_SEND_SUCCESS) and credits them to
+   the recipient's ledger record as a `transit` layer — counted in Alts/mail totals
+   and the breakdown tooltip — until the recipient's own mailbox scan supersedes it
+   (or 31 days expire it). Recipients are matched case-insensitively against existing
+   ledger characters on this realm; strangers are simply not tracked.
+10. **Spec auto-detection.** The Loadout view defaults to what your talents actually
+    say (deepest tab, both classic and retail `GetTalentTabInfo` shapes handled,
+    re-checked on talent changes) instead of the first spec in the file. A manual
+    spec pick still wins; Feral defaults to Cat (tab 2 can't tell Bear from Cat —
+    tanks pick by hand); tab-3 Rogues get Assassination's list. Roster gold comes
+    from the same batch: `GetMoney()` recorded at scan time and on PLAYER_MONEY.
+
+## Suite integration
+
+Commander_Inventory gets a Quartermaster button: a crate icon in the item grid's title
+bar (WINDOW style) or a small tab above the top-right corner (backdrop styles), shown
+only when Commander_Quartermaster is installed (the TopBar soft-fail pattern — probe
+the toggle global, never a hard dep). One click opens the browser.
+
+## Non-goals (still)
+
+Prices, crafting math, and any automation that buys, mails, or moves items. The
+shopping list is text you carry to the AH, not a bot.
+
+## Verification
+
+The offline harness moves in-repo to `Commander_Quartermaster/Harness/` (the
+Meters/Momentum convention) and grows checks for every feature above, including the
+bank/mail close-race flushes from v1's review, the transit commit/supersede/discard
+paths, both talent-API shapes, and the Inventory button's installed/absent gate.
+
+## Batch 2 follow-ups (same day)
+
+**Fringe loadouts.** The generated database stays generated; a new hand-curated
+`CommanderQuartermasterFringe.lua` appends off-meta specs at load. Every class
+fields one: Prot PvP (Warrior — the Season 1 shield-slam cheese), Shockadin
+(Paladin), Melee (Hunter — the forbidden spec, Bogling Root included), Subtlety
+(Rogue, PvP), Smite (Priest), Tank (Shaman — no taunt, all heart, plus a
+Masterwork Target Dummy), Krosh Tank (Mage — the Gruul's Lair Spellsteal
+contract), Demo Tank + SL/SL (Warlock — the Leotheras/Illidan niche and the arena
+drain-tank), and Dreamstate (Druid, the int-regen arena battery). House rule,
+harness-enforced: fringe picks may only reference item IDs that already exist in
+the verified database, so hand curation never dilutes the generator's ID
+guarantees. A slot may carry a note and NO entries (Tank Shaman's weapon slot:
+Rockbiter is the consumable) — it renders as advice and stays out of the
+readiness denominator. Tab-3 Rogues now auto-detect into the real Subtlety
+loadout; fringe specs sharing a tree with a mainstream spec (Shockadin/Holy,
+Smite/Holy, Demo Tank/Demonology, Dreamstate/Balance, Prot PvP/Protection, Tank
+Shaman/Enhancement-adjacent) keep the mainstream auto-detect default and are
+picked by hand.
+
+**Item level column.** A fifth sortable column, Lvl, left of the counts (a property,
+not a holding — the window widened 800→850 to pay for it honestly). Values come from
+the client item cache, memoized, dash until known; while sorted by Lvl an item-info
+arrival triggers a full rebuild so the order corrects itself. In the Roster view the
+same column shows and sorts character level.

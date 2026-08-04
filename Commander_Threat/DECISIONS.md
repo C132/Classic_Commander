@@ -21,11 +21,14 @@ anything else would re-derive what the client computes. No raw-vs-scaled
 toggle: scaled is strictly the more honest encoding, and a toggle to be
 less honest is not a setting.
 
-**D3 — Settings ceiling: 10, re-derived to 11 in D13.** EnableThreat,
-Role, WarnAt, WarnSound, WarnFlash, ShowTPS, BarRows, FrameWidth,
-CombatOnly, AccentColor (+ the shared HudChrome quartet, owned by the
-suite mechanism, per the Meters counting convention). MetersEmbed is the
-eleventh — Devin-requested, justified in D13. Derived by sorting Omen's option sprawl into
+**D3 — Settings ceiling: 10, re-derived to 11 in D13 and 13 in D14/D15.**
+EnableThreat, Role, WarnAt, WarnSound, WarnFlash, ShowTPS, BarRows,
+FrameWidth, CombatOnly, AccentColor (+ the shared HudChrome quartet, owned
+by the suite mechanism, per the Meters counting convention). MetersEmbed is
+the eleventh (D13); BoardLayout the twelfth (D14) and TargetEmbed the
+thirteenth (D15) — all three Devin-requested, each justified where it
+lands. Every one of them answers *where the module draws*, which is the one
+axis the original ten never covered. Derived by sorting Omen's option sprawl into
 load-bearing / legacy / decoration and keeping only the first bucket, then
 cross-checking survivors against the suite: Bar Rows and Window Width take
 Meters' names, ranges, and defaults exactly. Dropped: bar textures and
@@ -114,3 +117,50 @@ LIST, and the warnings carry the role story. Rejected: forcing the split
 open at every login (Meters' persistence already remembers), and a
 board-inside-Meters frame graft (two addons' pooling and click-through
 rules tangled for no user benefit).
+
+**D14 — Board Layout is one dropdown with three values, not two settings
+(2026-08-04, ceiling 11 → 12).** Full / Compact / Hidden. Compact is a
+DENSITY table, not a second painter: every metric that differs between the
+layouts (heights, three type sizes, four column widths) lives in one table
+per layout, `M` points at the active one, and the painters never branch on
+it. What compact actually does: the headline block folds up into the header
+strip at reading size (13pt, still the largest thing on the board) and the
+rows tighten 16 → 13px — about a third less height for the same facts. The
+single fact it gives up is the mob NAME, because that is the one thing the
+target frame already tells you (and D15 now puts the number there too);
+everything load-bearing — percentage, label, status word, bars, footer —
+survives. Hidden retires the board outright, which is what someone running
+the target-frame readout or the Meters embed alone actually wants; it costs
+nothing extra because it is a third value on a dropdown that had to exist
+anyway, and it is deliberately stronger than the unlock override (there is
+nothing to place). Applied live, never baked: nothing in the density table
+is a creation-time property once every fontstring is registered by SIZE KIND
+rather than a number, so Full ⇄ Compact needs no `/reload` note the way the
+accent does. Rejected: a separate "Hide Board" checkbox (two settings for
+one question), and a compact mode that dropped the footer instead of the mob
+name — the tank's LOOSE count is the footer's whole reason to exist.
+
+**D15 — Target-frame readout is additive, and shows the number only for the
+targeted mob (2026-08-04, ceiling 12 → 13).** Off / Bar / Text / Bar + Text,
+drawn on Blizzard's own target frame: BAR is a 4px fill along the bottom of
+`TargetFrameHealthBar` (the board's D2 encoding unchanged — full width IS
+the pull point), TEXT is the percentage above that bar's right end, reading
+AGGRO once the mob is yours. Role-adaptive like everything else: Damage and
+Healer see their own climb, a tank sees the chaser's climb while holding and
+their own climb to take it back when not. Unlike the Meters embed this
+RETIRES nothing — it is a second surface for the same tick, so the board,
+the embed, and every warning are untouched (pair it with Board Layout:
+Hidden for a target-frame-only setup). Two hard rules: it draws only for an
+ATTACKABLE target, because an unattackable one means the engine's list came
+from target-of-target (Omen's fallback, D1) and that mob's number does not
+belong on this frame; and nothing it creates takes the mouse, because the
+target frame is protected and its clicks are load-bearing (the
+Commander_Resources player-frame precedent). Alerts wash the whole health
+bar red rather than flashing one surface, so the cue reads the same in all
+three modes. Blizzard's own `TargetFrameNumericalThreat` is left alone: it
+is CVar-gated, off by default, sits above the frame, and is not
+role-aware — suppressing it would need a hook on
+`UnitFrame_UpdateThreatIndicator` to buy nothing. Rejected: reusing its frame
+as the surface (its position and art are not ours to redefine), and putting
+the bar under the mana bar (it would land on frame art whose geometry we
+have not verified; the health bar's rect is known).

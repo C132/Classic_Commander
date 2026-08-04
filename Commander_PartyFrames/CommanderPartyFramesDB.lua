@@ -24,6 +24,7 @@ local DefaultSettings = {
     ColorShieldTypes = true,    -- tint embedded shield segments per type (off = one cream)
     NameMaxChars = 6,
     ShowTargeters = true,       -- enemy-NPCs-targeting count over the class icon
+    ShowTargetMarks = true,     -- raid mark of the unit each ally is targeting
 
     -- Ten flagged features (all neutral defaults, so current behavior is kept)
     ClickCast = false,          -- rows become secure mouseover/click unit buttons
@@ -58,6 +59,20 @@ local DefaultSettings = {
     MageClickMiddle = "TARGET", -- mage row middle-click = target the ally
     MageClickModLeft = 1008,    -- mage row mod+left     = Amplify Magic
     SelfShieldRows = true,      -- append your own shields under the ally rows
+
+    -- Banner utility buttons. Bandage is chassis (every class); the rest ride
+    -- the mage layer alongside the armor switcher.
+    ShowUtilityCounts = true,   -- inventory tallies over the water/food/gem/bandage icons
+    ShowPortalButton = true,    -- portals & teleports popout
+    ShowGemButton = true,       -- mana gem: use / conjure
+    ShowBandageButton = true,   -- First Aid: bandage, lockout, open the window
+
+    -- Party Ability Bar (engine lands in phases; keys reserved now)
+    ShowAbilityBar = true,      -- cooldown strip under every player row
+    AbilityMaxIcons = 6,        -- most ability icons per strip (3-8)
+    AbilityBarSelf = true,      -- include your own row's strip
+    AbilityCdText = true,       -- remaining-time text on cooling icons
+    AbilityTrack = {},          -- per-ability overrides ("CLASS:KEY" -> bool; absent = book default)
     TrackManaShield = true,     -- Mana Shield row in the self-shield extra
     TrackWards = true,          -- Fire Ward / Frost Ward rows in the extra
 
@@ -96,6 +111,7 @@ end
 local CLICK_SPELLS = {
     { text = "None", value = "NONE" },
     { text = "Target", value = "TARGET" },
+    { text = "Assist (their target)", value = "TARGETTARGET" },
     { text = "Power Word: Shield", value = 17 },
     { text = "Renew", value = 139 },
     { text = "Flash Heal", value = 2061 },
@@ -118,6 +134,7 @@ local CLICK_SPELLS = {
 local MAGE_CLICK_SPELLS = {
     { text = "None", value = "NONE" },
     { text = "Target", value = "TARGET" },
+    { text = "Assist (their target)", value = "TARGETTARGET" },
     { text = "Arcane Intellect", value = 1459 },
     { text = "Arcane Brilliance", value = 23028 },
     { text = "Remove Curse", value = 475 },
@@ -130,6 +147,224 @@ local CLICK_MODIFIERS = {
     { text = "Ctrl", value = "ctrl" },
     { text = "Alt", value = "alt" },
 }
+
+-- ---------------------------------------------------------------------------
+-- Tracked Abilities window: one row per class (plus the shared racials and
+-- trinket), each with a dropdown of that class's ability book — check an
+-- ability to let it on the strip, uncheck to hide it. Overrides live in
+-- CommanderPartyFramesDB.AbilityTrack ("CLASS:KEY" -> bool, "*:KEY" for
+-- shared); absent means the book default, so `off` entries ship untracked
+-- and the curated default strip is unchanged until you opt in.
+-- ---------------------------------------------------------------------------
+local ABILITY_CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+local ABILITY_KIND_LABELS = { DEF = "Defensive", CC = "Crowd control", KICK = "Interrupt", OFF = "Offensive", UTIL = "Utility" }
+local ABILITY_ROW_H = 30
+local abilityWindow
+
+local function AbilityList(classToken)
+    if not CommanderPartyFrames_GetAbilityBook then return nil end
+    local book, shared = CommanderPartyFrames_GetAbilityBook()
+    if classToken == "SHARED" then return shared end
+    return book[classToken]
+end
+
+local function AbilityTok(classToken, entry)
+    return (classToken == "SHARED" and "*" or classToken) .. ":" .. entry.key
+end
+
+local function AbilityTracked(classToken, entry)
+    local overrides = CommanderPartyFramesDB.AbilityTrack
+    local value = overrides and overrides[AbilityTok(classToken, entry)]
+    if value == nil then return not entry.off end
+    return value
+end
+
+-- Store only deviations from the book default, so SavedVariables stay small
+-- and untouched abilities follow any later re-curation of the book
+local function WriteAbilityOverride(classToken, entry, tracked)
+    local overrides = CommanderPartyFramesDB.AbilityTrack
+    if not overrides then
+        overrides = {}
+        CommanderPartyFramesDB.AbilityTrack = overrides
+    end
+    if tracked == (not entry.off) then
+        overrides[AbilityTok(classToken, entry)] = nil
+    else
+        overrides[AbilityTok(classToken, entry)] = tracked
+    end
+end
+
+local function AbilityCounts(classToken)
+    local list = AbilityList(classToken)
+    if not list then return 0, 0 end
+    local tracked = 0
+    for _, entry in ipairs(list) do
+        if AbilityTracked(classToken, entry) then tracked = tracked + 1 end
+    end
+    return tracked, #list
+end
+
+local function FormatAbilityCd(cd)
+    if cd >= 60 then return string.format("%dm", math.floor(cd / 60 + 0.5)) end
+    return string.format("%ds", cd)
+end
+
+local function RefreshAbilityWindow()
+    if not (abilityWindow and abilityWindow:IsShown()) then return end
+    for _, row in ipairs(abilityWindow.rows) do
+        local tracked, total = AbilityCounts(row.classToken)
+        row.count:SetText(string.format("%d of %d", tracked, total))
+        local c = tracked > 0 and 0.85 or 0.5
+        row.count:SetTextColor(c, c, c)
+    end
+end
+
+local function AbilityMenuInit(menu)
+    local classToken = menu.classToken
+    local list = AbilityList(classToken)
+    if not list then return end
+
+    local title = UIDropDownMenu_CreateInfo()
+    title.isTitle = true
+    title.notCheckable = true
+    title.text = menu.classLabel or classToken
+    UIDropDownMenu_AddButton(title)
+
+    for _, entry in ipairs(list) do
+        local info = UIDropDownMenu_CreateInfo()
+        local name = entry.dispName or entry.name
+        info.text = string.format("|T%s:16|t %s  |cff8a8a8a%s|r",
+            entry.dispIcon or entry.icon, name, FormatAbilityCd(entry.cd))
+        info.isNotRadio = true
+        info.keepShownOnClick = true
+        info.checked = function() return AbilityTracked(classToken, entry) end
+        info.func = function(_, _, _, checked)
+            WriteAbilityOverride(classToken, entry, checked and true or false)
+            Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+            RefreshAbilityWindow()
+        end
+        local detail = (ABILITY_KIND_LABELS[entry.kind] or entry.kind)
+            .. (entry.tier == 1 and " — always on the strip while tracked."
+                or " — shows only while cooling down.")
+        if entry.spec then
+            detail = detail .. "  " .. entry.spec:sub(1, 1) .. entry.spec:sub(2):lower() .. " only."
+        end
+        info.tooltipTitle = name
+        info.tooltipText = detail
+        info.tooltipOnButton = 1
+        UIDropDownMenu_AddButton(info)
+    end
+
+    local function QuickSet(label, value)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = label
+        info.notCheckable = true
+        info.keepShownOnClick = true
+        info.func = function()
+            for _, entry in ipairs(list) do
+                WriteAbilityOverride(classToken, entry, value == nil and (not entry.off) or value)
+            end
+            Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+            RefreshAbilityWindow()
+            -- Repaint the open menu's checkmarks (only the clicked button
+            -- refreshes itself)
+            if UIDropDownMenu_Refresh then UIDropDownMenu_Refresh(menu, nil, 1) end
+        end
+        UIDropDownMenu_AddButton(info)
+    end
+    QuickSet("Track all", true)
+    QuickSet("Track none", false)
+    QuickSet("Book defaults", nil)
+end
+
+local function BuildAbilityWindow()
+    local rowTokens = {}
+    for i, token in ipairs(ABILITY_CLASSES) do rowTokens[i] = token end
+    rowTokens[#rowTokens + 1] = "SHARED"
+
+    local window = CreateFrame("Frame", "CommanderPartyFramesAbilityWindow", UIParent)
+    window:SetSize(348, 74 + #rowTokens * ABILITY_ROW_H + 12)
+    window:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+    window:SetFrameStrata("DIALOG")
+    window:SetMovable(true)
+    window:EnableMouse(true)
+    window:RegisterForDrag("LeftButton")
+    window:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    window:SetClampedToScreen(true)
+    Commander.UI.ApplyStyleBackdrop(window, "DARK")
+    if UISpecialFrames then
+        table.insert(UISpecialFrames, "CommanderPartyFramesAbilityWindow")
+    end
+
+    local title = window:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 12, -10)
+    title:SetText("Party Ability Bar — Tracked Abilities")
+    local closeButton = CreateFrame("Button", nil, window, "UIPanelCloseButton")
+    closeButton:SetPoint("TOPRIGHT", 2, 2)
+    local hint = window:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+    hint:SetPoint("RIGHT", window, "RIGHT", -12, 0)
+    hint:SetJustifyH("LEFT")
+    hint:SetText("Choose what each class's strip may show. New options ship unchecked — the curated default holds until you opt in.")
+
+    local menu = CreateFrame("Frame", "CommanderPartyFramesAbilityMenu", window, "UIDropDownMenuTemplate")
+    UIDropDownMenu_Initialize(menu, function() AbilityMenuInit(menu) end, "MENU")
+
+    window.rows = {}
+    for index, classToken in ipairs(rowTokens) do
+        local row = CreateFrame("Frame", nil, window)
+        row:SetHeight(ABILITY_ROW_H)
+        row:SetPoint("TOPLEFT", window, "TOPLEFT", 12, -66 - (index - 1) * ABILITY_ROW_H)
+        row:SetPoint("RIGHT", window, "RIGHT", -12, 0)
+
+        local icon = row:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(20, 20)
+        icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+        local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        label:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+        if classToken == "SHARED" then
+            icon:SetTexture("Interface\\Icons\\INV_Jewelry_TrinketPVP_01")
+            icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            label:SetText("Everyone — racials & trinket")
+        else
+            local info = Commander.GetClassInfo(classToken)
+            icon:SetTexture(info.icon)
+            if info.iconCoords then icon:SetTexCoord(unpack(info.iconCoords)) end
+            label:SetText(LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[classToken] or classToken)
+            label:SetTextColor(info.color[1], info.color[2], info.color[3])
+        end
+
+        local button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        button:SetSize(90, 22)
+        button:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        button:SetText("Choose…")
+        button:SetScript("OnClick", function(self)
+            menu.classToken = classToken
+            menu.classLabel = label:GetText()
+            ToggleDropDownMenu(1, nil, menu, self, 0, 0)
+        end)
+
+        local count = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        count:SetPoint("RIGHT", button, "LEFT", -10, 0)
+
+        row.classToken, row.count = classToken, count
+        window.rows[#window.rows + 1] = row
+    end
+
+    window:SetScript("OnShow", RefreshAbilityWindow)
+    window:Hide()
+    return window
+end
+
+function CommanderPartyFrames_ToggleAbilityWindow()
+    if not CommanderPartyFrames_GetAbilityBook then
+        print("Commander Party Frames: ability book unavailable")
+        return
+    end
+    if not abilityWindow then abilityWindow = BuildAbilityWindow() end
+    abilityWindow:SetShown(not abilityWindow:IsShown())
+end
 
 -- The whole module on one scrollable page, built for the class that is logged
 -- in: the Priest reshield board, the Mage party frames, or a dormant-class note.
@@ -147,7 +382,7 @@ local function CreateCorePanel()
             "Swiss-army-knife party frames with a class layer. Priests get the reshield board (Power Word: Shield, Weakened Soul, dispels); Mages get buff-upkeep frames (Arcane Intellect, decursing, an optional self-shield strip). %s has no layer yet, so the module stays dormant on this character. Settings here are shared account-wide — boards on your Priest or Mage characters are unaffected.",
             localizedClass or "This class")
     elseif mageMode then
-        description = "Arena-grade party frames with a mage's brain — built to win the information war. One row per teammate: health with a mana strip, who the enemies are targeting, their TOTAL shielding (Power Word: Shield + Ice Barrier + Mana Shield + wards, whoever cast them) drained live by real absorb events, and status icons for Int and their biggest shield. A removable curse turns the row purple (Remove Curse NOW); a teammate in crowd control turns it orange with the CC's name and time left. The banner on top is YOUR management: armor with a switch popout, shield uptime, team alerts, and conjure/consume buttons; below the board sit the Water Elemental's row (lifespan, health, and the gold double-Freeze tick) and your own shield rows. Mouseover click-casting throughout."
+        description = "Arena-grade party frames with a mage's brain — built to win the information war. One row per teammate: health with a mana strip, who the enemies are targeting, their TOTAL shielding (Power Word: Shield + Ice Barrier + Mana Shield + wards, whoever cast them) drained live by real absorb events, and status icons for Int and their biggest shield. A removable curse turns the row purple (Remove Curse NOW); a teammate in crowd control turns it orange with the CC's name and time left. The banner on top is YOUR management: armor with a switch popout, shield uptime, team alerts, and a button cluster — conjure, consume (drink on left, eat on right), mana gem, a portals/teleports popout, and bandages — each carrying a live count of what is in your bags; below the board sit the Water Elemental's row (health, lifespan, and the Freeze planner tick — gold spend-by deadline while Freeze is ready, frost blue for the next window once it is spent) and your own shield rows. Mouseover click-casting throughout."
     else
         description = "Everything about Power Word: Shield on one board — for you and every ally. Each row is the ally's health bar with every absorb on them embedded as colored segments (cream PW:S, vibrant blue Ice Barrier, blue-grey Mana Shield, dark grey Sacrifice) on a shared scale, plus your shield's remaining absorb as the row's number, the Weakened Soul lockout that blocks a reshield, and a readiness state so you know at a glance who to shield next. Sorted most-urgent first; built for Priests. Scroll down for icons, mouseover-cast, the decision aids, dispellable debuffs, and Renew tracking."
     end
@@ -163,6 +398,7 @@ local function CreateCorePanel()
             test = function() if CommanderPartyFrames_Test then CommanderPartyFrames_Test() end end,
             report = function() if CommanderPartyFrames_Report then CommanderPartyFrames_Report() end end,
             debug = function() if CommanderPartyFrames_Debug then CommanderPartyFrames_Debug() end end,
+            abilities = function() CommanderPartyFrames_ToggleAbilityWindow() end,
         },
     })
 
@@ -313,13 +549,15 @@ local function CreateCorePanel()
         panel:AddSection("Identity & Icons")
         panel:AddDropdownPair({
             label = "Show Unit As",
-            tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait.",
+            tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
             options = {
                 { text = "Class Icon", value = "CLASS_ICON" },
                 { text = "Portrait", value = "PORTRAIT" },
                 { text = "Name", value = "NAME" },
                 { text = "Icon + Name", value = "ICON_NAME" },
                 { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
+                { text = "Specialization", value = "SPEC" },
+                { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
             },
             get = function() return CommanderPartyFramesDB.UnitDisplay end,
             set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
@@ -337,7 +575,7 @@ local function CreateCorePanel()
         })
         panel:AddCheckboxPair({
             label = "Status Icons",
-            tooltip = "Show the two team-synergy icons on the left of each row: Arcane Intellect state (lit / amber when a rebuff is due / ghost when missing; hidden for rage and energy classes) and the ally's biggest shield with a sweep for its remaining time. The row's number is their TOTAL shielding — Power Word: Shield, Ice Barrier, Mana Shield, wards, Sacrifice, whoever cast them.",
+            tooltip = "Show the two team-synergy icons on the left of each row: Arcane Intellect only when it needs you (ghost when missing, amber inside the rebuff window — hidden while healthy) and the ally's biggest shield with a sweep for its remaining time. The row's number is their TOTAL shielding — Power Word: Shield, Ice Barrier, Mana Shield, wards, Sacrifice, whoever cast them.",
             get = function() return CommanderPartyFramesDB.ShowSpellIcon end,
             set = function(value) CommanderPartyFramesDB.ShowSpellIcon = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
@@ -350,6 +588,13 @@ local function CreateCorePanel()
                 return CommanderPartyFramesDB.EnableShield
                     and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
             end,
+        })
+        panel:AddCheckbox({
+            label = "Target Marks",
+            tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
+            get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
+            set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
         panel:AddSlider({
             label = "Name Length",
@@ -457,6 +702,34 @@ local function CreateCorePanel()
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
         })
 
+        panel:AddSection("Banner Buttons", "The management cluster at the banner's right edge. Conjure and Consume are always there — Consume drinks on left-click and eats on right-click, so pressing both is the full sit-down. The rest are optional below.")
+        panel:AddCheckboxPair({
+            label = "Portals & Teleports",
+            tooltip = "Add a button opening a two-row popout of every teleport (top) and portal (bottom) you have trained — the armor switcher's pattern, for travel. Hidden until you learn your first teleport.",
+            get = function() return CommanderPartyFramesDB.ShowPortalButton end,
+            set = function(value) CommanderPartyFramesDB.ShowPortalButton = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Mana Gem",
+            tooltip = "Add a mana gem button: left-click uses the best gem in your bags, right-click (or holding your modifier and left-clicking) conjures the best rank you know. Counter over the icon shows how many gems you are carrying.",
+            get = function() return CommanderPartyFramesDB.ShowGemButton end,
+            set = function(value) CommanderPartyFramesDB.ShowGemButton = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckboxPair({
+            label = "Bandage",
+            tooltip = "Add a First Aid button: left or right-click bandages a living friendly target (or yourself when you have none), the icon reddens with a countdown while Recently Bandaged blocks another, and middle-click opens the First Aid window.",
+            get = function() return CommanderPartyFramesDB.ShowBandageButton end,
+            set = function(value) CommanderPartyFramesDB.ShowBandageButton = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Inventory Counters",
+            tooltip = "Show how many you are carrying over each button — water on Conjure, food on Consume, gems on Mana Gem, bandages on Bandage. These keep counting during a fight, when the buttons' bindings themselves cannot be re-aimed.",
+            get = function() return CommanderPartyFramesDB.ShowUtilityCounts end,
+            set = function(value) CommanderPartyFramesDB.ShowUtilityCounts = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+
         panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs you can remove — Curses, purple rim — with a glow on crowd control. Curses also turn the whole row purple, whatever is shown here.")
         panel:AddCheckboxPair({
             label = "Show Dispellable Debuffs",
@@ -522,6 +795,46 @@ local function CreateCorePanel()
             get = function() return CommanderPartyFramesDB.TrackWards end,
             set = function(value) CommanderPartyFramesDB.TrackWards = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.SelfShieldRows end,
+        })
+
+        panel:AddSection("Party Ability Bar", "A curated cooldown strip under every player: match-deciders always visible (lit = ready, swept = cooling), trinkets/racials surfacing only once spent, a red rim for lockouts (Hypothermia, Forbearance), and a gold pip when Cold Snap or Preparation can refund a cooldown. Learned from the combat log; spec-gated abilities appear once the spec is known.")
+        panel:AddCheckboxPair({
+            label = "Show Ability Bar",
+            tooltip = "Master switch for the per-player cooldown strips.",
+            get = function() return CommanderPartyFramesDB.ShowAbilityBar end,
+            set = function(value) CommanderPartyFramesDB.ShowAbilityBar = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Include Your Row",
+            tooltip = "Also show the strip under your own row — you know your cooldowns, but under pressure the sanity check is free.",
+            get = function() return CommanderPartyFramesDB.AbilityBarSelf end,
+            set = function(value) CommanderPartyFramesDB.AbilityBarSelf = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddSlider({
+            label = "Max Ability Icons",
+            tooltip = "Most icons per strip; overflow evicts utility first, defensives last.",
+            min = 3, max = 8, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.AbilityMaxIcons end,
+            set = function(value) CommanderPartyFramesDB.AbilityMaxIcons = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddCheckbox({
+            label = "Cooldown Text",
+            tooltip = "Show remaining time on cooling icons (hidden under 10s — the sweep carries it).",
+            get = function() return CommanderPartyFramesDB.AbilityCdText end,
+            set = function(value) CommanderPartyFramesDB.AbilityCdText = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddButtonRow({
+            {
+                label = "Tracked Abilities…",
+                width = 150,
+                tooltip = "Open the tracked-abilities window — a dropdown per class choosing exactly which cooldowns its strip may show (also: /cpf abilities). New options ship unchecked, so the default strip is unchanged until you opt in.",
+                onClick = function() CommanderPartyFrames_ToggleAbilityWindow() end,
+                isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+            },
         })
 
         Commander.UI.AddHudChromeOptions(panel, CommanderPartyFramesDB, "Hud", {
@@ -643,13 +956,15 @@ local function CreateCorePanel()
     panel:AddSection("Identity & Icons")
     panel:AddDropdownPair({
         label = "Show Unit As",
-        tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait.",
+        tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
         options = {
             { text = "Class Icon", value = "CLASS_ICON" },
             { text = "Portrait", value = "PORTRAIT" },
             { text = "Name", value = "NAME" },
             { text = "Icon + Name", value = "ICON_NAME" },
             { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
+            { text = "Specialization", value = "SPEC" },
+            { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
         },
         get = function() return CommanderPartyFramesDB.UnitDisplay end,
         set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
@@ -688,6 +1003,13 @@ local function CreateCorePanel()
                 and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
         end,
     }, {
+        label = "Target Marks",
+        tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
+        get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
+        set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    })
+    panel:AddCheckbox({
         label = "Color Shield Types",
         tooltip = "Tint each embedded shield segment by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
         get = function() return CommanderPartyFramesDB.ColorShieldTypes end,
@@ -786,6 +1108,22 @@ local function CreateCorePanel()
         set = function(value) CommanderPartyFramesDB.ExposeAlertSound = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
     })
+    panel:AddSection("Banner Buttons", "First Aid is not a class layer, so the bandage control rides this banner too.")
+    panel:AddCheckboxPair({
+        label = "Bandage",
+        tooltip = "Add a First Aid button at the banner's right edge: left or right-click bandages a living friendly target (or yourself when you have none), the icon reddens with a countdown while Recently Bandaged blocks another, and middle-click opens the First Aid window.",
+        get = function() return CommanderPartyFramesDB.ShowBandageButton end,
+        set = function(value) CommanderPartyFramesDB.ShowBandageButton = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    }, {
+        label = "Inventory Counters",
+        tooltip = "Show how many bandages you are carrying over the button. The count keeps updating during a fight, when the button's binding itself cannot be re-aimed.",
+        get = function() return CommanderPartyFramesDB.ShowUtilityCounts end,
+        set = function(value) CommanderPartyFramesDB.ShowUtilityCounts = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield
+            and CommanderPartyFramesDB.ShowBandageButton end,
+    })
+
     panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs your class can remove, color-coded by school, with a glow on crowd control.")
     panel:AddCheckboxPair({
         label = "Show Dispellable Debuffs",
@@ -867,6 +1205,46 @@ local function CreateCorePanel()
         get = function() return CommanderPartyFramesDB.RenewRefreshAt end,
         set = function(value) CommanderPartyFramesDB.RenewRefreshAt = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.RenewTrack end,
+    })
+
+    panel:AddSection("Party Ability Bar", "A curated cooldown strip under every player: match-deciders always visible (lit = ready, swept = cooling), trinkets/racials surfacing only once spent, a red rim for lockouts (Hypothermia, Forbearance), and a gold pip when Cold Snap or Preparation can refund a cooldown. Learned from the combat log; spec-gated abilities appear once the spec is known.")
+    panel:AddCheckboxPair({
+        label = "Show Ability Bar",
+        tooltip = "Master switch for the per-player cooldown strips.",
+        get = function() return CommanderPartyFramesDB.ShowAbilityBar end,
+        set = function(value) CommanderPartyFramesDB.ShowAbilityBar = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    }, {
+        label = "Include Your Row",
+        tooltip = "Also show the strip under your own row — you know your cooldowns, but under pressure the sanity check is free.",
+        get = function() return CommanderPartyFramesDB.AbilityBarSelf end,
+        set = function(value) CommanderPartyFramesDB.AbilityBarSelf = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+    })
+    panel:AddSlider({
+        label = "Max Ability Icons",
+        tooltip = "Most icons per strip; overflow evicts utility first, defensives last.",
+        min = 3, max = 8, step = 1,
+        format = "%.0f",
+        get = function() return CommanderPartyFramesDB.AbilityMaxIcons end,
+        set = function(value) CommanderPartyFramesDB.AbilityMaxIcons = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+    })
+    panel:AddCheckbox({
+        label = "Cooldown Text",
+        tooltip = "Show remaining time on cooling icons (hidden under 10s — the sweep carries it).",
+        get = function() return CommanderPartyFramesDB.AbilityCdText end,
+        set = function(value) CommanderPartyFramesDB.AbilityCdText = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Tracked Abilities…",
+            width = 150,
+            tooltip = "Open the tracked-abilities window — a dropdown per class choosing exactly which cooldowns its strip may show (also: /cpf abilities). New options ship unchecked, so the default strip is unchanged until you opt in.",
+            onClick = function() CommanderPartyFrames_ToggleAbilityWindow() end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        },
     })
 
     -- Chrome last, per the suite convention

@@ -47,6 +47,45 @@ local function ApplyFraming()
         -- No title bar outside window art; reclaim its space
         ButtonsContainer:SetPoint("TOPLEFT", ItemGrid, "TOPLEFT", 7, windowArt and -25 or -8)
     end
+    if ItemGrid.qmButton then
+        -- With window art the crate rides the title bar left of the close
+        -- button; without one it perches just above the top-right corner so
+        -- it never overlaps the secure item buttons
+        ItemGrid.qmButton:ClearAllPoints()
+        if windowArt then
+            ItemGrid.qmButton:SetPoint("TOPRIGHT", ItemGrid, "TOPRIGHT", -26, -4)
+        else
+            ItemGrid.qmButton:SetPoint("BOTTOMRIGHT", ItemGrid, "TOPRIGHT", -2, 2)
+        end
+    end
+end
+
+-- Quartermaster jump: created only when Commander_Quartermaster is
+-- installed (probe its toggle global — the suite's soft-fail pattern,
+-- never a hard dependency)
+local function CreateQuartermasterButton()
+    if ItemGrid.qmButton or not CommanderQuartermaster_Toggle then return end
+    local button = CreateFrame("Button", nil, ItemGrid)
+    button:SetSize(18, 18)
+    ItemGrid.qmButton = button
+
+    local icon = button:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexture("Interface\\Icons\\INV_Crate_02")
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture("Interface\\Buttons\\WHITE8X8")
+    highlight:SetVertexColor(1, 1, 1, 0.2)
+
+    button:SetScript("OnClick", function()
+        if CommanderQuartermaster_Toggle then
+            CommanderQuartermaster_Toggle()
+        end
+    end)
+    Commander.UI.AttachTooltip(button, "Quartermaster",
+        "Open the Commander Quartermaster supply browser (/cqm).")
 end
 
 local function ApplySavedGridPosition()
@@ -74,6 +113,7 @@ local function CreateItemGrid()
     ButtonsContainer = CreateFrame("Frame", nil, ItemGrid)
     ButtonsContainer:SetPoint("TOPLEFT", ItemGrid, "TOPLEFT", 7, -25)
     ButtonsContainer:SetPoint("BOTTOMRIGHT", ItemGrid, "BOTTOMRIGHT", -7, 7)
+    CreateQuartermasterButton()
     ApplyFraming()
     ApplySavedGridPosition()
 end

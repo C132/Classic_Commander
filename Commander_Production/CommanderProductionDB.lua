@@ -37,7 +37,7 @@ local function CreateOptionsPanel()
         key = "Production",
         title = "Production",
         addonName = "Commander_Production",
-        description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar filling toward ready — like watching units build in an RTS — stacked at the left edge of the screen, longest waits at the bottom, with a sound and callout of your choice the moment something finishes.",
+        description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar draining toward ready — full when the cooldown starts, empty the moment it's back — stacked at the left edge of the screen, longest waits at the bottom, with a sound and callout of your choice the moment something finishes.",
         event = COMMANDER_PRODUCTION_EVENTS.UPDATE,
         slash = { "/cprod" },
         slashHandlers = {

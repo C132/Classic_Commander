@@ -21,7 +21,7 @@ local PILLARS = {
     { title = "Feedback & Alerts",
       keys = { "Momentum", "Impact", "Spoils", "Promotion", "Adjutant", "Idle" } },
     { title = "Operations",
-      keys = { "Economy", "Logistics", "Quartermaster", "Objectives", "ObjectivesBoard", "Recovery", "Who" } },
+      keys = { "Economy", "Logistics", "Quartermaster", "Talents", "Objectives", "ObjectivesBoard", "Recovery", "Who" } },
     { title = "Interface",
       keys = { "ActionBar", "ActionBarButtons", "RankCheck", "Bags", "Inventory", "Chat", "Minimap", "TopBar", "Tooltip", "Console" } },
 }

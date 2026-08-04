@@ -48,3 +48,21 @@ fact, never to a wrong warning.
 10. **`GetRealmName()` is stable at panel-build time** for the RoleByChar
     key. A nil realm degrades to a "Name-" key that still round-trips.
     *Test:* set a role, `/reload`, confirm the dropdown kept it.
+11. **`TargetFrame` and `TargetFrameHealthBar` exist as globals at
+    PLAYER_LOGIN, and the health bar is the 119×12 strip in the frame's
+    middle band** (read off `Blizzard_UnitFrame/Classic/TargetFrame.xml` on
+    the `classic_anniversary` branch: `name="$parentHealthBar"` under
+    `TargetFrameTemplate`, instanced as `TargetFrame`). Both are looked up
+    through a fallback chain (`TargetFrame.HealthBar` / `.healthbar`) and a
+    miss simply means no readout is ever built — the board and the warnings
+    do not notice.
+    *Test:* with Target Frame set to Bar + Text, pull a mob: a slim colored
+    fill should sit on the bottom edge of the target's health bar and the
+    percentage above its right end, both tracking the board's number.
+12. **The right end of the target frame's name band is free of Blizzard
+    art and text.** The readout's percentage is anchored there
+    (`BOTTOMRIGHT` of the health bar's `TOPRIGHT`). The name fontstring is
+    centred well to the left, but this is a visual judgement, not an API
+    fact.
+    *Test:* target an elite with a long name and a rare/elite dragon border;
+    if the number collides, Bar-only still gives the full reading.

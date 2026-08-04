@@ -36,12 +36,15 @@ local function CreateOptionsPanel()
         key = "Momentum",
         title = "Momentum",
         addonName = "Commander_Momentum",
-        description = "A kill-streak combo meter. Each killing blow feeds the meter and resets its drain timer; keep chaining kills and the streak climbs through escalating colors — hesitate and the bar empties, taking the streak with it. Pure grinding dopamine.",
+        description = "A kill-streak combo meter. Each killing blow feeds the meter and resets its drain timer; keep chaining kills and the streak climbs through escalating colors — hesitate and the bar empties, taking the streak with it. Best chains are remembered per zone and instance forever: when your session's best chain ends, you get the recap of how it stacks against the zone record and the all-time high. Pure grinding dopamine.",
         event = COMMANDER_MOMENTUM_EVENTS.UPDATE,
         slash = { "/cmom" },
         slashHandlers = {
             report = function()
                 if CommanderMomentum_Report then CommanderMomentum_Report() end
+            end,
+            records = function()
+                if CommanderMomentum_Records then CommanderMomentum_Records() end
             end,
             test = function()
                 if CommanderMomentum_Test then CommanderMomentum_Test() end
@@ -116,9 +119,17 @@ local function CreateOptionsPanel()
         {
             label = "Session Report",
             width = 130,
-            tooltip = "Print this session's kills, best chain, and any live streak (also: /cmom report).",
+            tooltip = "Print this session's kills, best chain, and any live streak, plus where you stand on the local zone record and the all-time high (also: /cmom report).",
             onClick = function()
                 if CommanderMomentum_Report then CommanderMomentum_Report() end
+            end,
+        },
+        {
+            label = "Zone Records",
+            width = 110,
+            tooltip = "Print the best chain ever landed in each zone and instance, top score first with the all-time high on top (also: /cmom records). Records persist forever and survive settings resets.",
+            onClick = function()
+                if CommanderMomentum_Records then CommanderMomentum_Records() end
             end,
         },
     })
@@ -137,7 +148,7 @@ local function CreateOptionsPanel()
     })
     panel:AddCheckboxPair({
         label = "Streak Break Emote",
-        tooltip = "When the clock runs out on a live chain over x10, your character emotes the lament with your session numbers; chains over x15 also earn the audible /cry sob, sent after the lament so the chat log reads in order. Public; off by default.",
+        tooltip = "When the clock runs out on a live chain over x10, your character emotes the lament with your session numbers and the all-time high; chains over x15 also earn the audible /cry sob, sent after the lament so the chat log reads in order. Public; off by default.",
         get = function() return CommanderMomentumDB.BreakEmotes end,
         set = function(value) CommanderMomentumDB.BreakEmotes = value end,
         isEnabled = function() return CommanderMomentumDB.EnableMomentum end,
