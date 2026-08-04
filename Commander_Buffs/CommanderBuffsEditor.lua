@@ -916,6 +916,8 @@ local function EnsureEditor()
         editor.previewRing:SetHideCountdownNumbers(true)
     end
     if editor.previewRing.SetDrawEdge then editor.previewRing:SetDrawEdge(false) end
+    -- Matches the live sentinel: reversed, so the sweep fills toward expiry.
+    if editor.previewRing.SetReverse then editor.previewRing:SetReverse(true) end
     if editor.previewRing.SetSwipeTexture then
         editor.previewRing:SetSwipeTexture("Interface\\AddOns\\Commander_Buffs\\Textures\\Ring.png")
         if editor.previewRing.SetSwipeColor then

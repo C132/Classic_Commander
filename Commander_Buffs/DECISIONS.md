@@ -91,3 +91,12 @@ Opacity is set on the block frame and the sentinel container rather than
 per-region: icon, ring, rim, count, and timer fade together, and the expiry
 pulse keeps setting slot alpha in the 0.45–1 range because child alpha
 multiplies with the parent's.
+
+**D16. Every sweep is reversed.** A stock cooldown swipe starts full and
+unwinds, which is right for "when can I press this again" and exactly
+backwards for "how long do I have left" — an expiring buff would be at its
+brightest in the last second before it falls off. All three sweeps (block
+icon, sentinel ring, editor preview) call `SetReverse(true)` at build time,
+so the shade or ring GROWS toward expiry and "dark/full" always means "about
+to drop". Guarded, like every other cooldown call here: a client without
+`SetReverse` keeps the old direction instead of erroring.
