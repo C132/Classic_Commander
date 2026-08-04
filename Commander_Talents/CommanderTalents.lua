@@ -42,6 +42,10 @@ local GRID_Y0 = TREE_HEADER_H + 10
 -- cross-axis must stay at button size or the line renders too thin.
 local BRANCH_THICK = BTN
 local ARROW_V, ARROW_H = PITCH_Y - BTN, PITCH_X - BTN
+-- The briefing panel's usable height is fixed by its anchors (top of the
+-- content area to just above the footer); its flow layout budgets against it
+local BRIEF_H = FRAME_H - 64 - 34
+local BRIEF_ROW_H = 20
 
 local CLASS_ORDER = Data.ClassOrder
 
@@ -802,15 +806,20 @@ local function CreatePane(parent, index)
     pane:SetPoint("BOTTOM", parent, "BOTTOM", 0, 0)
 
     -- Four-piece talent background art, proportioned like the original
-    -- 320x384 layout (256+64 wide, 256+128 tall)
+    -- 320x384 layout (256+64 wide, 256+128 tall). The LEFT pieces need an
+    -- explicit width: a texture anchored only by one corner falls back to its
+    -- native size (256), which overflows the pane and paints over whatever
+    -- sits to the right of it — that is how the briefing panel got eaten.
     local wa = TREE_W * 256 / 320
     pane.bgTL = pane:CreateTexture(nil, "BACKGROUND", nil, 0)
     pane.bgTL:SetPoint("TOPLEFT")
+    pane.bgTL:SetWidth(wa)
     pane.bgTR = pane:CreateTexture(nil, "BACKGROUND", nil, 0)
     pane.bgTR:SetPoint("TOPLEFT", wa, 0)
     pane.bgTR:SetPoint("TOPRIGHT")
     pane.bgBL = pane:CreateTexture(nil, "BACKGROUND", nil, 0)
     pane.bgBL:SetPoint("BOTTOMLEFT")
+    pane.bgBL:SetWidth(wa)
     pane.bgBR = pane:CreateTexture(nil, "BACKGROUND", nil, 0)
     pane.bgBR:SetPoint("BOTTOMLEFT", wa, 0)
     pane.bgBR:SetPoint("BOTTOMRIGHT")
@@ -1027,34 +1036,46 @@ local function UpdatePaneStates(pane)
     pane.headerFS:SetText(("%s |cffffd200(%d)|r"):format(tree.name, E.Spent(state, t)))
 
     local searching = searchText ~= ""
+    local unspent = E.MAX_POINTS - E.TotalSpent(state)
     local hits = 0
     for i, btn in pairs(pane.buttons) do
         local talent = tree.talents[i]
         local rank = E.Rank(state, t, i)
         local block = E.AddBlock(state, t, i)
-        local rim, desat, iconAlpha
-        if rank >= talent.max then
-            rim, desat, iconAlpha = RIM.maxed, false, 1
+
+        -- Availability is Blizzard's own test, in two halves. STRUCTURAL:
+        -- is the tier open and the prerequisite met (a full budget is not
+        -- part of that question). BUDGET: Blizzard's `forceDesaturated`
+        -- greys any talent you hold no points in once you have none left to
+        -- spend, which is what makes a finished build read as finished.
+        local structural = (block == nil) or block.type == "CAP" or block.type == "MAX"
+        local available = structural and not (rank == 0 and unspent <= 0)
+
+        local rim, desat, tint, iconAlpha
+        if not available then
+            rim, desat, tint, iconAlpha = RIM.locked, true, 0.65, 1
+        elseif rank >= talent.max then
+            rim, desat, tint, iconAlpha = RIM.maxed, false, 1, 1
         elseif rank > 0 then
-            rim, desat, iconAlpha = RIM.partial, false, 1
-        elseif block == nil or block.type == "CAP" then
-            rim, desat, iconAlpha = RIM.open, false, 0.92
+            rim, desat, tint, iconAlpha = RIM.partial, false, 1, 1
         else
-            rim, desat, iconAlpha = RIM.locked, true, 0.55
+            rim, desat, tint, iconAlpha = RIM.open, false, 1, 1
         end
         -- Search overrides the state colours: matches light up, everything
         -- else recedes, so a name can be found across all three trees at once
         if searching then
             if talent.name:lower():find(searchText, 1, true) then
-                rim, desat, iconAlpha = RIM.hit, false, 1
+                rim, desat, tint, iconAlpha = RIM.hit, false, 1, 1
                 hits = hits + 1
             else
-                desat, iconAlpha = true, 0.18
-                rim = RIM.locked
+                rim, desat, tint, iconAlpha = RIM.locked, true, 0.65, 0.25
             end
         end
         btn.rim:SetVertexColor(rim[1], rim[2], rim[3], 1)
         btn.icon:SetDesaturated(desat)
+        -- Blizzard greys an unavailable talent icon by BOTH desaturating and
+        -- tinting to 0.65; desaturation alone is far too subtle to read
+        btn.icon:SetVertexColor(tint, tint, tint)
         btn.icon:SetAlpha(iconAlpha)
         local rankColor
         if rank >= talent.max then rankColor = "|cffffd200"
@@ -1374,16 +1395,47 @@ BindBriefing = function()
     end
     if brief.consHeadFS:IsShown() then
         place(brief.consHeadFS, 14)
+        -- The panel has a fixed height, and a long stat list plus long notes
+        -- can leave less room than there are consumables. The jump button is
+        -- pinned to the panel's bottom so it is always reachable and always
+        -- inside the window; the rows spend only what is left above it, and
+        -- say so when some had to give way.
+        local HINT_H = 17
+        local bottomZone = brief.qmBtn:IsShown() and 31 or 0
+        local room = BRIEF_H + y - 12 - bottomZone     -- y is negative
+        local pitch = 5 + BRIEF_ROW_H
+        local fits = math.floor(room / pitch)
+        if fits < 0 then fits = 0 end
+        local showHint = false
+        if fits < shown then
+            -- the "and N more" line has to be paid for out of the same room
+            local visible = math.floor((room - HINT_H) / pitch)
+            if visible < 0 then visible = 0 end
+            for i = visible + 1, shown do
+                brief.consRows[i]:Hide()
+                brief.consRows[i].itemID = nil
+            end
+            showHint = room >= HINT_H
+            if showHint then
+                brief.consHintFS:SetText(("|cff666666…and %d more in Quartermaster|r"):format(
+                    shown - visible))
+            end
+            shown = visible
+        end
+        brief.consHintFS:SetShown(showHint)
         for i = 1, shown do
             local rowBtn = brief.consRows[i]
             rowBtn:ClearAllPoints()
             rowBtn:SetPoint("TOPLEFT", brief, "TOPLEFT", 10, y - 5)
             rowBtn:SetPoint("RIGHT", brief, "RIGHT", -10, 0)
-            y = y - 5 - rowBtn:GetHeight()
+            y = y - 5 - BRIEF_ROW_H
+        end
+        if showHint then
+            place(brief.consHintFS, 5)
         end
         if brief.qmBtn:IsShown() then
             brief.qmBtn:ClearAllPoints()
-            brief.qmBtn:SetPoint("TOPLEFT", brief, "TOPLEFT", 10, y - 10)
+            brief.qmBtn:SetPoint("BOTTOMLEFT", brief, "BOTTOMLEFT", 10, 10)
         end
     elseif brief.consHintFS:IsShown() then
         place(brief.consHintFS, 14)
@@ -1518,9 +1570,25 @@ local function ApplyFraming()
     Commander.UI.ApplyStyleBackdrop(calc, windowArt and "NONE" or style)
 end
 
+-- Three full talent trees plus a sidebar and a briefing is a wide window, and
+-- UIParent is only ~1024-1280 units across on most setups — at 100% it can
+-- overhang the screen. Clamp the effective scale so the window always fits;
+-- the user's slider still applies below that ceiling.
+local function EffectiveScale()
+    local want = db.BrowserScale or 1
+    local uw = (UIParent and UIParent.GetWidth and UIParent:GetWidth()) or 1024
+    local uh = (UIParent and UIParent.GetHeight and UIParent:GetHeight()) or 768
+    local ceiling = 1
+    if uw > 0 and uh > 0 then
+        ceiling = math.min((uw - 24) / FRAME_W, (uh - 24) / FRAME_H, 1)
+    end
+    if ceiling < 0.5 then ceiling = 0.5 end
+    return math.min(want, ceiling)
+end
+
 local function ApplyPosition()
     if not calc then return end
-    local scale = db.BrowserScale or 1
+    local scale = EffectiveScale()
     calc:SetScale(scale)
     if calc._dragging then return end
     calc:ClearAllPoints()

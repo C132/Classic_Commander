@@ -109,14 +109,15 @@ end
 -- Reasons: { type = "MAX" } | { type = "CAP" }
 --        | { type = "TIER", need = n, have = n }
 --        | { type = "REQ", name = s, need = n }
+-- Structural reasons are reported BEFORE the budget: at 61/61 every talent
+-- would otherwise answer "no points remaining", which hides why a talent is
+-- really shut (and left the UI painting locked talents as available). Callers
+-- that only care about reachability treat CAP as "structurally fine".
 function E.AddBlock(state, t, i)
     local tree = state.class.trees[t]
     local talent = tree.talents[i]
     if E.Rank(state, t, i) >= talent.max then
         return { type = "MAX" }
-    end
-    if E.TotalSpent(state) >= E.MAX_POINTS then
-        return { type = "CAP" }
     end
     local need = (talent.row - 1) * E.POINTS_PER_TIER
     local have = E.PointsAboveRow(state, t, talent.row)
@@ -129,6 +130,9 @@ function E.AddBlock(state, t, i)
         if E.Rank(state, t, ri) < reqTalent.max then
             return { type = "REQ", name = reqTalent.name, need = reqTalent.max }
         end
+    end
+    if E.TotalSpent(state) >= E.MAX_POINTS then
+        return { type = "CAP" }
     end
     return nil
 end
