@@ -66,6 +66,7 @@ local function IsMethodName(key)
 end
 
 local eventRegistry = {}
+local allRegions = {}       -- every texture and font string, in creation order
 local NewWidget
 
 -- Widget methods the assertions read back. Everything else falls through to a
@@ -114,7 +115,11 @@ WidgetMT.__index = function(self, key)
     end
     if key == "CreateTexture" or key == "CreateMaskTexture" or key == "CreateFontString" then
         local kind = key == "CreateFontString" and "FontString" or "Texture"
-        local fn = function(s) local t = NewWidget(kind); t.__parent = s; return t end
+        local fn = function(s)
+            local t = NewWidget(kind); t.__parent = s
+            allRegions[#allRegions + 1] = t
+            return t
+        end
         rawset(self, key, fn); return fn
     end
     if key == "SetScript" then
@@ -386,7 +391,79 @@ CHECK(anchor and anchor.rel == PlayerPortrait and anchor.point == "CENTER",
 CHECK(playerArc.__cooldown and playerArc.__cooldown.duration == 3,
     "arc runs for the length of the cast", playerArc.__cooldown and playerArc.__cooldown.duration)
 CHECK(playerArc.__reverse == true, "a cast fills clockwise by default", playerArc.__reverse)
-CHECK(playerArc.__drawEdge == true, "leading edge on by default")
+
+-- ---- The leading edge ------------------------------------------------------
+-- The Cooldown's own edge is a spoke from the center of the frame to its rim,
+-- so on a donut it draws straight across the portrait. It stays off, and the
+-- arc rides its own spark, cut to the thickness of the band it sits on.
+
+CHECK(playerArc.__drawEdge == false,
+    "the Cooldown's own edge stays off -- it would lay a line across the portrait")
+
+local RING_OUTER = 0.485
+local RATIOS = { 0.93, 0.88, 0.80, 0.71, 0.60, 0.46 }
+local EDGE_CORE, EDGE_FADE = 0.30, 0.06
+
+-- What the ring art actually measures on screen for a requested thickness: the
+-- weight is the nearest of six, so the band is near the setting, not equal to it
+local function Band(frameSize, thickness)
+    local outer = frameSize * RING_OUTER
+    local wanted = 1 - thickness / outer
+    local best, bestDiff = 1, math.huge
+    for i = 1, #RATIOS do
+        local diff = math.abs(RATIOS[i] - wanted)
+        if diff < bestDiff then best, bestDiff = i, diff end
+    end
+    local band = outer * (1 - RATIOS[best])
+    return band, outer - band / 2      -- thickness, and the mid-band radius
+end
+
+local function RegionOf(parent, file)
+    for _, region in ipairs(allRegions) do
+        if region.__parent == parent and region.__texture
+            and region.__texture:find(file, 1, true) then return region end
+    end
+end
+
+local playerOverlay = ChildrenOf(playerRing)[3]
+local spark = playerOverlay and RegionOf(playerOverlay, "Edge.png")
+CHECK(spark ~= nil, "the arc draws its own leading edge")
+CHECK(spark.__shown == true, "casting: the spark is up")
+
+local function Offset(region)
+    local point = region.__points[#region.__points]
+    return point and point.x or 0, point and point.y or 0
+end
+
+local band, midBand = Band(64 * 1.14, 5)
+CHECK(math.abs(spark.__w * EDGE_CORE * 2 - band) < 0.001,
+    "the spark's solid core is exactly as deep as the ring band",
+    spark.__w * EDGE_CORE * 2 .. " vs " .. band)
+CHECK(spark.__w == spark.__h, "the spark stays square, so rotating it never clips its ends")
+
+-- What runs past the band is the art's falloff and nothing more
+local overhang = (spark.__w * (EDGE_CORE + EDGE_FADE) * 2 - band) / 2
+CHECK(overhang > 0 and overhang < band * 0.15,
+    "and only a tenth of the band in fade spills past it", overhang / band)
+
+local x, y = Offset(spark)
+CHECK(math.abs(math.sqrt(x * x + y * y) - midBand) < 0.001,
+    "the spark rides the middle of the band, not the middle of the frame",
+    math.sqrt(x * x + y * y) .. " vs " .. midBand)
+CHECK(math.abs(x) < 0.001 and math.abs(y - midBand) < 0.001,
+    "a cast that has not started yet puts it at twelve o'clock", x .. "," .. y)
+
+local ice = COMMANDER_CASTING_COLORS.ICE
+CHECK(spark.__color and spark.__color[1] > ice[1] and spark.__color[1] < 1,
+    "the spark reads as heat off the arc: the cast's color, part way to white",
+    spark.__color and spark.__color[1])
+
+DB.PlayerRingEdge = false
+Redraw()
+CHECK(spark.__shown == false, "Leading Edge off takes it away")
+DB.PlayerRingEdge = true
+Redraw()
+CHECK(spark.__shown == true, "and back on brings it back")
 
 local ice = COMMANDER_CASTING_COLORS.ICE
 CHECK(playerArc.__swipeColor and playerArc.__swipeColor[1] == ice[1] and playerArc.__swipeColor[3] == ice[3],
@@ -476,6 +553,20 @@ CHECK(driver.__shown == true, "a live cast wakes the driver")
 now = now + 2
 Pump(0.1)
 CHECK(#harnessFailedErrors == 0, "driver tick clean", harnessFailedErrors[1])
+
+-- A third of the way through a six-second cast: past twelve, heading right and
+-- down -- the same direction the sweep fills
+local x, y = Offset(spark)
+CHECK(x > 0 and y < 0, "the spark runs clockwise with the sweep", x .. "," .. y)
+
+-- ...and it does so every frame. The label's 20Hz tick is too coarse for
+-- something the client is drawing smoothly underneath it.
+now = now + 0.01
+Pump(0.01)
+local movedX, movedY = Offset(spark)
+CHECK(movedX ~= x or movedY ~= y, "the spark moves on a frame the label sits out")
+CHECK(math.abs(math.sqrt(movedX * movedX + movedY * movedY) - midBand) < 0.001,
+    "and never leaves the band while it travels")
 
 DB.PlayerRingText = "NAME"
 Redraw()

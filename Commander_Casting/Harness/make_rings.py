@@ -2,7 +2,8 @@
 """Generate the Commander_Casting portrait-ring artwork.
 
 Six donut weights (thinnest first) sized as a proportion of the texture, a soft
-additive halo, and a tick bar. All white so the addon can vertex-tint them.
+additive halo, a tick bar, and the sweep's spark. All white so the addon can
+vertex-tint them.
 """
 
 import math
@@ -15,6 +16,14 @@ SIZE = 128
 SS = 4                      # supersample factor per axis
 OUTER = 0.485               # donut outer radius as a fraction of the width
 RATIOS = [0.93, 0.88, 0.80, 0.71, 0.60, 0.46]   # inner radius / outer radius
+
+# The spark at the head of the sweep, as fractions of the texture. Half-sizes:
+# the core is the flat-alpha part, the fade is what runs past it. The addon
+# mirrors EDGE_CORE and EDGE_FADE so it can size the quad from the ring band.
+EDGE_CORE = 0.30            # half-length of the core -- maps to the band
+EDGE_FADE = 0.06            # falloff past each end of the band
+EDGE_WIDTH = 0.12           # half-width of the line
+EDGE_WIDTH_FADE = 0.06
 
 
 def write_png(path, pixels, width, height):
@@ -100,6 +109,33 @@ def tick():
     return coverage
 
 
+def edge():
+    """The sweep's spark: a bar that is flat across its core and fades out just
+    past it, both radially and across its width.
+
+    The addon sizes the quad so the core is exactly as long as the ring band is
+    thick, which is the whole point of the shape -- the spark is cut off at the
+    band and only the falloff spills over the rim. Fades rather than a hard cut,
+    so the ends never read as a clipped stub.
+    """
+    center = SIZE / 2.0
+
+    def ramp(distance, core, fade):
+        if distance <= core:
+            return 1.0
+        if distance >= core + fade:
+            return 0.0
+        t = (distance - core) / fade
+        return 1.0 - t * t * (3.0 - 2.0 * t)    # smoothstep: no lip at the cut
+
+    def coverage(x, y):
+        dx, dy = abs(x - center), abs(y - center)
+        return (ramp(dy, SIZE * EDGE_CORE, SIZE * EDGE_FADE)
+                * ramp(dx, SIZE * EDGE_WIDTH, SIZE * EDGE_WIDTH_FADE))
+
+    return coverage
+
+
 def main():
     target = sys.argv[1]
     os.makedirs(target, exist_ok=True)
@@ -109,7 +145,8 @@ def main():
         print("%s  inner ratio %.2f" % (path, ratio))
     write_png(os.path.join(target, "RingGlow.png"), render(halo()), SIZE, SIZE)
     write_png(os.path.join(target, "Tick.png"), render(tick()), SIZE, SIZE)
-    print("RingGlow.png, Tick.png")
+    write_png(os.path.join(target, "Edge.png"), render(edge()), SIZE, SIZE)
+    print("RingGlow.png, Tick.png, Edge.png")
 
 
 if __name__ == "__main__":
