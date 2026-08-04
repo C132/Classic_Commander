@@ -1,0 +1,1053 @@
+-- Commander Quartermaster harness (luajit).
+-- Loads the REAL shared framework (CommanderSettingsUI.lua, CommanderEvents.lua)
+-- plus the three Commander_Quartermaster files — and Commander_Inventory for the
+-- crate-button integration — under a permissive WoW mock, then drives login,
+-- ledger scans and close-races, counts scoping, deep search, filters, sorting,
+-- the watchlist, readiness + the raid supply check, the shopping list, the
+-- roster view, outbound-mail transit, spec detection, and slash reset survival.
+--
+--   luajit quartermaster_harness.lua          full run (Quartermaster installed)
+--   luajit quartermaster_harness.lua noqm     Inventory without Quartermaster:
+--                                             the crate button must not exist
+--
+-- Mock notes (lessons already paid for): auto-generated widget methods are
+-- PREFIX-matched only, so template-child property probes (browser.TitleText)
+-- read nil unless the template mock provides them; HookScript CHAINS handlers
+-- (the search box hooks a placeholder over its own OnTextChanged); C_Timer.After
+-- feeds an executable queue because every scan coalesces through it.
+
+local MODE = arg and arg[1] or "full"
+local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
+
+local checks, fails = 0, 0
+local function CHECK(cond, label, detail)
+    checks = checks + 1
+    if not cond then
+        fails = fails + 1
+        io.write("FAIL  ", label, detail and ("  [" .. tostring(detail) .. "]") or "", "\n")
+    end
+end
+
+-- ===========================================================================
+-- WoW mock
+-- ===========================================================================
+
+local DAY = 86400
+local now = 1700000000
+function time() return now end
+function date(fmt) return "2026-08-03 12:00" end
+function GetTime() return now - 1699000000 end
+function GetBuildInfo() return "2.5.6", "68502", "Jul 7 2026", 20506 end
+
+local printLog = {}
+print = function(...)
+    local parts = {}
+    for i = 1, select("#", ...) do parts[#parts + 1] = tostring(select(i, ...)) end
+    printLog[#printLog + 1] = table.concat(parts, " ")
+end
+
+local function FindPrint(pattern, since)
+    for i = (since or 0) + 1, #printLog do
+        if printLog[i]:find(pattern, 1, true) then return printLog[i] end
+    end
+    return nil
+end
+
+local harnessFailedErrors = {}
+function geterrorhandler()
+    return function(err)
+        harnessFailedErrors[#harnessFailedErrors + 1] = tostring(err)
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Widgets: explicit methods for everything the code reads back; auto no-op
+-- methods ONLY for known camelCase prefixes so property probes read nil
+-- ---------------------------------------------------------------------------
+
+local frames = {}
+local eventRegistry = {}
+
+local NUMERIC_GETTERS = {
+    GetWidth = 0, GetHeight = 0, GetScale = 1, GetEffectiveScale = 1,
+    GetFrameLevel = 2, GetLeft = 0, GetBottom = 0, GetTop = 0, GetRight = 0,
+    GetVerticalScroll = 0, GetVerticalScrollRange = 0, GetStringWidth = 10,
+    GetID = 1, GetNumPoints = 1,
+}
+
+local METHOD_PREFIXES = {
+    "Set", "Enable", "Disable", "Register", "Unregister", "Clear",
+    "Start", "Stop", "Raise", "Lower", "Lock", "Play", "Add", "Highlight",
+}
+
+local function IsAutoMethod(key)
+    for _, prefix in ipairs(METHOD_PREFIXES) do
+        if key:sub(1, #prefix) == prefix then return true end
+    end
+    return false
+end
+
+local NewWidget
+
+local WidgetMT = {}
+WidgetMT.__index = function(self, key)
+    if type(key) ~= "string" then return nil end
+    if NUMERIC_GETTERS[key] ~= nil then
+        local v = NUMERIC_GETTERS[key]
+        local fn = function() return v end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "CreateTexture" then
+        local fn = function(s) local t = NewWidget("Texture"); t.__parent = s; return t end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "CreateFontString" then
+        local fn = function(s) local t = NewWidget("FontString"); t.__parent = s; return t end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetScript" then
+        local fn = function(s, name, handler) s.__scripts[name] = handler end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "HookScript" then
+        -- Real HookScript CHAINS; the search box hooks a placeholder update
+        -- onto its own OnTextChanged, and both must run
+        local fn = function(s, name, handler)
+            local prev = s.__scripts[name]
+            if prev then
+                s.__scripts[name] = function(...)
+                    prev(...)
+                    handler(...)
+                end
+            else
+                s.__scripts[name] = handler
+            end
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetScript" then
+        local fn = function(s, name) return s.__scripts[name] end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "RegisterEvent" then
+        local fn = function(s, event)
+            eventRegistry[event] = eventRegistry[event] or {}
+            table.insert(eventRegistry[event], s)
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "UnregisterEvent" then
+        local fn = function(s, event)
+            local list = eventRegistry[event]
+            if list then
+                for i = #list, 1, -1 do
+                    if list[i] == s then table.remove(list, i) end
+                end
+            end
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "Show" then
+        local fn = function(s)
+            s.__shown = true
+            if s.__scripts.OnShow then s.__scripts.OnShow(s) end
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "Hide" then
+        local fn = function(s) s.__shown = false end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetShown" then
+        local fn = function(s, v) if v then s:Show() else s:Hide() end end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "IsShown" or key == "IsVisible" then
+        local fn = function(s) return s.__shown end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetSize" then
+        local fn = function(s, w, h) s.__w, s.__h = w, h end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetText" then
+        local fn = function(s, text) s.__text = text end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetText" then
+        local fn = function(s) return s.__text or "" end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetTexCoord" then
+        local fn = function(s, a, b, c, d) s.__texcoord = { a, b, c, d } end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetChecked" then
+        local fn = function(s, v) s.__checked = v and true or false end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetChecked" then
+        local fn = function(s) return s.__checked end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetEnabled" then
+        local fn = function(s, v) s.__enabled = v and true or false end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetPoint" then
+        local fn = function() return "CENTER", nil, "CENTER", 0, 0 end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetThumbTexture" then
+        local fn = function() return NewWidget("Texture") end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetName" then
+        local fn = function(s) return s.__name end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetParent" then
+        local fn = function(s) return s.__parent end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetFont" then
+        local fn = function() return "Fonts\\FRIZQT__.TTF", 12, "" end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key:sub(1, 2) == "Is" or key:sub(1, 3) == "Get" or key:sub(1, 3) == "Can"
+        or key:sub(1, 4) == "Hook" then
+        local fn = function() return nil end
+        rawset(self, key, fn)
+        return fn
+    end
+    if IsAutoMethod(key) then
+        local fn = function() end
+        rawset(self, key, fn)
+        return fn
+    end
+    return nil
+end
+
+NewWidget = function(kind, name)
+    return setmetatable({
+        __kind = kind, __name = name, __scripts = {}, __shown = true,
+    }, WidgetMT)
+end
+
+function CreateFrame(frameType, name, parent, template)
+    local f = NewWidget(frameType, name)
+    f.__template = template
+    f.__parent = parent
+    if frameType == "CheckButton" or (template and template:find("CheckButton")) then
+        f.Text = NewWidget("FontString")
+    end
+    if template and template:find("BasicFrameTemplate") then
+        f.TitleText = NewWidget("FontString")
+        f.CloseButton = NewWidget("Button")
+        f.NineSlice = NewWidget("Frame")
+        f.Bg = NewWidget("Texture")
+        f.TitleBg = NewWidget("Texture")
+        f.Inset = NewWidget("Frame")
+    end
+    if name then _G[name] = f end
+    frames[#frames + 1] = f
+    return f
+end
+
+UIParent = NewWidget("Frame", "UIParent")
+GameTooltip = NewWidget("GameTooltip", "GameTooltip")
+tinsert = table.insert
+wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
+unpack = unpack or table.unpack
+
+GameFontNormal = NewWidget("Font")
+GameFontNormalLarge = NewWidget("Font")
+GameFontNormalHuge = NewWidget("Font")
+GameFontHighlight = NewWidget("Font")
+GameFontHighlightSmall = NewWidget("Font")
+GameFontDisableSmall = NewWidget("Font")
+
+local soundLog = {}
+SOUNDKIT = { RAID_WARNING = 8959, READY_CHECK = 8960,
+    IG_MAINMENU_OPTION_CHECKBOX_ON = 856, IG_MAINMENU_OPTION_CHECKBOX_OFF = 857 }
+function PlaySound(id) soundLog[#soundLog + 1] = id end
+BACKDROP_SLIDER_8_8 = {}
+UISpecialFrames = {}
+SlashCmdList = {}
+CANCEL, YES, NO = "Cancel", "Yes", "No"
+
+local categories = {}
+Settings = {
+    RegisterCanvasLayoutCategory = function(panel)
+        local cat = { __panel = panel, GetID = function() return #categories + 1 end }
+        categories[#categories + 1] = cat
+        return cat
+    end,
+    RegisterCanvasLayoutSubcategory = function(parent, panel)
+        local cat = { __panel = panel, GetID = function() return #categories + 1 end }
+        categories[#categories + 1] = cat
+        return cat
+    end,
+    RegisterAddOnCategory = function() end,
+    OpenToCategory = function() end,
+}
+
+C_AddOns = { GetAddOnMetadata = function() return "2.1.0" end }
+
+local tickers = {}
+local timerQueue = {}
+C_Timer = {
+    After = function(_, fn) timerQueue[#timerQueue + 1] = fn end,
+    NewTicker = function(interval, fn) tickers[#tickers + 1] = { interval = interval, fn = fn } end,
+}
+local function FlushTimers()
+    for _ = 1, 10 do
+        if #timerQueue == 0 then return end
+        local batch = timerQueue
+        timerQueue = {}
+        for _, fn in ipairs(batch) do fn() end
+    end
+end
+
+function UIDropDownMenu_Initialize() end
+function UIDropDownMenu_CreateInfo() return {} end
+function UIDropDownMenu_AddButton() end
+function UIDropDownMenu_SetWidth() end
+function UIDropDownMenu_SetSelectedValue() end
+function UIDropDownMenu_SetText() end
+function UIDropDownMenu_EnableDropDown() end
+function UIDropDownMenu_DisableDropDown() end
+function ToggleDropDownMenu() end
+
+local popupLog = {}
+StaticPopupDialogs = {}
+function StaticPopup_Show(which, arg1, arg2, data)
+    popupLog[#popupLog + 1] = { which = which, arg1 = arg1, data = data }
+    return {}
+end
+
+function IsShiftKeyDown() return false end
+function ChatEdit_InsertLink() end
+function InCombatLockdown() return false end
+function hooksecurefunc(name, hook)
+    local orig = _G[name]
+    _G[name] = function(...)
+        local r1, r2, r3 = orig(...)
+        hook(...)
+        return r1, r2, r3
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Player, classes, world state
+-- ---------------------------------------------------------------------------
+
+function GetRealmName() return "Aleria" end
+function UnitName(unit) if unit == "player" then return "Devinq" end return nil end
+function UnitClass(unit) if unit == "player" then return "Warrior", "WARRIOR" end return nil end
+function UnitLevel() return 70 end
+function UnitFactionGroup() return "Alliance" end
+RAID_CLASS_COLORS = {
+    WARRIOR = { r = 0.78, g = 0.61, b = 0.43, colorStr = "ffc79c6e" },
+    MAGE = { r = 0.41, g = 0.80, b = 0.94, colorStr = "ff69ccf0" },
+    PRIEST = { r = 1, g = 1, b = 1, colorStr = "ffffffff" },
+}
+CLASS_ICON_TCOORDS = { WARRIOR = { 0, 0.25, 0, 0.25 }, MAGE = { 0.25, 0.5, 0, 0.25 } }
+LOCALIZED_CLASS_NAMES_MALE = { WARRIOR = "Warrior", MAGE = "Mage", PRIEST = "Priest" }
+ITEM_QUALITY_COLORS = { [1] = { hex = "|cffffffff" } }
+
+NUM_BAG_SLOTS = 4
+NUM_BANKBAGSLOTS = 7
+BANK_CONTAINER = -1
+NUM_BAG_FRAMES = 4
+ATTACHMENTS_MAX_RECEIVE = 16
+ATTACHMENTS_MAX_SEND = 12
+
+local world = {
+    bags = {},      -- bagID (0-4) -> array of {id, count}
+    bankBags = {},  -- bagID (-1, 5-11) -> array of {id, count}
+    mail = {},      -- array of messages; each an array of {id, count}
+    send = {},      -- send-mail attachment slots: array of {id, count}
+    money = 4230000,
+    instanceType = "none",
+    instanceName = "Azeroth",
+    talents = nil,  -- { shape = "classic"|"retail", points = {a, b, c} }
+}
+
+-- Item class map for IsTracked's GetItemInfoInstant fallback: anything the
+-- curated database knows never reaches it; these two exercise the fallback
+local ITEM_CLASS = { [99999] = 4, [55555] = 0 }
+
+local function Container(bag)
+    if bag >= 0 and bag <= NUM_BAG_SLOTS then return world.bags[bag] end
+    return world.bankBags[bag]
+end
+
+C_Container = {
+    GetContainerNumSlots = function(bag)
+        local c = Container(bag)
+        return c and #c or 0
+    end,
+    GetContainerItemInfo = function(bag, slot)
+        local c = Container(bag)
+        local it = c and c[slot]
+        if not it then return nil end
+        return { itemID = it.id, stackCount = it.count }
+    end,
+    GetContainerItemID = function() return nil end,   -- Inventory sees empty bags
+    GetContainerItemLink = function() return nil end,
+    GetItemCooldown = function() return 0, 0, false end,
+}
+
+C_Item = {
+    GetItemInfoInstant = function(id)
+        return id, "type", "sub", "loc", 134400, ITEM_CLASS[id] or 0, 0
+    end,
+    GetItemInfo = function() return nil end,          -- never cached: curated names render
+    GetItemIconByID = function() return 134400 end,
+    GetItemCount = function(id, includeBank)
+        local total = 0
+        for _, c in pairs(world.bags) do
+            for _, it in ipairs(c) do
+                if it.id == id then total = total + it.count end
+            end
+        end
+        if includeBank then
+            for _, c in pairs(world.bankBags) do
+                for _, it in ipairs(c) do
+                    if it.id == id then total = total + it.count end
+                end
+            end
+        end
+        return total
+    end,
+    IsUsableItem = function() return false end,
+    GetItemSpell = function() return nil end,
+}
+
+function GetMoney() return world.money end
+function GetInventoryItemID() return nil end
+function GetInventoryItemTexture() return nil end
+function GetInventoryItemLink() return nil end
+
+function GetInboxNumItems() return #world.mail end
+function GetInboxItem(i, j)
+    local msg = world.mail[i]
+    local it = msg and msg[j]
+    if not it then return nil end
+    return "Item", it.id, 134400, it.count
+end
+function GetInboxItemLink(i, j)
+    local msg = world.mail[i]
+    local it = msg and msg[j]
+    return it and ("|Hitem:" .. it.id .. ":0|h[x]|h") or nil
+end
+
+function GetSendMailItem(i)
+    local it = world.send[i]
+    if not it then return nil end
+    return "Item", it.id, 134400, it.count
+end
+function GetSendMailItemLink(i)
+    local it = world.send[i]
+    return it and ("|Hitem:" .. it.id .. ":0|h[x]|h") or nil
+end
+function SendMail() end -- hooked by the addon at login
+
+function IsInInstance()
+    return world.instanceType ~= "none", world.instanceType
+end
+function GetInstanceInfo()
+    return world.instanceName, world.instanceType, 0, "", 40, 0, false, 0, 40
+end
+function GetRealZoneText() return world.instanceName end
+
+function GetNumTalentTabs() return 3 end
+function GetTalentTabInfo(i)
+    local t = world.talents
+    if not t then return nil end
+    local pts = t.points[i] or 0
+    if t.shape == "retail" then
+        return i, "Tab" .. i, "desc", 134400, pts
+    end
+    return "Tab" .. i, "tex", pts, "file"
+end
+
+-- ===========================================================================
+-- Load the real framework + addons
+-- ===========================================================================
+
+local function Load(path)
+    local chunk = assert(loadfile(path))
+    chunk()
+end
+
+CommanderConsole_Colors = {
+    { text = "Steel (Default)", value = "STEEL", r = 1, g = 1, b = 1 },
+    { text = "Class Color", value = "CLASS" },
+}
+
+Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
+Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
+
+-- Pre-login ledger seed: two alts here, one on another realm, plus a stale
+-- transit entry the login prune must clear and a fresh one it must keep
+CommanderQuartermasterLedger = {
+    Aleria = {
+        Mulek = {
+            class = "MAGE", level = 70, money = 9990000,
+            lastSeen = now - 3 * DAY, bagsAt = now - 3 * DAY, bankAt = now - 9 * DAY,
+            bags = { [22851] = 5 }, bank = { [22851] = 10 }, mail = {},
+            transit = { [13512] = 3 }, transitAt = now - 32 * DAY,
+        },
+        Banker = {
+            class = "PRIEST", level = 30, money = 120000,
+            lastSeen = now - 1 * DAY, bagsAt = now - 1 * DAY,
+            bags = { [22866] = 2 }, bank = {}, mail = { [22854] = 4 },
+            transit = { [22851] = 2 }, transitAt = now - 2 * DAY,
+        },
+    },
+    Faraway = {
+        Remoteguy = {
+            class = "WARRIOR", level = 70, money = 0,
+            lastSeen = now - 30 * DAY, bagsAt = now - 30 * DAY,
+            bags = { [22851] = 7 }, bank = {}, mail = {},
+        },
+    },
+}
+
+if MODE ~= "noqm" then
+    Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterData.lua")
+    Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterDB.lua")
+    Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermaster.lua")
+end
+Load(ADDONS .. "/Commander_Inventory/CommanderInventoryDB.lua")
+Load(ADDONS .. "/Commander_Inventory/CommanderInventory.lua")
+
+local function Fire(event, ...)
+    local list = eventRegistry[event]
+    if not list then return end
+    local snapshot = {}
+    for i, frame in ipairs(list) do snapshot[i] = frame end
+    for _, frame in ipairs(snapshot) do
+        local handler = frame.__scripts.OnEvent
+        if handler then handler(frame, event, ...) end
+    end
+end
+
+-- Force a rescan + counts invalidation after mutating `world` directly
+local function Sync()
+    Fire("BAG_UPDATE_DELAYED")
+    FlushTimers()
+end
+
+-- ===========================================================================
+-- noqm mode: Inventory alone — the crate button must not exist
+-- ===========================================================================
+
+if MODE == "noqm" then
+    Fire("ADDON_LOADED", "Commander_Inventory")
+    Fire("PLAYER_LOGIN")
+    FlushTimers()
+    CHECK(#harnessFailedErrors == 0, "noqm: login clean", harnessFailedErrors[1])
+    CHECK(CIItemGrid ~= nil, "noqm: item grid built")
+    CHECK(CIItemGrid.qmButton == nil, "noqm: no Quartermaster button without the addon")
+    io.write(("quartermaster_harness (noqm): %d checks, %d failures\n"):format(checks, fails))
+    os.exit(fails == 0 and 0 or 1)
+end
+
+-- ===========================================================================
+-- A: login
+-- ===========================================================================
+
+local Data = CommanderQuartermasterData
+local db
+
+world.bags[0] = { { id = 22851, count = 2 }, { id = 99999, count = 1 }, { id = 55555, count = 3 } }
+world.bankBags[-1] = { { id = 22851, count = 3 } }
+
+Fire("ADDON_LOADED", "Commander_Quartermaster")
+Fire("ADDON_LOADED", "Commander_Inventory")
+Fire("PLAYER_LOGIN")
+FlushTimers()
+db = CommanderQuartermasterDB
+
+CHECK(#harnessFailedErrors == 0, "A: login clean", harnessFailedErrors[1])
+CHECK(db.EnableQuartermaster == true, "A: defaults applied")
+CHECK(type(db.Watchlist) == "table", "A: watchlist map initialized")
+CHECK(db.TrackTransit == true and db.RaidCheck == true, "A: new defaults present")
+
+local meRec = CommanderQuartermasterLedger.Aleria.Devinq
+CHECK(meRec ~= nil, "A: current character filed")
+CHECK(meRec.bags[22851] == 2, "A: bags scanned")
+CHECK(meRec.bags[99999] == nil, "A: non-consumable ignored")
+CHECK(meRec.bags[55555] == 3, "A: client-consumable outside the database tracked")
+CHECK(meRec.money == world.money, "A: gold recorded")
+
+local mulek = CommanderQuartermasterLedger.Aleria.Mulek
+CHECK(mulek.transit == nil, "A: stale transit pruned at login (32d)")
+CHECK(CommanderQuartermasterLedger.Aleria.Banker.transit ~= nil, "A: fresh transit kept")
+
+-- ===========================================================================
+-- B: v1 races — bank close flush, mail inbox gate
+-- ===========================================================================
+
+world.bankBags[-1] = { { id = 22851, count = 3 }, { id = 22854, count = 5 } }
+Fire("BANKFRAME_OPENED")
+FlushTimers()
+CHECK(meRec.bank[22854] == 5, "B: bank scanned on open")
+
+-- Withdraw inside the coalesce window, close before the timer fires
+Fire("PLAYERBANKSLOTS_CHANGED")
+world.bankBags[-1] = { { id = 22851, count = 3 } }
+Fire("BANKFRAME_CLOSED")
+CHECK(meRec.bank[22854] == nil, "B: close-race flush caught the withdrawal")
+FlushTimers()
+
+world.mail = { { { id = 22854, count = 3 } } }
+Fire("MAIL_SHOW")
+Fire("MAIL_CLOSED")
+FlushTimers()
+CHECK(next(meRec.mail) == nil, "B: fast open/close records nothing (inbox gate)")
+
+Fire("MAIL_SHOW")
+Fire("MAIL_INBOX_UPDATE")
+FlushTimers()
+CHECK(meRec.mail[22854] == 3, "B: mail scanned after MAIL_INBOX_UPDATE")
+Fire("MAIL_CLOSED")
+
+-- ===========================================================================
+-- C: tooltip counts + scope gates
+-- ===========================================================================
+
+local appendFn = GameTooltip.__scripts["OnTooltipSetItem"]
+CHECK(type(appendFn) == "function", "C: tooltip hook installed")
+
+local function TipFor(itemID)
+    local tip = {
+        lines = {},
+        GetItem = function() return "x", "|Hitem:" .. itemID .. ":0|h[x]|h" end,
+        AddLine = function(self, text) self.lines[#self.lines + 1] = text end,
+        Show = function() end,
+    }
+    appendFn(tip)
+    return table.concat(tip.lines, "\n")
+end
+
+-- 22851: me 2 bags + 3 bank; Mulek 5+10; Banker transit 2; Remoteguy 7 (other realm)
+local text = TipFor(22851)
+CHECK(text:find("Quartermaster:|r 22", 1, true), "C: total = live + alts + transit, realm-scoped", text)
+db.CurrentRealmOnly = false
+Sync()
+CHECK(TipFor(22851):find("Quartermaster:|r 29", 1, true), "C: all-realms scope adds the other realm")
+db.CurrentRealmOnly = true
+db.TrackBank = false
+Sync()
+-- 12 = my live 2+3 (current char always reads live, even with TrackBank
+-- off — the setting gates LEDGER layers) + Mulek bags 5 + Banker transit 2
+CHECK(TipFor(22851):find("Quartermaster:|r 12", 1, true), "C: TrackBank off gates alt banks, live bank stays", TipFor(22851))
+db.TrackBank = true
+db.TrackTransit = false
+Sync()
+CHECK(TipFor(22851):find("Quartermaster:|r 20", 1, true), "C: TrackTransit off gates the transit layer")
+db.TrackTransit = true
+Sync()
+
+db.TooltipBreakdown = true
+Sync()
+text = TipFor(22851)
+CHECK(text:find("transit 2", 1, true), "C: breakdown names the transit layer", text)
+db.TooltipBreakdown = false
+
+-- ===========================================================================
+-- D: outbound-mail transit
+-- ===========================================================================
+
+world.send = { { id = 22854, count = 5 }, { id = 99999, count = 1 } }
+SendMail("mulek", "supplies", "")
+Fire("MAIL_SEND_SUCCESS")
+CHECK(mulek.transit and mulek.transit[22854] == 5, "D: send credited case-insensitively to Mulek")
+CHECK(mulek.transit[99999] == nil, "D: untracked attachment ignored")
+
+world.send = { { id = 22854, count = 2 } }
+SendMail("Mulek", "more", "")
+Fire("MAIL_SEND_SUCCESS")
+CHECK(mulek.transit[22854] == 7, "D: second send merges")
+
+world.send = { { id = 22866, count = 4 } }
+SendMail("Mulek", "failed", "")
+Fire("MAIL_FAILED")
+Fire("MAIL_SEND_SUCCESS")
+CHECK(mulek.transit[22866] == nil, "D: failed send discarded, late success is a no-op")
+
+world.send = { { id = 22866, count = 4 } }
+SendMail("Stranger", "hi", "")
+Fire("MAIL_SEND_SUCCESS")
+CHECK(CommanderQuartermasterLedger.Aleria.Stranger == nil, "D: unknown recipient never creates a record")
+
+db.TrackTransit = false
+world.send = { { id = 22866, count = 4 } }
+SendMail("Mulek", "off", "")
+Fire("MAIL_SEND_SUCCESS")
+CHECK(mulek.transit[22866] == nil, "D: TrackTransit off snapshots nothing")
+db.TrackTransit = true
+
+-- My own inbound transit clears when MY mailbox scan runs
+meRec.transit = { [22854] = 9 }
+meRec.transitAt = now
+Fire("MAIL_SHOW")
+Fire("MAIL_INBOX_UPDATE")
+FlushTimers()
+Fire("MAIL_CLOSED")
+CHECK(meRec.transit == nil, "D: own mailbox scan supersedes my transit layer")
+
+-- ===========================================================================
+-- E: browser, deep search, filters, sorting
+-- ===========================================================================
+
+CommanderQuartermaster_Toggle()
+local browser = CommanderQuartermasterFrame
+CHECK(browser and browser:IsShown(), "E: browser opens")
+CHECK(browser.TitleText.__text == "Quartermaster", "E: window title set")
+local rows, sidebar, list = browser._rows, browser._sidebar, browser._list
+
+CHECK(sidebar[1].key == "WATCHLIST", "E: watchlist pinned atop the sidebar")
+CHECK(sidebar[2].key == "ALL", "E: All Items follows")
+
+local function RowTexts()
+    local out = {}
+    for _, item in ipairs(list) do
+        out[#out + 1] = item.kind == "item" and tostring(item.id) or ("H:" .. tostring(item.text))
+    end
+    return table.concat(out, ",")
+end
+
+local function Search(query)
+    browser.searchBox:SetText(query)
+    browser.searchBox.__scripts.OnTextChanged(browser.searchBox, true)
+end
+
+local function ListHas(id)
+    for _, item in ipairs(list) do
+        if item.kind == "item" and item.id == id then return true end
+    end
+    return false
+end
+
+Search("spell damage flask")
+CHECK(ListHas(22866), "E: token search reaches effect notes (Pure Death)")
+CHECK(not ListHas(22851), "E: non-matching flask filtered (Fortification)")
+Search("flask vendor shattrath")
+CHECK(ListHas(32898) and not ListHas(22851), "E: source + note tokens AND together")
+Search("flask vendor zzznope")
+CHECK(not ListHas(32898) and not ListHas(22866), "E: one dead token kills the match")
+Search("")
+
+-- Filters: vanilla-only era, then a source on top
+local sidebarByKey = function(key)
+    for _, btn in ipairs(sidebar) do
+        if btn.key == key and btn.__shown then return btn end
+    end
+end
+db.EraFilter = "VANILLA"
+sidebarByKey("FLASKS").onClick()
+CHECK(ListHas(13512) and not ListHas(22851), "E: era filter keeps vanilla flasks only")
+db.SourceFilter = "VENDOR"
+sidebarByKey("FLASKS").onClick()
+CHECK(not ListHas(13512), "E: era+source compose (no vanilla vendor flask)")
+db.EraFilter, db.SourceFilter = "ALL", "ALL"
+
+-- Sorting: 22851 has the biggest total; TOTAL desc flattens headers away
+sidebarByKey("ALL").onClick()
+CHECK(list[1].kind == "header", "E: curated ALL view leads with a category header")
+local totalCol
+for _, col in ipairs(browser.colBtns) do
+    if col.key == "TOTAL" then totalCol = col end
+end
+totalCol.btn.__scripts.OnClick(totalCol.btn)
+CHECK(list[1].kind == "item" and list[1].id == 22851, "E: TOTAL desc puts the biggest holding first", list[1].id)
+CHECK(totalCol.fs.__text == "Total v", "E: sort direction marker")
+totalCol.btn.__scripts.OnClick(totalCol.btn)
+CHECK(list[1].kind == "item" and list[1].id ~= 22851, "E: second click flips ascending")
+totalCol.btn.__scripts.OnClick(totalCol.btn)
+CHECK(list[1].kind == "header", "E: third click restores curated order")
+
+-- ===========================================================================
+-- F: watchlist
+-- ===========================================================================
+
+CommanderQuartermaster_SetWatchTarget(22851, 20)
+FlushTimers()
+CHECK(CommanderQuartermaster_GetWatchTarget(22851) == 20, "F: target set")
+CHECK(db.Watchlist["Aleria\001Devinq"][22851] == 20, "F: stored per character token")
+
+local watchBtn = sidebarByKey("WATCHLIST")
+CHECK(watchBtn.badgeFS.__text:find("short", 1, true), "F: sidebar badge counts the deficit", watchBtn.badgeFS.__text)
+watchBtn.onClick()
+CHECK(list[2] and list[2].kind == "item" and list[2].id == 22851, "F: watch view lists the item")
+CHECK(list[2].why and list[2].why:find("Keep 20", 1, true) and list[2].why:find("have 5", 1, true),
+    "F: deficit note (bags 2 + bank 3)", list[2].why)
+CHECK(rows[2].nameFS.__text:find("ff4040%*"), "F: short item wears the red star", rows[2].nameFS.__text)
+
+text = TipFor(22851)
+CHECK(text:find("Restock:", 1, true) and text:find("5 / 20", 1, true), "F: tooltip restock line", text)
+
+-- Met target turns the star gold; removal drops the row
+world.bags[1] = { { id = 22851, count = 30 } }
+Sync()
+watchBtn = sidebarByKey("WATCHLIST")
+CHECK(watchBtn.badgeFS.__text == "|cff33ff991|r", "F: badge flips to stocked count", watchBtn.badgeFS.__text)
+CommanderQuartermaster_SetWatchTarget(22851, 0)
+FlushTimers()
+CHECK(CommanderQuartermaster_GetWatchTarget(22851) == nil, "F: zero clears the target")
+
+-- Right-click plumbing: row popup carries the item, accept path writes
+sidebarByKey("FLASKS").onClick()
+local flaskRow
+for _, row in ipairs(rows) do
+    if row.item and row.item.kind == "item" and row.item.id == 22851 then flaskRow = row end
+end
+flaskRow.__scripts.OnMouseUp(flaskRow, "RightButton")
+local popup = popupLog[#popupLog]
+CHECK(popup and popup.which == "COMMANDER_QM_TARGET" and popup.data.id == 22851, "F: right-click opens the target popup")
+StaticPopupDialogs["COMMANDER_QM_TARGET"].OnAccept(
+    { editBox = { GetText = function() return "12" end } }, popup.data)
+CHECK(CommanderQuartermaster_GetWatchTarget(22851) == 12, "F: popup accept writes the target")
+CommanderQuartermaster_SetWatchTarget(22851, 0)
+world.bags[1] = nil
+Sync()
+
+-- ===========================================================================
+-- G: loadout readiness + spec detection
+-- ===========================================================================
+
+local fury
+for _, spec in ipairs(Data.Recommendations.WARRIOR.specs) do
+    if spec.key == "FURY" then fury = spec end
+end
+CHECK(fury ~= nil, "G: FURY loadout exists")
+
+-- Clean slate, then stage: slot1 pick in bags, slot2 pick in bank,
+-- slot3 pick on an alt, everything else missing
+world.bags = {}
+world.bankBags = {}
+world.mail = {}
+meRec.mail = {}
+mulek.bags = {}
+mulek.bank = {}
+mulek.transit = nil
+CommanderQuartermasterLedger.Aleria.Banker.bags = {}
+CommanderQuartermasterLedger.Aleria.Banker.mail = {}
+CommanderQuartermasterLedger.Aleria.Banker.transit = nil
+
+local slot1 = fury.picks[1].entries[1].id
+local slot2 = fury.picks[2].entries[1].id
+local slot3 = fury.picks[3].entries[1].id
+world.bags[0] = { { id = slot1, count = 2 } }
+world.bankBags[-1] = { { id = slot2, count = 4 } }
+mulek.bags[slot3] = 6
+Sync()
+
+world.talents = { shape = "classic", points = { 12, 41, 8 } }
+db.BrowserClass, db.BrowserSpec = false, false
+browser.viewLoadout.__scripts.OnClick(browser.viewLoadout)
+CHECK(list[1].kind == "header" and list[1].text:find("Readiness", 1, true), "G: summary tops the loadout")
+CHECK(list[1].text:find("1/" .. #fury.picks .. " carried", 1, true), "G: carried count", list[1].text)
+CHECK(list[1].text:find("1 in bank", 1, true) and list[1].text:find("1 on alts", 1, true)
+    and list[1].text:find((#fury.picks - 3) .. " missing", 1, true), "G: summary tiers", list[1].text)
+CHECK(list[2].text:find("[CARRIED]", 1, true), "G: slot 1 graded CARRIED", list[2].text)
+
+local selectedSpec
+for _, btn in ipairs(sidebar) do
+    if btn.__shown and btn.selectedTex.__shown then selectedSpec = btn.key end
+end
+CHECK(selectedSpec == "FURY", "G: classic talent shape detects Fury", selectedSpec)
+world.talents = { shape = "retail", points = { 12, 41, 8 } }
+browser.viewLoadout.__scripts.OnClick(browser.viewLoadout)
+for _, btn in ipairs(sidebar) do
+    if btn.__shown and btn.selectedTex.__shown then selectedSpec = btn.key end
+end
+CHECK(selectedSpec == "FURY", "G: retail talent shape agrees")
+
+db.BrowserSpec = "PROTECTION"
+browser.viewLoadout.__scripts.OnClick(browser.viewLoadout)
+for _, btn in ipairs(sidebar) do
+    if btn.__shown and btn.selectedTex.__shown then selectedSpec = btn.key end
+end
+CHECK(selectedSpec == "PROTECTION", "G: manual pick beats detection")
+
+-- Verdicts always grade MY class: browsing a Mage loadout must not leak
+db.BrowserClass, db.BrowserSpec = "MAGE", "FROST"
+local mark = #printLog
+CommanderQuartermaster_Ready()
+local line = FindPrint("readiness (", mark)
+CHECK(line and line:find("(Fury)", 1, true), "G: /cqm ready grades the played class", line)
+CHECK(FindPrint("[CARRIED]", mark) and FindPrint("[IN BANK]", mark)
+    and FindPrint("[ON ALTS]", mark) and FindPrint("[MISSING]", mark), "G: all four grades printed")
+db.BrowserClass, db.BrowserSpec = false, false
+
+-- ===========================================================================
+-- H: shopping list + raid supply check
+-- ===========================================================================
+
+CommanderQuartermaster_SetWatchTarget(slot1, 10)
+FlushTimers()
+CommanderQuartermaster_ShoppingList()
+local shopText = CommanderQuartermasterShopFrame.edit.__text
+CHECK(CommanderQuartermasterShopFrame.__shown, "H: shopping window opens")
+CHECK(shopText:find("LOADOUT GAPS", 1, true), "H: gaps section present")
+CHECK(shopText:find("BUY", 1, true), "H: missing slots say BUY")
+CHECK(shopText:find("in bank/mail — withdraw", 1, true), "H: banked slot says withdraw", shopText)
+CHECK(shopText:find("on alts — mail it over", 1, true), "H: alt slot says mail it over")
+CHECK(shopText:find("WATCHLIST", 1, true) and shopText:find("2/10 — buy 8", 1, true),
+    "H: watchlist deficit math", shopText)
+
+world.instanceType, world.instanceName = "raid", "Karazhan"
+mark = #printLog
+Fire("PLAYER_ENTERING_WORLD")
+FlushTimers()
+line = FindPrint("supply check", mark)
+CHECK(line and line:find("missing", 1, true), "H: raid entry warns about gaps", line)
+CHECK(soundLog[#soundLog] == 8959, "H: warning klaxon")
+CHECK(FindPrint("watchlist item", mark), "H: watchlist shorts included")
+
+mark = #printLog
+Fire("PLAYER_ENTERING_WORLD")
+FlushTimers()
+CHECK(not FindPrint("supply check", mark), "H: same raid inside the window stays silent")
+
+world.instanceName = "Gruul's Lair"
+mark = #printLog
+Fire("PLAYER_ENTERING_WORLD")
+FlushTimers()
+CHECK(FindPrint("supply check", mark), "H: a different raid checks again")
+
+db.RaidCheck = false
+world.instanceName = "Magtheridon's Lair"
+mark = #printLog
+Fire("PLAYER_ENTERING_WORLD")
+FlushTimers()
+CHECK(not FindPrint("supply check", mark), "H: master toggle silences the check")
+db.RaidCheck = true
+world.instanceType, world.instanceName = "none", "Azeroth"
+CommanderQuartermaster_SetWatchTarget(slot1, 0)
+
+-- ===========================================================================
+-- I: roster view
+-- ===========================================================================
+
+browser.viewChars.__scripts.OnClick(browser.viewChars)
+CHECK(list[1].kind == "header" and list[1].text:find("Aleria", 1, true), "I: realm header leads")
+local charRow
+for _, item in ipairs(list) do
+    if item.kind == "char" and item.name == "Devinq" then charRow = item end
+end
+CHECK(charRow ~= nil, "I: current character listed")
+CHECK(list[2].kind == "char" and list[2].name == "Devinq", "I: freshest character first")
+
+local farawaySeen = false
+for _, item in ipairs(list) do
+    if item.kind == "char" and item.realm == "Faraway" then farawaySeen = true end
+end
+CHECK(farawaySeen, "I: roster ignores the realm-scope setting")
+
+for _, col in ipairs(browser.colBtns) do
+    if col.key == "ALTS" then CHECK(col.fs.__text == "Mail", "I: third column relabels to Mail") end
+end
+
+local meRow
+for _, row in ipairs(rows) do
+    if row.item and row.item.kind == "char" and row.item.name == "Devinq" then meRow = row end
+end
+CHECK(meRow.nameFS.__text:find("(you)", 1, true), "I: current char marked", meRow.nameFS.__text)
+CHECK(meRow.noteFS.__text:find("423g", 1, true), "I: gold rendered", meRow.noteFS.__text)
+CHECK(meRow.icon.__texcoord and meRow.icon.__texcoord[2] == 0.25, "I: class icon coords")
+
+-- Hide toggle via click writes both the durable map and the live flag
+local mulekRow
+for _, row in ipairs(rows) do
+    if row.item and row.item.kind == "char" and row.item.name == "Mulek" then mulekRow = row end
+end
+mulekRow.__scripts.OnMouseUp(mulekRow, "LeftButton")
+FlushTimers()
+CHECK(db.UntrackedChars["Aleria\001Mulek"] == true and mulek.hidden == true, "I: click hides a character")
+mulek.bags[22851] = 5
+Sync()
+CHECK(not TipFor(22851):find("alts", 1, true), "I: hidden character leaves the counts")
+for _, row in ipairs(rows) do
+    if row.item and row.item.kind == "char" and row.item.name == "Mulek" then mulekRow = row end
+end
+mulekRow.__scripts.OnMouseUp(mulekRow, "LeftButton")
+FlushTimers()
+CHECK(mulek.hidden == nil, "I: click again unhides")
+
+-- Forget: guarded for the played character, popup + accept for others
+mark = #popupLog
+meRow.__scripts.OnMouseUp(meRow, "RightButton")
+CHECK(#popupLog == mark, "I: cannot forget the played character")
+mulekRow.__scripts.OnMouseUp(mulekRow, "RightButton")
+popup = popupLog[#popupLog]
+CHECK(popup and popup.which == "COMMANDER_QM_FORGET", "I: forget popup for an alt")
+StaticPopupDialogs["COMMANDER_QM_FORGET"].OnAccept(nil, popup.data)
+CHECK(CommanderQuartermasterLedger.Aleria.Mulek == nil, "I: accept forgets the alt")
+
+world.money = 5000000
+Fire("PLAYER_MONEY")
+CHECK(meRec.money == 5000000, "I: PLAYER_MONEY restamps gold")
+
+-- ===========================================================================
+-- J: reset survival + slash surface
+-- ===========================================================================
+
+CommanderQuartermaster_SetWatchTarget(22851, 15)
+db.EraFilter = "VANILLA"
+local dispatch = SlashCmdList["COMMANDERUI_QUARTERMASTER"]
+CHECK(type(dispatch) == "function", "J: slash registered")
+dispatch("reset")
+CHECK(db.EraFilter == "ALL", "J: reset restores defaulted settings")
+CHECK(db.Watchlist["Aleria\001Devinq"][22851] == 15, "J: reset keeps watch targets")
+mark = #printLog
+dispatch("ready")
+CHECK(FindPrint("readiness", mark), "J: /cqm ready dispatches")
+dispatch("shop")
+CHECK(CommanderQuartermasterShopFrame.__shown, "J: /cqm shop dispatches")
+
+-- ===========================================================================
+-- K: Inventory crate button
+-- ===========================================================================
+
+CHECK(CIItemGrid.qmButton ~= nil, "K: crate button exists with Quartermaster installed")
+browser:Hide()
+CIItemGrid.qmButton.__scripts.OnClick(CIItemGrid.qmButton)
+CHECK(browser:IsShown(), "K: crate click opens the browser")
+CIItemGrid.qmButton.__scripts.OnClick(CIItemGrid.qmButton)
+CHECK(not browser:IsShown(), "K: crate click toggles closed")
+
+CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
+
+io.write(("quartermaster_harness: %d checks, %d failures\n"):format(checks, fails))
+os.exit(fails == 0 and 0 or 1)

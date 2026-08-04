@@ -14,9 +14,14 @@ local DefaultSettings = {
     UntrackedChars = {},
     TrackBank = true,
     TrackMail = true,
+    TrackTransit = true,        -- credit mailed consumables to the recipient
     TooltipCounts = true,       -- append holdings to consumable tooltips
     TooltipBreakdown = false,   -- per-character lines under the counts
     CurrentRealmOnly = true,
+
+    -- Raid supply check (readiness verdict on zoning into a raid)
+    RaidCheck = true,
+    RaidCheckSound = true,
 
     -- Browser window
     BrowserStyle = "WINDOW",    -- WINDOW | DARK | CLASSIC
@@ -26,10 +31,16 @@ local DefaultSettings = {
     OwnedOnly = false,          -- browse filter: only rows you hold somewhere
 
     -- Browser session memory (which page you were on)
-    BrowserView = "BROWSE",     -- BROWSE | LOADOUT
+    BrowserView = "BROWSE",     -- BROWSE | LOADOUT | CHARS
     BrowserCategory = "FLASKS",
     BrowserClass = false,       -- false = your class
-    BrowserSpec = false,
+    BrowserSpec = false,        -- false = auto-detect from talents
+    EraFilter = "ALL",          -- ALL | TBC | VANILLA
+    SourceFilter = "ALL",       -- ALL | a source key
+
+    -- NOTE: the Watchlist map (per-character restock targets) deliberately
+    -- lives OUTSIDE this table — the Orders rally-point precedent — so
+    -- Restore Defaults never wipes targets. It is initialized on load below.
 }
 
 local frame = CreateFrame("FRAME")
@@ -98,13 +109,15 @@ local function CreatePanel()
         key = "Quartermaster",
         title = "Quartermaster",
         addonName = "Commander_Quartermaster",
-        description = "The supply ledger. A browsable database of every TBC consumable — flasks to bandages to ammunition — with loadout recommendations per class and spec, and live counts of what you hold across bags, bank, mail, and every alt. Each character reports as it plays: bags are live, bank and mail are as of the last visit. Bare /cqm opens the browser.",
+        description = "The supply ledger. A browsable database of every TBC consumable — flasks to bandages to ammunition — with loadout recommendations per class and spec, and live counts of what you hold across bags, bank, mail, and every alt. Each character reports as it plays: bags are live, bank and mail are as of the last visit; mail sent to alts stays counted in transit. Bare /cqm opens the browser; 'ready' grades your raid loadout, 'shop' builds the shopping list.",
         event = COMMANDER_QUARTERMASTER_EVENTS.UPDATE,
         slash = { "/cquartermaster", "/cqm" },
         slashHandlers = {
             [""] = function() if CommanderQuartermaster_Toggle then CommanderQuartermaster_Toggle() end end,
             scan = function() if CommanderQuartermaster_Scan then CommanderQuartermaster_Scan() end end,
             report = function() if CommanderQuartermaster_Report then CommanderQuartermaster_Report() end end,
+            ready = function() if CommanderQuartermaster_Ready then CommanderQuartermaster_Ready() end end,
+            shop = function() if CommanderQuartermaster_ShoppingList then CommanderQuartermaster_ShoppingList() end end,
         },
     })
     local FinishScroll = MakeScrollable(panel, "CommanderQuartermasterSettingsScroll")
@@ -148,6 +161,42 @@ local function CreatePanel()
         get = function() return CommanderQuartermasterDB.TrackMail end,
         set = function(value) CommanderQuartermasterDB.TrackMail = value end,
         isEnabled = Enabled,
+    })
+    panel:AddCheckbox({
+        label = "Track Outbound Mail",
+        tooltip = "When you mail consumables to another of your characters, keep them counted 'in transit' against the recipient until their own mailbox scan takes over (or 31 days pass). Closes the classic gap where mailed flasks vanish from every count.",
+        get = function() return CommanderQuartermasterDB.TrackTransit end,
+        set = function(value) CommanderQuartermasterDB.TrackTransit = value end,
+        isEnabled = Enabled,
+    })
+
+    panel:AddSection("Raid Readiness", "The loadout verdict: carried, banked, on alts, or missing.")
+    panel:AddCheckboxPair({
+        label = "Raid Supply Check",
+        tooltip = "On zoning into a raid, print the readiness verdict for your spec's loadout plus any watchlist deficits — once per raid per half hour, so corpse runs stay quiet. Also on demand via /cqm ready.",
+        get = function() return CommanderQuartermasterDB.RaidCheck end,
+        set = function(value) CommanderQuartermasterDB.RaidCheck = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Supply Check Sound",
+        tooltip = "Play the raid-warning sound when the supply check finds gaps. A green check is always silent.",
+        get = function() return CommanderQuartermasterDB.RaidCheckSound end,
+        set = function(value) CommanderQuartermasterDB.RaidCheckSound = value end,
+        isEnabled = function() return Enabled() and CommanderQuartermasterDB.RaidCheck end,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Readiness Report",
+            tooltip = "Print the slot-by-slot readiness verdict to chat (same as /cqm ready).",
+            onClick = function() if CommanderQuartermaster_Ready then CommanderQuartermaster_Ready() end end,
+            isEnabled = Enabled,
+        },
+        {
+            label = "Shopping List",
+            tooltip = "Open the copyable shopping list built from loadout gaps and watchlist deficits (same as /cqm shop).",
+            onClick = function() if CommanderQuartermaster_ShoppingList then CommanderQuartermaster_ShoppingList() end end,
+            isEnabled = Enabled,
+        },
     })
 
     panel:AddSection("Tooltips & Scope", "Where the ledger speaks up.")
@@ -277,6 +326,8 @@ end
 frame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "Commander_Quartermaster" then
         Commander.UI.ApplyDefaults(CommanderQuartermasterDB, DefaultSettings)
+        -- Outside DefaultSettings on purpose (survives Restore Defaults)
+        CommanderQuartermasterDB.Watchlist = CommanderQuartermasterDB.Watchlist or {}
     elseif event == "PLAYER_LOGIN" then
         CreatePanel()
     end
