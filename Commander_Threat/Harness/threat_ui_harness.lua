@@ -417,6 +417,21 @@ RAID_CLASS_COLORS = {
 CLASS_ICON_TCOORDS = { WARRIOR = { 0, 0.25, 0, 0.25 } }
 SlashCmdList = {}
 
+-- Meters external-mode contract mock (records the cross-addon calls)
+local metersEmbed = { spec = nil, shown = {}, retired = {} }
+function CommanderMeters_RegisterExternalMode(spec)
+    metersEmbed.spec = spec
+    return true
+end
+function CommanderMeters_RetireExternalMode(key)
+    metersEmbed.retired[#metersEmbed.retired + 1] = key
+    if metersEmbed.spec and metersEmbed.spec.key == key then metersEmbed.spec = nil end
+end
+function CommanderMeters_ShowExternalPane(key)
+    metersEmbed.shown[#metersEmbed.shown + 1] = key
+    return true
+end
+
 -- Threat fixture helpers: (unit, mob, tanking, status, scaled, raw, value)
 local function SetThreat(u, mob, tanking, status, scaled, raw, value)
     threatPairs[u .. "@" .. mob] = { tanking, status, scaled, raw, value }
@@ -783,6 +798,85 @@ Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
 CHECK(root.__shown == true, "C: unlocked board forced visible")
 CommanderThreatDB.HudLocked = true
 Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+
+-- ===========================================================================
+-- Meters embed: registration, board retirement, provider rows, degradation
+-- ===========================================================================
+
+-- Back to a live damage-role party fight so the provider has rows to serve
+SlashCmdList.COMMANDERUI_THREAT("damage")
+units.target = { guid = "C-mob1", name = "Deviate Guardian", hostile = true }
+combat = true
+ClearThreat()
+SetThreat("party1", "target", true, 3, 100, 100, 100000)
+SetThreat("player", "target", false, 0, 55, 60, 60000)
+inRaid, grouped, groupSize = false, true, 2
+Fire("GROUP_ROSTER_UPDATE")
+Advance(1)
+CHECK(root.__shown == true, "C: standalone board up before the embed")
+
+-- Enable through the panel path (DB write + toggle hook + notify)
+CommanderThreatDB.MetersEmbed = true
+CommanderThreat_EmbedToggled(true)
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+CHECK(metersEmbed.spec ~= nil and metersEmbed.spec.key == "THREAT",
+    "C: embed registers the THREAT mode with Meters")
+CHECK(metersEmbed.shown[#metersEmbed.shown] == "THREAT",
+    "C: enabling opens Meters' threat pane")
+Advance(1)
+CHECK(root.__shown == false, "C: standalone board retires while embedded (mid-combat)")
+
+-- The provider serves Meters-shaped display rows from live engine data
+do
+    local rows, n = metersEmbed.spec.collect(0)
+    CHECK(n == 2, "C: provider row count", n)
+    CHECK(rows[1].name == "Brakk" and rows[1].valueText == "100%",
+        "C: provider top row is the holder at 100%")
+    CHECK(rows[2].valueText == "55%", "C: provider carries scaled % in the value column")
+    CHECK(rows[2].barFrac and math.abs(rows[2].barFrac - 0.55) < 0.001,
+        "C: provider bar fraction keeps the pull-point encoding")
+    CHECK(metersEmbed.spec.caption() == "DEVIATE GUARDIAN",
+        "C: provider caption names the mob", metersEmbed.spec.caption())
+    CHECK(metersEmbed.spec.empty == "No threat data", "C: provider empty line set")
+end
+
+-- Warnings keep firing while embedded — only the surface moved
+before = KlaxonCount()
+Advance(3)
+SetThreat("player", "target", false, 1, 85, 93, 93000)
+Advance(1)
+CHECK(KlaxonCount() == before + 1, "C: pull warning still fires while embedded")
+CHECK(root.__shown == false, "C: a warning does not resurrect the board")
+
+-- Disabling retires the mode and brings the board back
+CommanderThreatDB.MetersEmbed = false
+CommanderThreat_EmbedToggled(false)
+Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+CHECK(metersEmbed.retired[#metersEmbed.retired] == "THREAT",
+    "C: disabling retires the Meters mode")
+Advance(1)
+CHECK(root.__shown == true, "C: standalone board returns")
+
+-- Meters absent: the saved setting degrades to the standalone board
+do
+    local savedReg = CommanderMeters_RegisterExternalMode
+    local savedShow = CommanderMeters_ShowExternalPane
+    local savedRet = CommanderMeters_RetireExternalMode
+    CommanderMeters_RegisterExternalMode = nil
+    CommanderMeters_ShowExternalPane = nil
+    CommanderMeters_RetireExternalMode = nil
+    CommanderThreatDB.MetersEmbed = true
+    CommanderThreat_EmbedToggled(true)
+    Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+    Advance(1)
+    CHECK(root.__shown == true, "C: Meters absent — standalone board stays")
+    CommanderThreatDB.MetersEmbed = false
+    CommanderMeters_RegisterExternalMode = savedReg
+    CommanderMeters_ShowExternalPane = savedShow
+    CommanderMeters_RetireExternalMode = savedRet
+    Commander.Notify(COMMANDER_THREAT_EVENTS.UPDATE)
+end
+CHECK(#harnessFailedErrors == 0, "C: embed cycle clean", harnessFailedErrors[1])
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

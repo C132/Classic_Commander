@@ -12,4 +12,10 @@ mob-change re-arm, silent adoption, contested-list loss, healer inbound).
 `threat_ui_harness.lua` loads the real settings framework plus all three
 addon files, then walks login, the panel, role switching, live sampling in
 all three roles, the pinned-self row, warnings (klaxon counts), the test
-fight per role, visibility rules, and Restore Defaults keeping roles.
+fight per role, visibility rules, Restore Defaults keeping roles, and the
+Meters embed cycle (registration, board retirement, provider rows,
+warnings-while-embedded, graceful degradation with Meters absent).
+
+The Meters side of the embed contract is pinned in
+`Commander_Meters/Harness/meters_ui_harness.lua` (its external-mode
+section) — run that too when touching the embed.

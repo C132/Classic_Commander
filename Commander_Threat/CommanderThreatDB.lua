@@ -39,6 +39,8 @@ local DefaultSettings = {
     BarRows = 8,           -- bar rows on the board (Meters' Bar Rows)
     FrameWidth = 240,      -- board width in pixels (Meters' Window Width)
     CombatOnly = true,     -- board shows only in combat / while threat exists
+    MetersEmbed = false,   -- render inside Commander_Meters as a live THREAT
+                           -- pane instead of the standalone board
     AccentColor = "AMBER", -- AMBER | CYAN | GREEN | RED | WHITE, or any
                            -- Commander_Console suite tint — bake-at-login
 }
@@ -221,6 +223,20 @@ local function CreateCorePanel()
         get = function() return CommanderThreatDB.CombatOnly end,
         set = function(value) CommanderThreatDB.CombatOnly = value end,
         isEnabled = Enabled,
+    })
+
+    panel:AddCheckbox({
+        label = "Embed in Commander Meters",
+        tooltip = "Retire the standalone board and show the threat list as a live THREAT pane inside Commander Meters instead: enabling opens Meters' split view with threat in the second pane, and Meters' pane menus offer THREAT from then on. Every warning — klaxon, board flash, screen vignette — keeps firing either way; only the surface moves. Needs Commander_Meters (grayed out without it).",
+        get = function() return CommanderThreatDB.MetersEmbed end,
+        set = function(value)
+            CommanderThreatDB.MetersEmbed = value
+            if CommanderThreat_EmbedToggled then CommanderThreat_EmbedToggled(value) end
+        end,
+        isEnabled = function()
+            return CommanderThreatDB.EnableThreat
+                and CommanderMeters_RegisterExternalMode ~= nil
+        end,
     })
 
     panel:AddSliderPair({

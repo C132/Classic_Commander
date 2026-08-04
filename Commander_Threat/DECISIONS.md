@@ -21,10 +21,11 @@ anything else would re-derive what the client computes. No raw-vs-scaled
 toggle: scaled is strictly the more honest encoding, and a toggle to be
 less honest is not a setting.
 
-**D3 — Settings ceiling: 10.** EnableThreat, Role, WarnAt, WarnSound,
-WarnFlash, ShowTPS, BarRows, FrameWidth, CombatOnly, AccentColor (+ the
-shared HudChrome quartet, owned by the suite mechanism, per the Meters
-counting convention). Derived by sorting Omen's option sprawl into
+**D3 — Settings ceiling: 10, re-derived to 11 in D13.** EnableThreat,
+Role, WarnAt, WarnSound, WarnFlash, ShowTPS, BarRows, FrameWidth,
+CombatOnly, AccentColor (+ the shared HudChrome quartet, owned by the
+suite mechanism, per the Meters counting convention). MetersEmbed is the
+eleventh — Devin-requested, justified in D13. Derived by sorting Omen's option sprawl into
 load-bearing / legacy / decoration and keeping only the first bucket, then
 cross-checking survivors against the suite: Bar Rows and Window Width take
 Meters' names, ranges, and defaults exactly. Dropped: bar textures and
@@ -88,3 +89,28 @@ chaser scan — a Growling pet rips like anyone else.
 **D12 — Board default is LEFT (Meters sits RIGHT).** The two combat boards
 flank the field of view; both are HudChrome consumers so either moves
 anywhere.
+
+**D13 — Meters embed (2026-08-03, ceiling 10 → 11).** "Embed in Commander
+Meters" (default off, grayed without Commander_Meters) retires the
+standalone board and serves the threat list as a live THREAT pane through
+Meters' external-mode contract (`CommanderMeters_RegisterExternalMode` —
+see Meters D22). The split is where it shines: damage beside threat in one
+window. Division of labor: Threat keeps the engine, the 4 Hz sampler, and
+EVERY warning (klaxon, vignette — only the rendering surface moves; the
+board flash has no surface while embedded and the header flash simply goes
+unseen); Meters owns arrangement and never interprets. The provider hands
+back finished strings with the scaled percentage in the always-visible
+value column — Meters' split condenses to rank/name/value, and the % is
+the number that matters — absolute threat and TPS ride the wide-window
+columns. Enabling is the explicit action that opens Meters' split
+(ShowExternalPane); the silent login path only registers, letting Meters'
+own SplitOpen/SplitMode persistence decide the layout. Everything
+soft-fails (the TopBar pattern): Meters absent → checkbox grayed, a saved
+`true` degrades to the standalone board; Threat absent → Meters' saved
+THREAT pane falls back to its default mode. What the embed costs, stated
+honestly: no role headline, no footer facts (holder / HELD-LOOSE /
+INBOUND text), no holder stripe, no player-row pinning — the pane is the
+LIST, and the warnings carry the role story. Rejected: forcing the split
+open at every login (Meters' persistence already remembers), and a
+board-inside-Meters frame graft (two addons' pooling and click-through
+rules tangled for no user benefit).

@@ -772,11 +772,91 @@ local function Paint()
 end
 
 -- ---------------------------------------------------------------------------
+-- Meters embed: the threat list as a live pane inside Commander_Meters,
+-- through its external-mode contract (soft dependency, the TopBar pattern —
+-- everything here no-ops when Meters is absent). The engine, the tick, and
+-- every warning run exactly as before; only the rendering surface moves,
+-- and the standalone board retires while the embed is active.
+-- ---------------------------------------------------------------------------
+
+local embedRegistered = false
+local providerRows = {} -- pooled display rows handed to Meters' 2 Hz repaint
+
+local function EmbedActive()
+    return (db and db.MetersEmbed and embedRegistered) or false
+end
+
+-- Meters' split view condenses to rank/name/value columns, so the scaled
+-- percentage — the number that matters — rides in valueText; the wide
+-- window adds absolute threat (pctText) and TPS (rateText)
+local function ProviderCollect()
+    local rows, n = E.Rows()
+    for i = 1, n do
+        local r = rows[i]
+        local out = providerRows[i]
+        if not out then out = {}; providerRows[i] = out end
+        out.name = r.name
+        out.class = (not r.isPet) and r.class or nil
+        out.valueText = format("%d%%", math.min(r.scaled, 999) + 0.5)
+        out.pctText = FmtNum(r.value)
+        out.rateText = (db.ShowTPS and r.tps and r.tps >= 1) and FmtNum(r.tps) or ""
+        local frac = r.scaled / 100
+        if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+        out.barFrac = frac
+    end
+    return providerRows, n
+end
+
+local function ProviderCaption()
+    local _, name = E.Mob()
+    return name and name:upper() or "NO TARGET"
+end
+
+-- Idempotent: registration follows the setting. Called from Apply (login,
+-- any settings change) so the embed also recovers if Meters loads without
+-- Threat's checkbox being touched.
+local function SyncEmbedRegistration()
+    if not db then return end
+    if db.MetersEmbed and not embedRegistered and CommanderMeters_RegisterExternalMode then
+        embedRegistered = CommanderMeters_RegisterExternalMode({
+            key = "THREAT",
+            label = "THREAT",
+            collect = ProviderCollect,
+            caption = ProviderCaption,
+            empty = "No threat data",
+        }) and true or false
+    elseif not db.MetersEmbed and embedRegistered then
+        if CommanderMeters_RetireExternalMode then
+            CommanderMeters_RetireExternalMode("THREAT")
+        end
+        embedRegistered = false
+    end
+end
+
+-- The settings checkbox's set() calls this: enabling is an explicit user
+-- action, so it also opens Meters' split with the THREAT pane. The silent
+-- login path (SyncEmbedRegistration via Apply) never forces the split —
+-- Meters' own SplitOpen/SplitMode persistence decides there.
+function CommanderThreat_EmbedToggled(on)
+    SyncEmbedRegistration()
+    if on and embedRegistered and CommanderMeters_ShowExternalPane then
+        CommanderMeters_ShowExternalPane("THREAT")
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Visibility + apply
 -- ---------------------------------------------------------------------------
 
 local function UpdateVisibility()
     if not root then return end
+    -- Embedded into Meters: the standalone board retires outright — no
+    -- unlock exception, there is nothing to place while Meters hosts the
+    -- list (warnings keep firing from the tick regardless)
+    if EmbedActive() then
+        root:SetShown(false)
+        return
+    end
     local show = false
     if db.EnableThreat then
         if not db.CombatOnly then
@@ -795,6 +875,7 @@ end
 local function Apply()
     if not root then return end
     E.SetRole(CommanderThreat_GetRole())
+    SyncEmbedRegistration()
     Layout()
     BuildRows()
     Commander.UI.ApplyHudChrome(root, db, "Hud", {
@@ -917,7 +998,9 @@ Tick = function()
             print("Commander Threat: test complete")
         else
             RunTestFight(now)
-            Paint()
+            -- Embedded: Meters' own repaint reads the provider — the
+            -- hidden standalone board skips its paint, alerts still fire
+            if not EmbedActive() then Paint() end
             DrainAlerts()
             UpdateVisibility()
             return
@@ -943,7 +1026,7 @@ Tick = function()
     end
     local n = mobUnit and ScanMob(mobUnit) or 0
     E.Ingest(obs, n, now)
-    Paint()
+    if not EmbedActive() then Paint() end
     DrainAlerts()
     UpdateVisibility()
 end
