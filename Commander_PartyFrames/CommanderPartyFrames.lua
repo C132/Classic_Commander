@@ -646,6 +646,9 @@ local function NoteAbilityCast(guid, class, spellName, now)
     local st = abilityState[guid]
     if not st then st = {}; abilityState[guid] = st end
     st[entry.key] = now + entry.cd
+    -- A spec-gated ability's own cast IS proof of the spec (Cold Snap,
+    -- Scatter Shot… aren't all in the marker table)
+    if entry.spec then specState[guid] = entry.spec end
     -- The reset link is literal: Cold Snap/Preparation REFUND the linked CDs
     if entry.resets then
         for _, tk in ipairs(entry.resets) do st[tk] = nil end
@@ -1151,7 +1154,9 @@ local function ScanUnit(unit, reliable)
             armorFound = { icon = armorNames[aura.name], expire = aura.expirationTime }
         end
         -- Spec inference from visible marker auras (Shadowform, forms, Tree…)
-        if specMarkerNames[aura.name] then
+        -- Self-sourced only: party-wide/target-castable markers (Trueshot
+        -- Aura, Power Infusion) would stamp their CARRIER otherwise
+        if specMarkerNames[aura.name] and aura.sourceUnit and UnitIsUnit(aura.sourceUnit, unit) then
             specState[guid] = specMarkerNames[aura.name]
         end
         -- Aggregate shielding: catch every named absorb aura, whoever cast it
@@ -1244,8 +1249,8 @@ local function ScanUnit(unit, reliable)
         if not aura then break end
         if aura.name == WS_NAME and not wsExpire then
             wsExpire = aura.expirationTime
-            -- nothing else to collect (the INT layer still hunts for a curse)
-            if not dispelOn and not intOn then break end
+            -- No early break: lockout debuffs (Hypothermia/Forbearance) can
+            -- sit anywhere in the list on ANY layer
         end
         -- CURSED state feed: track the first removable debuff independently of
         -- the strip, which caps at MAX_DISPEL_ICONS — a curse buried under a
@@ -1329,6 +1334,16 @@ local function ScanUnit(unit, reliable)
         elseif reliable then
             ccState[guid] = nil
         end
+    end
+
+    -- Ability-bar lockouts commit with the same reliable contract (chassis:
+    -- the priest board needs its paladin's Forbearance too)
+    if hypoExpire or forbExpire then
+        local l = lockState[guid]
+        if not l then l = {}; lockState[guid] = l end
+        l.hypo, l.forb = hypoExpire, forbExpire
+    elseif reliable then
+        lockState[guid] = nil
     end
 
     if wsExpire then
@@ -3052,6 +3067,23 @@ local function StripOrder(a, b)
     return (a.e.ord or 99) < (b.e.ord or 99)
 end
 
+-- Hoisted strip selection (runs per row per draw — no closures, pooled
+-- slots): stripSpec/stripSt/stripLs/stripN carry the current row's context
+local stripSpec, stripSt, stripLs, stripN
+local function StripConsider(entry, now)
+    if entry.spec and entry.spec ~= stripSpec then return end
+    local cdEnd = stripSt and stripSt[entry.key]
+    if cdEnd and cdEnd <= now then cdEnd = nil; stripSt[entry.key] = nil end
+    local lockExp = entry.lock and stripLs and stripLs[entry.lock]
+    if lockExp and lockExp <= now then lockExp = nil end
+    if entry.tier == 1 or cdEnd or lockExp then
+        stripN = stripN + 1
+        local slot = stripScratch[stripN]
+        if not slot then slot = {}; stripScratch[stripN] = slot end
+        slot.e, slot.cdEnd, slot.lockExp = entry, cdEnd, lockExp
+    end
+end
+
 -- Fill one ability strip from the book + live state. Tier 1 shows always;
 -- tier 2 only while cooling; spec-gated entries appear once the spec is
 -- known. Lockouts (Hypothermia/Forbearance) wear the red rim and extend the
@@ -3059,30 +3091,21 @@ end
 local function PaintAbilityStrip(arow, r, now)
     local n = 0
     local guid, class = r.guid, r.class
-    if guid and class and r.state ~= "EMPTY"
+    if guid and class and r.state ~= "EMPTY" and not r.dead
         and (not r.isSelf or DB("AbilityBarSelf", true)) then
-        wipe(stripScratch)
         local spec = specState[guid]
-        local st = abilityState[guid]
-        local ls = lockState[guid]
-        local function consider(entry)
-            if entry.spec and entry.spec ~= spec then return end
-            local cdEnd = st and st[entry.key]
-            if cdEnd and cdEnd <= now then cdEnd = nil; st[entry.key] = nil end
-            local lockExp = entry.lock and ls and ls[entry.lock]
-            if lockExp and lockExp <= now then lockExp = nil end
-            if entry.tier == 1 or cdEnd or lockExp then
-                stripScratch[#stripScratch + 1] = { e = entry, cdEnd = cdEnd, lockExp = lockExp }
-            end
-        end
+        stripSpec, stripSt, stripLs, stripN = spec, abilityState[guid], lockState[guid], 0
         local list = SDATA.ABILITY_BOOK[class]
-        if list then for _, e in ipairs(list) do consider(e) end end
-        for _, e in ipairs(SDATA.ABILITY_SHARED) do consider(e) end
+        if list then for _, e in ipairs(list) do StripConsider(e, now) end end
+        for _, e in ipairs(SDATA.ABILITY_SHARED) do StripConsider(e, now) end
+        -- Trim pooled slots past the live count so the sort sees a dense array
+        for i = stripN + 1, #stripScratch do stripScratch[i] = nil end
         table.sort(stripScratch, StripOrder)
+        local st = stripSt
 
         local maxIcons = math.min(DB("AbilityMaxIcons", 6), SDATA.MAX_ABILITY_CELLS)
         local showTxt = DB("AbilityCdText", true)
-        for i = 1, math.min(#stripScratch, maxIcons) do
+        for i = 1, math.min(stripN, maxIcons) do
             n = n + 1
             local cell = arow.cells[n]
             local s = stripScratch[i]
