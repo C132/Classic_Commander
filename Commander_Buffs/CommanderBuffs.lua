@@ -271,7 +271,14 @@ local function ApplyDefaultFrames()
                 -- all re-show these; one hook keeps them down without
                 -- unregistering events we could never faithfully restore.
                 pcall(hooksecurefunc, frame, "Show", function(self)
-                    if hidingDefaults and self.__cbHidden then self:Hide() end
+                    if not (hidingDefaults and self.__cbHidden) then return end
+                    -- Never touch a Blizzard frame from a hook during
+                    -- combat; the regen handler re-asserts the hide.
+                    if InCombatLockdown and InCombatLockdown() then
+                        pendingDefaults = true
+                        return
+                    end
+                    self:Hide()
                 end)
             end
         end
