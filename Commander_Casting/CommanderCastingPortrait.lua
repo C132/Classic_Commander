@@ -30,6 +30,14 @@ local RING_OUTER = 0.485
 
 local GLOW_FILE = TEXTURES .. "RingGlow.png"
 local TICK_FILE = TEXTURES .. "Tick.png"
+local EDGE_FILE = TEXTURES .. "Edge.png"
+
+-- Half-length of the spark's flat-alpha core, as a fraction of its texture
+-- (mirrored from Harness/make_rings.py, where the art also fades out over
+-- another 0.06 past each end). Sizing the quad by this lands the core exactly
+-- on the ring band: the spark is cut off at the band's own thickness, and only
+-- a tenth of that thickness in falloff spills past the rim.
+local EDGE_CORE = 0.30
 -- Blizzard's own round portrait mask, used as art: a clean disc the exact
 -- shape of the portrait, so a tint never spills over the frame's metal
 local PORTRAIT_DISC = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
@@ -130,6 +138,9 @@ local function NewSweep(parent, level)
     if sweep.SetHideCountdownNumbers then sweep:SetHideCountdownNumbers(true) end
     if sweep.SetDrawBling then sweep:SetDrawBling(false) end
     if sweep.SetDrawSwipe then sweep:SetDrawSwipe(true) end
+    -- The Cooldown's own edge is a spoke drawn from the center of the frame out
+    -- to its rim, and nothing masks it: on a donut it lays a bright line right
+    -- across the portrait. The arc draws its own spark instead (UpdateEdge).
     if sweep.SetDrawEdge then sweep:SetDrawEdge(false) end
     if sweep.SetSwipeTexture then sweep:SetSwipeTexture(RING_FILES[3]) end
     sweep:Hide()
@@ -184,6 +195,13 @@ local function Build(ring)
     ring.glow:SetBlendMode("ADD")
     ring.glow:SetPoint("CENTER", holder, "CENTER")
     ring.glow:Hide()
+
+    -- The head of the sweep. Above the arc so it reads as a spark on top of the
+    -- fill rather than a notch cut out of it.
+    ring.edge = overlay:CreateTexture(nil, "OVERLAY")
+    ring.edge:SetTexture(EDGE_FILE)
+    ring.edge:SetBlendMode("ADD")
+    ring.edge:Hide()
 
     if spec.extras then
         ring.tick = overlay:CreateTexture(nil, "OVERLAY")
@@ -247,9 +265,21 @@ local function Layout(ring)
     local file, ratio = RingTexture(frameSize, thickness)
     ring.laid.ratio = ratio
     ring.laid.frameSize = frameSize
-    ring.laid.thickness = thickness
     if ring.arc.SetSwipeTexture then ring.arc:SetSwipeTexture(file) end
     ring.track:SetTexture(file)
+
+    -- What the band on screen actually measures, which is near the requested
+    -- thickness but rarely equal to it: the weight is the nearest of six.
+    -- Anything riding the band has to measure it rather than trust the setting,
+    -- or it sits off the ring by the rounding.
+    local outer = frameSize * RING_OUTER
+    local band = outer * (1 - ratio)
+    ring.laid.band = band
+    ring.laid.radius = outer - band / 2
+
+    -- Core as long as the band is thick; the art's falloff does the rest
+    local edgeSize = band / (EDGE_CORE * 2)
+    ring.edge:SetSize(edgeSize, edgeSize)
 
     ring.glow:SetSize(frameSize * 1.3, frameSize * 1.3)
 
@@ -376,6 +406,47 @@ local function ApplyGCD(ring)
     gcd:Show()
 end
 
+-- Where the sweep's head is right now, as a share of the cast. Both fill
+-- directions put the boundary between drawn and undrawn in the same place --
+-- reversing only swaps which side of it is painted -- so one angle serves both.
+local function CastProgress(cast)
+    local duration = cast.finish - cast.start
+    if duration <= 0 then return nil end
+    local progress = (GetTime() - cast.start) / duration
+    if progress < 0 then return 0 end
+    if progress > 1 then return 1 end
+    return progress
+end
+
+-- Ride the spark on the head of the sweep. Called every frame while a cast is
+-- live -- the arc itself is animated by the client, and this is the one piece
+-- of it the client will not move for us.
+local function MoveEdge(ring)
+    if not ring.edgeLive then return end
+    local progress = CastProgress(ring.cast)
+    if not progress then return end
+    -- Clockwise from twelve o'clock, the same convention as the latency tick
+    local theta = progress * math.pi * 2
+    local radius = ring.laid.radius or 0
+    ring.edge:SetPoint("CENTER", ring.overlay, "CENTER",
+        math.sin(theta) * radius, math.cos(theta) * radius)
+    ring.edge:SetRotation(-theta)
+end
+
+local function UpdateEdge(ring, casting, r, g, b)
+    if not (casting and DB(ring.spec.prefix .. "Edge", true)) then
+        ring.edgeLive = false
+        ring.edge:Hide()
+        return
+    end
+    -- Halfway to white: a spark reads as heat coming off the arc, not as more
+    -- of the same color laid over it
+    ring.edge:SetVertexColor((r + 1) / 2, (g + 1) / 2, (b + 1) / 2)
+    ring.edgeLive = true
+    MoveEdge(ring)
+    ring.edge:Show()
+end
+
 -- The point in the cast where the next one can already be queued
 local function UpdateLatency(ring)
     local tick = ring.tick
@@ -397,9 +468,9 @@ local function UpdateLatency(ring)
     end
     -- Angles run clockwise from twelve o'clock, matching the sweep
     local theta = (1 - latency / duration) * math.pi * 2
-    local thickness = ring.laid.thickness or 5
-    local radius = (ring.laid.frameSize or 64) * RING_OUTER - thickness / 2
-    local size = thickness + 6
+    local band = ring.laid.band or 5
+    local radius = ring.laid.radius or 0
+    local size = band + 6
     tick:SetSize(size, size)
     tick:SetPoint("CENTER", ring.overlay, "CENTER",
         math.sin(theta) * radius, math.cos(theta) * radius)
@@ -475,6 +546,7 @@ function ApplyRing(ring)
         ClearSweep(ring.arc)
         ClearSweep(ring.gcd)
         ring.flashKind = nil
+        ring.edgeLive = false
         ring.holder:Hide()
         return
     end
@@ -490,6 +562,7 @@ function ApplyRing(ring)
     if not (casting or always or ring.flashKind or gcdWants) then
         ClearSweep(ring.arc)
         ClearSweep(ring.gcd)
+        ring.edgeLive = false
         ring.holder:Hide()
         return
     end
@@ -517,15 +590,14 @@ function ApplyRing(ring)
         end
         if ring.arc.SetReverse then ring.arc:SetReverse(fill and true or false) end
         if ring.arc.SetSwipeColor then ring.arc:SetSwipeColor(r, g, b, 1) end
-        if ring.arc.SetDrawEdge then
-            ring.arc:SetDrawEdge(DB(prefix .. "Edge", true) and true or false)
-        end
         ring.arc:SetCooldown(cast.start, duration)
         ring.arc:Show()
     else
         ClearSweep(ring.arc)
         ring.arc:Hide()
     end
+
+    UpdateEdge(ring, casting, r, g, b)
 
     if casting and DB(prefix .. "Tint", false) then
         ring.tint:SetVertexColor(r, g, b, DB(prefix .. "TintStrength", 0.25))
@@ -562,8 +634,12 @@ local function Wake()
 end
 
 driver:SetScript("OnUpdate", function(_, elapsed)
+    -- Per frame, both of them: a spark that only moved with the label would
+    -- stutter around a ring the client is drawing smoothly underneath it
     for i = 1, #RING_ORDER do
-        RenderFlash(rings[RING_ORDER[i]])
+        local ring = rings[RING_ORDER[i]]
+        RenderFlash(ring)
+        MoveEdge(ring)
     end
 
     sinceText = sinceText + elapsed
