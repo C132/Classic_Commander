@@ -250,6 +250,11 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    if key == "SetFrameLevel" then
+        local fn = function(s, level) s.__level = level end
+        rawset(self, key, fn)
+        return fn
+    end
     if key == "GetThumbTexture" then
         local fn = function(s) return NewWidget("Texture") end
         rawset(self, key, fn)
@@ -301,6 +306,9 @@ TargetFrameHealthBar.GetWidth = function() return 119 end -- Blizzard's own widt
 TargetFrame.HealthBar = TargetFrameHealthBar
 TargetFramePortrait = NewWidget("Texture", "TargetFramePortrait")
 TargetFrame.portrait = TargetFramePortrait
+-- Where Blizzard's border art lives, and what Commander_Casting levels its
+-- portrait ring off — the threat plate has to clear both
+TargetFrameTextureFrame = NewWidget("Frame", "TargetFrameTextureFrame")
 UISpecialFrames = {}
 tinsert = table.insert
 wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
@@ -1014,6 +1022,11 @@ for _, fs in ipairs(allFontStrings) do
     if fs.__parent == tgtTag then tgtFs = fs end
 end
 CHECK(tgtFs ~= nil, "C: target readout fontstring found")
+
+-- Commander_Casting rings this same portrait, levelling its glow/label
+-- overlay at TargetFrameTextureFrame + 15; the alarm has to outrank it
+CHECK((tgtTag.__level or 0) > (_G.TargetFrameTextureFrame:GetFrameLevel() + 15),
+    "C: plate outranks Commander_Casting's portrait ring", tgtTag.__level)
 
 local function TagAnchor()
     local p = tgtTag.__points and tgtTag.__points[1]
