@@ -1731,6 +1731,10 @@ local function ResolveRow(unit, now)
         local m, mMax = UnitPower(unit, 0), UnitPowerMax(unit, 0)
         if mMax and mMax > 0 then r.mana = m / mMax end
     end
+    -- Their target's raid mark: watch the tank hold (or leave) skull
+    if DB("ShowTargetMarks", true) and GetRaidTargetIndex then
+        r.raidMark = GetRaidTargetIndex(unit .. "target")
+    end
     if DB("RangeFade", false) and not r.isSelf and UnitInRange then
         local inRange, checked = UnitInRange(unit)
         r.outOfRange = checked and not inRange or false
@@ -1924,6 +1928,11 @@ local function BuildRowWidgets(row)
     row.markTick:SetVertexColor(1, 0.85, 0.25, 0.95)
     row.markTick:Hide()
 
+    -- Raid mark of the unit THIS ally is targeting (assist awareness)
+    row.raidMark = row:CreateTexture(nil, "OVERLAY")
+    row.raidMark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+    row.raidMark:Hide()
+
     row.left = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.left:SetJustifyH("LEFT")
     row.right = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2004,8 +2013,36 @@ local function AcquirePersonalRow(index)
 end
 
 -- Ability strips: one insecure row of icon cells under each player row.
--- Each cell = icon + cooldown sweep + red lockout rim + gold reset pip +
--- remaining-time text.
+-- Each cell = a small hoverable frame carrying icon + cooldown sweep + red
+-- lockout rim + gold reset pip + remaining-time text, with a tooltip that
+-- explains the whole grammar in words.
+local function AbilityCellEnter(self)
+    local e = self._e
+    if not e then return end
+    local now = GetTime()
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(e.dispName, 1, 1, 1)
+    if self._lockExp and self._lockExp > now then
+        local lockName = (e.lock == "hypo")
+            and ((GetSpellInfo and GetSpellInfo(SDATA.HYPO_ID)) or "Hypothermia")
+            or ((GetSpellInfo and GetSpellInfo(SDATA.FORB_ID)) or "Forbearance")
+        GameTooltip:AddLine(string.format("Locked by %s — %ds", lockName,
+            math.ceil(self._lockExp - now)), 1, 0.35, 0.35)
+    end
+    if self._cdEnd and self._cdEnd > now then
+        GameTooltip:AddLine(string.format("Cooldown: %ds left (of %ds)",
+            math.ceil(self._cdEnd - now), e.cd), 0.9, 0.75, 0.4)
+    else
+        GameTooltip:AddLine("Ready", 0.4, 0.9, 0.4)
+    end
+    if self._pip and e.resetBy then
+        GameTooltip:AddLine(e.resetBy.dispName .. " is ready — this cooldown is refundable",
+            1, 0.85, 0.25)
+    end
+    GameTooltip:Show()
+end
+local function AbilityCellLeave() GameTooltip:Hide() end
+
 local abilityRowPool = {}
 local function AcquireAbilityRow(index)
     local row = abilityRowPool[index]
@@ -2022,24 +2059,30 @@ local function AcquireAbilityRow(index)
         c.rim:SetSize(SDATA.ABILITY_H, SDATA.ABILITY_H)
         c.rim:SetPoint("TOPLEFT", row, "TOPLEFT", x - 1, 0)
         c.rim:Hide()
-        c.icon = row:CreateTexture(nil, "ARTWORK")
+        local cf = CreateFrame("Frame", nil, row)
+        cf:SetSize(SDATA.ABILITY_H - 2, SDATA.ABILITY_H - 2)
+        cf:SetPoint("TOPLEFT", row, "TOPLEFT", x, -1)
+        cf:EnableMouse(true)
+        cf:SetScript("OnEnter", AbilityCellEnter)
+        cf:SetScript("OnLeave", AbilityCellLeave)
+        cf:Hide()
+        c.frame = cf
+        c.icon = cf:CreateTexture(nil, "ARTWORK")
         c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        c.icon:SetSize(SDATA.ABILITY_H - 2, SDATA.ABILITY_H - 2)
-        c.icon:SetPoint("TOPLEFT", row, "TOPLEFT", x, -1)
-        c.icon:Hide()
-        c.cd = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
+        c.icon:SetAllPoints(cf)
+        c.cd = CreateFrame("Cooldown", nil, cf, "CooldownFrameTemplate")
         if c.cd.SetHideCountdownNumbers then c.cd:SetHideCountdownNumbers(true) end
         if c.cd.SetDrawEdge then c.cd:SetDrawEdge(false) end
-        c.cd:SetAllPoints(c.icon)
+        c.cd:SetAllPoints(cf)
         c.cd:Hide()
-        c.pip = row:CreateTexture(nil, "OVERLAY")
+        c.pip = cf:CreateTexture(nil, "OVERLAY")
         c.pip:SetTexture("Interface\\Buttons\\WHITE8X8")
         c.pip:SetVertexColor(1, 0.85, 0.25, 1)
         c.pip:SetSize(5, 5)
-        c.pip:SetPoint("TOPRIGHT", c.icon, "TOPRIGHT", 1, 1)
+        c.pip:SetPoint("TOPRIGHT", cf, "TOPRIGHT", 1, 1)
         c.pip:Hide()
-        c.txt = row:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-        c.txt:SetPoint("CENTER", c.icon, "CENTER", 0, 0)
+        c.txt = cf:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+        c.txt:SetPoint("CENTER", cf, "CENTER", 0, 0)
         c.txt:Hide()
         row.cells[n] = c
     end
@@ -2128,9 +2171,19 @@ local function LayoutRow(row, width, sig)
     end
 
     -- Reserve room at the right for the Renew icon when it is tracked
-    -- (Priest-only: a shared account DB can carry the flag onto a Mage)
+    -- (Priest-only: a shared account DB can carry the flag onto a Mage) and
+    -- for the raid-mark watcher
     local renewOn = DB("RenewTrack", false) and layer == "PWS"
-    local rightReserve = renewOn and (RENEW_ICON_SIZE + 4) or 0
+    local marksOn = DB("ShowTargetMarks", true)
+    local rightReserve = (renewOn and (RENEW_ICON_SIZE + 4) or 0) + (marksOn and 16 or 0)
+    if marksOn then
+        row.raidMark:ClearAllPoints()
+        row.raidMark:SetSize(14, 14)
+        row.raidMark:SetPoint("RIGHT", row, "RIGHT",
+            -(PAD - 2) - (renewOn and (RENEW_ICON_SIZE + 4) or 0), 0)
+    else
+        row.raidMark:Hide()
+    end
     local barX = x
     local barW = width - barX - PAD - rightReserve
     if barW < 40 then barW = 40 end
@@ -2205,6 +2258,7 @@ local function LayoutSig(width)
         .. "|" .. tostring(DB("RenewTrack", false))
         .. "|" .. tostring(DB("ShowDispels", false)) .. "|" .. DB("DispelMaxIcons", 3)
         .. "|" .. DB("DispelIconSize", 16) .. "|" .. tostring(DB("ShowManaBar", true))
+        .. "|" .. tostring(DB("ShowTargetMarks", true))
 end
 
 -- Player rows stride taller when each carries an ability strip beneath it
@@ -2243,7 +2297,7 @@ local function PaintRow(row, r, now, index)
         row.spellIcon:Hide(); row.swipe:Hide(); row.unitIcon:Hide(); row.unitIcon2:Hide(); row.name:Hide()
         row.inShield:Hide(); row.inShieldCd:Hide()
         row.bar:Hide(); row.barBG:Hide(); row.healthBar:Hide(); row.wsBar:Hide()
-        row.markTick:Hide()
+        row.markTick:Hide(); row.raidMark:Hide()
         for i = 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
         row.left:SetText(""); row.right:SetText(""); row.glow:Hide(); row.flash:Hide()
         row.tgtCount:Hide()
@@ -2514,6 +2568,17 @@ local function PaintRow(row, r, now, index)
         row.healthBar:Hide()
     end
 
+    -- Raid mark of THEIR target: see the tank hold skull — or leave it —
+    -- at a glance, and know who to assist onto what
+    if r.raidMark and DB("ShowTargetMarks", true) then
+        local mi = r.raidMark - 1
+        local mx, my = (mi % 4) * 0.25, math.floor(mi / 4) * 0.25
+        row.raidMark:SetTexCoord(mx, mx + 0.25, my, my + 0.25)
+        row.raidMark:Show()
+    else
+        row.raidMark:Hide()
+    end
+
     -- Freeze-window tick (elemental row only): sits at the point on the
     -- lifespan bar where a Freeze cast stops leaving room for a second one
     if r.eleRow and r.freezeMark and row._barW then
@@ -2698,11 +2763,19 @@ end
 -- secure row to a spell cast, a plain target, or nothing. dbval is a spell ID,
 -- "TARGET", or "NONE". The name resolves from the ID so it stays locale-safe and
 -- always casts the highest rank you know.
-local function BindClick(row, prefix, button, dbval)
+local function BindClick(row, prefix, button, dbval, token)
     local typeAttr, spellAttr = prefix .. "type" .. button, prefix .. "spell" .. button
+    local unitAttr = prefix .. "unit" .. button
     if dbval == "TARGET" then
         row:SetAttribute(typeAttr, "target")
         row:SetAttribute(spellAttr, nil)
+        row:SetAttribute(unitAttr, nil)
+    elseif dbval == "TARGETTARGET" then
+        -- Assist: target what THEY are targeting. The token chain
+        -- ("party1target") resolves live, so the binding never goes stale.
+        row:SetAttribute(typeAttr, "target")
+        row:SetAttribute(spellAttr, nil)
+        row:SetAttribute(unitAttr, token and (token .. "target") or nil)
     elseif dbval and dbval ~= "NONE" then
         local id = tonumber(dbval)
         local name = id and GetSpellInfo and GetSpellInfo(id)
@@ -2713,9 +2786,11 @@ local function BindClick(row, prefix, button, dbval)
             row:SetAttribute(typeAttr, nil)
             row:SetAttribute(spellAttr, nil)
         end
+        row:SetAttribute(unitAttr, nil)
     else
         row:SetAttribute(typeAttr, nil)
         row:SetAttribute(spellAttr, nil)
+        row:SetAttribute(unitAttr, nil)
     end
 end
 
@@ -2744,15 +2819,15 @@ local function SetupSecureRows()
             -- Each layer keeps its own binding keys: the DB is account-wide,
             -- so a priest's spell IDs must not leak onto a mage's buttons.
             if layer == "INT" then
-                BindClick(row, "", "1", DB("MageClickLeft", 1459))          -- left   = Arcane Intellect
-                BindClick(row, "", "2", DB("MageClickRight", 475))          -- right  = Remove Curse
-                BindClick(row, "", "3", DB("MageClickMiddle", "TARGET"))    -- middle = target
-                BindClick(row, modPrefix, "1", DB("MageClickModLeft", 1008))-- mod+left = Amplify Magic
+                BindClick(row, "", "1", DB("MageClickLeft", 1459), token)          -- left   = Arcane Intellect
+                BindClick(row, "", "2", DB("MageClickRight", 475), token)          -- right  = Remove Curse
+                BindClick(row, "", "3", DB("MageClickMiddle", "TARGET"), token)    -- middle = target
+                BindClick(row, modPrefix, "1", DB("MageClickModLeft", 1008), token)-- mod+left = Amplify Magic
             else
-                BindClick(row, "", "1", DB("ClickLeft", 17))            -- left   = Power Word: Shield
-                BindClick(row, "", "2", DB("ClickRight", 139))          -- right  = Renew
-                BindClick(row, "", "3", DB("ClickMiddle", 2061))        -- middle = Flash Heal
-                BindClick(row, modPrefix, "1", DB("ClickModLeft", 2060))-- mod+left = Greater Heal
+                BindClick(row, "", "1", DB("ClickLeft", 17), token)            -- left   = Power Word: Shield
+                BindClick(row, "", "2", DB("ClickRight", 139), token)          -- right  = Renew
+                BindClick(row, "", "3", DB("ClickMiddle", 2061), token)        -- middle = Flash Heal
+                BindClick(row, modPrefix, "1", DB("ClickModLeft", 2060), token)-- mod+left = Greater Heal
             end
         end
         row.unitToken = token
@@ -3147,12 +3222,17 @@ local function PaintAbilityStrip(arow, r, now)
                 if not rbEnd or rbEnd <= now then pip = true end
             end
             if pip then cell.pip:Show() else cell.pip:Hide() end
-            cell.icon:Show()
+            -- Tooltip payload rides the hoverable cell frame
+            cell.frame._e, cell.frame._cdEnd, cell.frame._lockExp, cell.frame._pip
+                = e, s.cdEnd, s.lockExp, pip
+            cell.frame:Show()
         end
     end
     for i = n + 1, SDATA.MAX_ABILITY_CELLS do
         local cell = arow.cells[i]
-        cell.icon:Hide(); cell.cd:Hide(); cell.rim:Hide(); cell.pip:Hide(); cell.txt:Hide()
+        cell.frame._e = nil
+        cell.frame:Hide()
+        cell.rim:Hide()
     end
 end
 
@@ -3228,7 +3308,8 @@ local function Draw()
             else
                 local r = { guid = tr.guid, name = tr.name, class = tr.class, isSelf = tr.isSelf, unit = tr.unit,
                     selfSpell = tr.selfSpell, icon = tr.icon, duration = tr.duration, lockMax = tr.lockMax,
-                    dispelKey = tr.dispelKey, tgtKey = tr.tgtKey, manaUser = tr.manaUser, mana = tr.mana }
+                    dispelKey = tr.dispelKey, tgtKey = tr.tgtKey, manaUser = tr.manaUser, mana = tr.mana,
+                    raidMark = tr.raidMark }
                 r.health = tr.health
                 r.hpMax = tr.hpMax
                 ResolveState(r, now)
@@ -3369,7 +3450,7 @@ function CommanderPartyFrames_Test()
             { guid = "cshieldtest2", name = "Priest", class = "PRIEST", manaUser = true, health = 0.85, mana = 0.7, hpMax = 4100 },
             { guid = "cshieldtest3", name = "Druid", class = "DRUID", manaUser = true, health = 0.6, mana = 0.4, hpMax = 4600 },
             { guid = "cshieldtest4", name = "Pally", class = "PALADIN", manaUser = true, health = 1.0, mana = 0.92, hpMax = 5200 },
-            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200 },
+            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200, raidMark = 8 },
             { guid = "cshieldtest6", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.75, mana = 0.8, hpMax = 4000 },
         }
         if DB("SelfShieldRows", true) then
@@ -3466,8 +3547,8 @@ function CommanderPartyFrames_Test()
     }
 
     testRows = {
-        { guid = "cshieldtest1", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200 },
-        { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.78, hpMax = 4300 },
+        { guid = "cshieldtest1", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200, raidMark = 8 },
+        { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.78, hpMax = 4300, raidMark = 7 },
         { guid = "cshieldtest3", name = "Mage", class = "MAGE", health = 1.0, hpMax = 3800 },  -- full: shields extend the scale
         { guid = "cshieldtest4", name = "Druid", class = "DRUID", health = 0.6, hpMax = 4600 },
         { guid = "cshieldtest5", name = "Hunter", class = "HUNTER", health = 0.9, hpMax = 4800 },

@@ -24,6 +24,7 @@ local DefaultSettings = {
     ColorShieldTypes = true,    -- tint embedded shield segments per type (off = one cream)
     NameMaxChars = 6,
     ShowTargeters = true,       -- enemy-NPCs-targeting count over the class icon
+    ShowTargetMarks = true,     -- raid mark of the unit each ally is targeting
 
     -- Ten flagged features (all neutral defaults, so current behavior is kept)
     ClickCast = false,          -- rows become secure mouseover/click unit buttons
@@ -102,6 +103,7 @@ end
 local CLICK_SPELLS = {
     { text = "None", value = "NONE" },
     { text = "Target", value = "TARGET" },
+    { text = "Assist (their target)", value = "TARGETTARGET" },
     { text = "Power Word: Shield", value = 17 },
     { text = "Renew", value = 139 },
     { text = "Flash Heal", value = 2061 },
@@ -124,6 +126,7 @@ local CLICK_SPELLS = {
 local MAGE_CLICK_SPELLS = {
     { text = "None", value = "NONE" },
     { text = "Target", value = "TARGET" },
+    { text = "Assist (their target)", value = "TARGETTARGET" },
     { text = "Arcane Intellect", value = 1459 },
     { text = "Arcane Brilliance", value = 23028 },
     { text = "Remove Curse", value = 475 },
@@ -358,6 +361,13 @@ local function CreateCorePanel()
                 return CommanderPartyFramesDB.EnableShield
                     and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
             end,
+        })
+        panel:AddCheckbox({
+            label = "Target Marks",
+            tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
+            get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
+            set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
         panel:AddSlider({
             label = "Name Length",
@@ -729,6 +739,13 @@ local function CreateCorePanel()
                 and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
         end,
     }, {
+        label = "Target Marks",
+        tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
+        get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
+        set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    })
+    panel:AddCheckbox({
         label = "Color Shield Types",
         tooltip = "Tint each embedded shield segment by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
         get = function() return CommanderPartyFramesDB.ColorShieldTypes end,
