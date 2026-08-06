@@ -100,7 +100,7 @@ CommanderTalentsData.Classes.HUNTER = {
                     "Gives your pet a 20% chance to gain a 30% attack speed increase for 8 sec after dealing a critical strike.",
                     "Gives your pet a 40% chance to gain a 30% attack speed increase for 8 sec after dealing a critical strike.",
                     "Gives your pet a 60% chance to gain a 30% attack speed increase for 8 sec after dealing a critical strike.",
-                    "Gives your pet an 80% chance to gain a 30% attack speed increase for 8 sec after dealing a critical strike.",
+                    "Gives your pet a 80% chance to gain a 30% attack speed increase for 8 sec after dealing a critical strike.",
                     "Gives your pet a 100% chance to gain a 30% attack speed increase for 8 sec after dealing a critical strike.",
                   } },
                 { name = "Ferocious Inspiration", icon = "ability_hunter_ferociousinspiration", row = 7, col = 1, max = 3,
@@ -139,7 +139,7 @@ CommanderTalentsData.Classes.HUNTER = {
                 { name = "Improved Concussive Shot", icon = "spell_frost_stun", row = 1, col = 2, max = 5,
                   ranks = {
                     "Gives your Concussive Shot a 4% chance to stun the target for 3 sec.",
-                    "Gives your Concussive Shot an 8% chance to stun the target for 3 sec.",
+                    "Gives your Concussive Shot a 8% chance to stun the target for 3 sec.",
                     "Gives your Concussive Shot a 12% chance to stun the target for 3 sec.",
                     "Gives your Concussive Shot a 16% chance to stun the target for 3 sec.",
                     "Gives your Concussive Shot a 20% chance to stun the target for 3 sec.",
@@ -293,7 +293,7 @@ CommanderTalentsData.Classes.HUNTER = {
                   } },
                 { name = "Entrapment", icon = "spell_nature_stranglevines", row = 2, col = 1, max = 3,
                   ranks = {
-                    "Gives your Immolation Trap, Frost Trap, Explosive Trap, and Snake Trap an 8% chance to entrap the target, preventing them from moving for 4 sec.",
+                    "Gives your Immolation Trap, Frost Trap, Explosive Trap, and Snake Trap a 8% chance to entrap the target, preventing them from moving for 4 sec.",
                     "Gives your Immolation Trap, Frost Trap, Explosive Trap, and Snake Trap a 16% chance to entrap the target, preventing them from moving for 4 sec.",
                     "Gives your Immolation Trap, Frost Trap, Explosive Trap, and Snake Trap a 25% chance to entrap the target, preventing them from moving for 4 sec.",
                   } },
