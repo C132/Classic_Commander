@@ -24,10 +24,14 @@ Quartermaster patterns verbatim, including the drag strip, UISpecialFrames,
 and the settings mirror). Bare `/ctalents` (or `/ctal`) toggles it.
 
 - **Left sidebar (Quartermaster's sidebar, 190px):** the loadout list for the
-  selected class. Preset builds first (one per Quartermaster spec key — the
-  same 27 keys, same names, same role tags), then MY BUILDS (account-wide
-  custom saves), then the selection acts on the trees. Class picked from a
-  toolbar dropdown, class-colored, defaulting to your own class.
+  selected class. PRESET BUILDS first (one per Quartermaster spec key — the
+  same 27 keys, same names, same role tags), then PVP BUILDS (arena,
+  battleground and duelling specs, tagged by bracket rather than role since
+  that is the useful distinction between two builds of the same role), then
+  MY BUILDS (account-wide custom saves). The list **scrolls**: presets plus
+  PvP plus saves outrun any fixed row count, and dropping rows to fit was how
+  the save row nearly became unreachable. Selection scrolls itself into view.
+  Class picked from a toolbar dropdown, class-colored, defaulting to yours.
 - **Center: all three talent trees side by side**, each on its proper
   `Interface\TalentFrame\<bg>` four-piece art, 4×9 grid, prerequisite arrows
   drawn with Blizzard's own branch/arrow texture coordinates (taken from
@@ -122,6 +126,38 @@ exactly one 41-pointer at row 9, cols 1–4, ranks arrays exactly `max` long,
 and prerequisites that sit above (straight or bent — TBC ships exactly one
 bent arrow, Serrated Blades → Hemorrhage) or straight beside their dependent.
 
+## PvP builds
+
+The TBC PvP canon lives in `CommanderTalentsPvP.lua`, hand-curated and loaded
+AFTER the generated class data, appending via
+`CommanderTalentsData.AddPvPBuilds(class, {...})` so the machine-owned files
+are never touched — the Commander_Quartermaster fringe-loadout precedent.
+
+```lua
+{ key = "SLSL", name = "SL/SL (Arena)", role = "CASTER",
+  bracket = "ARENA",          -- ARENA | BG | DUEL | WORLD: what it is FOR
+  qmSpec = "AFFLICTION",      -- PvE spec key whose consumables suit it
+  points = { [1] = {...}, [2] = {...}, [3] = {...} },
+  stats = { "Resilience", ... },   -- PvP priorities, not raid ones
+  notes = "..." }
+```
+
+`qmSpec` exists because Quartermaster stocks by PvE specialization and has
+never heard of an arena build; it is what the briefing's consumables and the
+Open-in-Quartermaster jump follow. Stats and notes come from the PvP build
+itself — its priorities are its own (resilience, and the level-70 *player*
+hit numbers: 5% / 79 melee, ~4% / ~50 spell, not the raid-boss caps).
+
+Keys must not collide with the class's PvE preset keys. Every build is a
+legal 61-point build like any other, proven by `Harness/validate_pvp.lua`,
+which also checks bracket, qmSpec resolution, and key uniqueness.
+
+The 61-point cap makes several famous pairings impossible, and the data says
+so in the notes rather than quietly picking one: The Beast Within (BM row 9)
+with Scatter Shot (MM row 5) needs 62; Summon Water Elemental with Presence
+of Mind needs 62; Dark Pact with Soul Link needs 62, so SL/SL is Soul Link +
+Siphon Life.
+
 ## Files
 
 - `Commander_Talents.toc` — Interface 20506, Category Commander, RequiredDeps
@@ -129,10 +165,12 @@ bent arrow, Serrated Blades → Hemorrhage) or straight beside their dependent.
 - `CommanderTalentsData.lua` — namespace + shared constants (class order,
   role tags, spec-key → Quartermaster mapping is 1:1 by construction)
 - `CommanderTalentsData_<Class>.lua` × 9
+- `CommanderTalentsPvP.lua` — hand-curated arena/BG/duel presets
 - `CommanderTalentsEngine.lua` — pure rules/state/serialization, no frames
 - `CommanderTalentsDB.lua` — defaults, settings panel, slash wiring
 - `CommanderTalents.lua` — the window
 - `Harness/talents_harness.lua` — luajit, data + engine + builds checks
+- `Harness/validate_pvp.lua` — legality and metadata for the PvP roster
 
 Suite bookkeeping: Operations pillar (after Quartermaster), `## IconTexture`
 Interface\Icons\INV_Misc_Book_11, settings ceiling ~8 (master, style, scale,

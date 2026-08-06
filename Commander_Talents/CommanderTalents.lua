@@ -54,6 +54,13 @@ local ROLE_TAGS = {
     MELEE = "|cffff6060Melee|r", CASTER = "|cffcc66ffCaster|r", RANGED = "|cffff9933Ranged|r",
 }
 
+-- What a PvP build is FOR. Shown instead of the role tag on PvP rows, since
+-- the bracket is the useful distinction between two builds of the same role.
+local BRACKET_TAGS = {
+    ARENA = "|cffff7d0aArena|r", BG = "|cff33ccffBG|r",
+    DUEL = "|cffffd200Duel|r", WORLD = "|cff40cc40World|r",
+}
+
 -- Rim colors by talent state
 local RIM = {
     locked  = { 0.28, 0.28, 0.28 },
@@ -147,6 +154,17 @@ local function PresetByKey(token, key)
     end
 end
 
+local function PvPBuilds(token)
+    local class = Data.Classes[token]
+    return (class and class.pvpBuilds) or {}
+end
+
+local function PvPByKey(token, key)
+    for _, b in ipairs(PvPBuilds(token)) do
+        if b.key == key then return b end
+    end
+end
+
 local function CustomList(token)
     if not customs then return nil end
     customs[token] = customs[token] or {}
@@ -165,21 +183,27 @@ local function SelectedBuild()
     local token = CurrentClass()
     if db.SelBuildKind == "PRESET" then
         return PresetByKey(token, db.SelBuildKey), "PRESET"
+    elseif db.SelBuildKind == "PVP" then
+        return PvPByKey(token, db.SelBuildKey), "PVP"
     elseif db.SelBuildKind == "CUSTOM" then
         return CustomByName(token, db.SelBuildKey), "CUSTOM"
     end
     return nil, false
 end
 
--- The spec key that briefing content (stats/consumables) should follow:
--- presets carry their own; customs remember the spec they were based on.
+-- The spec key that briefing CONSUMABLES should follow. A PvP build names its
+-- own (qmSpec) because Quartermaster stocks by PvE spec; a custom build
+-- remembers whatever it was based on. The stats and notes always come from
+-- the selected build itself — a PvP build's priorities are its own.
 local function BriefingSpecKey()
     local build, kind = SelectedBuild()
     if not build then return nil, nil end
     if kind == "PRESET" then return build.key, build end
+    if kind == "PVP" then return build.qmSpec, build end
     if kind == "CUSTOM" and build.basedOn then
         local base = PresetByKey(CurrentClass(), build.basedOn)
-        return build.basedOn, base
+            or PvPByKey(CurrentClass(), build.basedOn)
+        return (base and base.qmSpec) or build.basedOn, base
     end
     return nil, nil
 end
@@ -282,7 +306,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local UpdateAll, RefreshSidebar, BindBriefing, BindPanes
-local RefreshBriefSoon
+local RefreshBriefSoon, ScrollSidebarToSelection
 
 -- ---------------------------------------------------------------------------
 -- Undo — one slot per class, covering every operation that replaces the whole
@@ -373,6 +397,18 @@ local function SelectPreset(key)
     UpdateAll()
 end
 
+local function SelectPvP(key)
+    local token = CurrentClass()
+    local build = PvPByKey(token, key)
+    local state = ClassState(token)
+    if not (build and state) then return end
+    PushUndo(state, "loading " .. build.name)
+    db.SelBuildKind, db.SelBuildKey = "PVP", key
+    state.edited, state.liveLabel = false, false
+    ApplyTargetsWithReport(state, build)
+    UpdateAll()
+end
+
 local function SelectCustom(name)
     local token = CurrentClass()
     local build = CustomByName(token, name)
@@ -407,6 +443,7 @@ local function SelectClass(token)
     end
     BindPanes()
     UpdateAll()
+    if ScrollSidebarToSelection then ScrollSidebarToSelection() end
 end
 
 local function SetCompare(label, points)
@@ -1184,14 +1221,45 @@ local function BuildSignature(build)
     return ("%d/%d/%d"):format(sums[1], sums[2], sums[3])
 end
 
+-- The list is built in full and then scrolled through a fixed bank of
+-- buttons: PvE presets, PvP builds and saved builds together outrun any
+-- fixed row count, and dropping rows to fit was how the save row nearly
+-- became unreachable.
+local sidebarRows = {}
+local sidebarOffset = 0
+
+local function SidebarMaxOffset()
+    return math.max(0, #sidebarRows - MAX_SIDEBAR_ROWS)
+end
+
+local function RenderSidebar()
+    if sidebarOffset > SidebarMaxOffset() then sidebarOffset = SidebarMaxOffset() end
+    if sidebarOffset < 0 then sidebarOffset = 0 end
+    for i = 1, MAX_SIDEBAR_ROWS do
+        local opts = sidebarRows[sidebarOffset + i]
+        if opts then
+            BindSidebarButton(sidebarButtons[i], opts)
+        else
+            sidebarButtons[i]:Hide()
+        end
+    end
+    if calc.sidebarMore then
+        calc.sidebarMore:SetShown(SidebarMaxOffset() > 0)
+        if SidebarMaxOffset() > 0 then
+            calc.sidebarMore:SetText(("|cff666666%d–%d of %d  (scroll)|r"):format(
+                sidebarOffset + 1,
+                math.min(sidebarOffset + MAX_SIDEBAR_ROWS, #sidebarRows),
+                #sidebarRows))
+        end
+    end
+end
+
 RefreshSidebar = function()
     if not calc then return end
     local token = CurrentClass()
-    local used = 0
+    wipe(sidebarRows)
     local function row(opts)
-        used = used + 1
-        if used > MAX_SIDEBAR_ROWS then return end
-        BindSidebarButton(sidebarButtons[used], opts)
+        sidebarRows[#sidebarRows + 1] = opts
     end
 
     row({ text = "|cffffd200PRESET BUILDS|r" })
@@ -1206,18 +1274,25 @@ RefreshSidebar = function()
         })
     end
 
+    local pvp = PvPBuilds(token)
+    if #pvp > 0 then
+        row({ text = "|cffffd200PVP BUILDS|r" })
+        for _, build in ipairs(pvp) do
+            row({
+                text = build.name,
+                badge = BRACKET_TAGS[build.bracket] or ROLE_TAGS[build.role] or "",
+                selected = db.SelBuildKind == "PVP" and db.SelBuildKey == build.key,
+                tooltipTitle = ("%s — %s"):format(build.name, BuildSignature(build)),
+                tooltip = build.notes,
+                onClick = function() SelectPvP(build.key) end,
+            })
+        end
+    end
+
     row({ text = "|cffffd200MY BUILDS|r" })
     local list = CustomList(token)
-    -- The save row is never allowed to fall off the bottom: it is the only
-    -- way to add a build, so a long list must lose a build row instead
-    local customBudget = MAX_SIDEBAR_ROWS - used - 1
-    local hidden = 0
-    if list and #list > customBudget then
-        hidden = #list - customBudget + 1   -- the extra row spent saying so
-    end
     if list and #list > 0 then
-        for shown, build in ipairs(list) do
-            if hidden > 0 and shown > customBudget - 1 then break end
+        for _, build in ipairs(list) do
             local name = build.name
             row({
                 text = "|cff69ccf0" .. name .. "|r",
@@ -1240,13 +1315,6 @@ RefreshSidebar = function()
     else
         row({ text = "|cff666666(none saved yet)|r" })
     end
-    if hidden > 0 then
-        row({
-            text = ("|cff666666…and %d more|r"):format(hidden),
-            tooltipTitle = "More saved builds",
-            tooltip = ("%d more builds are saved for this class than the list can show. Delete one you no longer need to bring the rest back into view."):format(hidden),
-        })
-    end
     row({
         text = "|cff1eff00+ Save Current Build…|r",
         tooltipTitle = "Save Current Build",
@@ -1260,8 +1328,19 @@ RefreshSidebar = function()
         end,
     })
 
-    for i = used + 1, #sidebarButtons do
-        sidebarButtons[i]:Hide()
+    RenderSidebar()
+end
+
+-- Keep the selected build on screen when a class switch or a load moves it
+ScrollSidebarToSelection = function()
+    for i, opts in ipairs(sidebarRows) do
+        if opts.selected then
+            if i <= sidebarOffset or i > sidebarOffset + MAX_SIDEBAR_ROWS then
+                sidebarOffset = math.max(0, i - math.floor(MAX_SIDEBAR_ROWS / 2))
+            end
+            RenderSidebar()
+            return
+        end
     end
 end
 
@@ -1296,7 +1375,11 @@ BindBriefing = function()
     if build then
         title = build.name
         local role = build.role or (statsSource and statsSource.role)
-        subtitle = (ROLE_TAGS[role] or "") .. "  |cff999999" .. BuildSignature(build) .. "|r"
+        local tags = ROLE_TAGS[role] or ""
+        if build.bracket and BRACKET_TAGS[build.bracket] then
+            tags = tags .. "  " .. BRACKET_TAGS[build.bracket]
+        end
+        subtitle = tags .. "  |cff999999" .. BuildSignature(build) .. "|r"
     elseif state and state.liveLabel then
         title = state.liveLabel
         subtitle = ""
@@ -1789,6 +1872,22 @@ local function EnsureCalculator()
                 end
             end
 
+            local pvp = PvPBuilds(token)
+            if #pvp > 0 then
+                local head = UIDropDownMenu_CreateInfo()
+                head.text = "PvP"
+                head.isTitle = true
+                head.notCheckable = true
+                UIDropDownMenu_AddButton(head)
+                for _, build in ipairs(pvp) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = build.name
+                    info.notCheckable = true
+                    info.func = function() SetCompare(build.name, build.points) end
+                    UIDropDownMenu_AddButton(info)
+                end
+            end
+
             local list = CustomList(token)
             if list and #list > 0 then
                 local head = UIDropDownMenu_CreateInfo()
@@ -1899,6 +1998,15 @@ local function EnsureCalculator()
     for i = 1, MAX_SIDEBAR_ROWS do
         sidebarButtons[i] = CreateSidebarButton(sidebar, i)
     end
+    sidebar:EnableMouseWheel(true)
+    sidebar:SetScript("OnMouseWheel", function(_, delta)
+        sidebarOffset = sidebarOffset - delta * 3
+        RenderSidebar()
+    end)
+    calc.sidebarMore = calc:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    calc.sidebarMore:SetPoint("TOPLEFT", sidebar, "BOTTOMLEFT", 8, -4)
+    calc.sidebarMore:SetJustifyH("LEFT")
+    calc.sidebarMore:Hide()
 
     -- Trees
     calc.treesArea = CreateFrame("Frame", nil, calc)
@@ -2034,6 +2142,12 @@ local function EnsureCalculator()
 
     -- Internal handles for the offline smoke harness
     calc._sidebar = sidebarButtons
+    calc._sidebarRows = function() return sidebarRows end
+    calc._sidebarScroll = function(delta)
+        sidebarOffset = sidebarOffset - (delta or 0) * 3
+        RenderSidebar()
+        return sidebarOffset
+    end
     calc._state = function() return ClassState(CurrentClass()) end
 
     ApplyFraming()

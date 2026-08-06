@@ -537,6 +537,7 @@ for _, cls in ipairs({ "Warrior", "Paladin", "Hunter", "Rogue", "Priest",
                        "Shaman", "Mage", "Warlock", "Druid" }) do
     Load(TAL .. "CommanderTalentsData_" .. cls .. ".lua")
 end
+Load(TAL .. "CommanderTalentsPvP.lua")
 Load(TAL .. "CommanderTalentsEngine.lua")
 Load(TAL .. "CommanderTalentsDB.lua")
 Load(TAL .. "CommanderTalents.lua")
@@ -1199,7 +1200,8 @@ do
     CHECK(#harnessFailedErrors == 0, "compare clean", harnessFailedErrors[1])
 end
 
--- A long build list must never push the save row off the sidebar
+-- A long build list scrolls rather than dropping rows: everything stays
+-- reachable, including the save row that used to fall off the bottom.
 do
     local snapshot = E.SerializePoints(state)
     for i = 1, 30 do
@@ -1207,17 +1209,122 @@ do
             { name = "Build " .. i, points = snapshot, at = now }
     end
     calc:Hide(); calc:Show()   -- OnShow repaints the sidebar
-    CHECK(SidebarRow("Save Current Build") ~= nil,
-        "save row survives a long build list")
-    CHECK(SidebarRow("and %d+ more") ~= nil, "hidden builds are announced")
+
+    local rows = calc._sidebarRows()
+    local function RowIndex(pattern)
+        for i, opts in ipairs(rows) do
+            if type(opts.text) == "string" and opts.text:find(pattern) then return i end
+        end
+    end
+    CHECK(#rows > 19, "every build has a row, beyond what fits", #rows)
+    CHECK(RowIndex("Save Current Build") ~= nil, "save row exists in the list")
+    CHECK(RowIndex("Build 30") ~= nil, "the last saved build has a row")
+
     local visible = 0
     for _, btn in ipairs(calc._sidebar) do if btn.__shown then visible = visible + 1 end end
-    CHECK(visible <= 19, "sidebar never overflows its rows", visible)
+    CHECK(visible <= 19, "sidebar never renders more rows than it has buttons", visible)
+    CHECK(SidebarRow("Save Current Build") == nil,
+        "save row is off-screen before scrolling")
+
+    -- Scrolling down brings it into view
+    calc._sidebarScroll(-20)
+    CHECK(SidebarRow("Save Current Build") ~= nil,
+        "scrolling reveals the save row")
+    CHECK(SidebarRow("PRESET BUILDS") == nil, "scrolled past the top section")
+
+    -- and back up again, clamped at the first row
+    calc._sidebarScroll(50)
+    CHECK(SidebarRow("PRESET BUILDS") ~= nil, "scrolling back reaches the top")
+    CHECK(calc._sidebarScroll(0) == 0, "scroll clamps at zero", calc._sidebarScroll(0))
+
     for i = #CommanderTalentsCustom.WARRIOR, 1, -1 do
         CommanderTalentsCustom.WARRIOR[i] = nil
     end
     calc:Hide(); calc:Show()
     CHECK(SidebarRow("none saved yet") ~= nil, "list empties cleanly")
+    CHECK(SidebarRow("Save Current Build") ~= nil, "save row visible again when short")
+end
+
+-- ===========================================================================
+-- PvP builds
+-- ===========================================================================
+
+do
+    local warriorPvP = CommanderTalentsData.Classes.WARRIOR.pvpBuilds
+    CHECK(type(warriorPvP) == "table" and #warriorPvP > 0,
+        "warrior has PvP builds", warriorPvP and #warriorPvP)
+
+    -- Every class ships at least one, and every one is a legal 61-point build
+    local classesWithPvP, totalPvP = 0, 0
+    for _, token in ipairs(CommanderTalentsData.ClassOrder) do
+        local list = CommanderTalentsData.Classes[token].pvpBuilds
+        if list and #list > 0 then
+            classesWithPvP = classesWithPvP + 1
+            totalPvP = totalPvP + #list
+        end
+    end
+    CHECK(classesWithPvP == 9, "every class fields PvP builds", classesWithPvP)
+    CHECK(totalPvP >= 27, "a real PvP roster, not a token one", totalPvP)
+
+    if warriorPvP and #warriorPvP > 0 then
+        calc:Hide(); calc:Show()
+        local rows = calc._sidebarRows()
+        local sawSection, sawBuild = false, false
+        for _, opts in ipairs(rows) do
+            if type(opts.text) == "string" and opts.text:find("PVP BUILDS") then sawSection = true end
+            if opts.text == warriorPvP[1].name then sawBuild = true end
+        end
+        CHECK(sawSection, "sidebar has a PVP BUILDS section")
+        CHECK(sawBuild, "PvP builds are listed under it")
+
+        -- Selecting one loads it and marks the selection
+        local target = warriorPvP[1]
+        local pvpRow
+        for _, opts in ipairs(rows) do
+            if opts.text == target.name then pvpRow = opts end
+        end
+        CHECK(pvpRow ~= nil, "found the PvP row descriptor")
+        pvpRow.onClick("LeftButton")
+        CHECK(CommanderTalentsDB.SelBuildKind == "PVP", "PvP selection recorded",
+            CommanderTalentsDB.SelBuildKind)
+        CHECK(CommanderTalentsDB.SelBuildKey == target.key, "PvP key recorded")
+        CHECK(E.TotalSpent(state) == 61, "PvP build applies 61 points", E.TotalSpent(state))
+
+        -- The briefing shows the build's OWN stats and its bracket
+        CHECK(calc.brief.titleFS.__text == target.name, "briefing names the PvP build",
+            calc.brief.titleFS.__text)
+        CHECK(calc.brief.subFS.__text:find("Arena") or calc.brief.subFS.__text:find("BG")
+            or calc.brief.subFS.__text:find("Duel") or calc.brief.subFS.__text:find("World"),
+            "briefing shows the bracket", calc.brief.subFS.__text)
+        CHECK(calc.brief.statsFS.__text and calc.brief.statsFS.__text:find("1%."),
+            "PvP stat priority rendered")
+
+        -- Consumables follow qmSpec, not the PvP key (Quartermaster stocks
+        -- by PvE spec and has never heard of an arena build)
+        if target.qmSpec then
+            local consShown2 = 0
+            for _, r in ipairs(calc.brief.consRows) do
+                if r.__shown then consShown2 = consShown2 + 1 end
+            end
+            CHECK(consShown2 > 0, "PvP build still gets consumables via qmSpec", consShown2)
+            CHECK(calc.brief.qmBtn.specKey == target.qmSpec,
+                "jump button targets the qmSpec", tostring(calc.brief.qmBtn.specKey))
+        end
+
+        -- Undo returns to whatever was selected before
+        calc.undoBtn.__scripts.OnClick(calc.undoBtn)
+        CHECK(CommanderTalentsDB.SelBuildKind ~= "PVP" or
+            CommanderTalentsDB.SelBuildKey ~= target.key,
+            "undo backs out of the PvP load")
+
+        -- Compare offers PvP builds too
+        local sawPvPInMenu = false
+        for _, info in ipairs(MenuEntries(calc.compareDrop)) do
+            if info.text == target.name then sawPvPInMenu = true end
+        end
+        CHECK(sawPvPInMenu, "compare menu lists PvP builds")
+    end
+    CHECK(#harnessFailedErrors == 0, "PvP section clean", harnessFailedErrors[1])
 end
 
 -- ===========================================================================
