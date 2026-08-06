@@ -26,7 +26,7 @@ CommanderTalentsData.Classes.MAGE = {
                       "Gives you a 20% chance to avoid interruption caused by damage while channeling Arcane Missiles.",
                       "Gives you a 40% chance to avoid interruption caused by damage while channeling Arcane Missiles.",
                       "Gives you a 60% chance to avoid interruption caused by damage while channeling Arcane Missiles.",
-                      "Gives you an 80% chance to avoid interruption caused by damage while channeling Arcane Missiles.",
+                      "Gives you a 80% chance to avoid interruption caused by damage while channeling Arcane Missiles.",
                       "Gives you a 100% chance to avoid interruption caused by damage while channeling Arcane Missiles.",
                   } },
                 { name = "Wand Specialization", icon = "inv_wand_01", row = 2, col = 1, max = 2,
@@ -36,18 +36,18 @@ CommanderTalentsData.Classes.MAGE = {
                   } },
                 { name = "Magic Absorption", icon = "spell_nature_astralrecalgroup", row = 2, col = 2, max = 5,
                   ranks = {
-                      "Increases all resistances by 2 and causes all spells you fully resist to restore 1% of your total mana.",
-                      "Increases all resistances by 4 and causes all spells you fully resist to restore 2% of your total mana.",
-                      "Increases all resistances by 6 and causes all spells you fully resist to restore 3% of your total mana.",
-                      "Increases all resistances by 8 and causes all spells you fully resist to restore 4% of your total mana.",
-                      "Increases all resistances by 10 and causes all spells you fully resist to restore 5% of your total mana.",
+                      "Increases all resistances by 2 and causes all spells you fully resist to restore 1% of your total mana. 1 sec. cooldown.",
+                      "Increases all resistances by 4 and causes all spells you fully resist to restore 2% of your total mana. 1 sec. cooldown.",
+                      "Increases all resistances by 6 and causes all spells you fully resist to restore 3% of your total mana. 1 sec. cooldown.",
+                      "Increases all resistances by 8 and causes all spells you fully resist to restore 4% of your total mana. 1 sec. cooldown.",
+                      "Increases all resistances by 10 and causes all spells you fully resist to restore 5% of your total mana. 1 sec. cooldown.",
                   } },
                 { name = "Arcane Concentration", icon = "spell_shadow_manaburn", row = 2, col = 3, max = 5,
                   ranks = {
                       "Gives you a 2% chance of entering a Clearcasting state after any damage spell hits a target. The Clearcasting state reduces the mana cost of your next damage spell by 100%.",
                       "Gives you a 4% chance of entering a Clearcasting state after any damage spell hits a target. The Clearcasting state reduces the mana cost of your next damage spell by 100%.",
                       "Gives you a 6% chance of entering a Clearcasting state after any damage spell hits a target. The Clearcasting state reduces the mana cost of your next damage spell by 100%.",
-                      "Gives you an 8% chance of entering a Clearcasting state after any damage spell hits a target. The Clearcasting state reduces the mana cost of your next damage spell by 100%.",
+                      "Gives you a 8% chance of entering a Clearcasting state after any damage spell hits a target. The Clearcasting state reduces the mana cost of your next damage spell by 100%.",
                       "Gives you a 10% chance of entering a Clearcasting state after any damage spell hits a target. The Clearcasting state reduces the mana cost of your next damage spell by 100%.",
                   } },
                 { name = "Magic Attunement", icon = "spell_nature_abolishmagic", row = 3, col = 1, max = 2,
@@ -63,7 +63,7 @@ CommanderTalentsData.Classes.MAGE = {
                   } },
                 { name = "Arcane Fortitude", icon = "spell_arcane_arcaneresilience", row = 3, col = 4, max = 1,
                   ranks = {
-                      "Increases your armor by an amount equal to 50% of your Intellect.",
+                      "Increases your armor by an amount equal to 100% of your Intellect.",
                   } },
                 { name = "Improved Mana Shield", icon = "spell_shadow_detectlesserinvisibility", row = 4, col = 1, max = 2,
                   ranks = {
@@ -83,8 +83,8 @@ CommanderTalentsData.Classes.MAGE = {
                   } },
                 { name = "Improved Blink", icon = "spell_arcane_blink", row = 5, col = 1, max = 2,
                   ranks = {
-                      "Reduces the mana cost of your Blink spell by 25%.",
-                      "Reduces the mana cost of your Blink spell by 50%.",
+                      "For 4 sec after casting Blink, your chance to be hit by all attacks and spells is reduced by 13%.",
+                      "For 4 sec after casting Blink, your chance to be hit by all attacks and spells is reduced by 25%.",
                   } },
                 { name = "Presence of Mind", icon = "spell_nature_enchantarmor", row = 5, col = 2, max = 1,
                   ranks = {
@@ -100,8 +100,8 @@ CommanderTalentsData.Classes.MAGE = {
                   } },
                 { name = "Prismatic Cloak", icon = "spell_arcane_prismaticcloak", row = 6, col = 1, max = 2,
                   ranks = {
-                      "Reduces all damage taken by 1%.",
                       "Reduces all damage taken by 2%.",
+                      "Reduces all damage taken by 4%.",
                   } },
                 { name = "Arcane Instability", icon = "spell_shadow_teleport", row = 6, col = 2, max = 3, req = "Presence of Mind",
                   ranks = {
@@ -160,7 +160,7 @@ CommanderTalentsData.Classes.MAGE = {
                       "Gives your Fire spells a 2% chance to stun the target for 2 sec.",
                       "Gives your Fire spells a 4% chance to stun the target for 2 sec.",
                       "Gives your Fire spells a 6% chance to stun the target for 2 sec.",
-                      "Gives your Fire spells an 8% chance to stun the target for 2 sec.",
+                      "Gives your Fire spells a 8% chance to stun the target for 2 sec.",
                       "Gives your Fire spells a 10% chance to stun the target for 2 sec.",
                   } },
                 { name = "Ignite", icon = "spell_fire_incinerate", row = 2, col = 1, max = 5,
@@ -195,7 +195,7 @@ CommanderTalentsData.Classes.MAGE = {
                   } },
                 { name = "Pyroblast", icon = "spell_fire_fireball02", row = 3, col = 3, max = 1,
                   ranks = {
-                      "Hurls an immense fiery boulder that causes 141 to 188 Fire damage and an additional 56 Fire damage over 12 sec.",
+                      "Hurls an immense fiery boulder that causes 148 to 195 Fire damage and an additional 56 Fire damage over 12 sec.",
                   } },
                 { name = "Burning Soul", icon = "spell_fire_fire", row = 3, col = 4, max = 2,
                   ranks = {
@@ -233,12 +233,12 @@ CommanderTalentsData.Classes.MAGE = {
                   } },
                 { name = "Blast Wave", icon = "spell_holy_excorcism_02", row = 5, col = 3, max = 1, req = "Pyroblast",
                   ranks = {
-                      "A wave of flame radiates outward from the caster, damaging all enemies caught within the blast for 154 to 187 Fire damage, and dazing them for 6 sec.",
+                      "A wave of flame radiates outward from the caster, damaging all enemies caught within the blast for 160 to 192 Fire damage, and Dazing them for 6 sec.",
                   } },
                 { name = "Blazing Speed", icon = "spell_fire_burningspeed", row = 6, col = 1, max = 2,
                   ranks = {
-                      "Gives you a 5% chance when hit by a melee or ranged attack to increase your movement speed by 50% and dissipate all movement impairing effects. This effect lasts 8 sec.",
-                      "Gives you a 10% chance when hit by a melee or ranged attack to increase your movement speed by 50% and dissipate all movement impairing effects. This effect lasts 8 sec.",
+                      "Gives you a 5% chance when hit by a melee or ranged attack to increase your movement speed by 50% and dispel all movement impairing effects. This effect lasts 8 sec.",
+                      "Gives you a 10% chance when hit by a melee or ranged attack to increase your movement speed by 50% and dispel all movement impairing effects. This effect lasts 8 sec.",
                   } },
                 { name = "Fire Power", icon = "spell_fire_immolation", row = 6, col = 3, max = 5,
                   ranks = {
@@ -273,7 +273,7 @@ CommanderTalentsData.Classes.MAGE = {
                   } },
                 { name = "Dragon's Breath", icon = "inv_misc_head_dragon_01", row = 9, col = 2, max = 1, req = "Combustion",
                   ranks = {
-                      "Targets in a cone in front of the caster take 370 to 430 Fire damage and are Disoriented for 3 sec. Any direct damaging attack will revive targets. Turns off your attack when used.",
+                      "Targets in a cone in front of the caster take 382 to 442 Fire damage and are Disoriented for 3 sec. Any direct damaging attack will revive targets. Turns off your attack when used.",
                   } },
             },
         },
@@ -321,8 +321,8 @@ CommanderTalentsData.Classes.MAGE = {
                 { name = "Permafrost", icon = "spell_frost_wisp", row = 2, col = 4, max = 3,
                   ranks = {
                       "Increases the duration of your Chill effects by 1 sec and reduces the target's speed by an additional 4%.",
-                      "Increases the duration of your Chill effects by 2 sec and reduces the target's speed by an additional 7%.",
-                      "Increases the duration of your Chill effects by 3 sec and reduces the target's speed by an additional 10%.",
+                      "Increases the duration of your Chill effects by 2 secs and reduces the target's speed by an additional 7%.",
+                      "Increases the duration of your Chill effects by 3 secs and reduces the target's speed by an additional 10%.",
                   } },
                 { name = "Piercing Ice", icon = "spell_frost_frostbolt", row = 3, col = 1, max = 3,
                   ranks = {
@@ -332,18 +332,18 @@ CommanderTalentsData.Classes.MAGE = {
                   } },
                 { name = "Icy Veins", icon = "spell_frost_coldhearted", row = 3, col = 2, max = 1,
                   ranks = {
-                      "Hastens your spellcasting, increasing spell casting speed by 20% and gives you 100% chance to avoid interruption caused by damage while casting any spell. Lasts 20 sec.",
+                      "Hastens your spellcasting, increasing spell casting speed by 20% and gives you 100% chance to avoid interruption caused by damage while casting. Lasts 20 sec.",
                   } },
                 { name = "Improved Blizzard", icon = "spell_frost_icestorm", row = 3, col = 4, max = 3,
                   ranks = {
-                      "Adds a chill effect to your Blizzard spell. This effect lowers the target's movement speed by 30%. Lasts 4 sec.",
-                      "Adds a chill effect to your Blizzard spell. This effect lowers the target's movement speed by 50%. Lasts 4 sec.",
-                      "Adds a chill effect to your Blizzard spell. This effect lowers the target's movement speed by 65%. Lasts 4 sec.",
+                      "Adds a chill effect to your Blizzard spell. This effect lowers the target's movement speed by 30%. Lasts 1.50 sec.",
+                      "Adds a chill effect to your Blizzard spell. This effect lowers the target's movement speed by 50%. Lasts 1.50 sec.",
+                      "Adds a chill effect to your Blizzard spell. This effect lowers the target's movement speed by 65%. Lasts 1.50 sec.",
                   } },
                 { name = "Arctic Reach", icon = "spell_shadow_darkritual", row = 4, col = 1, max = 2,
                   ranks = {
-                      "Increases the range of your Frostbolt and Blizzard spells and the radius of your Frost Nova and Cone of Cold spells by 10%.",
-                      "Increases the range of your Frostbolt and Blizzard spells and the radius of your Frost Nova and Cone of Cold spells by 20%.",
+                      "Increases the range of your Frostbolt, Ice Lance and Blizzard spells and the radius of your Frost Nova and Cone of Cold spells by 10%.",
+                      "Increases the range of your Frostbolt, Ice Lance and Blizzard spells and the radius of your Frost Nova and Cone of Cold spells by 20%.",
                   } },
                 { name = "Frost Channeling", icon = "spell_frost_stun", row = 4, col = 2, max = 3,
                   ranks = {
@@ -385,12 +385,12 @@ CommanderTalentsData.Classes.MAGE = {
                       "Gives your Frost damage spells a 20% chance to apply the Winter's Chill effect, which increases the chance a Frost spell will critically hit the target by 2% for 15 sec. Stacks up to 5 times.",
                       "Gives your Frost damage spells a 40% chance to apply the Winter's Chill effect, which increases the chance a Frost spell will critically hit the target by 2% for 15 sec. Stacks up to 5 times.",
                       "Gives your Frost damage spells a 60% chance to apply the Winter's Chill effect, which increases the chance a Frost spell will critically hit the target by 2% for 15 sec. Stacks up to 5 times.",
-                      "Gives your Frost damage spells an 80% chance to apply the Winter's Chill effect, which increases the chance a Frost spell will critically hit the target by 2% for 15 sec. Stacks up to 5 times.",
+                      "Gives your Frost damage spells a 80% chance to apply the Winter's Chill effect, which increases the chance a Frost spell will critically hit the target by 2% for 15 sec. Stacks up to 5 times.",
                       "Gives your Frost damage spells a 100% chance to apply the Winter's Chill effect, which increases the chance a Frost spell will critically hit the target by 2% for 15 sec. Stacks up to 5 times.",
                   } },
                 { name = "Ice Barrier", icon = "spell_ice_lament", row = 7, col = 2, max = 1, req = "Cold Snap",
                   ranks = {
-                      "Instantly shields you, absorbing 438 damage. Lasts 1 min. While the shield holds, spells will not be interrupted.",
+                      "Instantly shields you, absorbing 455 damage. Lasts 1 min. While the shield holds, spells will not be interrupted.",
                   } },
                 { name = "Arctic Winds", icon = "spell_frost_arcticwinds", row = 7, col = 3, max = 5,
                   ranks = {

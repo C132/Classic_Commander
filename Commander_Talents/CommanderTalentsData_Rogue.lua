@@ -10,9 +10,9 @@ CommanderTalentsData.Classes.ROGUE = {
             talents = {
                 { name = "Improved Eviscerate", icon = "ability_rogue_eviscerate", row = 1, col = 1, max = 3,
                   ranks = {
-                    "Increases the damage of your Eviscerate ability by 5%.",
-                    "Increases the damage of your Eviscerate ability by 10%.",
-                    "Increases the damage of your Eviscerate ability by 15%.",
+                    "Increases the damage done by your Eviscerate ability by 5%.",
+                    "Increases the damage done by your Eviscerate ability by 10%.",
+                    "Increases the damage done by your Eviscerate ability by 15%.",
                   } },
                 { name = "Remorseless Attacks", icon = "ability_fiegndead", row = 1, col = 2, max = 2,
                   ranks = {
@@ -102,7 +102,7 @@ CommanderTalentsData.Classes.ROGUE = {
                     "Your critical strikes from abilities that add combo points have a 20% chance to add an additional combo point.",
                     "Your critical strikes from abilities that add combo points have a 40% chance to add an additional combo point.",
                     "Your critical strikes from abilities that add combo points have a 60% chance to add an additional combo point.",
-                    "Your critical strikes from abilities that add combo points have an 80% chance to add an additional combo point.",
+                    "Your critical strikes from abilities that add combo points have a 80% chance to add an additional combo point.",
                     "Your critical strikes from abilities that add combo points have a 100% chance to add an additional combo point.",
                   } },
                 { name = "Master Poisoner", icon = "ability_creature_poison_06", row = 6, col = 3, max = 2,
@@ -183,7 +183,7 @@ CommanderTalentsData.Classes.ROGUE = {
                 { name = "Endurance", icon = "spell_shadow_shadowward", row = 3, col = 1, max = 2,
                   ranks = {
                     "Reduces the cooldown of your Sprint and Evasion abilities by 45 sec.",
-                    "Reduces the cooldown of your Sprint and Evasion abilities by 90 sec.",
+                    "Reduces the cooldown of your Sprint and Evasion abilities by 1.5 min.",
                   } },
                 { name = "Riposte", icon = "ability_warrior_challange", row = 3, col = 2, max = 1, req = "Deflection",
                   ranks = {
@@ -217,11 +217,11 @@ CommanderTalentsData.Classes.ROGUE = {
                   } },
                 { name = "Mace Specialization", icon = "inv_mace_01", row = 5, col = 1, max = 5,
                   ranks = {
-                    "Gives you a 1% chance to stun your target for 3 sec with a mace.",
-                    "Gives you a 2% chance to stun your target for 3 sec with a mace.",
-                    "Gives you a 3% chance to stun your target for 3 sec with a mace.",
-                    "Gives you a 4% chance to stun your target for 3 sec with a mace.",
-                    "Gives you a 5% chance to stun your target for 3 sec with a mace.",
+                    "Increases the damage dealt by your critical strikes with maces by 1%, and gives you a 1% chance to stun your target for 3 sec with a mace.",
+                    "Increases the damage dealt by your critical strikes with maces by 2%, and gives you a 2% chance to stun your target for 3 sec with a mace.",
+                    "Increases the damage dealt by your critical strikes with maces by 3%, and gives you a 3% chance to stun your target for 3 sec with a mace.",
+                    "Increases the damage dealt by your critical strikes with maces by 4%, and gives you a 4% chance to stun your target for 3 sec with a mace.",
+                    "Increases the damage dealt by your critical strikes with maces by 5%, and gives you a 6% chance to stun your target for 3 sec with a mace.",
                   } },
                 { name = "Blade Flurry", icon = "ability_warrior_punishingblow", row = 5, col = 2, max = 1,
                   ranks = {
@@ -229,11 +229,11 @@ CommanderTalentsData.Classes.ROGUE = {
                   } },
                 { name = "Sword Specialization", icon = "inv_sword_27", row = 5, col = 3, max = 5,
                   ranks = {
-                    "Gives you a 1% chance to get an extra attack on the same target after dealing damage with your Sword.",
-                    "Gives you a 2% chance to get an extra attack on the same target after dealing damage with your Sword.",
-                    "Gives you a 3% chance to get an extra attack on the same target after dealing damage with your Sword.",
-                    "Gives you a 4% chance to get an extra attack on the same target after dealing damage with your Sword.",
-                    "Gives you a 5% chance to get an extra attack on the same target after dealing damage with your Sword.",
+                    "Gives you a 1% chance to get an extra attack on the same target after hitting your target with your Sword.",
+                    "Gives you a 2% chance to get an extra attack on the same target after hitting your target with your Sword.",
+                    "Gives you a 3% chance to get an extra attack on the same target after hitting your target with your Sword.",
+                    "Gives you a 4% chance to get an extra attack on the same target after hitting your target with your Sword.",
+                    "Gives you a 5% chance to get an extra attack on the same target after hitting your target with your Sword.",
                   } },
                 { name = "Fist Weapon Specialization", icon = "inv_gauntlets_04", row = 5, col = 4, max = 5,
                   ranks = {

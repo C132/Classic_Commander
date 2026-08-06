@@ -24,9 +24,9 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Improved Rend", icon = "ability_gouge", row = 1, col = 3, max = 3,
                   ranks = {
-                    "Increases the bleed damage done by your Rend ability by 15%.",
                     "Increases the bleed damage done by your Rend ability by 25%.",
-                    "Increases the bleed damage done by your Rend ability by 35%.",
+                    "Increases the bleed damage done by your Rend ability by 50%.",
+                    "Increases the bleed damage done by your Rend ability by 75%.",
                   } },
                 { name = "Improved Charge", icon = "ability_warrior_charge", row = 2, col = 1, max = 2,
                   ranks = {
@@ -47,14 +47,14 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Reduces the cost of your Thunder Clap ability by 2 rage points and increases the damage by 70% and the slowing effect by an additional 7%.",
                     "Reduces the cost of your Thunder Clap ability by 4 rage points and increases the damage by 100% and the slowing effect by an additional 10%.",
                   } },
-                { name = "Improved Overpower", icon = "ability_meleedamage", row = 3, col = 1, max = 2,
+                { name = "Improved Overpower", icon = "inv_sword_05", row = 3, col = 1, max = 2,
                   ranks = {
                     "Increases the critical strike chance of your Overpower ability by 25%.",
                     "Increases the critical strike chance of your Overpower ability by 50%.",
                   } },
                 { name = "Anger Management", icon = "spell_holy_blessingofstamina", row = 3, col = 2, max = 1,
                   ranks = {
-                    "Generates 1 rage per 3 sec while in combat.",
+                    "Generates 1 rage per 3 seconds while in combat.",
                   } },
                 { name = "Deep Wounds", icon = "ability_backstab", row = 3, col = 3, max = 3,
                   ranks = {
@@ -75,13 +75,13 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Increases the critical strike damage bonus of your abilities in Battle, Defensive, and Berserker stance by 10%.",
                     "Increases the critical strike damage bonus of your abilities in Battle, Defensive, and Berserker stance by 20%.",
                   } },
-                { name = "Poleaxe Specialization", icon = "inv_weapon_halbard_12", row = 5, col = 1, max = 5,
+                { name = "Poleaxe Specialization", icon = "inv_axe_06", row = 5, col = 1, max = 5,
                   ranks = {
-                    "Increases your chance to get a critical strike with Polearms and Axes by 1%.",
-                    "Increases your chance to get a critical strike with Polearms and Axes by 2%.",
-                    "Increases your chance to get a critical strike with Polearms and Axes by 3%.",
-                    "Increases your chance to get a critical strike with Polearms and Axes by 4%.",
-                    "Increases your chance to get a critical strike with Polearms and Axes by 5%.",
+                    "Increases your chance to get a critical strike with Axes and Polearms by 1%.",
+                    "Increases your chance to get a critical strike with Axes and Polearms by 2%.",
+                    "Increases your chance to get a critical strike with Axes and Polearms by 3%.",
+                    "Increases your chance to get a critical strike with Axes and Polearms by 4%.",
+                    "Increases your chance to get a critical strike with Axes and Polearms by 5%.",
                   } },
                 { name = "Death Wish", icon = "spell_shadow_deathpact", row = 5, col = 2, max = 1,
                   ranks = {
@@ -89,19 +89,19 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Mace Specialization", icon = "inv_mace_01", row = 5, col = 3, max = 5,
                   ranks = {
-                    "Gives you a 1% chance to stun your target for 3 sec with a Mace.",
-                    "Gives you a 2% chance to stun your target for 3 sec with a Mace.",
-                    "Gives you a 3% chance to stun your target for 3 sec with a Mace.",
-                    "Gives you a 4% chance to stun your target for 3 sec with a Mace.",
-                    "Gives you a 6% chance to stun your target for 3 sec with a Mace.",
+                    "Gives your melee attacks a chance to stun your target for 3 sec and generate 7 rage when using a Mace.",
+                    "Gives your melee attacks a chance to stun your target for 3 sec and generate 7 rage when using a Mace.",
+                    "Gives your melee attacks a chance to stun your target for 3 sec and generate 7 rage when using a Mace.",
+                    "Gives your melee attacks a chance to stun your target for 3 sec and generate 7 rage when using a Mace.",
+                    "Gives your melee attacks a chance to stun your target for 3 sec and generate 7 rage when using a Mace.",
                   } },
                 { name = "Sword Specialization", icon = "inv_sword_27", row = 5, col = 4, max = 5,
                   ranks = {
-                    "Gives you a 1% chance to get an extra attack on the same target after dealing damage with your Sword.",
-                    "Gives you a 2% chance to get an extra attack on the same target after dealing damage with your Sword.",
-                    "Gives you a 3% chance to get an extra attack on the same target after dealing damage with your Sword.",
-                    "Gives you a 4% chance to get an extra attack on the same target after dealing damage with your Sword.",
-                    "Gives you a 5% chance to get an extra attack on the same target after dealing damage with your Sword.",
+                    "Gives you a 1% chance to get an extra attack on the same target after hitting your target with your Sword.",
+                    "Gives you a 2% chance to get an extra attack on the same target after hitting your target with your Sword.",
+                    "Gives you a 3% chance to get an extra attack on the same target after hitting your target with your Sword.",
+                    "Gives you a 4% chance to get an extra attack on the same target after hitting your target with your Sword.",
+                    "Gives you a 5% chance to get an extra attack on the same target after hitting your target with your Sword.",
                   } },
                 { name = "Improved Intercept", icon = "ability_rogue_sprint", row = 6, col = 1, max = 2,
                   ranks = {
@@ -178,10 +178,10 @@ CommanderTalentsData.Classes.WARRIOR = {
                 { name = "Unbridled Wrath", icon = "spell_nature_stoneclawtotem", row = 2, col = 3, max = 5,
                   ranks = {
                     "Gives you a chance to generate an additional Rage point when you deal melee damage with a weapon.",
-                    "Gives you a chance to generate an additional Rage point when you deal melee damage with a weapon.",
-                    "Gives you a chance to generate an additional Rage point when you deal melee damage with a weapon.",
-                    "Gives you a chance to generate an additional Rage point when you deal melee damage with a weapon.",
-                    "Gives you a chance to generate an additional Rage point when you deal melee damage with a weapon.",
+                    "Gives you a chance to generate an additional rage point when you deal melee damage with a weapon. Effect occurs more often than Unbridled Wrath (Rank 1).",
+                    "Gives you a chance to generate an additional rage point when you deal melee damage with a weapon. Effect occurs more often than Unbridled Wrath (Rank 2).",
+                    "Gives you a chance to generate an additional rage point when you deal melee damage with a weapon. Effect occurs more often than Unbridled Wrath (Rank 3).",
+                    "Gives you a chance to generate an additional rage point when you deal melee damage with a weapon. Effect occurs more often than Unbridled Wrath (Rank 4).",
                   } },
                 { name = "Improved Cleave", icon = "ability_warrior_cleave", row = 3, col = 1, max = 3,
                   ranks = {
@@ -239,8 +239,8 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Weapon Mastery", icon = "ability_warrior_weaponmastery", row = 5, col = 4, max = 2,
                   ranks = {
-                    "Reduces the chance for your attacks to be dodged by 1% and reduces the duration of all Disarm effects used against you by 25%.",
-                    "Reduces the chance for your attacks to be dodged by 2% and reduces the duration of all Disarm effects used against you by 50%.",
+                    "Reduces the chance for your attacks to be dodged by 1% and reduces the duration of all Disarm effects used against you by 25%. This does not stack with other Disarm duration reducing effects.",
+                    "Reduces the chance for your attacks to be dodged by 2% and reduces the duration of all Disarm effects used against you by 50%. This does not stack with other Disarm duration reducing effects.",
                   } },
                 { name = "Improved Berserker Rage", icon = "spell_nature_ancestralguardian", row = 6, col = 1, max = 2,
                   ranks = {
@@ -263,7 +263,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Bloodthirst", icon = "spell_nature_bloodlust", row = 7, col = 2, max = 1, req = "Sweeping Strikes",
                   ranks = {
-                    "Instantly attack the target causing damage equal to 45% of your attack power. In addition, the next 5 successful melee attacks will restore 10 health. This effect lasts 8 sec.",
+                    "Instantly attack the target causing (Attack Power * 45 / 100) damage. In addition, the next 5 successful melee attacks will restore 10 health. This effect lasts 8 sec. Damage is based on your attack power.",
                   } },
                 { name = "Improved Whirlwind", icon = "ability_whirlwind", row = 7, col = 3, max = 2,
                   ranks = {
@@ -289,14 +289,14 @@ CommanderTalentsData.Classes.WARRIOR = {
             talents = {
                 { name = "Improved Bloodrage", icon = "ability_racial_bloodrage", row = 1, col = 1, max = 2,
                   ranks = {
-                    "Increases the instant Rage generated by your Bloodrage ability by 2.",
-                    "Increases the instant Rage generated by your Bloodrage ability by 5.",
+                    "Increases the instant rage generated by your Bloodrage ability by 3.",
+                    "Increases the instant rage generated by your Bloodrage ability by 6.",
                   } },
                 { name = "Tactical Mastery", icon = "spell_nature_enchantarmor", row = 1, col = 2, max = 3,
                   ranks = {
-                    "You retain up to 5 of your rage points when you change stances.",
-                    "You retain up to 10 of your rage points when you change stances.",
-                    "You retain up to 15 of your rage points when you change stances.",
+                    "You retain up to an additional 5 of your rage points when you change stances. Also greatly increases the threat generated by your Bloodthirst and Mortal Strike abilities when you are in Defensive Stance.",
+                    "You retain up to an additional 10 of your rage points when you change stances. Also greatly increases the threat generated by your Bloodthirst and Mortal Strike abilities when you are in Defensive Stance (More effective than Rank 1).",
+                    "You retain up to an additional 15 of your rage points when you change stances. Also greatly increases the threat generated by your Bloodthirst and Mortal Strike abilities when you are in Defensive Stance (More effective than Rank 2).",
                   } },
                 { name = "Anticipation", icon = "spell_nature_mirrorimage", row = 1, col = 3, max = 5,
                   ranks = {
@@ -311,7 +311,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Increases your chance to block attacks with a shield by 1% and has a 20% chance to generate 1 rage when a block occurs.",
                     "Increases your chance to block attacks with a shield by 2% and has a 40% chance to generate 1 rage when a block occurs.",
                     "Increases your chance to block attacks with a shield by 3% and has a 60% chance to generate 1 rage when a block occurs.",
-                    "Increases your chance to block attacks with a shield by 4% and has an 80% chance to generate 1 rage when a block occurs.",
+                    "Increases your chance to block attacks with a shield by 4% and has a 80% chance to generate 1 rage when a block occurs.",
                     "Increases your chance to block attacks with a shield by 5% and has a 100% chance to generate 1 rage when a block occurs.",
                   } },
                 { name = "Toughness", icon = "spell_holy_devotion", row = 2, col = 3, max = 5,
@@ -328,7 +328,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Improved Shield Block", icon = "ability_defend", row = 3, col = 2, max = 1, req = "Shield Specialization",
                   ranks = {
-                    "Allows your Shield Block ability to block an additional attack and increases the duration by 1 sec.",
+                    "Allows your Shield Block ability to block an additional attack and increases the duration by 1 second.",
                   } },
                 { name = "Improved Revenge", icon = "ability_warrior_revenge", row = 3, col = 3, max = 3,
                   ranks = {
@@ -338,21 +338,21 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Defiance", icon = "ability_warrior_innerrage", row = 3, col = 4, max = 3,
                   ranks = {
-                    "Increases the threat generated by your attacks while in Defensive Stance by 5% and gives you 2 weapon expertise.",
-                    "Increases the threat generated by your attacks while in Defensive Stance by 10% and gives you 4 weapon expertise.",
-                    "Increases the threat generated by your attacks while in Defensive Stance by 15% and gives you 6 weapon expertise.",
+                    "Increases the threat generated by your attacks by 5% while in Defensive Stance and increases your expertise by 2.",
+                    "Increases the threat generated by your attacks by 10% while in Defensive Stance and increases your expertise by 4.",
+                    "Increases the threat generated by your attacks by 15% while in Defensive Stance and increases your expertise by 6.",
                   } },
                 { name = "Improved Sunder Armor", icon = "ability_warrior_sunder", row = 4, col = 1, max = 3,
                   ranks = {
                     "Reduces the cost of your Sunder Armor and Devastate abilities by 1 rage point.",
-                    "Reduces the cost of your Sunder Armor and Devastate abilities by 2 rage points.",
-                    "Reduces the cost of your Sunder Armor and Devastate abilities by 3 rage points.",
+                    "Reduces the cost of your Sunder Armor and Devastate abilities by 2 rage point.",
+                    "Reduces the cost of your Sunder Armor and Devastate abilities by 3 rage point.",
                   } },
                 { name = "Improved Disarm", icon = "ability_warrior_disarm", row = 4, col = 2, max = 3,
                   ranks = {
-                    "Reduces the cooldown of your Disarm ability by 4 sec.",
-                    "Reduces the cooldown of your Disarm ability by 7 sec.",
-                    "Reduces the cooldown of your Disarm ability by 10 sec.",
+                    "Increases the duration of your Disarm ability by 1 secs.",
+                    "Increases the duration of your Disarm ability by 2 secs.",
+                    "Increases the duration of your Disarm ability by 3 secs.",
                   } },
                 { name = "Improved Taunt", icon = "spell_nature_reincarnation", row = 4, col = 3, max = 2,
                   ranks = {
@@ -361,8 +361,8 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Improved Shield Wall", icon = "ability_warrior_shieldwall", row = 5, col = 1, max = 2,
                   ranks = {
-                    "Increases the effect duration of your Shield Wall ability by 3 sec.",
-                    "Increases the effect duration of your Shield Wall ability by 5 sec.",
+                    "Increases the effect duration of your Shield Wall ability by 3 secs.",
+                    "Increases the effect duration of your Shield Wall ability by 5 secs.",
                   } },
                 { name = "Concussion Blow", icon = "ability_thunderbolt", row = 5, col = 2, max = 1,
                   ranks = {
@@ -395,7 +395,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Shield Slam", icon = "inv_shield_05", row = 7, col = 2, max = 1, req = "Concussion Blow",
                   ranks = {
-                    "Slam the target with your shield, causing 225 to 235 damage, modified by your shield block value, and has a 50% chance of dispelling 1 magic effect on the target. Also causes a high amount of threat.",
+                    "Slam the target with your shield, causing 225 to 235 damage, modified by your shield block value, and dispels 1 magic effect on the target. Also causes a high amount of threat.",
                   } },
                 { name = "Focused Rage", icon = "ability_warrior_focusedrage", row = 7, col = 3, max = 3,
                   ranks = {
@@ -413,7 +413,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                   } },
                 { name = "Devastate", icon = "inv_sword_11", row = 9, col = 2, max = 1,
                   ranks = {
-                    "Sunder the target's armor causing the Sunder Armor effect. In addition, causes 50% of weapon damage plus 10 for each application of Sunder Armor on the target. The Sunder Armor effect can stack up to 5 times.",
+                    "Sunder the target's armor causing the Sunder Armor effect. In addition, causes 50% of weapon damage plus 15 for each application of Sunder Armor on the target. The Sunder Armor effect can stack up to 5 times.",
                   } },
             },
         },
