@@ -186,7 +186,7 @@ CommanderTalentsData.Classes.PALADIN = {
                     "Increases the amount of damage absorbed by your shield by 20%.",
                     "Increases the amount of damage absorbed by your shield by 30%.",
                   } },
-                { name = "Anticipation", icon = "spell_nature_mirrorimage", row = 3, col = 4, max = 5,
+                { name = "Anticipation", icon = "spell_magic_lesserinvisibilty", row = 3, col = 4, max = 5,
                   ranks = {
                     "Increases your Defense skill by 4.",
                     "Increases your Defense skill by 8.",
@@ -211,7 +211,7 @@ CommanderTalentsData.Classes.PALADIN = {
                     "Increases the effect of your Concentration Aura by an additional 10% and reduces the duration of any Silence or Interrupt effect used against an affected group member by 20%. The duration reduction does not stack with any other effects.",
                     "Increases the effect of your Concentration Aura by an additional 15% and reduces the duration of any Silence or Interrupt effect used against an affected group member by 30%. The duration reduction does not stack with any other effects.",
                   } },
-                { name = "Spell Warding", icon = "spell_holy_spellwarding", row = 5, col = 1, max = 2,
+                { name = "Spell Warding", icon = "spell_holy_improvedresistanceauras", row = 5, col = 1, max = 2,
                   ranks = {
                     "All spell damage taken is reduced by 2%.",
                     "All spell damage taken is reduced by 4%.",
@@ -373,7 +373,7 @@ CommanderTalentsData.Classes.PALADIN = {
                     "Gives you a 4% bonus to Physical and Holy damage you deal for 30 sec after dealing a critical strike from a weapon swing, spell, or ability. This effect stacks up to 3 times.",
                     "Gives you a 5% bonus to Physical and Holy damage you deal for 30 sec after dealing a critical strike from a weapon swing, spell, or ability. This effect stacks up to 3 times.",
                   } },
-                { name = "Sanctified Judgement", icon = "spell_holy_righteousnessaura", row = 6, col = 3, max = 3,
+                { name = "Sanctified Judgement", icon = "spell_holy_righteousfury", row = 6, col = 3, max = 3,
                   ranks = {
                     "Gives your Judgement spell a 33% chance to return 80% of the mana cost of the judged seal.",
                     "Gives your Judgement spell a 66% chance to return 80% of the mana cost of the judged seal.",

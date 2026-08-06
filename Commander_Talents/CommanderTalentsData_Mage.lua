@@ -147,7 +147,7 @@ CommanderTalentsData.Classes.MAGE = {
         {
             name = "Fire", bg = "MageFire",
             talents = {
-                { name = "Improved Fireball", icon = "spell_fire_fireball02", row = 1, col = 2, max = 5,
+                { name = "Improved Fireball", icon = "spell_fire_flamebolt", row = 1, col = 2, max = 5,
                   ranks = {
                       "Reduces the casting time of your Fireball spell by 0.1 sec.",
                       "Reduces the casting time of your Fireball spell by 0.2 sec.",

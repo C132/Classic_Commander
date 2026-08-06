@@ -403,7 +403,7 @@ CommanderTalentsData.Classes.WARRIOR = {
                     "Reduces the rage cost of your offensive abilities by 2.",
                     "Reduces the rage cost of your offensive abilities by 3.",
                   } },
-                { name = "Vitality", icon = "spell_nature_undyingstrength", row = 8, col = 2, max = 5,
+                { name = "Vitality", icon = "inv_helmet_21", row = 8, col = 2, max = 5,
                   ranks = {
                     "Increases your total Stamina by 1% and your total Strength by 2%.",
                     "Increases your total Stamina by 2% and your total Strength by 4%.",

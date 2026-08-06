@@ -55,6 +55,16 @@ CLASSES = {
     "DRUID": "CommanderTalentsData_Druid.lua",
 }
 
+# (talent name, icon Wowhead serves) pairs where Wowhead's TBC page returns a
+# MODERN art asset because the spell survived into retail. Those textures do
+# not exist in a 2.5.6 client, so taking Wowhead's answer would render a blank
+# tile — the TBC icon we already carry is the correct one. Verified by the
+# asset naming: `ability_warlock_randomizesuccubusincubus` is the
+# Succubus/Incubus randomiser art, which postdates TBC by several expansions.
+RETAIL_ICON_BLEED = {
+    ("Improved Succubus", "ability_warlock_randomizesuccubusincubus"),
+}
+
 DUMPER = r'''
 local file, token = ...
 CommanderTalentsData = { Classes = {} }
@@ -205,8 +215,13 @@ def main():
                 print(f"  {token} {treename}/{name}: no Wowhead talent at r{row}c{col}")
                 issues += 1
                 continue
-            if cell not in seen:
-                seen.add(cell)
+            # Dedup must be keyed by TREE as well as cell: all three trees
+            # share the same grid coordinates, so keying on the cell alone
+            # made Fire r1c1 and Frost r1c1 look like repeats of Arcane r1c1
+            # and skipped their icon/rank-count checks entirely — the harness
+            # reported "0 issues" while examining well under half the talents.
+            if (tid, cell) not in seen:
+                seen.add((tid, cell))
                 if len(whT["ranks"]) != int(mx):
                     print(f"  {token} {treename}/{name}: max {mx}, Wowhead {len(whT['ranks'])}")
                     issues += 1
@@ -216,6 +231,12 @@ def main():
                     # name; the in-game texture is the unprefixed one.
                     if want.lower() == "classic_" + icon.lower():
                         skipped.append(f"{token} {treename}/{name}: classic_ icon alias")
+                    elif (name, want) in RETAIL_ICON_BLEED:
+                        # Wowhead's TBC page occasionally serves a MODERN art
+                        # asset for a spell that still exists in retail. Those
+                        # files do not ship with a 2.5.6 client, so adopting
+                        # them would render a blank tile. Keep the TBC icon.
+                        skipped.append(f"{token} {treename}/{name}: retail icon bleed ({want})")
                     else:
                         icons.append((fname, name, icon, want))
             i = int(ri) - 1
