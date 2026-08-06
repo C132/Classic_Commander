@@ -203,11 +203,11 @@ CommanderTalentsData.Classes.SHAMAN = {
                   } },
                 { name = "Toughness", icon = "spell_holy_devotion", row = 4, col = 3, max = 5,
                   ranks = {
-                      "Increases your armor value from items by 2%.",
-                      "Increases your armor value from items by 4%.",
-                      "Increases your armor value from items by 6%.",
-                      "Increases your armor value from items by 8%.",
-                      "Increases your armor value from items by 10%.",
+                      "Increases your armor value from items by 2%, and reduces the duration of movement slowing effects on you by 10%.",
+                      "Increases your armor value from items by 4%, and reduces the duration of movement slowing effects on you by 20%.",
+                      "Increases your armor value from items by 6%, and reduces the duration of movement slowing effects on you by 30%.",
+                      "Increases your armor value from items by 8%, and reduces the duration of movement slowing effects on you by 40%.",
+                      "Increases your armor value from items by 10%, and reduces the duration of movement slowing effects on you by 50%.",
                   } },
                 { name = "Improved Weapon Totems", icon = "spell_fire_enchantweapon", row = 5, col = 1, max = 2,
                   ranks = {
