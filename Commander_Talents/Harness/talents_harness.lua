@@ -57,6 +57,11 @@ for _, token in ipairs(Data.ClassOrder) do
     end
 end
 
+-- PvP builds are appended by a separate hand-curated file
+local pvpPath = root .. "/CommanderTalentsPvP.lua"
+local havePvP = fileExists(pvpPath)
+if havePvP then dofile(pvpPath) end
+
 -- ---------------------------------------------------------------- synthetic engine tests
 local function T(name, icon, row, col, max, req)
     local ranks = {}
@@ -234,6 +239,24 @@ for _, token in ipairs(Data.ClassOrder) do
         end
         for _, key in ipairs(expected) do
             ok(have[key], ("%s covers Quartermaster spec %s"):format(token, key))
+        end
+
+        -- PvP builds obey exactly the same rules; they just are not required
+        -- to match a Quartermaster spec key (they name one via qmSpec).
+        for _, build in ipairs(class.pvpBuilds or {}) do
+            local _, bProbs = E.ApplyBuild(st, build)
+            ok(#bProbs == 0, ("%s PvP %s applies clean (%s)"):format(
+                token, build.key, bProbs[1] or ""))
+            ok(E.TotalSpent(st) == 61, ("%s PvP %s totals 61 (got %d)"):format(
+                token, build.key, E.TotalSpent(st)))
+            ok(not have[build.key],
+                ("%s PvP %s does not collide with a PvE key"):format(token, build.key))
+            if build.qmSpec then
+                ok(have[build.qmSpec], ("%s PvP %s names a real qmSpec (%s)"):format(
+                    token, build.key, tostring(build.qmSpec)))
+            end
+            census[#census + 1] = ("  %s %-18s %-6s %s"):format(
+                token, build.key, build.bracket or "?", E.Signature(st))
         end
     end
 end

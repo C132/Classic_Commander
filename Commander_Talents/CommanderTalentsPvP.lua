@@ -1,0 +1,15 @@
+-- Commander_Talents — PvP preset builds (hand-curated).
+--
+-- The TBC PvP canon: arena, battleground and duelling specs as they were
+-- actually played. Loaded AFTER the generated per-class data, appending to it
+-- via CommanderTalentsData.AddPvPBuilds so the machine-owned files are never
+-- touched — the Commander_Quartermaster fringe-loadout precedent.
+--
+-- Entry shape:
+--   { key, name, role, bracket, qmSpec, points, stats, notes }
+--     bracket = ARENA | BG | DUEL | WORLD
+--     qmSpec  = Quartermaster spec key for consumables (must be a PvE preset
+--               key of the same class), or nil
+--
+-- Every build must be a LEGAL 61-point TBC build. After ANY edit run:
+--   luajit Harness/validate_pvp.lua

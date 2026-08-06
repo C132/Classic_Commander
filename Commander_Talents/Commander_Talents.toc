@@ -19,6 +19,7 @@ CommanderTalentsData_Shaman.lua
 CommanderTalentsData_Mage.lua
 CommanderTalentsData_Warlock.lua
 CommanderTalentsData_Druid.lua
+CommanderTalentsPvP.lua
 CommanderTalentsEngine.lua
 CommanderTalentsDB.lua
 CommanderTalents.lua
