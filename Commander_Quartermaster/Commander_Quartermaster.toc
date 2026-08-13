@@ -2,13 +2,15 @@
 ## Category: Commander
 ## Title: Commander Quartermaster
 ## Author: Devin
-## Version: 2.1.0
-## Notes: The supply ledger — a browsable database of every TBC consumable with class/spec loadout recommendations, tracking what you hold across bags, bank, mail, and every alt.
+## Version: 2.2.0
+## Notes: The supply ledger — a browsable database of every TBC consumable and every item enhancement, with class/spec loadout recommendations, tracking what you hold across bags, bank, mail, and every alt.
 ## IconTexture: Interface\Icons\INV_Crate_02
 ## SavedVariables: CommanderQuartermasterDB, CommanderQuartermasterLedger
 ## RequiredDeps: Commander_Events
 
 CommanderQuartermasterData.lua
+CommanderQuartermasterEnhanceData.lua
 CommanderQuartermasterFringe.lua
+CommanderQuartermasterEnhance.lua
 CommanderQuartermasterDB.lua
 CommanderQuartermaster.lua

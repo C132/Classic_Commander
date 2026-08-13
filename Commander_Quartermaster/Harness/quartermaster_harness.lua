@@ -396,6 +396,8 @@ local world = {
     instanceType = "none",
     instanceName = "Azeroth",
     talents = nil,  -- { shape = "classic"|"retail", points = {a, b, c} }
+    equipped = {},  -- slotID -> { id, ench, gems, loc, sockets }
+    skills = {},    -- { { "Enchanting", 375 }, … }
 }
 
 -- Item class map for IsTracked's GetItemInfoInstant fallback: anything the
@@ -428,9 +430,13 @@ C_Container = {
 local ILVL = { [33208] = 100, [22861] = 92 }
 
 C_Item = {
-    GetItemInfoInstant = function(id)
-        return id, "type", "sub", "loc", 134400, ITEM_CLASS[id] or 0, 0
+    GetItemInfoInstant = function(idOrLink)
+        if type(idOrLink) == "string" then
+            return GetItemInfoInstant(idOrLink)
+        end
+        return idOrLink, "type", "sub", "loc", 134400, ITEM_CLASS[idOrLink] or 0, 0
     end,
+    GetItemStats = function(link) return GetItemStats(link) end,
     GetItemInfo = function(id)
         local ilvl = ILVL[id]
         if not ilvl then return nil end
@@ -460,7 +466,49 @@ C_Item = {
 function GetMoney() return world.money end
 function GetInventoryItemID() return nil end
 function GetInventoryItemTexture() return nil end
-function GetInventoryItemLink() return nil end
+
+-- Equipped gear for the enhancement audit. world.equipped[slotID] = {
+--   id, ench, gems = {…}, loc = "INVTYPE_HEAD", sockets = { RED = 1, … } }
+-- The link is built to the real shape so the engine's own parser is what gets
+-- tested, not a shortcut around it.
+function GetInventoryItemLink(unit, slot)
+    local it = world.equipped and world.equipped[slot]
+    if not it then return nil end
+    local g = it.gems or {}
+    return ("|cffffffff|Hitem:%d:%d:%d:%d:%d:%d:0:0:70:0:0|h[Gear %d]|h|r"):format(
+        it.id, it.ench or 0, g[1] or 0, g[2] or 0, g[3] or 0, g[4] or 0, it.id)
+end
+
+local function EquippedByLink(link)
+    local id = tonumber(link and link:match("Hitem:(%d+)"))
+    if not id then return nil end
+    for _, it in pairs(world.equipped or {}) do
+        if it.id == id then return it end
+    end
+    return nil
+end
+
+function GetItemStats(link)
+    local it = EquippedByLink(link)
+    if not (it and it.sockets) then return nil end
+    local out = {}
+    for color, n in pairs(it.sockets) do
+        out["EMPTY_SOCKET_" .. color] = n
+    end
+    return out
+end
+
+function GetItemInfoInstant(link)
+    local it = EquippedByLink(link)
+    return (it and it.id), "type", "sub", (it and it.loc), 134400, 0, 0
+end
+
+function GetNumSkillLines() return #(world.skills or {}) end
+function GetSkillLineInfo(i)
+    local sk = world.skills and world.skills[i]
+    if not sk then return nil end
+    return sk[1], false, 0, sk[2]
+end
 
 function GetInboxNumItems() return #world.mail end
 function GetInboxItem(i, j)
@@ -550,7 +598,9 @@ CommanderQuartermasterLedger = {
 
 if MODE ~= "noqm" then
     Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterData.lua")
+    Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterEnhanceData.lua")
     Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterFringe.lua")
+    Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterEnhance.lua")
     Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermasterDB.lua")
     Load(ADDONS .. "/Commander_Quartermaster/CommanderQuartermaster.lua")
 end
@@ -1191,6 +1241,101 @@ CHECK(list[2].kind == "char" and list[2].name == "Devinq" and list[3].name == "B
 lvlCol.btn.__scripts.OnClick(lvlCol.btn)
 CHECK(list[2].kind == "char" and list[2].name == "Banker", "M: roster Lvl asc flips")
 lvlCol.btn.__scripts.OnClick(lvlCol.btn)
+
+-- ===========================================================================
+-- N: item enhancements — index, gear audit, chat report
+-- ===========================================================================
+
+local E = CommanderQuartermasterEnhance
+CHECK(E ~= nil, "N: enhancement engine loaded")
+CHECK(#CommanderQuartermasterEnhanceData.Entries > 500, "N: enhancement database populated",
+    #CommanderQuartermasterEnhanceData.Entries)
+
+-- The index answers by enchant effect id (what a link carries) and by carrier
+-- item id (what you buy)
+local glyph = E.EntryForEnchant(3002)
+CHECK(glyph and glyph.name == "Glyph of Power", "N: enchant id resolves to its entry",
+    glyph and glyph.name)
+CHECK(glyph and glyph.slots[1] == "HEAD", "N: entry knows its slot")
+CHECK(E.EntryForItem(29191) == glyph, "N: carrier item resolves to the same entry")
+CHECK(E.EntryForEnchant(2673) ~= nil, "N: Mongoose is in the database")
+CHECK(E.EntriesForSlot("SHIELD") and #E.EntriesForSlot("SHIELD") > 0, "N: shield enchants exist")
+CHECK(E.EntryForEnchant(nil) == nil, "N: a bare slot resolves to nothing")
+
+-- A gem is item class 3 and a scope is trade goods; neither passes the
+-- consumable test, so the ledger has to be told about them by name
+CHECK(E.IsEnhancement(29191), "N: glyph is ledger-worthy")
+CHECK(E.IsEnhancement(32409), "N: gem is ledger-worthy")
+CHECK(not E.IsEnhancement(99999), "N: a random item is not")
+
+world.bags[0] = { { id = 29191, count = 2 }, { id = 32409, count = 1 } }
+Sync()
+local mine = CommanderQuartermasterLedger.Aleria.Devinq
+CHECK(mine.bags[29191] == 2, "N: glyphs file into the ledger", mine.bags[29191])
+CHECK(mine.bags[32409] == 1, "N: gems file into the ledger", mine.bags[32409])
+
+-- The audit reads the LINK, not the database: enchant id, gem ids, sockets
+world.equipped = {
+    [1] = { id = 28182, ench = 3002, loc = "INVTYPE_HEAD" },
+    [5] = { id = 28229, ench = 0, loc = "INVTYPE_CHEST" },
+    [6] = { id = 28190, ench = 0, loc = "INVTYPE_WAIST" },
+    [11] = { id = 28227, ench = 0, loc = "INVTYPE_FINGER" },
+    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON",
+             sockets = { RED = 1, YELLOW = 1 }, gems = { 32409 } },
+}
+local report = E.ScanGear("player")
+local function RowFor(slotID)
+    for _, row in ipairs(report.rows) do
+        if row.invSlot == slotID then return row end
+    end
+end
+CHECK(RowFor(1).ench == 3002, "N: head enchant read off the link", RowFor(1).ench)
+CHECK(RowFor(1).bare == nil, "N: an enchanted head is not bare")
+CHECK(E.EnchantName(RowFor(1)) == glyph.short, "N: the enchant is named from the database",
+    E.EnchantName(RowFor(1)))
+CHECK(RowFor(5).bare == true, "N: an unenchanted chest is bare")
+CHECK(RowFor(6).bare == nil and RowFor(6).takesEnchant == nil,
+    "N: a belt takes no enchant, so it is never missing one")
+CHECK(RowFor(11).bare == nil and RowFor(11).needsProfession == "Enchanting",
+    "N: rings only nag an enchanter")
+CHECK(#RowFor(16).sockets == 2, "N: sockets counted from the item, not the link")
+CHECK(RowFor(16).empty == 1, "N: one gem in two sockets leaves one empty")
+CHECK(report.bare == 1 and report.empty == 1, "N: the totals agree with the rows",
+    report.bare .. "/" .. report.empty)
+
+-- With Enchanting trained, the same bare ring becomes actionable
+world.skills = { { "Enchanting", 375 } }
+local asEnchanter = E.ScanGear("player")
+local ringRow
+for _, row in ipairs(asEnchanter.rows) do
+    if row.invSlot == 11 then ringRow = row end
+end
+CHECK(ringRow.bare == true, "N: an enchanter's bare ring IS missing an enchant")
+CHECK(asEnchanter.enchanter == 375, "N: the audit knows your enchanting rank")
+
+-- What you already own for a bare slot
+local held = E.BestHeld("HEAD", function(id)
+    return (id == 29191) and 2 or 0, 0, 0, 0, (id == 29191) and 2 or 0
+end)
+CHECK(held and held.entry == glyph and held.count == 2,
+    "N: BestHeld finds the glyph sitting in your bags", held and held.name)
+CHECK(E.BestHeld("HEAD", function() return 0, 0, 0, 0, 0 end) == nil,
+    "N: nothing held, nothing suggested")
+
+-- The chat report. Head goes bare for this pass so the "you already own one"
+-- line has something to find: a chest enchant is enchanter-cast and has no
+-- carrier item, so there is nothing to be holding.
+world.equipped[1].ench = 0
+local before = #printLog
+CommanderQuartermaster_Gear()
+CHECK(FindPrint("gear enhancements", before) ~= nil, "N: /cqm gear reports")
+CHECK(FindPrint("not enchanted", before) ~= nil, "N: the bare chest is called out")
+CHECK(FindPrint("gems 1/2", before) ~= nil, "N: the half-gemmed weapon is called out")
+CHECK(FindPrint("you are holding", before) ~= nil, "N: it says what you already hold")
+
+world.equipped, world.skills = {}, {}
+world.bags[0] = {}
+Sync()
 
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 

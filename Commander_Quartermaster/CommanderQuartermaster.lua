@@ -48,12 +48,17 @@ local function BuildIndex()
     end
 end
 
--- An item is ledger-worthy if the database knows it, or the client says it
--- is a Consumable (class 0) or Projectile (class 6)
+-- An item is ledger-worthy if either database knows it, or the client says it
+-- is a Consumable (class 0) or Projectile (class 6). The enhancement database
+-- has to be asked by name: a gem is item class 3 and a scope is trade goods,
+-- so neither would ever pass the class test.
 local trackedCache = {}
 local function IsTracked(itemID)
     if not itemID then return false end
     if byID[itemID] then return true end
+    if CommanderQuartermasterEnhance and CommanderQuartermasterEnhance.IsEnhancement(itemID) then
+        return true
+    end
     local cached = trackedCache[itemID]
     if cached ~= nil then return cached end
     local classID
@@ -1480,6 +1485,20 @@ local function ApplyPosition()
     end
 end
 
+-- Shared suite icon shading, drawn by Commander_Events (a RequiredDep, so it
+-- is always loaded). The registry is what lets a setting changed mid-session
+-- reach rows that were built long before it.
+local styledIcons = {}
+
+local function ApplyIconRecess(icon)
+    if not Commander.DebossIcon then return end
+    Commander.DebossIcon(icon, (db and db.IconRecess) or "SOFT")
+end
+
+local function RestyleIcons()
+    for icon in pairs(styledIcons) do ApplyIconRecess(icon) end
+end
+
 local function CreateRow(parent, index)
     local row = CreateFrame("Button", nil, parent)
     row:SetHeight(ROW_H)
@@ -1495,6 +1514,10 @@ local function CreateRow(parent, index)
     row.icon:SetSize(22, 22)
     row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
     row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    -- The suite's shared icon recess (Commander_Events' art). Rows are pooled
+    -- and built once, so ApplySettings carries a changed style back to them.
+    styledIcons[row.icon] = true
+    ApplyIconRecess(row.icon)
 
     row.nameFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     row.nameFS:SetPoint("LEFT", row, "LEFT", 30, 0)
@@ -2206,6 +2229,53 @@ function CommanderQuartermaster_Ready()
         #shorts > 0 and (", %d watchlist short"):format(#shorts) or ""))
 end
 
+-- Gear audit to chat: what every equipped slot is enchanted and gemmed with,
+-- and what is bare. The counts come from the ledger, so a bare slot whose
+-- enhancement is sitting in your bank says so instead of sending you shopping.
+function CommanderQuartermaster_Gear()
+    if not loaded then return end
+    local E = CommanderQuartermasterEnhance
+    if not E then
+        print("Commander Quartermaster: enhancement database not loaded")
+        return
+    end
+    local report = E.ScanGear("player")
+    print(("|cff33ff99Commander Quartermaster|r — gear enhancements (%d enhanceable slot%s):"):format(
+        report.enchantable, report.enchantable == 1 and "" or "s"))
+    for _, row in ipairs(report.rows) do
+        if row.link then
+            local bits = {}
+            local ench = E.EnchantName(row)
+            if ench then
+                bits[#bits + 1] = "|cff33ff99" .. ench .. "|r"
+            elseif row.takesEnchant then
+                bits[#bits + 1] = "|cffff4040not enchanted|r"
+            elseif row.needsProfession then
+                bits[#bits + 1] = ("|cff777777needs %s|r"):format(row.needsProfession)
+            end
+            local sockets = row.sockets and #row.sockets or 0
+            if sockets > 0 then
+                local filled = sockets - (row.empty or 0)
+                bits[#bits + 1] = ("%sgems %d/%d|r"):format(
+                    (row.empty or 0) > 0 and "|cffff4040" or "|cff33ff99", filled, sockets)
+            end
+            if #bits > 0 then
+                print(("  %s %s  %s"):format(row.label, row.link, table.concat(bits, "  ")))
+            end
+        end
+    end
+    -- What to do about it, priced against what you already hold
+    for _, problem in ipairs(E.Problems(report)) do
+        if problem.kind == "BARE" then
+            local best = E.BestHeld and E.BestHeld(problem.row.slot, CountsFor)
+            if best then
+                print(("  |cffff8040->|r %s: you are holding %s ×%d"):format(
+                    problem.row.label, best.name, best.count))
+            end
+        end
+    end
+end
+
 function CommanderQuartermaster_ShoppingList()
     if not loaded then return end
     if not db.EnableQuartermaster then
@@ -2271,6 +2341,7 @@ end
 local function ApplySettings()
     if not loaded then return end
     LinkCharacter()
+    RestyleIcons()
     -- Scope and tracking settings all change what CountsFor answers
     InvalidateCounts()
     if browser then

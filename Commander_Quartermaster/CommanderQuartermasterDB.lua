@@ -24,7 +24,8 @@ local DefaultSettings = {
     RaidCheckSound = true,
 
     -- Browser window
-    BrowserStyle = "WINDOW",    -- WINDOW | DARK | CLASSIC
+    BrowserStyle = "WINDOW",
+    IconRecess = "SOFT",          -- shared suite icon shading: OFF|SOFT|DEEP|CARVED    -- WINDOW | DARK | CLASSIC
     BrowserScale = 1.0,
     -- false (not nil) so Restore Defaults clears a saved drag position
     BrowserPos = false,
@@ -109,7 +110,7 @@ local function CreatePanel()
         key = "Quartermaster",
         title = "Quartermaster",
         addonName = "Commander_Quartermaster",
-        description = "The supply ledger. A browsable database of every TBC consumable — flasks to bandages to ammunition — with loadout recommendations per class and spec, and live counts of what you hold across bags, bank, mail, and every alt. Each character reports as it plays: bags are live, bank and mail are as of the last visit; mail sent to alts stays counted in transit. Bare /cqm opens the browser; 'ready' grades your raid loadout, 'shop' builds the shopping list.",
+        description = "The supply ledger. A browsable database of every TBC consumable — flasks to bandages to ammunition — with loadout recommendations per class and spec, and live counts of what you hold across bags, bank, mail, and every alt. Each character reports as it plays: bags are live, bank and mail are as of the last visit; mail sent to alts stays counted in transit. Bare /cqm opens the browser; 'ready' grades your raid loadout, 'shop' builds the shopping list, 'gear' audits what your equipped gear is enchanted and gemmed with.",
         event = COMMANDER_QUARTERMASTER_EVENTS.UPDATE,
         slash = { "/cquartermaster", "/cqm" },
         slashHandlers = {
@@ -118,6 +119,7 @@ local function CreatePanel()
             report = function() if CommanderQuartermaster_Report then CommanderQuartermaster_Report() end end,
             ready = function() if CommanderQuartermaster_Ready then CommanderQuartermaster_Ready() end end,
             shop = function() if CommanderQuartermaster_ShoppingList then CommanderQuartermaster_ShoppingList() end end,
+            gear = function() if CommanderQuartermaster_Gear then CommanderQuartermaster_Gear() end end,
         },
     })
     local FinishScroll = MakeScrollable(panel, "CommanderQuartermasterSettingsScroll")
@@ -238,6 +240,14 @@ local function CreatePanel()
         },
         get = function() return CommanderQuartermasterDB.BrowserStyle end,
         set = function(value) CommanderQuartermasterDB.BrowserStyle = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddDropdown({
+        label = "Icon Recess",
+        tooltip = "Shading laid over every item icon in the browser so it reads as set into its row rather than pasted on it. The art is shared with the rest of the suite, so an icon here is cut the same way as one on any other Commander board. Soft is a shallow press, which is what a 22px row icon wants.",
+        options = Commander.ICON_STYLES,
+        get = function() return CommanderQuartermasterDB.IconRecess end,
+        set = function(value) CommanderQuartermasterDB.IconRecess = value end,
         isEnabled = Enabled,
     })
     panel:AddSlider({
