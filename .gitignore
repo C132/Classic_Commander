@@ -110,3 +110,7 @@
 /DBM-Outlands
 /DBM-Raids-BC
 /NovaInstanceTracker
+
+# Offline generator caches — a 100 MB world-DB dump and its SQLite staging.
+# The generator's OUTPUT ships; the quarry it was cut from does not.
+/Commander_Quartermaster/Harness/.cache/
