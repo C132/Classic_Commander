@@ -619,7 +619,7 @@ local function AddBuffSection(panel, layerMode)
     if book then for _, d in ipairs(book) do defs[#defs + 1] = d end end
     -- The druid's hots answer the same two questions and belong in the same
     -- grid: they are things you put on an ally and watch a slot for.
-    local hots = CommanderPartyFrames_GetHotBook and CommanderPartyFrames_GetHotBook(layerMode)
+    local hots = CommanderPartyFrames_GetStripBook and CommanderPartyFrames_GetStripBook(layerMode)
     if hots then for _, d in ipairs(hots) do defs[#defs + 1] = d end end
     if #defs == 0 then return end
 

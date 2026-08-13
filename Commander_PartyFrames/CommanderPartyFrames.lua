@@ -132,8 +132,8 @@ SDATA.DRUID_HOTS = {
       default = true, icon = "Interface\\Icons\\INV_Misc_Herb_Felblossom" },
 }
 for _, def in ipairs(SDATA.DRUID_HOTS) do def.dbKey = "HOT:" .. def.key end
-SDATA.MAX_HOT_ICONS = 3
-SDATA.HOT_ACTIVE = {}       -- the hots actually tracked AND trained, in order
+SDATA.MAX_STRIP_ICONS = 3
+SDATA.STRIP_ACTIVE = {}       -- the hots actually tracked AND trained, in order
 
 -- ---------------------------------------------------------------------------
 -- The ally-buff registry: every buff a supported class maintains on OTHER
@@ -436,7 +436,7 @@ local settingsBtn               -- header gear opening the settings page (any cl
 -- registry with every other class's, because they are any-caster facts while
 -- `state` is ours-only — another druid's Rejuvenation does not gate your next
 -- global, but their Mark absolutely means you do not recast it.
-local hot = { state = {}, names = {}, scan = {}, cds = {}, forms = {}, form = nil }
+local strip = { state = {}, names = {}, scan = {}, cds = {}, forms = {}, form = nil }
 
 -- Aggregate shielding (both layers): every absorb aura we can name — PW:S,
 -- Ice Barrier, Mana Shield, the wards, warlock Sacrifice — from ANY caster,
@@ -518,7 +518,7 @@ function CommanderPartyFrames_ResetProfile(p)
     if CommanderPartyFrames_RebindRows then CommanderPartyFrames_RebindRows() end
 end
 
-function CommanderPartyFrames_GetHotBook(layerKey)
+function CommanderPartyFrames_GetStripBook(layerKey)
     if layerKey ~= "HOT" then return nil end
     for _, def in ipairs(SDATA.DRUID_HOTS) do def.isHot = true end
     return SDATA.DRUID_HOTS
@@ -791,12 +791,12 @@ function util.RefreshBuffs()
         end
     end
     -- The druid's hot strip answers to exactly the same two questions
-    wipe(SDATA.HOT_ACTIVE)
+    wipe(SDATA.STRIP_ACTIVE)
     if layer == "HOT" then
         sig[#sig + 1] = "|"
         for _, def in ipairs(SDATA.DRUID_HOTS) do
             if def.known and util.BuffTracked(def) then
-                SDATA.HOT_ACTIVE[#SDATA.HOT_ACTIVE + 1] = def
+                SDATA.STRIP_ACTIVE[#SDATA.STRIP_ACTIVE + 1] = def
                 sig[#sig + 1] = def.key
             end
         end
@@ -1798,12 +1798,12 @@ end
 -- actually knows, so a feral never sees a Nature's Swiftness segment.
 local function ResolveDruidInfo()
     if layer ~= "HOT" or not GetSpellInfo then return end
-    wipe(hot.names)
+    wipe(strip.names)
     for _, def in ipairs(SDATA.DRUID_HOTS) do
         local n, _, icon = GetSpellInfo(def.baseId)
         def.known = false
         if n then
-            hot.names[n] = def
+            strip.names[n] = def
             if icon then def.icon = icon end
             -- knownSpells is the spellbook scan; IsSpellKnown is the backstop
             -- for a rank it has not indexed yet (same pair the rest use)
@@ -1812,21 +1812,21 @@ local function ResolveDruidInfo()
             end
         end
     end
-    wipe(hot.forms)
+    wipe(strip.forms)
     for id, form in pairs(SDATA.DRUID_FORMS) do
         local n, _, icon = GetSpellInfo(id)
         if n then
-            hot.forms[n] = form
+            strip.forms[n] = form
             form.icon = icon or form.icon
         end
     end
-    wipe(hot.cds)
+    wipe(strip.cds)
     for _, e in ipairs(SDATA.DRUID_BANNER_CDS) do
         local n, _, icon = GetSpellInfo(e.id)
         -- knownSpells is the spellbook scan; IsSpellKnown is the backstop for
         -- a rank we have not indexed yet (same pair the armor popout uses)
         if n and ((knownSpells and knownSpells[n]) or (IsSpellKnown and IsSpellKnown(e.id))) then
-            hot.cds[#hot.cds + 1] = { key = e.key, name = n, icon = icon or e.icon, cd = e.cd }
+            strip.cds[#strip.cds + 1] = { key = e.key, name = n, icon = icon or e.icon, cd = e.cd }
         end
     end
 end
@@ -2920,7 +2920,7 @@ local function ScanUnit(unit, reliable)
     -- The two layers with an ally-buff slot and the curse/CC escalation share
     -- one gate; the hot strip is the druid's alone.
     local intOn = layer == "INT" or layer == "HOT"
-    local hotOn = layer == "HOT"
+    local stripOn = layer == "HOT"
     local isPlayer = guid == playerGUID
     -- Ally buffs are read off the registry now: one pass fills a scratch pair
     -- keyed by buff, whatever class this is (see SDATA.CLASS_BUFFS)
@@ -2928,7 +2928,7 @@ local function ScanUnit(unit, reliable)
     local armorFound, formFound
     wipe(scanAbsorbs)
     if buffOn then wipe(util.buffExp); wipe(util.buffDur) end
-    if hotOn then wipe(hot.scan) end
+    if stripOn then wipe(strip.scan) end
     for i = 1, 40 do
         local aura = C_UnitAuras.GetBuffDataByIndex(unit, i, "HELPFUL")
         if not aura then break end
@@ -2955,17 +2955,17 @@ local function ScanUnit(unit, reliable)
         -- got rolling here" — another druid's Rejuvenation does not gate our
         -- next global, so sourceUnit decides membership exactly the way the
         -- Renew tracker does. No early break: hots sit anywhere in the list.
-        local hotDef = hotOn and hot.names[aura.name]
-        if hotDef and not hot.scan[hotDef.key]
+        local stripDef = stripOn and strip.names[aura.name]
+        if stripDef and not strip.scan[stripDef.key]
             and aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") then
-            hot.scan[hotDef.key] = { expire = aura.expirationTime, duration = aura.duration,
-                icon = aura.icon or hotDef.icon,
+            strip.scan[stripDef.key] = { expire = aura.expirationTime, duration = aura.duration,
+                icon = aura.icon or stripDef.icon,
                 stacks = aura.applications or aura.charges or 0 }
         end
         -- The player's own form (HOT layer): the banner's first segment, and
         -- the only aura on this pass we read off ourselves rather than an ally
-        if hotOn and isPlayer and not formFound and hot.forms[aura.name] then
-            formFound = hot.forms[aura.name]
+        if stripOn and isPlayer and not formFound and strip.forms[aura.name] then
+            formFound = strip.forms[aura.name]
         end
         -- Spec inference from visible marker auras (Shadowform, forms, Tree…)
         -- Self-sourced only: party-wide/target-castable markers (Trueshot
@@ -2995,8 +2995,8 @@ local function ScanUnit(unit, reliable)
     -- reliable, so absence here genuinely means "naked" / "caster form"
     if layer == "INT" and isPlayer then
         selfArmor = armorFound
-    elseif hotOn and isPlayer then
-        hot.form = formFound
+    elseif stripOn and isPlayer then
+        strip.form = formFound
     end
 
     -- Our hots on this unit, under the same reliable contract as everything
@@ -3004,14 +3004,14 @@ local function ScanUnit(unit, reliable)
     -- must not wipe a live record. A scan that COULD see them is the whole
     -- truth, so the record is rebuilt rather than merged — otherwise a hot
     -- that ticked away would linger on the strip forever.
-    if hotOn then
-        if next(hot.scan) then
-            local rec = hot.state[guid]
-            if not rec then rec = {}; hot.state[guid] = rec end
+    if stripOn then
+        if next(strip.scan) then
+            local rec = strip.state[guid]
+            if not rec then rec = {}; strip.state[guid] = rec end
             wipe(rec)
-            for key, e in pairs(hot.scan) do rec[key] = e end
+            for key, e in pairs(strip.scan) do rec[key] = e end
         elseif reliable then
-            hot.state[guid] = nil
+            strip.state[guid] = nil
         end
     end
 
@@ -3610,7 +3610,7 @@ SDATA.BUFF_ADVICE = {
 -- segment about it. Reddening every buff on every row on top of that is the
 -- same complaint six more times.
 function util.CastBlocked()
-    if layer == "HOT" and hot.form and not hot.form.heals then
+    if layer == "HOT" and strip.form and not strip.form.heals then
         return "you are shifted out of caster form"
     end
     return nil
@@ -3755,7 +3755,7 @@ end
 -- Lifebloom-about-to-bloom case; SHIELDED means it is rolling and you can
 -- look elsewhere. A full-health ally with no hots is not a decision, so it
 -- stays quiet at OTHER rather than lighting the board up yellow.
-local function ResolveHotState(r, now)
+local function ResolveStripState(r, now)
     if r.dead then
         r.state = "DEAD"
         r.mainText = r.deadText or "DEAD"
@@ -3788,12 +3788,12 @@ local function ResolveHotState(r, now)
     -- Position alone then tells you which hot you are looking at, which is
     -- what makes the strip readable at a glance instead of one you have to
     -- re-parse every time something falls.
-    local rec = hot.state[r.guid]
+    local rec = strip.state[r.guid]
     local n, soonest = 0, nil
-    r.hots = r.hots or {}
-    for i, def in ipairs(SDATA.HOT_ACTIVE) do
-        local slot = r.hots[i]
-        if not slot then slot = {}; r.hots[i] = slot end
+    r.strip = r.strip or {}
+    for i, def in ipairs(SDATA.STRIP_ACTIVE) do
+        local slot = r.strip[i]
+        if not slot then slot = {}; r.strip[i] = slot end
         local h = rec and rec[def.key]
         if h and h.expire and h.expire > 0 and h.expire <= now then
             rec[def.key], h = nil, nil
@@ -3809,9 +3809,9 @@ local function ResolveHotState(r, now)
             if not soonest or tl < soonest then soonest = tl end
         end
     end
-    if rec and not next(rec) then hot.state[r.guid] = nil end
-    r.hotCount = n
-    r.hotSlots = #SDATA.HOT_ACTIVE
+    if rec and not next(rec) then strip.state[r.guid] = nil end
+    r.stripCount = n
+    r.stripSlots = #SDATA.STRIP_ACTIVE
 
     if n == 0 then
         -- No hots of ours. Only a damaged ally is a decision; everyone else
@@ -3843,7 +3843,7 @@ local function ResolveState(r, now)
     -- their bar IS an absorb and their lockout IS a cooldown
     if not r.selfSpell then
         if layer == "INT" then return ResolveIntState(r, now) end
-        if layer == "HOT" then return ResolveHotState(r, now) end
+        if layer == "HOT" then return ResolveStripState(r, now) end
     end
     return ResolveShieldState(r, now)
 end
@@ -4141,8 +4141,8 @@ local function BuildRowWidgets(row)
     -- one that stacks, so every slot carries a stack count that only shows
     -- when there is a stack worth reading — three about to bloom is a
     -- different decision from one.
-    row.hots = {}
-    for n = 1, SDATA.MAX_HOT_ICONS do
+    row.strip = {}
+    for n = 1, SDATA.MAX_STRIP_ICONS do
         local h = {}
         h.icon = row:CreateTexture(nil, "ARTWORK")
         h.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -4156,7 +4156,7 @@ local function BuildRowWidgets(row)
         -- readable over the herb art whatever the sweep is doing behind it
         h.count = row:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
         h.count:Hide()
-        row.hots[n] = h
+        row.strip[n] = h
     end
 
     row.unitIcon = row:CreateTexture(nil, "ARTWORK")
@@ -4473,10 +4473,10 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     -- a row that jitters mid-fight is a row you cannot read. Unlike the
     -- dispel strip this lives INSIDE the frame: it is the board's subject, not
     -- an annotation, so it is worth the width it costs.
-    local hotSlots = (not compact and layer == "HOT") and #SDATA.HOT_ACTIVE or 0
-    for n = 1, SDATA.MAX_HOT_ICONS do
-        local h = row.hots[n]
-        if n <= hotSlots then
+    local stripSlots = (not compact and layer == "HOT") and #SDATA.STRIP_ACTIVE or 0
+    for n = 1, SDATA.MAX_STRIP_ICONS do
+        local h = row.strip[n]
+        if n <= stripSlots then
             h.icon:ClearAllPoints()
             h.icon:SetSize(SMALL_ICON, SMALL_ICON)
             h.icon:SetPoint("LEFT", row, "LEFT", x, 0)
@@ -4742,8 +4742,8 @@ local function PaintRow(row, r, now, index)
         row.bar:Hide(); row.barBG:Hide(); row.healthBar:Hide(); row.wsBar:Hide()
         row.markTick:Hide(); row.raidMark:Hide()
         for i = 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
-        for i = 1, SDATA.MAX_HOT_ICONS do
-            local h = row.hots[i]
+        for i = 1, SDATA.MAX_STRIP_ICONS do
+            local h = row.strip[i]
             h._exp = nil
             h.icon:Hide(); h.cd:Hide(); h.count:Hide()
         end
@@ -4883,14 +4883,14 @@ local function PaintRow(row, r, now, index)
     -- the hot's own remaining time, and a stack count on the one that stacks.
     -- The slots were reserved by the layout, so an empty one leaves a gap
     -- rather than sliding the rest of the row around.
-    local hotShown = 0
+    local stripShown = 0
     if layer == "HOT" and not r.selfSpell and DB("ShowSpellIcon", true)
         and r.state ~= "EMPTY" and not r.dead then
-        for i = 1, (r.hotSlots or 0) do
-            local e = r.hots and r.hots[i]
+        for i = 1, (r.stripSlots or 0) do
+            local e = r.strip and r.strip[i]
             if e then
-                hotShown = i
-                local h = row.hots[i]
+                stripShown = i
+                local h = row.strip[i]
                 if not e.up then
                     -- Missing: the hot's own art, dark, holding its place. The
                     -- slot is the answer to "what could I cast here".
@@ -4925,8 +4925,8 @@ local function PaintRow(row, r, now, index)
             end
         end
     end
-    for i = hotShown + 1, SDATA.MAX_HOT_ICONS do
-        local h = row.hots[i]
+    for i = stripShown + 1, SDATA.MAX_STRIP_ICONS do
+        local h = row.strip[i]
         h._exp = nil
         h.icon:Hide(); h.cd:Hide(); h.count:Hide()
     end
@@ -5451,7 +5451,7 @@ local function SampleUptime(now)
         for _, unit in ipairs(sampleUnits) do
             if not (UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)) then
                 total = total + 1
-                local rec = hot.state[UnitGUID(unit)]
+                local rec = strip.state[UnitGUID(unit)]
                 if rec and next(rec) then covered = covered + 1 end
             end
         end
@@ -5724,16 +5724,16 @@ local function DrawHeader(now, showHeader)
             -- other segment on this banner is advice you cannot take until
             -- you shift out. Tree of Life casts the whole hot kit, so it is
             -- shown plain — it is a resto druid's home, not a warning.
-            if hot.form then
-                util.Seg(hot.form.icon or "Interface\\Icons\\Ability_Racial_BearForm",
-                    not hot.form.heals, nil,
-                    (not hot.form.heals) and { 1, 0.25, 0.25 } or nil)
+            if strip.form then
+                util.Seg(strip.form.icon or "Interface\\Icons\\Ability_Racial_BearForm",
+                    not strip.form.heals, nil,
+                    (not strip.form.heals) and { 1, 0.25, 0.25 } or nil)
             end
             -- 2) The cooldowns that decide games, in book order and filtered
             -- at login to what this druid actually trained — a feral never
             -- sees a Nature's Swiftness slot
             if DB("HotBannerCooldowns", true) then
-                for _, e in ipairs(hot.cds) do
+                for _, e in ipairs(strip.cds) do
                     util.SegCooldown(e.name, e.icon, e.cd, now)
                 end
             end
@@ -5873,7 +5873,7 @@ end
 
 -- Drop every injected test entry from the shared state tables
 local function ClearTestState()
-    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters, hot.state }) do
+    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters, strip.state }) do
         for guid in pairs(t) do
             if type(guid) == "string" and guid:find("^cshieldtest") then t[guid] = nil end
         end
@@ -6358,17 +6358,17 @@ function CommanderPartyFrames_Test()
         intState["cshieldtest5"] = { MOTW = { expire = now + 1200, duration = 1800 },
             THORNS = { expire = now + 220, duration = 600 } }
         -- Rolling: all three up, the full strip with Lifebloom at three stacks
-        hot.state["cshieldtest1"] = {
+        strip.state["cshieldtest1"] = {
             REJUV = { expire = now + 9, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
             REGROWTH = { expire = now + 17, duration = 21, icon = defs.REGROWTH.icon, stacks = 0 },
             LIFEBLOOM = { expire = now + 6, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 3 },
         }
         -- About to bloom: one stack, inside the refresh window -> REFRESH
-        hot.state["cshieldtest2"] = {
+        strip.state["cshieldtest2"] = {
             LIFEBLOOM = { expire = now + 3, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 1 },
         }
         -- Rejuv only, healthy clock
-        hot.state["cshieldtest5"] = {
+        strip.state["cshieldtest5"] = {
             REJUV = { expire = now + 11, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
         }
         -- The two schools a druid removes, so both row colors are on screen
@@ -6410,7 +6410,7 @@ function CommanderPartyFrames_Test()
         -- whatever it runs on, so the buff slot applies even though a boar
         -- has no mana strip — and a hot of yours rolls on it like any ally.
         if DB("IncludePets", true) then
-            hot.state["cshieldtest8"] = {
+            strip.state["cshieldtest8"] = {
                 REJUV = { expire = now + 5, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
             }
             testRows[#testRows + 1] = { guid = "cshieldtest8", name = "Boar",
@@ -6627,12 +6627,12 @@ function CommanderPartyFrames_Debug()
             tostring(barrierDef and barrierDef.name or "unknown"),
             tostring(eleKnown), tostring(selfArmor and "up" or "none/unseen")))
     elseif layer == "HOT" then
-        local names, cds, units = 0, #hot.cds, 0
-        for _ in pairs(hot.names) do names = names + 1 end
-        for _ in pairs(hot.state) do units = units + 1 end
+        local names, cds, units = 0, #strip.cds, 0
+        for _ in pairs(strip.names) do names = names + 1 end
+        for _ in pairs(strip.state) do units = units + 1 end
         print(string.format("  hotNames=%d  bannerCds=%d  unitsWithHots=%d  form=%s",
             names, cds, units,
-            tostring(hot.form and hot.form.key or "caster")))
+            tostring(strip.form and strip.form.key or "caster")))
         local tracked = {}
         for _, def in ipairs(SDATA.BUFF_ACTIVE) do tracked[#tracked + 1] = def.key end
         print(string.format("  buffs tracked: %s",
@@ -6728,7 +6728,7 @@ local function Apply()
         wipe(curseState)
         wipe(ccState)
         wipe(allyAbsorbs)
-        wipe(hot.state)
+        wipe(strip.state)
         root:Hide()
     end
 end
