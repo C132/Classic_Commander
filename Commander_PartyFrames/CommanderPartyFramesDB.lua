@@ -74,6 +74,7 @@ local DefaultSettings = {
     MageClickMiddle = "TARGET", -- mage row middle-click = target the ally
     MageClickModLeft = 1008,    -- mage row mod+left     = Amplify Magic
     SelfShieldRows = true,      -- append your own shields under the ally rows
+    MageBannerCooldowns = true, -- Ice Block/Cold Snap/Evocation/... segments on the banner
 
     -- Druid layer: the hot board. Its own click keys for the same reason the
     -- mage's are separate — the DB is account-wide, so a priest's and a
@@ -1064,7 +1065,7 @@ local function CreateCorePanel()
             set = function(value) CommanderPartyFramesDB.EnableShield = value end,
         }, {
             label = "Show Header",
-            tooltip = "Show your management banner at the top: your armor with time left (a red OFF when you have none) with the click-to-switch popout, session shield uptime when tracked, team alerts (curses to remove, teammates in CC), and the conjure/consume/settings buttons. Live shield tracking lives on the My Shields rows below the board.",
+            tooltip = "Show your management banner at the top: your armor with time left (a red OFF when you have none) with the click-to-switch popout, your Ice Block / Cold Snap / Evocation / Counterspell / Icy Veins / Presence of Mind / Arcane Power / Combustion / Invisibility / Frost Nova cooldowns, session shield uptime when tracked, team alerts (curses to remove, teammates in CC), and the conjure/consume/settings buttons. Live shield tracking lives on the My Shields rows below the board.",
             get = function() return CommanderPartyFramesDB.ShowHeader end,
             set = function(value) CommanderPartyFramesDB.ShowHeader = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
@@ -1329,6 +1330,14 @@ local function CreateCorePanel()
             get = function() return CommanderPartyFramesDB.ExposeAlertSound end,
             set = function(value) CommanderPartyFramesDB.ExposeAlertSound = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
+        })
+
+        panel:AddCheckbox({
+            label = "Banner Cooldowns",
+            tooltip = "Show Ice Block, Cold Snap, Evocation, Counterspell, Icy Veins, Presence of Mind, Arcane Power, Combustion, Invisibility and Frost Nova on the banner — lit when ready, dimmed with the time left when not. Only the ones you have actually trained appear, so an arcane mage never sees a Cold Snap slot. Ice Barrier and the Water Elemental are deliberately absent: both already have their own row below the board, saying more than a segment could.",
+            get = function() return CommanderPartyFramesDB.MageBannerCooldowns end,
+            set = function(value) CommanderPartyFramesDB.MageBannerCooldowns = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
         })
 
         panel:AddSection("Banner Buttons", "The management cluster at the banner's right edge. Conjure and Consume are always there — Consume drinks on left-click and eats on right-click, so pressing both is the full sit-down. The rest are optional below.")

@@ -503,10 +503,44 @@ SDATA.PRIEST_BANNER_CDS = {
     { key = "MASSDISPEL", id = 32375, cd = 15, icon = "Interface\\Icons\\Spell_Arcane_MassDispel" },
     { key = "DESPERATE", id = 19236, cd = 600, icon = "Interface\\Icons\\Spell_Holy_Restoration" },
 }
+-- The mage banner's cooldown segments. Ice Block and Cold Snap lead because
+-- they are the two that decide whether you are alive in ten seconds; the
+-- shorter ones trail, where the width truncation reaches them first.
+--
+-- Ice Barrier and the Water Elemental are deliberately absent: the barrier
+-- already has a My Shields row carrying its real remaining absorb, and the
+-- elemental has a richer personal row than a segment could ever be. A banner
+-- that repeats what is two inches below it is width spent twice.
+--
+-- The ids and icons are the ones the party ability book already uses, which
+-- is the only list in this addon that has been checked against the live
+-- client rather than written from memory.
+SDATA.MAGE_BANNER_CDS = {
+    { key = "BLOCK",    id = 45438, cd = 300, icon = "Interface\\Icons\\Spell_Frost_Frost" },
+    { key = "COLDSNAP", id = 11958, cd = 480, icon = "Interface\\Icons\\Spell_Frost_WizardMark" },
+    { key = "EVOC",     id = 12051, cd = 480, icon = "Interface\\Icons\\Spell_Nature_Purge" },
+    { key = "CS",       id = 2139,  cd = 24,  icon = "Interface\\Icons\\Spell_Frost_IceShock" },
+    { key = "ICYVEINS", id = 12472, cd = 180, icon = "Interface\\Icons\\Spell_Frost_ColdHearted" },
+    { key = "POM",      id = 12043, cd = 180, icon = "Interface\\Icons\\Spell_Nature_EnchantArmor" },
+    { key = "AP",       id = 12042, cd = 180, icon = "Interface\\Icons\\Spell_Nature_Lightning" },
+    { key = "COMBUST",  id = 11129, cd = 180, icon = "Interface\\Icons\\Spell_Fire_SealOfFire" },
+    { key = "INVIS",    id = 66,    cd = 300, icon = "Interface\\Icons\\Ability_Mage_Invisibility" },
+    { key = "NOVA",     id = 122,   cd = 25,  icon = "Interface\\Icons\\Spell_Frost_FrostNova" },
+}
 SDATA.BANNER_CDS = {
     PWS   = SDATA.PRIEST_BANNER_CDS,
+    INT   = SDATA.MAGE_BANNER_CDS,
     HOT   = SDATA.DRUID_BANNER_CDS,
     BLESS = SDATA.PALADIN_BANNER_CDS,
+}
+-- Which saved-variable key each layer's banner-cooldown toggle lives under.
+-- Four separate keys because the DB is account-wide and a mage turning their
+-- segments off has no business turning a druid's off with them.
+SDATA.BANNER_CD_KEY = {
+    PWS   = "PriestBannerCooldowns",
+    INT   = "MageBannerCooldowns",
+    HOT   = "HotBannerCooldowns",
+    BLESS = "BlessBannerCooldowns",
 }
 -- Inner Fire, the priest's answer to the mage's armor: one permanent-ish self
 -- buff that is always meant to be up and is the easiest thing on the board to
@@ -2607,6 +2641,17 @@ function util.SegCooldown(name, icon, cd, now)
     local txt = left >= 90 and string.format("%dm", math.floor(left / 60 + 0.5))
         or string.format("%d", math.floor(left + 0.5))
     util.Seg(icon, true, txt)
+end
+
+-- The banner's whole cooldown run, shared by every layer that has one. The
+-- book was filtered to trained spells at login and each layer owns its own
+-- toggle (SDATA.BANNER_CD_KEY), so what was four identical loops is one.
+function util.SegCds(now)
+    local key = SDATA.BANNER_CD_KEY[layer or ""]
+    if key and not DB(key, true) then return end
+    for _, e in ipairs(strip.cds) do
+        util.SegCooldown(e.name, e.icon, e.cd, now)
+    end
 end
 
 -- Per-draw refresh of everything insecure on the utility cluster: the
@@ -6126,13 +6171,19 @@ local function DrawHeader(now, showHeader)
                 util.Seg("Interface\\Icons\\Spell_Frost_FrostArmor02", true, nil, { 1, 0.25, 0.25 })
                 if root.armorCd then root._armorExp = nil; root.armorCd:Hide() end
             end
-            -- 2) Session shield uptime — the live shield tracking itself
+            -- 2) The cooldowns that decide games, filtered at login to what
+            -- this mage actually trained — an arcane mage never sees a Cold
+            -- Snap slot. Ice Barrier and the elemental stay off the banner:
+            -- both already have a personal row saying more than a segment
+            -- could (see SDATA.MAGE_BANNER_CDS).
+            util.SegCds(now)
+            -- 3) Session shield uptime — the live shield tracking itself
             -- (Barrier state, absorb totals) lives on the My Shields rows now
             if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
                 util.Seg("Interface\\Icons\\Spell_Shadow_DetectLesserInvisibility", false,
                     string.format("%d%%", math.floor(uptime.coverageSum / uptime.coverageSamples * 100 + 0.5)))
             end
-            -- 3) Team alerts: curses you can remove, teammates in CC
+            -- 4) Team alerts: curses you can remove, teammates in CC
             if intCurses > 0 or intCCs > 0 then
                 util.Seg(intCurses > 0 and "Interface\\Icons\\Spell_Shadow_CurseOfTounges"
                     or "Interface\\Icons\\Spell_Nature_Polymorph", false, AlertText())
@@ -6164,11 +6215,7 @@ local function DrawHeader(now, showHeader)
             -- 2) The cooldowns that decide games, in book order and filtered
             -- at login to what this druid actually trained — a feral never
             -- sees a Nature's Swiftness slot
-            if DB("HotBannerCooldowns", true) then
-                for _, e in ipairs(strip.cds) do
-                    util.SegCooldown(e.name, e.icon, e.cd, now)
-                end
-            end
+            util.SegCds(now)
             -- 3) Session hot uptime
             if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
                 util.Seg(SDATA.DRUID_HOTS[1].icon, false,
@@ -6218,11 +6265,7 @@ local function DrawHeader(now, showHeader)
             end
             -- 3) The cooldowns that decide games, in book order and filtered
             -- at login to what this paladin actually trained
-            if DB("BlessBannerCooldowns", true) then
-                for _, e in ipairs(strip.cds) do
-                    util.SegCooldown(e.name, e.icon, e.cd, now)
-                end
-            end
+            util.SegCds(now)
             -- 4) Session blessing uptime
             if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
                 util.Seg("Interface\\Icons\\Spell_Magic_MageArmor", false,
@@ -6285,11 +6328,7 @@ local function DrawHeader(now, showHeader)
         end
         -- 3) The cooldowns that decide games, filtered at login to what this
         -- priest actually trained — a disc priest never sees Shadowfiend
-        if DB("PriestBannerCooldowns", true) then
-            for _, e in ipairs(strip.cds) do
-                util.SegCooldown(e.name, e.icon, e.cd, now)
-            end
-        end
+        util.SegCds(now)
         -- 4) Session shield uptime
         if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
             util.Seg(SDATA.PWS_ICON, false,

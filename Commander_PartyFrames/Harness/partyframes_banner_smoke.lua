@@ -532,6 +532,13 @@ local SPELLS = {
     [15487] = "Silence", [14751] = "Inner Focus",
     [34433] = "Shadowfiend", [32375] = "Mass Dispel",
     [19236] = "Desperate Prayer",
+    -- Mage banner cooldowns. Combustion is deliberately left UNTRAINED below
+    -- (this mock mage is frost), so the known-only filter has something to
+    -- drop here too.
+    [45438] = "Ice Block", [11958] = "Cold Snap", [12051] = "Evocation",
+    [2139] = "Counterspell", [12472] = "Icy Veins", [12043] = "Presence of Mind",
+    [12042] = "Arcane Power", [11129] = "Combustion", [66] = "Invisibility",
+    [122] = "Frost Nova",
 }
 local knownIds = {}
 local function Learn(...) for _, id in ipairs({ ... }) do knownIds[id] = true end end
@@ -542,6 +549,7 @@ Learn(17, 6788, 139, 1459, 23028, 5504, 587, 3273,
     27125, 27124,
     11426, 1463,                                   -- Ice Barrier, Mana Shield
     1008,                                          -- Amplify Magic (Dampen untrained)
+    45438, 11958, 12051, 2139, 12472, 66, 122,     -- mage banner (no Combustion)
     1243, 21562, 14752, 27681, 976,                -- the priest's ally buffs
     25431, 33206, 10060, 6346, 8122, 15487, 14751, 32375, 19236)  -- priest banner (no Shadowfiend)
 -- Druid book: the whole hot kit and three of the four banner cooldowns.
@@ -2768,6 +2776,42 @@ playerBuffs = {}
 ArmorNow()
 CHECK((hdr[1].text.__text or "") == "", "no armor, still no text", hdr[1].text.__text)
 CHECK(armorCd.__shown == false, "no armor, no ring")
+
+-- --- Banner cooldowns --------------------------------------------------
+-- The mage banner was the last of the four without them: armor, uptime and
+-- alerts, and no way to see your own Ice Block.
+do
+    local function Textures()
+        local out = {}
+        for i = 1, #hdr do
+            if hdr[i].icon.__shown then out[hdr[i].icon.__texture or "?"] = true end
+        end
+        return out
+    end
+    CommanderPartyFramesDB.MageBannerCooldowns = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    ArmorNow()
+    local drawn = Textures()
+    CHECK(drawn["Interface\\Icons\\Spell_45438"] == true,
+        "Ice Block, which this mage knows, gets a segment")
+    CHECK(drawn["Interface\\Icons\\Spell_11129"] ~= true,
+        "Combustion, which they do not, never does")
+    -- Both live on their own rows below the board; repeating them here would
+    -- be width spent twice
+    CHECK(drawn["Interface\\Icons\\Spell_11426"] ~= true,
+        "Ice Barrier stays on its My Shields row, not the banner")
+    CHECK(drawn["Interface\\Icons\\Spell_31687"] ~= true,
+        "...and the Water Elemental stays on its own row")
+
+    CommanderPartyFramesDB.MageBannerCooldowns = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    ArmorNow()
+    CHECK(Textures()["Interface\\Icons\\Spell_45438"] ~= true,
+        "the banner cooldowns answer their toggle")
+    CommanderPartyFramesDB.MageBannerCooldowns = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    ArmorNow()
+end
 CHECK(hdr[1].icon.__desat == true, "the naked-mage icon is desaturated")
 tint = hdr[1].icon.__color or {}
 CHECK(tint[1] == 1 and tint[2] and tint[2] < 0.4, "and red", tostring(tint[2]))
