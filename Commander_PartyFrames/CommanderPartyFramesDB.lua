@@ -234,14 +234,6 @@ local function BuffFlag(field, def, fallback)
     return v
 end
 
-local BUFF_ADVICE_TEXT = {
-    ALWAYS = "always — there is no fight where you would rather not have it",
-    VS_MELEE = "when an enemy melee is parked on them, or a wounded melee ally is trading hits",
-    VS_SHADOW = "only against a team that actually deals shadow damage",
-    VS_PHYSICAL = "only against an all-physical team, where the extra magic damage taken costs nothing",
-    VS_CASTER = "only against a caster team worth blunting",
-}
-
 -- Everything this class can put on somebody else, as a grid of the spells'
 -- own icons — the icon IS the switch. A list of twelve checkboxes reading
 -- "Track Prayer of Fortitude" is a worse way to answer "what am I watching"
