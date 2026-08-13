@@ -721,6 +721,23 @@ local function ItemLevelOf(id)
     return 0
 end
 
+-- A link for the chat box. The client's own link is best, but it only has one
+-- once the item is cached — and an enhancement you have never held is exactly
+-- the case where it is not. Build one from what the database knows rather than
+-- let shift-click silently do nothing.
+local function LinkForItem(itemID, name, quality)
+    if not itemID then return nil end
+    local ok, _, link = pcall(C_Item.GetItemInfo, itemID)
+    if ok and link then return link end
+    local hex = "|cffffffff"
+    local colors = ITEM_QUALITY_COLORS
+    if quality and colors and colors[quality] and colors[quality].hex then
+        hex = colors[quality].hex
+    end
+    return ("%s|Hitem:%d:0:0:0:0:0:0:0:0|h[%s]|h|r"):format(
+        hex, itemID, name or ("Item " .. itemID))
+end
+
 local function FormatCount(n)
     if n and n > 0 then return tostring(n) end
     return "|cff444444–|r"
@@ -1895,6 +1912,41 @@ local function CreateRow(parent, index)
             GameTooltip:Show()
             return
         end
+        -- A row in the Gear view is either a slot you are wearing or an
+        -- enhancement that could go in one. Both want the real item tooltip
+        -- where there is one, so the enhancement lines the addon appends land
+        -- on it the same way they do in the bags.
+        if item.kind == "gearslot" then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            local shown = item.row.invSlot and
+                pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", item.row.invSlot)
+            if not shown and item.row.link then
+                shown = pcall(GameTooltip.SetHyperlink, GameTooltip, item.row.link)
+            end
+            if not shown then
+                GameTooltip:SetText(item.row.label or "?")
+            end
+            GameTooltip:Show()
+            return
+        end
+        if item.kind == "enh" then
+            local entry = item.entry
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            local shown = entry.item and
+                pcall(GameTooltip.SetHyperlink, GameTooltip, ("item:%d"):format(entry.item))
+            if not shown then
+                -- An enchanter casts it: there is no item, so there is no
+                -- item tooltip to borrow. Build the whole thing by hand.
+                GameTooltip:SetText(entry.name or "?", 1, 1, 1)
+                local E = CommanderQuartermasterEnhance
+                for _, line in ipairs(E and E.DetailLines(entry) or {}) do
+                    GameTooltip:AddLine(("%s%s"):format(("   "):rep(line.depth), line.text),
+                        1, 1, 1, true)
+                end
+            end
+            GameTooltip:Show()
+            return
+        end
         if item.kind ~= "item" then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, ("item:%d"):format(item.id))
@@ -1921,7 +1973,32 @@ local function CreateRow(parent, index)
             end
             return
         end
-        if item.kind ~= "item" then return end
+        -- Gear-view rows behave like item rows: shift-click links, right-click
+        -- sets a restock target. A gear row links the EQUIPPED item, enchant
+        -- and gems and all, because that link is already in hand and is what
+        -- someone linking their gear means to show.
+        if item.kind ~= "item" then
+            local clickID, clickLink
+            if item.kind == "gearslot" then
+                clickID, clickLink = item.row and item.row.id, item.row and item.row.link
+            elseif item.kind == "enh" then
+                clickID = item.entry and item.entry.item
+            end
+            if button == "RightButton" then
+                if item.kind == "enh" and clickID and StaticPopup_Show then
+                    StaticPopup_Show("COMMANDER_QM_TARGET",
+                        ItemName(clickID, item.entry and item.entry.name), nil,
+                        { id = clickID, current = CommanderQuartermaster_GetWatchTarget(clickID) })
+                end
+                return
+            end
+            if IsShiftKeyDown and IsShiftKeyDown() and ChatEdit_InsertLink then
+                clickLink = clickLink or LinkForItem(clickID,
+                    item.entry and item.entry.name, item.entry and item.entry.quality)
+                if clickLink then ChatEdit_InsertLink(clickLink) end
+            end
+            return
+        end
         if button == "RightButton" then
             if StaticPopup_Show then
                 local target = CommanderQuartermaster_GetWatchTarget(item.id)
@@ -1932,10 +2009,8 @@ local function CreateRow(parent, index)
             return
         end
         if IsShiftKeyDown and IsShiftKeyDown() and ChatEdit_InsertLink then
-            local okInfo, _, link = pcall(C_Item.GetItemInfo, self.item.id)
-            if okInfo and link then
-                ChatEdit_InsertLink(link)
-            end
+            local link = LinkForItem(item.id, item.entry and item.entry.name)
+            if link then ChatEdit_InsertLink(link) end
         end
     end)
     return row

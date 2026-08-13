@@ -280,6 +280,7 @@ end
 
 UIParent = NewWidget("Frame", "UIParent")
 GameTooltip = NewWidget("GameTooltip", "GameTooltip")
+
 tinsert = table.insert
 wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
 unpack = unpack or table.unpack
@@ -400,6 +401,25 @@ local world = {
     items = {},     -- itemID -> { id, loc, sockets } for gear not worn
     skills = {},    -- { { "Enchanting", 375 }, … }
 }
+
+-- Record what the tooltip was asked to show. The browser's rows borrow the
+-- real item tooltip where one exists and hand-build one where it does not,
+-- and both paths are worth asserting.
+local insertedLinks = {}
+function ChatEdit_InsertLink(link) insertedLinks[#insertedLinks + 1] = link return true end
+local shiftDown = false
+function IsShiftKeyDown() return shiftDown end
+
+GameTooltip.__lines = {}
+function GameTooltip:SetOwner() self.__lines = {} self.__source = nil end
+function GameTooltip:AddLine(text) self.__lines[#self.__lines + 1] = tostring(text) end
+function GameTooltip:AddDoubleLine(a, b) self:AddLine(tostring(a) .. " " .. tostring(b)) end
+function GameTooltip:SetHyperlink(link) self.__source = "hyperlink:" .. tostring(link) end
+function GameTooltip:SetInventoryItem(unit, slot)
+    if not (world.equipped and world.equipped[slot]) then error("nothing equipped") end
+    self.__source = ("inventory:%s:%d"):format(unit, slot)
+end
+function GameTooltip:Text() return table.concat(self.__lines, "\n") end
 
 -- Item class map for IsTracked's GetItemInfoInstant fallback: anything the
 -- curated database knows never reaches it; these two exercise the fallback
@@ -1536,10 +1556,12 @@ CHECK(bareTip:find("Not enchanted", 1, true), "P: bare gear says so on its own t
 CHECK(bareTip:find("Enchant Chest", 1, true), "P: and names what belongs there", bareTip)
 local doneTip = TipForLink(GearLink(28187, 2673, 32409))
 CHECK(doneTip:find("Mongoose", 1, true), "P: an enchanted weapon is named", doneTip)
-CHECK(doneTip:find("Empty Yellow socket", 1, true),
-    "P: its remaining socket is named by colour", doneTip)
+CHECK(doneTip:find("1 empty socket", 1, true),
+    "P: its remaining socket is counted", doneTip)
 CHECK(doneTip:find("Relentless Earthstorm Diamond", 1, true),
-    "P: and the gem that is in the other one", doneTip)
+    "P: and the gem in the other one is named", doneTip)
+CHECK(doneTip:find("matches no socket", 1, true),
+    "P: a meta gem in a red socket is called out as matching nothing", doneTip)
 CHECK(not TipForLink(GearLink(28190, 0)):find("Not enchanted", 1, true),
     "P: a belt is never accused of missing an enchant")
 CHECK(not TipForLink(GearLink(28227, 0)):find("Not enchanted", 1, true),
@@ -1824,6 +1846,95 @@ for _, e in ipairs(SData.Entries) do
 end
 CHECK(ungrouped == 0, "S: every gem belongs to exactly one colour shelf", ungrouped)
 CHECK(grouped > 200, "S: and there are as many gems as TBC has", grouped)
+
+-- ===========================================================================
+-- T: the Gear view's own rows have tooltips
+-- ===========================================================================
+
+world.equipped = {
+    [1] = { id = 28182, ench = 3002, loc = "INVTYPE_HEAD" },
+    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON", cls = 2, sub = 7,
+             sockets = { RED = 1, YELLOW = 1 }, gems = { 32409 } },
+}
+Sync()
+browser.viewGear.__scripts.OnClick(browser.viewGear)
+
+local function HoverRowWhere(pred)
+    for _, row in ipairs(rows) do
+        if row.__shown and row.item and pred(row.item) then
+            row.__scripts.OnEnter(row)
+            return row
+        end
+    end
+end
+
+-- An equipped-slot row borrows the real item tooltip, which is where the
+-- addon's own gear verdict gets appended
+local gearRow = HoverRowWhere(function(item) return item.kind == "gearslot" end)
+CHECK(gearRow ~= nil, "T: a My Gear row can be hovered")
+CHECK(GameTooltip.__source and GameTooltip.__source:find("inventory:player", 1, true),
+    "T: and it shows the equipped item's own tooltip", tostring(GameTooltip.__source))
+
+-- An enhancement row with a carrier item does the same by item id
+sidebarByKey("HEAD").onClick()
+local withItem = HoverRowWhere(function(item) return item.kind == "enh" and item.entry.item end)
+CHECK(withItem ~= nil, "T: an enhancement row can be hovered")
+CHECK(GameTooltip.__source and GameTooltip.__source:find("hyperlink:item:", 1, true),
+    "T: and shows the item tooltip", tostring(GameTooltip.__source))
+
+-- An enchanter-cast enchant has no item, so the row builds the tooltip itself
+sidebarByKey("CHEST").onClick()
+local noItem = HoverRowWhere(function(item) return item.kind == "enh" and not item.entry.item end)
+CHECK(noItem ~= nil, "T: an enchanter-cast enchant is on the shelf")
+CHECK(GameTooltip.__text and GameTooltip.__text:find("Enchant Chest", 1, true),
+    "T: its row builds a tooltip by hand", tostring(GameTooltip.__text))
+local built = GameTooltip:Text()
+CHECK(built:find("Enhances:", 1, true) and built:find("Sources", 1, true),
+    "T: carrying the full detail, not just a name", built:sub(1, 160))
+CHECK(built:find("Enchanting", 1, true), "T: including the profession that applies it")
+
+-- Shift-click links what the row is about
+shiftDown = true
+sidebarByKey("MYGEAR").onClick()
+local before = #insertedLinks
+for _, row in ipairs(rows) do
+    if row.__shown and row.item and row.item.kind == "gearslot" then
+        row.__scripts.OnMouseUp(row, "LeftButton")
+        break
+    end
+end
+CHECK(#insertedLinks > before and insertedLinks[#insertedLinks]:find("Hitem:", 1, true),
+    "T: shift-clicking a gear row links the equipped item",
+    insertedLinks[#insertedLinks])
+
+sidebarByKey("HEAD").onClick()
+before = #insertedLinks
+for _, row in ipairs(rows) do
+    if row.__shown and row.item and row.item.kind == "enh" and row.item.entry.item then
+        row.__scripts.OnMouseUp(row, "LeftButton")
+        break
+    end
+end
+CHECK(#insertedLinks > before, "T: and shift-clicking an enhancement links it too",
+    insertedLinks[#insertedLinks])
+CHECK(insertedLinks[#insertedLinks]:find("Hitem:", 1, true),
+    "T: with a real hyperlink even though the client has never cached the item",
+    insertedLinks[#insertedLinks])
+
+before = #insertedLinks
+shiftDown = false
+for _, row in ipairs(rows) do
+    if row.__shown and row.item and row.item.kind == "enh" then
+        row.__scripts.OnMouseUp(row, "LeftButton")
+        break
+    end
+end
+CHECK(#insertedLinks == before, "T: a plain click links nothing")
+
+world.equipped = {}
+Sync()
+db.BrowserView, db.BrowserSlot = "BROWSE", "MYGEAR"
+browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
 
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 

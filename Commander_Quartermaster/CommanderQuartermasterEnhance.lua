@@ -155,6 +155,7 @@ local SLOTS = {
 }
 M.Slots = SLOTS
 
+local SOCKET_ORDER = { "META", "RED", "YELLOW", "BLUE", "PRISMATIC" }
 local SOCKET_STATS = {
     EMPTY_SOCKET_RED = "RED", EMPTY_SOCKET_YELLOW = "YELLOW",
     EMPTY_SOCKET_BLUE = "BLUE", EMPTY_SOCKET_META = "META",
@@ -313,10 +314,16 @@ local function Fits(colors, socket)
 end
 M.Fits = Fits
 
--- Largest set of sockets that can be satisfied at once. A greedy pass is not
--- enough: a red gem in a red socket may have to move to the orange one so a
--- red-only gem can take its place. Kuhn's augmenting path, over at most four
--- sockets, which is free.
+-- Largest set of sockets that can be satisfied at once, and which gem went
+-- where. A greedy pass is not enough: a red gem in a red socket may have to
+-- move to the orange one so a red-only gem can take its place. Kuhn's
+-- augmenting path, over at most four sockets, which is free.
+--
+-- Returns the count and the assignment (socket index -> gem index). The
+-- assignment is what the tooltip reads: the client tells us WHICH COLOURS an
+-- item has sockets for and WHICH GEMS are in it, but never which gem sits in
+-- which socket — so the honest display is the one the matching computes,
+-- not gem[i] paired with socket[i].
 local function MaxMatch(sockets, gems)
     local gemColors = {}
     for i, id in ipairs(gems) do gemColors[i] = GemColors(id) end
@@ -337,7 +344,7 @@ local function MaxMatch(sockets, gems)
     for gem = 1, #gems do
         if try(gem, {}) then matched = matched + 1 end
     end
-    return matched
+    return matched, takenBy
 end
 M.MaxMatch = MaxMatch
 
@@ -347,9 +354,12 @@ function M.JudgeSockets(link, parsed)
     parsed = parsed or ParseLink(link)
     local stats = ItemStats(link)
     if not (parsed and stats) then return nil end
+    -- Deterministic order. GetItemStats reports socket COUNTS by colour, and
+    -- a pairs() walk over them would shuffle the list between calls — which
+    -- is fine for counting and useless for anything that names them.
     local sockets = {}
-    for stat, color in pairs(SOCKET_STATS) do
-        for _ = 1, (stats[stat] or 0) do
+    for _, color in ipairs(SOCKET_ORDER) do
+        for _ = 1, (stats["EMPTY_SOCKET_" .. color] or 0) do
             sockets[#sockets + 1] = color
         end
     end
@@ -360,9 +370,9 @@ function M.JudgeSockets(link, parsed)
             gems[#gems + 1] = parsed.gems[i]
         end
     end
-    local matched = MaxMatch(sockets, gems)
+    local matched, assign = MaxMatch(sockets, gems)
     return {
-        sockets = sockets, gems = gems,
+        sockets = sockets, gems = gems, assign = assign,
         empty = math.max(0, #sockets - #gems),
         matched = matched,
         -- Only claim the bonus when every socket is both filled and matched.
@@ -855,18 +865,26 @@ function M.GearLines(link, role)
 
     local judged = M.JudgeSockets(link, parsed)
     if judged then
-        for i, color in ipairs(judged.sockets) do
-            local gemID = judged.gems[i]
-            local gem = gemID and byItem[gemID]
-            local colorName = COLOR_TEXT[color] or color
-            if not gemID then
-                add(0, ("|cffff4040Empty %s socket|r"):format(colorName))
-            else
-                local fits = Fits(GemColors(gemID), color)
-                add(0, ("%s%s|r |cff888888in the %s socket|r"):format(
-                    fits and "|cff33ff99" or "|cffff8040",
-                    gem and gem.name or ("gem #" .. gemID), colorName))
+        local placed = {}
+        for socket, gem in pairs(judged.assign or {}) do
+            placed[gem] = true
+            local gemID = judged.gems[gem]
+            local entry = byItem[gemID]
+            add(0, ("|cff33ff99%s|r |cff888888in the %s socket|r"):format(
+                entry and entry.name or ("gem #" .. tostring(gemID)),
+                COLOR_TEXT[judged.sockets[socket]] or judged.sockets[socket]))
+        end
+        -- A gem that matched nothing is still socketed; it just earns nothing
+        for i, gemID in ipairs(judged.gems) do
+            if not placed[i] then
+                local entry = byItem[gemID]
+                add(0, ("|cffff8040%s|r |cff888888matches no socket on this item|r"):format(
+                    entry and entry.name or ("gem #" .. tostring(gemID))))
             end
+        end
+        if judged.empty > 0 then
+            add(0, ("|cffff4040%d empty socket%s|r"):format(
+                judged.empty, judged.empty == 1 and "" or "s"))
         end
         if #judged.sockets > 0 and judged.empty == 0 and not judged.unknown then
             add(0, judged.bonus and "|cff33ff99Socket bonus earned|r"
