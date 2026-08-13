@@ -1401,13 +1401,29 @@ for _, item in ipairs(list) do
 end
 CHECK(headRows > 10, "O: the head shelf is populated", headRows)
 CHECK(powerRow ~= nil, "O: Glyph of Power is on the head shelf")
-local powerText
-for _, row in ipairs(rows) do
-    if row.__shown and row.item == powerRow then powerText = row.noteFS.__text end
+-- The row's note is the source summary; assert on it directly rather than on
+-- whichever fifteen rows the ranking happens to have scrolled into view
+local powerText = CommanderQuartermasterEnhance.SourceSummary(powerRow.entry)
+CHECK(powerText:find("Almaador", 1, true), "O: the row states where to buy it", powerText)
+CHECK(powerText:find("Sha'tar", 1, true), "O: and the standing it wants")
+CHECK(powerText:find("Revered", 1, true), "O: and how much of it")
+
+-- The shelf is ordered for the role you play, and the top pick is marked
+local firstEnh
+for _, item in ipairs(list) do
+    if item.kind == "enh" then firstEnh = item break end
 end
-CHECK(powerText and powerText:find("Almaador", 1, true), "O: the row states where to buy it",
-    powerText)
-CHECK(powerText and powerText:find("Sha'tar", 1, true), "O: and the standing it wants")
+CHECK(firstEnh and firstEnh.bestFor ~= nil, "O: the head shelf marks a best pick for your role",
+    firstEnh and tostring(firstEnh.bestFor))
+local E = CommanderQuartermasterEnhance
+CHECK(E.Score({ stats = { STR = 10 } }, "MELEE") > E.Score({ stats = { STR = 10 } }, "CASTER"),
+    "O: strength is worth more to melee than to a caster")
+CHECK(E.Score({ stats = { MP5 = 6 } }, "HEALER") > E.Score({ stats = { MP5 = 6 } }, "MELEE"),
+    "O: mana regen is a healer stat")
+CHECK(E.Score({ stats = { SP = 20 } }, "CASTER") > E.Score({ stats = { SP_FIRE = 20 } }, "CASTER"),
+    "O: school-locked spell damage is discounted against the general kind")
+CHECK(E.Score({ short = "Mongoose" }, "MELEE") == nil,
+    "O: a proc enchant scores nothing rather than scoring badly")
 
 -- Search reaches across every slot, and into the sources
 sidebarByKey("MYGEAR").onClick()

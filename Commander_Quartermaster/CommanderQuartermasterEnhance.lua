@@ -281,6 +281,102 @@ function M.ScanGear(unit)
 end
 
 -- ---------------------------------------------------------------------------
+-- Ranking for a role
+-- ---------------------------------------------------------------------------
+-- TBC-era stat weights, one column per role the loadout database already
+-- assigns to a spec. They are deliberately coarse: the job is to sort a
+-- slot's shelf so the right handful floats to the top, not to out-argue a
+-- simulator. Spell damage and healing are separate stats in TBC, so a caster
+-- weight and a healer weight genuinely differ; school-locked spell damage
+-- pays for one school and is discounted accordingly; and anything situational
+-- (undead-only attack power, fishing) scores zero rather than a small number,
+-- because a small number still sorts above the enchant you actually want.
+local WEIGHTS = {
+    MELEE = {
+        STR = 1.0, AGI = 1.0, STA = 0.4, AP = 0.5, CRIT = 0.9, HIT = 1.2,
+        EXPERTISE = 1.1, HASTE = 0.9, WEAPONDMG = 1.3, ARPEN = 0.5,
+        ARMOR = 0.05, DODGE = 0.1, DEF = 0.1, RESIL = 0.2,
+    },
+    RANGED = {
+        AGI = 1.0, STA = 0.35, RAP = 0.5, AP = 0.5, CRIT = 0.9, HIT = 1.2,
+        HASTE = 0.9, INT = 0.15, WEAPONDMG = 1.0, ARMOR = 0.05, RESIL = 0.2,
+    },
+    CASTER = {
+        SP = 1.0, SP_FIRE = 0.45, SP_FROST = 0.45, SP_SHADOW = 0.45,
+        SP_ARCANE = 0.45, SP_NATURE = 0.45, SP_HOLY = 0.45,
+        SPELLHIT = 1.3, SPELLCRIT = 0.8, SPELLHASTE = 1.0, INT = 0.35,
+        SPI = 0.15, STA = 0.3, MP5 = 0.4, SPELLPEN = 0.2, ARMOR = 0.03,
+    },
+    HEALER = {
+        HEAL = 1.0, SP = 0.55, INT = 0.5, SPI = 0.45, MP5 = 1.6,
+        SPELLCRIT = 0.5, SPELLHASTE = 0.7, STA = 0.3, ARMOR = 0.03,
+    },
+    TANK = {
+        STA = 1.0, DEF = 1.2, DODGE = 1.0, PARRY = 0.9, BLOCK = 0.6,
+        BLOCKVALUE = 0.35, ARMOR = 0.12, STR = 0.4, AGI = 0.6, HP = 0.08,
+        THREAT = 0.8, AP = 0.2, CRIT = 0.3, HIT = 0.5, RESIL = 0.3,
+        ALLRES = 0.2, FIRERES = 0.05, FROSTRES = 0.05, NATURERES = 0.05,
+        SHADOWRES = 0.05, ARCANERES = 0.05,
+    },
+}
+M.Weights = WEIGHTS
+
+-- What one enhancement is worth to a role. nil when it grants no stats at
+-- all — a proc enchant like Mongoose or Crusader cannot be scored this way,
+-- and pretending otherwise would rank it below +12 Stamina.
+function M.Score(entry, role)
+    local weights = WEIGHTS[role]
+    if not (weights and entry and entry.stats) then return nil end
+    local total = 0
+    for stat, amount in pairs(entry.stats) do
+        total = total + amount * (weights[stat] or 0)
+    end
+    return total
+end
+
+-- A slot's shelf, best for this role first. Entries with no stats keep their
+-- place at the end rather than being dropped: Mongoose is the best weapon
+-- enchant in TBC and scores nil, because a proc is not a stat line. That is
+-- also why nothing here is called "best" without the words "by stats".
+--
+-- `want` picks a half of the shelf: "PERM" for the enchant a slot keeps,
+-- "TEMP" for the stone or oil you reapply. They are not alternatives to each
+-- other — a weapon carries both — so ranking them in one list would be
+-- comparing an enchant to a consumable.
+function M.RankSlot(slotKey, role, filter, want)
+    local list = bySlot[slotKey]
+    if not list then return nil end
+    local scored, unscored = {}, {}
+    for _, entry in ipairs(list) do
+        local isTemp = entry.kind == "TEMP"
+        local wanted = (want == nil) or (want == "TEMP" and isTemp) or (want == "PERM" and not isTemp)
+        if wanted and not entry.unobtainable and (not filter or filter(entry)) then
+            local score = M.Score(entry, role)
+            if score and score > 0 then
+                scored[#scored + 1] = { entry = entry, score = score }
+            else
+                unscored[#unscored + 1] = { entry = entry }
+            end
+        end
+    end
+    table.sort(scored, function(a, b)
+        if a.score ~= b.score then return a.score > b.score end
+        return (a.entry.name or "") < (b.entry.name or "")
+    end)
+    for _, row in ipairs(unscored) do
+        scored[#scored + 1] = row
+    end
+    return scored
+end
+
+-- The best PERMANENT enhancement for a slot and role, ignoring what you own.
+function M.BestFor(slotKey, role)
+    local ranked = M.RankSlot(slotKey, role, nil, "PERM")
+    local top = ranked and ranked[1]
+    return top and top.score and top.entry or nil
+end
+
+-- ---------------------------------------------------------------------------
 -- Rendering a source
 -- ---------------------------------------------------------------------------
 

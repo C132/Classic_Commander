@@ -275,6 +275,121 @@ class Client:
 
 
 # ---------------------------------------------------------------------------
+# What an enhancement actually grants
+# ---------------------------------------------------------------------------
+# Parsed from the enchantment's own display string — the green line the game
+# prints on the item — rather than reconstructed from aura effects. The string
+# is the client's, so it cannot drift from what the player reads; the cost is
+# that a phrase we do not recognise yields no stats at all, which is why the
+# generator reports its own coverage. These numbers exist to RANK
+# enhancements for a spec, never to describe one: the display string is what
+# the UI shows.
+STAT_NAMES = {
+    "stamina": "STA", "agility": "AGI", "strength": "STR",
+    "intellect": "INT", "spirit": "SPI", "all stats": "ALLSTATS",
+    "attack power": "AP", "ranged attack power": "RAP",
+    "attack power in forms": "AP", "attack power in cat": "AP",
+    "spell damage": "SP", "damage spells": "SP", "spell power": "SP",
+    "healing": "HEAL", "healing spells": "HEAL", "healing power": "HEAL",
+    "critical strike rating": "CRIT", "critical rating": "CRIT",
+    "melee critical strike rating": "CRIT",
+    "spell critical strike rating": "SPELLCRIT", "spell critical rating": "SPELLCRIT",
+    "hit rating": "HIT", "spell hit rating": "SPELLHIT", "spell hit": "SPELLHIT",
+    "haste rating": "HASTE", "spell haste rating": "SPELLHASTE",
+    "expertise rating": "EXPERTISE", "resilience rating": "RESIL",
+    "defense rating": "DEF", "defense": "DEF",
+    "dodge rating": "DODGE", "parry rating": "PARRY",
+    "block value": "BLOCKVALUE", "block rating": "BLOCK", "shield block rating": "BLOCK",
+    "armor": "ARMOR", "armor penetration": "ARPEN",
+    "all resistances": "ALLRES",
+    "fire resistance": "FIRERES", "frost resistance": "FROSTRES",
+    "nature resistance": "NATURERES", "shadow resistance": "SHADOWRES",
+    "arcane resistance": "ARCANERES", "holy resistance": "HOLYRES",
+    "spell penetration": "SPELLPEN",
+    "mana": "MANA", "health": "HP",
+    "mana regen": "MP5", "mana per 5 sec": "MP5", "mana every 5 seconds": "MP5",
+    "mana per 5 seconds": "MP5", "mana every 5 sec": "MP5",
+    "health every 5 seconds": "HP5", "health per 5 sec": "HP5",
+    "weapon damage": "WEAPONDMG", "damage": "WEAPONDMG", "melee damage": "WEAPONDMG",
+    "crit rating": "CRIT", "spell crit rating": "SPELLCRIT", "spell critical": "SPELLCRIT",
+    "hp": "HP", "mp": "MANA", "mana restored per 5 seconds": "MP5",
+    "resist all": "ALLRES",
+    "fire resist": "FIRERES", "frost resist": "FROSTRES", "nature resist": "NATURERES",
+    "shadow resist": "SHADOWRES", "arcane resist": "ARCANERES", "holy resist": "HOLYRES",
+    # School-locked spell damage is real but only pays for one school, so it
+    # gets its own key and the role weights discount it.
+    "fire spell damage": "SP_FIRE", "frost spell damage": "SP_FROST",
+    "shadow spell damage": "SP_SHADOW", "arcane spell damage": "SP_ARCANE",
+    "holy spell damage": "SP_HOLY", "nature spell damage": "SP_NATURE",
+    # Creature-type damage is situational to the point of being scenery
+    "attack power vs undead": "AP_UNDEAD",
+    "attack power vs undead and demons": "AP_UNDEAD",
+    "spell damage vs undead": "SP_UNDEAD",
+    "beastslaying": "BEASTSLAYING", "elemental slayer": "ELEMSLAYER",
+    "fishing": "FISHING", "fishing lure": "FISHING",
+    "threat": "THREAT", "stealth": "STEALTH",
+    "fishing skill": "FISHING", "mining": "MINING", "herbalism": "HERBALISM",
+    "skinning": "SKINNING",
+}
+
+# "+18 Healing and Spell Damage" is eighteen of each; "+33 Healing and +11
+# Spell Damage" is not. The difference is the second plus sign, so the split
+# has to happen on "and +" and on "and <digit>", never on a bare "and".
+SPLIT = re.compile(r"\s*/\s*|\s*,\s*|\s*&\s*|\s+and\s+(?=[+\d])|\s*\+(?=\d)")
+# "Sharpened (+14 Crit Rating and +12 Damage)" — the label outside the
+# parentheses is the buff's NAME, and everything that matters is inside.
+LABELLED = re.compile(r"^[^(+\d]*\((.+)\)\s*$")
+CHUNK = re.compile(r"^\s*\+?(\d+)\s+(.+?)[.\s]*$")
+COMPOUND = re.compile(r"\s+and\s+")
+# Tails that are prose, not stats. They ride along after an "and" and would
+# otherwise be counted as vocabulary we failed to learn.
+PROSE = {
+    "minor run speed increase", "demons", "undead", "chance to stun target",
+    "chance to restore health on hit", "chance to restore mana on spellcast",
+}
+
+
+def parse_stats(short):
+    """Display string -> { STAT: amount }. Unrecognised phrases yield nothing."""
+    if not short:
+        return None, 0, 0
+    labelled = LABELLED.match(short)
+    if labelled:
+        short = labelled.group(1)
+    out, hit, miss = {}, 0, 0
+    for chunk in SPLIT.split(short):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        m = CHUNK.match(chunk)
+        if not m:
+            continue
+        amount, phrase = int(m.group(1)), m.group(2).strip().lower()
+        phrase = re.sub(r"\s+", " ", phrase.rstrip(".").strip())
+        names = [p.strip() for p in COMPOUND.split(phrase)] if COMPOUND.search(phrase) else [phrase]
+        for name in names:
+            if name in PROSE:
+                continue
+            key = STAT_NAMES.get(name)
+            if not key:
+                # "+12 Spell Damage and Healing" splits to a bare "healing";
+                # "+20 Arcane Resistance" is already exact. Anything left is a
+                # phrase worth knowing about.
+                miss += 1
+                continue
+            hit += 1
+            if key == "ALLSTATS":
+                for stat in ("STA", "AGI", "STR", "INT", "SPI"):
+                    out[stat] = out.get(stat, 0) + amount
+            elif key == "ALLRES":
+                for stat in ("FIRERES", "FROSTRES", "NATURERES", "SHADOWRES", "ARCANERES"):
+                    out[stat] = out.get(stat, 0) + amount
+            else:
+                out[key] = out.get(key, 0) + amount
+    return (out or None), hit, miss
+
+
+# ---------------------------------------------------------------------------
 # Assembly
 # ---------------------------------------------------------------------------
 MAX_SOURCES = 6
@@ -410,6 +525,7 @@ def build():
                 "name": (cl.item_name(item_id) if item_id else name),
                 "recipe": name if (item_id and name != cl.item_name(item_id)) else None,
                 "short": short,
+                "stats": parse_stats(short)[0],
                 "note": clean_desc(cl.spell_desc.get(spell)),
                 "slots": slots or ["OTHER"],
                 "kind": kind,
@@ -448,6 +564,7 @@ def build():
         add({
             "ench": ench_id, "spell": None, "item": iid, "name": name,
             "short": ench["Name_lang"] if ench else None,
+            "stats": parse_stats(ench["Name_lang"] if ench else None)[0],
             "slots": ["GEM"], "kind": "GEM", "color": color,
             "prof": None, "ilvl": None,
             "quality": _int(row["OverallQualityID"]),
@@ -612,6 +729,16 @@ def main():
         if by_slot.get(k):
             sys.stderr.write("  %-10s %4d\n" % (k, by_slot[k]))
     sys.stderr.write("kinds: %s\n" % dict(sorted(by_kind.items())))
+    with_stats = sum(1 for e in entries if e.get("stats"))
+    phrases = defaultdict(int)
+    for e in entries:
+        _, _, miss = parse_stats(e.get("short"))
+        if miss:
+            phrases[e.get("short")] += 1
+    sys.stderr.write("stats parsed for %d/%d entries; %d display strings have a phrase we do not know\n"
+                     % (with_stats, len(entries), len(phrases)))
+    for phrase in list(phrases)[:15]:
+        sys.stderr.write("    ? %s\n" % phrase)
     sys.stderr.write("no source at all: %d\n" % len(sourceless))
     for e in sourceless[:20]:
         sys.stderr.write("    %s (%s)\n" % (e["name"], e["ench"]))

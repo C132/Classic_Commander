@@ -1250,8 +1250,17 @@ local function EnhanceMatches(entry)
     return true
 end
 
-local function PushEnhance(entry)
-    displayList[#displayList + 1] = { kind = "enh", entry = entry, id = entry.item }
+local function PushEnhance(entry, bestFor)
+    displayList[#displayList + 1] = {
+        kind = "enh", entry = entry, id = entry.item, bestFor = bestFor,
+    }
+end
+
+-- The role the shelf is sorted for: the played spec's, never the class you
+-- happen to be sightseeing in the Loadout view.
+local function MyRole()
+    local spec = MyLoadoutSpec()
+    return spec and spec.role or nil
 end
 
 local function BuildGearList()
@@ -1261,6 +1270,7 @@ local function BuildGearList()
     end
     local EData = CommanderQuartermasterEnhanceData
     local slot = GearSlotKey()
+    local role = MyRole()
     if slot == "MYGEAR" and #searchTokens == 0 then
         local report = Enhance.ScanGear("player")
         PushHeader(("|cffffd200Equipped|r  |cff888888%d enhanceable slot%s, %d bare, %d socket%s empty|r"):format(
@@ -1273,19 +1283,26 @@ local function BuildGearList()
         end
         return
     end
-    -- Searching from My Gear searches everything; otherwise one slot's shelf
+    -- Searching from My Gear searches everything; otherwise one slot's shelf,
+    -- ordered best-first for the role you actually play.
     local slots = (slot == "MYGEAR") and EData.SlotOrder or { slot }
+    local many = #slots > 1
     for _, key in ipairs(slots) do
-        local list = Enhance.EntriesForSlot(key)
-        if list then
-            local wrote = false
-            for _, entry in ipairs(list) do
-                if not entry.unobtainable and EnhanceMatches(entry) then
-                    if not wrote and #slots > 1 then
-                        wrote = true
-                        PushHeader(("|cffffd200%s|r"):format(EData.SlotNames[key] or key))
-                    end
-                    PushEnhance(entry)
+        local label = EData.SlotNames[key] or key
+        -- Permanent and temporary are not alternatives: a weapon carries an
+        -- enchant AND a stone, so they get their own headers and their own
+        -- ranking rather than competing in one list.
+        for _, half in ipairs({ "PERM", "TEMP" }) do
+            local ranked = Enhance.RankSlot(key, role, EnhanceMatches, half)
+            if ranked and #ranked > 0 then
+                if many then
+                    PushHeader(("|cffffd200%s|r%s"):format(label,
+                        half == "TEMP" and " |cff888888— temporary|r" or ""))
+                elseif half == "TEMP" then
+                    PushHeader("|cffffd200Temporary|r |cff888888— reapplied, and stacks with the enchant above|r")
+                end
+                for i, row in ipairs(ranked) do
+                    PushEnhance(row.entry, i == 1 and row.score and role or nil)
                 end
             end
         end
@@ -1373,6 +1390,10 @@ local function BindRow(row, item)
             note = "|cff33ff99" .. ench .. "|r"
         elseif grow.bare then
             note = "|cffff4040Not enchanted|r"
+            local best = Enhance and Enhance.BestFor(grow.slot, MyRole())
+            if best then
+                note = note .. ("  |cff888888·|r best by stats: |cffffd200%s|r"):format(best.name)
+            end
         elseif grow.needsProfession then
             note = ("|cff777777Enchantable only by an %s|r"):format(grow.needsProfession)
         else
@@ -1398,6 +1419,9 @@ local function BindRow(row, item)
             or "Interface\\Icons\\Trade_Engraving")
         row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
         local nameText = entry.item and ItemName(entry.item, entry.name) or entry.name
+        if item.bestFor then
+            nameText = ("|cffffd200*|r %s"):format(nameText)
+        end
         if entry.reqSkill then
             nameText = nameText .. (" |cffff8040(%s only)|r"):format(entry.reqSkill.skill)
         end
