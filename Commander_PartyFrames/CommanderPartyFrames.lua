@@ -435,6 +435,64 @@ SDATA.DRUID_FORMS = {
     [24858] = { key = "MOONKIN", heals = false },
     [33891] = { key = "TREE",    heals = true },
 }
+-- ---------------------------------------------------------------------------
+-- The paladin's self-upkeep, for the banner: the aura you are running and the
+-- seal you are holding. Both are permanent-ish states a paladin is supposed to
+-- have chosen deliberately and neither is visible anywhere else on the board,
+-- which is exactly the druid form segment's job description.
+--
+-- Ranks are listed best-first per line, the same shape SDATA.ARMOR_LINES uses,
+-- so a later aura/seal switcher can cast the top one you know. Every rank of a
+-- line shares one localized name, so detection only ever needs the line — and
+-- unlike the mage's armor, these names are registered ONLY for ids this
+-- character actually knows. A paladin can only be running an aura they have,
+-- so nothing is lost, and a rank id that turns out to be wrong can never
+-- quietly map some unrelated spell's name onto an aura icon.
+SDATA.PALADIN_AURAS = {
+    { key = "DEVOTION",    ids = { 27149, 10293, 10292, 10291, 10290, 643, 465 } },
+    { key = "RETRIBUTION", ids = { 27150, 10301, 10300, 10299, 10298, 7294 } },
+    { key = "CONCENTRATION", ids = { 19746 } },
+    { key = "CRUSADER",    ids = { 32223 } },
+    { key = "SANCTITY",    ids = { 20218 } },
+    { key = "FIRERES",     ids = { 27153, 19900, 19899, 19891 } },
+    { key = "FROSTRES",    ids = { 27152, 19898, 19897, 19888 } },
+    { key = "SHADOWRES",   ids = { 27151, 19896, 19895, 19876 } },
+}
+SDATA.PALADIN_SEALS = {
+    { key = "COMMAND",      ids = { 20375 } },
+    { key = "BLOOD",        ids = { 31892 } },
+    { key = "VENGEANCE",    ids = { 31801 } },
+    { key = "CRUSADER",     ids = { 27158, 20307, 20306, 20305, 20162, 21082 } },
+    { key = "RIGHTEOUSNESS", ids = { 27155, 20293, 20292, 20291, 20290, 20289, 20288, 20287, 21084 } },
+    { key = "JUSTICE",      ids = { 20164 } },
+    { key = "LIGHT",        ids = { 20165 } },
+    { key = "WISDOM",       ids = { 20166 } },
+}
+-- The paladin banner's cooldown segments, in banner order — the ones that
+-- decide a game, then the Hands, whose cooldowns are the other half of what
+-- the row strip shows (the strip says where a Hand IS, this says whether you
+-- have one to give). Filtered at login to what this paladin actually trained,
+-- so a holy paladin never sees a Repentance slot.
+SDATA.PALADIN_BANNER_CDS = {
+    { key = "LOH",       id = 633,   cd = 1200, icon = "Interface\\Icons\\Spell_Holy_LayOnHands" },
+    { key = "BUBBLE",    id = 642,   cd = 300,  icon = "Interface\\Icons\\Spell_Holy_DivineIntervention" },
+    { key = "DPROT",     id = 498,   cd = 300,  icon = "Interface\\Icons\\Spell_Holy_Restoration" },
+    { key = "BOP",       id = 1022,  cd = 300,  icon = "Interface\\Icons\\Spell_Holy_SealOfProtection" },
+    { key = "FREEDOM",   id = 1044,  cd = 25,   icon = "Interface\\Icons\\Spell_Holy_SealOfValor" },
+    { key = "SACRIFICE", id = 6940,  cd = 120,  icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice" },
+    { key = "FAVOR",     id = 20216, cd = 120,  icon = "Interface\\Icons\\Spell_Holy_Heal" },
+    { key = "WINGS",     id = 31884, cd = 180,  icon = "Interface\\Icons\\Spell_Holy_AvengineWrath" },
+    { key = "HOJ",       id = 853,   cd = 60,   icon = "Interface\\Icons\\Spell_Holy_SealOfMight" },
+    { key = "ILLUM",     id = 31842, cd = 180,  icon = "Interface\\Icons\\Spell_Holy_DivineIllumination" },
+    { key = "REPENT",    id = 20066, cd = 60,   icon = "Interface\\Icons\\Spell_Holy_PrayerOfHealing" },
+}
+-- Which book of banner cooldowns the active layer draws, so the segment loop
+-- is one loop rather than one per class.
+SDATA.BANNER_CDS = {
+    HOT   = SDATA.DRUID_BANNER_CDS,
+    BLESS = SDATA.PALADIN_BANNER_CDS,
+}
+
 local CLASS_PROFILES = {
     PRIEST  = { layer = "PWS" },
     MAGE    = { layer = "INT", selfSpells = SDATA.MAGE_SPELLS },
@@ -545,7 +603,8 @@ local settingsBtn               -- header gear opening the settings page (any cl
 -- registry with every other class's, because they are any-caster facts while
 -- `state` is ours-only — another druid's Rejuvenation does not gate your next
 -- global, but their Mark absolutely means you do not recast it.
-local strip = { state = {}, names = {}, scan = {}, cds = {}, forms = {}, form = nil }
+local strip = { state = {}, names = {}, scan = {}, cds = {}, forms = {}, form = nil,
+                auraNames = {}, sealNames = {}, aura = nil, seal = nil }
 
 -- Aggregate shielding (both layers): every absorb aura we can name — PW:S,
 -- Ice Barrier, Mana Shield, the wards, warlock Sacrifice — from ANY caster,
@@ -1933,23 +1992,46 @@ local function ResolveStripInfo()
             end
         end
     end
-    if layer ~= "HOT" then return end
-    wipe(strip.forms)
-    for id, form in pairs(SDATA.DRUID_FORMS) do
-        local n, _, icon = GetSpellInfo(id)
-        if n then
-            strip.forms[n] = form
-            form.icon = icon or form.icon
-        end
-    end
+    -- The banner's cooldown segments, from whichever book this layer brought
     wipe(strip.cds)
-    for _, e in ipairs(SDATA.DRUID_BANNER_CDS) do
+    for _, e in ipairs(SDATA.BANNER_CDS[layer] or {}) do
         local n, _, icon = GetSpellInfo(e.id)
         -- knownSpells is the spellbook scan; IsSpellKnown is the backstop for
         -- a rank we have not indexed yet (same pair the armor popout uses)
         if n and ((knownSpells and knownSpells[n]) or (IsSpellKnown and IsSpellKnown(e.id))) then
             strip.cds[#strip.cds + 1] = { key = e.key, name = n, icon = icon or e.icon, cd = e.cd }
         end
+    end
+
+    if layer == "HOT" then
+        wipe(strip.forms)
+        for id, form in pairs(SDATA.DRUID_FORMS) do
+            local n, _, icon = GetSpellInfo(id)
+            if n then
+                strip.forms[n] = form
+                form.icon = icon or form.icon
+            end
+        end
+    elseif layer == "BLESS" then
+        -- Aura and seal names, KNOWN LINES ONLY (see SDATA.PALADIN_AURAS):
+        -- you cannot be running one you have not trained, so gating on the
+        -- spellbook costs nothing and makes a bad rank id inert instead of
+        -- dangerous.
+        local function fill(out, lines)
+            wipe(out)
+            for _, line in ipairs(lines) do
+                for _, id in ipairs(line.ids) do
+                    local n, _, icon = GetSpellInfo(id)
+                    if n and ((knownSpells and knownSpells[n])
+                        or (IsSpellKnown and IsSpellKnown(id))) then
+                        out[n] = { key = line.key, icon = icon }
+                        break
+                    end
+                end
+            end
+        end
+        fill(strip.auraNames, SDATA.PALADIN_AURAS)
+        fill(strip.sealNames, SDATA.PALADIN_SEALS)
     end
 end
 
@@ -3047,7 +3129,7 @@ local function ScanUnit(unit, reliable)
     -- Ally buffs are read off the registry now: one pass fills a scratch pair
     -- keyed by buff, whatever class this is (see SDATA.CLASS_BUFFS)
     local buffOn = #SDATA.BUFF_ACTIVE > 0
-    local armorFound, formFound
+    local armorFound, formFound, auraFound, sealFound
     wipe(scanAbsorbs)
     if buffOn then wipe(util.buffExp); wipe(util.buffDur) end
     if stripOn then wipe(strip.scan) end
@@ -3072,6 +3154,20 @@ local function ScanUnit(unit, reliable)
         elseif layer == "INT" and isPlayer and not armorFound and armorNames[aura.name] then
             armorFound = { icon = armorNames[aura.name], expire = aura.expirationTime,
                 duration = aura.duration }
+        end
+        -- The paladin's own aura and seal (banner segments). Read off
+        -- ourselves like the mage's armor and the druid's form, and for the
+        -- same reason: they are states you chose that nothing else on the
+        -- board would ever tell you about.
+        if layer == "BLESS" and isPlayer then
+            if not auraFound and strip.auraNames[aura.name] then
+                local a = strip.auraNames[aura.name]
+                auraFound = { key = a.key, icon = aura.icon or a.icon }
+            elseif not sealFound and strip.sealNames[aura.name] then
+                local s = strip.sealNames[aura.name]
+                sealFound = { key = s.key, icon = aura.icon or s.icon,
+                    expire = aura.expirationTime, duration = aura.duration }
+            end
         end
         -- OURS only: the strip exists to answer "what have I got on this ally
         -- right now" — another druid's Rejuvenation does not gate our next
@@ -3120,6 +3216,8 @@ local function ScanUnit(unit, reliable)
         selfArmor = armorFound
     elseif layer == "HOT" and isPlayer then
         strip.form = formFound
+    elseif layer == "BLESS" and isPlayer then
+        strip.aura, strip.seal = auraFound, sealFound
     end
 
     -- Our hots on this unit, under the same reliable contract as everything
@@ -5650,6 +5748,39 @@ local function SampleUptime(now)
         return
     end
     wipe(sampleUnits)
+    if layer == "BLESS" then
+        -- The paladin's version is the BLESSINGS, not the Hands. Hand uptime
+        -- would be a number near zero that means nothing — they are
+        -- emergencies, and spending them constantly is not the goal. Blessing
+        -- coverage is the thing a paladin is actually judged on, and it is
+        -- the one upkeep number on this board worth a percentage.
+        if IsInRaid and IsInRaid() then
+            for i = 1, 40 do if UnitExists("raid" .. i) then sampleUnits[#sampleUnits + 1] = "raid" .. i end end
+        elseif IsInGroup and IsInGroup() then
+            sampleUnits[#sampleUnits + 1] = "player"
+            for i = 1, 4 do if UnitExists("party" .. i) then sampleUnits[#sampleUnits + 1] = "party" .. i end end
+        end
+        local total, covered = 0, 0
+        for _, unit in ipairs(sampleUnits) do
+            if not (UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)) then
+                total = total + 1
+                local rec = intState[UnitGUID(unit)]
+                if rec then
+                    for _, e in pairs(rec) do
+                        if not (e.expire and e.expire > 0 and e.expire <= now) then
+                            covered = covered + 1
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        if total > 0 then
+            uptime.coverageSamples = (uptime.coverageSamples or 0) + 1
+            uptime.coverageSum = (uptime.coverageSum or 0) + covered / total
+        end
+        return
+    end
     if layer == "HOT" then
         -- The druid's version of the same question the priest board asks:
         -- what share of the living team is carrying a hot of YOURS. Reads the
@@ -5959,6 +6090,61 @@ local function DrawHeader(now, showHeader)
             -- 4) Team alerts: what you can remove, teammates in CC
             if intCurses > 0 or intCCs > 0 then
                 util.Seg(intCurses > 0 and "Interface\\Icons\\Spell_Nature_RemoveCurse"
+                    or "Interface\\Icons\\Spell_Nature_Polymorph", false, AlertText())
+            end
+            util.TruncSegs(segX)
+            return
+        end
+        -- BLESS layer: the paladin's upkeep banner. Same segment grammar
+        -- again, asking a paladin's questions in the order they bite: am I
+        -- actually running the two things I am supposed to be running, what
+        -- have I got to give, how well is the team blessed, what needs
+        -- removing.
+        if layer == "BLESS" then
+            root.header:Hide()
+            util.EnsureSegs()
+            if mageUtil then SafeSetShown(mageUtil, true) end
+            util.Paint(now)
+            local segX = util.PlaceSegs()
+            util.segN = 0
+            -- 1) Aura. Unlike a druid's form there is no neutral state here:
+            -- a paladin is always meant to be running one, so a missing aura
+            -- gets the dim red icon a naked mage's armor slot gets rather
+            -- than no slot at all.
+            if strip.aura then
+                util.Seg(strip.aura.icon or "Interface\\Icons\\Spell_Holy_DevotionAura", false)
+            else
+                util.Seg("Interface\\Icons\\Spell_Holy_DevotionAura", true, nil, { 1, 0.25, 0.25 })
+            end
+            -- 2) Seal. Thirty seconds long and dropped constantly, which is
+            -- exactly why it earns a slot: the sweep IS the timer, and a
+            -- sealless paladin is a paladin doing nothing. Amber inside the
+            -- last five seconds, red when there is no seal at all.
+            local sealLeft = strip.seal and strip.seal.expire and strip.seal.expire > 0
+                and (strip.seal.expire - now) or nil
+            if strip.seal and (not sealLeft or sealLeft > 0) then
+                util.Seg(strip.seal.icon or "Interface\\Icons\\Spell_Holy_HolySmite", false,
+                    sealLeft and string.format("%d", math.ceil(sealLeft)) or nil,
+                    (sealLeft and sealLeft <= 5) and { 1, 0.65, 0.3 } or nil)
+            else
+                util.Seg("Interface\\Icons\\Spell_Holy_HolySmite", true, nil, { 1, 0.25, 0.25 })
+            end
+            -- 3) The cooldowns that decide games, in book order and filtered
+            -- at login to what this paladin actually trained
+            if DB("BlessBannerCooldowns", true) then
+                for _, e in ipairs(strip.cds) do
+                    util.SegCooldown(e.name, e.icon, e.cd, now)
+                end
+            end
+            -- 4) Session blessing uptime
+            if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
+                util.Seg("Interface\\Icons\\Spell_Magic_MageArmor", false,
+                    string.format("%d%%", math.floor(uptime.coverageSum / uptime.coverageSamples * 100 + 0.5)))
+            end
+            -- 5) Team alerts: what you can remove, teammates in CC. A paladin
+            -- cleanses Magic, so the icon is Cleanse rather than Remove Curse.
+            if intCurses > 0 or intCCs > 0 then
+                util.Seg(intCurses > 0 and "Interface\\Icons\\Spell_Holy_Renew"
                     or "Interface\\Icons\\Spell_Nature_Polymorph", false, AlertText())
             end
             util.TruncSegs(segX)
@@ -6848,13 +7034,19 @@ function CommanderPartyFrames_Debug()
         print(string.format("  barrier=%s  elemental=%s  armor=%s",
             tostring(barrierDef and barrierDef.name or "unknown"),
             tostring(eleKnown), tostring(selfArmor and "up" or "none/unseen")))
-    elseif layer == "HOT" then
+    elseif SDATA.STRIP_BOOKS[layer or ""] then
         local names, cds, units = 0, #strip.cds, 0
         for _ in pairs(strip.names) do names = names + 1 end
         for _ in pairs(strip.state) do units = units + 1 end
-        print(string.format("  hotNames=%d  bannerCds=%d  unitsWithHots=%d  form=%s",
-            names, cds, units,
-            tostring(strip.form and strip.form.key or "caster")))
+        print(string.format("  stripNames=%d  bannerCds=%d  unitsCarrying=%d",
+            names, cds, units))
+        if layer == "HOT" then
+            print(string.format("  form=%s", tostring(strip.form and strip.form.key or "caster")))
+        else
+            print(string.format("  aura=%s  seal=%s",
+                tostring(strip.aura and strip.aura.key or "none"),
+                tostring(strip.seal and strip.seal.key or "none")))
+        end
         local tracked = {}
         for _, def in ipairs(SDATA.BUFF_ACTIVE) do tracked[#tracked + 1] = def.key end
         print(string.format("  buffs tracked: %s",
@@ -6881,6 +7073,11 @@ function CommanderPartyFrames_Report()
     -- What "coverage" counted differs by layer, so the line has to say which
     if layer == "HOT" then
         print(string.format("|cff66ccffCommander Party Frames|r: session hot uptime |cff33ff33%d%%|r over %dm%02ds — the share of your living team carrying one of your hots.",
+            math.floor(pct + 0.5), mins, dur - mins * 60))
+        return
+    end
+    if layer == "BLESS" then
+        print(string.format("|cff66ccffCommander Party Frames|r: session blessing uptime |cff33ff33%d%%|r over %dm%02ds — the share of your living team carrying one of your blessings.",
             math.floor(pct + 0.5), mins, dur - mins * 60))
         return
     end
