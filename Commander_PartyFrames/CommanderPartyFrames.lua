@@ -19,6 +19,17 @@
 --   Ice Barrier, own total shielding, Water Elemental, shield uptime, team
 --   alerts, plus conjure/consume buttons. An opt-in extra appends own-shield
 --   rows.
+-- DRUID layer ("HOT"): bar = HEALTH with a mana strip under it, same chassis
+--   as INT; what the row MANAGES is YOUR hots on that ally — Rejuvenation,
+--   Regrowth and Lifebloom (with its stack count) as a strip of swept icons,
+--   the row's number being the soonest of them to fall off. States are the
+--   reshield grammar read for hots: READY (a damaged ally carrying none of
+--   yours), REFRESH (one inside the refresh window — the Lifebloom about to
+--   bloom is exactly this), SHIELDED (rolling). A removable debuff still
+--   outranks all of it, and a druid removes TWO schools, so the row says
+--   which: purple CURSED, green POISONED. The header is the druid's upkeep
+--   banner: current form (red when it blocks healing), Innervate / Nature's
+--   Swiftness / Rebirth / Barkskin, hot uptime, team alerts.
 -- Other classes: the module sits inert (see CLASS_PROFILES).
 --
 -- Two signals keep the absorb number honest, each with a clear job:
@@ -74,6 +85,8 @@ local CLASS_ICON_TEXTURE = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREAT
 --   MAGE layer "INT": Arcane Intellect/Brilliance upkeep vs removable Curses,
 --     plus an opt-in self-shield extra (selfSpells below) whose recast lockout
 --     is each spell's own cooldown.
+--   DRUID layer "HOT": your rolling hots vs removable Curses AND Poisons,
+--     with Mark of the Wild riding the same upkeep slot Int does on INT.
 -- Any other class gets no layer, so the module goes inert for it at login.
 -- The gate is runtime-only on purpose: the saved DB is account-wide, so
 -- writing EnableShield=false here would disable the board on an alt too.
@@ -98,9 +111,234 @@ SDATA.MAGE_SPELLS = {
       ranks = { [6143] = 165, [8461] = 290, [8462] = 470, [10177] = 675,
                 [28609] = 875, [32796] = 1125 } },
 }
+-- Druid hots, in the order they ride a row's strip. `duration` is the
+-- fallback scale for the radial sweep — the aura's own duration always wins;
+-- it only matters for a hot seen on a unit whose aura we could not read.
+-- Lifebloom is the one that STACKS, and its stack count is the whole reason
+-- the strip carries a number: three stacks about to bloom is a different
+-- decision from one.
+-- Each hot owns a fixed slot and carries the same three facts every other
+-- trackable does: a key the settings toggle by, whether it is on out of the
+-- box, and whether this character has actually TRAINED it. A druid who has
+-- never specced far enough for Lifebloom must not be shown a Lifebloom slot,
+-- dark or otherwise — the strip is supposed to answer "what could I cast
+-- here", and a spell that is not in the book is not an answer.
+SDATA.DRUID_HOTS = {
+    { key = "REJUV",  label = "Rejuv", baseId = 774, duration = 12, default = true,
+      icon = "Interface\\Icons\\Spell_Nature_Rejuvenation" },
+    { key = "REGROWTH", label = "Regrowth", baseId = 8936, duration = 21, default = true,
+      icon = "Interface\\Icons\\Spell_Nature_ResistNature" },
+    { key = "LIFEBLOOM", label = "Lifebloom", baseId = 33763, duration = 7, stacking = true,
+      default = true, icon = "Interface\\Icons\\INV_Misc_Herb_Felblossom" },
+}
+for _, def in ipairs(SDATA.DRUID_HOTS) do def.dbKey = "HOT:" .. def.key end
+SDATA.MAX_HOT_ICONS = 3
+SDATA.HOT_ACTIVE = {}       -- the hots actually tracked AND trained, in order
+
+-- ---------------------------------------------------------------------------
+-- The ally-buff registry: every buff a supported class maintains on OTHER
+-- people, one entry each, with its own tracking toggle.
+--
+-- Every rank of a buff shares one localized name, so a single base ID resolves
+-- the whole line — and `groupId` is the raid version, which satisfies exactly
+-- the same slot (Prayer of Fortitude is Fortitude; Gift of the Wild is Mark).
+-- Membership is ANY CASTER on purpose: the question a row answers is "is this
+-- buff on them", not "did I put it there". That is the opposite of the hot
+-- strip's ours-only rule, and for the same reason — another druid's Rejuv does
+-- not stop your global, but their Mark absolutely stops you recasting.
+--
+--   targets   who the buff is even FOR. "MANA" entries never take a slot on a
+--             rogue, so the strip does not nag about Intellect on a warrior.
+--   duration  fallback sweep scale only; the aura's own duration always wins.
+--   default   tracked out of the box. The always-cast raid buffs are on; the
+--             situational ones (Shadow Protection, Amplify, Dampen) are off,
+--             because a slot that is dark on every row all match is width the
+--             health bar wants back.
+--   advise    which urgency rule the slot asks when it is missing (see
+--             SDATA.BUFF_ADVICE) — the difference between "not there" and
+--             "not there and that is costing you the game".
+-- ---------------------------------------------------------------------------
+-- The pool's ceiling, not a budget: a priest can now track five ally buffs at
+-- once if they want to, and the row simply gets wider. Slots past what the
+-- settings ask for are never laid out, so this costs nothing when unused.
+SDATA.MAX_BUFF_SLOTS = 6
+SDATA.CLASS_BUFFS = {
+    PWS = {
+        { key = "FORT", label = "Fortitude", id = 1243, groupId = 21562,
+          duration = 1800, targets = "ALL", default = true, advise = "ALWAYS",
+          icon = "Interface\\Icons\\Spell_Holy_WordFortitude" },
+        { key = "SPIRIT", label = "Spirit", id = 14752, groupId = 27681,
+          duration = 1800, targets = "MANA", default = true, advise = "ALWAYS",
+          icon = "Interface\\Icons\\Spell_Holy_DivineSpirit" },
+        { key = "SHADOWPROT", label = "Shadow Prot.", id = 976, groupId = 27683,
+          duration = 600, targets = "ALL", default = false, advise = "VS_SHADOW",
+          icon = "Interface\\Icons\\Spell_Shadow_AntiShadow" },
+        -- Fear Ward is a race-gated arena cooldown (dwarf and draenei only),
+        -- which is exactly why it is worth a slot when you HAVE it: one
+        -- pre-warded healer is the difference in a fear comp. Untrained on
+        -- everyone else, so the known gate keeps it off their boards.
+        { key = "FEARWARD", label = "Fear Ward", id = 6346, duration = 600,
+          targets = "ALL", default = false, advise = "VS_FEAR",
+          icon = "Interface\\Icons\\Spell_Holy_Excorcism" },
+        { key = "POM", label = "Mending", id = 33076, duration = 30,
+          targets = "ALL", default = false, advise = "ALWAYS",
+          icon = "Interface\\Icons\\Spell_Holy_PrayerOfMendingtga" },
+    },
+    INT = {
+        { key = "AI", label = "Intellect", id = 1459, groupId = 23028,
+          duration = 1800, targets = "MANA", default = true, advise = "ALWAYS",
+          icon = "Interface\\Icons\\Spell_Holy_MagicalSentry" },
+        -- The two halves of one decision: they overwrite each other on the
+        -- target, so whichever is up makes the other's absence CORRECT rather
+        -- than a mistake, and neither may nag while its sibling is doing the
+        -- job. `excludes` is what tells the advisor that.
+        { key = "AMP", label = "Amplify", id = 1008, duration = 600,
+          targets = "ALL", default = false, advise = "VS_PHYSICAL",
+          excludes = "DAMPEN",
+          icon = "Interface\\Icons\\Spell_Holy_FlashHeal" },
+        { key = "DAMPEN", label = "Dampen", id = 604, duration = 600,
+          targets = "ALL", default = false, advise = "VS_CASTER",
+          excludes = "AMP",
+          icon = "Interface\\Icons\\Spell_Nature_AbolishMagic" },
+        -- Castable on others and occasionally match-relevant, but never
+        -- something a slot should nag about: no advice rule, so it can be
+        -- watched without ever going red.
+        { key = "SLOWFALL", label = "Slow Fall", id = 130, duration = 30,
+          targets = "ALL", default = false,
+          icon = "Interface\\Icons\\Spell_Magic_FeatherFall" },
+    },
+    HOT = {
+        { key = "MOTW", label = "Mark", id = 1126, groupId = 21849,
+          duration = 1800, targets = "ALL", default = true, advise = "ALWAYS",
+          icon = "Interface\\Icons\\Spell_Nature_Regeneration" },
+        { key = "THORNS", label = "Thorns", id = 467, duration = 600,
+          targets = "ALL", default = true, advise = "VS_MELEE",
+          icon = "Interface\\Icons\\Spell_Nature_Thorns" },
+        -- Innervate is a cooldown you spend ON somebody, and knowing whether
+        -- it is currently riding a teammate is a real question. No advice
+        -- rule: a slot that reddens because nobody has your six-minute
+        -- cooldown on them right now would be lying.
+        { key = "INNERVATE", label = "Innervate", id = 29166, duration = 20,
+          targets = "MANA", default = false,
+          icon = "Interface\\Icons\\Spell_Nature_Lightning" },
+        { key = "ABOLISHPOISON", label = "Abolish Poison", id = 2893, duration = 8,
+          targets = "ALL", default = false,
+          icon = "Interface\\Icons\\Spell_Nature_NullifyPoison" },
+    },
+}
+-- ---------------------------------------------------------------------------
+-- Click bindings: the full modifier x button matrix, per talent build.
+--
+-- MODIFIERS. Blizzard's secure buttons build their attribute prefix in a fixed
+-- order — alt, then ctrl, then shift — so "alt-ctrl-shift-type1" is the only
+-- spelling the client will look up. Getting that order wrong produces a
+-- binding that saves fine and silently never fires, so the canonical strings
+-- live here rather than being assembled at each call site.
+SDATA.CLICK_MODS = {
+    { key = "",                 label = "No modifier" },
+    { key = "shift-",           label = "Shift" },
+    { key = "ctrl-",            label = "Ctrl" },
+    { key = "alt-",             label = "Alt" },
+    { key = "ctrl-shift-",      label = "Ctrl + Shift" },
+    { key = "alt-shift-",       label = "Alt + Shift" },
+    { key = "alt-ctrl-",        label = "Alt + Ctrl" },
+    { key = "alt-ctrl-shift-",  label = "Alt + Ctrl + Shift" },
+}
+SDATA.CLICK_BUTTONS = {
+    { key = "1", label = "Left" },
+    { key = "2", label = "Right" },
+    { key = "3", label = "Middle" },
+    { key = "4", label = "Button 4" },
+    { key = "5", label = "Button 5" },
+}
+
+-- The two bindings that are not spells. Both resolve live off the row's unit
+-- token, so neither can go stale as the roster shuffles.
+SDATA.CLICK_ACTIONS = {
+    { value = "TARGET", label = "Target them",
+      icon = "Interface\\Icons\\Ability_Hunter_SniperShot" },
+    { value = "TARGETTARGET", label = "Assist (target their target)",
+      icon = "Interface\\Icons\\Ability_Hunter_MasterMarksman" },
+}
+
+-- What a cell may be bound to, per layer: the spells this class actually
+-- casts at a friendly unit, curated rather than scraped. A raw spellbook dump
+-- would offer Fireball for a left-click on your healer, which is not a menu,
+-- it is a haystack. Each entry is filtered against the spellbook at login, so
+-- the picker only ever offers what this character can really cast.
+SDATA.BINDABLE = {
+    PWS = {
+        { id = 17, group = "Absorbs" }, { id = 33076, group = "Heals" },
+        { id = 2061, group = "Heals" }, { id = 2060, group = "Heals" },
+        { id = 2054, group = "Heals" }, { id = 139, group = "Heals" },
+        { id = 596, group = "Heals" }, { id = 34861, group = "Heals" },
+        { id = 32546, group = "Heals" }, { id = 2006, group = "Utility" },
+        { id = 527, group = "Dispels" }, { id = 528, group = "Dispels" },
+        { id = 552, group = "Dispels" }, { id = 32375, group = "Dispels" },
+        { id = 1243, group = "Buffs" }, { id = 21562, group = "Buffs" },
+        { id = 14752, group = "Buffs" }, { id = 27681, group = "Buffs" },
+        { id = 976, group = "Buffs" }, { id = 27683, group = "Buffs" },
+        { id = 6346, group = "Buffs" }, { id = 33206, group = "Cooldowns" },
+        { id = 10060, group = "Cooldowns" },
+    },
+    INT = {
+        { id = 1459, group = "Buffs" }, { id = 23028, group = "Buffs" },
+        { id = 1008, group = "Buffs" }, { id = 604, group = "Buffs" },
+        { id = 130, group = "Utility" }, { id = 475, group = "Dispels" },
+    },
+    HOT = {
+        { id = 774, group = "Hots" }, { id = 8936, group = "Hots" },
+        { id = 33763, group = "Hots" }, { id = 5185, group = "Heals" },
+        { id = 18562, group = "Heals" }, { id = 20484, group = "Utility" },
+        { id = 1126, group = "Buffs" }, { id = 21849, group = "Buffs" },
+        { id = 467, group = "Buffs" }, { id = 29166, group = "Cooldowns" },
+        { id = 2782, group = "Dispels" }, { id = 2893, group = "Dispels" },
+        { id = 8946, group = "Dispels" }, { id = 17116, group = "Cooldowns" },
+    },
+}
+SDATA.BIND_GROUPS = { "Heals", "Absorbs", "Hots", "Buffs", "Dispels", "Cooldowns", "Utility" }
+SDATA.BIND_LIST = {}        -- the active layer's known bindables, resolved at login
+SDATA.BOOK_LIST = {}        -- every spell in the book, deduped by name, for the picker
+
+-- Stamped once, for every layer rather than just the active one, so the
+-- settings panel can key its checkboxes without waiting for login.
+for lkey, list in pairs(SDATA.CLASS_BUFFS) do
+    for _, def in ipairs(list) do def.dbKey = lkey .. ":" .. def.key end
+end
+
+SDATA.BUFF_BY_NAME = {}     -- localized aura name -> def, ACTIVE layer only
+SDATA.BUFF_LIST = {}        -- the active layer's defs, in strip order
+SDATA.BUFF_ACTIVE = {}      -- the subset actually tracked; rebuilt on Apply
+SDATA.BUFF_SIG = ""         -- layout signature for the strip's shape
+
+-- The druid banner's cooldown segments, in banner order. Shown only for
+-- spells this druid actually knows; lit = ready, desaturated + time = cooling.
+SDATA.DRUID_BANNER_CDS = {
+    { key = "INNERVATE", id = 29166, cd = 360, icon = "Interface\\Icons\\Spell_Nature_Lightning" },
+    { key = "NS",        id = 17116, cd = 180, icon = "Interface\\Icons\\Spell_Nature_RavenForm" },
+    { key = "REBIRTH",   id = 20484, cd = 1200, icon = "Interface\\Icons\\Spell_Nature_Reincarnation" },
+    { key = "BARKSKIN",  id = 22812, cd = 60, icon = "Interface\\Icons\\Spell_Nature_StoneClawTotem" },
+}
+-- Shapeshift forms, and whether the druid can cast a HEAL while wearing one.
+-- That is the banner segment's whole question: Tree of Life is a resto
+-- druid's home and casts the entire hot kit, but bear/cat/travel — and
+-- Moonkin, which blocks healing outright — mean the board's advice is
+-- unreachable until you shift out.
+SDATA.DRUID_FORMS = {
+    [5487]  = { key = "BEAR",    heals = false },
+    [9634]  = { key = "DIRE",    heals = false },
+    [768]   = { key = "CAT",     heals = false },
+    [783]   = { key = "TRAVEL",  heals = false },
+    [1066]  = { key = "AQUATIC", heals = false },
+    [33943] = { key = "FLIGHT",  heals = false },
+    [40120] = { key = "SWIFTFLIGHT", heals = false },
+    [24858] = { key = "MOONKIN", heals = false },
+    [33891] = { key = "TREE",    heals = true },
+}
 local CLASS_PROFILES = {
     PRIEST = { layer = "PWS" },
     MAGE   = { layer = "INT", selfSpells = SDATA.MAGE_SPELLS },
+    DRUID  = { layer = "HOT" },
 }
 local profile               -- resolved at login; nil = unsupported class (module inert)
 local layer                 -- the active profile's layer ("PWS" / "INT"), nil when inert
@@ -109,12 +347,8 @@ local trackedSpells = {}    -- INT self extra: known tracked spells, in profile 
 local trackedByName = {}    -- localized spell name -> tracked-spell def
 local SELF_KEY = "cself"    -- shieldState/wsState key prefix for self-spell rows
 
--- Mage buff layer: Arcane Intellect (single) and Arcane Brilliance (group)
--- both satisfy "buffed"; names resolve from stable base IDs at login.
-SDATA.AI_ID, SDATA.BRILLIANCE_ID = 1459, 23028
-local AI_NAME, BRILLIANCE_NAME
-local AI_ICON = "Interface\\Icons\\Spell_Holy_MagicalSentry"
-SDATA.AI_DURATION = 1800    -- fallback scale; the aura's real duration wins
+-- Ally buffs are the registry's job now (see SDATA.CLASS_BUFFS above): every
+-- class's, one entry each, with its own toggle and its own urgency rule.
 
 -- Self armor (Frost/Ice/Mage/Molten Armor): the upkeep banner's first segment
 -- AND the armor-switch popout. Ranks listed best-first per line; a line whose
@@ -190,6 +424,20 @@ local util = {
 local mageBtnsDirty = false     -- attribute binds queued for after combat
 local settingsBtn               -- header gear opening the settings page (any class)
 
+-- HOT layer state, in ONE table for the same reason `util` is one (Lua's
+-- 200-local chunk cap — see the SDATA note above).
+--   state       guid -> { [hotKey] = { expire, duration, stacks, icon } }, OURS only
+--   names       localized hot name -> its SDATA.DRUID_HOTS def
+--   scan        per-scan scratch, wiped per unit like scanAbsorbs
+--   cds         banner cooldowns we know -> { name, icon, cd }
+--   forms       localized form name -> SDATA.DRUID_FORMS entry
+--   form        the form we are wearing right now (nil = caster form)
+-- Ally buffs (Mark of the Wild, Thorns) are NOT here: they live on the shared
+-- registry with every other class's, because they are any-caster facts while
+-- `state` is ours-only — another druid's Rejuvenation does not gate your next
+-- global, but their Mark absolutely means you do not recast it.
+local hot = { state = {}, names = {}, scan = {}, cds = {}, forms = {}, form = nil }
+
 -- Aggregate shielding (both layers): every absorb aura we can name — PW:S,
 -- Ice Barrier, Mana Shield, the wards, warlock Sacrifice — from ANY caster,
 -- summed per ally and EMBEDDED into the health bar as colored segments.
@@ -216,6 +464,66 @@ end
 
 -- The settings panel builds per-class too; it lives in the other file, so it
 -- asks the engine which layer (if any) this character gets.
+-- The settings panel builds its per-buff controls from this. Pure registry
+-- data, so it answers correctly before login has resolved anything.
+function CommanderPartyFrames_GetBuffBook(layerKey)
+    return SDATA.CLASS_BUFFS[layerKey or ""]
+end
+
+-- The hot strip's book, for the same settings grid. Flagged so the grid can
+-- word its tooltip correctly: hots are YOURS-only, ally buffs are any-caster.
+-- The settings grid's window onto the binding model. Kept as thin accessors
+-- so the panel file never has to reach into SDATA or util directly.
+function CommanderPartyFrames_GetClickMods() return SDATA.CLICK_MODS end
+function CommanderPartyFrames_GetClickButtons() return SDATA.CLICK_BUTTONS end
+function CommanderPartyFrames_GetClickActions() return SDATA.CLICK_ACTIONS end
+function CommanderPartyFrames_GetBind(key) return util.GetBind(key) end
+function CommanderPartyFrames_BindDisplay(v) return util.BindDisplay(v) end
+function CommanderPartyFrames_ActiveProfile() return util.TalentProfile() end
+
+function CommanderPartyFrames_SetBind(key, value)
+    util.SetBind(key, value)
+    -- Secure attributes are out-of-combat only; SetupSecureRows defers itself
+    -- when it has to, so the caller does not have to care
+    if CommanderPartyFrames_RebindRows then CommanderPartyFrames_RebindRows() end
+end
+
+-- Bindables grouped for the picker, so twenty priest spells arrive as five
+-- readable submenus rather than one wall.
+function CommanderPartyFrames_GetBindables()
+    local byGroup, order = {}, {}
+    for _, sp in ipairs(SDATA.BIND_LIST) do
+        local g = sp.group
+        if not byGroup[g] then byGroup[g] = {}; end
+        byGroup[g][#byGroup[g] + 1] = sp
+    end
+    for _, g in ipairs(SDATA.BIND_GROUPS) do
+        if byGroup[g] then order[#order + 1] = g end
+    end
+    return byGroup, order
+end
+
+function CommanderPartyFrames_ProfileLabel(p) return util.ProfileLabel(p) end
+function CommanderPartyFrames_ListProfiles(out) return util.ListProfiles(out) end
+function CommanderPartyFrames_GetSpellBook() return SDATA.BOOK_LIST end
+
+function CommanderPartyFrames_CopyProfile(from, to)
+    local ok = util.CopyProfile(from, to)
+    if ok and CommanderPartyFrames_RebindRows then CommanderPartyFrames_RebindRows() end
+    return ok
+end
+
+function CommanderPartyFrames_ResetProfile(p)
+    util.ResetProfile(p or util.TalentProfile())
+    if CommanderPartyFrames_RebindRows then CommanderPartyFrames_RebindRows() end
+end
+
+function CommanderPartyFrames_GetHotBook(layerKey)
+    if layerKey ~= "HOT" then return nil end
+    for _, def in ipairs(SDATA.DRUID_HOTS) do def.isHot = true end
+    return SDATA.DRUID_HOTS
+end
+
 function CommanderPartyFrames_GetProfileMode()
     local _, classToken = UnitClass("player")
     local p = CLASS_PROFILES[classToken or ""]
@@ -325,6 +633,185 @@ local function DB(key, default)
     return v
 end
 
+-- Icon shading. The art and the drawing are Commander_Events' (a RequiredDep,
+-- so it is always loaded); what belongs here is remembering which icons were
+-- styled, because half of them are built once in a constructor that never runs
+-- again -- a setting changed mid-session has to reach those too.
+--
+-- On the table rather than as chunk locals for the same reason as everything
+-- else in this file: it is close to Lua's 200-local ceiling.
+util.styledIcons = {}
+
+function util.StyleIcon(icon, round)
+    if not icon then return end
+    util.styledIcons[icon] = round and "ROUND" or "SQUARE"
+    if Commander.DebossIcon then
+        Commander.DebossIcon(icon, DB("IconRecess", "SOFT"), round)
+    end
+end
+
+-- The one look every MISSING tracker wears, board-wide: the real icon, drained
+-- of color and sunk dark, sitting in the slot it will occupy once the buff is
+-- up. A tracker that vanishes when the thing it tracks is gone leaves a hole
+-- exactly where the answer should be, and makes the row's icons shuffle every
+-- time a hot ticks off — so nothing is ever absent from a strip, it is only
+-- ever dark. The shape and position tell you WHICH buff; the tint tells you it
+-- is not there.
+SDATA.GHOST_TINT = { 0.30, 0.30, 0.34, 0.9 }
+
+-- The advisor's louder cousin. Same dark placeholder, bled red: this buff is
+-- missing AND the target's situation says a good player would have put it
+-- there already. Red is reserved for that judgement — a neutral dark slot
+-- means "not up", a red one means "not up and it matters right now".
+SDATA.URGENT_TINT = { 0.62, 0.11, 0.13, 0.95 }
+
+function util.UrgentIcon(icon, tex)
+    if tex then icon:SetTexture(tex) end
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    if icon.SetDesaturated then icon:SetDesaturated(true) end
+    local u = SDATA.URGENT_TINT
+    icon:SetVertexColor(u[1], u[2], u[3], u[4])
+    icon:Show()
+end
+
+function util.GhostIcon(icon, tex)
+    if tex then icon:SetTexture(tex) end
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    if icon.SetDesaturated then icon:SetDesaturated(true) end
+    local g = SDATA.GHOST_TINT
+    icon:SetVertexColor(g[1], g[2], g[3], g[4])
+    icon:Show()
+end
+
+function util.RestyleIcons()
+    if not Commander.DebossIcon then return end
+    local style = DB("IconRecess", "SOFT")
+    for icon, kind in pairs(util.styledIcons) do
+        Commander.DebossIcon(icon, style, kind == "ROUND")
+    end
+end
+
+-- Radial timers that may wear the leading-edge spark, remembered for exactly
+-- the reason above: they are built in the row constructor, so a setting
+-- flipped mid-session would otherwise only reach rows nobody has built yet.
+--
+-- Membership is the whole point of this table, and it is deliberately narrow:
+-- what is in here is how long an AURA has left -- the hots and upkeep strip,
+-- Renew, the dispellable debuffs. The ability bar's sweeps are elsewhere and
+-- stay plain: those count down a cooldown, where the only question is ready
+-- or not, and six sparks orbiting under every row answer a question nobody
+-- asked.
+util.edgeSweeps = {}
+
+-- Register a sweep that measures a DURATION (an aura draining) rather than a
+-- COOLDOWN (an ability coming back).
+--
+-- The two want opposite shading, and Blizzard's Cooldown draws the cooldown
+-- one: the wedge starts covering the icon and retreats as the spell becomes
+-- ready, so the art brightens on its way to "usable". Point that at a buff and
+-- it reads exactly backwards — the icon gets LIGHTER as the buff runs out, at
+-- its brightest the instant before it falls off. SetReverse flips it, so the
+-- lit art is what is LEFT and the dark wedge is what is spent: a full buff is
+-- a full-color icon, an expiring one is nearly all shadow. That is the
+-- direction every duration on this board reads in — hots, absorbs, debuffs and
+-- the ally-buff slots alike. Real cooldowns (the ability strip, Freeze on the
+-- elemental row, the armor segment) deliberately keep the stock direction.
+function util.TrackSweep(cd)
+    if not cd then return end
+    util.edgeSweeps[cd] = true
+    if cd.SetReverse then cd:SetReverse(true) end
+    -- At construction as well as on Apply, so a row acquired after the toggle
+    -- is born matching the board it joins
+    if cd.SetDrawEdge then cd:SetDrawEdge(DB("SweepEdge", false)) end
+end
+
+-- ---------------------------------------------------------------------------
+-- Ally-buff registry helpers. All on `util` rather than as chunk locals: this
+-- file sits a handful of locals under Lua's 200-per-chunk ceiling (see the
+-- SDATA note at the top).
+-- ---------------------------------------------------------------------------
+util.buffExp, util.buffDur = {}, {}   -- per-scan scratch, wiped per unit
+
+-- What the other side is made of, refreshed by the quarter-second hostile
+-- scan. `enemySeen` is how many enemies we could actually read: zero means we
+-- know nothing, which is NOT the same as "no casters" and is why the physical
+-- test below insists on having seen somebody.
+util.enemyClasses, util.meleeOn, util.enemySeen = {}, {}, 0
+util.enemyShadowUntil = 0   -- last time hostile shadow damage landed, + 60s
+
+-- Classes that bring the damage school each situational buff answers. Priests
+-- are the awkward one: a shadow priest is exactly what Shadow Protection is
+-- for, a disc priest is not, so they only count once their spec has actually
+-- been inferred from a cast.
+SDATA.ENEMY_KINDS = {
+    -- SHADOW lists only the class that is shadow by definition; the shadow
+    -- PRIEST arrives through the combat log instead (see util.EnemyHas),
+    -- because a disc priest is not what Shadow Protection is for and their
+    -- class alone cannot tell you which one you are facing.
+    SHADOW = { WARLOCK = true },
+    CASTER = { MAGE = true, WARLOCK = true, PRIEST = true },
+    FEAR = { WARLOCK = true, PRIEST = true, WARRIOR = true },
+}
+
+-- The queries themselves live below specState/groupGuids, which they read.
+
+-- Is this buff tracked? An explicit per-buff toggle wins; absent falls back to
+-- the registry's default, so a fresh install gets the sane set without the DB
+-- carrying a row for every buff in the game.
+function util.BuffTracked(def)
+    local ov = CommanderPartyFramesDB and CommanderPartyFramesDB.BuffTrack
+        and CommanderPartyFramesDB.BuffTrack[def.dbKey]
+    if ov ~= nil then return ov end
+    return def.default and true or false
+end
+
+-- Does the urgency advisor run for this slot? Same override-then-default
+-- shape, under its own master switch.
+function util.BuffAdvised(def)
+    if not DB("BuffAdvisor", true) then return false end
+    local ov = CommanderPartyFramesDB and CommanderPartyFramesDB.BuffAdvise
+        and CommanderPartyFramesDB.BuffAdvise[def.dbKey]
+    if ov ~= nil then return ov end
+    return def.advise and true or false
+end
+
+-- Rebuild the tracked subset and the layout signature. Called from Apply, so
+-- a toggle in the settings panel re-shapes every row on the next draw rather
+-- than on the next reload.
+function util.RefreshBuffs()
+    wipe(SDATA.BUFF_ACTIVE)
+    local sig = {}
+    for _, def in ipairs(SDATA.BUFF_LIST) do
+        -- A spell you have not trained earns no slot. A level-20 mage has no
+        -- Dampen Magic, and a permanent dark reminder of a spell that is not
+        -- in the book is the emptiest pixel on the board.
+        if def.known and util.BuffTracked(def) then
+            SDATA.BUFF_ACTIVE[#SDATA.BUFF_ACTIVE + 1] = def
+            sig[#sig + 1] = def.key
+        end
+    end
+    -- The druid's hot strip answers to exactly the same two questions
+    wipe(SDATA.HOT_ACTIVE)
+    if layer == "HOT" then
+        sig[#sig + 1] = "|"
+        for _, def in ipairs(SDATA.DRUID_HOTS) do
+            if def.known and util.BuffTracked(def) then
+                SDATA.HOT_ACTIVE[#SDATA.HOT_ACTIVE + 1] = def
+                sig[#sig + 1] = def.key
+            end
+        end
+    end
+    SDATA.BUFF_SIG = table.concat(sig, ",")
+end
+
+-- util.ResolveBuffBook lives below knownSpells, whose spellbook scan it reads.
+function util.RestyleSweeps()
+    local edge = DB("SweepEdge", false)
+    for cd in pairs(util.edgeSweeps) do
+        if cd.SetDrawEdge then cd:SetDrawEdge(edge) end
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- Layout constants. Kept tight on purpose: this is a HUD, not a window.
 -- ---------------------------------------------------------------------------
@@ -344,33 +831,83 @@ local HEADER_H = 15
 local DRAW_THROTTLE = 0.1
 local UPTIME_SAMPLE = 1.0
 
+-- Personal rows (Water Elemental, My Shields) render at half an ally row's
+-- height: they are YOUR upkeep, read at a glance, and they now sit ABOVE the
+-- ally board where every pixel is charged to the thing you actually heal.
+-- Kept in SDATA rather than as chunk locals (see the 200-local note above).
+SDATA.PERSONAL_ROW_H = 11
+SDATA.PERSONAL_ICON = 10
+SDATA.PERSONAL_BAR_H = 6
+SDATA.PERSONAL_WS_H = 2
+SDATA.PERSONAL_NAME_W = 44
+
+-- In SDATA rather than a chunk local, like everything else here: the file is
+-- close enough to Lua's 200-local ceiling that new constants pay rent
+SDATA.TEXTURES = "Interface\\AddOns\\Commander_PartyFrames\\Textures\\"
+
+-- Bar fill art. Flat is the board's own look — a solid block, which is what
+-- reads fastest at a glance and stays honest at 6px. Blizzard is the unit
+-- frame gloss: `UI-StatusBar` is the texture the default health bars have
+-- worn since 1.0 (and the one Commander_Nameplate already draws with, so it
+-- is known good on this client). Both take SetVertexColor identically, so
+-- every tint the board applies survives the swap untouched.
+-- The four after those are the board's own art (Harness/make_bars.py): shading
+-- that runs down the bar's height and is uniform across its width, because a
+-- fill is this texture SQUEEZED into the fraction of the row it has earned --
+-- anything with horizontal shape would stretch differently at every health
+-- value. White art throughout, so every tint still lands unchanged.
+SDATA.BAR_TEXTURES = {
+    FLAT = "Interface\\Buttons\\WHITE8X8",
+    BLIZZARD = "Interface\\TargetingFrame\\UI-StatusBar",
+    GLOSS = SDATA.TEXTURES .. "BarGloss.png",
+    BEVEL = SDATA.TEXTURES .. "BarBevel.png",
+    RIDGE = SDATA.TEXTURES .. "BarRidge.png",
+    GLASS = SDATA.TEXTURES .. "BarGlass.png",
+}
+
+-- What the empty part of a bar is drawn with. Flat and Blizzard keep the plain
+-- black wash the board has always had; the board's own styles get a groove --
+-- shadow gathering under the top lip -- so an empty bar reads as a track the
+-- fill runs in rather than a rectangle of nothing.
+-- A track with no file of its own is the fill art washed black, which is what
+-- the board has always drawn and is indistinguishable whatever art it is given
+SDATA.BAR_TRACKS = {
+    FLAT = { 0, 0, 0, 0.55 },
+    SOCKET = { 0.38, 0.38, 0.42, 0.55, file = SDATA.TEXTURES .. "BarSocket.png" },
+}
+SDATA.BAR_TRACK_OF = {
+    GLOSS = "SOCKET", BEVEL = "SOCKET", RIDGE = "SOCKET", GLASS = "SOCKET",
+}
+
 -- state -> { rank (sort, lower = more urgent), color (accent stripe) }
 local STATES = {
-    CURSED   = { rank = -2, color = { 0.65, 0.30, 0.95 } },-- INT: removable curse, decurse NOW
-    CCED     = { rank = -1, color = { 1.00, 0.55, 0.15 } },-- INT: teammate in crowd control
-    READY    = { rank = 0, color = { 1.00, 0.90, 0.25 } }, -- no shield/buff, castable NOW
+    CURSED   = { rank = -2, color = { 0.65, 0.30, 0.95 } },-- INT/HOT: removable curse, decurse NOW
+    POISONED = { rank = -2, color = { 0.25, 0.85, 0.35 } },-- HOT: removable poison, abolish NOW
+    CCED     = { rank = -1, color = { 1.00, 0.55, 0.15 } },-- INT/HOT: teammate in crowd control
+    READY    = { rank = 0, color = { 1.00, 0.90, 0.25 } }, -- no shield/hot/buff, castable NOW
     EXPOSED  = { rank = 1, color = { 0.95, 0.25, 0.25 } }, -- no shield, still lockout-bound
     REFRESH  = { rank = 2, color = { 0.35, 0.85, 1.00 } }, -- low/expiring, can recast
     FADING   = { rank = 3, color = { 1.00, 0.55, 0.15 } }, -- low/expiring, but locked
-    SHIELDED = { rank = 4, color = { 0.35, 0.85, 0.40 } }, -- healthy shield/buff of ours
+    SHIELDED = { rank = 4, color = { 0.35, 0.85, 0.40 } }, -- healthy shield/hot/buff of ours
     OTHER    = { rank = 5, color = { 0.55, 0.60, 0.78 } }, -- an ally priest's shield / no buff target
     DEAD     = { rank = 9, color = { 0.42, 0.42, 0.42 } }, -- dead / offline
     EMPTY    = { rank = 10, color = { 0, 0, 0 } },          -- an empty secure slot
 }
 -- Rows the player usually acts on; the rest are hidden by Only Show Alerts
-local ALERT_STATES = { CURSED = true, CCED = true, READY = true, EXPOSED = true, REFRESH = true, FADING = true }
+local ALERT_STATES = { CURSED = true, POISONED = true, CCED = true, READY = true,
+    EXPOSED = true, REFRESH = true, FADING = true }
 -- The recast/act window is open (castable and wanted) in these states
-local CASTABLE_STATES = { CURSED = true, READY = true, REFRESH = true }
+local CASTABLE_STATES = { CURSED = true, POISONED = true, READY = true, REFRESH = true }
 
 -- Persistent per-unit state, keyed by GUID so every token that points at a unit
 -- (party3, target, mouseover) refines one record.
 local shieldState = {}   -- guid -> { spellId, expire, capacity, absorbed, mine }
 local wsState = {}        -- guid -> weakened-soul expirationTime
 local renewState = {}     -- guid -> OUR Renew expirationTime (Renew tracking)
-local intState = {}       -- guid -> { expire, duration } for Arcane Int/Brilliance
-local curseState = {}     -- guid -> { expire, duration } first removable debuff (INT layer)
-local ccState = {}        -- guid -> { expire, duration, icon, name } first CC debuff (INT layer)
--- Live header tallies for the INT layer, rebuilt every draw pass
+local intState = {}       -- guid -> { expire, duration } for the layer's ally buff
+local curseState = {}     -- guid -> { expire, duration, dispelName } first removable debuff
+local ccState = {}        -- guid -> { expire, duration, icon, name } first CC debuff
+-- Live header tallies for the buff layers (INT/HOT), rebuilt every draw pass
 local intCurses, intCCs = 0, 0
 
 -- ---------------------------------------------------------------------------
@@ -434,6 +971,34 @@ SDATA.SPEC_ICONS = {
 local specMarkerNames = {}  -- localized marker spell name -> spec token
 local specState = {}        -- guid -> spec token (session cache, never pruned)
 local groupGuids = {}       -- guid -> classToken for the current roster (CLEU filter)
+function util.EnemyHas(kind)
+    -- Shadow has a second, better witness than anybody's class: damage of that
+    -- school actually landing. It catches the shadow priest a class read
+    -- cannot tell from a healer, and it survives them going quiet for a while.
+    if kind == "SHADOW" and util.enemyShadowUntil > GetTime() then return true end
+    local set = SDATA.ENEMY_KINDS[kind]
+    if not set then return false end
+    for class in pairs(util.enemyClasses) do
+        if set[class] then return true end
+    end
+    return false
+end
+
+-- Have we seen ANYTHING of the other side? The comp scan and the shadow log
+-- are separate witnesses, and either one counts as having looked.
+function util.EnemySeen()
+    return util.enemySeen > 0 or util.enemyShadowUntil > GetTime()
+end
+
+-- Amplify Magic's condition: the enemy deals no magic damage worth speaking
+-- of, so the extra healing taken is free and the extra magic damage taken
+-- costs nothing. Requires having SEEN the other team — an empty scan means we
+-- do not know, and "do not know" must never read as "safe".
+function util.EnemyIsPhysical()
+    if not util.EnemySeen() then return false end
+    return not util.EnemyHas("CASTER")
+end
+
 
 -- ---------------------------------------------------------------------------
 -- Party Ability Bar: the curated cooldown book (see
@@ -803,6 +1368,15 @@ local MANA_CLASSES = {
     MAGE = true, PRIEST = true, WARLOCK = true, DRUID = true,
     SHAMAN = true, PALADIN = true, HUNTER = true,
 }
+-- Pets on the ally board (Include Pets). Every pet in the group has its own
+-- fixed token, so "is this a pet, and whose" is a static lookup rather than a
+-- UnitIsUnit walk — and the owner is what a pet row borrows for the two
+-- things a pet has none of: a class color and a class icon. It lives in SDATA
+-- because this chunk sits within a few locals of Lua's 200-per-chunk ceiling
+-- (see the SDATA note at the top).
+SDATA.PET_OWNER = { pet = "player" }
+for i = 1, 4 do SDATA.PET_OWNER["partypet" .. i] = "party" .. i end
+for i = 1, 40 do SDATA.PET_OWNER["raidpet" .. i] = "raid" .. i end
 -- guid -> pooled array of dispellable debuffs; list.n is the live count so the
 -- entry tables are reused instead of reallocated on every aura event
 local dispelState = {}
@@ -827,6 +1401,11 @@ root:SetSize(214, ROW_H)
 root:SetFrameStrata("MEDIUM")
 root:Hide()
 
+-- Forward declaration: the default-party-frame toggle is built far below
+-- (next to EnsureSettingsButton), but the mage button cluster has to chain
+-- off it, and util.Layout is defined before it exists.
+local blizz
+
 -- Hidden tooltip used to read "Absorbs N damage" off a fresh shield. Best-effort
 -- and fully guarded: a client that will not cooperate just falls back to the
 -- computed capacity, so the bar always has a number to draw.
@@ -838,6 +1417,27 @@ end
 
 local function InCombat()
     return InCombatLockdown and InCombatLockdown()
+end
+
+-- Show/Hide is a PROTECTED call on any frame that CARRIES secure children,
+-- not just on one built from a secure template: the engine walks up from the
+-- secure button, because hiding an ancestor would hide the button. That makes
+-- both `root` and the banner's utility container protected — the same rule
+-- the default-party-frame toggle already respects — and calling either in
+-- combat is blocked outright (ADDON_ACTION_BLOCKED, the field report).
+--
+-- So: a visibility change is a no-op when the frame is already in the wanted
+-- state (the common case, once per draw), and one that would really flip a
+-- protected frame mid-fight is skipped rather than attempted. Nothing has to
+-- be queued — PLAYER_REGEN_ENABLED re-draws, and the draw re-derives every
+-- one of these from scratch. Returns whether the frame ended up as asked, so
+-- a caller that measures the result can ask instead of assume.
+local function SafeSetShown(frame, want)
+    want = want and true or false
+    if (frame:IsShown() and true or false) == want then return true end
+    if InCombat() and frame.IsProtected and frame:IsProtected() then return false end
+    frame:SetShown(want)
+    return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -902,16 +1502,286 @@ end
 -- kept as a bonus signal where it happens to work.
 -- ---------------------------------------------------------------------------
 local knownSpells = {}   -- localized spell name -> true (spellbook contents)
+
+-- ---------------------------------------------------------------------------
+-- Click-binding profiles, keyed by TALENT BUILD.
+--
+-- This is a TBC client: dual spec is a Wrath feature, so there is no spec API
+-- to hook and no in-game switch to listen for. What there IS is the talent
+-- tree itself — which tab you have sunk the most points into — and that is
+-- the thing a player actually changes when they respec between arena and PvE.
+-- So the profile follows the build: respec, and the board comes back bound the
+-- way you left it for that build. The tab INDEX keys it, not the tab name,
+-- because names are localized and a saved profile has to survive a client in
+-- another language.
+-- ---------------------------------------------------------------------------
+function util.TalentProfile()
+    local cls = playerClass or "UNKNOWN"
+    if DB("ClickProfileMode", "TALENT") == "FIXED" then
+        local fixed = DB("ClickProfileFixed", "")
+        if fixed ~= "" then return fixed end
+    end
+    if not (GetNumTalentTabs and GetTalentTabInfo) then return cls .. ":1" end
+    local bestTab, bestPts = 1, -1
+    for i = 1, (GetNumTalentTabs() or 0) do
+        local ok, _, _, pts = pcall(GetTalentTabInfo, i)
+        if ok and type(pts) == "number" and pts > bestPts then bestTab, bestPts = i, pts end
+    end
+    -- A fresh character with nothing spent gets one shared profile rather than
+    -- an arbitrary tree's, so early bindings do not scatter across three of them
+    if bestPts <= 0 then return cls .. ":0" end
+    return cls .. ":" .. bestTab
+end
+
+function util.BindStore(profile, create)
+    local all = CommanderPartyFramesDB and CommanderPartyFramesDB.ClickBinds
+    if not all then
+        if not create then return nil end
+        all = {}
+        CommanderPartyFramesDB.ClickBinds = all
+    end
+    local rec = all[profile]
+    if not rec and create then rec = {}; all[profile] = rec end
+    return rec
+end
+
+function util.GetBind(key, profile)
+    local rec = util.BindStore(profile or util.TalentProfile(), false)
+    if rec then
+        local v = rec[key]
+        -- An explicit false is how the grid records "deliberately cleared",
+        -- which has to beat the default rather than fall back through it
+        if v == false then return nil end
+        if v ~= nil then return v end
+        if rec.__touched then return nil end
+    end
+    local d = layer and SDATA.BIND_DEFAULTS[layer]
+    return d and d[key] or nil
+end
+
+function util.SetBind(key, value, profile)
+    local rec = util.BindStore(profile or util.TalentProfile(), true)
+    -- The first edit takes this profile off the shared defaults entirely, so
+    -- clearing a cell means cleared rather than "fall back to Flash Heal"
+    if not rec.__touched then
+        rec.__touched = true
+        local d = layer and SDATA.BIND_DEFAULTS[layer]
+        if d then for k, v in pairs(d) do if rec[k] == nil then rec[k] = v end end end
+    end
+    if value == nil or value == "NONE" then rec[key] = false else rec[key] = value end
+end
+
+-- One-time migration off the old flat keys. The bindings a player already set
+-- are theirs; silently resetting everyone to defaults because the storage
+-- shape changed is the rudest possible upgrade. Seeds the profile that is
+-- active at first login and marks the DB so it never runs twice.
+-- What a brand-new profile starts as, per layer. Not written to the DB —
+-- they are what GetBind falls back to, so a player who never opens the grid
+-- still has a working board, and re-tuning these later reaches everyone who
+-- never overrode them.
+SDATA.BIND_DEFAULTS = {
+    PWS = { ["1"] = 17, ["2"] = 139, ["3"] = 2061, ["shift-1"] = 2060 },
+    INT = { ["1"] = 1459, ["2"] = 475, ["3"] = "TARGET", ["shift-1"] = 1008 },
+    HOT = { ["1"] = 774, ["2"] = 33763, ["3"] = "TARGET", ["shift-1"] = 8936 },
+}
+
+function util.MigrateBinds()
+    if not CommanderPartyFramesDB then return end
+    if CommanderPartyFramesDB.ClickBindsMigrated then return end
+    CommanderPartyFramesDB.ClickBindsMigrated = true
+    local old
+    if layer == "INT" then
+        old = { CommanderPartyFramesDB.MageClickLeft, CommanderPartyFramesDB.MageClickRight,
+            CommanderPartyFramesDB.MageClickMiddle, CommanderPartyFramesDB.MageClickModLeft }
+    elseif layer == "HOT" then
+        old = { CommanderPartyFramesDB.DruidClickLeft, CommanderPartyFramesDB.DruidClickRight,
+            CommanderPartyFramesDB.DruidClickMiddle, CommanderPartyFramesDB.DruidClickModLeft }
+    elseif layer == "PWS" then
+        old = { CommanderPartyFramesDB.ClickLeft, CommanderPartyFramesDB.ClickRight,
+            CommanderPartyFramesDB.ClickMiddle, CommanderPartyFramesDB.ClickModLeft }
+    else
+        return
+    end
+    local profile = util.TalentProfile()
+    local rec = util.BindStore(profile, true)
+    if next(rec) then return end   -- already populated: leave it alone
+    if old[1] then rec["1"] = old[1] end
+    if old[2] then rec["2"] = old[2] end
+    if old[3] then rec["3"] = old[3] end
+    if old[4] then
+        local mod = (CommanderPartyFramesDB.ClickModifier or "shift") .. "-"
+        rec[mod .. "1"] = old[4]
+    end
+end
+
+-- A profile key is CLASS:tabIndex — locale-proof, and meaningless to read.
+-- This turns it back into the tree's own name for the settings header, which
+-- is the only place a player should ever have to see a profile identified.
+function util.ProfileLabel(profile)
+    if not profile then return "?" end
+    local cls, tab = profile:match("^(.+):(%d+)$")
+    tab = tonumber(tab)
+    if not tab then return profile end
+    if tab == 0 then return "No talents spent" end
+    if GetTalentTabInfo then
+        local ok, name = pcall(GetTalentTabInfo, tab)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+    return (cls or "?") .. " tree " .. tab
+end
+
+-- Every profile that exists, with the active one guaranteed present even
+-- before it has been written to. Sorted so the settings list does not
+-- reshuffle between openings.
+function util.ListProfiles(out)
+    wipe(out)
+    local seen = {}
+    local active = util.TalentProfile()
+    out[#out + 1] = active
+    seen[active] = true
+    local all = CommanderPartyFramesDB and CommanderPartyFramesDB.ClickBinds
+    if all then
+        for key in pairs(all) do
+            if not seen[key] then seen[key] = true; out[#out + 1] = key end
+        end
+    end
+    table.sort(out)
+    return out
+end
+
+-- Copy every binding from one profile onto another, replacing it wholesale.
+-- Marked touched, so the copy is the copy — a cell the source deliberately
+-- cleared stays cleared rather than reverting to the layer default.
+function util.CopyProfile(from, to)
+    if not from or not to or from == to then return false end
+    local src = util.BindStore(from, false)
+    if not src then return false end
+    local dst = util.BindStore(to, true)
+    wipe(dst)
+    for k, v in pairs(src) do dst[k] = v end
+    dst.__touched = true
+    return true
+end
+
+-- Back to the layer's defaults: the profile is dropped entirely rather than
+-- filled with default values, so it keeps following the defaults if they are
+-- ever re-tuned.
+function util.ResetProfile(profile)
+    local all = CommanderPartyFramesDB and CommanderPartyFramesDB.ClickBinds
+    if all then all[profile] = nil end
+end
+
+-- Every bindable this class knows, resolved against the spellbook. The picker
+-- is only as honest as this list: offering a spell the character cannot cast
+-- produces a binding that saves and then does nothing.
+function util.ResolveBindables()
+    wipe(SDATA.BIND_LIST)
+    local list = layer and SDATA.BINDABLE[layer]
+    if not (list and GetSpellInfo) then return end
+    for _, e in ipairs(list) do
+        local name, _, icon = GetSpellInfo(e.id)
+        if name and (knownSpells[name] or (IsSpellKnown and IsSpellKnown(e.id))) then
+            SDATA.BIND_LIST[#SDATA.BIND_LIST + 1] = {
+                id = e.id, name = name, icon = icon, group = e.group or "Utility",
+            }
+        end
+    end
+end
+
+-- What a bound value looks like in the UI: its icon and a readable label.
+function util.BindDisplay(value)
+    if value == nil or value == "NONE" then
+        return nil, "Unbound"
+    end
+    for _, a in ipairs(SDATA.CLICK_ACTIONS) do
+        if a.value == value then return a.icon, a.label end
+    end
+    local id = tonumber(value)
+    if id and GetSpellInfo then
+        local name, _, icon = GetSpellInfo(id)
+        if name then
+            local known = knownSpells[name] or (IsSpellKnown and IsSpellKnown(id))
+            return icon, name, not known
+        end
+    end
+    return nil, "Unknown spell (" .. tostring(value) .. ")", true
+end
+
+
+-- Resolve the active layer's buff names and icons from the spellbook. Only the
+-- ACTIVE layer goes into the name map, so a mage's board can never count a
+-- druid's Mark of the Wild as "buffed" and vice versa.
+function util.ResolveBuffBook()
+    wipe(SDATA.BUFF_BY_NAME)
+    wipe(SDATA.BUFF_LIST)
+    local list = layer and SDATA.CLASS_BUFFS[layer]
+    if not list then util.RefreshBuffs(); return end
+    for _, def in ipairs(list) do
+        SDATA.BUFF_LIST[#SDATA.BUFF_LIST + 1] = def
+        def.known = false
+        if GetSpellInfo then
+            -- Knowing EITHER version counts: a raid-buffing priest who only
+            -- ever presses Prayer of Fortitude still maintains Fortitude.
+            -- knownSpells is the spellbook scan; IsSpellKnown is the backstop
+            -- for a rank it has not indexed (the same pair the armor popout
+            -- and the druid banner use).
+            local n, _, icon = GetSpellInfo(def.id)
+            if n then
+                SDATA.BUFF_BY_NAME[n] = def
+                if icon then def.icon = icon end
+                if knownSpells[n] or (IsSpellKnown and IsSpellKnown(def.id)) then
+                    def.known = true
+                end
+            end
+            if def.groupId then
+                local gn, _, gicon = GetSpellInfo(def.groupId)
+                if gn then
+                    SDATA.BUFF_BY_NAME[gn] = def
+                    if knownSpells[gn] or (IsSpellKnown and IsSpellKnown(def.groupId)) then
+                        def.known = true
+                        if not def.icon and gicon then def.icon = gicon end
+                    end
+                end
+            end
+        end
+    end
+    util.RefreshBuffs()
+end
+
+-- The spellbook, twice over: a name set for every "do I know this" question
+-- on the board, and an ordered list with icons for the binding picker.
+--
+-- Deduped by NAME rather than by id, because that is the unit the game itself
+-- binds in: BindClick writes a spell NAME into the secure attribute, and the
+-- client then casts your highest known rank of it. So five ranks of Flash Heal
+-- are one entry in the picker, not five, and the entry never goes stale as you
+-- train the next rank.
 local function RefreshKnownSpells()
     wipe(knownSpells)
+    wipe(SDATA.BOOK_LIST)
     if not (GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemName) then return end
+    local seen = {}
     for tab = 1, GetNumSpellTabs() do
         local _, _, offset, numSlots = GetSpellTabInfo(tab)
         for i = (offset or 0) + 1, (offset or 0) + (numSlots or 0) do
             local name = GetSpellBookItemName(i, "spell")
-            if name then knownSpells[name] = true end
+            if name then
+                knownSpells[name] = true
+                if not seen[name] then
+                    seen[name] = true
+                    local id, icon
+                    if GetSpellBookItemInfo then
+                        local _, sid = GetSpellBookItemInfo(i, "spell")
+                        id = sid
+                    end
+                    if id and GetSpellInfo then icon = select(3, GetSpellInfo(id)) end
+                    SDATA.BOOK_LIST[#SDATA.BOOK_LIST + 1] =
+                        { id = id, name = name, icon = icon }
+                end
+            end
         end
     end
+    table.sort(SDATA.BOOK_LIST, function(x, y) return x.name < y.name end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -921,6 +1791,46 @@ end
 -- button CONTAINER are insecure frames, so showing/hiding them stays legal
 -- mid-combat even though the buttons themselves are protected.
 -- ---------------------------------------------------------------------------
+-- HOT layer name resolution (login + respec/SPELLS_CHANGED). Every lookup the
+-- druid layer does at runtime is by LOCALIZED NAME — hots on an ally, the
+-- form we are wearing — so the whole locale problem is solved once, here,
+-- from stable base IDs. Banner cooldowns are filtered to what this druid
+-- actually knows, so a feral never sees a Nature's Swiftness segment.
+local function ResolveDruidInfo()
+    if layer ~= "HOT" or not GetSpellInfo then return end
+    wipe(hot.names)
+    for _, def in ipairs(SDATA.DRUID_HOTS) do
+        local n, _, icon = GetSpellInfo(def.baseId)
+        def.known = false
+        if n then
+            hot.names[n] = def
+            if icon then def.icon = icon end
+            -- knownSpells is the spellbook scan; IsSpellKnown is the backstop
+            -- for a rank it has not indexed yet (same pair the rest use)
+            if knownSpells[n] or (IsSpellKnown and IsSpellKnown(def.baseId)) then
+                def.known = true
+            end
+        end
+    end
+    wipe(hot.forms)
+    for id, form in pairs(SDATA.DRUID_FORMS) do
+        local n, _, icon = GetSpellInfo(id)
+        if n then
+            hot.forms[n] = form
+            form.icon = icon or form.icon
+        end
+    end
+    wipe(hot.cds)
+    for _, e in ipairs(SDATA.DRUID_BANNER_CDS) do
+        local n, _, icon = GetSpellInfo(e.id)
+        -- knownSpells is the spellbook scan; IsSpellKnown is the backstop for
+        -- a rank we have not indexed yet (same pair the armor popout uses)
+        if n and ((knownSpells and knownSpells[n]) or (IsSpellKnown and IsSpellKnown(e.id))) then
+            hot.cds[#hot.cds + 1] = { key = e.key, name = n, icon = icon or e.icon, cd = e.cd }
+        end
+    end
+end
+
 local function ResolveEleInfo()
     eleKnown = false
     if layer ~= "INT" or not GetSpellInfo then return end
@@ -1050,24 +1960,80 @@ end
 -- turns off so no gap is left behind. Only ever called from the bind pass,
 -- which is combat-deferred: these are protected frames and may neither move
 -- nor change visibility mid-fight.
+-- Width the class cluster occupies, so the banner's readout segments know
+-- where to start. Zero when every button is switched off.
+--
+-- Measured from what is ON SCREEN, not from what the config wants. These are
+-- secure buttons: a fight freezes them in whatever state it caught them in,
+-- and the readout — plain textures, free to move — is the half of the pair
+-- that adapts. Reading `wanted` here would reserve a left margin for a
+-- cluster that is not drawn, which is precisely the gap that showed up.
+-- The cluster in banner order. Walked by INDEX, never with ipairs: four of
+-- these five are mage-only and stay nil on any other layer, and ipairs stops
+-- dead at the first hole — which on a priest or druid banner is index 1. That
+-- ended the walk before it began, so ClusterWidth reported 0 and Layout never
+-- re-anchored anything, leaving the bandage button parked on the provisional
+-- top-right anchor mkBtn gives it: directly under the settings gear.
+SDATA.CLUSTER_N = 5
+local function ClusterAt(i)
+    if i == 1 then return consumeBtn end
+    if i == 2 then return conjureBtn end
+    if i == 3 then return gemBtn end
+    if i == 4 then return util.portalBtn end
+    if i == 5 then return bandageBtn end
+    return nil
+end
+
+function util.ClusterWidth()
+    if mageUtil and not mageUtil:IsShown() then return 0 end
+    local w, any = 0, false
+    for i = 1, SDATA.CLUSTER_N do
+        local b = ClusterAt(i)
+        if b and b:IsShown() then
+            w = w + (b:GetWidth() or 13) + (any and 3 or 0)
+            any = true
+        end
+    end
+    return w
+end
+
+-- Where the banner's own content starts: after the cluster, or hard left when
+-- every button is off. Shared by both segment banners AND the priest board's
+-- plain text header, so none of them can drift onto the buttons.
+function util.ClusterOffset()
+    local cw = util.ClusterWidth()
+    return STRIPE_W + 4 + (cw > 0 and (cw + 5) or 0)
+end
+
+-- Header convention: everything CLASS-specific is left-aligned, everything
+-- Commander is right-aligned.
+--
+-- Within the left block the cluster leads and the readout segments flow after
+-- it, which looks backwards until you notice these buttons are SECURE: a
+-- fixed left anchor is the only placement that never needs a protected
+-- SetPoint mid-fight. The segments are plain textures, so they are the half
+-- of the pair that can safely move every draw.
 function util.Layout()
-    local order = { consumeBtn, conjureBtn, gemBtn, util.portalBtn, bandageBtn }
     local prev
-    for _, b in ipairs(order) do
+    for i = 1, SDATA.CLUSTER_N do
+        local b = ClusterAt(i)
         if b then
             b:SetShown(b.wanted and true or false)
             if b.wanted then
                 b:ClearAllPoints()
                 if prev then
-                    b:SetPoint("RIGHT", prev, "LEFT", -3, 0)
-                elseif settingsBtn then
-                    b:SetPoint("RIGHT", settingsBtn, "LEFT", -3, 0)
+                    b:SetPoint("LEFT", prev, "RIGHT", 3, 0)
                 else
-                    b:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(PAD - 2), -1)
+                    b:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 3, -1)
                 end
                 prev = b
             end
         end
+    end
+    -- The portals popout hangs under its own button, wherever that ended up
+    if util.portalPop and util.portalBtn then
+        util.portalPop:ClearAllPoints()
+        util.portalPop:SetPoint("TOPLEFT", util.portalBtn, "BOTTOMLEFT", 0, -3)
     end
 end
 
@@ -1090,11 +2056,12 @@ function util.BuildPortalRow(ids, row, count)
                 b.icon = b:CreateTexture(nil, "ARTWORK")
                 b.icon:SetAllPoints(b)
                 b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                util.StyleIcon(b.icon)
                 local hl = b:CreateTexture(nil, "HIGHLIGHT")
                 hl:SetAllPoints(b)
                 hl:SetTexture("Interface\\Buttons\\WHITE8X8")
                 hl:SetVertexColor(1, 1, 1, 0.25)
-                b:SetScript("PostClick", function() util.portalPop:Hide() end)
+                b:SetScript("PostClick", function() SafeSetShown(util.portalPop, false) end)
                 b:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
                     GameTooltip:SetText(self.tipName or "")
@@ -1232,11 +2199,12 @@ local function BindMageUtilityButtons()
                 b.icon = b:CreateTexture(nil, "ARTWORK")
                 b.icon:SetAllPoints(b)
                 b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                util.StyleIcon(b.icon)
                 local hl = b:CreateTexture(nil, "HIGHLIGHT")
                 hl:SetAllPoints(b)
                 hl:SetTexture("Interface\\Buttons\\WHITE8X8")
                 hl:SetVertexColor(1, 1, 1, 0.25)
-                b:SetScript("PostClick", function() armorPop:Hide() end)
+                b:SetScript("PostClick", function() SafeSetShown(armorPop, false) end)
                 armorButtons[shown] = b
             end
             local name, _, icon = GetSpellInfo(bestId)
@@ -1248,6 +2216,127 @@ local function BindMageUtilityButtons()
     end
     for i = shown + 1, #armorButtons do armorButtons[i]:Hide() end
     armorPop:SetSize(math.max(shown, 1) * 21 + 3, 24)
+end
+
+-- The cluster and its popouts are siblings of the board, so root's scale no
+-- longer reaches them by inheritance. The HUD chrome writes that scale
+-- directly on root (the resize grip does it live, mid-drag, without telling
+-- the module), so this is checked per draw rather than on a settings event —
+-- a number compare, with the protected SetScale only ever reached on change
+-- and out of combat.
+function util.SyncCluster()
+    if not mageUtil or InCombat() then return end
+    local s = root:GetScale() or 1
+    for _, f in ipairs({ mageUtil, armorPop, util.portalPop }) do
+        if f and (f:GetScale() or 1) ~= s then f:SetScale(s) end
+    end
+    -- Stacking order is the other thing a child got free. Above the board's
+    -- rows, below the HUD chrome's drag overlay (root + 20), so a banner
+    -- button never steals the drag handle while the frame is unlocked.
+    local want = (root:GetFrameLevel() or 1) + 5
+    if (mageUtil:GetFrameLevel() or 0) ~= want then mageUtil:SetFrameLevel(want) end
+end
+
+-- ---------------------------------------------------------------------------
+-- The upkeep banner's readout: a row of icon+text segments. Both class layers
+-- that HAVE a banner (mage armor/uptime/alerts, druid form/cooldowns/alerts)
+-- draw the same shape, so the pool, the placement and the truncation live
+-- here once and each layer only decides what the segments SAY.
+-- ---------------------------------------------------------------------------
+util.segN = 0
+
+function util.EnsureSegs()
+    if root.hdrSegs then return root.hdrSegs end
+    local segs, prev = {}, nil
+    for i = 1, 8 do
+        local icon = root:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(12, 12)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local text = root:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        text:SetJustifyH("LEFT")
+        if prev then
+            icon:SetPoint("LEFT", prev, "RIGHT", 8, 0)
+        else
+            icon:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 4, -1)
+        end
+        text:SetPoint("LEFT", icon, "RIGHT", 2, 0)
+        segs[i] = { icon = icon, text = text }
+        prev = text
+    end
+    root.hdrSegs = segs
+    return segs
+end
+
+-- Segments start after the class button cluster. Re-anchored only when that
+-- width changes: this runs at the draw rate, and they are textures, so combat
+-- is no obstacle. Returns the x the readout begins at.
+function util.PlaceSegs()
+    local segX = util.ClusterOffset()
+    if root._segX ~= segX then
+        root._segX = segX
+        local segs = util.EnsureSegs()
+        segs[1].icon:ClearAllPoints()
+        segs[1].icon:SetPoint("TOPLEFT", root, "TOPLEFT", segX, -1)
+    end
+    return segX
+end
+
+function util.Seg(icon, desat, text, tint)
+    util.segN = util.segN + 1
+    local s = root.hdrSegs and root.hdrSegs[util.segN]
+    if not s then return end
+    s.icon:SetTexture(icon)
+    if s.icon.SetDesaturated then s.icon:SetDesaturated(desat or false) end
+    s.icon:SetAlpha(desat and 0.5 or 1)
+    if tint then
+        s.icon:SetVertexColor(tint[1], tint[2], tint[3], 1)
+    else
+        s.icon:SetVertexColor(1, 1, 1, 1)
+    end
+    s.text:SetText(text or "")
+    s.icon:Show()
+    s.text:Show()
+end
+
+-- The right-aligned Commander chrome is a hard wall, and the cluster shares
+-- the left block, so a segment that would run under the gear is dropped along
+-- with everything after it — a truncated banner beats an overlapping one.
+-- Layers fill segments most-urgent-first, so what survives is what matters.
+function util.TruncSegs(segX)
+    local segs = root.hdrSegs
+    if not segs then return end
+    local chromeW = 0
+    if blizz and blizz.btn and blizz.btn:IsShown() then chromeW = chromeW + 12 + 3 end
+    if settingsBtn and settingsBtn:IsShown() then chromeW = chromeW + 12 + 3 end
+    local limit = FrameWidth() - (PAD - 3) - chromeW
+    local n, x = util.segN, segX
+    for i = 1, n do
+        local s = segs[i]
+        local tw = (s.text.GetStringWidth and s.text:GetStringWidth()) or 0
+        local w = 12 + 2 + tw
+        if x + w > limit then n = i - 1; break end
+        x = x + w + 8
+    end
+    for i = n + 1, #segs do
+        segs[i].icon:Hide()
+        segs[i].text:Hide()
+    end
+end
+
+-- A cooldown as one banner segment: lit and bare when it is ready, dimmed
+-- with the time left when it is not. The mage banner's armor ring is its own
+-- special case; everything else reads better as the ability strip's grammar.
+function util.SegCooldown(name, icon, cd, now)
+    local start, duration = GetSpellCooldown and GetSpellCooldown(name)
+    local left = 0
+    if start and duration and duration > 1.5 then left = start + duration - now end
+    if left <= 0 then
+        util.Seg(icon, false, nil)
+        return
+    end
+    local txt = left >= 90 and string.format("%dm", math.floor(left / 60 + 0.5))
+        or string.format("%d", math.floor(left + 0.5))
+    util.Seg(icon, true, txt)
 end
 
 -- Per-draw refresh of everything insecure on the utility cluster: the
@@ -1335,19 +2424,191 @@ end
 
 -- Header gear (any class): opens the settings page through the framework's
 -- own bare-slash handler; hideable via the Settings Button option.
+-- ---------------------------------------------------------------------------
+-- The default party frames. This client runs the retail-style UI framework,
+-- so the old PartyMemberFrame1..4 globals DO NOT exist here: the party frames
+-- are pooled member frames living inside ONE PartyFrame container (verified
+-- against Blizzard_UnitFrame/Shared/PartyFrame.lua and the Classic TOC's
+-- file list on wow-ui-source's classic_anniversary branch).
+--
+-- Hiding that container is the whole job, and it is what keeps this safe: the
+-- member frames are protected unit buttons, but we never touch one. They may
+-- Show() themselves as often as Blizzard likes behind a hidden parent.
+--
+-- PartyFrame is the ONLY thing to touch. The raid-style party frame is
+-- CompactPartyFrame, and CompactPartyFrame_Generate builds it lazily as a
+-- CHILD of PartyFrame ("CreateFrame('Frame', 'CompactPartyFrame', PartyFrame,
+-- ...)"), so hiding the parent covers both styles. Naming it separately is
+-- not just redundant, it is actively harmful: its template ships
+-- hidden="true" and Blizzard only shows it when raid-style party frames are
+-- switched on, so anyone calling Show() on it conjures raid frames out of
+-- nowhere for everybody else.
+--
+-- Hence the rule this code follows: only ever re-show a frame we hid
+-- ourselves, while it was showing. We never decide that something Blizzard
+-- was keeping hidden ought to be visible.
+--
+-- Everything here is gated on combat. PartyFrame itself is insecure, but it
+-- parents secure buttons, and a settings toggle has no business finding out
+-- exactly where the engine draws that line.
+--
+-- One chunk local, holding both state and functions: this file sits close to
+-- Lua's 200-local cap (see the SDATA note at the top).
+-- ---------------------------------------------------------------------------
+blizz = { names = { "PartyFrame" }, hooked = {}, hidByUs = {}, dirty = false }
+
+-- Effective state, not the raw setting: with the module switched off the
+-- board is gone, so leaving the default frames hidden would leave the player
+-- with no party frames at all.
+function blizz.Hidden()
+    return (CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield
+        and DB("HideBlizzardParty", false)) and true or false
+end
+
+-- Glyph: three stacked rows (the default frames), struck through when they
+-- are hidden. Drawn from tinted quads rather than a texture file — the suite
+-- convention, since art paths move across patches. The lit tint is the gear's
+-- exact grey so the two read as one set of controls.
+function blizz.Paint()
+    local b = blizz.btn
+    if not b then return end
+    local hidden = blizz.Hidden()
+    for _, bar in ipairs(b.bars) do
+        bar:SetColorTexture(0.8, 0.8, 0.8, hidden and 0.22 or 0.9)
+    end
+    b.slash:SetShown(hidden)
+end
+
+function blizz.Apply()
+    if InCombat() then blizz.dirty = true; blizz.Paint(); return end
+    blizz.dirty = false
+    local hide = blizz.Hidden()
+    for _, name in ipairs(blizz.names) do
+        local f = _G[name]
+        if f then
+            if not blizz.hooked[name] then
+                blizz.hooked[name] = true
+                -- Blizzard re-shows the container on its own (roster changes,
+                -- leaving Edit Mode). The hook makes the setting stick without
+                -- us having to know every path that calls Show().
+                f:HookScript("OnShow", function(self)
+                    if blizz.Hidden() and not InCombat() then
+                        -- Marked as ours, or a frame Blizzard raised while
+                        -- the toggle was on could never be given back
+                        blizz.hidByUs[name] = true
+                        self:Hide()
+                    end
+                end)
+            end
+            -- Strictly symmetric: hide only what is currently showing, and
+            -- restore only what that hid. A frame already down when we got
+            -- here stays down — it is not ours to reveal.
+            if hide then
+                if f:IsShown() then blizz.hidByUs[name] = true; f:Hide() end
+            elseif blizz.hidByUs[name] then
+                blizz.hidByUs[name] = nil
+                f:Show()   -- PartyFrame's own OnShow re-initializes its members
+            end
+        end
+    end
+    blizz.Paint()
+end
+
+function blizz.Toggle()
+    if InCombat() then
+        print("|cff66ccffCommander Party Frames|r: the default party frames can only be toggled out of combat.")
+        return
+    end
+    if not CommanderPartyFramesDB then return end
+    CommanderPartyFramesDB.HideBlizzardParty = not DB("HideBlizzardParty", false)
+    blizz.Apply()
+    print(blizz.Hidden()
+        and "|cff66ccffCommander Party Frames|r: default party frames |cffff7f50hidden|r."
+        or "|cff66ccffCommander Party Frames|r: default party frames |cff33ff33shown|r.")
+end
+
+-- Escape hatch for the settings page and /cpf blizzard: the header button
+-- rides the board, and the board is Priest/Mage only (and can hide itself).
+function CommanderPartyFrames_ToggleBlizzardParty()
+    blizz.Toggle()
+end
+
+function blizz.EnsureButton()
+    if blizz.btn or not profile then return end
+    -- Sized and tinted to sit beside the gear as a matching pair: same 12x12
+    -- footprint, same grey, same highlight. Each row spans the button via
+    -- LEFT+RIGHT anchors (inset a little) rather than a width — two
+    -- horizontal anchors settle the width however the size resolves, which is
+    -- what turns these into rows instead of specks. SetColorTexture needs no
+    -- art file, so there is no path to go stale.
+    local b = CreateFrame("Button", nil, root)
+    b:SetSize(12, 12)
+    b.bars = {}
+    for i = 1, 3 do
+        local t = b:CreateTexture(nil, "ARTWORK")
+        local y = 3 - (i - 1) * 3
+        t:SetPoint("LEFT", b, "LEFT", 1, y)
+        t:SetPoint("RIGHT", b, "RIGHT", -1, y)
+        t:SetHeight(2)
+        b.bars[i] = t
+    end
+    b.slash = b:CreateTexture(nil, "OVERLAY")
+    b.slash:SetColorTexture(0.85, 0.40, 0.35, 0.9)
+    b.slash:SetWidth(15)
+    b.slash:SetHeight(1.5)
+    b.slash:SetPoint("CENTER", b, "CENTER", 0, 0)
+    b.slash:SetRotation(math.rad(-40))
+    b.slash:Hide()
+    local hl = b:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints(b)
+    hl:SetColorTexture(1, 1, 1, 0.25)
+    b:SetScript("OnClick", function() blizz.Toggle() end)
+    b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+        GameTooltip:SetText(blizz.Hidden() and "Default party frames: hidden"
+            or "Default party frames: shown")
+        GameTooltip:AddLine("Click to toggle. Out of combat only; also |cffffd100/cpf blizzard|r.",
+            0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    blizz.btn = b
+    blizz.Paint()
+end
+
 local function EnsureSettingsButton()
     if settingsBtn or not profile then return end
     settingsBtn = CreateFrame("Button", nil, root)
     settingsBtn:SetSize(12, 12)
     settingsBtn:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(PAD - 3), -1.5)
-    settingsBtn.icon = settingsBtn:CreateTexture(nil, "ARTWORK")
-    settingsBtn.icon:SetAllPoints(settingsBtn)
-    settingsBtn.icon:SetTexture("Interface\\WorldMap\\Gear_64Grey")
-    settingsBtn.icon:SetVertexColor(0.8, 0.8, 0.8, 0.9)
+    -- The cog is DRAWN, not loaded. It used to be Interface\WorldMap\
+    -- Gear_64Grey, which is Cataclysm-era world-map art: this client runs the
+    -- retail-style UI framework, that folder no longer ships it, and a texture
+    -- path that does not resolve draws nothing at all — leaving a button that
+    -- was present, positioned and clickable but completely invisible. Every
+    -- other piece of chrome on this header (the stacked-rows toggle beside it)
+    -- already builds its glyph from SetColorTexture quads, which need no art
+    -- file and so have no path to go stale. This one now matches.
+    --
+    -- Four bars through the center at 45-degree steps give eight teeth; the
+    -- hub sits on top. They overlap at the middle, and the extra blend there
+    -- is wanted — it is what reads as the cog's hub rather than an asterisk.
+    settingsBtn.cog = {}
+    for i = 1, 4 do
+        local t = settingsBtn:CreateTexture(nil, "ARTWORK")
+        t:SetColorTexture(0.8, 0.8, 0.8, 0.75)
+        t:SetSize(2.5, 12)
+        t:SetPoint("CENTER", settingsBtn, "CENTER", 0, 0)
+        t:SetRotation(math.rad((i - 1) * 45))
+        settingsBtn.cog[i] = t
+    end
+    settingsBtn.hub = settingsBtn:CreateTexture(nil, "OVERLAY")
+    settingsBtn.hub:SetColorTexture(0.8, 0.8, 0.8, 0.9)
+    settingsBtn.hub:SetSize(6, 6)
+    settingsBtn.hub:SetPoint("CENTER", settingsBtn, "CENTER", 0, 0)
     local hl = settingsBtn:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints(settingsBtn)
-    hl:SetTexture("Interface\\Buttons\\WHITE8X8")
-    hl:SetVertexColor(1, 1, 1, 0.25)
+    hl:SetColorTexture(1, 1, 1, 0.25)
     settingsBtn:SetScript("OnClick", function()
         local f = SlashCmdList and SlashCmdList["COMMANDERUI_PARTYFRAMES"]
         if f then f("") end
@@ -1375,10 +2636,26 @@ end
 
 local function EnsureMageUtilButtons()
     if mageUtil or not profile then return end
-    -- Insecure container: toggling IT (not the protected buttons) keeps the
-    -- banner's show/hide legal in combat
-    mageUtil = CreateFrame("Frame", nil, root)
+    -- The container is a SIBLING of the board, not a child of it — pinned to
+    -- root's rect, so it still behaves like one.
+    --
+    -- Parenting it to root would hang secure buttons under the board, and
+    -- protection walks UP: root would inherit it and could then be neither
+    -- resized nor shown mid-fight. That is not academic — a party member
+    -- appearing during a fight made the rows outgrow a frame that could not
+    -- follow them, and the bottom row hung outside its own border until
+    -- combat dropped. As a sibling it takes its protection with it and leaves
+    -- root a plain frame (Click-Cast is the exception, and there the row set
+    -- is already fixed out of combat, so root never needs to resize).
+    --
+    -- The cost of not being a child is that root's scale and visibility no
+    -- longer arrive for free: SyncCluster below carries the scale, and the
+    -- draw pass folds the board's own visibility into the header flag.
+    mageUtil = CreateFrame("Frame", nil, UIParent)
     mageUtil:SetAllPoints(root)
+    mageUtil:SetFrameStrata(root:GetFrameStrata() or "MEDIUM")
+    -- Above the board's rows, below the HUD chrome's drag overlay (root + 20)
+    mageUtil:SetFrameLevel((root:GetFrameLevel() or 1) + 5)
     local function mkBtn(name, tipTitle, tip1, tip2, width)
         local b = CreateFrame("Button", name, mageUtil, "SecureActionButtonTemplate")
         b:SetSize(width or 13, 13)
@@ -1392,6 +2669,7 @@ local function EnsureMageUtilButtons()
         b.icon:SetSize(13, 13)
         b.icon:SetPoint("CENTER", b, "CENTER", 0, 0)
         b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        util.StyleIcon(b.icon)
         local hl = b:CreateTexture(nil, "HIGHLIGHT")
         hl:SetAllPoints(b)
         hl:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -1442,7 +2720,7 @@ local function EnsureMageUtilButtons()
     -- would silently kill the secure use
     bandageBtn:SetScript("PostClick", function(_, button)
         if button == "MiddleButton" then
-            if util.portalPop then util.portalPop:Hide() end
+            if util.portalPop then SafeSetShown(util.portalPop, false) end
             util.OpenFirstAid()
         end
     end)
@@ -1465,12 +2743,12 @@ local function EnsureMageUtilButtons()
         -- The portal button opens an insecure popout; PostClick keeps the
         -- (unused) secure path intact
         util.portalBtn:SetScript("PostClick", function()
-            local opening = not util.portalPop:IsShown()
-            util.portalPop:SetShown(opening)
+            SafeSetShown(util.portalPop, not util.portalPop:IsShown())
         end)
         util.portalBtn.icon:SetTexture("Interface\\Icons\\Spell_Arcane_PortalStormwind")
 
-        util.portalPop = CreateFrame("Frame", nil, root)
+        -- Siblings for the same reason as the container: secure children
+        util.portalPop = CreateFrame("Frame", nil, UIParent)
         util.portalPop:SetFrameStrata("DIALOG")
         util.portalPop:SetSize(24, 45)
         util.portalPop:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(PAD - 2), -(HEADER_H + 3))
@@ -1480,7 +2758,7 @@ local function EnsureMageUtilButtons()
         ppbg:SetVertexColor(0, 0, 0, 0.75)
         util.portalPop:Hide()
 
-        armorPop = CreateFrame("Frame", nil, root)
+        armorPop = CreateFrame("Frame", nil, UIParent)
         armorPop:SetFrameStrata("DIALOG")
         armorPop:SetSize(24, 24)
         -- Anchored ONCE to root (a Frame): the popout carries protected children,
@@ -1639,11 +2917,18 @@ local function ScanUnit(unit, reliable)
     local pwsExpire, pwsSpellId, pwsMine, pwsIndex
     local renewExpire
     local renewOn = DB("RenewTrack", false)
-    local intOn = layer == "INT"
+    -- The two layers with an ally-buff slot and the curse/CC escalation share
+    -- one gate; the hot strip is the druid's alone.
+    local intOn = layer == "INT" or layer == "HOT"
+    local hotOn = layer == "HOT"
     local isPlayer = guid == playerGUID
-    local intExpire, intDuration
-    local armorFound
+    -- Ally buffs are read off the registry now: one pass fills a scratch pair
+    -- keyed by buff, whatever class this is (see SDATA.CLASS_BUFFS)
+    local buffOn = #SDATA.BUFF_ACTIVE > 0
+    local armorFound, formFound
     wipe(scanAbsorbs)
+    if buffOn then wipe(util.buffExp); wipe(util.buffDur) end
+    if hotOn then wipe(hot.scan) end
     for i = 1, 40 do
         local aura = C_UnitAuras.GetBuffDataByIndex(unit, i, "HELPFUL")
         if not aura then break end
@@ -1655,13 +2940,32 @@ local function ScanUnit(unit, reliable)
         elseif renewOn and aura.name == RENEW_NAME and not renewExpire
             and aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") then
             renewExpire = aura.expirationTime   -- only OUR Renew is tracked
-        elseif intOn and not intExpire
-            and (aura.name == AI_NAME or aura.name == BRILLIANCE_NAME) then
-            intExpire = aura.expirationTime     -- any caster's Int counts as covered
-            intDuration = aura.duration
-        elseif intOn and isPlayer and not armorFound and armorNames[aura.name] then
+        elseif buffOn and SDATA.BUFF_BY_NAME[aura.name]
+            and not util.buffExp[SDATA.BUFF_BY_NAME[aura.name].key] then
+            -- Any caster's buff counts as covered, and the group version
+            -- satisfies the same slot as the single (both map to one def)
+            local bkey = SDATA.BUFF_BY_NAME[aura.name].key
+            util.buffExp[bkey] = aura.expirationTime or 0
+            util.buffDur[bkey] = aura.duration
+        elseif layer == "INT" and isPlayer and not armorFound and armorNames[aura.name] then
             armorFound = { icon = armorNames[aura.name], expire = aura.expirationTime,
                 duration = aura.duration }
+        end
+        -- OUR hots only (HOT layer): the strip exists to answer "what have I
+        -- got rolling here" — another druid's Rejuvenation does not gate our
+        -- next global, so sourceUnit decides membership exactly the way the
+        -- Renew tracker does. No early break: hots sit anywhere in the list.
+        local hotDef = hotOn and hot.names[aura.name]
+        if hotDef and not hot.scan[hotDef.key]
+            and aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") then
+            hot.scan[hotDef.key] = { expire = aura.expirationTime, duration = aura.duration,
+                icon = aura.icon or hotDef.icon,
+                stacks = aura.applications or aura.charges or 0 }
+        end
+        -- The player's own form (HOT layer): the banner's first segment, and
+        -- the only aura on this pass we read off ourselves rather than an ally
+        if hotOn and isPlayer and not formFound and hot.forms[aura.name] then
+            formFound = hot.forms[aura.name]
         end
         -- Spec inference from visible marker auras (Shadowform, forms, Tree…)
         -- Self-sourced only: party-wide/target-castable markers (Trueshot
@@ -1687,9 +2991,28 @@ local function ScanUnit(unit, reliable)
         end
     end
 
-    -- Our armor (upkeep banner); the player's own scan is always reliable
-    if intOn and isPlayer then
+    -- Our armor / our form (upkeep banners); the player's own scan is always
+    -- reliable, so absence here genuinely means "naked" / "caster form"
+    if layer == "INT" and isPlayer then
         selfArmor = armorFound
+    elseif hotOn and isPlayer then
+        hot.form = formFound
+    end
+
+    -- Our hots on this unit, under the same reliable contract as everything
+    -- else: a scan that could not see the unit returns no auras, and that
+    -- must not wipe a live record. A scan that COULD see them is the whole
+    -- truth, so the record is rebuilt rather than merged — otherwise a hot
+    -- that ticked away would linger on the strip forever.
+    if hotOn then
+        if next(hot.scan) then
+            local rec = hot.state[guid]
+            if not rec then rec = {}; hot.state[guid] = rec end
+            wipe(rec)
+            for key, e in pairs(hot.scan) do rec[key] = e end
+        elseif reliable then
+            hot.state[guid] = nil
+        end
     end
 
     -- Aggregate shielding: refresh this unit's absorb records. A new or
@@ -1731,12 +3054,24 @@ local function ScanUnit(unit, reliable)
         end
     end
 
-    -- Int/Brilliance upkeep (INT layer); same reliable pruning contract
-    if intOn then
-        if intExpire then
-            local e = intState[guid]
-            if not e then e = {}; intState[guid] = e end
-            e.expire, e.duration = intExpire, intDuration
+    -- Ally-buff upkeep, under the same reliable contract as everything else:
+    -- absence only prunes when the scan could actually see the unit. Entry
+    -- tables are reused rather than rebuilt, because this runs per unit on
+    -- every UNIT_AURA.
+    if buffOn then
+        if next(util.buffExp) then
+            local rec = intState[guid]
+            if not rec then rec = {}; intState[guid] = rec end
+            for k, exp in pairs(util.buffExp) do
+                local slot = rec[k]
+                if not slot then slot = {}; rec[k] = slot end
+                slot.expire, slot.duration = exp, util.buffDur[k]
+            end
+            if reliable then
+                for k in pairs(rec) do
+                    if util.buffExp[k] == nil then rec[k] = nil end
+                end
+            end
         elseif reliable then
             intState[guid] = nil
         end
@@ -1746,7 +3081,7 @@ local function ScanUnit(unit, reliable)
     local dispelOn = DB("ShowDispels", false)
     local showAllDebuffs = DB("DispelShowAll", false)
     local showImportant = DB("DispelShowImportant", true)
-    local curseExpire, curseDuration
+    local curseExpire, curseDuration, curseSchool
     local ccExpire, ccDuration, ccIcon, ccName
     local hypoExpire, forbExpire
     local list, dispelCount = nil, 0
@@ -1770,6 +3105,10 @@ local function ScanUnit(unit, reliable)
             if dt and dt ~= "" and myDispelTypes[dt] then
                 curseExpire = aura.expirationTime or 0
                 curseDuration = aura.duration
+                -- A mage removes one school so this is always "Curse"; a
+                -- druid removes two, and which one it is changes the row's
+                -- color and the spell you press, so the school is kept
+                curseSchool = dt
             end
         end
         -- CC status feed (same cap-independence): a sheeped/feared/stunned
@@ -1833,7 +3172,7 @@ local function ScanUnit(unit, reliable)
         if curseExpire then
             local c = curseState[guid]
             if not c then c = {}; curseState[guid] = c end
-            c.expire, c.duration = curseExpire, curseDuration
+            c.expire, c.duration, c.dispelName = curseExpire, curseDuration, curseSchool
         elseif reliable then
             curseState[guid] = nil
         end
@@ -1893,6 +3232,11 @@ local LOOK_UNITS = { target = true, focus = true, mouseover = true }
 local function ScanGroup()
     wipe(groupGuids)
     if playerGUID then groupGuids[playerGUID] = playerClass or true end
+    -- Pets are scanned like any other ally (their shields, their buff, the
+    -- curse on them) but deliberately stay OUT of groupGuids: that table feeds
+    -- the combat log's class-keyed ability inference, and a pet has no class
+    -- ability book to stamp.
+    local pets = DB("IncludePets", true)
     if IsInRaid and IsInRaid() then
         for i = 1, 40 do
             local u = "raid" .. i
@@ -1900,6 +3244,8 @@ local function ScanGroup()
                 local g = UnitGUID and UnitGUID(u)
                 if g then groupGuids[g] = select(2, UnitClass(u)) or true end
                 ScanUnit(u, IsReliable(u))
+                local p = "raidpet" .. i
+                if pets and UnitExists(p) then ScanUnit(p, IsReliable(p)) end
             end
         end
     elseif IsInGroup and IsInGroup() then
@@ -1909,10 +3255,13 @@ local function ScanGroup()
                 local g = UnitGUID and UnitGUID(u)
                 if g then groupGuids[g] = select(2, UnitClass(u)) or true end
                 ScanUnit(u, IsReliable(u))
+                local p = "partypet" .. i
+                if pets and UnitExists(p) then ScanUnit(p, IsReliable(p)) end
             end
         end
     end
     ScanUnit("player", true)
+    if pets and UnitExists("pet") then ScanUnit("pet", IsReliable("pet")) end
 end
 
 -- SPELL_ABSORBED: subtract real absorbs from our own shields (unchanged).
@@ -1932,6 +3281,20 @@ local function OnCombatLog()
         end
         if subevent == "SPELL_CAST_SUCCESS" then return end
         -- AURA_APPLIED falls through: SPELL_ABSORBED filtering below ignores it
+    end
+    -- Shadow damage from OFF the team. Reading the school off the log is the
+    -- only detection that works on both halves of the problem: a warlock is
+    -- obvious from their class, but a shadow priest looks exactly like a
+    -- healer until they cast, and Shadow Protection is for both. Sixty seconds
+    -- of memory, because an arena team does not stop being a shadow team
+    -- between casts.
+    if (subevent == "SPELL_DAMAGE" or subevent == "SPELL_PERIODIC_DAMAGE")
+        and a3 and sourceGUID and not groupGuids[sourceGUID] then
+        local shadow = a3 == 32
+        if not shadow and bit and bit.band then
+            shadow = bit.band(a3, 32) ~= 0
+        end
+        if shadow then util.enemyShadowUntil = GetTime() + 60 end
     end
     if subevent == "SPELL_SUMMON" then
         -- Water Elemental lifespan clock (elemental row)
@@ -2047,6 +3410,9 @@ local function ResolveShieldState(r, now)
     if not r.selfSpell then
         ResolveAbsorbSegs(r, now)
         ApplyHealthEmbed(r)
+        -- Fortitude / Spirit / Shadow Protection ride the same registry strip
+        -- the other two layers use
+        util.ResolveBuffs(r, now)
     end
 
     local ws = wsState[guid]
@@ -2116,6 +3482,232 @@ local function FormatAmount(v)
     return tostring(math.floor(v + 0.5))
 end
 
+-- The alert ladder shared by both buff layers (INT and HOT), applied on top
+-- of whatever the layer already decided the row was. Two things outrank a
+-- board's own subject matter, in this order:
+--   1. A debuff YOU can remove. That is your action, right now, and it is the
+--      loudest thing on the row. A mage removes one school, so the row is
+--      always purple; a druid removes two, and green POISONED vs purple
+--      CURSED is the difference between Abolish Poison and Remove Curse.
+--   2. A teammate in crowd control — awareness rather than an action, so it
+--      yields to the dispel above it, but in arena it reshapes the next three
+--      seconds and must escalate even with the icon strip switched off.
+-- Both feeds are cap-independent (ScanUnit fills them regardless of how many
+-- icons the strip can show); expire == 0 means "no readable clock" and stays
+-- live until a reliable rescan clears it.
+local function ApplyAlertStates(r, now)
+    local c = curseState[r.guid]
+    if c and c.expire and c.expire > 0 and c.expire <= now then
+        curseState[r.guid], c = nil, nil
+    end
+    if c then
+        local poison = c.dispelName == "Poison"
+        r.state = poison and "POISONED" or "CURSED"
+        r.mainText = poison and "POISON" or "CURSED"
+        if c.expire and c.expire > now then
+            r.wsLeft = c.expire - now
+            if c.duration and c.duration > 0 then r.lockMax = c.duration end
+            r.rightText = string.format("%ds", math.ceil(r.wsLeft))
+        end
+        intCurses = intCurses + 1
+    end
+
+    local cc = ccState[r.guid]
+    if cc and cc.expire and cc.expire > 0 and cc.expire <= now then
+        ccState[r.guid], cc = nil, nil
+    end
+    if cc then
+        intCCs = intCCs + 1
+        if r.state ~= "CURSED" and r.state ~= "POISONED" then
+            r.state = "CCED"
+            local nm = cc.name
+            r.mainText = (nm and #nm > 10) and nm:sub(1, 10) or nm or "CC"
+            if cc.expire and cc.expire > now then
+                r.wsLeft = cc.expire - now
+                if cc.duration and cc.duration > 0 then r.lockMax = cc.duration end
+                r.rightText = string.format("%ds", math.ceil(r.wsLeft))
+            end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- The buff advisor. A missing buff is one fact; whether a good player would
+-- have cast it BY NOW is a different one, and it is the second that deserves
+-- red. Each registry entry names the rule its slot asks, and every rule
+-- answers the same question: given this target and this fight, is the absence
+-- of this buff currently costing us something?
+--
+-- The rules are deliberately conservative. A slot that reddens on everyone all
+-- match is a slot nobody reads, so the situational buffs stay neutral-dark
+-- until their condition is actually observed — never red on a guess. Anything
+-- the client cannot tell us yet reads as "not urgent".
+--
+-- Melee classes for the Thorns rule: Thorns pays out per melee swing taken, so
+-- it belongs on whoever is being hit, which in arena is the target the enemy
+-- melee has picked.
+SDATA.MELEE_CLASSES = {
+    WARRIOR = true, ROGUE = true, PALADIN = true, SHAMAN = true,
+    DRUID = true, HUNTER = true,
+}
+--
+-- Every rule returns (urgent, reason). The reason is not decoration: a slot
+-- that turns red without being able to say why is a slot you learn to ignore,
+-- and it is what /cpf buffs prints back.
+SDATA.BUFF_ADVICE = {
+    -- The raid buffs: there is no situation where you would rather not have
+    -- them, so missing IS urgent. This is the honest answer for Fortitude,
+    -- Intellect, Spirit and Mark — a pro does not leave them off.
+    ALWAYS = function() return true, "always worth a global" end,
+
+    -- Thorns: worth a global on whoever is actually eating melee swings. That
+    -- is the ally an enemy is parked on, or failing that a wounded melee ally,
+    -- who is trading hits by default. A caster nobody is touching is not it.
+    VS_MELEE = function(r)
+        if r.meleeOnMe then return true, "an enemy melee is on them" end
+        if r.class and SDATA.MELEE_CLASSES[r.class] and (r.health or 1) < 1 then
+            return true, "a wounded melee ally is trading hits"
+        end
+        return false, "nothing is meleeing them"
+    end,
+
+    -- The three comp-reading rules. Shadow Protection only pays against a
+    -- shadow team; Amplify Magic is free healing ONLY when the enemy deals no
+    -- magic damage to punish it; Dampen Magic is the answer to burst casters.
+    -- Each needs to know what the other side is made of (see the enemy-comp
+    -- scanner) — until it has an answer they stay neutral rather than guess.
+    -- Fear Ward: worth pre-casting against anything that fears. Warlocks and
+    -- priests both bring it, and a warrior's Intimidating Shout counts too.
+    VS_FEAR = function()
+        if util.EnemyHas("FEAR") then return true, "the enemy team brings a fear" end
+        return false, not util.EnemySeen() and "enemy team unknown"
+            or "nothing on the other side fears"
+    end,
+
+    VS_SHADOW = function()
+        if util.EnemyHas("SHADOW") then return true, "the enemy deals shadow damage" end
+        return false, not util.EnemySeen() and "enemy team unknown"
+            or "no shadow damage on the other side"
+    end,
+    VS_PHYSICAL = function()
+        if util.EnemyIsPhysical() then return true, "the enemy team is all physical" end
+        return false, not util.EnemySeen() and "enemy team unknown"
+            or "an enemy caster would punish it"
+    end,
+    VS_CASTER = function()
+        if util.EnemyHas("CASTER") then return true, "there are enemy casters to blunt" end
+        return false, not util.EnemySeen() and "enemy team unknown"
+            or "no enemy casters to blunt"
+    end,
+}
+
+-- Ask one slot's rule whether its absence is urgent. Wrapped so a rule that
+-- errors can never take the board down with it: a bad advisor degrades to
+-- "not urgent", which is the same as having the feature off.
+-- Is the CASTER, rather than the target, the reason this cannot happen? Right
+-- now that means one thing: a druid in bear, cat or travel form cannot cast
+-- any of this, and the upkeep banner is already showing them a red form
+-- segment about it. Reddening every buff on every row on top of that is the
+-- same complaint six more times.
+function util.CastBlocked()
+    if layer == "HOT" and hot.form and not hot.form.heals then
+        return "you are shifted out of caster form"
+    end
+    return nil
+end
+
+function util.AdviseBuff(def, r, rec)
+    -- Urgency you cannot act on is not urgency. Three ways that happens, and
+    -- all of them mean the same thing to a slot: report the absence, do not
+    -- demand anything about it.
+    --
+    --   1. The ally is out of range — red there is a slot crying about
+    --      physics, and it trains you to ignore the colour.
+    --   2. You are in a form that cannot cast (druid).
+    --   3. The spell itself is cooling down. Only a REAL cooldown counts: the
+    --      global is on everything you press and would blink every slot dark
+    --      twice a second, so anything at or under two seconds is ignored.
+    if r.outOfCastRange then return false, "out of range" end
+    local blocked = util.CastBlocked()
+    if blocked then return false, blocked end
+    if def.id and GetSpellCooldown then
+        local ok, start, dur = pcall(GetSpellCooldown, def.id)
+        if ok and start and start > 0 and dur and dur > 2
+            and (start + dur) > GetTime() then
+            return false, "on cooldown"
+        end
+    end
+    -- A buff whose sibling is doing the job is not missing, it is SUPERSEDED:
+    -- Amplify and Dampen overwrite each other, so a target carrying one must
+    -- never light up asking for the other.
+    if def.excludes and rec and rec[def.excludes] then
+        local sib = rec[def.excludes]
+        if not (sib.expire and sib.expire > 0 and sib.expire <= GetTime()) then
+            return false, "its sibling is already up"
+        end
+    end
+    local rule = def.advise and SDATA.BUFF_ADVICE[def.advise]
+    if not rule then return false end
+    local ok, urgent, why = pcall(rule, r)
+    if not ok then return false, "rule errored" end
+    return urgent and true or false, why
+end
+
+-- Resolve this row's ally-buff strip: one entry per TRACKED buff, in registry
+-- order, present whether or not the buff is up. A slot that vanishes when its
+-- buff falls off leaves a hole exactly where the answer should be, and shuffles
+-- every icon to its right — so the strip's shape is fixed by the settings, not
+-- by what happens to be running.
+--
+-- `r.buffMissing` is the row-level summary the action glow reads: anything
+-- tracked that is absent or inside its rebuff window.
+function util.ResolveBuffs(r, now)
+    local n = #SDATA.BUFF_ACTIVE
+    if n == 0 or r.selfSpell then r.buffCount = 0; return end
+    local rec = intState[r.guid]
+    local rebuffAt = DB("IntRefreshAt", 300)
+    r.buffs = r.buffs or {}
+    local shown = 0
+    for i = 1, n do
+        local def = SDATA.BUFF_ACTIVE[i]
+        -- A buff nobody would cast here earns no slot at all: Intellect and
+        -- Spirit are for mana users, and a rogue's row should not carry a
+        -- permanent dark reminder of a spell that does nothing for them.
+        if def.targets ~= "MANA" or r.manaUser then
+            shown = shown + 1
+            local slot = r.buffs[shown]
+            if not slot then slot = {}; r.buffs[shown] = slot end
+            local e = rec and rec[def.key]
+            local left
+            if e and e.expire and e.expire > 0 then
+                left = e.expire - now
+                if left <= 0 then rec[def.key], e, left = nil, nil, nil end
+            end
+            slot.def = def
+            slot.icon = def.icon
+            slot.up = e and true or false
+            -- expire 0 is a permanent aura (no readable clock): up, no sweep
+            slot.expire = e and e.expire or nil
+            slot.duration = (e and e.duration and e.duration > 0) and e.duration or def.duration
+            slot.due = (left and left <= rebuffAt) or false
+            if not slot.up then
+                r.buffMissing = true
+                if util.BuffAdvised(def) then
+                    slot.urgent, slot.why = util.AdviseBuff(def, r, rec)
+                else
+                    slot.urgent, slot.why = false, "advisor off for this buff"
+                end
+                if slot.urgent then r.buffUrgent = true end
+            else
+                slot.urgent = false
+                if slot.due then r.buffMissing = true end
+            end
+        end
+    end
+    if rec and not next(rec) then intState[r.guid] = nil end
+    r.buffCount = shown
+end
+
 -- INT layer (Mage ally rows): these are party frames first, so the main bar
 -- is plain HEALTH (lowest sorts first among the quiet rows). Buff upkeep is
 -- deliberately icon-sized — Arcane Intellect state rides the left status
@@ -2128,15 +3720,9 @@ local function ResolveIntState(r, now)
         return r
     end
 
-    -- Int upkeep -> left status icon + header tally (never the bar)
-    local e = intState[r.guid]
-    local left
-    if e and e.expire and e.expire > 0 then
-        left = e.expire - now
-        if left <= 0 then intState[r.guid], e, left = nil, nil, nil end
-    end
-    r.intUp = e and true or false
-    r.intDue = (left and left <= DB("IntRefreshAt", 300)) or false
+    -- Ally buffs (Intellect, and Amplify/Dampen when tracked) -> the strip on
+    -- the row's left. Deliberately icon-sized: raid upkeep never earns a bar.
+    util.ResolveBuffs(r, now)
 
     -- Everything shielding this ally — a priest's PW:S, their own Ice
     -- Barrier / Mana Shield, a warlock's Sacrifice — as embedded segments.
@@ -2156,48 +3742,109 @@ local function ResolveIntState(r, now)
         r.rightText = string.format("%d%%", math.floor(r.health * 100 + 0.5))
     end
 
-    -- Removable curse: the row's loudest problem, whatever the buff says.
-    -- curseState is fed cap-independently by ScanUnit; expire == 0 means "no
-    -- readable clock" and stays live until a reliable rescan clears it.
-    local c = curseState[r.guid]
-    if c and c.expire and c.expire > 0 and c.expire <= now then
-        curseState[r.guid], c = nil, nil
-    end
-    if c then
-        r.state, r.mainText = "CURSED", "CURSED"
-        if c.expire and c.expire > now then
-            r.wsLeft = c.expire - now
-            if c.duration and c.duration > 0 then r.lockMax = c.duration end
-            r.rightText = string.format("%ds", math.ceil(r.wsLeft))
-        end
-        intCurses = intCurses + 1
+    ApplyAlertStates(r, now)
+    return r
+end
+
+-- HOT layer (Druid ally rows). Same chassis as INT — health is the bar, mana
+-- rides the strip under it, the ally-buff slot carries Mark of the Wild — and
+-- the same alert ladder tops it. What differs is the middle: the row's
+-- managed thing is YOUR hots, and the states are the reshield grammar read
+-- for them. READY means a hurt ally is carrying none of yours (cast one now);
+-- REFRESH means one is inside the refresh window, which is also exactly the
+-- Lifebloom-about-to-bloom case; SHIELDED means it is rolling and you can
+-- look elsewhere. A full-health ally with no hots is not a decision, so it
+-- stays quiet at OTHER rather than lighting the board up yellow.
+local function ResolveHotState(r, now)
+    if r.dead then
+        r.state = "DEAD"
+        r.mainText = r.deadText or "DEAD"
+        return r
     end
 
-    -- Crowd control on this teammate (sheep, fear, stun, blind...): loud
-    -- awareness — in arena a CC'd partner reshapes the next three seconds.
-    -- A removable curse still outranks it (that one is YOUR action).
-    local cc = ccState[r.guid]
-    if cc and cc.expire and cc.expire > 0 and cc.expire <= now then
-        ccState[r.guid], cc = nil, nil
+    -- Mark of the Wild and Thorns ride the same registry strip every other
+    -- layer's ally buffs do: a permanent slot each, the icon never leaving,
+    -- its sweep carrying what is left and the art going dark when it is gone.
+    util.ResolveBuffs(r, now)
+
+    -- A druid heals through absorbs too, so an ally's shields stay embedded
+    ResolveAbsorbSegs(r, now)
+    -- ...and the Shield Broke Flash arms off the same edge it does on INT:
+    -- the moment an ally's last absorb breaks is the moment to pre-hot them,
+    -- so the alert is worth as much here as it is on the mage board
+    if r.inShield then r.shieldUp, r.mine = true, true end
+    ApplyHealthEmbed(r)
+    if r.health and r.health < 1 then
+        r.rightText = string.format("%d%%", math.floor(r.health * 100 + 0.5))
     end
-    if cc then
-        intCCs = intCCs + 1
-        if r.state ~= "CURSED" then
-            r.state = "CCED"
-            local nm = cc.name
-            r.mainText = (nm and #nm > 10) and nm:sub(1, 10) or nm or "CC"
-            if cc.expire and cc.expire > now then
-                r.wsLeft = cc.expire - now
-                if cc.duration and cc.duration > 0 then r.lockMax = cc.duration end
-                r.rightText = string.format("%ds", math.ceil(r.wsLeft))
-            end
+
+    -- Our hots, in book order, pruning any that ran out. `soonest` is the one
+    -- that decides the row: it is what falls off first and what the number
+    -- counts down.
+    --
+    -- Each hot owns a FIXED slot — Rejuvenation, Regrowth, Lifebloom, always
+    -- in that order — so a missing one leaves a dark placeholder of itself
+    -- rather than a hole, and the strip never reshuffles as hots tick off.
+    -- Position alone then tells you which hot you are looking at, which is
+    -- what makes the strip readable at a glance instead of one you have to
+    -- re-parse every time something falls.
+    local rec = hot.state[r.guid]
+    local n, soonest = 0, nil
+    r.hots = r.hots or {}
+    for i, def in ipairs(SDATA.HOT_ACTIVE) do
+        local slot = r.hots[i]
+        if not slot then slot = {}; r.hots[i] = slot end
+        local h = rec and rec[def.key]
+        if h and h.expire and h.expire > 0 and h.expire <= now then
+            rec[def.key], h = nil, nil
+        end
+        slot.icon = (h and h.icon) or def.icon
+        slot.up = h and true or false
+        slot.expire = h and h.expire or nil
+        slot.duration = h and ((h.duration and h.duration > 0) and h.duration or def.duration) or nil
+        slot.stacks = (h and def.stacking) and (h.stacks or 0) or 0
+        if h then
+            n = n + 1
+            local tl = h.expire and (h.expire - now) or math.huge
+            if not soonest or tl < soonest then soonest = tl end
         end
     end
+    if rec and not next(rec) then hot.state[r.guid] = nil end
+    r.hotCount = n
+    r.hotSlots = #SDATA.HOT_ACTIVE
+
+    if n == 0 then
+        -- No hots of ours. Only a damaged ally is a decision; everyone else
+        -- is quiet, and among the quiet rows the sort's time key floats the
+        -- lowest health to the top.
+        if (r.health or 1) <= (DB("HotReadyAt", 90) / 100) then
+            r.state, r.mainText = "READY", "HOT"
+        else
+            r.state, r.mainText = "OTHER", ""
+        end
+        r.tLeft = (r.health or 1) * 1000
+    elseif soonest and soonest <= DB("HotRefreshAt", 4) then
+        -- Urgent rows sort by how long is actually left, not by health
+        r.state = "REFRESH"
+        r.tLeft = soonest
+        r.mainText = string.format("%ds", math.max(0, math.ceil(soonest)))
+    else
+        r.state = "SHIELDED"
+        r.tLeft = (r.health or 1) * 1000
+        r.mainText = soonest and string.format("%ds", math.ceil(soonest)) or ""
+    end
+
+    ApplyAlertStates(r, now)
     return r
 end
 
 local function ResolveState(r, now)
-    if layer == "INT" and not r.selfSpell then return ResolveIntState(r, now) end
+    -- Self-spell rows always take the shield resolver whatever the layer:
+    -- their bar IS an absorb and their lockout IS a cooldown
+    if not r.selfSpell then
+        if layer == "INT" then return ResolveIntState(r, now) end
+        if layer == "HOT" then return ResolveHotState(r, now) end
+    end
     return ResolveShieldState(r, now)
 end
 
@@ -2205,38 +3852,83 @@ end
 local function ResolveRow(unit, now)
     local guid = UnitGUID and UnitGUID(unit)
     if not guid then return nil end
-    local className = select(2, UnitClass(unit))
+    -- A pet row is an ally row in every respect the chassis cares about —
+    -- health, absorbs, dispels, targeters, click-cast — so it goes through
+    -- this same resolver. What it BORROWS from its owner is identity: a pet
+    -- has no class of its own, and the owner's is both the row's name tint
+    -- and the icon that answers "whose pet is that".
+    local owner = SDATA.PET_OWNER[unit]
+    local className = select(2, UnitClass(owner or unit))
+    -- Buff layers: mana users get the mana strip. For a player that is a
+    -- question of class (see MANA_CLASSES — a shapeshifted druid must not
+    -- flap in and out of it); for a pet there is no class to ask, so it is
+    -- the pet's own power bar, which also correctly excludes a hunter's
+    -- focus and a shadowfiend's energy.
+    -- Resolved on EVERY layer, not just the two that draw a mana strip: the
+    -- buff registry asks it to decide whether a mana-only buff (Intellect,
+    -- Divine Spirit) earns a slot on this row at all.
+    local manaUser
+    if owner then
+        manaUser = (UnitPowerType and UnitPowerType(unit) == 0) or nil
+    else
+        manaUser = MANA_CLASSES[className or ""] or nil
+    end
     local r = {
         guid = guid,
         unit = unit,
         name = UnitName(unit) or "?",
         class = className,
-        isSelf = UnitIsUnit(unit, "player"),
-        -- INT layer: mana classes are Int-buff targets (see MANA_CLASSES)
-        manaUser = (layer == "INT") and MANA_CLASSES[className or ""] or nil,
+        isSelf = (not owner) and UnitIsUnit(unit, "player") or false,
+        isPet = owner and true or nil,
+        petOwner = owner,
+        -- Whether the ally-BUFF icon applies is a separate question — Int is
+        -- for casters, Mark of the Wild is for everyone — so it is answered
+        -- per layer in the resolvers as r.buffTarget, not here.
+        manaUser = manaUser,
     }
     if UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit) then
         r.dead, r.deadText = true, "DEAD"
-    elseif UnitIsConnected and not UnitIsConnected(unit) then
+    elseif not owner and UnitIsConnected and not UnitIsConnected(unit) then
+        -- Pets are never "offline": UnitIsConnected has no meaning for one,
+        -- and a falsy answer would gray out every pet on the board
         r.dead, r.deadText = true, "OFFLINE"
     end
     -- Health is every ally row's main bar now; hpMax also scales the
-    -- embedded shield segments
+    -- embedded shield segments.
+    --
+    -- CLAMPED, because the client does not promise hp <= hpMax. A group
+    -- member the client has not fully synced yet — someone who just joined,
+    -- or is in another zone — reports a PLACEHOLDER max (1) alongside a real
+    -- current health, and the honest-looking division then yields a fraction
+    -- in the thousands. Downstream that is a bar width in the thousands: the
+    -- last row's health running clean off the side of the screen.
     if UnitHealthMax then
         local hp, hpMax = UnitHealth(unit), UnitHealthMax(unit)
         if hpMax and hpMax > 0 then
-            r.health = hp / hpMax
+            r.health = math.min(1, math.max(0, hp / hpMax))
             r.hpMax = hpMax
         end
     end
-    -- INT layer: mana strip for mana users (read live; the ticker repaints)
-    if layer == "INT" and r.manaUser and UnitPower and UnitPowerMax then
+    -- Buff layers: mana strip for mana users (read live; the ticker repaints).
+    -- Same contract, same clamp.
+    if (layer == "INT" or layer == "HOT") and r.manaUser and UnitPower and UnitPowerMax then
         local m, mMax = UnitPower(unit, 0), UnitPowerMax(unit, 0)
-        if mMax and mMax > 0 then r.mana = m / mMax end
+        if mMax and mMax > 0 then r.mana = math.min(1, math.max(0, m / mMax)) end
     end
     -- Their target's raid mark: watch the tank hold (or leave) skull
     if DB("ShowTargetMarks", true) and GetRaidTargetIndex then
         r.raidMark = GetRaidTargetIndex(unit .. "target")
+    end
+    -- Is an enemy melee parked on them? The Thorns rule's whole question.
+    r.meleeOnMe = util.meleeOn[guid] or false
+    -- Can we even reach them? Read separately from the Range Fade SETTING,
+    -- which is about dimming the row: the advisor needs this whether or not
+    -- the player wants the visual, because urgency you cannot act on is not
+    -- urgency. UnitInRange only answers for group members, and an unanswered
+    -- question reads as in-range rather than as an excuse to go quiet.
+    if not r.isSelf and UnitInRange then
+        local inRange, checked = UnitInRange(unit)
+        r.outOfCastRange = (checked and not inRange) or false
     end
     if DB("RangeFade", false) and not r.isSelf and UnitInRange then
         local inRange, checked = UnitInRange(unit)
@@ -2335,7 +4027,18 @@ end
 -- ---------------------------------------------------------------------------
 -- Class icon helpers
 -- ---------------------------------------------------------------------------
-local function SetClassIcon(tex, classToken, guid)
+-- `petUnit` is set only where the row shows ONE identity icon. A pet has no
+-- class of its own, and its owner's icon alone cannot tell two warlocks'
+-- minions apart, so that single slot becomes the pet's portrait — the same
+-- answer the Water Elemental's row already gives. Where the display mode
+-- carries a second, portrait slot the caller leaves this nil and slot one
+-- stays the OWNER's class icon, which is the more useful half of "whose pet".
+local function SetClassIcon(tex, classToken, guid, petUnit)
+    if petUnit and UnitExists and UnitExists(petUnit) and SetPortraitTexture then
+        SetPortraitTexture(tex, petUnit)
+        tex:SetTexCoord(0.12, 0.88, 0.12, 0.88)
+        return true
+    end
     if not classToken and guid and GetPlayerInfoByGUID then
         local _, token = GetPlayerInfoByGUID(guid)
         classToken = token
@@ -2357,8 +4060,12 @@ local function ShortName(name, maxc)
     return name
 end
 
--- Spec icon when the spec has been learned, class icon until then
-local function SetSpecOrClassIcon(tex, r)
+-- Spec icon when the spec has been learned, class icon until then. A pet has
+-- no spec to learn, so it takes the identity rule above instead.
+local function SetSpecOrClassIcon(tex, r, petPortrait)
+    if r.isPet then
+        return SetClassIcon(tex, r.class, nil, petPortrait and r.unit or nil)
+    end
     local spec = r.guid and specState[r.guid]
     local icon = spec and r.class and SDATA.SPEC_ICONS[r.class] and SDATA.SPEC_ICONS[r.class][spec]
     if icon then
@@ -2397,7 +4104,7 @@ local function BuildRowWidgets(row)
     row.spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.swipe = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
     if row.swipe.SetHideCountdownNumbers then row.swipe:SetHideCountdownNumbers(true) end
-    if row.swipe.SetDrawEdge then row.swipe:SetDrawEdge(false) end
+    util.TrackSweep(row.swipe)
     row.swipe:Hide()
 
     -- Second left status slot (INT layer): an incoming priest shield, with a
@@ -2407,11 +4114,58 @@ local function BuildRowWidgets(row)
     row.inShield:Hide()
     row.inShieldCd = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
     if row.inShieldCd.SetHideCountdownNumbers then row.inShieldCd:SetHideCountdownNumbers(true) end
-    if row.inShieldCd.SetDrawEdge then row.inShieldCd:SetDrawEdge(false) end
+    util.TrackSweep(row.inShieldCd)
     row.inShieldCd:Hide()
+
+
+    -- Ally-buff strip: one slot per TRACKED buff from the registry, leading
+    -- the row. Built at the pool's maximum and laid out to whatever the
+    -- settings actually ask for, so toggling a buff re-shapes the row without
+    -- ever building a widget mid-combat.
+    row.buffs = {}
+    for n = 1, SDATA.MAX_BUFF_SLOTS do
+        local b = {}
+        b.icon = row:CreateTexture(nil, "ARTWORK")
+        b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        util.StyleIcon(b.icon)
+        b.icon:Hide()
+        b.cd = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
+        if b.cd.SetHideCountdownNumbers then b.cd:SetHideCountdownNumbers(true) end
+        util.TrackSweep(b.cd)
+        b.cd:Hide()
+        row.buffs[n] = b
+    end
+
+    -- Hot strip (HOT layer): up to three of OUR hots on this ally, each a
+    -- small icon with a radial sweep for what is left of it. Lifebloom is the
+    -- one that stacks, so every slot carries a stack count that only shows
+    -- when there is a stack worth reading — three about to bloom is a
+    -- different decision from one.
+    row.hots = {}
+    for n = 1, SDATA.MAX_HOT_ICONS do
+        local h = {}
+        h.icon = row:CreateTexture(nil, "ARTWORK")
+        h.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        util.StyleIcon(h.icon)
+        h.icon:Hide()
+        h.cd = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
+        if h.cd.SetHideCountdownNumbers then h.cd:SetHideCountdownNumbers(true) end
+        util.TrackSweep(h.cd)
+        h.cd:Hide()
+        -- NumberFontNormalSmall carries its own outline, so the digit stays
+        -- readable over the herb art whatever the sweep is doing behind it
+        h.count = row:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+        h.count:Hide()
+        row.hots[n] = h
+    end
 
     row.unitIcon = row:CreateTexture(nil, "ARTWORK")
     row.unitIcon2 = row:CreateTexture(nil, "ARTWORK")   -- ICON_PORTRAIT's portrait slot
+    -- Shaded square even in Portrait mode: this one slot carries a class icon
+    -- or a live portrait depending on the setting and the unit, and a circular
+    -- mask is permanent -- it would round the class symbols too
+    util.StyleIcon(row.unitIcon)
+    util.StyleIcon(row.unitIcon2)
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.name:SetJustifyH("LEFT")
 
@@ -2477,10 +4231,11 @@ local function BuildRowWidgets(row)
     -- radial sweep for the HoT's remaining duration
     row.renewIcon = row:CreateTexture(nil, "ARTWORK")
     row.renewIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    util.StyleIcon(row.renewIcon)
     row.renewIcon:Hide()
     row.renewSwipe = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
     if row.renewSwipe.SetHideCountdownNumbers then row.renewSwipe:SetHideCountdownNumbers(true) end
-    if row.renewSwipe.SetDrawEdge then row.renewSwipe:SetDrawEdge(false) end
+    util.TrackSweep(row.renewSwipe)
     row.renewSwipe:Hide()
 
     -- Dispellable-debuff strip, hanging off the row's right edge. Each slot is
@@ -2497,10 +4252,11 @@ local function BuildRowWidgets(row)
         d.rim:Hide()
         d.icon = row:CreateTexture(nil, "ARTWORK")
         d.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        util.StyleIcon(d.icon)
         d.icon:Hide()
         d.cd = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
         if d.cd.SetHideCountdownNumbers then d.cd:SetHideCountdownNumbers(true) end
-        if d.cd.SetDrawEdge then d.cd:SetDrawEdge(false) end
+        util.TrackSweep(d.cd)
         d.cd:Hide()
         row.dispels[n] = d
     end
@@ -2572,6 +4328,14 @@ local function AcquireAbilityRow(index)
     if row then return row end
     row = CreateFrame("Frame", nil, root)
     row:SetSize(FrameWidth(), SDATA.ABILITY_H)
+    -- Optional panel behind the strip. Width is set per paint so it hugs the
+    -- icons actually shown; sublevel -1 puts it under the lockout rims.
+    row.bg = row:CreateTexture(nil, "BACKGROUND", nil, -1)
+    row.bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.bg:SetVertexColor(0, 0, 0, 0.5)
+    row.bg:SetPoint("TOPLEFT", row, "TOPLEFT", STRIPE_W + 2, 0)
+    row.bg:SetHeight(SDATA.ABILITY_H)
+    row.bg:Hide()
     row.cells = {}
     for n = 1, SDATA.MAX_ABILITY_CELLS do
         local c = {}
@@ -2592,6 +4356,7 @@ local function AcquireAbilityRow(index)
         c.frame = cf
         c.icon = cf:CreateTexture(nil, "ARTWORK")
         c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        util.StyleIcon(c.icon)
         c.icon:SetAllPoints(cf)
         c.cd = CreateFrame("Cooldown", nil, cf, "CooldownFrameTemplate")
         if c.cd.SetHideCountdownNumbers then c.cd:SetHideCountdownNumbers(true) end
@@ -2616,27 +4381,62 @@ end
 -- Lay out a row's inner pieces for the current settings. Horizontal flow packs
 -- only the enabled identity elements (spell icon, class icon / portrait, name);
 -- the bar fills the rest. Cached by a signature so it runs only on change.
-local function LayoutRow(row, width, sig)
+local function LayoutRow(row, width, sig, compact, secondSlot)
     local showIcon = DB("ShowSpellIcon", true)
     local mode = DB("UnitDisplay", "CLASS_ICON")
+    -- Compact personal rows: half an ally row's height, carrying only the
+    -- spell icon, its label and the bar. None of the ally chrome applies —
+    -- no portrait, no target mark, no Renew, and no dispel strip (your own
+    -- debuffs already ride your ally row, so they were duplicated per shield).
+    -- `secondSlot` is the one exception, asked for by the elemental row alone:
+    -- Freeze is its whole reason to exist, and a slot nobody reserved is a
+    -- slot the icon cannot be drawn in.
+    local rowH = compact and SDATA.PERSONAL_ROW_H or ROW_H
+    local barH = compact and SDATA.PERSONAL_BAR_H or BAR_H
+    local wsH = compact and SDATA.PERSONAL_WS_H or WS_H
     -- Health is the main bar on every layer now; the underlay slot carries
     -- MANA on the mage board and is retired on the priest board
     local showHealth
-    if layer == "INT" then
-        showHealth = DB("ShowManaBar", true)
-    else
+    if compact or (layer ~= "INT" and layer ~= "HOT") then
         showHealth = false
+    else
+        showHealth = DB("ShowManaBar", true)
     end
-    local showUnitIcon = (mode == "CLASS_ICON" or mode == "PORTRAIT" or mode == "ICON_NAME"
-        or mode == "ICON_PORTRAIT" or mode == "SPEC" or mode == "SPEC_PORTRAIT")
-    local showUnitIcon2 = (mode == "ICON_PORTRAIT" or mode == "SPEC_PORTRAIT")
-    local showName = (mode == "NAME" or mode == "ICON_NAME")
+    local showUnitIcon = not compact and (mode == "CLASS_ICON" or mode == "PORTRAIT"
+        or mode == "ICON_NAME" or mode == "ICON_PORTRAIT" or mode == "SPEC"
+        or mode == "SPEC_PORTRAIT")
+    local showUnitIcon2 = not compact and (mode == "ICON_PORTRAIT" or mode == "SPEC_PORTRAIT")
+    local showName = compact or (mode == "NAME" or mode == "ICON_NAME")
 
-    row:SetSize(width, ROW_H)
+    row:SetSize(width, rowH)
     local x = STRIPE_W + 3
 
-    if showIcon then
-        local iconSize = (layer == "INT") and SMALL_ICON or ICON_SIZE
+    -- The ally-buff strip leads the row. Slots are reserved from the SETTINGS,
+    -- not from what is currently up, so the row's geometry is stable for a
+    -- whole fight — which is also what keeps Click-Cast legal, since a secure
+    -- row cannot be re-laid-out mid-combat.
+    local buffSlots = (not compact and showIcon) and #SDATA.BUFF_ACTIVE or 0
+    for n = 1, SDATA.MAX_BUFF_SLOTS do
+        local b = row.buffs[n]
+        if n <= buffSlots then
+            b.icon:ClearAllPoints()
+            b.icon:SetSize(SMALL_ICON, SMALL_ICON)
+            b.icon:SetPoint("LEFT", row, "LEFT", x, 0)
+            b.cd:ClearAllPoints()
+            b.cd:SetAllPoints(b.icon)
+            x = x + SMALL_ICON + 3
+        else
+            b.icon:Hide(); b.cd:Hide()
+        end
+    end
+
+    -- The layer's OWN status slot, which is a different job from the buff
+    -- strip above: the priest board's Power Word: Shield tracker, or a
+    -- personal row's spell icon. The two buff layers have nothing left to put
+    -- here now that their upkeep moved to the strip, so they spend no width.
+    local ownSlot = showIcon and (compact or (layer ~= "INT" and layer ~= "HOT"))
+    if ownSlot then
+        local iconSize = compact and SDATA.PERSONAL_ICON or ICON_SIZE
         row.spellIcon:ClearAllPoints()
         row.spellIcon:SetSize(iconSize, iconSize)
         row.spellIcon:SetPoint("LEFT", row, "LEFT", x, 0)
@@ -2644,23 +4444,50 @@ local function LayoutRow(row, width, sig)
         row.swipe:ClearAllPoints()
         row.swipe:SetAllPoints(row.spellIcon)
         x = x + iconSize + 3
-        if layer == "INT" then
-            -- Second status slot: the incoming-shield icon
+    else
+        row.spellIcon:Hide()
+        row.swipe:Hide()
+    end
+    -- Second status slot: an incoming priest shield on the mage board, or
+    -- Freeze on the elemental's compact row.
+    if showIcon then
+        if (layer == "INT" and not compact) or secondSlot then
+            local slotSize = compact and SDATA.PERSONAL_ICON or SMALL_ICON
             row.inShield:ClearAllPoints()
-            row.inShield:SetSize(SMALL_ICON, SMALL_ICON)
+            row.inShield:SetSize(slotSize, slotSize)
             row.inShield:SetPoint("LEFT", row, "LEFT", x, 0)
             row.inShieldCd:ClearAllPoints()
             row.inShieldCd:SetAllPoints(row.inShield)
-            x = x + SMALL_ICON + 3
+            x = x + slotSize + 3
         else
             row.inShield:Hide()
             row.inShieldCd:Hide()
         end
     else
-        row.spellIcon:Hide()
-        row.swipe:Hide()
         row.inShield:Hide()
         row.inShieldCd:Hide()
+    end
+
+    -- Hot strip (HOT layer, ally rows): slots are RESERVED whether or not a
+    -- hot is up, so the bar never shifts left and right as hots come and go —
+    -- a row that jitters mid-fight is a row you cannot read. Unlike the
+    -- dispel strip this lives INSIDE the frame: it is the board's subject, not
+    -- an annotation, so it is worth the width it costs.
+    local hotSlots = (not compact and layer == "HOT") and #SDATA.HOT_ACTIVE or 0
+    for n = 1, SDATA.MAX_HOT_ICONS do
+        local h = row.hots[n]
+        if n <= hotSlots then
+            h.icon:ClearAllPoints()
+            h.icon:SetSize(SMALL_ICON, SMALL_ICON)
+            h.icon:SetPoint("LEFT", row, "LEFT", x, 0)
+            h.cd:ClearAllPoints()
+            h.cd:SetAllPoints(h.icon)
+            h.count:ClearAllPoints()
+            h.count:SetPoint("BOTTOMRIGHT", h.icon, "BOTTOMRIGHT", 2, -1)
+            x = x + SMALL_ICON + 2
+        else
+            h.icon:Hide(); h.cd:Hide(); h.count:Hide()
+        end
     end
 
     if showUnitIcon then
@@ -2683,7 +4510,8 @@ local function LayoutRow(row, width, sig)
     end
 
     if showName then
-        local nw = (mode == "ICON_NAME") and SHORT_NAME_W or NAME_W
+        local nw = compact and SDATA.PERSONAL_NAME_W
+            or ((mode == "ICON_NAME") and SHORT_NAME_W or NAME_W)
         row.name:ClearAllPoints()
         row.name:SetPoint("LEFT", row, "LEFT", x, 0)
         row.name:SetWidth(nw)
@@ -2696,8 +4524,8 @@ local function LayoutRow(row, width, sig)
     -- Reserve room at the right for the Renew icon when it is tracked
     -- (Priest-only: a shared account DB can carry the flag onto a Mage) and
     -- for the raid-mark watcher
-    local renewOn = DB("RenewTrack", false) and layer == "PWS"
-    local marksOn = DB("ShowTargetMarks", true)
+    local renewOn = not compact and DB("RenewTrack", false) and layer == "PWS"
+    local marksOn = not compact and DB("ShowTargetMarks", true)
     local rightReserve = (renewOn and (RENEW_ICON_SIZE + 4) or 0) + (marksOn and 16 or 0)
     if marksOn then
         row.raidMark:ClearAllPoints()
@@ -2711,15 +4539,15 @@ local function LayoutRow(row, width, sig)
     local barW = width - barX - PAD - rightReserve
     if barW < 40 then barW = 40 end
     -- Vertical stack: absorb bar on top, optional health, then WS drain
-    local barTop = -(ROW_H - BAR_H - (showHealth and HEALTH_H or 0) - WS_H) / 2
+    local barTop = -(rowH - barH - (showHealth and HEALTH_H or 0) - wsH) / 2
     row.barBG:ClearAllPoints()
     row.barBG:SetPoint("TOPLEFT", row, "TOPLEFT", barX, barTop)
-    row.barBG:SetSize(barW, BAR_H)
+    row.barBG:SetSize(barW, barH)
     row.bar:ClearAllPoints()
     row.bar:SetPoint("TOPLEFT", row.barBG, "TOPLEFT", 0, 0)
-    row.bar:SetSize(barW, BAR_H)
+    row.bar:SetSize(barW, barH)
 
-    local y = barTop - BAR_H
+    local y = barTop - barH
     if showHealth then
         row.healthBar:ClearAllPoints()
         row.healthBar:SetPoint("TOPLEFT", row, "TOPLEFT", barX, y)
@@ -2730,7 +4558,7 @@ local function LayoutRow(row, width, sig)
     end
     row.wsBar:ClearAllPoints()
     row.wsBar:SetPoint("TOPLEFT", row, "TOPLEFT", barX, y)
-    row.wsBar:SetSize(barW, WS_H)
+    row.wsBar:SetSize(barW, wsH)
 
     row.left:ClearAllPoints()
     row.left:SetPoint("LEFT", row.barBG, "LEFT", 3, 0)
@@ -2749,7 +4577,7 @@ local function LayoutRow(row, width, sig)
     end
 
     -- Dispel strip: marches rightward OUTSIDE the frame so it never eats board width
-    local dispelOn = DB("ShowDispels", false)
+    local dispelOn = not compact and DB("ShowDispels", false)
     local dSize = DB("DispelIconSize", 16)
     local dMax = DB("DispelMaxIcons", 3)
     for n = 1, MAX_DISPEL_ICONS do
@@ -2771,7 +4599,29 @@ local function LayoutRow(row, width, sig)
         end
     end
 
+    -- Bar art. Applied here rather than at build time so the setting can be
+    -- changed live: it rides the layout signature, so a swap re-lays every
+    -- pooled row exactly once. The stripe and the icons are deliberately
+    -- left out — the stripe is a state accent, not a bar.
+    local barStyle = DB("BarTexture", "FLAT")
+    local barTex = SDATA.BAR_TEXTURES[barStyle] or SDATA.BAR_TEXTURES.FLAT
+    -- The empty track is the fill's opposite number, so it comes from the style
+    -- rather than being painted black once at build time and forgotten
+    local track = SDATA.BAR_TRACKS[SDATA.BAR_TRACK_OF[barStyle] or "FLAT"]
+    row.barBG:SetTexture(track.file or barTex)
+    row.barBG:SetVertexColor(track[1], track[2], track[3], track[4])
+    row.bar:SetTexture(barTex)
+    row.healthBar:SetTexture(barTex)
+    row.wsBar:SetTexture(barTex)
+    for n = 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[n]:SetTexture(barTex) end
+
     row._barW = barW
+    -- What the layout actually granted this row, for the paint pass to read
+    -- back: whether a name slot was reserved (a compact row always gets one,
+    -- whatever UnitDisplay says, or its label would leave a hole where the
+    -- bar should start), and how tall its lockout strip is.
+    row._nameSlot = showName and true or false
+    row._wsH = wsH
     row._sig = sig
 end
 
@@ -2782,6 +4632,7 @@ local function LayoutSig(width)
         .. "|" .. tostring(DB("ShowDispels", false)) .. "|" .. DB("DispelMaxIcons", 3)
         .. "|" .. DB("DispelIconSize", 16) .. "|" .. tostring(DB("ShowManaBar", true))
         .. "|" .. tostring(DB("ShowTargetMarks", true))
+        .. "|" .. DB("BarTexture", "FLAT") .. "|" .. SDATA.BUFF_SIG
 end
 
 -- Player rows stride taller when each carries an ability strip beneath it
@@ -2791,22 +4642,91 @@ local function RowStride()
     return s
 end
 
-local function PositionRow(row, index, topOffset, grow)
+-- Height the personal block takes above the ally board. Growing DOWN, `base`
+-- pushes the ally rows past it; growing UP the ally board already starts at
+-- the bottom and the personal block stacks on top of it, so base is unused.
+local function PersonalStride()
+    return SDATA.PERSONAL_ROW_H + ROW_GAP
+end
+
+-- How many personal rows the block can EVER hold. The ally board is offset by
+-- this reserve rather than by the live count, so an Ice Barrier dropping
+-- mid-fight never shifts the party rows underneath it — which is also what
+-- keeps Click-Cast legal, since moving a secure row in combat is a protected
+-- call we would be forced to skip.
+local function PersonalReserve()
+    if layer ~= "INT" then return 0 end
+    local n = eleKnown and 1 or 0
+    if DB("SelfShieldRows", true) then
+        for _, def in ipairs(trackedSpells) do
+            if SelfTrackEnabled(def) then n = n + 1 end
+        end
+    end
+    return n
+end
+
+local function PositionRow(row, index, topOffset, grow, base)
     row:ClearAllPoints()
     if grow == "UP" then
         local lift = DB("ShowAbilityBar", true) and (SDATA.ABILITY_H + 1) or 0
         row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * RowStride() + lift)
     else
-        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -topOffset - (index - 1) * RowStride())
+        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0,
+            -topOffset - (base or 0) - (index - 1) * RowStride())
     end
 end
 
-local function PositionAbilityRow(row, index, topOffset, grow)
+local function PositionAbilityRow(row, index, topOffset, grow, base)
     row:ClearAllPoints()
     if grow == "UP" then
         row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * RowStride())
     else
-        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -topOffset - (index - 1) * RowStride() - ROW_H - 1)
+        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0,
+            -topOffset - (base or 0) - (index - 1) * RowStride() - ROW_H - 1)
+    end
+end
+
+-- One ally-upkeep status slot: Arcane Intellect on the mage board, Mark of
+-- the Wild and Thorns on the druid's. The icon is ALWAYS on screen — that is
+-- the whole contract, and the reason a healer can read a row's buffs without
+-- hovering it. Dark ghost means missing (cast it); amber means the rebuff
+-- window is open; lit means healthy, with the radial sweep carrying what is
+-- left exactly the way a hot's does.
+--
+-- Lives on `util` rather than as a chunk local: this file sits a handful of
+-- locals under Lua's 200-per-chunk ceiling (see the SDATA note at the top).
+function util.PaintUpkeep(row, cache, icon, cd, tex, up, due, duration, expire, urgent)
+    if not up then
+        cache._exp = nil
+        cd:Hide()
+        if urgent then util.UrgentIcon(icon, tex) else util.GhostIcon(icon, tex) end
+        return
+    end
+    icon:SetTexture(tex)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    if icon.SetDesaturated then icon:SetDesaturated(false) end
+    if due then
+        icon:SetVertexColor(1, 0.65, 0.3, 1)    -- amber: rebuff window is open
+    else
+        icon:SetVertexColor(1, 1, 1, 1)
+    end
+    icon:Show()
+    -- Cached against the expiry, like every other sweep on this row:
+    -- SetCooldown restarts the animation, so calling it per frame would leave
+    -- the sweep permanently stuck at full.
+    if expire and expire > 0 and duration and duration > 0 then
+        -- A buff DRAINS: lit art is what is left (see util.TrackSweep). Stated
+        -- here as well as at construction because the elemental row borrows
+        -- this same slot for Freeze, which is a cooldown and flips it back.
+        if cd.SetReverse then cd:SetReverse(true) end
+        if cache._exp ~= expire then
+            cache._exp = expire
+            cd:SetCooldown(expire - duration, duration)
+        end
+        cd:Show()
+    else
+        cache._exp = nil
+        cd:Hide()
     end
 end
 
@@ -2822,6 +4742,11 @@ local function PaintRow(row, r, now, index)
         row.bar:Hide(); row.barBG:Hide(); row.healthBar:Hide(); row.wsBar:Hide()
         row.markTick:Hide(); row.raidMark:Hide()
         for i = 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
+        for i = 1, SDATA.MAX_HOT_ICONS do
+            local h = row.hots[i]
+            h._exp = nil
+            h.icon:Hide(); h.cd:Hide(); h.count:Hide()
+        end
         row.left:SetText(""); row.right:SetText(""); row.glow:Hide(); row.flash:Hide()
         row.tgtCount:Hide()
         row.stripe:SetAlpha(0)
@@ -2834,32 +4759,39 @@ local function PaintRow(row, r, now, index)
     row.stripe:SetVertexColor(def.color[1], def.color[2], def.color[3], 1)
     row.stripe:SetAlpha(r.state == "READY" and (0.55 + 0.45 * math.abs(math.sin(now * 3))) or 1)
 
-    -- Left status slot. INT ally rows: Int state icon (lit / amber when due /
-    -- ghost when missing) + an incoming priest shield with its 30s sweep.
-    -- Everything else: the spell icon, desaturated when no shield is up.
+    -- The ally-buff strip. Every tracked buff holds its slot whether or not it
+    -- is up: lit with its draining sweep while healthy, amber inside the
+    -- rebuff window, dark when it is gone — and dark RED when the advisor says
+    -- its absence is actually costing you (see util.AdviseBuff).
+    --
+    -- "Permanent" stops at a corpse, the same place the hot strip stops: a
+    -- dark Mark on a dead ally still reads as "cast this", and the answer
+    -- there is a battle rez, not a buff.
+    local buffShown = 0
+    if DB("ShowSpellIcon", true) and not r.selfSpell and not r.dead
+        and r.state ~= "EMPTY" then
+        for i = 1, math.min(r.buffCount or 0, #SDATA.BUFF_ACTIVE) do
+            local e = r.buffs[i]
+            buffShown = i
+            local b = row.buffs[i]
+            util.PaintUpkeep(row, b, b.icon, b.cd, e.icon, e.up, e.due,
+                e.duration, e.expire, e.urgent)
+        end
+    end
+    for i = buffShown + 1, SDATA.MAX_BUFF_SLOTS do
+        local b = row.buffs[i]
+        b._exp = nil
+        b.icon:Hide(); b.cd:Hide()
+    end
+
+    -- The layer's own status slot: Power Word: Shield on the priest board, the
+    -- spell icon on a personal row, an incoming shield / Freeze beside it.
     if DB("ShowSpellIcon", true) then
         if layer == "INT" and not r.selfSpell then
-            -- Int icon only when ACTIONABLE: ghost when missing, amber inside
-            -- the rebuff window (IntRefreshAt, default 5 min). A healthy buff
-            -- earns no pixels.
-            if r.manaUser and (not r.intUp or r.intDue) then
-                row.spellIcon:SetTexture(AI_ICON)
-                row.spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                if row.spellIcon.SetDesaturated then row.spellIcon:SetDesaturated(not r.intUp) end
-                if not r.intUp then
-                    row.spellIcon:SetVertexColor(1, 1, 1, 0.35)      -- ghost: cast Int
-                else
-                    row.spellIcon:SetVertexColor(1, 0.65, 0.3, 1)    -- amber: rebuff soon
-                end
-                row.spellIcon:Show()
-            else
-                row.spellIcon:Hide()   -- healthy buff, or a rage/energy ally
-            end
-            row._swExp = nil
-            row.swipe:Hide()
             if r.inShield and r.inShieldExpire then
                 row.inShield:SetTexture(r.inShieldIcon or SDATA.PWS_ICON)
                 row.inShield:Show()
+                if row.inShieldCd.SetReverse then row.inShieldCd:SetReverse(true) end
                 if row._inExp ~= r.inShieldExpire then
                     row._inExp = r.inShieldExpire
                     local dur = r.inShieldDuration or SDATA.SHIELD_DURATION
@@ -2871,6 +4803,12 @@ local function PaintRow(row, r, now, index)
                 row.inShield:Hide()
                 row.inShieldCd:Hide()
             end
+            row.spellIcon:Hide()
+            row.swipe:Hide()
+        elseif layer == "HOT" and not r.selfSpell then
+            -- The druid board's upkeep all lives on the strip above
+            row.spellIcon:Hide(); row.swipe:Hide()
+            row.inShield:Hide(); row.inShieldCd:Hide()
         elseif r.eleRow then
             -- Elemental row: the pet's portrait, Freeze on the second slot
             -- with its cooldown sweep (lit the moment it is ready)
@@ -2891,6 +4829,11 @@ local function PaintRow(row, r, now, index)
                 if row.inShield.SetDesaturated then row.inShield:SetDesaturated((r.freezeCd or 0) > 0) end
                 row.inShield:Show()
                 if r.freezeCd and r.freezeCd > 0 and r.freezeStart and r.freezeDur then
+                    -- Freeze is a COOLDOWN, not a duration: the wedge should
+                    -- retreat as it comes back up. This slot is shared with
+                    -- Thorns and the incoming-shield tracker, which are
+                    -- durations, so the direction is set per paint.
+                    if row.inShieldCd.SetReverse then row.inShieldCd:SetReverse(false) end
                     if row._inExp ~= r.freezeStart then
                         row._inExp = r.freezeStart
                         row.inShieldCd:SetCooldown(r.freezeStart, r.freezeDur)
@@ -2904,11 +4847,17 @@ local function PaintRow(row, r, now, index)
                 row.inShield:Hide(); row.inShieldCd:Hide()
             end
         else
-            row.spellIcon:SetTexture(r.icon or SDATA.PWS_ICON)
-            row.spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            row.spellIcon:SetVertexColor(1, 1, 1, 1)
-            if row.spellIcon.SetDesaturated then row.spellIcon:SetDesaturated(not (r.shieldUp and r.mine)) end
-            row.spellIcon:Show()
+            if r.shieldUp and r.mine then
+                row.spellIcon:SetTexture(r.icon or SDATA.PWS_ICON)
+                row.spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                row.spellIcon:SetVertexColor(1, 1, 1, 1)
+                if row.spellIcon.SetDesaturated then row.spellIcon:SetDesaturated(false) end
+                row.spellIcon:Show()
+            else
+                -- No shield of ours here: the same dark placeholder every
+                -- other missing tracker on the board wears
+                util.GhostIcon(row.spellIcon, r.icon or SDATA.PWS_ICON)
+            end
             row.inShield:Hide(); row.inShieldCd:Hide()
             -- Duration sweep comes from shieldState, which on the INT layer
             -- only self-spell rows own (an ally's entry would be a priest's PW:S)
@@ -2930,6 +4879,58 @@ local function PaintRow(row, r, now, index)
         row.inShield:Hide(); row.inShieldCd:Hide()
     end
 
+    -- Hot strip (HOT layer): one lit icon per hot of ours, its sweep running
+    -- the hot's own remaining time, and a stack count on the one that stacks.
+    -- The slots were reserved by the layout, so an empty one leaves a gap
+    -- rather than sliding the rest of the row around.
+    local hotShown = 0
+    if layer == "HOT" and not r.selfSpell and DB("ShowSpellIcon", true)
+        and r.state ~= "EMPTY" and not r.dead then
+        for i = 1, (r.hotSlots or 0) do
+            local e = r.hots and r.hots[i]
+            if e then
+                hotShown = i
+                local h = row.hots[i]
+                if not e.up then
+                    -- Missing: the hot's own art, dark, holding its place. The
+                    -- slot is the answer to "what could I cast here".
+                    h._exp = nil
+                    h.cd:Hide()
+                    h.count:Hide()
+                    util.GhostIcon(h.icon, e.icon)
+                else
+                    h.icon:SetTexture(e.icon)
+                    h.icon:SetVertexColor(1, 1, 1, 1)
+                    if h.icon.SetDesaturated then h.icon:SetDesaturated(false) end
+                    h.icon:Show()
+                    if e.expire and e.expire > 0 and e.duration and e.duration > 0 then
+                        if h._exp ~= e.expire then
+                            h._exp = e.expire
+                            h.cd:SetCooldown(e.expire - e.duration, e.duration)
+                        end
+                        h.cd:Show()
+                    else
+                        h._exp = nil
+                        h.cd:Hide()
+                    end
+                    -- Only worth a digit once it actually stacks: a Lifebloom
+                    -- at one is the common case and a "1" on every row is noise
+                    if (e.stacks or 0) > 1 then
+                        h.count:SetText(e.stacks)
+                        h.count:Show()
+                    else
+                        h.count:Hide()
+                    end
+                end
+            end
+        end
+    end
+    for i = hotShown + 1, SDATA.MAX_HOT_ICONS do
+        local h = row.hots[i]
+        h._exp = nil
+        h.icon:Hide(); h.cd:Hide(); h.count:Hide()
+    end
+
     -- Identity: class icon / portrait / name per UnitDisplay. Self-spell rows
     -- have no unit to show — their identity is the spell icon, plus the spell's
     -- short name whenever the layout has a name slot.
@@ -2937,7 +4938,7 @@ local function PaintRow(row, r, now, index)
     if r.selfSpell then
         row.unitIcon:Hide()
         row.unitIcon2:Hide()
-        if mode == "NAME" or mode == "ICON_NAME" then
+        if row._nameSlot then
             local cc = r.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[r.class]
             row.name:SetTextColor(cc and cc.r or 0.9, cc and cc.g or 0.9, cc and cc.b or 0.9)
             row.name:SetText(r.name or "")
@@ -2966,7 +4967,7 @@ local function PaintRow(row, r, now, index)
         end
         row.unitIcon2:Show()
     elseif mode == "SPEC" then
-        SetSpecOrClassIcon(row.unitIcon, r)
+        SetSpecOrClassIcon(row.unitIcon, r, true)
         row.unitIcon:Show()
         row.unitIcon2:Hide()
     elseif mode == "SPEC_PORTRAIT" then
@@ -2980,7 +4981,7 @@ local function PaintRow(row, r, now, index)
         end
         row.unitIcon2:Show()
     elseif mode == "CLASS_ICON" or mode == "ICON_NAME" then
-        SetClassIcon(row.unitIcon, r.class, r.guid)
+        SetClassIcon(row.unitIcon, r.class, r.guid, r.isPet and r.unit or nil)
         row.unitIcon:Show()
         row.unitIcon2:Hide()
     else
@@ -2990,7 +4991,7 @@ local function PaintRow(row, r, now, index)
 
     if r.selfSpell then
         -- name already set above; nothing to do here
-    elseif mode == "NAME" or mode == "ICON_NAME" then
+    elseif row._nameSlot then
         local cc = r.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[r.class]
         row.name:SetTextColor(cc and cc.r or 0.9, cc and cc.g or 0.9, cc and cc.b or 0.9)
         row.name:SetText(ShortName(r.name, DB("NameMaxChars", 6)))
@@ -3029,17 +5030,24 @@ local function PaintRow(row, r, now, index)
     -- apart from the green health underlay while the white number/timer on top
     -- stays legible. Others' shields stay blue-grey; remaining strength is shown
     -- by the bar's width and the state stripe rather than its color.
+    -- A fill may never outrun its own track. The resolvers all intend to hand
+    -- over a 0..1 fraction, but they draw on numbers the client supplies, and
+    -- one bad ratio here is not a slightly-wrong bar — it is a texture
+    -- thousands of pixels wide laid across the whole screen, because nothing
+    -- clips a texture to its parent. So the paint pass refuses to trust the
+    -- fraction rather than trusting every present and future producer of it.
+    local barW = row._barW or 100
     if r.ratio then
+        local h = math.min(1, math.max(0, r.ratio))
         if r.healthMain then
             -- Health-colored main bar: green at full through amber to red
-            local h = r.ratio
             row.bar:SetVertexColor(math.min(1, 1.6 - h * 1.4), math.min(0.75, 0.15 + h * 0.75), 0.2, 0.9)
         elseif r.state == "OTHER" then
             row.bar:SetVertexColor(0.45, 0.5, 0.7, 0.9)
         else
             row.bar:SetVertexColor(0.44, 0.44, 0.46, 0.95)
         end
-        row.bar:SetWidth(math.max((row._barW or 100) * r.ratio, 1))
+        row.bar:SetWidth(math.max(barW * h, 1))
         row.bar:Show()
     else
         row.bar:Hide()
@@ -3050,12 +5058,17 @@ local function PaintRow(row, r, now, index)
     -- wards, dark grey Sacrifice — all on the same scale as the health
     local nSegs = 0
     if r.healthMain and r.segs and r.segScale and r.segScale > 0 and row.bar:IsShown() then
-        local barW = row._barW or 100
+        -- The segments CHAIN off the fill's right edge, so the budget they
+        -- share is whatever the fill left behind. Spending it down as they go
+        -- means the run can never reach past the track even if the scale it
+        -- was measured against turns out to be wrong.
+        local budget = barW - (row.bar:GetWidth() or 0)
         for i = 1, #r.segs do
             local s = r.segs[i]
-            local w = barW * (s.amount / r.segScale)
+            local w = math.min(barW * (s.amount / r.segScale), budget)
             if w >= 1 and nSegs < SDATA.MAX_SHIELD_SEGS then
                 nSegs = nSegs + 1
+                budget = budget - w
                 local tex = row.shieldSegs[nSegs]
                 -- Per-type tints, or one classic cream when the minute
                 -- differences between shields aren't wanted
@@ -3070,11 +5083,12 @@ local function PaintRow(row, r, now, index)
     end
     for i = nSegs + 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
 
-    -- Underlay strip: MANA on the mage board's ally rows, the elemental's
+    -- Underlay strip: MANA on the buff boards' ally rows, the elemental's
     -- HEALTH on its row (health is the main bar everywhere else now)
-    if layer == "INT" and not r.selfSpell and r.mana and DB("ShowManaBar", true) then
+    if (layer == "INT" or layer == "HOT") and not r.selfSpell and r.mana
+        and DB("ShowManaBar", true) then
         row.healthBar:SetVertexColor(0.25, 0.5, 0.95, 0.9)
-        row.healthBar:SetWidth(math.max((row._barW or 100) * r.mana, 1))
+        row.healthBar:SetWidth(math.max(barW * math.min(1, math.max(0, r.mana)), 1))
         row.healthBar:Show()
     else
         row.healthBar:Hide()
@@ -3105,7 +5119,8 @@ local function PaintRow(row, r, now, index)
         end
         row.markTick:ClearAllPoints()
         row.markTick:SetPoint("CENTER", row.wsBar, "LEFT", x, 0)
-        row.markTick:SetSize(2, WS_H + 4)
+        -- Overhangs the strip it rides, at whatever height that strip is
+        row.markTick:SetSize(2, (row._wsH or WS_H) + 4)
         row.markTick:Show()
     else
         row.markTick:Hide()
@@ -3148,8 +5163,7 @@ local function PaintRow(row, r, now, index)
         else
             row._rnExp = nil
             row.renewSwipe:Hide()
-            if row.renewIcon.SetDesaturated then row.renewIcon:SetDesaturated(true) end
-            row.renewIcon:SetVertexColor(1, 1, 1, 0.3)   -- ghost: Renew missing
+            util.GhostIcon(row.renewIcon, SDATA.RENEW_ICON)   -- missing: dark placeholder
         end
         row.renewIcon:Show()
     else
@@ -3216,12 +5230,13 @@ local function PaintRow(row, r, now, index)
         d.icon:Hide(); d.rim:Hide(); d.glow:Hide(); d.cd:Hide()
     end
 
-    -- Action glow (castable & wanted) and shield-broke flash. On INT ally
-    -- rows the open actions are: decurse (CURSED), cast a missing Int, or
+    -- Action glow (castable & wanted) and shield-broke flash. On the buff
+    -- boards' ally rows the open actions are: remove what you can remove
+    -- (CURSED/POISONED), start or refresh a hot, cast a missing Int/Mark, or
     -- rebuff one that is due.
     local glowOn = DB("WSReadyGlow", false) and (CASTABLE_STATES[r.state]
-        or (layer == "INT" and not r.selfSpell and not r.dead
-            and r.manaUser and (not r.intUp or r.intDue)))
+        or ((layer == "INT" or layer == "HOT") and not r.selfSpell and not r.dead
+            and r.buffMissing))
     if glowOn then
         row.glow:SetAlpha(0.1 + 0.18 * math.abs(math.sin(now * 4)))
         row.glow:Show()
@@ -3263,18 +5278,41 @@ end
 local function BuildSecureTokens(out)
     wipe(out)
     local maxRows = DB("MaxRows", 6)
+    -- Pet tokens are as fixed as their owners' — "partypet2" follows whoever
+    -- fills slot 2 — so a pet row click-casts under exactly the same contract
+    -- and each one is bound directly after its owner.
+    local pets = DB("IncludePets", true)
+    -- Your own pet on the mage layer never takes an ALLY slot — the elemental
+    -- has its own personal row below the board — and in raid scope it would
+    -- otherwise arrive a second time as raidpetN, so it is matched by GUID.
+    local skipGuid = pets and layer == "INT" and UnitExists("pet")
+        and UnitGUID and UnitGUID("pet") or nil
+    local function addPet(unit)
+        if not (pets and UnitExists(unit)) then return end
+        if skipGuid and UnitGUID and UnitGUID(unit) == skipGuid then return end
+        out[#out + 1] = unit
+    end
     -- Bind only units that currently exist (a tight board), but rebind only
     -- out of combat — so the token->slot mapping never shifts mid-fight.
     if DB("Scope", "PARTY") == "RAID" and IsInRaid and IsInRaid() then
         for i = 1, 40 do
             if #out >= maxRows then break end
-            if UnitExists("raid" .. i) then out[#out + 1] = "raid" .. i end
+            if UnitExists("raid" .. i) then
+                out[#out + 1] = "raid" .. i
+                if #out < maxRows then addPet("raidpet" .. i) end
+            end
         end
     else
-        if DB("IncludeSelf", true) then out[#out + 1] = "player" end
+        if DB("IncludeSelf", true) then
+            out[#out + 1] = "player"
+            addPet("pet")
+        end
         for i = 1, 4 do
             if #out >= maxRows then break end
-            if UnitExists("party" .. i) then out[#out + 1] = "party" .. i end
+            if UnitExists("party" .. i) then
+                out[#out + 1] = "party" .. i
+                if #out < maxRows then addPet("partypet" .. i) end
+            end
         end
     end
 end
@@ -3314,6 +5352,11 @@ local function BindClick(row, prefix, button, dbval, token)
     end
 end
 
+-- Exposed so the settings grid can push a binding change straight onto the
+-- live rows. Named rather than anonymous because it is declared before
+-- SetupSecureRows exists and filled in just after.
+function CommanderPartyFrames_RebindRows() end
+
 local function SetupSecureRows()
     if InCombat() then secureDirty = true; return end
     secureDirty = false
@@ -3323,11 +5366,14 @@ local function SetupSecureRows()
     local showHeader = DB("ShowHeader", true)
     local topOffset = showHeader and HEADER_H or 0
     local grow = DB("Grow", "DOWN")
-    local modPrefix = (DB("ClickModifier", "shift")) .. "-"
+    local personalBase = PersonalReserve() * PersonalStride()
+    -- Resolved once per pass, not per row: the talent scan is cheap but there
+    -- is no reason for forty rows to each ask which spec we are
+    local profile = util.TalentProfile()
     for i, token in ipairs(secureTokens) do
         local row = AcquireRow(i)
         if row._sig ~= sig then LayoutRow(row, width, sig) end
-        PositionRow(row, i, topOffset, grow)
+        PositionRow(row, i, topOffset, grow, personalBase)
         if row.SetAttribute then
             -- Raw token drives mouseover for @mouseover macros; each mouse button
             -- (and the modifier+left combo) casts its bound spell or targets. Both
@@ -3336,18 +5382,16 @@ local function SetupSecureRows()
             -- before a settings change update too. Secure -> out of combat only.
             if row.RegisterForClicks then row:RegisterForClicks("AnyDown", "AnyUp") end
             row:SetAttribute("unit", token)
-            -- Each layer keeps its own binding keys: the DB is account-wide,
-            -- so a priest's spell IDs must not leak onto a mage's buttons.
-            if layer == "INT" then
-                BindClick(row, "", "1", DB("MageClickLeft", 1459), token)          -- left   = Arcane Intellect
-                BindClick(row, "", "2", DB("MageClickRight", 475), token)          -- right  = Remove Curse
-                BindClick(row, "", "3", DB("MageClickMiddle", "TARGET"), token)    -- middle = target
-                BindClick(row, modPrefix, "1", DB("MageClickModLeft", 1008), token)-- mod+left = Amplify Magic
-            else
-                BindClick(row, "", "1", DB("ClickLeft", 17), token)            -- left   = Power Word: Shield
-                BindClick(row, "", "2", DB("ClickRight", 139), token)          -- right  = Renew
-                BindClick(row, "", "3", DB("ClickMiddle", 2061), token)        -- middle = Flash Heal
-                BindClick(row, modPrefix, "1", DB("ClickModLeft", 2060), token)-- mod+left = Greater Heal
+            -- The whole modifier x button matrix, from the profile that
+            -- matches this talent build. Every cell is written on every pass,
+            -- including the empty ones: a binding cleared in the settings has
+            -- to actually clear the attribute, or the old spell keeps firing
+            -- until reload. Out of combat only, like everything secure here.
+            for _, mod in ipairs(SDATA.CLICK_MODS) do
+                for _, btn in ipairs(SDATA.CLICK_BUTTONS) do
+                    BindClick(row, mod.key, btn.key,
+                        util.GetBind(mod.key .. btn.key, profile), token)
+                end
             end
         end
         row.unitToken = token
@@ -3357,12 +5401,20 @@ local function SetupSecureRows()
         rowPool[i]:Hide()
     end
     local slots = DB("FixedHeight", false) and DB("MaxRows", 6) or math.max(#secureTokens, 1)
-    root:SetSize(width, topOffset + math.max(slots * RowStride() - ROW_GAP, ROW_H))
+    root:SetSize(width, topOffset + personalBase
+        + math.max(slots * RowStride() - ROW_GAP, ROW_H))
+end
+
+function CommanderPartyFrames_RebindRows()
+    if securePool then SetupSecureRows() end
 end
 
 -- ---------------------------------------------------------------------------
--- Uptime sampling (Track Shield Uptime). Averages, per sample, the share of
--- shieldable allies currently carrying our shield.
+-- Uptime sampling (Track Shield Uptime). One number, three questions —
+-- each layer measures the coverage that actually decides its fights:
+--   PWS  the share of living allies carrying OUR Power Word: Shield
+--   INT  the share of the session YOU had any absorb up (arena survival)
+--   HOT  the share of living allies carrying one of OUR hots
 -- ---------------------------------------------------------------------------
 local sampleUnits = {}
 local function SampleUptime(now)
@@ -3384,6 +5436,31 @@ local function SampleUptime(now)
         return
     end
     wipe(sampleUnits)
+    if layer == "HOT" then
+        -- The druid's version of the same question the priest board asks:
+        -- what share of the living team is carrying a hot of YOURS. Reads the
+        -- hot records rather than the units, so an ally who drifted out of
+        -- range still counts until a reliable scan says otherwise.
+        if IsInRaid and IsInRaid() then
+            for i = 1, 40 do if UnitExists("raid" .. i) then sampleUnits[#sampleUnits + 1] = "raid" .. i end end
+        elseif IsInGroup and IsInGroup() then
+            sampleUnits[#sampleUnits + 1] = "player"
+            for i = 1, 4 do if UnitExists("party" .. i) then sampleUnits[#sampleUnits + 1] = "party" .. i end end
+        end
+        local total, covered = 0, 0
+        for _, unit in ipairs(sampleUnits) do
+            if not (UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)) then
+                total = total + 1
+                local rec = hot.state[UnitGUID(unit)]
+                if rec and next(rec) then covered = covered + 1 end
+            end
+        end
+        if total > 0 then
+            uptime.coverageSamples = (uptime.coverageSamples or 0) + 1
+            uptime.coverageSum = (uptime.coverageSum or 0) + covered / total
+        end
+        return
+    end
     if IsInRaid and IsInRaid() then
         for i = 1, 40 do if UnitExists("raid" .. i) then sampleUnits[#sampleUnits + 1] = "raid" .. i end end
     elseif IsInGroup and IsInGroup() then
@@ -3422,17 +5499,44 @@ local function BuildRoster(out)
         seen[guid] = true
         out[#out + 1] = unit
     end
-    if DB("IncludeSelf", true) then add("player") end
+    local pets = DB("IncludePets", true)
+    -- Your own pet on the mage layer is deliberately absent from the ALLY
+    -- board: the elemental already has a richer personal row below it
+    -- (lifespan, the Freeze planner), and two rows for one unit is noise.
+    -- Marking its GUID taken here is what also stops the raid loop from
+    -- re-adding it as raidpetN.
+    if layer == "INT" and UnitExists("pet") then
+        local g = UnitGUID("pet")
+        if g then seen[g] = true end
+    end
+    if DB("IncludeSelf", true) then
+        add("player")
+        if pets then add("pet") end
+    end
+    -- Each pet follows its owner, so the Click-Cast board keeps the pair
+    -- adjacent; the sorted board re-orders by urgency anyway.
     if DB("Scope", "PARTY") == "RAID" and IsInRaid and IsInRaid() then
-        for i = 1, 40 do add("raid" .. i) end
+        for i = 1, 40 do
+            add("raid" .. i)
+            if pets then add("raidpet" .. i) end
+        end
     else
-        for i = 1, 4 do add("party" .. i) end
+        for i = 1, 4 do
+            add("party" .. i)
+            if pets then add("partypet" .. i) end
+        end
     end
 end
 
 local function SortRows(a, b)
     local sa, sb = STATES[a.state].rank, STATES[b.state].rank
     if sa ~= sb then return sa < sb end
+    -- A player outranks an EQUALLY urgent pet. A pet is worth buffing and
+    -- worth healing — that is the whole point of putting it on the board —
+    -- but it is never the row that decides the fight, and with Max Rows tight
+    -- it must be the one that gives way. Urgency still wins across the two:
+    -- a cursed pet outranks a quiet player, exactly as it should.
+    if (a.isPet or false) ~= (b.isPet or false) then return not a.isPet end
     local ka = a.wsLeft and a.wsLeft > 0 and a.wsLeft or (a.tLeft or math.huge)
     local kb = b.wsLeft and b.wsLeft > 0 and b.wsLeft or (b.tLeft or math.huge)
     if ka ~= kb then return ka < kb end
@@ -3448,9 +5552,54 @@ local function PinToTop(pred)
     end
 end
 
+-- Optional dark panel behind the top bar, so the banner reads as a bar
+-- against the world instead of text floating over it. BACKGROUND sublevel -1
+-- keeps it under everything the header itself draws.
+local function HeaderBackdrop()
+    if not root.headerBG then
+        root.headerBG = root:CreateTexture(nil, "BACKGROUND", nil, -1)
+        root.headerBG:SetTexture("Interface\\Buttons\\WHITE8X8")
+        root.headerBG:SetVertexColor(0, 0, 0, 0.55)
+        root.headerBG:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
+        root.headerBG:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
+        root.headerBG:SetHeight(HEADER_H)
+    end
+    return root.headerBG
+end
+
+-- The team-alert segment's text, shared by both banners: how many allies are
+-- carrying something you can remove, and how many are in crowd control.
+-- Purple for the removable (the row color it matches), orange for the CC.
+local function AlertText()
+    local t = ""
+    if intCurses > 0 then t = string.format("|cffa64dffC%d|r", intCurses) end
+    if intCCs > 0 then
+        t = t .. (t ~= "" and " " or "") .. string.format("|cffff8c26CC%d|r", intCCs)
+    end
+    return t
+end
+
 local function DrawHeader(now, showHeader)
+    -- Ahead of the layer split: the mage banner branch returns early
+    if showHeader and DB("HeaderBackdrop", true) then
+        HeaderBackdrop():Show()
+    elseif root.headerBG then
+        root.headerBG:Hide()
+    end
     if settingsBtn then
         settingsBtn:SetShown(showHeader and DB("ShowSettingsButton", true))
+    end
+    if blizz.btn then
+        -- Sits left of the gear, or takes its slot when the gear is off.
+        -- Re-anchored only when that changes: this runs at the draw rate.
+        local gearOn = (settingsBtn and settingsBtn:IsShown()) and true or false
+        if blizz.gearOn ~= gearOn then
+            blizz.gearOn = gearOn
+            blizz.btn:ClearAllPoints()
+            blizz.btn:SetPoint("TOPRIGHT", root, "TOPRIGHT",
+                -(PAD - 3) - (gearOn and 15 or 0), -1.5)
+        end
+        blizz.btn:SetShown(showHeader)
     end
     if showHeader then
         if not root.header then
@@ -3464,24 +5613,12 @@ local function DrawHeader(now, showHeader)
         -- session shield uptime, and team alerts.
         if layer == "INT" then
             root.header:Hide()
-            if not root.mageHdr then
-                local segs, prev = {}, nil
-                for i = 1, 7 do
-                    local icon = root:CreateTexture(nil, "OVERLAY")
-                    icon:SetSize(12, 12)
-                    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                    local text = root:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                    text:SetJustifyH("LEFT")
-                    if prev then
-                        icon:SetPoint("LEFT", prev, "RIGHT", 8, 0)
-                    else
-                        icon:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 4, -1)
-                    end
-                    text:SetPoint("LEFT", icon, "RIGHT", 2, 0)
-                    segs[i] = { icon = icon, text = text }
-                    prev = text
-                end
-                root.mageHdr = segs
+            local segs = util.EnsureSegs()
+            -- The segment pool is shared; these two extras are the mage
+            -- banner's alone and hang off its first segment, so they are
+            -- built once here rather than in EnsureSegs.
+            if not root.armorBuilt then
+                root.armorBuilt = true
                 -- Armor wears its remaining time as a radial sweep instead of
                 -- a countdown string: the ring IS the duration, and the
                 -- banner keeps its icon clean
@@ -3500,7 +5637,7 @@ local function DrawHeader(now, showHeader)
                     armorBtn:SetSize(16, 16)
                     armorBtn:SetPoint("CENTER", segs[1].icon, "CENTER", 0, 0)
                     armorBtn:SetScript("OnClick", function()
-                        armorPop:SetShown(not armorPop:IsShown())
+                        SafeSetShown(armorPop, not armorPop:IsShown())
                     end)
                     armorBtn:SetScript("OnEnter", function(self)
                         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
@@ -3511,26 +5648,26 @@ local function DrawHeader(now, showHeader)
                     armorBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
                 end
             end
-            if mageUtil then mageUtil:Show() end
+            if mageUtil then SafeSetShown(mageUtil, true) end
             if armorBtn then armorBtn:Show() end
             util.Paint(now)
-            local segs = root.mageHdr
-            local n = 0
-            local function seg(icon, desat, text, tint)
-                n = n + 1
-                local s = segs[n]
-                if not s then return end
-                s.icon:SetTexture(icon)
-                if s.icon.SetDesaturated then s.icon:SetDesaturated(desat or false) end
-                s.icon:SetAlpha(desat and 0.5 or 1)
-                if tint then
-                    s.icon:SetVertexColor(tint[1], tint[2], tint[3], 1)
-                else
-                    s.icon:SetVertexColor(1, 1, 1, 1)
-                end
-                s.text:SetText(text or "")
-                s.icon:Show()
-                s.text:Show()
+            local segX = util.PlaceSegs()
+            util.segN = 0
+            -- The armor popout hangs under the armor segment, which moved. It
+            -- may only follow by tracking the segment's offset off ROOT: the
+            -- popout's secure children pull it into their protected anchor
+            -- family, and a protected family may not attach to a region like
+            -- segs[1].icon (see the creation anchor). Moving it at all is a
+            -- protected call, so it keeps its OWN record of where it was last
+            -- put — sharing the segment's would have a deferred popout report
+            -- the segment as unplaced too, and the segment (a texture, free to
+            -- move in combat) would then be stranded wherever the fight caught
+            -- it once its cache finally caught up.
+            if armorPop and root._popX ~= segX and not InCombat() then
+                root._popX = segX
+                armorPop:ClearAllPoints()
+                armorPop:SetPoint("TOPLEFT", root, "TOPLEFT", segX,
+                    -(1 + segs[1].icon:GetHeight() + 3))
             end
             -- 1) Armor upkeep, text-free: the radial carries the time left,
             -- the icon goes amber inside the last five minutes, and a naked
@@ -3538,7 +5675,7 @@ local function DrawHeader(now, showHeader)
             local armorLeft = selfArmor and selfArmor.expire and selfArmor.expire > 0
                 and (selfArmor.expire - now) or nil
             if selfArmor and (not armorLeft or armorLeft > 0) then
-                seg(selfArmor.icon, false, nil,
+                util.Seg(selfArmor.icon, false, nil,
                     (armorLeft and armorLeft <= 300) and { 1, 0.65, 0.3 } or nil)
                 local dur = selfArmor.duration
                 if root.armorCd and armorLeft and dur and dur > 0 then
@@ -3554,36 +5691,78 @@ local function DrawHeader(now, showHeader)
                     root.armorCd:Hide()
                 end
             else
-                seg("Interface\\Icons\\Spell_Frost_FrostArmor02", true, nil, { 1, 0.25, 0.25 })
+                util.Seg("Interface\\Icons\\Spell_Frost_FrostArmor02", true, nil, { 1, 0.25, 0.25 })
                 if root.armorCd then root._armorExp = nil; root.armorCd:Hide() end
             end
             -- 2) Session shield uptime — the live shield tracking itself
             -- (Barrier state, absorb totals) lives on the My Shields rows now
             if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
-                seg("Interface\\Icons\\Spell_Shadow_DetectLesserInvisibility", false,
+                util.Seg("Interface\\Icons\\Spell_Shadow_DetectLesserInvisibility", false,
                     string.format("%d%%", math.floor(uptime.coverageSum / uptime.coverageSamples * 100 + 0.5)))
             end
             -- 3) Team alerts: curses you can remove, teammates in CC
             if intCurses > 0 or intCCs > 0 then
-                local t = ""
-                if intCurses > 0 then t = string.format("|cffa64dffC%d|r", intCurses) end
-                if intCCs > 0 then
-                    t = t .. (t ~= "" and " " or "") .. string.format("|cffff8c26CC%d|r", intCCs)
+                util.Seg(intCurses > 0 and "Interface\\Icons\\Spell_Shadow_CurseOfTounges"
+                    or "Interface\\Icons\\Spell_Nature_Polymorph", false, AlertText())
+            end
+            util.TruncSegs(segX)
+            return
+        end
+        -- HOT layer: the druid's upkeep banner. Same segment grammar as the
+        -- mage's, answering a druid's questions in the order they bite:
+        -- can I even cast right now (form), are my match-deciding cooldowns
+        -- up, how well have I kept the team covered, and what needs removing.
+        if layer == "HOT" then
+            root.header:Hide()
+            util.EnsureSegs()
+            if mageUtil then SafeSetShown(mageUtil, true) end
+            util.Paint(now)
+            local segX = util.PlaceSegs()
+            util.segN = 0
+            -- 1) Form. Caster form says nothing worth a slot, so it gets none;
+            -- a form that BLOCKS healing gets the red icon, because every
+            -- other segment on this banner is advice you cannot take until
+            -- you shift out. Tree of Life casts the whole hot kit, so it is
+            -- shown plain — it is a resto druid's home, not a warning.
+            if hot.form then
+                util.Seg(hot.form.icon or "Interface\\Icons\\Ability_Racial_BearForm",
+                    not hot.form.heals, nil,
+                    (not hot.form.heals) and { 1, 0.25, 0.25 } or nil)
+            end
+            -- 2) The cooldowns that decide games, in book order and filtered
+            -- at login to what this druid actually trained — a feral never
+            -- sees a Nature's Swiftness slot
+            if DB("HotBannerCooldowns", true) then
+                for _, e in ipairs(hot.cds) do
+                    util.SegCooldown(e.name, e.icon, e.cd, now)
                 end
-                local icon = intCurses > 0 and "Interface\\Icons\\Spell_Shadow_CurseOfTounges"
-                    or "Interface\\Icons\\Spell_Nature_Polymorph"
-                seg(icon, false, t)
             end
-            for i = n + 1, #segs do
-                segs[i].icon:Hide()
-                segs[i].text:Hide()
+            -- 3) Session hot uptime
+            if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
+                util.Seg(SDATA.DRUID_HOTS[1].icon, false,
+                    string.format("%d%%", math.floor(uptime.coverageSum / uptime.coverageSamples * 100 + 0.5)))
             end
+            -- 4) Team alerts: what you can remove, teammates in CC
+            if intCurses > 0 or intCCs > 0 then
+                util.Seg(intCurses > 0 and "Interface\\Icons\\Spell_Nature_RemoveCurse"
+                    or "Interface\\Icons\\Spell_Nature_Polymorph", false, AlertText())
+            end
+            util.TruncSegs(segX)
             return
         end
         -- The bandage control is chassis, not a class layer — it rides the
-        -- priest banner too (the mage branch above returned already)
-        if mageUtil then mageUtil:Show() end
+        -- priest banner too (the class-layer branches above returned already)
+        if mageUtil then SafeSetShown(mageUtil, true) end
         util.Paint(now)
+        -- The text starts after the cluster, exactly as the segment banners
+        -- do — the bandage button shares this block. Re-anchored only when
+        -- that width changes, since this runs at the draw rate.
+        local hdrX = util.ClusterOffset()
+        if root._hdrX ~= hdrX then
+            root._hdrX = hdrX
+            root.header:ClearAllPoints()
+            root.header:SetPoint("TOPLEFT", root, "TOPLEFT", hdrX, -1)
+        end
         local cdText = "Ready"
         if GetSpellCooldown and PWS_NAME then
             local start, duration = GetSpellCooldown(PWS_NAME)
@@ -3600,15 +5779,17 @@ local function DrawHeader(now, showHeader)
         root.header:Show()
     else
         if root.header then root.header:Hide() end
-        if root.mageHdr then
-            for _, s in ipairs(root.mageHdr) do s.icon:Hide(); s.text:Hide() end
+        if root.hdrSegs then
+            for _, s in ipairs(root.hdrSegs) do s.icon:Hide(); s.text:Hide() end
         end
         if root.armorCd then root._armorExp = nil; root.armorCd:Hide() end
-        -- Insecure container/toggles, so this stays legal in combat
-        if mageUtil then mageUtil:Hide() end
+        -- The container and the popouts carry secure children, so taking them
+        -- down is protected and waits for combat to drop; the plain toggles
+        -- and textures go immediately.
+        if mageUtil then SafeSetShown(mageUtil, false) end
         if armorBtn then armorBtn:Hide() end
-        if armorPop then armorPop:Hide() end
-        if util.portalPop then util.portalPop:Hide() end
+        if armorPop then SafeSetShown(armorPop, false) end
+        if util.portalPop then SafeSetShown(util.portalPop, false) end
     end
 end
 
@@ -3617,24 +5798,73 @@ end
 -- for units the client shows plates for, so coverage follows the player's
 -- nameplate settings). Throttled to 4 Hz; the table is tiny and rebuilt in
 -- place. Skipped during the test board so the tester's fake counts survive.
+-- One quarter-second pass over everything hostile we can currently address,
+-- feeding two consumers:
+--   1. the targeted-by counter (enemy NPCs parked on an ally), and
+--   2. the enemy composition, which is what lets the buff advisor tell a
+--      caster team from a physical one.
+--
+-- Two sources, because neither is complete on its own. Arena unit tokens are
+-- exact but only exist in an arena; nameplates work everywhere but only cover
+-- what is rendered nearby. Whatever they agree on is what the advisor gets,
+-- and a rule with no answer stays quiet rather than guessing (see
+-- SDATA.BUFF_ADVICE). Everything here soft-fails: a client without
+-- C_NamePlate or arena tokens simply contributes nothing.
 local function ScanTargeters(now)
-    if not DB("ShowTargeters", true) then return end
     if testUntil > 0 then return end
     if now < nextTargeterScan then return end
     nextTargeterScan = now + 0.25
-    wipe(targeters)
+    local tally = DB("ShowTargeters", true)
+    if tally then wipe(targeters) end
+    wipe(util.enemyClasses)
+    wipe(util.meleeOn)
+    util.enemySeen = 0
+
+    -- What an enemy unit contributes, whichever source found it
+    local function note(unit)
+        local _, class = UnitClass(unit)
+        if class then
+            util.enemyClasses[class] = true
+            util.enemySeen = util.enemySeen + 1
+        end
+        -- Who they are on. A melee parked on an ally is the whole Thorns
+        -- question, and it is the same token walk the counter already does.
+        local tgt = unit .. "target"
+        if UnitExists(tgt) then
+            local guid = UnitGUID(tgt)
+            if guid and class and SDATA.MELEE_CLASSES[class] then
+                util.meleeOn[guid] = true
+            end
+        end
+    end
+
+    -- Arena tokens first: exact classes, and they resolve whether or not the
+    -- enemy is on screen
+    if UnitExists then
+        for i = 1, 5 do
+            local u = "arena" .. i
+            if UnitExists(u) and not (UnitIsDeadOrGhost and UnitIsDeadOrGhost(u)) then
+                note(u)
+            end
+        end
+    end
+
     if not (C_NamePlate and C_NamePlate.GetNamePlates) then return end
     local plates = C_NamePlate.GetNamePlates()
     if not plates then return end
     for i = 1, #plates do
         local plate = plates[i]
         local unit = plate and (plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit))
-        if unit and UnitCanAttack("player", unit) and not UnitIsPlayer(unit) then
-            local tgt = unit .. "target"
-            if UnitExists(tgt) then
-                local guid = UnitGUID(tgt)
-                if guid then
-                    targeters[guid] = (targeters[guid] or 0) + 1
+        if unit and UnitCanAttack("player", unit) then
+            if UnitIsPlayer(unit) then
+                note(unit)
+            else
+                -- The counter is about enemy NPCs specifically: a pet or a
+                -- add parked on an ally is the pressure it exists to show
+                local tgt = unit .. "target"
+                if tally and UnitExists(tgt) then
+                    local guid = UnitGUID(tgt)
+                    if guid then targeters[guid] = (targeters[guid] or 0) + 1 end
                 end
             end
         end
@@ -3643,7 +5873,7 @@ end
 
 -- Drop every injected test entry from the shared state tables
 local function ClearTestState()
-    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters }) do
+    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters, hot.state }) do
         for guid in pairs(t) do
             if type(guid) == "string" and guid:find("^cshieldtest") then t[guid] = nil end
         end
@@ -3671,13 +5901,24 @@ local function AppendLivePersonalRows(now)
     end
 end
 
--- Personal rows sit in a tight block after the (taller-strided) player rows
+-- Personal rows lead the board: your own upkeep on top, at half an ally
+-- row's height, with the party rows below it.
 local function PaintPersonalRows(now, shownPlayers, topOffset, grow, width, sig)
-    local base = shownPlayers * RowStride()
+    -- Their own layout signature: the compact metrics must not be cached
+    -- against (or clobber) the ally rows' full-height layout
+    local psig = sig .. "|P"
+    -- Growing UP the ally board rises from the bottom, so the personal block
+    -- stacks above it; growing DOWN it leads from under the header.
+    local base = (grow == "UP") and (shownPlayers * RowStride()) or 0
     for i = 1, #personalRows do
         local row = AcquirePersonalRow(i)
-        if row._sig ~= sig then LayoutRow(row, width, sig) end
-        local off = base + (i - 1) * (ROW_H + ROW_GAP)
+        -- The elemental row reserves a second status slot for Freeze; the
+        -- shield rows do not, so it rides the signature rather than the row
+        -- index (the pet coming and going re-lays out one row, not the block)
+        local ele = personalRows[i].eleRow and true or false
+        local rsig = ele and (psig .. "E") or psig
+        if row._sig ~= rsig then LayoutRow(row, width, rsig, true, ele) end
+        local off = base + (i - 1) * PersonalStride()
         row:ClearAllPoints()
         if grow == "UP" then
             row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, off)
@@ -3728,8 +5969,15 @@ end
 local function PaintAbilityStrip(arow, r, now)
     local n = 0
     local guid, class = r.guid, r.class
-    if guid and class and r.state ~= "EMPTY" and not r.dead
-        and (not r.isSelf or DB("AbilityBarSelf", true)) then
+    -- Pets carry their OWNER's class for color and icon, which is exactly the
+    -- reason they must be excluded here: the book is a class's cooldowns, and
+    -- stamping a warlock's Death Coil under their felhunter would be a lie.
+    if guid and class and r.state ~= "EMPTY" and not r.dead and not r.isPet
+        and (not r.isSelf or DB("AbilityBarSelf", true))
+        -- Mine only: your own cooldowns under your own row, and nothing under
+        -- anybody else's. The narrowest the strip goes without switching it
+        -- off, for a player who wants the reminder but not the wall.
+        and (r.isSelf or not DB("AbilityBarOnlySelf", false)) then
         local spec = specState[guid]
         stripSpec, stripSt, stripLs, stripN = spec, abilityState[guid], lockState[guid], 0
         stripTrack = CommanderPartyFramesDB.AbilityTrack
@@ -3797,22 +6045,38 @@ local function PaintAbilityStrip(arow, r, now)
         cell.frame:Hide()
         cell.rim:Hide()
     end
+    -- Hug the live icons: a strip with nothing to show (or a short one) must
+    -- not leave a dark bar hanging under the row
+    if n > 0 and DB("AbilityBarBackdrop", true) then
+        arow.bg:SetWidth(n * (SDATA.ABILITY_H - 1) + 1)
+        arow.bg:Show()
+    else
+        arow.bg:Hide()
+    end
 end
 
 local function Draw()
     local now = GetTime()
     ScanTargeters(now)
-    -- INT header tallies rebuild as this pass resolves rows
-    if layer == "INT" then intCurses, intCCs = 0, 0 end
+    -- Buff-layer header tallies rebuild as this pass resolves rows
+    if layer == "INT" or layer == "HOT" then intCurses, intCCs = 0, 0 end
     local showHeader = DB("ShowHeader", true)
     local topOffset = showHeader and HEADER_H or 0
     local grow = DB("Grow", "DOWN")
     local width = FrameWidth()
     local sig = LayoutSig(width)
+    -- Height held for the personal block that now leads the board
+    local personalBase = PersonalReserve() * PersonalStride()
 
-    -- Combat-only visibility applies to both modes (root is not a secure frame)
+    -- Combat-only visibility applies to both modes. With the secure buttons
+    -- moved off root this is a legal call again in either direction — the
+    -- board can come UP at the start of a fight, which is the whole point of
+    -- the option and was impossible while root wore their protection.
     local combatHidden = DB("CombatOnly", false) and not InCombat()
         and not Commander.UI.HudUnlocked(CommanderPartyFramesDB, "Hud")
+    -- The cluster is a sibling now, so it neither scales nor hides with the
+    -- board unless it is told to
+    util.SyncCluster()
 
     -- Test board upkeep
     if testUntil > 0 and now > testUntil then
@@ -3834,30 +6098,34 @@ local function Draw()
                 if barsOn then
                     -- Ability strips are insecure: positionable mid-combat
                     local ar = AcquireAbilityRow(i)
-                    PositionAbilityRow(ar, i, topOffset, grow)
+                    PositionAbilityRow(ar, i, topOffset, grow, personalBase)
                     PaintAbilityStrip(ar, r, now)
                     ar:Show()
                 end
             end
         end
         for i = (barsOn and #secureTokens or 0) + 1, #abilityRowPool do abilityRowPool[i]:Hide() end
-        -- Personal rows ride below the secure block from their own insecure
-        -- pool — Click-Cast must not cost the mage their own rows
+        -- Personal rows LEAD the secure block from their own insecure pool —
+        -- Click-Cast must not cost the mage their own rows
         wipe(personalRows)
         AppendLivePersonalRows(now)
         PaintPersonalRows(now, #secureTokens, topOffset, grow, width, sig)
-        DrawHeader(now, showHeader)
-        -- Root resizes for personal rows out of combat only (protected rows
-        -- anchor to it; not worth the mid-combat taint risk)
+        -- The banner rides the board's visibility, not just the header
+        -- setting: its container is no longer root's child to hide with it
+        local boardOn = not combatHidden and (#secureTokens > 0 or #personalRows > 0
+            or DB("AlwaysShow", false)
+            or Commander.UI.HudUnlocked(CommanderPartyFramesDB, "Hud"))
+        DrawHeader(now, showHeader and boardOn)
+        -- Root resizes out of combat only (protected rows anchor to it; not
+        -- worth the mid-combat taint risk). The personal block is charged at
+        -- its RESERVE, not its live count, so the box never breathes.
         if not InCombat() then
             local mainSlots = DB("FixedHeight", false) and DB("MaxRows", 6)
                 or math.max(#secureTokens, 1)
-            local bodyH = mainSlots * RowStride() + #personalRows * (ROW_H + ROW_GAP) - ROW_GAP
+            local bodyH = mainSlots * RowStride() + personalBase - ROW_GAP
             root:SetSize(width, topOffset + math.max(bodyH, ROW_H))
         end
-        root:SetShown(not combatHidden and (#secureTokens > 0 or #personalRows > 0
-            or DB("AlwaysShow", false)
-            or Commander.UI.HudUnlocked(CommanderPartyFramesDB, "Hud")))
+        SafeSetShown(root, boardOn)
         return
     end
 
@@ -3872,7 +6140,7 @@ local function Draw()
                 local r = { guid = tr.guid, name = tr.name, class = tr.class, isSelf = tr.isSelf, unit = tr.unit,
                     selfSpell = tr.selfSpell, icon = tr.icon, duration = tr.duration, lockMax = tr.lockMax,
                     dispelKey = tr.dispelKey, tgtKey = tr.tgtKey, manaUser = tr.manaUser, mana = tr.mana,
-                    raidMark = tr.raidMark }
+                    raidMark = tr.raidMark, isPet = tr.isPet, petOwner = tr.petOwner }
                 r.health = tr.health
                 r.hpMax = tr.hpMax
                 ResolveState(r, now)
@@ -3919,17 +6187,21 @@ local function Draw()
 
     local shown = #rowData
     local barsOn = DB("ShowAbilityBar", true)
+    -- These rows are insecure, so the block can be sized to whichever is
+    -- larger — the reserve, or what is actually up. The test board builds
+    -- personal rows the reserve knows nothing about.
+    local base = math.max(personalBase, #personalRows * PersonalStride())
     for i = 1, shown do
         local row = AcquireRow(i)
         if row._sig ~= sig then LayoutRow(row, width, sig) end
-        PositionRow(row, i, topOffset, grow)
+        PositionRow(row, i, topOffset, grow, base)
         local r = rowData[i]
         CheckExposeAlert(r, i, now)
         PaintRow(row, r, now, i)
         row:Show()
         if barsOn then
             local ar = AcquireAbilityRow(i)
-            PositionAbilityRow(ar, i, topOffset, grow)
+            PositionAbilityRow(ar, i, topOffset, grow, base)
             PaintAbilityStrip(ar, r, now)
             ar:Show()
         end
@@ -3938,13 +6210,21 @@ local function Draw()
     for i = (barsOn and shown or 0) + 1, #abilityRowPool do abilityRowPool[i]:Hide() end
     PaintPersonalRows(now, shown, topOffset, grow, width, sig)
 
-    DrawHeader(now, showHeader)
+    local boardOn = not combatHidden and (shown + #personalRows > 0 or DB("AlwaysShow", false)
+        or Commander.UI.HudUnlocked(CommanderPartyFramesDB, "Hud"))
+    DrawHeader(now, showHeader and boardOn)
 
+    -- This board's row count moves mid-fight (a member joining, a row
+    -- alerting in), so the frame has to be able to follow it — which it can,
+    -- now that nothing secure hangs off root. Still guarded: Click-Cast puts
+    -- secure rows back under it, and there the token set only changes out of
+    -- combat, so the frozen size is always the right one anyway.
     local mainSlots = DB("FixedHeight", false) and math.max(maxRows, shown) or shown
-    local bodyH = mainSlots * RowStride() + #personalRows * (ROW_H + ROW_GAP) - ROW_GAP
-    root:SetSize(width, topOffset + math.max(bodyH, ROW_H))
-    root:SetShown(not combatHidden and (shown + #personalRows > 0 or DB("AlwaysShow", false)
-        or Commander.UI.HudUnlocked(CommanderPartyFramesDB, "Hud")))
+    local bodyH = mainSlots * RowStride() + base - ROW_GAP
+    if not (InCombat() and root.IsProtected and root:IsProtected()) then
+        root:SetSize(width, topOffset + math.max(bodyH, ROW_H))
+    end
+    SafeSetShown(root, boardOn)
 end
 
 -- ---------------------------------------------------------------------------
@@ -3952,7 +6232,7 @@ end
 -- ---------------------------------------------------------------------------
 function CommanderPartyFrames_Test()
     if not profile then
-        print("Commander Party Frames: no shield profile for this class (boards exist for Priests and Mages)")
+        print("Commander Party Frames: no board for this class (boards exist for Priests, Mages and Druids)")
         return
     end
     if not (CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield) then
@@ -3968,9 +6248,9 @@ function CommanderPartyFrames_Test()
     -- cursed, unbuffed, a non-mana ally (pure chassis row), you — plus
     -- self-shield sample rows when that extra is switched on.
     if layer == "INT" then
-        intState["cshieldtest1"] = { expire = now + 1500, duration = 1800 }  -- healthy
-        intState["cshieldtest2"] = { expire = now + 150, duration = 1800 }   -- amber: rebuff due
-        intState["cshieldtest3"] = { expire = now + 900, duration = 1800 }   -- buffed but cursed
+        intState["cshieldtest1"] = { AI = { expire = now + 1500, duration = 1800 } }
+        intState["cshieldtest2"] = { AI = { expire = now + 150, duration = 1800 } }  -- amber
+        intState["cshieldtest3"] = { AI = { expire = now + 900, duration = 1800 } }  -- buffed, cursed
         curseState["cshieldtest3"] = { expire = now + 18, duration = 30 }
         dispelState["cshieldtest3"] = { n = 1,   -- strip preview (when it is on)
             { icon = "Interface\\Icons\\Spell_Shadow_CurseOfTounges", name = "Test Curse",
@@ -4016,6 +6296,20 @@ function CommanderPartyFrames_Test()
             { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200, raidMark = 8 },
             { guid = "cshieldtest6", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.75, mana = 0.8, hpMax = 4000 },
         }
+        -- An ally's pet (Include Pets): a mana pet, so it takes the mana strip
+        -- and the Intellect slot — unbuffed here, which is the ghost icon that
+        -- says "cast it". It carries no ability strip and no spec, and it
+        -- sorts under an equally quiet player.
+        if DB("IncludePets", true) then
+            allyAbsorbs["cshieldtest7"] = {
+                [PWS_NAME or "Power Word: Shield"] = { expire = now + 19, duration = 30,
+                  capacity = 1265, absorbed = 780,
+                  icon = "Interface\\Icons\\Spell_Holy_PowerWordShield" },
+            }
+            testRows[#testRows + 1] = { guid = "cshieldtest7", name = "Felhunter",
+                class = "WARLOCK", isPet = true, petOwner = "party4",
+                manaUser = true, health = 0.68, mana = 0.35, hpMax = 2900 }
+        end
         if DB("SelfShieldRows", true) then
             local defs = {}
             for _, def in ipairs(SDATA.MAGE_SPELLS) do defs[def.key] = def end
@@ -4044,6 +6338,101 @@ function CommanderPartyFrames_Test()
         print("Commander Party Frames: test board injected — rows drain and clear themselves")
         return
     end
+
+    -- HOT layer (Druid): a party across the whole hot grammar — rolling,
+    -- about to fall off, bare and hurt, bare and healthy — plus the two
+    -- removable schools side by side (that pairing is the point: purple and
+    -- green have to be tellable apart at a glance) and a teammate in CC.
+    if layer == "HOT" then
+        local defs = {}
+        for _, d in ipairs(SDATA.DRUID_HOTS) do defs[d.key] = d end
+        -- The upkeep strip across every reading it has: healthy, inside the
+        -- rebuff window (amber), and missing. Row 4 keeps both slots empty,
+        -- which is what an ally who just walked in looks like — and with the
+        -- advisor on, Mark's slot there is the dark RED one.
+        intState["cshieldtest1"] = { MOTW = { expire = now + 1500, duration = 1800 },
+            THORNS = { expire = now + 480, duration = 600 } }
+        intState["cshieldtest2"] = { MOTW = { expire = now + 150, duration = 1800 },
+            THORNS = { expire = now + 40, duration = 600 } }
+        intState["cshieldtest3"] = { MOTW = { expire = now + 900, duration = 1800 } }
+        intState["cshieldtest5"] = { MOTW = { expire = now + 1200, duration = 1800 },
+            THORNS = { expire = now + 220, duration = 600 } }
+        -- Rolling: all three up, the full strip with Lifebloom at three stacks
+        hot.state["cshieldtest1"] = {
+            REJUV = { expire = now + 9, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
+            REGROWTH = { expire = now + 17, duration = 21, icon = defs.REGROWTH.icon, stacks = 0 },
+            LIFEBLOOM = { expire = now + 6, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 3 },
+        }
+        -- About to bloom: one stack, inside the refresh window -> REFRESH
+        hot.state["cshieldtest2"] = {
+            LIFEBLOOM = { expire = now + 3, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 1 },
+        }
+        -- Rejuv only, healthy clock
+        hot.state["cshieldtest5"] = {
+            REJUV = { expire = now + 11, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
+        }
+        -- The two schools a druid removes, so both row colors are on screen
+        curseState["cshieldtest3"] = { expire = now + 18, duration = 30, dispelName = "Curse" }
+        curseState["cshieldtest4"] = { expire = now + 11, duration = 20, dispelName = "Poison" }
+        dispelState["cshieldtest3"] = { n = 1,
+            { icon = "Interface\\Icons\\Spell_Shadow_CurseOfTounges", name = "Test Curse",
+              dispelName = "Curse", expire = now + 18, duration = 30, cc = false, canDispel = true },
+        }
+        dispelState["cshieldtest4"] = { n = 1,
+            { icon = "Interface\\Icons\\Ability_Creature_Poison_06", name = "Test Poison",
+              dispelName = "Poison", expire = now + 11, duration = 20, cc = false, canDispel = true },
+        }
+        ccState["cshieldtest6"] = { expire = now + 7, duration = 10, name = "Test Polymorph",
+            icon = "Interface\\Icons\\Spell_Nature_Polymorph" }
+        -- A priest bubble on the hurt one: absorbs stay embedded on this layer
+        allyAbsorbs["cshieldtest5"] = {
+            [PWS_NAME or "Power Word: Shield"] = { expire = now + 22, duration = 30,
+              capacity = 1265, absorbed = 315,
+              icon = "Interface\\Icons\\Spell_Holy_PowerWordShield" },
+        }
+        targeters["cshieldtest5"] = 2
+        specState["cshieldtest1"] = "DISC"
+        specState["cshieldtest3"] = "FROST"
+        specState["cshieldtest5"] = "PROTECTION"
+        abilityState["cshieldtest3"] = { BLOCK = now + 120, CS = now + 12 }
+        lockState["cshieldtest3"] = { hypo = now + 18 }
+        abilityState["cshieldtest5"] = { LASTSTAND = now + 60, PUMMEL = now + 4 }
+        testRows = {
+            { guid = "cshieldtest1", name = "Priest", class = "PRIEST", manaUser = true, health = 0.72, mana = 0.6, hpMax = 4100 },
+            { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.66, hpMax = 4300 },
+            { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 0.9, mana = 0.45, hpMax = 3800 },
+            { guid = "cshieldtest4", name = "Hunter", class = "HUNTER", manaUser = true, health = 0.83, mana = 0.7, hpMax = 4800 },
+            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.38, hpMax = 6200, raidMark = 8 },
+            { guid = "cshieldtest6", name = "Pally", class = "PALADIN", manaUser = true, health = 0.55, mana = 0.5, hpMax = 5200 },
+            { guid = "cshieldtest7", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.95, mana = 0.8, hpMax = 4400 },
+        }
+        -- The hunter's pet (Include Pets). Mark of the Wild lands on a pet
+        -- whatever it runs on, so the buff slot applies even though a boar
+        -- has no mana strip — and a hot of yours rolls on it like any ally.
+        if DB("IncludePets", true) then
+            hot.state["cshieldtest8"] = {
+                REJUV = { expire = now + 5, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
+            }
+            testRows[#testRows + 1] = { guid = "cshieldtest8", name = "Boar",
+                class = "HUNTER", isPet = true, petOwner = "party4",
+                health = 0.47, hpMax = 3300 }
+        end
+        Draw()
+        print("Commander Party Frames: test board injected — rows drain and clear themselves")
+        return
+    end
+
+    -- Ally-buff strip samples: Fortitude healthy on most of the party, inside
+    -- the rebuff window on one, and missing on the tank — which with the
+    -- advisor on is the dark RED slot, because Fortitude is never not worth
+    -- casting. Divine Spirit only reaches the mana users' rows at all.
+    intState["cshieldtest2"] = { FORT = { expire = now + 1500, duration = 1800 } }
+    intState["cshieldtest3"] = { FORT = { expire = now + 1400, duration = 1800 },
+        SPIRIT = { expire = now + 1200, duration = 1800 } }
+    intState["cshieldtest4"] = { FORT = { expire = now + 120, duration = 1800 },
+        SPIRIT = { expire = now + 900, duration = 1800 } }
+    intState["cshieldtest6"] = { FORT = { expire = now + 1700, duration = 1800 },
+        SPIRIT = { expire = now + 1700, duration = 1800 } }
 
     -- Fake targeted-by counts so the counter can be judged from the tester
     -- (ScanTargeters pauses while the test board is live)
@@ -4114,13 +6503,111 @@ function CommanderPartyFrames_Test()
     testRows = {
         { guid = "cshieldtest1", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200, raidMark = 8 },
         { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.78, hpMax = 4300, raidMark = 7 },
-        { guid = "cshieldtest3", name = "Mage", class = "MAGE", health = 1.0, hpMax = 3800 },  -- full: shields extend the scale
-        { guid = "cshieldtest4", name = "Druid", class = "DRUID", health = 0.6, hpMax = 4600 },
+        { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 1.0, hpMax = 3800 },  -- full: shields extend the scale
+        { guid = "cshieldtest4", name = "Druid", class = "DRUID", manaUser = true, health = 0.6, hpMax = 4600 },
         { guid = "cshieldtest5", name = "Hunter", class = "HUNTER", health = 0.9, hpMax = 4800 },
-        { guid = "cshieldtest6", name = "You", class = select(2, UnitClass("player")), isSelf = true, health = 0.85, hpMax = 4000 },
+        { guid = "cshieldtest6", name = "You", class = select(2, UnitClass("player")), isSelf = true, manaUser = true, health = 0.85, hpMax = 4000 },
     }
+    -- The warlock's pet (Include Pets): a shieldable ally like any other —
+    -- one of yours is on it here, draining — with no ability strip of its own.
+    if DB("IncludePets", true) then
+        shieldState["cshieldtest7"] = { spellId = 25218, expire = now + 15, mine = true,
+            absorbed = cap * 0.5, capacity = cap }
+        allyAbsorbs["cshieldtest7"] = { [PWS_NAME or "Power Word: Shield"] =
+            { expire = now + 15, duration = 30, capacity = cap, absorbed = cap * 0.5 } }
+        testRows[#testRows + 1] = { guid = "cshieldtest7", name = "Voidwalker",
+            class = "WARLOCK", isPet = true, petOwner = "party4",
+            health = 0.55, hpMax = 3100 }
+    end
     Draw()
     print("Commander Party Frames: test board injected — rows drain and clear themselves")
+end
+
+-- Ally-buff diagnostic (/cpf buffs). The advisor's whole credibility rests on
+-- being able to answer "why is that red" — and the strip itself has no room to
+-- say so, so it says it here: every tracked buff on every ally, its state, and
+-- the rule's own words for the verdict it reached.
+function CommanderPartyFrames_Buffs()
+    if not layer then
+        print("Commander Party Frames: no board for this class (Priest, Mage, Druid)")
+        return
+    end
+    print(string.format("|cff66ccffCPF buffs|r: layer=%s  advisor=%s", layer,
+        tostring(DB("BuffAdvisor", true))))
+    for _, def in ipairs(SDATA.BUFF_LIST) do
+        print(string.format("  %-13s known=%-5s tracked=%-5s advised=%s",
+            def.label, tostring(def.known and true or false),
+            tostring(util.BuffTracked(def)), tostring(util.BuffAdvised(def))))
+    end
+    -- What the advisor currently believes about the other side, which is what
+    -- the three situational rules are reading
+    local seen = {}
+    for class in pairs(util.enemyClasses) do seen[#seen + 1] = class end
+    table.sort(seen)
+    print(string.format("  enemy: %s%s",
+        #seen > 0 and table.concat(seen, ", ") or "none seen",
+        util.enemyShadowUntil > GetTime() and "  (+shadow damage observed)" or ""))
+    if #SDATA.BUFF_ACTIVE == 0 then
+        print("  no buffs are taking a slot right now")
+        return
+    end
+    local now = GetTime()
+    BuildRoster(rosterUnits)
+    for _, unit in ipairs(rosterUnits) do
+        local r = ResolveRow(unit, now)
+        if r and (r.buffCount or 0) > 0 then
+            for i = 1, r.buffCount do
+                local slot = r.buffs[i]
+                local state
+                if slot.up then
+                    local left = slot.expire and (slot.expire - now)
+                    state = left and left > 0
+                        and string.format("|cff40dd40up %dm|r", math.max(1, math.floor(left / 60 + 0.5)))
+                        or "|cff40dd40up|r"
+                    if slot.due then state = "|cffffa64dREBUFF|r" end
+                elseif slot.urgent then
+                    state = "|cffff4040MISSING - CAST IT|r"
+                else
+                    state = "|cff999999missing|r"
+                end
+                print(string.format("    %-10s %-13s %s%s", r.name or "?",
+                    slot.def.label, state,
+                    (not slot.up and slot.why) and ("  (" .. slot.why .. ")") or ""))
+            end
+        end
+    end
+end
+
+-- Click-binding diagnostic (/cpf binds). Forty cells across eight modifier
+-- rows is more than a settings page shows at a glance, and a binding that
+-- silently never fires looks identical to one that was never set — so this
+-- prints what is actually stored, flags anything bound to a spell this
+-- character cannot cast, and names the profile it came from.
+function CommanderPartyFrames_Binds()
+    if not layer then
+        print("Commander Party Frames: no board for this class (Priest, Mage, Druid)")
+        return
+    end
+    local profile = util.TalentProfile()
+    print(string.format("|cff66ccffCPF binds|r: profile=%s (%s)  clickcast=%s",
+        util.ProfileLabel(profile), profile, tostring(DB("ClickCast", false))))
+    if not DB("ClickCast", false) then
+        print("  Click-Cast is off, so none of these are live yet.")
+    end
+    local shown = 0
+    for _, mod in ipairs(SDATA.CLICK_MODS) do
+        for _, btn in ipairs(SDATA.CLICK_BUTTONS) do
+            local v = util.GetBind(mod.key .. btn.key, profile)
+            if v ~= nil then
+                local _, label, missing = util.BindDisplay(v)
+                shown = shown + 1
+                print(string.format("  %-22s %-8s %s%s",
+                    mod.label, btn.label, label,
+                    missing and "  |cffff4040(you cannot cast this)|r" or ""))
+            end
+        end
+    end
+    if shown == 0 then print("  nothing bound in this profile") end
 end
 
 -- Live-state diagnostic (/cpf debug): why rows are or aren't appearing
@@ -4139,6 +6626,17 @@ function CommanderPartyFrames_Debug()
         print(string.format("  barrier=%s  elemental=%s  armor=%s",
             tostring(barrierDef and barrierDef.name or "unknown"),
             tostring(eleKnown), tostring(selfArmor and "up" or "none/unseen")))
+    elseif layer == "HOT" then
+        local names, cds, units = 0, #hot.cds, 0
+        for _ in pairs(hot.names) do names = names + 1 end
+        for _ in pairs(hot.state) do units = units + 1 end
+        print(string.format("  hotNames=%d  bannerCds=%d  unitsWithHots=%d  form=%s",
+            names, cds, units,
+            tostring(hot.form and hot.form.key or "caster")))
+        local tracked = {}
+        for _, def in ipairs(SDATA.BUFF_ACTIVE) do tracked[#tracked + 1] = def.key end
+        print(string.format("  buffs tracked: %s",
+            #tracked > 0 and table.concat(tracked, ", ") or "none"))
     end
     local bookNames = 0
     for _ in pairs(abilityByName) do bookNames = bookNames + 1 end
@@ -4158,6 +6656,12 @@ function CommanderPartyFrames_Report()
     local pct = samples > 0 and (uptime.coverageSum / samples * 100) or 0
     local dur = uptime.startedAt and (time() - uptime.startedAt) or 0
     local mins = math.floor(dur / 60)
+    -- What "coverage" counted differs by layer, so the line has to say which
+    if layer == "HOT" then
+        print(string.format("|cff66ccffCommander Party Frames|r: session hot uptime |cff33ff33%d%%|r over %dm%02ds — the share of your living team carrying one of your hots.",
+            math.floor(pct + 0.5), mins, dur - mins * 60))
+        return
+    end
     print(string.format("|cff66ccffCommander Party Frames|r: session shield uptime |cff33ff33%d%%|r over %dm%02ds — %d shields cast.",
         math.floor(pct + 0.5), mins, dur - mins * 60, uptime.shieldsCast or 0))
 end
@@ -4179,6 +6683,9 @@ end)
 -- Wiring
 -- ---------------------------------------------------------------------------
 local function Apply()
+    -- Ahead of the enabled check: switching the module off must give the
+    -- default party frames back (blizz.Hidden reads EnableShield too)
+    blizz.Apply()
     if profile and CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield then
         if not DB("RenewTrack", false) then wipe(renewState) end
         if not DB("ShowDispels", false) then wipe(dispelState) end
@@ -4193,12 +6700,20 @@ local function Apply()
             print("|cff66ccffCommander Party Frames|r: Click-Cast change takes effect after |cffffd100/reload|r.")
         end
         UpdateMyShieldValue()
+        -- A per-buff toggle changes the strip's SHAPE, so the tracked subset
+        -- and the layout signature have to be rebuilt before anything redraws
+        util.RefreshBuffs()
         if layer == "INT" then
             -- Always scanned (not just when the rows are on): the upkeep
             -- banner's Barrier segment reads the same state
             ResolveTrackedSpells()
             ScanSelfShields()
         end
+        -- Reaches the icons built once in a constructor, which a redraw of the
+        -- rows would never touch -- and the duration sweeps, which are built
+        -- in the same place and are just as far out of a redraw's reach
+        util.RestyleIcons()
+        util.RestyleSweeps()
         -- Utility toggles changed which buttons belong on the banner
         BindMageUtilityButtons()
         ScanGroup()
@@ -4213,6 +6728,7 @@ local function Apply()
         wipe(curseState)
         wipe(ccState)
         wipe(allyAbsorbs)
+        wipe(hot.state)
         root:Hide()
     end
 end
@@ -4231,6 +6747,11 @@ events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:RegisterEvent("SPELLS_CHANGED")
 events:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 events:RegisterEvent("UNIT_PET")
+-- A respec changes which binding profile is live, so the secure rows have to
+-- be rewritten. Soft-registered: a client without the event must not stop the
+-- rest of the board from loading.
+pcall(events.RegisterEvent, events, "CHARACTER_POINTS_CHANGED")
+pcall(events.RegisterEvent, events, "PLAYER_TALENT_UPDATE")
 pcall(events.RegisterEvent, events, "BAG_UPDATE_DELAYED")
 events:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
@@ -4238,8 +6759,6 @@ events:SetScript("OnEvent", function(self, event, arg1)
         PWS_NAME = (GetSpellInfo and GetSpellInfo(17)) or "Power Word: Shield"
         WS_NAME = (GetSpellInfo and GetSpellInfo(6788)) or "Weakened Soul"
         RENEW_NAME = (GetSpellInfo and GetSpellInfo(139)) or "Renew"
-        AI_NAME = (GetSpellInfo and GetSpellInfo(SDATA.AI_ID)) or "Arcane Intellect"
-        BRILLIANCE_NAME = (GetSpellInfo and GetSpellInfo(SDATA.BRILLIANCE_ID)) or "Arcane Brilliance"
         -- Which layer (if any) this class gets, what we can dispel, and the
         -- CC names worth glowing
         local _, classToken = UnitClass("player")
@@ -4247,8 +6766,17 @@ events:SetScript("OnEvent", function(self, event, arg1)
         profile = CLASS_PROFILES[classToken or ""]
         layer = profile and profile.layer or nil
         myDispelTypes = DISPEL_BY_CLASS[classToken or ""] or {}
+        -- The ally-buff pair for THIS layer, resolved from stable base IDs.
+        -- Only the active layer's pair goes in the set, so a mage's board can
+        -- never count a druid's Mark of the Wild as "buffed" and vice versa.
+        -- Order matters: every `known` flag below is read off knownSpells,
+        -- so the spellbook has to be scanned before anything asks it
         RefreshKnownSpells()
+        util.ResolveBuffBook()
+        util.ResolveBindables()
+        util.MigrateBinds()
         EnsureSettingsButton()
+        blizz.EnsureButton()
         -- Armor names/icons for the upkeep banner (INT layer only)
         if layer == "INT" and GetSpellInfo then
             for _, line in ipairs(SDATA.ARMOR_LINES) do
@@ -4261,6 +6789,8 @@ events:SetScript("OnEvent", function(self, event, arg1)
             end
             ResolveEleInfo()
         end
+        -- Hot / form / banner-cooldown names for the druid banner and strip
+        ResolveDruidInfo()
         -- Banner utilities exist for every supported class (the bandage
         -- control is chassis); the mage-only ones self-gate inside
         util.recentName = (GetSpellInfo and GetSpellInfo(SDATA.RECENT_BANDAGE_ID))
@@ -4316,11 +6846,21 @@ events:SetScript("OnEvent", function(self, event, arg1)
         Apply()
         return
     end
+    -- Default-party-frame upkeep runs AHEAD of the profile gate: the setting
+    -- is class-independent, so a class with no board must still be able to
+    -- get its default frames back. Zoning re-creates/re-shows the container,
+    -- and a toggle asked for mid-fight lands the moment combat drops.
+    if event == "PLAYER_ENTERING_WORLD" or (event == "PLAYER_REGEN_ENABLED" and blizz.dirty) then
+        blizz.Apply()
+    end
     if not (profile and CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield) then return end
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
         OnCombatLog()
     elseif event == "UNIT_AURA" then
-        if arg1 == "player" or GROUP_UNITS[arg1] then
+        -- Pet tokens ride the same path as their owners': a shield landing on
+        -- someone's felhunter, or a curse on it, has to repaint that row.
+        if arg1 == "player" or GROUP_UNITS[arg1]
+            or (SDATA.PET_OWNER[arg1] and DB("IncludePets", true)) then
             ScanUnit(arg1, IsReliable(arg1))
             if arg1 == "player" and layer == "INT" then ScanSelfShields() end
             if testUntil == 0 then Draw() end
@@ -4341,6 +6881,10 @@ events:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "UPDATE_MOUSEOVER_UNIT" then
         if UnitExists("mouseover") then ScanUnit("mouseover", IsReliable("mouseover")) end
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+        -- A new zone is a new enemy team: the shadow-damage memory is sticky
+        -- on purpose within a fight (60s, so a quiet warlock still counts) and
+        -- must not survive being carried into the next arena.
+        if event == "PLAYER_ENTERING_WORLD" then util.enemyShadowUntil = 0 end
         ScanGroup()
         if layer == "INT" then ScanSelfShields() end
         if securePool then SetupSecureRows() end
@@ -4354,20 +6898,44 @@ events:SetScript("OnEvent", function(self, event, arg1)
         -- Entering combat: wake a board that Combat Only kept hidden
         if testUntil == 0 then Draw() end
     elseif event == "UNIT_PET" then
-        -- Elemental appearing/despawning re-draws the banner promptly
-        if arg1 == "player" and layer == "INT" and testUntil == 0 then Draw() end
+        -- Elemental appearing/despawning re-draws the banner promptly. With
+        -- Include Pets on, ANY owner's pet coming or going is a roster change:
+        -- the new unit wants a first aura scan, and the secure token map has
+        -- to be rebuilt (out of combat — SetupSecureRows defers it otherwise).
+        local pets = DB("IncludePets", true)
+        if pets and arg1 then
+            local u = (arg1 == "player" and "pet")
+                or (arg1:find("^party%d") and ("partypet" .. arg1:sub(6)))
+                or (arg1:find("^raid%d") and ("raidpet" .. arg1:sub(5)))
+                or nil
+            if u and UnitExists(u) then ScanUnit(u, IsReliable(u)) end
+            if securePool then SetupSecureRows() end
+        end
+        if testUntil == 0 and (pets or (arg1 == "player" and layer == "INT")) then Draw() end
     elseif event == "BAG_UPDATE_DELAYED" then
         -- Conjures landed / consumables ran out: re-aim the use buttons and
         -- refresh the counters (counters alone if a fight froze the binds)
         BindMageUtilityButtons()
         if mageBtnsDirty then util.RefreshCounts() end
+    elseif event == "CHARACTER_POINTS_CHANGED" or event == "PLAYER_TALENT_UPDATE" then
+        -- Respec: a different profile is live now. Out of combat this rebinds
+        -- immediately; in combat SetupSecureRows defers it, which is correct —
+        -- you cannot respec mid-fight anyway.
+        if securePool then SetupSecureRows() end
     elseif event == "SPELLS_CHANGED" then
         RefreshKnownSpells()
         UpdateMyShieldValue()
+        -- Training a buff (or its group version) adds its slot; the registry
+        -- re-reads the book rather than waiting for a reload
+        util.ResolveBuffBook()
+        util.ResolveBindables()
         if layer == "INT" then
             ResolveTrackedSpells()
             ResolveEleInfo()
         end
+        -- A respec can hand a druid Nature's Swiftness (or take it away), so
+        -- the banner's cooldown segments re-filter with the spellbook
+        ResolveDruidInfo()
         BindMageUtilityButtons()
     end
 end)
