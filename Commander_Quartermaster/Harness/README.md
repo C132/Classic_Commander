@@ -1,5 +1,36 @@
 # Commander_Quartermaster harness
 
+## Offline generators
+
+The enhancement database is generated, never hand-edited. Three scripts, in
+order; everything they download lands in the gitignored `.cache/`:
+
+```
+python3 tbcdb_to_sqlite.py --fetch      # stage the CMaNGOS TBC world DB
+python3 build_enhancements.py           # write CommanderQuartermasterEnhanceData.lua
+python3 crosscheck_enhancements.py      # verify it against Wowhead
+```
+
+`tbcdb_to_sqlite.py` stages the server-side facts the client does not carry —
+npc_vendor with extended costs, creature/object/reference loot, quests,
+trainers, prospecting, disenchanting. `build_enhancements.py` takes the
+universe from the client's own DB2 tables for build 2.5.6 (every spell with an
+ENCHANT_ITEM or ENCHANT_ITEM_TEMPORARY effect, plus every gem item, fetched
+from wago.tools) and marries the two. `crosscheck_enhancements.py` re-reads
+the generated Lua with luajit and compares every entry's name, quality,
+required level, profession gate and reputation standing against Wowhead's
+tooltip endpoint at dataEnv=5 — the live Anniversary dataset. It currently
+reports zero disagreements across all 629 entries, and it reports rather than
+rewrites: a disagreement is as likely to be Wowhead rendering a later patch as
+it is to be us.
+
+Both generators print their own coverage. `build_enhancements.py` names every
+enchantment display string containing a stat phrase its parser does not know
+(currently none) and every entry with no obtainable source (currently nine,
+all flagged `unobtainable` — items this client carries but never hands out).
+
+## Harness
+
 Offline smoke checks that load the REAL shared framework
 (`Commander_Events/CommanderSettingsUI.lua` + `CommanderEvents.lua`), the three
 Quartermaster files, and Commander_Inventory (for the crate-button integration)
@@ -15,6 +46,15 @@ rule: fringe-spec picks (Shockadin, Smite, Subtlety, Demo Tank, Dreamstate) may 
 reference item IDs the generated database already verified. The Lvl column is
 covered in both faces — client item level in item lists, character level in the
 Roster — including the sort-order correction when item info arrives late.
+
+Enhancement coverage (sections N, O, P): the index by enchant effect id and by
+carrier item, the link parser, socket counting from GetItemStats, the
+profession gate on ring enchants, BestHeld against the ledger, the Gear view's
+audit page and per-slot shelf, search reaching into sources (typing "moroes"
+finds Mongoose), owned-only filtering, role ranking and its honesty rules, and
+both tooltip halves — the enhancement's own slot/source lines and the verdict
+on a piece of gear. These run against the real generated database, not a
+fixture, so a regeneration that broke the shape would fail here.
 
 Coverage: login + ledger filing, the v1 close-race flushes (bank withdrawal
 inside the coalesce window, the mail inbox-seen gate), tooltip count scoping

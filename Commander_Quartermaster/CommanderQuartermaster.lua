@@ -2576,6 +2576,12 @@ function CommanderQuartermaster_Gear()
             if best then
                 print(("  |cffff8040->|r %s: you are holding %s ×%d"):format(
                     problem.row.label, best.name, best.count))
+            else
+                local pick = E.BestFor and E.BestFor(problem.row.slot, MyRole())
+                if pick then
+                    print(("  |cffff8040->|r %s: best by stats is %s |cff888888(%s)|r"):format(
+                        problem.row.label, pick.name, E.SourceSummary(pick)))
+                end
             end
         end
     end

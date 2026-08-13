@@ -1337,6 +1337,14 @@ CHECK(FindPrint("not enchanted", before) ~= nil, "N: the bare chest is called ou
 CHECK(FindPrint("gems 1/2", before) ~= nil, "N: the half-gemmed weapon is called out")
 CHECK(FindPrint("you are holding", before) ~= nil, "N: it says what you already hold")
 
+-- Owning none of it, the report names the pick instead — with its source
+world.bags[0] = {}
+Sync()
+local before2 = #printLog
+CommanderQuartermaster_Gear()
+CHECK(FindPrint("best by stats is", before2) ~= nil,
+    "N: with nothing held, the report names the best pick for your role")
+
 world.equipped, world.skills = {}, {}
 world.bags[0] = {}
 Sync()
