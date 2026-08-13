@@ -87,6 +87,11 @@ local GEM_GROUPS = {
     { key = "ORANGE", name = "Orange", colors = { RED = true, YELLOW = true } },
     { key = "PURPLE", name = "Purple", colors = { RED = true, BLUE = true } },
     { key = "GREEN", name = "Green", colors = { YELLOW = true, BLUE = true } },
+    -- Void Sphere and Prismatic Sphere are red AND yellow AND blue: they fit
+    -- any socket that is not a meta, and they get their own shelf because
+    -- nothing else in TBC behaves like them.
+    { key = "PRISMATIC", name = "Prismatic",
+      colors = { RED = true, YELLOW = true, BLUE = true } },
 }
 M.GemGroups = GEM_GROUPS
 

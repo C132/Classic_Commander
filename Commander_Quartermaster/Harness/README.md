@@ -64,6 +64,15 @@ reference item IDs the generated database already verified. The Lvl column is
 covered in both faces — client item level in item lists, character level in the
 Roster — including the sort-order correction when item info arrives late.
 
+Sections S and R are the tripwires for a file nobody watches being written:
+S asserts the SHAPE of the generated data (ids, slots, kinds, stat vectors,
+every shelf ranking for every role, every entry's sources rendering, every gem
+falling on exactly one colour shelf) and R asserts the class/subclass filter
+that separates a wand from a gun. S has already earned itself twice — it
+caught a renderer that would have thrown on 142 entries the first time a
+trainer-taught craft was drawn, and it found the two three-colour gems
+(Void Sphere, Prismatic Sphere) that fit every socket and had no shelf.
+
 Enhancement coverage (sections N, O, P): the index by enchant effect id and by
 carrier item, the link parser, socket counting from GetItemStats, the
 profession gate on ring enchants, BestHeld against the ledger, the Gear view's

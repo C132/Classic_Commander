@@ -1775,6 +1775,36 @@ end
 CHECK(rendered == #SData.Entries, "S: every entry's sources render",
     rendered .. "/" .. #SData.Entries)
 
+-- And every shelf ranks, for every role, which is the other path the browser
+-- walks on every draw
+local rankOk, rankFail = 0, nil
+for _, key in ipairs(SData.SlotOrder) do
+    for _, role in ipairs({ "MELEE", "RANGED", "CASTER", "HEALER", "TANK" }) do
+        local ok, err = pcall(function()
+            for _, half in ipairs({ "PERM", "TEMP" }) do
+                for _, row in ipairs(S.RankSlot(key, role, nil, half) or {}) do
+                    assert(row.entry, "row without an entry")
+                    S.Score(row.entry, role)
+                end
+            end
+            S.BestFor(key, role)
+        end)
+        if ok then rankOk = rankOk + 1 else rankFail = rankFail or err end
+    end
+end
+CHECK(rankFail == nil, "S: every shelf ranks for every role", rankFail)
+
+-- The gem groups partition the gems: each one lands on exactly one shelf
+local grouped, ungrouped = 0, 0
+for _, e in ipairs(SData.Entries) do
+    if e.kind == "GEM" then
+        local group = S.GemGroup(e)
+        if group and group ~= "OTHER" then grouped = grouped + 1 else ungrouped = ungrouped + 1 end
+    end
+end
+CHECK(ungrouped == 0, "S: every gem belongs to exactly one colour shelf", ungrouped)
+CHECK(grouped > 200, "S: and there are as many gems as TBC has", grouped)
+
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 
 io.write(("quartermaster_harness: %d checks, %d failures\n"):format(checks, fails))
