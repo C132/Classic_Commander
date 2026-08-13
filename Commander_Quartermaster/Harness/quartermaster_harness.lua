@@ -397,6 +397,7 @@ local world = {
     instanceName = "Azeroth",
     talents = nil,  -- { shape = "classic"|"retail", points = {a, b, c} }
     equipped = {},  -- slotID -> { id, ench, gems, loc, sockets }
+    items = {},     -- itemID -> { id, loc, sockets } for gear not worn
     skills = {},    -- { { "Enchanting", 375 }, … }
 }
 
@@ -479,13 +480,16 @@ function GetInventoryItemLink(unit, slot)
         it.id, it.ench or 0, g[1] or 0, g[2] or 0, g[3] or 0, g[4] or 0, it.id)
 end
 
+-- Item facts by id: equip location and sockets. Equipped gear is the usual
+-- source, but a tooltip can be shown for something you are not wearing, so
+-- world.items backs it for those tests.
 local function EquippedByLink(link)
     local id = tonumber(link and link:match("Hitem:(%d+)"))
     if not id then return nil end
     for _, it in pairs(world.equipped or {}) do
         if it.id == id then return it end
     end
-    return nil
+    return world.items and world.items[id] or nil
 end
 
 function GetItemStats(link)
@@ -1441,6 +1445,72 @@ world.equipped = {}
 Sync()
 db.BrowserView, db.BrowserSlot = "BROWSE", "MYGEAR"
 browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
+
+-- ===========================================================================
+-- P: tooltips — the enhancement's own, and the verdict on a piece of gear
+-- ===========================================================================
+
+local function TipForLink(link)
+    local tip = {
+        lines = {},
+        GetItem = function() return "x", link end,
+        AddLine = function(self, text) self.lines[#self.lines + 1] = text end,
+        Show = function() end,
+    }
+    appendFn(tip)
+    return table.concat(tip.lines, "\n")
+end
+
+-- On the enhancement itself: what it is for, and where another comes from
+local glyphTip = TipFor(29191)
+CHECK(glyphTip:find("Enhances:", 1, true) and glyphTip:find("Head", 1, true),
+    "P: the glyph's tooltip names the slot it enhances", glyphTip)
+CHECK(glyphTip:find("Almaador", 1, true) and glyphTip:find("Sha'tar", 1, true),
+    "P: and where to buy another, with the standing it wants")
+
+-- A crafted enhancement shows the profession, its reagents, and the recipe
+CHECK(TipFor(29192):find("Enhances:", 1, true), "P: every enhancement gets the line")
+local threadTip = TipFor(24273)
+CHECK(threadTip:find("Tailoring", 1, true), "P: a crafted one names its profession", threadTip)
+CHECK(threadTip:find("Pattern:", 1, true), "P: and how the pattern is obtained")
+
+-- On a piece of GEAR: the link is the authority
+world.items = {
+    [28229] = { id = 28229, loc = "INVTYPE_CHEST" },
+    [28187] = { id = 28187, loc = "INVTYPE_WEAPON", sockets = { RED = 1, YELLOW = 1 } },
+    [28190] = { id = 28190, loc = "INVTYPE_WAIST" },
+    [28227] = { id = 28227, loc = "INVTYPE_FINGER" },
+}
+local function GearLink(id, ench, gem)
+    return ("|cffffffff|Hitem:%d:%d:%d:0:0:0:0:0:70:0:0|h[Gear]|h|r"):format(id, ench or 0, gem or 0)
+end
+local bareTip = TipForLink(GearLink(28229, 0))
+CHECK(bareTip:find("not enchanted", 1, true), "P: bare gear says so on its own tooltip", bareTip)
+local doneTip = TipForLink(GearLink(28187, 2673, 32409))
+CHECK(doneTip:find("Mongoose", 1, true), "P: an enchanted weapon is named", doneTip)
+CHECK(doneTip:find("1 empty socket", 1, true), "P: and its remaining socket counted", doneTip)
+CHECK(not TipForLink(GearLink(28190, 0)):find("not enchanted", 1, true),
+    "P: a belt is never accused of missing an enchant")
+CHECK(not TipForLink(GearLink(28227, 0)):find("not enchanted", 1, true),
+    "P: nor a ring, for someone who cannot enchant one")
+world.skills = { { "Enchanting", 375 } }
+CHECK(TipForLink(GearLink(28227, 0)):find("not enchanted", 1, true),
+    "P: but an enchanter's bare ring is called out")
+world.skills = {}
+
+db.TooltipEnhance = false
+CHECK(not TipFor(29191):find("Enhances:", 1, true), "P: the setting silences both lines")
+CHECK(not TipForLink(GearLink(28229, 0)):find("not enchanted", 1, true), "P: gear verdict too")
+db.TooltipEnhance = true
+
+-- Counts still work for an enhancement, because the ledger now tracks them
+world.bags[0] = { { id = 29191, count = 3 } }
+Sync()
+CHECK(TipFor(29191):find("Quartermaster:|r 3", 1, true),
+    "P: the holdings line still lands under the enhancement lines", TipFor(29191))
+world.bags[0] = {}
+world.items = {}
+Sync()
 
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 

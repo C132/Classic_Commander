@@ -412,22 +412,79 @@ local function JoinParts(parts)
     return out or ""
 end
 
+-- What this enhancement is for, and the shortest way to get another. Runs on
+-- the enhancement's own tooltip (a glyph, a gem, a sharpening stone) — the
+-- ledger's count is appended separately, by AppendHoldings.
+local function AppendEnhancement(tooltip, itemID)
+    local E = CommanderQuartermasterEnhance
+    if not (E and db.TooltipEnhance) then return end
+    local entry = E.EntryForItem(itemID)
+    if not entry then return end
+    local EData = CommanderQuartermasterEnhanceData
+    local slots = {}
+    for _, key in ipairs(entry.slots) do
+        slots[#slots + 1] = EData.SlotNames[key] or key
+    end
+    tooltip:AddLine(("|cff33ff99Enhances:|r %s"):format(table.concat(slots, ", ")))
+    for _, line in ipairs(E.SourceLines(entry, 4)) do
+        tooltip:AddLine(("%s|cffaaaaaa%s|r"):format(("  "):rep(line.depth + 1), line.text))
+    end
+end
+
+-- The other half: a piece of GEAR whose slot takes an enhancement it has not
+-- got. The link is the authority — an unenchanted item says enchant 0 — so
+-- this is the same verdict /cqm gear gives, delivered where you are looking.
+local function AppendGearVerdict(tooltip, link)
+    local E = CommanderQuartermasterEnhance
+    if not (E and db.TooltipEnhance) then return end
+    local parsed = E.ParseLink(link)
+    if not parsed then return end
+    local slot = E.SlotOfLink(link)
+    if not slot then return end
+    if parsed.enchant == 0 then
+        if slot ~= "RING" or E.SkillRank("Enchanting") then
+            tooltip:AddLine("|cffff4040Quartermaster:|r not enchanted")
+        end
+    else
+        local entry = E.EntryForEnchant(parsed.enchant)
+        if entry then
+            tooltip:AddLine(("|cff33ff99Quartermaster:|r %s"):format(entry.short or entry.name))
+        end
+    end
+    local empty = E.EmptySockets(link, parsed)
+    if empty and empty > 0 then
+        tooltip:AddLine(("|cffff4040Quartermaster:|r %d empty socket%s"):format(
+            empty, empty == 1 and "" or "s"))
+    end
+end
+
 local function AppendHoldings(tooltip)
-    if not (loaded and db.EnableQuartermaster and db.TooltipCounts) then return end
+    if not (loaded and db.EnableQuartermaster) then return end
     if not tooltip.GetItem then return end
     local ok, _, link = pcall(tooltip.GetItem, tooltip)
     if not ok or not link then return end
     local itemID = tonumber(link:match("item:(%d+)"))
-    if not itemID or not IsTracked(itemID) then return end
+    if not itemID then return end
     -- OnTooltipSetItem can fire more than once for one tooltip fill
     if tooltip._cqmItem == itemID then return end
     tooltip._cqmItem = itemID
+
+    AppendEnhancement(tooltip, itemID)
+    AppendGearVerdict(tooltip, link)
+
+    if not (db.TooltipCounts and IsTracked(itemID)) then
+        tooltip:Show()
+        return
+    end
 
     local bags, bank, mail, alts, total = CountsFor(itemID)
     local target = CommanderQuartermaster_GetWatchTarget(itemID)
     -- A watched item speaks up even when the count is zero — that IS the
     -- restock signal
-    if total == 0 and not target then return end
+    if total == 0 and not target then
+        tooltip:Show()
+        return
+    end
     if total > 0 then
         local parts = {}
         if bags > 0 then parts[#parts + 1] = ("bags %d"):format(bags) end

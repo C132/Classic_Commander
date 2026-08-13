@@ -17,6 +17,7 @@ local DefaultSettings = {
     TrackTransit = true,        -- credit mailed consumables to the recipient
     TooltipCounts = true,       -- append holdings to consumable tooltips
     TooltipBreakdown = false,   -- per-character lines under the counts
+    TooltipEnhance = true,      -- enhancement slot + sources, and a bare-gear verdict
     CurrentRealmOnly = true,
 
     -- Raid supply check (readiness verdict on zoning into a raid)
@@ -215,6 +216,13 @@ local function CreatePanel()
         get = function() return CommanderQuartermasterDB.TooltipBreakdown end,
         set = function(value) CommanderQuartermasterDB.TooltipBreakdown = value end,
         isEnabled = function() return Enabled() and CommanderQuartermasterDB.TooltipCounts end,
+    })
+    panel:AddCheckbox({
+        label = "Tooltip Enhancements",
+        tooltip = "Two lines the enhancement database can add. On a glyph, gem, kit or oil: which slots it enhances and where to get another. On a piece of gear: what it is enchanted with — or that it is not, and how many sockets are still empty.",
+        get = function() return CommanderQuartermasterDB.TooltipEnhance end,
+        set = function(value) CommanderQuartermasterDB.TooltipEnhance = value end,
+        isEnabled = Enabled,
     })
     panel:AddCheckboxPair({
         label = "Current Realm Only",

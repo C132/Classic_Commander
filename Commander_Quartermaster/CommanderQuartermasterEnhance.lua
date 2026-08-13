@@ -165,6 +165,32 @@ local function EquipLoc(link)
     return nil
 end
 
+-- Which of our slots a link's item belongs to, or nil when nothing can be
+-- applied to it. Answered from the item's equip location, so a held-in-
+-- off-hand and a sword — both slot 17 — get different answers.
+function M.SlotOfLink(link)
+    local slot = SLOT_OF_EQUIPLOC[EquipLoc(link) or ""]
+    if not (slot and bySlot[slot]) then return nil end
+    return slot
+end
+
+-- Sockets the item has, minus gems the link says are in them.
+function M.EmptySockets(link, parsed)
+    local stats = ItemStats(link)
+    if not stats then return nil end
+    local sockets = 0
+    for stat in pairs(SOCKET_STATS) do
+        sockets = sockets + (stats[stat] or 0)
+    end
+    if sockets == 0 then return 0 end
+    parsed = parsed or ParseLink(link)
+    local filled = 0
+    for i = 1, 4 do
+        if parsed and parsed.gems[i] and parsed.gems[i] ~= 0 then filled = filled + 1 end
+    end
+    return math.max(0, sockets - filled)
+end
+
 -- Do you have the profession that would let you enchant your own rings, or
 -- socket a jeweller-only gem? Ring enchants are the only TBC enhancement no
 -- vendor and no friend can give you, so a non-enchanter is not "missing" one.
