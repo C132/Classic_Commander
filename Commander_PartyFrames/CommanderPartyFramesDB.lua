@@ -48,7 +48,6 @@ local DefaultSettings = {
     ClickMiddle = 2061,         -- middle-click = Flash Heal
     ClickModLeft = 2060,        -- modifier + left-click = Greater Heal
     ClickModifier = "shift",    -- modifier key for the mod binding: shift | ctrl | alt
-    ShowHealth = false,         -- thin health underlay per row
     RangeFade = false,          -- dim units out of shield range
     ShieldSwipe = false,        -- radial 30s shield-duration sweep on the spell icon
     WSReadyGlow = false,        -- glow rows whose reshield window is open
@@ -2354,6 +2353,16 @@ local function CreateCorePanel()
             tooltip = "Fill the board with sample rows in every state so you can see and position it without a group (also: /cpf test).",
             onClick = function() if CommanderPartyFrames_Test then CommanderPartyFrames_Test() end end,
         },
+    })
+
+    panel:AddSlider({
+        label = "Rebuff Window",
+        tooltip = "Treat an ally buff as due when this much time or less remains — its slot turns amber so you can recast before it drops. Fortitude and Divine Spirit both run thirty minutes, so this is the number that decides how often the strip asks you for anything.",
+        min = 60, max = 900, step = 30,
+        format = function(value) return string.format("%dm", math.floor((value or 0) / 60 + 0.5)) end,
+        get = function() return CommanderPartyFramesDB.IntRefreshAt end,
+        set = function(value) CommanderPartyFramesDB.IntRefreshAt = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
     })
 
     AddBuffSection(panel, "PWS")

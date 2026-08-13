@@ -559,6 +559,15 @@ SDATA.BANNER_CDS = {
 -- Which saved-variable key each layer's banner-cooldown toggle lives under.
 -- Four separate keys because the DB is account-wide and a mage turning their
 -- segments off has no business turning a druid's off with them.
+-- Which saved-variable key each strip layer's refresh window lives under. The
+-- per-slot "about to drop" cue was reading the priest's key on every layer,
+-- which left a druid and a paladin governed by a slider only a priest can see.
+-- One key per layer, the same shape SDATA.BANNER_CD_KEY uses.
+SDATA.STRIP_REFRESH_KEY = {
+    PWS   = "RenewRefreshAt",
+    HOT   = "HotRefreshAt",
+    BLESS = "BlessRefreshAt",
+}
 SDATA.BANNER_CD_KEY = {
     PWS   = "PriestBannerCooldowns",
     INT   = "MageBannerCooldowns",
@@ -4104,7 +4113,7 @@ end
 function util.ResolveStrip(r, now)
     local rec = strip.state[r.guid]
     local n, soonest = 0, nil
-    local refreshAt = DB("RenewRefreshAt", 4)
+    local refreshAt = DB(SDATA.STRIP_REFRESH_KEY[layer or ""] or "RenewRefreshAt", 4)
     r.strip = r.strip or {}
     for i, def in ipairs(SDATA.STRIP_ACTIVE) do
         local slot = r.strip[i]
@@ -5067,7 +5076,7 @@ end
 
 local function LayoutSig(width)
     return width .. "|" .. tostring(DB("ShowSpellIcon", true)) .. "|"
-        .. DB("UnitDisplay", "CLASS_ICON") .. "|" .. tostring(DB("ShowHealth", false))
+        .. DB("UnitDisplay", "CLASS_ICON")
         .. "|" .. tostring(DB("ShowDispels", false)) .. "|" .. DB("DispelMaxIcons", 3)
         .. "|" .. DB("DispelIconSize", 16) .. "|" .. tostring(DB("ShowManaBar", true))
         .. "|" .. tostring(DB("ShowTargetMarks", true))
