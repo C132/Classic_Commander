@@ -1040,6 +1040,100 @@ local function FinishPanel(panel, scrollChild)
     scrollChild:SetHeight(panel._contentHeight + 24)
 end
 
+-- What each page says where the pages differ. Everything not in here is
+-- identical across all four and lives in the shared builders above.
+local LAYER_UI = {
+    INT = {
+        dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — Curses, purple rim — with a glow on crowd control. Curses also turn the whole row purple, whatever is shown here.",
+        dispelShow = "Show, to the right of each ally's row, the Curses you can remove (purple rim, countdown sweep). The CURSED row state works even with this strip off; the strip tells you WHICH curse it is.",
+        dispelHealGlow = "Pulse a red glow on debuffs that cut healing received. Worth acting on: absorbs ignore Mortal Strike effects, so a shield lands at full value where a heal does not.",
+    },
+    HOT = {
+        dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — Curses with a purple rim, Poisons with a green one — and a glow on crowd control. Both schools also color the whole row, whatever is shown here.",
+        dispelShow = "Show, to the right of each ally's row, the Curses and Poisons you can remove (rim colored by school, countdown sweep). The CURSED and POISONED row states work even with this strip off; the strip tells you WHICH debuff it is.",
+        dispelHealGlow = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a hot board that is the cue to stop topping and start pre-hotting through it.",
+    },
+    BLESS = {
+        dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — a paladin cleanses Magic, Poison and Disease, which is more schools than anyone else on this board — and a glow on crowd control. A removable debuff also colors the whole row, whatever is shown here.",
+        dispelShow = "Show, to the right of each ally's row, the Magic, Poison and Disease debuffs you can cleanse (rim colored by school, countdown sweep). The row states work even with this strip off; the strip tells you WHICH debuff it is.",
+        dispelHealGlow = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a paladin board that is the cue to stop trading Flash of Light against it and spend a cooldown instead.",
+    },
+    PWS = {
+        dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — a priest dispels Magic and Disease — color-coded by school, with a glow on crowd control. A removable debuff also colors the whole row, and a teammate in crowd control turns it orange.",
+        dispelShow = "Show, to the right of each ally's row, the debuffs your class can actually dispel — Priests see Magic and Disease, Paladins Magic/Poison/Disease, Druids Curse/Poison, Mages Curse, Shamans Poison/Disease. Each icon's rim is colored by school (blue Magic, purple Curse, brown Disease, green Poison) and carries a countdown sweep.",
+        dispelHealGlow = "Pulse a red glow on debuffs that cut healing received. Worth acting on: absorbs ignore Mortal Strike effects, so a shield lands at full value where a heal does not.",
+    },
+}
+
+-- The dispellable-debuff strip. Same controls on every page — only the
+-- wording changes with what the class can actually take off — but they had
+-- drifted into four different subsets of one section. Two settings the
+-- engine reads on EVERY layer had no control at all on some pages: Show All
+-- Debuffs existed only for priests, and the heal-reduction glow only for
+-- everyone but mages. This is the superset, so every board can reach every
+-- setting it is already subject to.
+local function AddDispelSection(panel, ui)
+        panel:AddSection("Dispellable Debuffs", ui.dispelIntro)
+        panel:AddCheckboxPair({
+            label = "Show Dispellable Debuffs",
+            tooltip = ui.dispelShow,
+            get = function() return CommanderPartyFramesDB.ShowDispels end,
+            set = function(value) CommanderPartyFramesDB.ShowDispels = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "CC Glow",
+            tooltip = "Pulse a bright glow behind crowd-control debuffs (Polymorph, Fear, Sap-likes, roots, stuns, Mind Control...) so the one that needs dispelling first jumps out of a busy strip.",
+            get = function() return CommanderPartyFramesDB.DispelCCGlow end,
+            set = function(value) CommanderPartyFramesDB.DispelCCGlow = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        })
+        panel:AddCheckboxPair({
+            label = "Important Debuffs",
+            tooltip = "Also show debuffs that matter to a healer even though you cannot dispel them: healing reductions (Mortal Strike, Aimed Shot, Wound Poison), undispellable crowd control and stuns (Blind, Sap, Gouge, Kidney Shot, Cyclone, Intimidating Shout...), and silences. These get a category-colored rim — red for healing reduction, orange for crowd control — and are sorted to the front of the strip.",
+            get = function() return CommanderPartyFramesDB.DispelShowImportant end,
+            set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        }, {
+            label = "Heal-Reduction Glow",
+            tooltip = ui.dispelHealGlow,
+            get = function() return CommanderPartyFramesDB.DispelHealGlow end,
+            set = function(value) CommanderPartyFramesDB.DispelHealGlow = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels
+                and CommanderPartyFramesDB.DispelShowImportant end,
+        })
+        panel:AddCheckboxPair({
+            label = "Show All Debuffs",
+            tooltip = "Also show debuffs you cannot dispel. Off (default) keeps the strip strictly actionable — only what you can actually remove.",
+            get = function() return CommanderPartyFramesDB.DispelShowAll end,
+            set = function(value) CommanderPartyFramesDB.DispelShowAll = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        }, {
+            label = "Duration Sweep",
+            tooltip = "Draw a radial countdown over each debuff icon showing how long it has left.",
+            get = function() return CommanderPartyFramesDB.DispelSweep end,
+            set = function(value) CommanderPartyFramesDB.DispelSweep = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        })
+        panel:AddSliderPair({
+            label = "Debuff Icons",
+            tooltip = "How many debuff icons to show per row.",
+            min = 1, max = 5, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.DispelMaxIcons end,
+            set = function(value) CommanderPartyFramesDB.DispelMaxIcons = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        }, {
+            label = "Debuff Icon Size",
+            tooltip = "Size of each debuff icon in the strip.",
+            min = 10, max = 24, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.DispelIconSize end,
+            set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        })
+
+end
+
 local function CreateCorePanel()
     -- Ask the engine which class layer this character gets (nil = none)
     local layerMode, classToken
@@ -1452,50 +1546,7 @@ local function CreateCorePanel()
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
 
-        panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs you can remove — Curses, purple rim — with a glow on crowd control. Curses also turn the whole row purple, whatever is shown here.")
-        panel:AddCheckboxPair({
-            label = "Show Dispellable Debuffs",
-            tooltip = "Show, to the right of each ally's row, the Curses you can remove (purple rim, countdown sweep). The CURSED row state works even with this strip off; the strip tells you WHICH curse it is.",
-            get = function() return CommanderPartyFramesDB.ShowDispels end,
-            set = function(value) CommanderPartyFramesDB.ShowDispels = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "CC Glow",
-            tooltip = "Pulse a bright glow behind crowd-control debuffs so the one that needs removing first jumps out of a busy strip.",
-            get = function() return CommanderPartyFramesDB.DispelCCGlow end,
-            set = function(value) CommanderPartyFramesDB.DispelCCGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddCheckboxPair({
-            label = "Important Debuffs",
-            tooltip = "Also show debuffs worth knowing about even though you cannot remove them: healing reductions, undispellable crowd control and stuns, and silences. These get a category-colored rim and sort to the front of the strip.",
-            get = function() return CommanderPartyFramesDB.DispelShowImportant end,
-            set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Duration Sweep",
-            tooltip = "Draw a radial countdown over each debuff icon showing how long it has left.",
-            get = function() return CommanderPartyFramesDB.DispelSweep end,
-            set = function(value) CommanderPartyFramesDB.DispelSweep = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddSliderPair({
-            label = "Debuff Icons",
-            tooltip = "How many debuff icons to show per row.",
-            min = 1, max = 5, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.DispelMaxIcons end,
-            set = function(value) CommanderPartyFramesDB.DispelMaxIcons = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Debuff Icon Size",
-            tooltip = "Size of each debuff icon in the strip.",
-            min = 10, max = 24, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.DispelIconSize end,
-            set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
+        AddDispelSection(panel, LAYER_UI.INT)
 
         panel:AddSection("My Shields", "Your own Ice Barrier, Mana Shield, and wards as rows under the ally board — absorb remaining as the bar, each spell's cooldown as the red drain. Works on both the sorted and the Click-Cast boards; the Water Elemental's row appears just above these whenever it is in play.")
         panel:AddCheckboxPair({
@@ -1843,57 +1894,7 @@ local function CreateCorePanel()
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
         })
 
-        panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs you can remove — Curses with a purple rim, Poisons with a green one — and a glow on crowd control. Both schools also color the whole row, whatever is shown here.")
-        panel:AddCheckboxPair({
-            label = "Show Dispellable Debuffs",
-            tooltip = "Show, to the right of each ally's row, the Curses and Poisons you can remove (rim colored by school, countdown sweep). The CURSED and POISONED row states work even with this strip off; the strip tells you WHICH debuff it is.",
-            get = function() return CommanderPartyFramesDB.ShowDispels end,
-            set = function(value) CommanderPartyFramesDB.ShowDispels = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "CC Glow",
-            tooltip = "Pulse a bright glow behind crowd-control debuffs so the one that needs removing first jumps out of a busy strip.",
-            get = function() return CommanderPartyFramesDB.DispelCCGlow end,
-            set = function(value) CommanderPartyFramesDB.DispelCCGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddCheckboxPair({
-            label = "Important Debuffs",
-            tooltip = "Also show debuffs worth knowing about even though you cannot remove them: healing reductions, undispellable crowd control and stuns, and silences. These get a category-colored rim and sort to the front of the strip.",
-            get = function() return CommanderPartyFramesDB.DispelShowImportant end,
-            set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Heal Reduction Glow",
-            tooltip = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a hot board that is the cue to stop topping and start pre-hotting through it.",
-            get = function() return CommanderPartyFramesDB.DispelHealGlow end,
-            set = function(value) CommanderPartyFramesDB.DispelHealGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddCheckbox({
-            label = "Duration Sweep",
-            tooltip = "Draw a radial countdown over each debuff icon showing how long it has left.",
-            get = function() return CommanderPartyFramesDB.DispelSweep end,
-            set = function(value) CommanderPartyFramesDB.DispelSweep = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddSliderPair({
-            label = "Debuff Icons",
-            tooltip = "How many debuff icons to show per row.",
-            min = 1, max = 5, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.DispelMaxIcons end,
-            set = function(value) CommanderPartyFramesDB.DispelMaxIcons = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Debuff Icon Size",
-            tooltip = "Size of each debuff icon in the strip.",
-            min = 10, max = 24, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.DispelIconSize end,
-            set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
+        AddDispelSection(panel, LAYER_UI.HOT)
 
         AddAbilityBarSection(panel)
 
@@ -2219,57 +2220,7 @@ local function CreateCorePanel()
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
         })
 
-        panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs you can remove — a paladin cleanses Magic, Poison and Disease, which is more schools than anyone else on this board — and a glow on crowd control. A removable debuff also colors the whole row, whatever is shown here.")
-        panel:AddCheckboxPair({
-            label = "Show Dispellable Debuffs",
-            tooltip = "Show, to the right of each ally's row, the Magic, Poison and Disease debuffs you can cleanse (rim colored by school, countdown sweep). The row states work even with this strip off; the strip tells you WHICH debuff it is.",
-            get = function() return CommanderPartyFramesDB.ShowDispels end,
-            set = function(value) CommanderPartyFramesDB.ShowDispels = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "CC Glow",
-            tooltip = "Pulse a bright glow behind crowd-control debuffs so the one that needs removing first jumps out of a busy strip.",
-            get = function() return CommanderPartyFramesDB.DispelCCGlow end,
-            set = function(value) CommanderPartyFramesDB.DispelCCGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddCheckboxPair({
-            label = "Important Debuffs",
-            tooltip = "Also show debuffs worth knowing about even though you cannot remove them: healing reductions, undispellable crowd control and stuns, and silences. These get a category-colored rim and sort to the front of the strip.",
-            get = function() return CommanderPartyFramesDB.DispelShowImportant end,
-            set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Heal Reduction Glow",
-            tooltip = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a paladin board that is the cue to stop trading Flash of Light against it and spend a cooldown instead.",
-            get = function() return CommanderPartyFramesDB.DispelHealGlow end,
-            set = function(value) CommanderPartyFramesDB.DispelHealGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddCheckbox({
-            label = "Duration Sweep",
-            tooltip = "Draw a radial countdown over each debuff icon showing how long it has left.",
-            get = function() return CommanderPartyFramesDB.DispelSweep end,
-            set = function(value) CommanderPartyFramesDB.DispelSweep = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddSliderPair({
-            label = "Debuff Icons",
-            tooltip = "How many debuff icons to show per row.",
-            min = 1, max = 5, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.DispelMaxIcons end,
-            set = function(value) CommanderPartyFramesDB.DispelMaxIcons = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Debuff Icon Size",
-            tooltip = "Size of each debuff icon in the strip.",
-            min = 10, max = 24, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.DispelIconSize end,
-            set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
+        AddDispelSection(panel, LAYER_UI.BLESS)
 
         AddAbilityBarSection(panel)
 
@@ -2576,64 +2527,7 @@ local function CreateCorePanel()
             and CommanderPartyFramesDB.ShowBandageButton end,
     })
 
-    panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs you can remove — a priest dispels Magic and Disease — color-coded by school, with a glow on crowd control. A removable debuff also colors the whole row, and a teammate in crowd control turns it orange.")
-    panel:AddCheckboxPair({
-        label = "Show Dispellable Debuffs",
-        tooltip = "Show, to the right of each ally's row, the debuffs your class can actually dispel — Priests see Magic and Disease, Paladins Magic/Poison/Disease, Druids Curse/Poison, Mages Curse, Shamans Poison/Disease. Each icon's rim is colored by school (blue Magic, purple Curse, brown Disease, green Poison) and carries a countdown sweep.",
-        get = function() return CommanderPartyFramesDB.ShowDispels end,
-        set = function(value) CommanderPartyFramesDB.ShowDispels = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    }, {
-        label = "CC Glow",
-        tooltip = "Pulse a bright glow behind crowd-control debuffs (Polymorph, Fear, Sap-likes, roots, stuns, Mind Control...) so the one that needs dispelling first jumps out of a busy strip.",
-        get = function() return CommanderPartyFramesDB.DispelCCGlow end,
-        set = function(value) CommanderPartyFramesDB.DispelCCGlow = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-    })
-    panel:AddCheckboxPair({
-        label = "Important Debuffs",
-        tooltip = "Also show debuffs that matter to a healer even though you cannot dispel them: healing reductions (Mortal Strike, Aimed Shot, Wound Poison), undispellable crowd control and stuns (Blind, Sap, Gouge, Kidney Shot, Cyclone, Intimidating Shout...), and silences. These get a category-colored rim — red for healing reduction, orange for crowd control — and are sorted to the front of the strip.",
-        get = function() return CommanderPartyFramesDB.DispelShowImportant end,
-        set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-    }, {
-        label = "Heal-Reduction Glow",
-        tooltip = "Pulse a red glow on debuffs that cut healing received. Worth acting on: absorbs ignore Mortal Strike effects, so a shield lands at full value where a heal does not.",
-        get = function() return CommanderPartyFramesDB.DispelHealGlow end,
-        set = function(value) CommanderPartyFramesDB.DispelHealGlow = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels
-            and CommanderPartyFramesDB.DispelShowImportant end,
-    })
-    panel:AddCheckboxPair({
-        label = "Show All Debuffs",
-        tooltip = "Also show debuffs you cannot dispel. Off (default) keeps the strip strictly actionable — only what you can actually remove.",
-        get = function() return CommanderPartyFramesDB.DispelShowAll end,
-        set = function(value) CommanderPartyFramesDB.DispelShowAll = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-    }, {
-        label = "Duration Sweep",
-        tooltip = "Draw a radial countdown over each debuff icon showing how long it has left.",
-        get = function() return CommanderPartyFramesDB.DispelSweep end,
-        set = function(value) CommanderPartyFramesDB.DispelSweep = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-    })
-    panel:AddSliderPair({
-        label = "Debuff Icons",
-        tooltip = "How many debuff icons to show per row.",
-        min = 1, max = 5, step = 1,
-        format = "%.0f",
-        get = function() return CommanderPartyFramesDB.DispelMaxIcons end,
-        set = function(value) CommanderPartyFramesDB.DispelMaxIcons = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-    }, {
-        label = "Debuff Icon Size",
-        tooltip = "Size of each debuff icon in the strip.",
-        min = 10, max = 24, step = 1,
-        format = "%.0f",
-        get = function() return CommanderPartyFramesDB.DispelIconSize end,
-        set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-    })
+    AddDispelSection(panel, LAYER_UI.PWS)
 
     panel:AddCheckbox({
         label = "Banner Cooldowns",
