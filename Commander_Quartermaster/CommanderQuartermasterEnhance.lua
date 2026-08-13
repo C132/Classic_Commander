@@ -255,6 +255,104 @@ function M.ScanGear(unit)
 end
 
 -- ---------------------------------------------------------------------------
+-- Rendering a source
+-- ---------------------------------------------------------------------------
+
+local function Money(copper)
+    if not copper or copper <= 0 then return nil end
+    local g = math.floor(copper / 10000)
+    local s = math.floor((copper % 10000) / 100)
+    if g > 0 then return s > 0 and ("%dg %ds"):format(g, s) or ("%dg"):format(g) end
+    if s > 0 then return ("%ds"):format(s) end
+    return ("%dc"):format(copper % 100)
+end
+M.Money = Money
+
+local KIND_LABEL = {
+    VENDOR = "Vendor", TRAINER = "Trainer", QUEST = "Quest", CRAFT = "Crafted",
+    RECIPE = "Recipe", DROP = "Drops", OBJECT = "Container", CONTAINER = "Inside",
+    PROSPECT = "Prospecting", DISENCHANT = "Disenchanting", FISH = "Fishing",
+    SKIN = "Skinning", PICKPOCKET = "Pickpocket", MAIL = "Mail",
+}
+M.KindLabel = KIND_LABEL
+
+-- One source as a player would say it out loud. Everything the generator
+-- captured gets a chance to appear: who, where, what it costs, what standing
+-- it wants, how likely it is.
+function M.SourceText(src)
+    if not src then return "" end
+    local out = KIND_LABEL[src.k] or src.k
+    if src.k == "CRAFT" then
+        if src.prof then
+            out = ("%s (%s %s)"):format(out, src.prof.skill, tostring(src.prof.rank or "?"))
+        end
+        return out
+    end
+    if src.name then out = out .. ": " .. src.name end
+    if src.sub then out = out .. ", " .. src.sub end
+    if src.zone then out = out .. " — " .. src.zone end
+    if src.rank then out = out .. " (" .. src.rank .. ")" end
+    if src.heroic then out = out .. " |cffff8040heroic|r" end
+    if src.chance and src.chance > 0 and src.chance < 100 then
+        out = out .. (" %.1f%%"):format(src.chance)
+    end
+    if src.faction and src.faction.name then
+        out = out .. (" |cffffd200[%s%s]|r"):format(src.faction.name,
+            src.faction.standing and (" - " .. src.faction.standing) or "")
+    end
+    if src.cost and src.cost.tokens then
+        for _, token in ipairs(src.cost.tokens) do
+            out = out .. (" |cff00ccff%d× %s|r"):format(token.count, token.name or ("#" .. token.item))
+        end
+    end
+    local price = Money(src.price)
+    if price then out = out .. " |cffffffff" .. price .. "|r" end
+    if src.stock then out = out .. (" |cff888888(%d in stock)|r"):format(src.stock) end
+    return out
+end
+
+-- The whole acquisition story for one enhancement, flattened into lines:
+-- the source, and under a craft, how the recipe itself is obtained.
+function M.SourceLines(entry, max)
+    local lines = {}
+    if not entry then return lines end
+    for _, src in ipairs(entry.src or {}) do
+        lines[#lines + 1] = { depth = 0, text = M.SourceText(src) }
+        if src.reagents then
+            local parts = {}
+            for _, r in ipairs(src.reagents) do
+                parts[#parts + 1] = ("%d× %s"):format(r.count, r.name or ("#" .. r.item))
+            end
+            lines[#lines + 1] = { depth = 1, text = "|cff888888" .. table.concat(parts, ", ") .. "|r" }
+        end
+        for _, learn in ipairs(src.learn or {}) do
+            lines[#lines + 1] = { depth = 1, text = M.SourceText(learn) }
+            for _, deep in ipairs(learn.src or {}) do
+                lines[#lines + 1] = { depth = 2, text = M.SourceText(deep) }
+            end
+        end
+        if max and #lines >= max then break end
+    end
+    if #lines == 0 then
+        lines[1] = { depth = 0, text = "|cff888888No known source in this build|r" }
+    end
+    return lines
+end
+
+-- A one-line summary for a list row: the best source, plus how many others.
+function M.SourceSummary(entry)
+    if not entry then return "" end
+    local first = entry.src and entry.src[1]
+    if not first then return "|cff888888No known source|r" end
+    local text = M.SourceText(first)
+    local extra = (#entry.src - 1) + (entry.more or 0)
+    if extra > 0 then
+        text = text .. (" |cff666666+%d more|r"):format(extra)
+    end
+    return text
+end
+
+-- ---------------------------------------------------------------------------
 -- Reporting
 -- ---------------------------------------------------------------------------
 

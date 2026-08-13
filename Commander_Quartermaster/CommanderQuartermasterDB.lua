@@ -32,8 +32,9 @@ local DefaultSettings = {
     OwnedOnly = false,          -- browse filter: only rows you hold somewhere
 
     -- Browser session memory (which page you were on)
-    BrowserView = "BROWSE",     -- BROWSE | LOADOUT | CHARS
+    BrowserView = "BROWSE",     -- BROWSE | LOADOUT | CHARS | GEAR
     BrowserCategory = "FLASKS",
+    BrowserSlot = "MYGEAR",     -- Gear view: MYGEAR, or an enhancement slot key
     BrowserClass = false,       -- false = your class
     BrowserSpec = false,        -- false = auto-detect from talents
     EraFilter = "ALL",          -- ALL | TBC | VANILLA

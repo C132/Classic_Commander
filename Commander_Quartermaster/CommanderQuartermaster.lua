@@ -1139,9 +1139,110 @@ local function BuildCharsList()
     end
 end
 
+-- ------------------------------------------------------------------
+-- Gear view — the enhancement audit and the enhancement catalogue
+-- ------------------------------------------------------------------
+
+local Enhance = CommanderQuartermasterEnhance
+
+local function GearSlotKey()
+    return db.BrowserSlot or "MYGEAR"
+end
+
+-- An enhancement row matches the search the same way an item row does, over
+-- everything a player might type: its name, what it grants, its slot, its
+-- profession, and every source it has.
+local function EnhanceHaystack(entry)
+    local hay = entry._hay
+    if hay then return hay end
+    local parts = { entry.name or "", entry.short or "", entry.note or "",
+                    entry.recipe or "", entry.kind or "", entry.era or "" }
+    for _, slot in ipairs(entry.slots or {}) do
+        parts[#parts + 1] = (Enhance and CommanderQuartermasterEnhanceData.SlotNames[slot]) or slot
+    end
+    if entry.prof then parts[#parts + 1] = entry.prof.skill end
+    for _, src in ipairs(entry.src or {}) do
+        parts[#parts + 1] = src.k or ""
+        parts[#parts + 1] = src.name or ""
+        parts[#parts + 1] = src.zone or ""
+        if src.faction then parts[#parts + 1] = src.faction.name or "" end
+        for _, learn in ipairs(src.learn or {}) do
+            parts[#parts + 1] = learn.name or ""
+            for _, deep in ipairs(learn.src or {}) do
+                parts[#parts + 1] = (deep.name or "") .. " " .. (deep.zone or "")
+            end
+        end
+    end
+    hay = table.concat(parts, " "):lower()
+    entry._hay = hay
+    return hay
+end
+
+local function EnhanceMatches(entry)
+    if db.EraFilter ~= "ALL" and entry.era ~= db.EraFilter then return false end
+    if db.OwnedOnly then
+        if not entry.item then return false end
+        local _, _, _, _, total = CountsFor(entry.item)
+        if total == 0 then return false end
+    end
+    if #searchTokens == 0 then return true end
+    local hay = EnhanceHaystack(entry)
+    for _, token in ipairs(searchTokens) do
+        if not hay:find(token, 1, true) then return false end
+    end
+    return true
+end
+
+local function PushEnhance(entry)
+    displayList[#displayList + 1] = { kind = "enh", entry = entry, id = entry.item }
+end
+
+local function BuildGearList()
+    if not Enhance then
+        PushHeader("|cffaaaaaaEnhancement database not loaded.|r")
+        return
+    end
+    local EData = CommanderQuartermasterEnhanceData
+    local slot = GearSlotKey()
+    if slot == "MYGEAR" and #searchTokens == 0 then
+        local report = Enhance.ScanGear("player")
+        PushHeader(("|cffffd200Equipped|r  |cff888888%d enhanceable slot%s, %d bare, %d socket%s empty|r"):format(
+            report.enchantable, report.enchantable == 1 and "" or "s",
+            report.bare, report.empty, report.empty == 1 and "" or "s"))
+        for _, row in ipairs(report.rows) do
+            if row.link then
+                displayList[#displayList + 1] = { kind = "gearslot", row = row, id = row.id }
+            end
+        end
+        return
+    end
+    -- Searching from My Gear searches everything; otherwise one slot's shelf
+    local slots = (slot == "MYGEAR") and EData.SlotOrder or { slot }
+    for _, key in ipairs(slots) do
+        local list = Enhance.EntriesForSlot(key)
+        if list then
+            local wrote = false
+            for _, entry in ipairs(list) do
+                if not entry.unobtainable and EnhanceMatches(entry) then
+                    if not wrote and #slots > 1 then
+                        wrote = true
+                        PushHeader(("|cffffd200%s|r"):format(EData.SlotNames[key] or key))
+                    end
+                    PushEnhance(entry)
+                end
+            end
+        end
+    end
+    if #displayList == 0 then
+        PushHeader("|cffaaaaaaNothing matches.|r")
+    end
+end
+
 local function BuildList()
     wipe(displayList)
-    if db.BrowserView == "LOADOUT" then
+    if db.BrowserView == "GEAR" then
+        BuildGearList()
+    elseif db.BrowserView == "LOADOUT" then
         BuildLoadoutList()
     elseif db.BrowserView == "CHARS" then
         BuildCharsList()
@@ -1201,6 +1302,71 @@ local function BindRow(row, item)
         row.c2:SetText(FormatCount(sums.bank))
         row.c3:SetText(FormatCount(sums.mail))
         row.c4:SetText(sums.total > 0 and ("|cff33ff99%d|r"):format(sums.total) or FormatCount(0))
+        return
+    end
+
+    if item.kind == "gearslot" then
+        local grow = item.row
+        row.icon:SetTexture(item.id and ItemIcon(item.id) or "Interface\\Icons\\INV_Misc_QuestionMark")
+        row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        row.nameFS:SetText(("|cffffd200%s|r  %s"):format(grow.label, grow.link or ""))
+        local ench = Enhance and Enhance.EnchantName(grow)
+        local note
+        if ench then
+            note = "|cff33ff99" .. ench .. "|r"
+        elseif grow.bare then
+            note = "|cffff4040Not enchanted|r"
+        elseif grow.needsProfession then
+            note = ("|cff777777Enchantable only by an %s|r"):format(grow.needsProfession)
+        else
+            note = "|cff777777Takes no enchant|r"
+        end
+        local sockets = grow.sockets and #grow.sockets or 0
+        if sockets > 0 then
+            note = note .. ("  |cff888888·|r %s%d/%d gems|r"):format(
+                (grow.empty or 0) > 0 and "|cffff4040" or "|cff33ff99",
+                sockets - (grow.empty or 0), sockets)
+        end
+        row.noteFS:SetText(note)
+        row.tagFS:SetText(grow.slot and ("|cff777777%s|r"):format(grow.slot) or "")
+        row.c0:SetText(FormatCount(0))
+        row.c1:SetText(FormatCount(0)); row.c2:SetText(FormatCount(0))
+        row.c3:SetText(FormatCount(0)); row.c4:SetText(FormatCount(0))
+        return
+    end
+
+    if item.kind == "enh" then
+        local entry = item.entry
+        row.icon:SetTexture(entry.item and ItemIcon(entry.item)
+            or "Interface\\Icons\\Trade_Engraving")
+        row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        local nameText = entry.item and ItemName(entry.item, entry.name) or entry.name
+        if entry.reqSkill then
+            nameText = nameText .. (" |cffff8040(%s only)|r"):format(entry.reqSkill.skill)
+        end
+        row.nameFS:SetText(nameText)
+        local note = entry.short or entry.note or ""
+        local summary = Enhance and Enhance.SourceSummary(entry) or ""
+        row.noteFS:SetText(("%s  |cff888888·|r %s"):format(note, summary))
+        local tag = entry.prof and entry.prof.skill
+            or (entry.src and entry.src[1] and Enhance
+                and (Enhance.KindLabel[entry.src[1].k] or entry.src[1].k))
+            or ""
+        if entry.era == "VANILLA" then tag = tag .. " |cff888888·V|r" end
+        row.tagFS:SetText(("|cffaaaaaa%s|r"):format(tag))
+        row.c0:SetText((entry.lvl or entry.ilvl) and ("|cffaaaaaa%d|r"):format(entry.lvl or entry.ilvl)
+            or FormatCount(0))
+        if entry.item then
+            local bags, bank, _, alts, total = CountsFor(entry.item)
+            row.c1:SetText(FormatCount(bags))
+            row.c2:SetText(FormatCount(bank))
+            row.c3:SetText(FormatCount(alts))
+            row.c4:SetText(total > 0 and ("|cff33ff99%d|r"):format(total) or FormatCount(0))
+        else
+            -- an enchanter casts it; there is nothing to hold
+            row.c1:SetText(FormatCount(0)); row.c2:SetText(FormatCount(0))
+            row.c3:SetText(FormatCount(0)); row.c4:SetText(FormatCount(0))
+        end
         return
     end
 
@@ -1293,6 +1459,52 @@ local function RefreshSidebar()
                         RefreshList()
                     end,
                 })
+            end
+        end
+    elseif db.BrowserView == "GEAR" then
+        local EData = CommanderQuartermasterEnhanceData
+        local function slotButton(key, text, badge)
+            used = used + 1
+            if used > MAX_SIDEBAR_ROWS then return end
+            BindSidebarButton(sidebarButtons[used], {
+                key = key,
+                text = text,
+                badge = badge,
+                selected = GearSlotKey() == key,
+                onClick = function()
+                    db.BrowserSlot = key
+                    offset = 0
+                    BuildList()
+                    RefreshSidebar()
+                    RefreshList()
+                end,
+            })
+        end
+        local badge = ""
+        if Enhance then
+            local report = Enhance.ScanGear("player")
+            local trouble = report.bare + report.empty
+            badge = trouble > 0 and ("|cffff4040%d|r"):format(trouble) or "|cff33ff99ok|r"
+        end
+        slotButton("MYGEAR", "|cffffd200My Gear|r", badge)
+        if EData then
+            for _, key in ipairs(EData.SlotOrder) do
+                local list = Enhance and Enhance.EntriesForSlot(key)
+                if list and #list > 0 then
+                    local owned, total = 0, 0
+                    for _, entry in ipairs(list) do
+                        if not entry.unobtainable then
+                            total = total + 1
+                            if entry.item then
+                                local _, _, _, _, held = CountsFor(entry.item)
+                                if held > 0 then owned = owned + 1 end
+                            end
+                        end
+                    end
+                    slotButton(key, EData.SlotNames[key] or key,
+                        owned > 0 and ("|cff33ff99%d|r|cff666666/%d|r"):format(owned, total)
+                        or ("|cff666666%d|r"):format(total))
+                end
             end
         end
     elseif db.BrowserView == "CHARS" then
@@ -1401,6 +1613,8 @@ local function FullRefresh()
     browser.viewBrowse:SetEnabled(view ~= "BROWSE")
     browser.viewLoadout:SetEnabled(view ~= "LOADOUT")
     if browser.viewChars then browser.viewChars:SetEnabled(view ~= "CHARS") end
+    if browser.viewGear then browser.viewGear:SetEnabled(view ~= "GEAR") end
+    -- Gear searches too: the catalogue is the point of searching it
     local browse = view ~= "LOADOUT" and view ~= "CHARS"
     if browser.searchBox then browser.searchBox:SetShown(browse) end
     if browser.filterBtn then
@@ -1731,9 +1945,19 @@ local function EnsureBrowser()
         FullRefresh()
     end)
 
+    browser.viewGear = CreateFrame("Button", nil, toolbar, "UIPanelButtonTemplate")
+    browser.viewGear:SetSize(74, 22)
+    browser.viewGear:SetPoint("LEFT", browser.viewChars, "RIGHT", 4, 0)
+    browser.viewGear:SetText("Gear")
+    browser.viewGear:SetScript("OnClick", function()
+        db.BrowserView = "GEAR"
+        offset = 0
+        FullRefresh()
+    end)
+
     browser.searchBox = CreateFrame("EditBox", "CommanderQuartermasterSearch", toolbar, "InputBoxTemplate")
     browser.searchBox:SetSize(150, 20)
-    browser.searchBox:SetPoint("LEFT", browser.viewChars, "RIGHT", 16, 0)
+    browser.searchBox:SetPoint("LEFT", browser.viewGear, "RIGHT", 16, 0)
     browser.searchBox:SetAutoFocus(false)
     browser.searchBox:SetMaxLetters(40)
     browser.searchBox:SetScript("OnTextChanged", function(self, userInput)
@@ -1847,7 +2071,7 @@ local function EnsureBrowser()
     -- Class picker (Loadout view)
     if UIDropDownMenu_Initialize then
         browser.classDrop = CreateFrame("Frame", "CommanderQuartermasterClassDrop", toolbar, "UIDropDownMenuTemplate")
-        browser.classDrop:SetPoint("LEFT", browser.viewChars, "RIGHT", 0, -2)
+        browser.classDrop:SetPoint("LEFT", browser.viewGear, "RIGHT", 0, -2)
         UIDropDownMenu_SetWidth(browser.classDrop, 120)
         UIDropDownMenu_Initialize(browser.classDrop, function()
             local current = CurrentClass()

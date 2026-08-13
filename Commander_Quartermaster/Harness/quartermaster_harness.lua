@@ -1337,6 +1337,111 @@ world.equipped, world.skills = {}, {}
 world.bags[0] = {}
 Sync()
 
+-- ===========================================================================
+-- O: the Gear view — audit page and enhancement catalogue
+-- ===========================================================================
+
+world.equipped = {
+    [1] = { id = 28182, ench = 3002, loc = "INVTYPE_HEAD" },
+    [5] = { id = 28229, ench = 0, loc = "INVTYPE_CHEST" },
+    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON",
+             sockets = { RED = 1, YELLOW = 1 }, gems = { 32409 } },
+}
+Sync()
+browser.viewGear.__scripts.OnClick(browser.viewGear)
+CHECK(db.BrowserView == "GEAR", "O: Gear view selected")
+CHECK(browser.viewGear.__enabled == false, "O: the current view's button is disabled")
+
+CHECK(sidebar[1].key == "MYGEAR", "O: My Gear pinned atop the Gear sidebar")
+CHECK(sidebar[1].badgeFS.__text:find("2", 1, true) ~= nil,
+    "O: the badge counts one bare slot plus one empty socket", sidebar[1].badgeFS.__text)
+local slotKeys = {}
+for _, btn in ipairs(sidebar) do
+    if btn.__shown then slotKeys[btn.key] = true end
+end
+CHECK(slotKeys.HEAD and slotKeys.WEAPON and slotKeys.GEM, "O: slots listed in the sidebar")
+
+-- The audit page: one row per equipped slot, verdict in the note
+local gearRows = {}
+for _, item in ipairs(list) do
+    if item.kind == "gearslot" then gearRows[item.row.invSlot] = item end
+end
+CHECK(gearRows[1] and gearRows[5] and gearRows[16], "O: every equipped slot gets a row")
+CHECK(list[1].kind == "header" and list[1].text:find("bare", 1, true),
+    "O: the page leads with the totals", list[1].text)
+
+local function NoteFor(invSlot)
+    for _, row in ipairs(rows) do
+        if row.__shown and row.item and row.item.kind == "gearslot"
+            and row.item.row.invSlot == invSlot then
+            return row.noteFS.__text
+        end
+    end
+end
+CHECK(NoteFor(1) and NoteFor(1):find("Spell Power", 1, true), "O: the head's enchant is named",
+    NoteFor(1))
+CHECK(NoteFor(5) and NoteFor(5):find("Not enchanted", 1, true), "O: the bare chest says so",
+    NoteFor(5))
+CHECK(NoteFor(16) and NoteFor(16):find("1/2 gems", 1, true), "O: sockets reported on the row",
+    NoteFor(16))
+
+-- A slot's shelf: every enhancement that can land there, with its source
+sidebarByKey("HEAD").onClick()
+local headRows = 0
+local powerRow
+for _, item in ipairs(list) do
+    if item.kind == "enh" then
+        headRows = headRows + 1
+        if item.entry.name == "Glyph of Power" then powerRow = item end
+    end
+end
+CHECK(headRows > 10, "O: the head shelf is populated", headRows)
+CHECK(powerRow ~= nil, "O: Glyph of Power is on the head shelf")
+local powerText
+for _, row in ipairs(rows) do
+    if row.__shown and row.item == powerRow then powerText = row.noteFS.__text end
+end
+CHECK(powerText and powerText:find("Almaador", 1, true), "O: the row states where to buy it",
+    powerText)
+CHECK(powerText and powerText:find("Sha'tar", 1, true), "O: and the standing it wants")
+
+-- Search reaches across every slot, and into the sources
+sidebarByKey("MYGEAR").onClick()
+Search("mongoose")
+local found
+for _, item in ipairs(list) do
+    if item.kind == "enh" and item.entry.ench == 2673 then found = item end
+end
+CHECK(found ~= nil, "O: search finds an enchant by name across slots")
+Search("moroes")
+local viaSource
+for _, item in ipairs(list) do
+    if item.kind == "enh" and item.entry.ench == 2673 then viaSource = item end
+end
+CHECK(viaSource ~= nil, "O: search reaches the boss who drops the formula")
+Search("")
+
+-- Owned-only respects the ledger, and unobtainable entries never show
+world.bags[0] = { { id = 29191, count = 1 } }
+Sync()
+sidebarByKey("HEAD").onClick()
+db.OwnedOnly = true
+browser.viewGear.__scripts.OnClick(browser.viewGear)
+local ownedCount, sawGlyph = 0, false
+for _, item in ipairs(list) do
+    if item.kind == "enh" then
+        ownedCount = ownedCount + 1
+        if item.entry.item == 29191 then sawGlyph = true end
+    end
+end
+CHECK(sawGlyph and ownedCount == 1, "O: owned-only keeps just what you hold", ownedCount)
+db.OwnedOnly = false
+world.bags[0] = {}
+world.equipped = {}
+Sync()
+db.BrowserView, db.BrowserSlot = "BROWSE", "MYGEAR"
+browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
+
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 
 io.write(("quartermaster_harness: %d checks, %d failures\n"):format(checks, fails))
