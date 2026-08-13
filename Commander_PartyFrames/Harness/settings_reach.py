@@ -80,10 +80,13 @@ PAGES = [
     ("PWS", "    -- ---- Priest ally board"),
 ]
 
-# Shared builders whose bodies count as part of every page that calls them
-BUILDERS = ("AddBuffSection", "AddClickMatrix", "AddDispelSection",
-            "AddIdentitySection", "AddDecisionAids", "AddAbilityBarSection",
-            "FinishPanel")
+# Shared builders whose bodies count as part of every page that calls them.
+# DISCOVERED, not listed: every extraction from the four pages adds another
+# one, and a hardcoded list that falls behind reports the settings inside the
+# new builder as unreachable from all four pages at once — which is what
+# happened on the first three extractions, every time, before this was a
+# pattern. Anything at file scope taking `panel` as its first argument counts.
+BUILDER = re.compile(r"^local function (\w+)\(panel[,)]")
 
 # A page can also reach a setting through a file-scope option table it hands
 # straight to the panel — panel:AddDropdown(BAR_TEXTURE_OPTION). Those are as
@@ -113,17 +116,16 @@ def builder_bodies(lines):
     file scope, so column zero is the terminator either way.
     """
     bodies = {}
-    for name in BUILDERS:
-        head = "local function %s(" % name
-        start = next((i for i, l in enumerate(lines) if l.startswith(head)), None)
-        if start is None:
+    for i, line in enumerate(lines):
+        m = BUILDER.match(line)
+        if not m:
             continue
         body = []
-        for i in range(start, len(lines)):
-            body.append(lines[i])
-            if lines[i] == "end":
+        for j in range(i, len(lines)):
+            body.append(lines[j])
+            if lines[j] == "end":
                 break
-        bodies[name] = body
+        bodies[m.group(1)] = body
     for i, line in enumerate(lines):
         m = OPTION_TABLE.match(line)
         if not m:
