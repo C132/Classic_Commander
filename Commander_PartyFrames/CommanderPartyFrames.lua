@@ -66,12 +66,10 @@ SDATA.SHIELD_DURATION = 30      -- fallback only; the aura's real expiration win
 SDATA.WEAKENED_SOUL_MAX = 15    -- Weakened Soul duration, for the drain bar scale
 SDATA.FORBEARANCE_MAX = 60      -- Forbearance duration, the BLESS layer's drain scale
 SDATA.PWS_ICON = "Interface\\Icons\\Spell_Holy_PowerWordShield"
-SDATA.RENEW_ICON = "Interface\\Icons\\Spell_Holy_Renew"
-SDATA.RENEW_DURATION = 15       -- Renew HoT duration, for the sweep scale
 
 -- IDs 17 / 6788 / 139 are stable everywhere, so the localized names resolve
 -- without a locale table.
-local PWS_NAME, WS_NAME, RENEW_NAME  -- resolved at login
+local PWS_NAME, WS_NAME              -- resolved at login
 local playerGUID
 local myShieldValue = 0         -- nominal capacity of our own max-rank shield
 local capObserved = {}          -- spellId -> real full absorb seen via tooltip
@@ -166,15 +164,40 @@ SDATA.PALADIN_HANDS = {
 }
 for _, def in ipairs(SDATA.PALADIN_HANDS) do def.dbKey = "HAND:" .. def.key end
 
+-- The priest's own hots. Renew is the one every priest has and the one this
+-- board used to show as a lone icon bolted to the right edge of the row, with
+-- its own setting, its own flash and its own refresh window — a second
+-- vocabulary for exactly what the strip already says everywhere else. Prayer
+-- of Mending never had a slot at all, which on a TBC arena board is a strange
+-- thing to leave out.
+--
+-- The priest is the one strip layer whose ROW STATE is not read from here
+-- (see SDATA.STRIP_STATE_LAYERS): its bar is the absorb and its lockout is
+-- Weakened Soul, and no hot outranks that. So the strip is purely a readout,
+-- and the per-slot refresh cue does the work the row colour does elsewhere.
+SDATA.PRIEST_HOTS = {
+    { key = "RENEW", label = "Renew", baseId = 139, duration = 15, default = true,
+      icon = "Interface\\Icons\\Spell_Holy_Renew" },
+    { key = "POM", label = "Mending", baseId = 33076, duration = 30, default = true,
+      stacking = true, icon = "Interface\\Icons\\Spell_Holy_PrayerOfMendingtga" },
+}
+for _, def in ipairs(SDATA.PRIEST_HOTS) do def.dbKey = "PWS:" .. def.key end
+
 -- The own-aura strip is CHASSIS, not druid code. A layer names a book of
 -- auras it puts on allies and watches ours-only; the strip renders that book
 -- in fixed slots with radial sweeps and stack counts. Two layers fill it so
 -- far, and the shape of the entries is identical (key, label, baseId,
 -- duration, default, dbKey) precisely so a third costs nothing but its data.
 SDATA.STRIP_BOOKS = {
+    PWS   = SDATA.PRIEST_HOTS,
     HOT   = SDATA.DRUID_HOTS,
     BLESS = SDATA.PALADIN_HANDS,
 }
+-- ...and the layers whose ROW STATE is read off that strip. Having a strip and
+-- being driven by one are different questions: the priest board shows its
+-- hots and still ranks every row by the absorb and the Weakened Soul lockout,
+-- because that is what a priest is deciding between.
+SDATA.STRIP_STATE_LAYERS = { HOT = true, BLESS = true }
 SDATA.MAX_STRIP_ICONS = 3
 SDATA.STRIP_ACTIVE = {}       -- the active book's entries, tracked AND trained
 
@@ -932,8 +955,8 @@ end
 -- flipped mid-session would otherwise only reach rows nobody has built yet.
 --
 -- Membership is the whole point of this table, and it is deliberately narrow:
--- what is in here is how long an AURA has left -- the hots and upkeep strip,
--- Renew, the dispellable debuffs. The ability bar's sweeps are elsewhere and
+-- what is in here is how long an AURA has left -- the own-aura strip, the
+-- ally-buff strip, the dispellable debuffs. The ability bar's sweeps are elsewhere and
 -- stay plain: those count down a cooldown, where the only question is ready
 -- or not, and six sparks orbiting under every row answer a question nobody
 -- asked.
@@ -1061,7 +1084,6 @@ local WS_H = 3
 local STRIPE_W = 3
 local ICON_SIZE = 18
 local SMALL_ICON = 15   -- INT layer: two status icons share the left slot
-local RENEW_ICON_SIZE = 16
 local NAME_W = 60
 local SHORT_NAME_W = 44
 local PAD = 6
@@ -1160,7 +1182,6 @@ for k in pairs(DISPEL_STATES) do ALERT_STATES[k] = true; CASTABLE_STATES[k] = tr
 -- (party3, target, mouseover) refines one record.
 local shieldState = {}   -- guid -> { spellId, expire, capacity, absorbed, mine }
 local wsState = {}        -- guid -> weakened-soul expirationTime
-local renewState = {}     -- guid -> OUR Renew expirationTime (Renew tracking)
 local intState = {}       -- guid -> { expire, duration } for the layer's ally buff
 local curseState = {}     -- guid -> { expire, duration, dispelName } first removable debuff
 local ccState = {}        -- guid -> { expire, duration, icon, name } first CC debuff
@@ -3231,8 +3252,6 @@ local function ScanUnit(unit, reliable)
     if not guid then return end
 
     local pwsExpire, pwsSpellId, pwsMine, pwsIndex
-    local renewExpire
-    local renewOn = DB("RenewTrack", false)
     -- Every supported layer gets the removable-debuff and CC escalation now:
     -- what a row is FOR differs per class, but "there is something on them I
     -- can take off" and "a teammate is in crowd control" are the same two
@@ -3256,9 +3275,6 @@ local function ScanUnit(unit, reliable)
             pwsSpellId = aura.spellId
             pwsMine = aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") or false
             pwsIndex = i
-        elseif renewOn and aura.name == RENEW_NAME and not renewExpire
-            and aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") then
-            renewExpire = aura.expirationTime   -- only OUR Renew is tracked
         elseif buffOn and SDATA.BUFF_BY_NAME[aura.name]
             and not util.buffExp[SDATA.BUFF_BY_NAME[aura.name].key] then
             -- Any caster's buff counts as covered, and the group version
@@ -3313,15 +3329,6 @@ local function ScanUnit(unit, reliable)
         if absorbNames[aura.name] and not scanAbsorbs[aura.name] then
             scanAbsorbs[aura.name] = { expire = aura.expirationTime, duration = aura.duration,
                 icon = aura.icon, spellId = aura.spellId, index = i }
-        end
-    end
-
-    -- Our Renew (tracked only when the feature is on); reliable scans prune it
-    if renewOn then
-        if renewExpire then
-            renewState[guid] = renewExpire
-        elseif reliable then
-            renewState[guid] = nil
         end
     end
 
@@ -3758,11 +3765,6 @@ local function ResolveShieldState(r, now)
     if ws and ws <= now then wsState[guid], ws = nil, nil end
     r.wsLeft = ws and (ws - now) or 0
 
-    local renew = renewState[guid]
-    if renew and renew <= now then renewState[guid], renew = nil, nil end
-    r.renewLeft = renew and (renew - now) or 0
-    r.renewExpire = renew
-
     local st = shieldState[guid]
     if st and st.expire and st.expire <= now then
         shieldState[guid] = nil
@@ -4083,6 +4085,53 @@ function util.ResolveBuffs(r, now)
     r.buffCount = shown
 end
 
+-- Resolve this row's OWN-aura strip: one entry per tracked book entry, in book
+-- order, present whether or not the aura is up. Returns how many are up and
+-- how long the soonest has left — the two facts a layer needs whether or not
+-- it lets them drive the row's state.
+--
+-- Each entry owns a FIXED slot — Rejuvenation, Regrowth, Lifebloom; Freedom,
+-- Protection, Sacrifice; Renew, Prayer of Mending — always in that order, so a
+-- missing one leaves a dark placeholder of itself rather than a hole and the
+-- strip never reshuffles as things tick off. Position alone then tells you
+-- what you are looking at, which is what makes it readable at a glance
+-- instead of something you re-parse every time something falls.
+--
+-- `due` is the per-slot version of the refresh window: on the two layers whose
+-- STATE reads the strip it is redundant with the row colour, but the priest
+-- board's state is its shield, so the slot itself has to say when a Renew is
+-- about to drop. That was the old right-edge Renew icon's whole job.
+function util.ResolveStrip(r, now)
+    local rec = strip.state[r.guid]
+    local n, soonest = 0, nil
+    local refreshAt = DB("RenewRefreshAt", 4)
+    r.strip = r.strip or {}
+    for i, def in ipairs(SDATA.STRIP_ACTIVE) do
+        local slot = r.strip[i]
+        if not slot then slot = {}; r.strip[i] = slot end
+        local h = rec and rec[def.key]
+        if h and h.expire and h.expire > 0 and h.expire <= now then
+            rec[def.key], h = nil, nil
+        end
+        slot.icon = (h and h.icon) or def.icon
+        slot.up = h and true or false
+        slot.expire = h and h.expire or nil
+        slot.duration = h and ((h.duration and h.duration > 0) and h.duration or def.duration) or nil
+        slot.stacks = (h and def.stacking) and (h.stacks or 0) or 0
+        slot.due = false
+        if h then
+            n = n + 1
+            local tl = h.expire and (h.expire - now) or math.huge
+            slot.due = tl <= refreshAt
+            if not soonest or tl < soonest then soonest = tl end
+        end
+    end
+    if rec and not next(rec) then strip.state[r.guid] = nil end
+    r.stripCount = n
+    r.stripSlots = #SDATA.STRIP_ACTIVE
+    return n, soonest
+end
+
 -- INT layer (Mage ally rows): these are party frames first, so the main bar
 -- is plain HEALTH (lowest sorts first among the quiet rows). Buff upkeep is
 -- deliberately icon-sized — Arcane Intellect state rides the left status
@@ -4168,40 +4217,7 @@ local function ResolveStripState(r, now)
         r.rightText = string.format("%d%%", math.floor(r.health * 100 + 0.5))
     end
 
-    -- Our auras from this layer's book, in book order, pruning any that ran
-    -- out. `soonest` is the one that decides the row: it is what falls off
-    -- first and what the number counts down.
-    --
-    -- Each entry owns a FIXED slot — Rejuvenation, Regrowth, Lifebloom; or
-    -- Freedom, Protection, Sacrifice — always in that order, so a missing one
-    -- leaves a dark placeholder of itself rather than a hole, and the strip
-    -- never reshuffles as things tick off. Position alone then tells you what
-    -- you are looking at, which is what makes the strip readable at a glance
-    -- instead of one you have to re-parse every time something falls.
-    local rec = strip.state[r.guid]
-    local n, soonest = 0, nil
-    r.strip = r.strip or {}
-    for i, def in ipairs(SDATA.STRIP_ACTIVE) do
-        local slot = r.strip[i]
-        if not slot then slot = {}; r.strip[i] = slot end
-        local h = rec and rec[def.key]
-        if h and h.expire and h.expire > 0 and h.expire <= now then
-            rec[def.key], h = nil, nil
-        end
-        slot.icon = (h and h.icon) or def.icon
-        slot.up = h and true or false
-        slot.expire = h and h.expire or nil
-        slot.duration = h and ((h.duration and h.duration > 0) and h.duration or def.duration) or nil
-        slot.stacks = (h and def.stacking) and (h.stacks or 0) or 0
-        if h then
-            n = n + 1
-            local tl = h.expire and (h.expire - now) or math.huge
-            if not soonest or tl < soonest then soonest = tl end
-        end
-    end
-    if rec and not next(rec) then strip.state[r.guid] = nil end
-    r.stripCount = n
-    r.stripSlots = #SDATA.STRIP_ACTIVE
+    local n, soonest = util.ResolveStrip(r, now)
 
     -- The paladin's lockout. Forbearance is read off the target rather than
     -- remembered from what we cast, because three different spells stamp it
@@ -4278,7 +4294,7 @@ local function ResolveState(r, now)
     -- their bar IS an absorb and their lockout IS a cooldown
     if not r.selfSpell then
         if layer == "INT" then return ResolveIntState(r, now) end
-        if SDATA.STRIP_BOOKS[layer or ""] then return ResolveStripState(r, now) end
+        if SDATA.STRIP_STATE_LAYERS[layer or ""] then return ResolveStripState(r, now) end
         -- PWS ally rows: the shield grammar, and then the same alert ladder
         -- every other board tops itself with. The priest board went without
         -- it for three layers' worth of releases, which meant the one class
@@ -4286,7 +4302,12 @@ local function ResolveState(r, now)
         -- never said so — and a teammate in a fear did not reshape the board
         -- for the healer it was aimed at.
         local res = ResolveShieldState(r, now)
-        if res then ApplyAlertStates(res, now) end
+        if res then
+            -- The strip is a readout here, not the state: fill it, ignore
+            -- what it would have ranked the row as.
+            util.ResolveStrip(res, now)
+            ApplyAlertStates(res, now)
+        end
         return res
     end
     return ResolveShieldState(r, now)
@@ -4580,10 +4601,10 @@ local function BuildRowWidgets(row)
         row.buffs[n] = b
     end
 
-    -- Hot strip (HOT layer): up to three of OUR hots on this ally, each a
-    -- small icon with a radial sweep for what is left of it. Lifebloom is the
-    -- one that stacks, so every slot carries a stack count that only shows
-    -- when there is a stack worth reading — three about to bloom is a
+    -- The own-aura strip: up to three auras of OURS on this ally, each a
+    -- small icon with a radial sweep for what is left of it. Lifebloom and
+    -- Prayer of Mending stack, so every slot carries a stack count that only
+    -- shows when there is a stack worth reading — three about to bloom is a
     -- different decision from one.
     row.strip = {}
     for n = 1, SDATA.MAX_STRIP_ICONS do
@@ -4670,17 +4691,6 @@ local function BuildRowWidgets(row)
     row.flash:SetAllPoints(row)
     row.flash:SetVertexColor(1, 0.2, 0.2, 1)
     row.flash:Hide()
-
-    -- Renew indicator (optional): a small icon at the row's right edge with a
-    -- radial sweep for the HoT's remaining duration
-    row.renewIcon = row:CreateTexture(nil, "ARTWORK")
-    row.renewIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    util.StyleIcon(row.renewIcon)
-    row.renewIcon:Hide()
-    row.renewSwipe = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
-    if row.renewSwipe.SetHideCountdownNumbers then row.renewSwipe:SetHideCountdownNumbers(true) end
-    util.TrackSweep(row.renewSwipe)
-    row.renewSwipe:Hide()
 
     -- Dispellable-debuff strip, hanging off the row's right edge. Each slot is
     -- a CC glow (behind), a dispel-type rim, the icon, and a duration sweep.
@@ -4965,17 +4975,13 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
         row.name:Hide()
     end
 
-    -- Reserve room at the right for the Renew icon when it is tracked
-    -- (Priest-only: a shared account DB can carry the flag onto a Mage) and
-    -- for the raid-mark watcher
-    local renewOn = not compact and DB("RenewTrack", false) and layer == "PWS"
+    -- Reserve room at the right for the raid-mark watcher
     local marksOn = not compact and DB("ShowTargetMarks", true)
-    local rightReserve = (renewOn and (RENEW_ICON_SIZE + 4) or 0) + (marksOn and 16 or 0)
+    local rightReserve = marksOn and 16 or 0
     if marksOn then
         row.raidMark:ClearAllPoints()
         row.raidMark:SetSize(14, 14)
-        row.raidMark:SetPoint("RIGHT", row, "RIGHT",
-            -(PAD - 2) - (renewOn and (RENEW_ICON_SIZE + 4) or 0), 0)
+        row.raidMark:SetPoint("RIGHT", row, "RIGHT", -(PAD - 2), 0)
     else
         row.raidMark:Hide()
     end
@@ -5009,16 +5015,6 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     row.right:ClearAllPoints()
     row.right:SetPoint("RIGHT", row.barBG, "RIGHT", -3, 0)
 
-    if renewOn then
-        row.renewIcon:ClearAllPoints()
-        row.renewIcon:SetSize(RENEW_ICON_SIZE, RENEW_ICON_SIZE)
-        row.renewIcon:SetPoint("RIGHT", row, "RIGHT", -(PAD - 2), 0)
-        row.renewSwipe:ClearAllPoints()
-        row.renewSwipe:SetAllPoints(row.renewIcon)
-    else
-        row.renewIcon:Hide()
-        row.renewSwipe:Hide()
-    end
 
     -- Dispel strip: marches rightward OUTSIDE the frame so it never eats board width
     local dispelOn = not compact and DB("ShowDispels", false)
@@ -5072,7 +5068,6 @@ end
 local function LayoutSig(width)
     return width .. "|" .. tostring(DB("ShowSpellIcon", true)) .. "|"
         .. DB("UnitDisplay", "CLASS_ICON") .. "|" .. tostring(DB("ShowHealth", false))
-        .. "|" .. tostring(DB("RenewTrack", false))
         .. "|" .. tostring(DB("ShowDispels", false)) .. "|" .. DB("DispelMaxIcons", 3)
         .. "|" .. DB("DispelIconSize", 16) .. "|" .. tostring(DB("ShowManaBar", true))
         .. "|" .. tostring(DB("ShowTargetMarks", true))
@@ -5249,8 +5244,11 @@ local function PaintRow(row, r, now, index)
             end
             row.spellIcon:Hide()
             row.swipe:Hide()
-        elseif SDATA.STRIP_BOOKS[layer or ""] and not r.selfSpell then
-            -- The druid board's upkeep all lives on the strip above
+        elseif SDATA.STRIP_STATE_LAYERS[layer or ""] and not r.selfSpell then
+            -- The druid and paladin boards have nothing to put here: their
+            -- upkeep all lives on the strips. The priest board is NOT in this
+            -- branch even though it has a strip — its own status slot is the
+            -- Power Word: Shield tracker, which is the whole board.
             row.spellIcon:Hide(); row.swipe:Hide()
             row.inShield:Hide(); row.inShieldCd:Hide()
         elseif r.eleRow then
@@ -5323,10 +5321,10 @@ local function PaintRow(row, r, now, index)
         row.inShield:Hide(); row.inShieldCd:Hide()
     end
 
-    -- Hot strip (HOT layer): one lit icon per hot of ours, its sweep running
-    -- the hot's own remaining time, and a stack count on the one that stacks.
-    -- The slots were reserved by the layout, so an empty one leaves a gap
-    -- rather than sliding the rest of the row around.
+    -- The own-aura strip: one lit icon per aura of ours, its sweep running
+    -- that aura's own remaining time, and a stack count on the ones that
+    -- stack. The slots were reserved by the layout, so an empty one leaves a
+    -- gap rather than sliding the rest of the row around.
     local stripShown = 0
     if SDATA.STRIP_BOOKS[layer or ""] and not r.selfSpell and DB("ShowSpellIcon", true)
         and r.state ~= "EMPTY" and not r.dead then
@@ -5336,15 +5334,28 @@ local function PaintRow(row, r, now, index)
                 stripShown = i
                 local h = row.strip[i]
                 if not e.up then
-                    -- Missing: the hot's own art, dark, holding its place. The
-                    -- slot is the answer to "what could I cast here".
+                    -- Missing: the aura's own art, dark, holding its place.
+                    -- The slot is the answer to "what could I cast here".
                     h._exp = nil
                     h.cd:Hide()
                     h.count:Hide()
                     util.GhostIcon(h.icon, e.icon)
                 else
                     h.icon:SetTexture(e.icon)
-                    h.icon:SetVertexColor(1, 1, 1, 1)
+                    -- Inside the refresh window the slot itself says so. On
+                    -- the two layers whose STATE reads the strip this only
+                    -- agrees with the row colour; on the priest board, whose
+                    -- state is its shield, the slot is the ONLY thing that can
+                    -- tell you a Renew is about to drop — which is the job the
+                    -- old right-edge Renew icon existed to do.
+                    if e.due and DB("RenewFlash", true) then
+                        local pulse = 0.55 + 0.45 * math.abs(math.sin(now * 4))
+                        h.icon:SetVertexColor(1, 0.45, 0.45, pulse)
+                    elseif e.due then
+                        h.icon:SetVertexColor(1, 0.65, 0.3, 1)
+                    else
+                        h.icon:SetVertexColor(1, 1, 1, 1)
+                    end
                     if h.icon.SetDesaturated then h.icon:SetDesaturated(false) end
                     h.icon:Show()
                     if e.expire and e.expire > 0 and e.duration and e.duration > 0 then
@@ -5582,38 +5593,6 @@ local function PaintRow(row, r, now, index)
 
     row.left:SetText(r.mainText or "")
     row.right:SetText(r.rightText or "")
-
-    -- Renew indicator: bright + radial sweep while our Renew ticks, a red pulse
-    -- when it is about to fall off, a dim ghost icon when it is missing.
-    -- Priest-only; the shared account DB can carry the flag onto a Mage.
-    if DB("RenewTrack", false) and layer == "PWS" and r.state ~= "EMPTY" and not r.dead then
-        row.renewIcon:SetTexture(SDATA.RENEW_ICON)
-        local rl = r.renewLeft or 0
-        if rl > 0 and r.renewExpire then
-            if row.renewIcon.SetDesaturated then row.renewIcon:SetDesaturated(false) end
-            if row._rnExp ~= r.renewExpire then
-                row._rnExp = r.renewExpire
-                row.renewSwipe:SetCooldown(r.renewExpire - SDATA.RENEW_DURATION, SDATA.RENEW_DURATION)
-            end
-            row.renewSwipe:Show()
-            local expiring = rl <= DB("RenewRefreshAt", 4)
-            if expiring and DB("RenewFlash", true) then
-                row.renewIcon:SetVertexColor(1, 0.4, 0.4, 0.55 + 0.45 * math.abs(math.sin(now * 4)))
-            elseif expiring then
-                row.renewIcon:SetVertexColor(1, 0.55, 0.55, 1)
-            else
-                row.renewIcon:SetVertexColor(1, 1, 1, 1)
-            end
-        else
-            row._rnExp = nil
-            row.renewSwipe:Hide()
-            util.GhostIcon(row.renewIcon, SDATA.RENEW_ICON)   -- missing: dark placeholder
-        end
-        row.renewIcon:Show()
-    else
-        row.renewIcon:Hide()
-        row.renewSwipe:Hide()
-    end
 
     -- Dispellable debuffs, marching right of the frame. Rim is colored by dispel
     -- school; crowd control pulses a glow so it jumps out of a busy strip.
@@ -6436,7 +6415,7 @@ end
 
 -- Drop every injected test entry from the shared state tables
 local function ClearTestState()
-    for _, t in ipairs({ shieldState, wsState, renewState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters, strip.state }) do
+    for _, t in ipairs({ shieldState, wsState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters, strip.state }) do
         for guid in pairs(t) do
             if type(guid) == "string" and guid:find("^cshieldtest") then t[guid] = nil end
         end
@@ -7118,11 +7097,24 @@ function CommanderPartyFrames_Test()
     }
     allyAbsorbs["cshieldtest4"] = { [PWS_NAME or "Power Word: Shield"] =
         { expire = now + 20, duration = 30, capacity = cap, absorbed = cap * 0.4 } }
-    -- Renew samples (shown when Track Renew is on): healthy, expiring, missing
-    renewState["cshieldtest1"] = now + 12
-    renewState["cshieldtest2"] = now + 3
-    renewState["cshieldtest4"] = now + 9
-    renewState["cshieldtest6"] = now + 7
+    -- The priest's own hots on the strip, across every reading it has:
+    -- rolling, inside the refresh window (the tinted/pulsing slot, which on
+    -- this board is the ONLY warning an expiring hot gets), and a Prayer of
+    -- Mending carrying its charge count.
+    do
+        local defs = {}
+        for _, d in ipairs(SDATA.PRIEST_HOTS) do defs[d.key] = d end
+        strip.state["cshieldtest1"] = {
+            RENEW = { expire = now + 12, duration = 15, icon = defs.RENEW.icon, stacks = 0 },
+            POM = { expire = now + 26, duration = 30, icon = defs.POM.icon, stacks = 5 },
+        }
+        strip.state["cshieldtest2"] = {
+            RENEW = { expire = now + 3, duration = 15, icon = defs.RENEW.icon, stacks = 0 },
+        }
+        strip.state["cshieldtest4"] = {
+            POM = { expire = now + 9, duration = 30, icon = defs.POM.icon, stacks = 2 },
+        }
+    end
     -- Dispellable-debuff samples (shown when the strip is on); the Polymorph and
     -- Fear entries are flagged CC so the glow can be previewed
     dispelState["cshieldtest1"] = { n = 3,
@@ -7344,7 +7336,6 @@ local function Apply()
     -- default party frames back (blizz.Hidden reads EnableShield too)
     blizz.Apply()
     if profile and CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield then
-        if not DB("RenewTrack", false) then wipe(renewState) end
         if not DB("ShowDispels", false) then wipe(dispelState) end
         if not DB("ShowTargeters", true) then wipe(targeters) end
         Commander.UI.ApplyHudChrome(root, CommanderPartyFramesDB, "Hud", {
@@ -7379,7 +7370,6 @@ local function Apply()
     else
         wipe(shieldState)
         wipe(wsState)
-        wipe(renewState)
         wipe(dispelState)
         wipe(intState)
         wipe(curseState)
@@ -7415,7 +7405,6 @@ events:SetScript("OnEvent", function(self, event, arg1)
         playerGUID = UnitGUID("player")
         PWS_NAME = (GetSpellInfo and GetSpellInfo(17)) or "Power Word: Shield"
         WS_NAME = (GetSpellInfo and GetSpellInfo(6788)) or "Weakened Soul"
-        RENEW_NAME = (GetSpellInfo and GetSpellInfo(139)) or "Renew"
         -- Which layer (if any) this class gets, what we can dispel, and the
         -- CC names worth glowing
         local _, classToken = UnitClass("player")

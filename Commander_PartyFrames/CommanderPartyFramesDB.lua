@@ -58,9 +58,11 @@ local DefaultSettings = {
     TrackUptime = false,        -- track session shield coverage (+/cpf report)
     ExposeAlert = false,        -- flash a row when your shield breaks off an ally
     ExposeAlertSound = false,   -- also play a sound with the expose flash
-    RenewTrack = false,         -- per-row Renew HoT indicator (pairs with the shield)
-    RenewFlash = true,          -- pulse the Renew icon when it is about to expire
-    RenewRefreshAt = 4,         -- seconds left at/under which Renew counts as expiring
+    -- The priest's own hots (Renew, Prayer of Mending) ride the shared strip
+    -- now, so WHICH of them get a slot lives in BuffTrack with everyone
+    -- else's. RenewTrack is gone with the right-edge icon it switched on.
+    RenewFlash = true,          -- pulse a hot's slot when it is about to expire
+    RenewRefreshAt = 4,         -- seconds left at/under which a hot counts as expiring
     PriestBannerCooldowns = true, -- Pain Suppression/PI/Fear Ward/... segments on the banner
 
     -- Mage layer: Int/Brilliance upkeep, mage click bindings (their own keys —
@@ -178,7 +180,7 @@ local ICON_STYLE_OPTION = {
 -- chassis, so the spark is not a class decision either.
 local SWEEP_EDGE_OPTION = {
     label = "Sweep Edge",
-    tooltip = "Put a bright spark on the leading edge of the radial duration timers, so where a sweep IS reads at a glance instead of only how much shadow it has eaten. Affects the aura timers on the tracker strips: the hots and upkeep icons, the Renew indicator, and the dispellable-debuff icons. The party ability bar is deliberately left plain — those sweeps count down a cooldown, where the only question is ready or not, and a spark orbiting every one of them is motion you would have to learn to ignore.",
+    tooltip = "Put a bright spark on the leading edge of the radial duration timers, so where a sweep IS reads at a glance instead of only how much shadow it has eaten. Affects the aura timers on the tracker strips: the own-aura strip, the ally-buff icons, and the dispellable-debuff icons. The party ability bar is deliberately left plain — those sweeps count down a cooldown, where the only question is ready or not, and a spark orbiting every one of them is motion you would have to learn to ignore.",
     get = function() return CommanderPartyFramesDB.SweepEdge end,
     set = function(value) CommanderPartyFramesDB.SweepEdge = value end,
     isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
@@ -2763,28 +2765,22 @@ local function CreateCorePanel()
         isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
     })
 
-    panel:AddSection("Renew")
-    panel:AddCheckboxPair({
-        label = "Track Renew",
-        tooltip = "Show a Renew indicator at the right of each row, pairing your other maintenance HoT with the shield board: bright with a radial sweep while your Renew ticks, a red pulse when it is about to fall off, and a dim ghost icon when it is missing — so you can keep Renew rolling on the same allies you shield.",
-        get = function() return CommanderPartyFramesDB.RenewTrack end,
-        set = function(value) CommanderPartyFramesDB.RenewTrack = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    }, {
-        label = "Renew Refresh Flash",
-        tooltip = "Pulse the Renew icon when it is inside the refresh window below, so an about-to-drop Renew catches your eye. Requires Track Renew.",
+    panel:AddSection("Your Hots", "Renew and Prayer of Mending on each ally, one fixed slot each on the left of the row, timed by a radial sweep — the same strip a druid's hots and a paladin's Hands ride. Which of them get a slot is set in the Ally Buffs grid above. The row's state stays what it has always been: the shield and the Weakened Soul lockout, because no hot outranks those on this board.")
+    panel:AddCheckbox({
+        label = "Refresh Flash",
+        tooltip = "Pulse a hot's slot red while it is inside the refresh window below, so an about-to-drop Renew catches your eye. With this off the slot still tints amber — it just stops pulsing. This is the only warning the priest board gives about an expiring hot: on the druid and paladin boards the whole row changes colour, but here the row is busy saying something about the shield.",
         get = function() return CommanderPartyFramesDB.RenewFlash end,
         set = function(value) CommanderPartyFramesDB.RenewFlash = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.RenewTrack end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
     })
     panel:AddSlider({
-        label = "Renew Refresh At",
-        tooltip = "Treat your Renew as expiring when this many seconds or fewer remain (tints, and pulses if Renew Refresh Flash is on).",
+        label = "Refresh At",
+        tooltip = "Treat one of your hots as expiring when this many seconds or fewer remain — its slot tints, and pulses if Refresh Flash is on.",
         min = 1, max = 10, step = 1,
         format = function(value) return string.format("%ds", value or 0) end,
         get = function() return CommanderPartyFramesDB.RenewRefreshAt end,
         set = function(value) CommanderPartyFramesDB.RenewRefreshAt = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.RenewTrack end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
     })
 
     panel:AddSection("Party Ability Bar", "A curated cooldown strip under every player: match-deciders always visible (lit = ready, swept = cooling), trinkets/racials surfacing only once spent, a red rim for lockouts (Hypothermia, Forbearance), and a gold pip when Cold Snap or Preparation can refund a cooldown. Learned from the combat log; spec-gated abilities appear once the spec is known.")

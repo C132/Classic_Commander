@@ -496,6 +496,7 @@ local SPELLS = {
     -- Magic is deliberately LEFT OUT of the book below, so the known-spell
     -- gate has an untrained buff to prove it drops.
     [1243] = "Power Word: Fortitude", [21562] = "Prayer of Fortitude",
+    [33076] = "Prayer of Mending",
     [14752] = "Divine Spirit", [27681] = "Prayer of Spirit",
     [976] = "Shadow Protection", [27683] = "Prayer of Shadow Protection",
     [1008] = "Amplify Magic", [604] = "Dampen Magic",
@@ -550,7 +551,7 @@ Learn(17, 6788, 139, 1459, 23028, 5504, 587, 3273,
     11426, 1463,                                   -- Ice Barrier, Mana Shield
     1008,                                          -- Amplify Magic (Dampen untrained)
     45438, 11958, 12051, 2139, 12472, 66, 122,     -- mage banner (no Combustion)
-    1243, 21562, 14752, 27681, 976,                -- the priest's ally buffs
+    1243, 21562, 14752, 27681, 976, 33076,         -- the priest's ally buffs + Mending
     25431, 33206, 10060, 6346, 8122, 15487, 14751, 32375, 19236)  -- priest banner (no Shadowfiend)
 -- Druid book: the whole hot kit and three of the four banner cooldowns.
 -- Rebirth stays untrained on purpose (see the SPELLS note above).
@@ -1452,12 +1453,17 @@ if CLASS == "PALADIN" then
 end
 
 -- ===========================================================================
--- Priest Renew tracking (PWS layer)
+-- Priest own-aura strip (PWS layer)
 -- ===========================================================================
--- Ships behind RenewTrack, off by default. The indicator pairs the priest's
--- other maintenance HoT with the shield board, so it has to answer the same
--- three questions the shield does: is it up, how long has it got, and is it
--- about to drop.
+-- Renew used to be a lone icon bolted to the row's right edge with its own
+-- setting, its own flash and its own refresh window — a second vocabulary for
+-- what the strip already says on every other layer. It is a strip entry now,
+-- alongside Prayer of Mending, which never had a slot at all.
+--
+-- The priest is the one strip layer whose ROW STATE is not read from the
+-- strip: its bar is the absorb and its lockout is Weakened Soul. So the
+-- per-slot refresh cue is load-bearing here in a way it is not elsewhere —
+-- it is the only thing that can say a Renew is about to drop.
 if CLASS == "PRIEST" then
     -- --- The upkeep banner -------------------------------------------------
     -- The priest board carried a one-line string ("PW:S CD Ready ~1265")
@@ -1522,59 +1528,67 @@ if CLASS == "PRIEST" then
         Fire("UNIT_AURA", "player")
         now = now + 1
         for _, f in ipairs(allFrames) do
-            local u = f.__scripts.OnUpdate
             PumpFrame(f, 10)
         end
     end
     local function Row()
         for _, f in ipairs(allFrames) do
-            if f.renewIcon and f.stripe then return f end
+            if f.strip and f.stripe then return f end
         end
     end
 
-    -- Off by default: no icon, and no width reserved for one
-    CommanderPartyFramesDB.RenewTrack = false
-    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
-    Tick()
-    local row = Row()
-    CHECK(row ~= nil, "the priest board draws a row with a Renew slot")
-    local trackOff = row and row._barW
-    CHECK(row and row.renewIcon.__shown == false, "Renew is off by default")
-
-    CommanderPartyFramesDB.RenewTrack = true
+    CommanderPartyFramesDB.BuffTrack = CommanderPartyFramesDB.BuffTrack or {}
+    CommanderPartyFramesDB.BuffTrack["PWS:RENEW"] = true
+    CommanderPartyFramesDB.BuffTrack["PWS:POM"] = true
+    CommanderPartyFramesDB.RenewFlash = true
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     playerBuffs = {}
     Tick()
-    CHECK(row.renewIcon.__shown == true, "switching it on shows the slot")
-    CHECK(row._barW < trackOff, "...and the bar gives up width for it",
-        string.format("%s -> %s", tostring(trackOff), tostring(row._barW)))
+    local row = Row()
+    CHECK(row ~= nil, "the priest board draws a row with an own-aura strip")
+
+    -- The priest board keeps its OWN state grammar: the strip is a readout,
+    -- and a shieldless ally is still READY however many hots are on them
+    CHECK(row.spellIcon.__shown == true,
+        "...without giving up the Power Word: Shield slot")
+
     -- Missing: the board-wide dark placeholder, no sweep. Not a faded icon —
     -- desaturated AND sunk dark, the same look every missing tracker wears.
-    CHECK(row.renewSwipe.__shown == false, "a missing Renew runs no sweep")
-    CHECK(row.renewIcon.__desat == true, "...and ghosts the icon")
-    local ghost = row.renewIcon.__color or {}
+    CHECK(row.strip[1].cd.__shown == false, "a missing Renew runs no sweep")
+    CHECK(row.strip[1].icon.__desat == true, "...and ghosts the icon")
+    local ghost = row.strip[1].icon.__color or {}
     CHECK(ghost[1] and ghost[1] < 0.5 and ghost[2] and ghost[2] < 0.5,
         "...tinted dark, not merely faded", tostring(ghost[1]))
-    CHECK(row.renewIcon.__shown == true, "...and still holding its slot")
+    CHECK(row.strip[1].icon.__shown == true, "...and still holding its slot")
 
     -- Ticking: bright, swept against Renew's own 15s
     playerBuffs = { { name = "Renew", expirationTime = now + 12, duration = 15,
         icon = "Interface\\Icons\\Spell_139", sourceUnit = "player" } }
     Tick()
-    CHECK(row.renewSwipe.__shown == true, "a live Renew runs the sweep")
-    CHECK(row.renewSwipe.__cdDur == 15, "scaled to Renew's 15s", row.renewSwipe.__cdDur)
-    CHECK(row.renewIcon.__desat == false, "and the icon lights up")
-    local lit = row.renewIcon.__color or {}
+    CHECK(row.strip[1].cd.__shown == true, "a live Renew runs the sweep")
+    CHECK(row.strip[1].cd.__cdDur == 15, "scaled to Renew's 15s", row.strip[1].cd.__cdDur)
+    CHECK(row.strip[1].icon.__desat == false, "and the icon lights up")
+    local lit = row.strip[1].icon.__color or {}
     CHECK(lit[1] == 1 and lit[2] == 1 and lit[3] == 1, "healthy Renew is untinted")
+
+    -- Prayer of Mending owns the second slot and carries its stack count,
+    -- the way Lifebloom does on the druid board
+    playerBuffs[#playerBuffs + 1] = { name = "Prayer of Mending",
+        expirationTime = now + 25, duration = 30, applications = 4,
+        icon = "Interface\\Icons\\Spell_33076", sourceUnit = "player" }
+    Tick()
+    CHECK(row.strip[2].icon.__desat == false, "Prayer of Mending fills the second slot")
+    CHECK(row.strip[2].count.__shown == true and row.strip[2].count.__text == 4,
+        "...and carries its charge count", tostring(row.strip[2].count.__text))
 
     -- Someone else's Renew is not yours to maintain
     playerBuffs[1].sourceUnit = "party1"
     Tick()
-    CHECK(row.renewIcon.__desat == true, "another priest's Renew does not count as yours")
+    CHECK(row.strip[1].icon.__desat == true, "another priest's Renew does not count as yours")
     playerBuffs[1].sourceUnit = "player"
     Tick()
 
-    -- About to drop: inside the refresh window it tints red and pulses.
+    -- About to drop: inside the refresh window the SLOT tints and pulses.
     -- Re-stamped against the CURRENT now before each look, since Tick()
     -- advances the clock and a 2s Renew would otherwise expire between them.
     local function Expiring()
@@ -1582,26 +1596,37 @@ if CLASS == "PRIEST" then
         Tick()
     end
     Expiring()
-    local warn = row.renewIcon.__color or {}
+    local warn = row.strip[1].icon.__color or {}
     CHECK(warn[1] == 1 and warn[2] and warn[2] < 0.6,
         "an expiring Renew tints red", tostring(warn[2]))
-    CHECK(warn[4] and warn[4] < 1, "and pulses while Renew Refresh Flash is on", tostring(warn[4]))
+    CHECK(warn[4] and warn[4] < 1, "and pulses while the flash is on", tostring(warn[4]))
     CommanderPartyFramesDB.RenewFlash = false
     Expiring()
-    local steady = row.renewIcon.__color or {}
-    CHECK(steady[4] == 1, "with the flash off it tints without pulsing", tostring(steady[4]))
+    local steady = row.strip[1].icon.__color or {}
+    CHECK(steady[4] == 1, "with the flash off it tints amber without pulsing",
+        tostring(steady[4]))
+    CHECK(steady[2] and steady[2] > 0.5, "...amber, not the pulse's red", tostring(steady[2]))
     CommanderPartyFramesDB.RenewFlash = true
 
     -- Expiry prunes it back to the ghost
     playerBuffs = {}
     Tick()
-    CHECK(row.renewSwipe.__shown == false, "a Renew that fell off clears its sweep")
-    CHECK(row.renewIcon.__desat == true, "...and goes back to the ghost")
+    CHECK(row.strip[1].cd.__shown == false, "a Renew that fell off clears its sweep")
+    CHECK(row.strip[1].icon.__desat == true, "...and goes back to the ghost")
 
-    CommanderPartyFramesDB.RenewTrack = false
+    -- Untracking gives the width back
+    local withStrip = row._barW
+    CommanderPartyFramesDB.BuffTrack["PWS:RENEW"] = false
+    CommanderPartyFramesDB.BuffTrack["PWS:POM"] = false
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Tick()
-    CHECK(#caughtErrors == 0, "no errors across Renew tracking", caughtErrors[1])
+    CHECK(row._barW > withStrip, "dropping both slots hands the width back to the bar",
+        string.format("%s -> %s", tostring(withStrip), tostring(row._barW)))
+    CommanderPartyFramesDB.BuffTrack["PWS:RENEW"] = nil
+    CommanderPartyFramesDB.BuffTrack["PWS:POM"] = nil
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Tick()
+    CHECK(#caughtErrors == 0, "no errors across the priest strip", caughtErrors[1])
 end
 
 -- ===========================================================================
@@ -3311,7 +3336,7 @@ do
     -- trackers took those two slots: Mark of the Wild, Thorns and Arcane
     -- Intellect are aura durations like any hot, so they follow the same rule.
     local function AuraSweeps(row)
-        local out = { row.renewSwipe, row.swipe, row.inShieldCd }
+        local out = { row.swipe, row.inShieldCd }
         for i = 1, #row.strip do out[#out + 1] = row.strip[i].cd end
         for i = 1, #row.dispels do out[#out + 1] = row.dispels[i].cd end
         return out
@@ -3319,7 +3344,7 @@ do
     local function AllRows()
         local out = {}
         for _, f in ipairs(allFrames) do
-            if f.strip and f.dispels and f.renewSwipe then out[#out + 1] = f end
+            if f.strip and f.dispels and f.swipe then out[#out + 1] = f end
         end
         return out
     end
