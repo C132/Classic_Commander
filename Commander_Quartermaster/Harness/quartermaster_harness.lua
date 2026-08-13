@@ -1536,6 +1536,93 @@ world.bags[0] = {}
 world.items = {}
 Sync()
 
+-- ===========================================================================
+-- Q: sockets judged — colour matching, socket bonus, meta activation
+-- ===========================================================================
+
+local Q = CommanderQuartermasterEnhance
+
+-- Real gems from the generated database, by colour
+local RED, YELLOW, BLUE = 32193, 32204, 32200        -- Runed/Gleaming/Solid TBC cuts
+local ORANGE, PURPLE = 32218, 32215                   -- two-colour cuts
+local META = 32409                                    -- Relentless Earthstorm Diamond
+local function ColorsOf(id) return table.concat(Q.GemColors(id) or {}, "+") end
+CHECK(ColorsOf(RED) == "RED", "Q: a red gem is red", ColorsOf(RED))
+CHECK(ColorsOf(ORANGE) == "RED+YELLOW", "Q: an orange gem is red AND yellow", ColorsOf(ORANGE))
+CHECK(ColorsOf(PURPLE) == "RED+BLUE", "Q: a purple gem is red AND blue", ColorsOf(PURPLE))
+CHECK(ColorsOf(META) == "META", "Q: a meta gem is meta", ColorsOf(META))
+
+CHECK(Q.Fits(Q.GemColors(ORANGE), "YELLOW"), "Q: orange fits a yellow socket")
+CHECK(Q.Fits(Q.GemColors(ORANGE), "RED"), "Q: and a red one")
+CHECK(not Q.Fits(Q.GemColors(ORANGE), "BLUE"), "Q: but not a blue one")
+
+-- Matching has to be an assignment, not a greedy walk: the orange gem must
+-- give up the red socket so the red-only gem can have it
+CHECK(Q.MaxMatch({ "RED", "YELLOW" }, { ORANGE, RED }) == 2,
+    "Q: the orange gem moves aside for the red one",
+    Q.MaxMatch({ "RED", "YELLOW" }, { ORANGE, RED }))
+CHECK(Q.MaxMatch({ "RED", "RED" }, { ORANGE, BLUE }) == 1, "Q: a blue gem matches no red socket")
+
+-- Socket bonus on a real item
+world.items = {
+    [28187] = { id = 28187, loc = "INVTYPE_WEAPON", sockets = { RED = 1, YELLOW = 1 } },
+}
+local function Judge(gem1, gem2)
+    local link = ("|cffffffff|Hitem:28187:0:%d:%d:0:0:0:0:70:0:0|h[Gear]|h|r"):format(gem1 or 0, gem2 or 0)
+    return Q.JudgeSockets(link)
+end
+CHECK(Judge(RED, YELLOW).bonus == true, "Q: matching colours earn the socket bonus")
+CHECK(Judge(ORANGE, ORANGE).bonus == true, "Q: two orange gems match both sockets")
+CHECK(Judge(BLUE, BLUE).bonus == false, "Q: two blue gems earn nothing")
+CHECK(Judge(RED, BLUE).matched == 1, "Q: partial matching is counted, not rounded")
+CHECK(Judge(RED, nil).empty == 1, "Q: an empty socket is still an empty socket")
+CHECK(Judge(RED, nil).bonus == false, "Q: and forfeits the bonus even though the gem matched")
+
+-- Meta activation is judged across every gem you wear, not per item
+local relentless
+for _, e in ipairs(CommanderQuartermasterEnhanceData.Entries) do
+    if e.item == META then relentless = e end
+end
+CHECK(relentless and relentless.cond, "Q: the meta carries its colour condition")
+CHECK(relentless.condText:find("2 Red", 1, true) and relentless.condText:find("2 Blue", 1, true),
+    "Q: and says so in the client's words", relentless.condText)
+local function MetaWith(counts) return Q.MetaActive(relentless, counts) end
+CHECK(MetaWith({ RED = 2, YELLOW = 2, BLUE = 2 }) == true, "Q: 2/2/2 activates it")
+CHECK(MetaWith({ RED = 2, YELLOW = 2, BLUE = 1 }) == false, "Q: one blue short does not")
+
+world.equipped = {
+    [1] = { id = 28182, ench = 3002, loc = "INVTYPE_HEAD", sockets = { META = 1 }, gems = { META } },
+    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON",
+             sockets = { RED = 1, YELLOW = 1 }, gems = { ORANGE, ORANGE } },
+}
+local sockReport = Q.ScanGear("player")
+CHECK(sockReport.meta and sockReport.meta.entry.item == META, "Q: the audit finds the meta you wear")
+CHECK(sockReport.gemCounts.RED == 2 and sockReport.gemCounts.YELLOW == 2,
+    "Q: an orange gem counts for both of its colours, as the client counts it",
+    sockReport.gemCounts.RED .. "/" .. sockReport.gemCounts.YELLOW)
+CHECK(sockReport.meta.active == false, "Q: two orange gems do not satisfy a 2/2/2 meta")
+local metaProblem
+for _, p in ipairs(Q.Problems(sockReport)) do
+    if p.kind == "META" then metaProblem = p end
+end
+CHECK(metaProblem and metaProblem.text:find("inactive", 1, true),
+    "Q: and the audit says so, with the requirement", metaProblem and metaProblem.text)
+
+-- Add the blues and it lights up
+world.equipped[16].gems = { PURPLE, ORANGE }
+world.equipped[5] = { id = 28229, ench = 1, loc = "INVTYPE_CHEST",
+                      sockets = { BLUE = 1, YELLOW = 1 }, gems = { BLUE, YELLOW } }
+local better = Q.ScanGear("player")
+CHECK(better.meta.active == true, "Q: red 2, yellow 2, blue 2 across the set activates it")
+
+local beforeQ = #printLog
+CommanderQuartermaster_Gear()
+CHECK(FindPrint("is active", beforeQ) ~= nil, "Q: the chat report states the meta verdict")
+CHECK(FindPrint("socket bonus", beforeQ) ~= nil, "Q: and whether each item earned its bonus")
+
+world.equipped, world.items = {}, {}
+Sync()
+
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 
 io.write(("quartermaster_harness: %d checks, %d failures\n"):format(checks, fails))

@@ -1273,9 +1273,16 @@ local function BuildGearList()
     local role = MyRole()
     if slot == "MYGEAR" and #searchTokens == 0 then
         local report = Enhance.ScanGear("player")
-        PushHeader(("|cffffd200Equipped|r  |cff888888%d enhanceable slot%s, %d bare, %d socket%s empty|r"):format(
+        local head = ("|cffffd200Equipped|r  |cff888888%d enhanceable slot%s, %d bare, %d socket%s empty|r"):format(
             report.enchantable, report.enchantable == 1 and "" or "s",
-            report.bare, report.empty, report.empty == 1 and "" or "s"))
+            report.bare, report.empty, report.empty == 1 and "" or "s")
+        if report.meta then
+            head = head .. (report.meta.active
+                and ("  |cff33ff99%s active|r"):format(report.meta.entry.name)
+                or ("  |cffff4040%s INACTIVE|r |cff888888%s|r"):format(
+                    report.meta.entry.name, report.meta.entry.condText or ""))
+        end
+        PushHeader(head)
         for _, row in ipairs(report.rows) do
             if row.link then
                 displayList[#displayList + 1] = { kind = "gearslot", row = row, id = row.id }
@@ -1404,6 +1411,10 @@ local function BindRow(row, item)
             note = note .. ("  |cff888888·|r %s%d/%d gems|r"):format(
                 (grow.empty or 0) > 0 and "|cffff4040" or "|cff33ff99",
                 sockets - (grow.empty or 0), sockets)
+            if (grow.empty or 0) == 0 and not grow.unknownGems then
+                note = note .. (grow.bonus and " |cff33ff99bonus|r"
+                    or (" |cffff4040bonus lost (%d match)|r"):format(grow.matched or 0))
+            end
         end
         row.noteFS:SetText(note)
         row.tagFS:SetText(grow.slot and ("|cff777777%s|r"):format(grow.slot) or "")
@@ -2563,11 +2574,21 @@ function CommanderQuartermaster_Gear()
                 local filled = sockets - (row.empty or 0)
                 bits[#bits + 1] = ("%sgems %d/%d|r"):format(
                     (row.empty or 0) > 0 and "|cffff4040" or "|cff33ff99", filled, sockets)
+                if (row.empty or 0) == 0 and not row.unknownGems then
+                    bits[#bits + 1] = row.bonus and "|cff33ff99socket bonus|r"
+                        or "|cffff4040socket bonus lost|r"
+                end
             end
             if #bits > 0 then
                 print(("  %s %s  %s"):format(row.label, row.link, table.concat(bits, "  ")))
             end
         end
+    end
+    if report.meta then
+        print(("  %s%s|r %s"):format(report.meta.active and "|cff33ff99" or "|cffff4040",
+            report.meta.entry.name,
+            report.meta.active and "is active" or
+                ("is INACTIVE — " .. (report.meta.entry.condText or "colour requirement unmet"))))
     end
     -- What to do about it, priced against what you already hold
     for _, problem in ipairs(E.Problems(report)) do

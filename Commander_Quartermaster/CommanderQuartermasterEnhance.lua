@@ -205,6 +205,129 @@ end
 M.SkillRank = SkillRank
 
 -- ---------------------------------------------------------------------------
+-- Sockets
+-- ---------------------------------------------------------------------------
+
+-- A TBC gem's colour is a SET, not a value: an orange gem is red and yellow
+-- at once and satisfies either socket. Everything below treats it that way,
+-- which is the only way the socket bonus and the meta requirement come out
+-- right for anyone gemming orange, purple or green.
+local function GemColors(itemID)
+    local entry = itemID and byItem[itemID]
+    if not (entry and entry.kind == "GEM") then return nil end
+    return entry.colors or (entry.color and { entry.color }) or nil
+end
+M.GemColors = GemColors
+
+local function Fits(colors, socket)
+    if socket == "PRISMATIC" then return true end
+    if not colors then return false end
+    for _, color in ipairs(colors) do
+        if color == socket then return true end
+    end
+    return false
+end
+M.Fits = Fits
+
+-- Largest set of sockets that can be satisfied at once. A greedy pass is not
+-- enough: a red gem in a red socket may have to move to the orange one so a
+-- red-only gem can take its place. Kuhn's augmenting path, over at most four
+-- sockets, which is free.
+local function MaxMatch(sockets, gems)
+    local gemColors = {}
+    for i, id in ipairs(gems) do gemColors[i] = GemColors(id) end
+    local takenBy = {}          -- socket index -> gem index
+    local function try(gem, seen)
+        for s, socket in ipairs(sockets) do
+            if not seen[s] and Fits(gemColors[gem], socket) then
+                seen[s] = true
+                if not takenBy[s] or try(takenBy[s], seen) then
+                    takenBy[s] = gem
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    local matched = 0
+    for gem = 1, #gems do
+        if try(gem, {}) then matched = matched + 1 end
+    end
+    return matched
+end
+M.MaxMatch = MaxMatch
+
+-- One item's socket verdict. `bonus` is whether the item's socket bonus is
+-- earned: every socket filled, and filled by a gem whose colour matches it.
+function M.JudgeSockets(link, parsed)
+    parsed = parsed or ParseLink(link)
+    local stats = ItemStats(link)
+    if not (parsed and stats) then return nil end
+    local sockets = {}
+    for stat, color in pairs(SOCKET_STATS) do
+        for _ = 1, (stats[stat] or 0) do
+            sockets[#sockets + 1] = color
+        end
+    end
+    if #sockets == 0 then return nil end
+    local gems = {}
+    for i = 1, 4 do
+        if parsed.gems[i] and parsed.gems[i] ~= 0 then
+            gems[#gems + 1] = parsed.gems[i]
+        end
+    end
+    local matched = MaxMatch(sockets, gems)
+    return {
+        sockets = sockets, gems = gems,
+        empty = math.max(0, #sockets - #gems),
+        matched = matched,
+        -- Only claim the bonus when every socket is both filled and matched.
+        -- An unknown gem (one the database has never seen) counts as filled
+        -- but not matched, so the verdict degrades to "cannot tell" rather
+        -- than to a confident no.
+        bonus = (#gems >= #sockets) and (matched >= #sockets) or false,
+        unknown = (function()
+            for _, id in ipairs(gems) do
+                if not GemColors(id) then return true end
+            end
+            return nil
+        end)(),
+    }
+end
+
+-- Meta gems are judged against EVERY gem you are wearing, not against the
+-- item they sit in — which is why a helm's meta can switch off when you
+-- change a glove. A multi-coloured gem counts for each of its colours, the
+-- same way the client counts it.
+local function CountGemColors(rows)
+    local counts = { META = 0, RED = 0, YELLOW = 0, BLUE = 0 }
+    for _, row in ipairs(rows) do
+        for _, id in ipairs(row.gems or {}) do
+            for _, color in ipairs(GemColors(id) or {}) do
+                counts[color] = (counts[color] or 0) + 1
+            end
+        end
+    end
+    return counts
+end
+M.CountGemColors = CountGemColors
+
+function M.MetaActive(entry, counts)
+    if not (entry and entry.cond) then return nil end
+    for _, clause in ipairs(entry.cond) do
+        local left = counts[clause.lt] or 0
+        local right = clause.rtColor and (counts[clause.rtColor] or 0) or (clause.rt or 0)
+        local ok
+        if clause.op == ">=" then ok = left >= right
+        elseif clause.op == ">" then ok = left > right
+        elseif clause.op == "<" then ok = left < right
+        else ok = true end
+        if not ok then return false end
+    end
+    return true
+end
+
+-- ---------------------------------------------------------------------------
 -- The audit
 -- ---------------------------------------------------------------------------
 
@@ -242,26 +365,18 @@ function M.ScanGear(unit)
             end
             row.takesEnchant = takesEnchant or nil
 
-            local stats = ItemStats(link)
-            if stats then
-                for stat, color in pairs(SOCKET_STATS) do
-                    for _ = 1, (stats[stat] or 0) do
-                        row.sockets = row.sockets or {}
-                        row.sockets[#row.sockets + 1] = color
-                    end
-                end
-            end
-            if parsed then
+            local judged = M.JudgeSockets(link, parsed)
+            if judged then
+                row.sockets = judged.sockets
+                row.gems = judged.gems
+                row.empty = judged.empty
+                row.matched = judged.matched
+                row.bonus = judged.bonus
+                row.unknownGems = judged.unknown
+            else
                 row.gems = {}
-                for i = 1, 4 do
-                    if parsed.gems[i] and parsed.gems[i] ~= 0 then
-                        row.gems[#row.gems + 1] = parsed.gems[i]
-                    end
-                end
+                row.empty = 0
             end
-            local socketCount = row.sockets and #row.sockets or 0
-            local gemCount = row.gems and #row.gems or 0
-            row.empty = math.max(0, socketCount - gemCount)
 
             if takesEnchant then
                 enchantable = enchantable + 1
@@ -274,9 +389,22 @@ function M.ScanGear(unit)
         end
         rows[#rows + 1] = row
     end
+    -- Meta activation is a whole-character question — a helm's meta switches
+    -- off when you change a glove — so it can only be answered once every
+    -- slot has been read.
+    local counts = CountGemColors(rows)
+    local meta
+    for _, row in ipairs(rows) do
+        for _, id in ipairs(row.gems or {}) do
+            local entry = byItem[id]
+            if entry and entry.cond then
+                meta = { entry = entry, row = row, active = M.MetaActive(entry, counts) }
+            end
+        end
+    end
     return {
         rows = rows, bare = bare, empty = empty, enchantable = enchantable,
-        enchanter = enchanter,
+        enchanter = enchanter, gemCounts = counts, meta = meta,
     }
 end
 
@@ -501,8 +629,23 @@ function M.Problems(report)
                 out[#out + 1] = { row = row, kind = "SOCKET",
                                   text = ("%s has %d empty socket%s"):format(
                                       row.label, row.empty, row.empty == 1 and "" or "s") }
+            elseif row.sockets and not row.bonus and not row.unknownGems then
+                -- Filled, but not with matching colours: the socket bonus is
+                -- being left on the table, which is a different mistake.
+                out[#out + 1] = { row = row, kind = "BONUS",
+                                  text = ("%s forfeits its socket bonus (%d of %d gems match)"):format(
+                                      row.label, row.matched or 0, #row.sockets) }
             end
         end
+    end
+    -- The meta is one verdict for the whole character, so it is reported once
+    -- rather than against the helm that happens to carry it.
+    if report.meta and report.meta.active == false then
+        out[#out + 1] = {
+            row = report.meta.row, kind = "META",
+            text = ("%s is inactive — %s"):format(report.meta.entry.name,
+                report.meta.entry.condText or "its colour requirement is unmet"),
+        }
     end
     return out
 end

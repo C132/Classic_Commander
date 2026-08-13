@@ -65,8 +65,52 @@ SLOT_NAMES = {
     "SHIELD": "Shield", "RANGED": "Ranged", "GEM": "Gem", "OTHER": "Other",
 }
 
-# Gem colour, from GemProperties.Type (the socket-colour bitmask)
+# Gem colour, from GemProperties.Type — a BITMASK, not an enum. An orange gem
+# is red|yellow and fits either socket, which is the whole point of the
+# TBC gem system, so the colour has to be kept as a set.
 GEM_COLORS = [(1, "META"), (2, "RED"), (4, "YELLOW"), (8, "BLUE")]
+
+# Meta-gem activation, from SpellItemEnchantment.Condition_ID ->
+# SpellItemEnchantmentCondition. Operand types are colour indices and the
+# operators are the three the client implements. Decoded here rather than
+# scraped, then checked against Wowhead's rendered sentence: all six metas
+# spot-checked agree exactly ("Requires at least 2 Red Gems" and so on).
+COND_COLOR = {1: "META", 2: "RED", 3: "YELLOW", 4: "BLUE"}
+COND_OP = {2: ">", 3: "<", 5: ">="}
+
+
+def decode_condition(row):
+    if not row:
+        return None, None
+    clauses, words = [], []
+    for i in range(5):
+        lt = _int(row["Lt_operandType_%d" % i])
+        if not lt:
+            continue
+        op = _int(row["Operator_%d" % i])
+        rt_type = _int(row["Rt_operandType_%d" % i])
+        rt = _int(row["Rt_operand_%d" % i])
+        clause = {"lt": COND_COLOR.get(lt), "op": COND_OP.get(op)}
+        if rt_type:
+            clause["rtColor"] = COND_COLOR.get(rt_type)
+        else:
+            clause["rt"] = rt
+        if not (clause["lt"] and clause["op"]):
+            continue
+        clauses.append(clause)
+        # The client's own phrasing, which is what the player is looking for
+        if rt_type:
+            words.append(("more %s than %s Gems" if op == 2 else "fewer %s than %s Gems")
+                         % (clause["lt"].capitalize(), (clause.get("rtColor") or "?").capitalize()))
+        elif op == 5:
+            words.append("at least %d %s Gem%s" % (rt, clause["lt"].capitalize(),
+                                                   "" if rt == 1 else "s"))
+        else:
+            words.append("%s %s %d Gems" % (clause["lt"].capitalize(),
+                                            COND_OP.get(op, "?"), rt))
+    if not clauses:
+        return None, None
+    return clauses, "Requires " + ", ".join(words)
 
 # Names the client carries but no player ever sees
 JUNK = re.compile(r"^(QAEnchant|Test |TEST|zzOLD|OLD |Deprecated|\[?PH\]?|NPC )|"
@@ -100,6 +144,7 @@ class Client:
         self.item = {_int(r["ID"]): r for r in load_csv("ItemSparse")}
         self.item_cls = {_int(r["ID"]): r for r in load_csv("Item")}
         self.gem_props = {_int(r["ID"]): r for r in load_csv("GemProperties")}
+        self.ench_cond = {_int(r["ID"]): r for r in load_csv("SpellItemEnchantmentCondition")}
         self.equipped = {}
         for r in load_csv("SpellEquippedItems"):
             self.equipped[_int(r["SpellID"])] = r
@@ -557,15 +602,19 @@ def build():
             continue
         ench_id = _int(gp["Enchant_ID"])
         ench = cl.ench.get(ench_id)
-        color = next((c for bit, c in GEM_COLORS if _int(gp["Type"]) & bit), None)
-        if not color:
+        colors = [c for bit, c in GEM_COLORS if _int(gp["Type"]) & bit]
+        if not colors:
             continue   # "fits into a tonk Overdrive socket" — not player gear
+        color = colors[0]
+        clauses, cond_text = decode_condition(
+            cl.ench_cond.get(_int(ench["Condition_ID"])) if ench else None)
         src = world.item_sources(iid) + craft_sources(cl, world, iid)
         add({
             "ench": ench_id, "spell": None, "item": iid, "name": name,
             "short": ench["Name_lang"] if ench else None,
             "stats": parse_stats(ench["Name_lang"] if ench else None)[0],
-            "slots": ["GEM"], "kind": "GEM", "color": color,
+            "slots": ["GEM"], "kind": "GEM", "color": color, "colors": colors,
+            "cond": clauses, "condText": cond_text,
             "prof": None, "ilvl": None,
             "quality": _int(row["OverallQualityID"]),
             "lvl": _int(row["RequiredLevel"]) or None,
