@@ -960,14 +960,17 @@ local function CreateCorePanel()
     if CommanderPartyFrames_GetProfileMode then layerMode, classToken = CommanderPartyFrames_GetProfileMode() end
     local mageMode = layerMode == "INT"
     local druidMode = layerMode == "HOT"
+    local palaMode = layerMode == "BLESS"
     local unsupported = not layerMode
 
     local description
     if unsupported then
         local localizedClass = UnitClass("player")
         description = string.format(
-            "Swiss-army-knife party frames with a class layer. Priests get the reshield board (Power Word: Shield, Weakened Soul, dispels); Mages get buff-upkeep frames (Arcane Intellect, decursing, an optional self-shield strip); Druids get the hot board (Rejuvenation, Regrowth, Lifebloom stacks, curses and poisons). %s has no layer yet, so the module stays dormant on this character. Settings here are shared account-wide — boards on your Priest, Mage or Druid characters are unaffected.",
+            "Swiss-army-knife party frames with a class layer. Priests get the reshield board (Power Word: Shield, Weakened Soul, dispels); Mages get buff-upkeep frames (Arcane Intellect, decursing, an optional self-shield strip); Druids get the hot board (Rejuvenation, Regrowth, Lifebloom stacks, curses and poisons); Paladins get the blessing board (blessings, the Hands, Forbearance). %s has no layer yet, so the module stays dormant on this character. Settings here are shared account-wide — boards on your Priest, Mage, Druid or Paladin characters are unaffected.",
             localizedClass or "This class")
+    elseif palaMode then
+        description = "Arena party frames with a paladin's brain. Health and mana per ally, absorbs embedded in the bar, and — leading each row — the blessings you keep up and the Hands you have spent there: Freedom, Protection and Sacrifice, each in a fixed slot timed by a radial sweep. Forbearance draws the red drain under the bar, because a target who cannot be Protected is a target you plan around. A removable debuff turns the row purple or green, crowd control orange. The banner on top is your own upkeep: aura, seal, cooldowns, blessing uptime, team alerts. Allies' pets get full rows too."
     elseif druidMode then
         description = "Arena party frames with a resto druid's brain. Health and mana per ally, absorbs embedded in the bar, and — leading each row — your ally buffs and the hots you have rolling there, each in a fixed slot timed by a radial sweep. A removable Curse turns the row purple, a Poison green, crowd control orange. The banner on top is your own upkeep: form, cooldowns, hot uptime, team alerts. Allies' pets get full rows too."
     elseif mageMode then
@@ -991,7 +994,7 @@ local function CreateCorePanel()
             binds = function() if CommanderPartyFrames_Binds then CommanderPartyFrames_Binds() end end,
             abilities = function() CommanderPartyFrames_ToggleAbilityWindow() end,
             -- Always-available twin of the header button: the board is
-            -- Priest/Mage only, and it can hide itself
+            -- Priest/Mage/Druid/Paladin only, and it can hide itself
             blizzard = function()
                 if CommanderPartyFrames_ToggleBlizzardParty then
                     CommanderPartyFrames_ToggleBlizzardParty()
@@ -1120,7 +1123,7 @@ local function CreateCorePanel()
         })
         panel:AddCheckbox({
             label = "Hide Default Party Frames",
-            tooltip = "Hide Blizzard's own party frames and run on this board alone. The header's stacked-rows button toggles the same setting, and |cffffd100/cpf blizzard|r works from anywhere — worth knowing, because this board is Priest/Mage only and can hide itself. Changes apply out of combat; switching the module off gives the default frames back.",
+            tooltip = "Hide Blizzard's own party frames and run on this board alone. The header's stacked-rows button toggles the same setting, and |cffffd100/cpf blizzard|r works from anywhere — worth knowing, because this board is Priest/Mage/Druid/Paladin only and can hide itself. Changes apply out of combat; switching the module off gives the default frames back.",
             get = function() return CommanderPartyFramesDB.HideBlizzardParty end,
             set = function(value) CommanderPartyFramesDB.HideBlizzardParty = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
@@ -1565,7 +1568,7 @@ local function CreateCorePanel()
         })
         panel:AddCheckbox({
             label = "Hide Default Party Frames",
-            tooltip = "Hide Blizzard's own party frames and run on this board alone. The header's stacked-rows button toggles the same setting, and |cffffd100/cpf blizzard|r works from anywhere — worth knowing, because this board is Priest/Mage/Druid only and can hide itself. Changes apply out of combat; switching the module off gives the default frames back.",
+            tooltip = "Hide Blizzard's own party frames and run on this board alone. The header's stacked-rows button toggles the same setting, and |cffffd100/cpf blizzard|r works from anywhere — worth knowing, because this board is Priest/Mage/Druid/Paladin only and can hide itself. Changes apply out of combat; switching the module off gives the default frames back.",
             get = function() return CommanderPartyFramesDB.HideBlizzardParty end,
             set = function(value) CommanderPartyFramesDB.HideBlizzardParty = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
@@ -1940,6 +1943,451 @@ local function CreateCorePanel()
         return
     end
 
+    -- ---- Paladin party frames: blessings, the Hands, and Forbearance ----
+    if palaMode then
+        panel:AddCheckboxPair({
+            label = "Enable Shield",
+            tooltip = "Master switch for the whole module.",
+            get = function() return CommanderPartyFramesDB.EnableShield end,
+            set = function(value) CommanderPartyFramesDB.EnableShield = value end,
+        }, {
+            label = "Show Header",
+            tooltip = "Show your upkeep banner at the top: the aura you are running and the seal you are holding (both red when you have none — a paladin is always meant to be running both), your Lay on Hands / bubble / Hands / wings cooldowns, session blessing uptime when tracked, team alerts (what you can cleanse, who is in CC), and the bandage/settings buttons.",
+            get = function() return CommanderPartyFramesDB.ShowHeader end,
+            set = function(value) CommanderPartyFramesDB.ShowHeader = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckboxPair({
+            label = "Include Self",
+            tooltip = "Add your own row to the board — the Hands you have on yourself, your own Forbearance, and anything on you that you can cleanse.",
+            get = function() return CommanderPartyFramesDB.IncludeSelf end,
+            set = function(value) CommanderPartyFramesDB.IncludeSelf = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Self First",
+            tooltip = "Pin your own row to the top instead of sorting it in by urgency. No effect in Click-Cast mode (fixed roster order).",
+            get = function() return CommanderPartyFramesDB.SelfFirst end,
+            set = function(value) CommanderPartyFramesDB.SelfFirst = value end,
+            isEnabled = function() return SortableMode() and CommanderPartyFramesDB.IncludeSelf end,
+        })
+        panel:AddCheckbox({
+            label = "Include Pets",
+            tooltip = "Give your allies' pets their own rows — a warlock's demon, a hunter's pet — with the same health bar, embedded absorbs, magic and poison colors, dispel strip and click-casting every ally row gets, so a Freedom or a blessing lands on them like anyone else. Blessing of Might applies to anything that swings, so a pet keeps that slot even without a mana strip. A pet's portrait stands in for the class icon, and its name is tinted with its owner's class color. Pets carry no ability strip (the book is a class's cooldowns, and a pet has none) and give way to an equally urgent player in the sort — but a poisoned pet still outranks a quiet teammate. They count against Max Rows.",
+            get = function() return CommanderPartyFramesDB.IncludePets end,
+            set = function(value) CommanderPartyFramesDB.IncludePets = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckboxPair({
+            label = "Only Show Alerts",
+            tooltip = "Hide the quiet rows and keep only the ones that want a global — Hands about to fall off, allies in real trouble with none, anyone Forbearance-locked, and anyone with something you can cleanse or in CC (you always stay visible). No effect in Click-Cast mode (fixed roster order).",
+            get = function() return CommanderPartyFramesDB.OnlyAlerts end,
+            set = function(value) CommanderPartyFramesDB.OnlyAlerts = value end,
+            isEnabled = SortableMode,
+        }, {
+            label = "Always Show",
+            tooltip = "Keep the board frame on screen even when there is nothing to report.",
+            get = function() return CommanderPartyFramesDB.AlwaysShow end,
+            set = function(value) CommanderPartyFramesDB.AlwaysShow = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckboxPair({
+            label = "Fixed Frame Size",
+            tooltip = "Keep the frame (and its styled backdrop) sized for the full board length instead of shrinking to what is currently shown.",
+            get = function() return CommanderPartyFramesDB.FixedHeight end,
+            set = function(value) CommanderPartyFramesDB.FixedHeight = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Settings Button",
+            tooltip = "Show a small gear at the header's right edge that opens this settings page.",
+            get = function() return CommanderPartyFramesDB.ShowSettingsButton end,
+            set = function(value) CommanderPartyFramesDB.ShowSettingsButton = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
+        })
+        panel:AddCheckbox({
+            label = "Header Backdrop",
+            tooltip = "Dark panel behind the banner across the top of the board, so the icons and text read against it instead of against the world. Independent of the frame's own styled backdrop.",
+            get = function() return CommanderPartyFramesDB.HeaderBackdrop end,
+            set = function(value) CommanderPartyFramesDB.HeaderBackdrop = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
+        })
+        panel:AddCheckbox({
+            label = "Hide Default Party Frames",
+            tooltip = "Hide Blizzard's own party frames and run on this board alone. The header's stacked-rows button toggles the same setting, and |cffffd100/cpf blizzard|r works from anywhere — worth knowing, because this board is Priest/Mage/Druid/Paladin only and can hide itself. Changes apply out of combat; switching the module off gives the default frames back.",
+            get = function() return CommanderPartyFramesDB.HideBlizzardParty end,
+            set = function(value) CommanderPartyFramesDB.HideBlizzardParty = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddDropdown({
+            label = "Watch",
+            tooltip = "Which allies to put on the board. Party watches you and your party; Raid watches you and your raid group (use Max Rows and Only Show Alerts to keep a large raid readable).",
+            options = {
+                { text = "Party", value = "PARTY" },
+                { text = "Raid", value = "RAID" },
+            },
+            get = function() return CommanderPartyFramesDB.Scope end,
+            set = function(value) CommanderPartyFramesDB.Scope = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddSliderPair({
+            label = "Max Rows",
+            tooltip = "Most ally rows shown at once (most urgent first).",
+            min = 1, max = 40, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.MaxRows end,
+            set = function(value) CommanderPartyFramesDB.MaxRows = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Frame Width",
+            tooltip = "Overall width of the board — widen until the blessing slots, the Hand strip, names and numbers sit comfortably.",
+            min = 180, max = 340, step = 2,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.FrameWidth end,
+            set = function(value) CommanderPartyFramesDB.FrameWidth = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddSlider({
+            label = "Rebuff Window",
+            tooltip = "Treat an ally's blessing as due when this much time or less remains — its slot turns amber so you can rebless before it drops. Greater blessings run thirty minutes and singles ten, so this is the one number that decides how often the strip asks you for anything.",
+            min = 60, max = 900, step = 30,
+            format = function(value) return string.format("%dm", math.floor((value or 0) / 60 + 0.5)) end,
+            get = function() return CommanderPartyFramesDB.IntRefreshAt end,
+            set = function(value) CommanderPartyFramesDB.IntRefreshAt = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddButtonRow({
+            {
+                label = "Test Board",
+                width = 110,
+                tooltip = "Fill the board with sample rows in every state so you can see and position it without a group (also: /cpf test).",
+                onClick = function() if CommanderPartyFrames_Test then CommanderPartyFrames_Test() end end,
+            },
+        })
+
+        AddBuffSection(panel, "HOT")
+
+        panel:AddSection("Hands", "Your own Blessing of Freedom, Protection and Sacrifice on each ally, one fixed slot each, timed by a radial sweep. The row's number is whichever falls off first — and when a target is carrying Forbearance, the red drain under the bar is the minute you cannot Protect them for.")
+        panel:AddSlider({
+            label = "Refresh Window",
+            tooltip = "Seconds left at or under which a Hand counts as expiring — the row turns cyan (REFRESH) and sorts up by how long is actually left, or orange (FADING) when Forbearance means you cannot replace it. Ten seconds of Freedom goes fast, so set this to the reaction time you actually want.",
+            min = 1, max = 10, step = 1,
+            format = "%.0fs",
+            get = function() return CommanderPartyFramesDB.BlessRefreshAt end,
+            set = function(value) CommanderPartyFramesDB.BlessRefreshAt = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddSlider({
+            label = "Hand Me At",
+            tooltip = "Health at or under which an ally carrying none of your Hands turns yellow (READY — this is the one to Protect or Free). A Hand is a cooldown you get once a fight, so this sits far lower than a hot board's: an ally at 89% is not a decision. An ally with an enemy melee parked on them qualifies at 85% whatever this says.",
+            min = 30, max = 100, step = 5,
+            format = "%.0f%%",
+            get = function() return CommanderPartyFramesDB.BlessReadyAt end,
+            set = function(value) CommanderPartyFramesDB.BlessReadyAt = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckbox({
+            label = "Banner Cooldowns",
+            tooltip = "Show Lay on Hands, Divine Shield, Divine Protection, the three Hands, Divine Favor, Avenging Wrath, Hammer of Justice, Divine Illumination and Repentance on the banner — lit when ready, dimmed with the time left when not. Only the ones you have actually trained appear, so a holy paladin never sees a Repentance slot.",
+            get = function() return CommanderPartyFramesDB.BlessBannerCooldowns end,
+            set = function(value) CommanderPartyFramesDB.BlessBannerCooldowns = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
+        })
+
+        panel:AddSection("Identity & Icons")
+        panel:AddDropdownPair({
+            label = "Show Unit As",
+            tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
+            options = {
+                { text = "Class Icon", value = "CLASS_ICON" },
+                { text = "Portrait", value = "PORTRAIT" },
+                { text = "Name", value = "NAME" },
+                { text = "Icon + Name", value = "ICON_NAME" },
+                { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
+                { text = "Specialization", value = "SPEC" },
+                { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
+            },
+            get = function() return CommanderPartyFramesDB.UnitDisplay end,
+            set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Grow",
+            tooltip = "Direction the board grows from its anchor.",
+            options = {
+                { text = "Down", value = "DOWN" },
+                { text = "Up", value = "UP" },
+            },
+            get = function() return CommanderPartyFramesDB.Grow end,
+            set = function(value) CommanderPartyFramesDB.Grow = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckboxPair({
+            label = "Status Icons",
+            tooltip = "Show the blessing slots and the Hand strip beside them. A blessing slot is ghosted when missing, amber inside the rebuff window, and dark-red only when the advisor says its absence is actually costing you — never when the ally already carries another of your blessings, because the game only allows them one.",
+            get = function() return CommanderPartyFramesDB.ShowSpellIcon end,
+            set = function(value) CommanderPartyFramesDB.ShowSpellIcon = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "NPC Target Counter",
+            tooltip = "Show, over each unit's class icon or portrait, how many enemy NPCs are currently targeting them — white 1, amber 2, red 3+. Reads the visible enemy nameplates, so turn enemy nameplates on (default V) for full coverage; needs an icon to sit on, so it hides in Name-only display.",
+            get = function() return CommanderPartyFramesDB.ShowTargeters end,
+            set = function(value) CommanderPartyFramesDB.ShowTargeters = value end,
+            isEnabled = function()
+                return CommanderPartyFramesDB.EnableShield
+                    and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
+            end,
+        })
+        panel:AddCheckbox({
+            label = "Target Marks",
+            tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
+            get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
+            set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddSlider({
+            label = "Name Length",
+            tooltip = "Trim ally names to this many characters (keeps rows compact). Applies when Show Unit As includes a name.",
+            min = 3, max = 12, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.NameMaxChars end,
+            set = function(value) CommanderPartyFramesDB.NameMaxChars = value end,
+            isEnabled = function()
+                return CommanderPartyFramesDB.EnableShield
+                    and (CommanderPartyFramesDB.UnitDisplay == "NAME" or CommanderPartyFramesDB.UnitDisplay == "ICON_NAME")
+            end,
+        })
+        panel:AddCheckbox({
+            label = "Color Shield Types",
+            tooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
+            get = function() return CommanderPartyFramesDB.ColorShieldTypes end,
+            set = function(value) CommanderPartyFramesDB.ColorShieldTypes = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddDropdown(BAR_TEXTURE_OPTION)
+        panel:AddDropdown(ICON_STYLE_OPTION)
+        panel:AddCheckbox(SWEEP_EDGE_OPTION)
+
+        panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Enabling needs a /reload and fixes the roster order.")
+        panel:AddCheckbox({
+            label = "Enable Row Clicks",
+            tooltip = "Make each row a secure unit button bound to a fixed roster slot: hovering it targets that ally for your @mouseover cast macros, and each bound click casts its spell. Because secure frames cannot change in combat, the board uses a fixed roster order (no urgency sort) while this is on. Takes effect after a /reload.",
+            get = function() return CommanderPartyFramesDB.ClickCast end,
+            set = function(value) CommanderPartyFramesDB.ClickCast = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddDropdown({
+            label = "Binding Profile",
+            tooltip = "Which set of bindings is live. Follow Talent Build keys them to the tree you have most points in, so respeccing from your arena build to your PvE one brings back the bindings you left for it — this is a TBC client, so the talent build is what stands in for dual spec. Single Set keeps one profile whatever you respec into.",
+            options = {
+                { text = "Follow Talent Build", value = "TALENT" },
+                { text = "Single Set", value = "FIXED" },
+            },
+            get = function() return CommanderPartyFramesDB.ClickProfileMode end,
+            set = function(value)
+                CommanderPartyFramesDB.ClickProfileMode = value
+                if value == "FIXED" and (CommanderPartyFramesDB.ClickProfileFixed or "") == "" then
+                    CommanderPartyFramesDB.ClickProfileFixed =
+                        CommanderPartyFrames_ActiveProfile and CommanderPartyFrames_ActiveProfile() or ""
+                end
+            end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ClickCast end,
+        })
+        AddClickMatrix(panel)
+
+        panel:AddSection("Decision Aids")
+        panel:AddCheckboxPair({
+            label = "Mana Bar",
+            tooltip = "Show a blue mana strip under each mana user's health bar — the health bar itself is always on (it IS the row's main bar).",
+            get = function() return CommanderPartyFramesDB.ShowManaBar end,
+            set = function(value) CommanderPartyFramesDB.ShowManaBar = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Range Fade",
+            tooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
+            get = function() return CommanderPartyFramesDB.RangeFade end,
+            set = function(value) CommanderPartyFramesDB.RangeFade = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckboxPair({
+            label = "Action Glow",
+            tooltip = "Softly glow any row with an open action — something to cleanse, a Hand to give or refresh, or a missing blessing — so the next global jumps out.",
+            get = function() return CommanderPartyFramesDB.WSReadyGlow end,
+            set = function(value) CommanderPartyFramesDB.WSReadyGlow = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Pin Focus",
+            tooltip = "Keep your focus unit's row at the top of the board. No effect in Click-Cast mode (fixed roster order).",
+            get = function() return CommanderPartyFramesDB.PinFocus end,
+            set = function(value) CommanderPartyFramesDB.PinFocus = value end,
+            isEnabled = SortableMode,
+        })
+        panel:AddCheckboxPair({
+            label = "Combat Only",
+            tooltip = "Only show the board while you are in combat.",
+            get = function() return CommanderPartyFramesDB.CombatOnly end,
+            set = function(value) CommanderPartyFramesDB.CombatOnly = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Track Uptime",
+            tooltip = "Track your BLESSING uptime — the share of the session your living teammates were carrying at least one blessing of yours. Hands are deliberately not counted: they are emergencies, and a number near zero would mean nothing. Shown in the banner; detailed by /cpf report.",
+            get = function() return CommanderPartyFramesDB.TrackUptime end,
+            set = function(value) CommanderPartyFramesDB.TrackUptime = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckboxPair({
+            label = "Shield Broke Flash",
+            tooltip = "Flash a row red the moment a teammate's LAST absorb breaks — that is exactly when the enemy team commits, and on this board it is the cue to have a Hand ready before the damage lands.",
+            get = function() return CommanderPartyFramesDB.ExposeAlert end,
+            set = function(value) CommanderPartyFramesDB.ExposeAlert = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Break Sound",
+            tooltip = "Also play an alert sound with the flash.",
+            get = function() return CommanderPartyFramesDB.ExposeAlertSound end,
+            set = function(value) CommanderPartyFramesDB.ExposeAlertSound = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
+        })
+
+        panel:AddSection("Banner Buttons", "First Aid is not a class layer, so the bandage control rides this banner too.")
+        panel:AddCheckboxPair({
+            label = "Bandage Button",
+            tooltip = "Show the First Aid control: left or right-click bandages your friendly target (or you), middle-click opens the First Aid window. The icon carries a count of the bandages in your bags and sweeps while the target is locked out by Recently Bandaged.",
+            get = function() return CommanderPartyFramesDB.ShowBandageButton end,
+            set = function(value) CommanderPartyFramesDB.ShowBandageButton = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
+        }, {
+            label = "Inventory Counts",
+            tooltip = "Show the live tally of what is in your bags over the button icon.",
+            get = function() return CommanderPartyFramesDB.ShowUtilityCounts end,
+            set = function(value) CommanderPartyFramesDB.ShowUtilityCounts = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
+        })
+
+        panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs you can remove — a paladin cleanses Magic, Poison and Disease, which is more schools than anyone else on this board — and a glow on crowd control. A removable debuff also colors the whole row, whatever is shown here.")
+        panel:AddCheckboxPair({
+            label = "Show Dispellable Debuffs",
+            tooltip = "Show, to the right of each ally's row, the Magic, Poison and Disease debuffs you can cleanse (rim colored by school, countdown sweep). The row states work even with this strip off; the strip tells you WHICH debuff it is.",
+            get = function() return CommanderPartyFramesDB.ShowDispels end,
+            set = function(value) CommanderPartyFramesDB.ShowDispels = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "CC Glow",
+            tooltip = "Pulse a bright glow behind crowd-control debuffs so the one that needs removing first jumps out of a busy strip.",
+            get = function() return CommanderPartyFramesDB.DispelCCGlow end,
+            set = function(value) CommanderPartyFramesDB.DispelCCGlow = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        })
+        panel:AddCheckboxPair({
+            label = "Important Debuffs",
+            tooltip = "Also show debuffs worth knowing about even though you cannot remove them: healing reductions, undispellable crowd control and stuns, and silences. These get a category-colored rim and sort to the front of the strip.",
+            get = function() return CommanderPartyFramesDB.DispelShowImportant end,
+            set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        }, {
+            label = "Heal Reduction Glow",
+            tooltip = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a paladin board that is the cue to stop trading Flash of Light against it and spend a cooldown instead.",
+            get = function() return CommanderPartyFramesDB.DispelHealGlow end,
+            set = function(value) CommanderPartyFramesDB.DispelHealGlow = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        })
+        panel:AddCheckbox({
+            label = "Duration Sweep",
+            tooltip = "Draw a radial countdown over each debuff icon showing how long it has left.",
+            get = function() return CommanderPartyFramesDB.DispelSweep end,
+            set = function(value) CommanderPartyFramesDB.DispelSweep = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        })
+        panel:AddSliderPair({
+            label = "Debuff Icons",
+            tooltip = "How many debuff icons to show per row.",
+            min = 1, max = 5, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.DispelMaxIcons end,
+            set = function(value) CommanderPartyFramesDB.DispelMaxIcons = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        }, {
+            label = "Debuff Icon Size",
+            tooltip = "Size of each debuff icon in the strip.",
+            min = 10, max = 24, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.DispelIconSize end,
+            set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+        })
+
+        panel:AddSection("Party Ability Bar", "A curated cooldown strip under every player: match-deciders always visible (lit = ready, swept = cooling), trinkets/racials surfacing only once spent, a red rim for lockouts (Hypothermia, Forbearance), and a gold pip when Cold Snap or Preparation can refund a cooldown. Learned from the combat log; spec-gated abilities appear once the spec is known.")
+        panel:AddCheckboxPair({
+            label = "Show Ability Bar",
+            tooltip = "Master switch for the per-player cooldown strips.",
+            get = function() return CommanderPartyFramesDB.ShowAbilityBar end,
+            set = function(value) CommanderPartyFramesDB.ShowAbilityBar = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Include Your Row",
+            tooltip = "Also show the strip under your own row — you know your cooldowns, but under pressure the sanity check is free.",
+            get = function() return CommanderPartyFramesDB.AbilityBarSelf end,
+            set = function(value) CommanderPartyFramesDB.AbilityBarSelf = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddCheckbox({
+            label = "Mine Only",
+            tooltip = "Show the strip under YOUR row and nobody else's. The narrowest the ability bar goes without switching it off — the reminder of your own cooldowns, without a wall of everyone else's. Needs Include Your Row on, or there would be nothing left to draw.",
+            get = function() return CommanderPartyFramesDB.AbilityBarOnlySelf end,
+            set = function(value) CommanderPartyFramesDB.AbilityBarOnlySelf = value end,
+            isEnabled = function()
+                return CommanderPartyFramesDB.EnableShield
+                    and CommanderPartyFramesDB.ShowAbilityBar
+                    and CommanderPartyFramesDB.AbilityBarSelf
+            end,
+        })
+        panel:AddSlider({
+            label = "Max Ability Icons",
+            tooltip = "Most icons per strip; overflow evicts utility first, defensives last.",
+            min = 3, max = 8, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.AbilityMaxIcons end,
+            set = function(value) CommanderPartyFramesDB.AbilityMaxIcons = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddCheckbox({
+            label = "Cooldown Text",
+            tooltip = "Show remaining time on cooling icons (hidden under 10s — the sweep carries it).",
+            get = function() return CommanderPartyFramesDB.AbilityCdText end,
+            set = function(value) CommanderPartyFramesDB.AbilityCdText = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddCheckbox({
+            label = "Bar Backdrop",
+            tooltip = "Dark panel behind each strip, sized to the icons actually shown — so a short strip leaves no bar hanging under the row, and an empty one draws nothing.",
+            get = function() return CommanderPartyFramesDB.AbilityBarBackdrop end,
+            set = function(value) CommanderPartyFramesDB.AbilityBarBackdrop = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+        })
+        panel:AddButtonRow({
+            {
+                label = "Tracked Abilities…",
+                width = 150,
+                tooltip = "Open the tracked-abilities window — a dropdown per class choosing exactly which cooldowns its strip may show (also: /cpf abilities). New options ship unchecked, so the default strip is unchanged until you opt in.",
+                onClick = function() CommanderPartyFrames_ToggleAbilityWindow() end,
+                isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowAbilityBar end,
+            },
+        })
+
+        Commander.UI.AddHudChromeOptions(panel, CommanderPartyFramesDB, "Hud", {
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+            onChanged = function() Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE) end,
+        })
+
+        panel:Finalize({ onDefaults = Reset })
+        -- Re-synced on every refresh, not just at build: sections measure
+        -- their own wrapped subtext on first show and grow, and a scroll
+        -- child frozen at the build-time total would clip the last rows off.
+        panel:AddRefresher(function()
+            scrollChild:SetHeight(panel._contentHeight + 24)
+        end)
+        scrollChild:SetHeight(panel._contentHeight + 24)
+        return
+    end
+
+
     -- ---- Priest ally board (the original page, unchanged) ----
     panel:AddCheckboxPair({
         label = "Enable Shield",
@@ -2008,7 +2456,7 @@ local function CreateCorePanel()
     })
     panel:AddCheckbox({
         label = "Hide Default Party Frames",
-        tooltip = "Hide Blizzard's own party frames and run on this board alone. The header's stacked-rows button toggles the same setting, and |cffffd100/cpf blizzard|r works from anywhere — worth knowing, because this board is Priest/Mage only and can hide itself. Changes apply out of combat; switching the module off gives the default frames back.",
+        tooltip = "Hide Blizzard's own party frames and run on this board alone. The header's stacked-rows button toggles the same setting, and |cffffd100/cpf blizzard|r works from anywhere — worth knowing, because this board is Priest/Mage/Druid/Paladin only and can hide itself. Changes apply out of combat; switching the module off gives the default frames back.",
         get = function() return CommanderPartyFramesDB.HideBlizzardParty end,
         set = function(value) CommanderPartyFramesDB.HideBlizzardParty = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield end,

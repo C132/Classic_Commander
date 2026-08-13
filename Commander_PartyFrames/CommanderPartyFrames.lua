@@ -2732,7 +2732,8 @@ function blizz.Toggle()
 end
 
 -- Escape hatch for the settings page and /cpf blizzard: the header button
--- rides the board, and the board is Priest/Mage only (and can hide itself).
+-- rides the board, and the board is Priest/Mage/Druid/Paladin only (and can
+-- hide itself).
 function CommanderPartyFrames_ToggleBlizzardParty()
     blizz.Toggle()
 end
@@ -6937,7 +6938,7 @@ end
 -- the rule's own words for the verdict it reached.
 function CommanderPartyFrames_Buffs()
     if not layer then
-        print("Commander Party Frames: no board for this class (Priest, Mage, Druid)")
+        print("Commander Party Frames: no board for this class (Priest, Mage, Druid, Paladin)")
         return
     end
     print(string.format("|cff66ccffCPF buffs|r: layer=%s  advisor=%s", layer,
@@ -6993,7 +6994,7 @@ end
 -- character cannot cast, and names the profile it came from.
 function CommanderPartyFrames_Binds()
     if not layer then
-        print("Commander Party Frames: no board for this class (Priest, Mage, Druid)")
+        print("Commander Party Frames: no board for this class (Priest, Mage, Druid, Paladin)")
         return
     end
     local profile = util.TalentProfile()
