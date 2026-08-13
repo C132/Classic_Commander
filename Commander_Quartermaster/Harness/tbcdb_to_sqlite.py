@@ -34,7 +34,8 @@ DB_PATH = os.path.join(CACHE, "tbcdb.sqlite")
 TABLES = [
     "item_template",
     "npc_vendor", "npc_vendor_template",
-    "creature_template", "creature", "gameobject_template", "gameobject",
+    "creature_template", "creature", "creature_zone",
+    "gameobject_template", "gameobject",
     "creature_loot_template", "gameobject_loot_template", "item_loot_template",
     "reference_loot_template", "disenchant_loot_template", "fishing_loot_template",
     "pickpocketing_loot_template", "prospecting_loot_template", "skinning_loot_template",
@@ -65,8 +66,21 @@ def fetch(force=False):
     os.replace(DUMP_GZ + ".part", DUMP_GZ)
 
 
+# mysql type -> sqlite affinity. Affinity is not cosmetic here: every value
+# arrives from the dump as a python string, and only an INTEGER/REAL column
+# converts it on insert. Leave it off and `WHERE entry = 29191` matches
+# nothing, because the stored value is the text '29191'.
+def affinity(mysql_type):
+    t = mysql_type.lower()
+    if t in ("tinyint", "smallint", "mediumint", "int", "bigint", "year"):
+        return "INTEGER"
+    if t in ("float", "double", "decimal", "numeric"):
+        return "REAL"
+    return "TEXT"
+
+
 def read_schemas():
-    """table -> [column names], read from the dump's own CREATE TABLE blocks."""
+    """table -> [(column, affinity)], read from the dump's own CREATE TABLE blocks."""
     schemas, cur, cols = {}, None, []
     with gzip.open(DUMP_GZ, "rt", encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -81,7 +95,7 @@ def read_schemas():
                 continue
             m = COLUMN_RE.match(line)
             if m and m.group(1).upper() not in ("PRIMARY", "KEY", "UNIQUE", "INDEX"):
-                cols.append(m.group(1))
+                cols.append((m.group(1), affinity(m.group(2))))
     missing = [t for t in TABLES if t not in schemas]
     if missing:
         raise SystemExit("dump is missing tables: %s" % ", ".join(missing))
@@ -138,7 +152,8 @@ def build(schemas):
     con.execute("PRAGMA journal_mode=OFF")
     con.execute("PRAGMA synchronous=OFF")
     for table, cols in schemas.items():
-        con.execute("CREATE TABLE %s (%s)" % (table, ", ".join('"%s"' % c for c in cols)))
+        con.execute("CREATE TABLE %s (%s)" %
+                    (table, ", ".join('"%s" %s' % (c, a) for c, a in cols)))
     counts = {t: 0 for t in schemas}
     with gzip.open(DUMP_GZ, "rt", encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -159,7 +174,7 @@ def build(schemas):
             con.executemany(stmt, rows)
             counts[table] += len(rows)
     for table in schemas:
-        first = schemas[table][0]
+        first = schemas[table][0][0]
         con.execute('CREATE INDEX idx_%s_1 ON %s ("%s")' % (table, table, first))
     # The lookups the generator actually leans on
     con.execute("CREATE INDEX idx_loot_item ON creature_loot_template (item)")

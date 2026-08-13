@@ -1,0 +1,627 @@
+#!/usr/bin/env python3
+"""Generate CommanderQuartermasterEnhanceData.lua — every TBC item enhancement.
+
+An "item enhancement" here is anything that permanently or temporarily improves
+a piece of gear you are wearing: enchanting enchants, head glyphs and arcanums,
+shoulder inscriptions, leg armors and spellthreads, armor kits, weapon chains,
+shield spikes, scopes, gems, and the temporary weapon buffs (stones, oils,
+poisons, shaman imbues).
+
+Nothing in the output is hand-written. The universe comes from the client's own
+tables for the build this account runs — every spell with an ENCHANT_ITEM or
+ENCHANT_ITEM_TEMPORARY effect, plus every gem item — so an enhancement cannot
+be "forgotten": if the client can apply it, it is in here. Sourcing comes from
+the staged world DB (see qm_worlddb.py).
+
+    python3 Harness/tbcdb_to_sqlite.py --fetch     # once
+    python3 Harness/build_enhancements.py          # writes the Lua
+    python3 Harness/build_enhancements.py --report # what would change, no write
+"""
+import argparse
+import os
+import re
+import sys
+from collections import defaultdict
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ADDON = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+from qm_worlddb import WorldDB, load_csv, _int, STANDING   # noqa: E402
+
+OUT = os.path.join(ADDON, "CommanderQuartermasterEnhanceData.lua")
+BUILD = "2.5.6.68941"
+
+# Spell effect ids
+EFFECT_ENCHANT_ITEM = 53
+EFFECT_ENCHANT_ITEM_TEMP = 54
+EFFECT_CREATE_ITEM = 24
+EFFECT_LEARN_SPELL = 36
+
+SKILL_NAMES = {
+    333: "Enchanting", 202: "Engineering", 164: "Blacksmithing",
+    165: "Leatherworking", 197: "Tailoring", 755: "Jewelcrafting",
+    171: "Alchemy", 185: "Cooking", 129: "First Aid", 186: "Mining",
+    182: "Herbalism", 393: "Skinning", 356: "Fishing", 773: "Inscription",
+}
+
+# InventoryType -> our slot key. The enchant spell's EquippedItemInvTypes is a
+# bitmask over these, which is how the client itself decides what a scroll can
+# land on.
+INV_SLOT = {
+    1: "HEAD", 3: "SHOULDER", 5: "CHEST", 20: "CHEST", 6: "BELT", 7: "LEGS",
+    8: "BOOTS", 9: "BRACER", 10: "GLOVES", 11: "RING", 12: "TRINKET",
+    13: "WEAPON", 14: "SHIELD", 15: "RANGED", 16: "CLOAK", 17: "TWOHAND",
+    21: "WEAPON", 22: "OFFHAND", 23: "HELD", 25: "THROWN", 26: "RANGED",
+    2: "NECK", 28: "RELIC",
+}
+
+SLOT_ORDER = ["HEAD", "SHOULDER", "CLOAK", "CHEST", "BRACER", "GLOVES", "BELT",
+              "LEGS", "BOOTS", "RING", "WEAPON", "TWOHAND", "SHIELD", "RANGED",
+              "GEM", "OTHER"]
+SLOT_NAMES = {
+    "HEAD": "Head", "SHOULDER": "Shoulder", "CLOAK": "Cloak", "CHEST": "Chest",
+    "BRACER": "Bracer", "GLOVES": "Gloves", "BELT": "Belt", "LEGS": "Legs",
+    "BOOTS": "Boots", "RING": "Ring", "WEAPON": "Weapon", "TWOHAND": "Two-Hand",
+    "SHIELD": "Shield", "RANGED": "Ranged", "GEM": "Gem", "OTHER": "Other",
+}
+
+# Gem colour, from GemProperties.Type (the socket-colour bitmask)
+GEM_COLORS = [(1, "META"), (2, "RED"), (4, "YELLOW"), (8, "BLUE")]
+
+# Names the client carries but no player ever sees
+JUNK = re.compile(r"^(QAEnchant|Test |TEST|zzOLD|OLD |Deprecated|\[?PH\]?|NPC )|"
+                  r"(TEST|Deprecated|DEPRECATED|UNUSED)", re.I)
+
+CLASS_BY_MASK = [
+    (1, "WARRIOR"), (2, "PALADIN"), (4, "HUNTER"), (8, "ROGUE"), (16, "PRIEST"),
+    (64, "SHAMAN"), (128, "MAGE"), (256, "WARLOCK"), (1024, "DRUID"),
+]
+ALL_CLASSES = 1 + 2 + 4 + 8 + 16 + 64 + 128 + 256 + 1024
+
+
+def classes_of(mask):
+    mask = _int(mask)
+    if not mask or mask == -1 or (mask & ALL_CLASSES) == ALL_CLASSES:
+        return None
+    return [name for bit, name in CLASS_BY_MASK if mask & bit] or None
+
+
+# ---------------------------------------------------------------------------
+# Client tables
+# ---------------------------------------------------------------------------
+class Client:
+    def __init__(self, world=None):
+        self.world = world
+        self.spell_name = {_int(r["ID"]): r["Name_lang"] for r in load_csv("SpellName")}
+        self.spell_desc = {}
+        for r in load_csv("Spell"):
+            self.spell_desc[_int(r["ID"])] = r.get("Description_lang") or ""
+        self.ench = {_int(r["ID"]): r for r in load_csv("SpellItemEnchantment")}
+        self.item = {_int(r["ID"]): r for r in load_csv("ItemSparse")}
+        self.item_cls = {_int(r["ID"]): r for r in load_csv("Item")}
+        self.gem_props = {_int(r["ID"]): r for r in load_csv("GemProperties")}
+        self.equipped = {}
+        for r in load_csv("SpellEquippedItems"):
+            self.equipped[_int(r["SpellID"])] = r
+        self.levels = {_int(r["SpellID"]): r for r in load_csv("SpellLevels")}
+        self.limit = {_int(r["ID"]): r for r in load_csv("ItemLimitCategory")}
+
+        self.perm, self.temp, self.creates, self.teaches = {}, {}, {}, {}
+        for r in load_csv("SpellEffect"):
+            sid, eff = _int(r["SpellID"]), _int(r["Effect"])
+            if eff == EFFECT_ENCHANT_ITEM:
+                self.perm[sid] = _int(r["EffectMiscValue_0"])
+            elif eff == EFFECT_ENCHANT_ITEM_TEMP:
+                self.temp[sid] = _int(r["EffectMiscValue_0"])
+            elif eff == EFFECT_CREATE_ITEM:
+                self.creates[sid] = _int(r["EffectItemType"])
+            elif eff == EFFECT_LEARN_SPELL:
+                self.teaches[sid] = _int(r["EffectTriggerSpell"])
+
+        # item -> spells it casts, and the reverse. TriggerType matters: 6 is
+        # "teaches you this", which is what a Formula scroll does. Treating that
+        # as a carrier would file every enchanting recipe as if the scroll were
+        # the thing you apply to the gear.
+        self.item_spells = defaultdict(list)
+        self.spell_items = defaultdict(list)
+        self.spell_taught_by_item = defaultdict(list)
+        for r in load_csv("ItemEffect"):
+            iid, sid, trig = _int(r["ParentItemID"]), _int(r["SpellID"]), _int(r["TriggerType"])
+            self.item_spells[iid].append((sid, trig))
+            if trig == 6:
+                self.spell_taught_by_item[sid].append(iid)
+            else:
+                self.spell_items[sid].append(iid)
+
+        # profession recipes
+        self.skill_of_spell = defaultdict(list)
+        for r in load_csv("SkillLineAbility"):
+            self.skill_of_spell[_int(r["Spell"])].append(
+                (_int(r["SkillLine"]), _int(r["MinSkillLineRank"])))
+
+        self.reagents = {}
+        for r in load_csv("SpellReagents"):
+            got = []
+            for i in range(8):
+                iid, cnt = _int(r["Reagent_%d" % i]), _int(r["ReagentCount_%d" % i])
+                if iid and cnt:
+                    got.append((iid, cnt))
+            if got:
+                self.reagents[_int(r["SpellID"])] = got
+
+        # which spell creates a given item (the crafting recipe)
+        self.creator_of_item = defaultdict(list)
+        for sid, iid in self.creates.items():
+            if iid:
+                self.creator_of_item[iid].append(sid)
+        # which spell teaches a given spell (the recipe scroll's payload)
+        self.teacher_of_spell = defaultdict(list)
+        for sid, taught in self.teaches.items():
+            if taught:
+                self.teacher_of_spell[taught].append(sid)
+
+    def req_skill(self, item_id):
+        """The profession you must HAVE to use it — what makes a gem
+        jeweller-only or a scope engineer-only."""
+        row = self.item.get(item_id)
+        if row is None:
+            return None
+        skill, rank = _int(row["RequiredSkill"]), _int(row["RequiredSkillRank"])
+        if not skill or skill not in SKILL_NAMES:
+            return None
+        return {"skill": SKILL_NAMES[skill], "rank": rank or None}
+
+    def unique_of(self, item_id, world=None):
+        """Unique, unique-equipped, or one of a limited family of gems.
+
+        Three different limits in TBC and they are not interchangeable: a
+        LimitCategory caps a FAMILY ("Jeweler's Gems (3)"), maxcount caps how
+        many you may own, and the unique-equipped item flag caps how many you
+        may wear. The world DB carries the flag and the count; the client
+        carries the family.
+        """
+        out = {}
+        row = self.item.get(item_id)
+        cat = self.limit.get(_int(row["LimitCategory"])) if row is not None else None
+        if cat:
+            out["family"] = cat["Name_lang"]
+            out["max"] = _int(cat["Quantity"])
+        if world is not None:
+            wrow = world.item_row(item_id)
+            if wrow is not None:
+                if _int(wrow["Flags"]) & 0x00080000:
+                    out["equipped"] = True
+                if _int(wrow["maxcount"]) > 0:
+                    out["own"] = _int(wrow["maxcount"])
+        return out or None
+
+    def item_name(self, iid):
+        r = self.item.get(iid)
+        return r["Display_lang"] if r else None
+
+    def profession(self, spell_id):
+        """Which profession makes this, and at what skill.
+
+        SkillLineAbility.MinSkillLineRank is 1 for most recipes — it is the
+        rank at which the ability may EXIST, not the rank that gates it. What
+        actually gates a player is the recipe scroll's own RequiredSkillRank
+        (Formula: Enchant Weapon - Mongoose says Enchanting 375, and so does
+        the live client's tooltip), so prefer that and fall back.
+        """
+        for skill, rank in self.skill_of_spell.get(spell_id, []):
+            if skill not in SKILL_NAMES:
+                continue
+            for item in self.recipe_items(spell_id):
+                row = self.item.get(item)
+                if row is not None and _int(row["RequiredSkill"]) == skill:
+                    rank = max(rank, _int(row["RequiredSkillRank"]))
+            if rank <= 1 and self.world is not None:
+                # trainer-taught: no scroll to read the gate off, so ask the
+                # trainer (Heavy Knothide Armor Kit is Leatherworking 350, and
+                # the client's own SkillLineAbility rank for it is 1)
+                for t in self.world.trainers(spell_id):
+                    rank = max(rank, t.get("reqSkill") or 0)
+            return {"skill": SKILL_NAMES[skill], "skillID": skill, "rank": rank or None}
+        return None
+
+    def recipe_items(self, spell):
+        """The Formula/Plans/Pattern scroll that teaches this craft, if any.
+
+        Two shapes in the client: the scroll's on-learn effect points straight
+        at the craft, or at a wrapper spell whose LEARN_SPELL effect does.
+        """
+        items = list(self.spell_taught_by_item.get(spell, []))
+        for teacher in self.teacher_of_spell.get(spell, []):
+            items += self.spell_taught_by_item.get(teacher, [])
+            items += self.spell_items.get(teacher, [])
+        seen, out = set(), []
+        for i in items:
+            if i not in seen and self.item.get(i):
+                seen.add(i)
+                out.append(i)
+        return out
+
+    def slots_for_spell(self, spell_id):
+        """Which equipment slots this enchant spell may land on."""
+        r = self.equipped.get(spell_id)
+        if not r:
+            return []
+        cls = _int(r["EquippedItemClass"])
+        inv_mask = _int(r["EquippedItemInvTypes"])
+        sub_mask = _int(r["EquippedItemSubclass"])
+        slots = []
+        if inv_mask:
+            for inv, slot in INV_SLOT.items():
+                if inv_mask & (1 << inv) and slot not in slots:
+                    slots.append(slot)
+        if not slots and cls == 2:      # a weapon enchant with no inv-type mask
+            # subclass 1/5/8 are the two-handers (axe, mace, sword) plus 6 polearm
+            two = {1, 5, 6, 8, 10}
+            one = {0, 4, 7, 13, 15}
+            if sub_mask and not (sub_mask & sum(1 << s for s in one)):
+                slots = ["TWOHAND"]
+            elif sub_mask and not (sub_mask & sum(1 << s for s in two)):
+                slots = ["WEAPON"]
+            else:
+                slots = ["WEAPON"]
+            if sub_mask and (sub_mask & sum(1 << s for s in (2, 3, 18))):
+                slots = ["RANGED"]
+        if not slots and cls == 4:
+            # armour with no inv-type mask: the subclass mask is doing the work.
+            # Subclass 6 is Shield, which is the only armour piece TBC enchants
+            # by weapon-style subclass rather than by slot.
+            slots = ["SHIELD"] if sub_mask & (1 << 6) else ["OTHER"]
+        return slots
+
+
+# ---------------------------------------------------------------------------
+# Assembly
+# ---------------------------------------------------------------------------
+MAX_SOURCES = 6
+
+
+def craft_sources(cl, world, item_id, seen_recipes=None):
+    """How the item is made, and how the recipe that makes it is obtained."""
+    out = []
+    for spell in cl.creator_of_item.get(item_id, []):
+        prof = cl.profession(spell)
+        rec = {"k": "CRAFT", "spell": spell, "name": cl.spell_name.get(spell)}
+        if prof:
+            rec["prof"] = prof
+        reagents = cl.reagents.get(spell)
+        if reagents:
+            rec["reagents"] = [{"item": i, "count": c, "name": cl.item_name(i)}
+                               for i, c in reagents]
+        rec["learn"] = learn_sources(cl, world, spell)
+        out.append(rec)
+    return out
+
+
+def learn_sources(cl, world, spell):
+    """Trainer taught, or a recipe item — and where THAT comes from."""
+    out = list(world.trainers(spell)[:MAX_SOURCES])
+    for item in cl.recipe_items(spell):
+        rec = {"k": "RECIPE", "item": item, "name": cl.item_name(item)}
+        src = world.item_sources(item)
+        rec["src"] = trim(src)
+        if len(src) > MAX_SOURCES:
+            rec["more"] = len(src) - MAX_SOURCES
+        out.append(rec)
+    return out
+
+
+def source_weight(s):
+    """Best-first: a named vendor beats a 0.1% world drop."""
+    order = {"VENDOR": 0, "TRAINER": 1, "QUEST": 2, "CRAFT": 3, "DROP": 4,
+             "OBJECT": 5, "CONTAINER": 6, "RECIPE": 7, "PROSPECT": 8,
+             "DISENCHANT": 9, "FISH": 10, "SKIN": 11, "PICKPOCKET": 12, "MAIL": 13}
+    return (order.get(s["k"], 99), -(s.get("chance") or 0))
+
+
+def trim(sources):
+    return sorted(sources, key=source_weight)[:MAX_SOURCES]
+
+
+def era_of(cl, item_id, spell_id, prof):
+    """VANILLA or TBC.
+
+    ItemSparse.ExpansionID is no help — this client stamps 254 on 30,025 of its
+    30,128 items. What does separate the eras cleanly is the skill ceiling
+    (vanilla professions stopped at 300) and, for things no profession makes,
+    the level TBC content sits above.
+    """
+    if prof and prof.get("rank"):
+        return "TBC" if prof["rank"] > 300 else "VANILLA"
+    row = cl.item.get(item_id) if item_id else None
+    if row is not None:
+        if _int(row["RequiredLevel"]) >= 58 or _int(row["ItemLevel"]) >= 60:
+            return "TBC"
+    return "VANILLA"
+
+
+TAGS = re.compile(r"\$[a-zA-Z0-9]+|\|4[^;]*;|\s+")
+
+
+BOILERPLATE = re.compile(
+    r"\s*Does not stack with other enchantments for the selected equipment slot\.",
+    re.I)
+
+
+def clean_desc(text):
+    if not text:
+        return None
+    text = BOILERPLATE.sub("", text)
+    text = TAGS.sub(lambda m: " " if m.group(0).isspace() else "", text)
+    return text.strip() or None
+
+
+def build():
+    world = WorldDB()
+    cl = Client(world)
+    entries = []
+
+    def add(entry):
+        entries.append(entry)
+
+    # --- 1. every enchant the client can apply -----------------------------
+    for table, kind_default in ((cl.perm, "ENCHANT"), (cl.temp, "TEMP")):
+        for spell, ench_id in sorted(table.items()):
+            name = cl.spell_name.get(spell)
+            ench = cl.ench.get(ench_id)
+            if not name or not ench or JUNK.search(name):
+                continue
+            short = ench["Name_lang"]
+            if short and JUNK.search(short):
+                continue
+            prof = cl.profession(spell)
+            carriers = [i for i in cl.spell_items.get(spell, [])
+                        if cl.item.get(i) and not JUNK.search(cl.item_name(i) or "")]
+            slots = cl.slots_for_spell(spell)
+            item_id = carriers[0] if carriers else None
+            row = cl.item.get(item_id) if item_id else None
+
+            kind = kind_default
+            if kind == "ENCHANT" and item_id:
+                kind = carrier_kind(cl, item_id, slots)
+
+            src = []
+            if item_id:
+                src += world.item_sources(item_id)
+                src += craft_sources(cl, world, item_id)
+            elif prof:
+                src += [{"k": "CRAFT", "spell": spell, "prof": prof,
+                         "reagents": [{"item": i, "count": c, "name": cl.item_name(i)}
+                                      for i, c in cl.reagents.get(spell, [])] or None,
+                         "learn": learn_sources(cl, world, spell)}]
+
+            if not src:
+                # No item, no profession — but a class may still teach it.
+                # The shaman's weapon imbues live here, and a shaman's weapon
+                # is not "unenhanced" just because nothing was consumed.
+                taught = world.trainers(spell)
+                if taught:
+                    src = [{"k": "TRAINER", **t} if False else t for t in taught]
+                    kind = "TEMP"
+            if not src and not prof:
+                continue          # nothing in TBC hands this to a player
+
+            add({
+                "ench": ench_id, "spell": spell, "item": item_id,
+                "name": (cl.item_name(item_id) if item_id else name),
+                "recipe": name if (item_id and name != cl.item_name(item_id)) else None,
+                "short": short,
+                "note": clean_desc(cl.spell_desc.get(spell)),
+                "slots": slots or ["OTHER"],
+                "kind": kind,
+                "prof": prof,
+                "quality": _int(row["OverallQualityID"]) if row is not None else None,
+                "lvl": _int(row["RequiredLevel"]) if row is not None else None,
+                # the minimum item level the target must be, which the client
+                # enforces and the tooltip prints as "requires a level N item"
+                "ilvl": _int(cl.levels.get(spell, {}).get("BaseLevel", 0)) or None,
+                "era": era_of(cl, item_id, spell, prof),
+                "classes": classes_of(row["AllowableClass"]) if row is not None else None,
+                "bind": _int(row["Bonding"]) if row is not None else None,
+                "reqSkill": cl.req_skill(item_id) if item_id else None,
+                "unique": cl.unique_of(item_id, world) if item_id else None,
+                "src": trim(src),
+                "more": max(0, len(src) - MAX_SOURCES) or None,
+            })
+
+    # --- 2. gems ------------------------------------------------------------
+    for iid, row in cl.item.items():
+        cls = cl.item_cls.get(iid)
+        if not cls or _int(cls["ClassID"]) != 3:
+            continue
+        name = row["Display_lang"]
+        if not name or JUNK.search(name):
+            continue
+        gp = cl.gem_props.get(_int(row["Gem_properties"]))
+        if not gp:
+            continue
+        ench_id = _int(gp["Enchant_ID"])
+        ench = cl.ench.get(ench_id)
+        color = next((c for bit, c in GEM_COLORS if _int(gp["Type"]) & bit), None)
+        if not color:
+            continue   # "fits into a tonk Overdrive socket" — not player gear
+        src = world.item_sources(iid) + craft_sources(cl, world, iid)
+        add({
+            "ench": ench_id, "spell": None, "item": iid, "name": name,
+            "short": ench["Name_lang"] if ench else None,
+            "slots": ["GEM"], "kind": "GEM", "color": color,
+            "prof": None, "ilvl": None,
+            "quality": _int(row["OverallQualityID"]),
+            "lvl": _int(row["RequiredLevel"]) or None,
+            "era": era_of(cl, iid, None, None),
+            "classes": classes_of(row["AllowableClass"]),
+            "bind": _int(row["Bonding"]),
+            "reqSkill": cl.req_skill(iid),
+            "unique": cl.unique_of(iid, world),
+            "src": trim(src),
+            "more": max(0, len(src) - MAX_SOURCES) or None,
+        })
+
+    # A crafted carrier (Nethercleft Leg Armor, Adamantite Sharpening Stone)
+    # has no profession of its own — the profession is on the craft source.
+    # Lift it so "who makes this" is one field everywhere.
+    for e in entries:
+        if not e["src"]:
+            e["unobtainable"] = True
+        if not e.get("prof"):
+            for s in e["src"]:
+                if s["k"] == "CRAFT" and s.get("prof"):
+                    e["prof"] = s["prof"]
+                    break
+
+    return cl, world, entries
+
+
+def carrier_kind(cl, item_id, slots):
+    """Name the family a carrier item belongs to, the way a player would."""
+    name = (cl.item_name(item_id) or "").lower()
+    for needle, kind in (("armor kit", "KIT"), ("leg armor", "LEG_ARMOR"),
+                         ("spellthread", "SPELLTHREAD"), ("scope", "SCOPE"),
+                         ("weapon chain", "CHAIN"), ("counterweight", "CHAIN"),
+                         ("shield spike", "SPIKE"), ("spurs", "SPURS"),
+                         ("inscription", "INSCRIPTION"), ("arcanum", "ARCANUM"),
+                         ("glyph", "GLYPH")):
+        if needle in name:
+            return kind
+    if "HEAD" in slots:
+        return "ARCANUM"
+    if "SHOULDER" in slots:
+        return "INSCRIPTION"
+    return "ITEM"
+
+
+# ---------------------------------------------------------------------------
+# Lua emission
+# ---------------------------------------------------------------------------
+# One source record per line reads fine and costs a third of what a fully
+# exploded table costs on disk.
+INLINE = 400
+
+
+def lua_str(s):
+    return '"%s"' % str(s).replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
+def lua_val(v, indent=0):
+    pad = " " * indent
+    if v is None:
+        return "nil"
+    if v is True:
+        return "true"
+    if v is False:
+        return "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    if isinstance(v, str):
+        return lua_str(v)
+    if isinstance(v, list):
+        if not v:
+            return "nil"
+        inner = ", ".join(lua_val(x, indent) for x in v)
+        if len(inner) < INLINE:
+            return "{ %s }" % inner
+        parts = ["\n%s    %s," % (pad, lua_val(x, indent + 4)) for x in v]
+        return "{%s\n%s}" % ("".join(parts), pad)
+    if isinstance(v, dict):
+        items = [(k, x) for k, x in v.items() if x is not None and x != [] and x != {}]
+        if not items:
+            return "nil"
+        inner = ", ".join("%s = %s" % (k, lua_val(x, indent)) for k, x in items)
+        if len(inner) < INLINE:
+            return "{ %s }" % inner
+        parts = ["\n%s    %s = %s," % (pad, k, lua_val(x, indent + 4)) for k, x in items]
+        return "{%s\n%s}" % ("".join(parts), pad)
+    raise TypeError(type(v))
+
+
+HEADER = '''-- Commander Quartermaster — the item-enhancement database.
+-- GENERATED by Harness/build_enhancements.py from the client's own tables for
+-- build %s (wago.tools DB2) married to the CMaNGOS TBC world database.
+-- DO NOT HAND-EDIT: rerun the generator instead, or the next run silently
+-- reverts you.
+--
+-- The universe is not a curated list. It is every spell in the client with an
+-- ENCHANT_ITEM or ENCHANT_ITEM_TEMPORARY effect, plus every gem item — so an
+-- enhancement cannot be missing unless the client cannot apply it.
+--
+-- Shape:
+--   Entries[i] = {
+--       ench    = SpellItemEnchantment id — the number an item LINK carries,
+--                 which is how an equipped item is identified as enchanted
+--       spell   = the spell that applies it (nil for gems)
+--       item    = the item you consume to apply it (nil for enchanter-cast)
+--       name    = what you look for (item name, or the enchant's spell name)
+--       recipe  = the enchant's own name when `name` is the carrier item
+--       short   = the green line the enchant prints on the gear
+--       slots   = { "HEAD", ... } — every slot it may land on
+--       kind    = ENCHANT | GLYPH | ARCANUM | INSCRIPTION | KIT | LEG_ARMOR |
+--                 SPELLTHREAD | SCOPE | CHAIN | SPIKE | SPURS | GEM | TEMP
+--       prof    = { skill, skillID, rank } when a profession applies it
+--       src     = every way to obtain it, best first (see SourceKinds)
+--       more    = sources beyond the %d kept
+--   }
+--
+-- Source records carry whatever the world DB knows: vendor npc + zone + price
+-- + reputation gate + token cost, drop npc + zone + rank + chance, quest +
+-- giver + side, craft profession + rank + reagents + how the recipe is learned.
+
+CommanderQuartermasterEnhanceData = {
+    Build = %s,
+    SlotOrder = %s,
+    SlotNames = %s,
+    SourceKinds = { "VENDOR", "TRAINER", "QUEST", "CRAFT", "RECIPE", "DROP",
+                    "OBJECT", "CONTAINER", "PROSPECT", "DISENCHANT", "FISH",
+                    "SKIN", "PICKPOCKET", "MAIL" },
+    Entries = {
+'''
+
+
+def emit(entries):
+    slot_names = "{\n" + "".join(
+        "        %s = %s,\n" % (k, lua_str(SLOT_NAMES[k])) for k in SLOT_ORDER) + "    }"
+    out = [HEADER % (BUILD, MAX_SOURCES, lua_str(BUILD),
+                     lua_val(SLOT_ORDER), slot_names)]
+    for e in sorted(entries, key=lambda e: (SLOT_ORDER.index(e["slots"][0])
+                                            if e["slots"][0] in SLOT_ORDER else 99,
+                                            -(e.get("lvl") or 0), e["name"] or "")):
+        out.append("        %s,\n" % lua_val(e, 8))
+    out.append("    },\n}\n")
+    return "".join(out)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--report", action="store_true", help="summarise, do not write")
+    args = ap.parse_args()
+
+    cl, world, entries = build()
+    by_slot = defaultdict(int)
+    by_kind = defaultdict(int)
+    sourceless = []
+    for e in entries:
+        by_slot[e["slots"][0]] += 1
+        by_kind[e["kind"]] += 1
+        if not e["src"]:
+            sourceless.append(e)
+    sys.stderr.write("entries: %d\n" % len(entries))
+    for k in SLOT_ORDER:
+        if by_slot.get(k):
+            sys.stderr.write("  %-10s %4d\n" % (k, by_slot[k]))
+    sys.stderr.write("kinds: %s\n" % dict(sorted(by_kind.items())))
+    sys.stderr.write("no source at all: %d\n" % len(sourceless))
+    for e in sourceless[:20]:
+        sys.stderr.write("    %s (%s)\n" % (e["name"], e["ench"]))
+    if args.report:
+        return
+    text = emit(entries)
+    with open(OUT, "w", encoding="utf-8") as f:
+        f.write(text)
+    sys.stderr.write("wrote %s (%d lines)\n" % (OUT, text.count("\n")))
+
+
+if __name__ == "__main__":
+    main()
