@@ -23,6 +23,14 @@ setting belongs to these layers and no others". A key not listed there is
 assumed to apply to every page, which is the safe default — it produces a
 complaint to investigate rather than silence.
 
+One limit worth knowing: a shared builder can hold a control behind a per-layer
+flag (`if ui.shieldSwipe then`), and this reads text rather than running Lua, so
+it counts that control as present on every page calling the builder. That is
+only ever an OVER-count, so it cannot hide a missing control — the thing this
+exists to catch — and LAYER_SCOPED still records where such a setting really
+belongs. Do not read a clean run as proof that a layer-scoped control is absent
+from the pages it does not belong to.
+
 Exit status is 1 if anything is unreachable, so this can gate a commit.
 """
 
@@ -143,14 +151,22 @@ def page_keys(lines):
     out = {}
     for n, (name, a) in enumerate(starts):
         b = starts[n + 1][1] if n + 1 < len(starts) else tail
-        expanded = []
-        for line in lines[a:b]:
-            expanded.append(line)
-            for builder, body in bodies.items():
-                # a builder is called as Name(panel, ...); an option table is
-                # handed over as panel:AddX(NAME)
-                if builder + "(panel" in line or "(" + builder + ")" in line:
-                    expanded.extend(body)
+        # Expansion has to run to a fixed point, not once: a shared builder can
+        # itself hand a shared option table to the panel, and a single pass
+        # would report the settings in that table as unreachable from every
+        # page. (It did, the moment the identity section was extracted.)
+        expanded = list(lines[a:b])
+        pulled = set()
+        while True:
+            text = "\n".join(expanded)
+            more = [n for n, _ in bodies.items()
+                    if n not in pulled
+                    and (n + "(panel" in text or "(" + n + ")" in text)]
+            if not more:
+                break
+            for n in more:
+                pulled.add(n)
+                expanded.extend(bodies[n])
         out[name] = set(re.findall(r"CommanderPartyFramesDB\.([A-Za-z_]+)",
                                    "\n".join(expanded)))
     return out

@@ -1035,21 +1035,36 @@ end
 -- identical across all four and lives in the shared builders above.
 local LAYER_UI = {
     INT = {
+        iconLabel = "Status Icons",
+        iconTooltip = "Show the two team-synergy icons on the left of each row: Arcane Intellect only when it needs you (ghost when missing, amber inside the rebuff window — hidden while healthy) and the ally's biggest shield with a sweep for its remaining time. The row's number is their TOTAL shielding — Power Word: Shield, Ice Barrier, Mana Shield, wards, Sacrifice, whoever cast them.",
+        shieldTypesTooltip = "Tint each embedded shield segment by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
         dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — Curses, purple rim — with a glow on crowd control. Curses also turn the whole row purple, whatever is shown here.",
         dispelShow = "Show, to the right of each ally's row, the Curses you can remove (purple rim, countdown sweep). The CURSED row state works even with this strip off; the strip tells you WHICH curse it is.",
         dispelHealGlow = "Pulse a red glow on debuffs that cut healing received. Worth acting on: absorbs ignore Mortal Strike effects, so a shield lands at full value where a heal does not.",
     },
     HOT = {
+        iconLabel = "Status Icons",
+        iconTooltip = "Show the left status slot and the hot strip beside it. The status slot carries Mark of the Wild only when it needs you — ghost when missing, amber inside the rebuff window, hidden while healthy — and unlike Arcane Intellect it applies to your rage and energy allies too.",
+        shieldTypesTooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
         dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — Curses with a purple rim, Poisons with a green one — and a glow on crowd control. Both schools also color the whole row, whatever is shown here.",
         dispelShow = "Show, to the right of each ally's row, the Curses and Poisons you can remove (rim colored by school, countdown sweep). The CURSED and POISONED row states work even with this strip off; the strip tells you WHICH debuff it is.",
         dispelHealGlow = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a hot board that is the cue to stop topping and start pre-hotting through it.",
     },
     BLESS = {
+        iconLabel = "Status Icons",
+        iconTooltip = "Show the blessing slots and the Hand strip beside them. A blessing slot is ghosted when missing, amber inside the rebuff window, and dark-red only when the advisor says its absence is actually costing you — never when the ally already carries another of your blessings, because the game only allows them one.",
+        shieldTypesTooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
         dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — a paladin cleanses Magic, Poison and Disease, which is more schools than anyone else on this board — and a glow on crowd control. A removable debuff also colors the whole row, whatever is shown here.",
         dispelShow = "Show, to the right of each ally's row, the Magic, Poison and Disease debuffs you can cleanse (rim colored by school, countdown sweep). The row states work even with this strip off; the strip tells you WHICH debuff it is.",
         dispelHealGlow = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a paladin board that is the cue to stop trading Flash of Light against it and spend a cooldown instead.",
     },
     PWS = {
+        iconLabel = "Spell Icon",
+        iconTooltip = "Show the Power Word: Shield icon at the start of each row (dimmed when no shield of yours is up).",
+        shieldTypesTooltip = "Tint each embedded shield segment by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
+        -- The absorb board is the only one whose status slot is a single
+        -- icon with a duration of its own to draw.
+        shieldSwipe = true,
         dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — a priest dispels Magic and Disease — color-coded by school, with a glow on crowd control. A removable debuff also colors the whole row, and a teammate in crowd control turns it orange.",
         dispelShow = "Show, to the right of each ally's row, the debuffs your class can actually dispel — Priests see Magic and Disease, Paladins Magic/Poison/Disease, Druids Curse/Poison, Mages Curse, Shamans Poison/Disease. Each icon's rim is colored by school (blue Magic, purple Curse, brown Disease, green Poison) and carries a countdown sweep.",
         dispelHealGlow = "Pulse a red glow on debuffs that cut healing received. Worth acting on: absorbs ignore Mortal Strike effects, so a shield lands at full value where a heal does not.",
@@ -1064,65 +1079,157 @@ local LAYER_UI = {
 -- everyone but mages. This is the superset, so every board can reach every
 -- setting it is already subject to.
 local function AddDispelSection(panel, ui)
-        panel:AddSection("Dispellable Debuffs", ui.dispelIntro)
-        panel:AddCheckboxPair({
-            label = "Show Dispellable Debuffs",
-            tooltip = ui.dispelShow,
-            get = function() return CommanderPartyFramesDB.ShowDispels end,
-            set = function(value) CommanderPartyFramesDB.ShowDispels = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "CC Glow",
-            tooltip = "Pulse a bright glow behind crowd-control debuffs (Polymorph, Fear, Sap-likes, roots, stuns, Mind Control...) so the one that needs dispelling first jumps out of a busy strip.",
-            get = function() return CommanderPartyFramesDB.DispelCCGlow end,
-            set = function(value) CommanderPartyFramesDB.DispelCCGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddCheckboxPair({
-            label = "Important Debuffs",
-            tooltip = "Also show debuffs that matter to a healer even though you cannot dispel them: healing reductions (Mortal Strike, Aimed Shot, Wound Poison), undispellable crowd control and stuns (Blind, Sap, Gouge, Kidney Shot, Cyclone, Intimidating Shout...), and silences. These get a category-colored rim — red for healing reduction, orange for crowd control — and are sorted to the front of the strip.",
-            get = function() return CommanderPartyFramesDB.DispelShowImportant end,
-            set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Heal-Reduction Glow",
-            tooltip = ui.dispelHealGlow,
-            get = function() return CommanderPartyFramesDB.DispelHealGlow end,
-            set = function(value) CommanderPartyFramesDB.DispelHealGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels
-                and CommanderPartyFramesDB.DispelShowImportant end,
-        })
-        panel:AddCheckboxPair({
-            label = "Show All Debuffs",
-            tooltip = "Also show debuffs you cannot dispel. Off (default) keeps the strip strictly actionable — only what you can actually remove.",
-            get = function() return CommanderPartyFramesDB.DispelShowAll end,
-            set = function(value) CommanderPartyFramesDB.DispelShowAll = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Duration Sweep",
-            tooltip = "Draw a radial countdown over each debuff icon showing how long it has left.",
-            get = function() return CommanderPartyFramesDB.DispelSweep end,
-            set = function(value) CommanderPartyFramesDB.DispelSweep = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
-        panel:AddSliderPair({
-            label = "Debuff Icons",
-            tooltip = "How many debuff icons to show per row.",
-            min = 1, max = 5, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.DispelMaxIcons end,
-            set = function(value) CommanderPartyFramesDB.DispelMaxIcons = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        }, {
-            label = "Debuff Icon Size",
-            tooltip = "Size of each debuff icon in the strip.",
-            min = 10, max = 24, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.DispelIconSize end,
-            set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
-        })
+    panel:AddSection("Dispellable Debuffs", ui.dispelIntro)
+    panel:AddCheckboxPair({
+        label = "Show Dispellable Debuffs",
+        tooltip = ui.dispelShow,
+        get = function() return CommanderPartyFramesDB.ShowDispels end,
+        set = function(value) CommanderPartyFramesDB.ShowDispels = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    }, {
+        label = "CC Glow",
+        tooltip = "Pulse a bright glow behind crowd-control debuffs (Polymorph, Fear, Sap-likes, roots, stuns, Mind Control...) so the one that needs dispelling first jumps out of a busy strip.",
+        get = function() return CommanderPartyFramesDB.DispelCCGlow end,
+        set = function(value) CommanderPartyFramesDB.DispelCCGlow = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+    })
+    panel:AddCheckboxPair({
+        label = "Important Debuffs",
+        tooltip = "Also show debuffs that matter to a healer even though you cannot dispel them: healing reductions (Mortal Strike, Aimed Shot, Wound Poison), undispellable crowd control and stuns (Blind, Sap, Gouge, Kidney Shot, Cyclone, Intimidating Shout...), and silences. These get a category-colored rim — red for healing reduction, orange for crowd control — and are sorted to the front of the strip.",
+        get = function() return CommanderPartyFramesDB.DispelShowImportant end,
+        set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+    }, {
+        label = "Heal-Reduction Glow",
+        tooltip = ui.dispelHealGlow,
+        get = function() return CommanderPartyFramesDB.DispelHealGlow end,
+        set = function(value) CommanderPartyFramesDB.DispelHealGlow = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels
+            and CommanderPartyFramesDB.DispelShowImportant end,
+    })
+    panel:AddCheckboxPair({
+        label = "Show All Debuffs",
+        tooltip = "Also show debuffs you cannot dispel. Off (default) keeps the strip strictly actionable — only what you can actually remove.",
+        get = function() return CommanderPartyFramesDB.DispelShowAll end,
+        set = function(value) CommanderPartyFramesDB.DispelShowAll = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+    }, {
+        label = "Duration Sweep",
+        tooltip = "Draw a radial countdown over each debuff icon showing how long it has left.",
+        get = function() return CommanderPartyFramesDB.DispelSweep end,
+        set = function(value) CommanderPartyFramesDB.DispelSweep = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+    })
+    panel:AddSliderPair({
+        label = "Debuff Icons",
+        tooltip = "How many debuff icons to show per row.",
+        min = 1, max = 5, step = 1,
+        format = "%.0f",
+        get = function() return CommanderPartyFramesDB.DispelMaxIcons end,
+        set = function(value) CommanderPartyFramesDB.DispelMaxIcons = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+    }, {
+        label = "Debuff Icon Size",
+        tooltip = "Size of each debuff icon in the strip.",
+        min = 10, max = 24, step = 1,
+        format = "%.0f",
+        get = function() return CommanderPartyFramesDB.DispelIconSize end,
+        set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+    })
 
+end
+
+-- Identity, icons and bar art. The same section on every page — only the
+-- status-slot wording changes with what the class actually keeps there,
+-- and only the priest board has a second toggle to pair with it.
+local function AddIdentitySection(panel, ui)
+    panel:AddSection("Identity & Icons")
+    panel:AddDropdownPair({
+        label = "Show Unit As",
+        tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
+        options = {
+            { text = "Class Icon", value = "CLASS_ICON" },
+            { text = "Portrait", value = "PORTRAIT" },
+            { text = "Name", value = "NAME" },
+            { text = "Icon + Name", value = "ICON_NAME" },
+            { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
+            { text = "Specialization", value = "SPEC" },
+            { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
+        },
+        get = function() return CommanderPartyFramesDB.UnitDisplay end,
+        set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    }, {
+        label = "Grow",
+        tooltip = "Direction the board grows from its anchor.",
+        options = {
+            { text = "Down", value = "DOWN" },
+            { text = "Up", value = "UP" },
+        },
+        get = function() return CommanderPartyFramesDB.Grow end,
+        set = function(value) CommanderPartyFramesDB.Grow = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    })
+    -- The icon toggle, and — on the priest board only — the shield's duration
+    -- sweep beside it. Every other layer's status slot is a strip whose slots
+    -- carry their own sweeps, so there is nothing for a second toggle to do.
+    local iconToggle = {
+        label = ui.iconLabel,
+        tooltip = ui.iconTooltip,
+        get = function() return CommanderPartyFramesDB.ShowSpellIcon end,
+        set = function(value) CommanderPartyFramesDB.ShowSpellIcon = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    }
+    if ui.shieldSwipe then
+        panel:AddCheckboxPair(iconToggle, {
+            label = "Shield Duration Sweep",
+            tooltip = "Draw a radial 30-second sweep over the spell icon showing the shield's remaining duration. Requires Spell Icon.",
+            get = function() return CommanderPartyFramesDB.ShieldSwipe end,
+            set = function(value) CommanderPartyFramesDB.ShieldSwipe = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowSpellIcon end,
+        })
+    else
+        panel:AddCheckbox(iconToggle)
+    end
+    panel:AddCheckboxPair({
+        label = "NPC Target Counter",
+        tooltip = "Show, over each unit's class icon or portrait, how many enemy NPCs are currently targeting them — white 1, amber 2, red 3+. Reads the visible enemy nameplates, so turn enemy nameplates on (default V) for full coverage; needs an icon to sit on, so it hides in Name-only display.",
+        get = function() return CommanderPartyFramesDB.ShowTargeters end,
+        set = function(value) CommanderPartyFramesDB.ShowTargeters = value end,
+        isEnabled = function()
+            return CommanderPartyFramesDB.EnableShield
+                and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
+        end,
+    }, {
+        label = "Target Marks",
+        tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
+        get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
+        set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    })
+    panel:AddCheckbox({
+        label = "Color Shield Types",
+        tooltip = ui.shieldTypesTooltip,
+        get = function() return CommanderPartyFramesDB.ColorShieldTypes end,
+        set = function(value) CommanderPartyFramesDB.ColorShieldTypes = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    })
+    panel:AddDropdown(BAR_TEXTURE_OPTION)
+    panel:AddDropdown(ICON_STYLE_OPTION)
+    panel:AddCheckbox(SWEEP_EDGE_OPTION)
+    panel:AddSlider({
+        label = "Name Length",
+        tooltip = "Trim ally names to this many characters (keeps rows compact). Applies when Show Unit As includes a name.",
+        min = 3, max = 12, step = 1,
+        format = "%.0f",
+        get = function() return CommanderPartyFramesDB.NameMaxChars end,
+        set = function(value) CommanderPartyFramesDB.NameMaxChars = value end,
+        isEnabled = function()
+            return CommanderPartyFramesDB.EnableShield
+                and (CommanderPartyFramesDB.UnitDisplay == "NAME" or CommanderPartyFramesDB.UnitDisplay == "ICON_NAME")
+        end,
+    })
 end
 
 local function CreateCorePanel()
@@ -1347,78 +1454,7 @@ local function CreateCorePanel()
 
         AddBuffSection(panel, "INT")
 
-        panel:AddSection("Identity & Icons")
-        panel:AddDropdownPair({
-            label = "Show Unit As",
-            tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
-            options = {
-                { text = "Class Icon", value = "CLASS_ICON" },
-                { text = "Portrait", value = "PORTRAIT" },
-                { text = "Name", value = "NAME" },
-                { text = "Icon + Name", value = "ICON_NAME" },
-                { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
-                { text = "Specialization", value = "SPEC" },
-                { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
-            },
-            get = function() return CommanderPartyFramesDB.UnitDisplay end,
-            set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Grow",
-            tooltip = "Direction the board grows from its anchor.",
-            options = {
-                { text = "Down", value = "DOWN" },
-                { text = "Up", value = "UP" },
-            },
-            get = function() return CommanderPartyFramesDB.Grow end,
-            set = function(value) CommanderPartyFramesDB.Grow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Status Icons",
-            tooltip = "Show the two team-synergy icons on the left of each row: Arcane Intellect only when it needs you (ghost when missing, amber inside the rebuff window — hidden while healthy) and the ally's biggest shield with a sweep for its remaining time. The row's number is their TOTAL shielding — Power Word: Shield, Ice Barrier, Mana Shield, wards, Sacrifice, whoever cast them.",
-            get = function() return CommanderPartyFramesDB.ShowSpellIcon end,
-            set = function(value) CommanderPartyFramesDB.ShowSpellIcon = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "NPC Target Counter",
-            tooltip = "Show, over each unit's class icon or portrait, how many enemy NPCs are currently targeting them — white 1, amber 2, red 3+. Reads the visible enemy nameplates, so turn enemy nameplates on (default V) for full coverage; needs an icon to sit on, so it hides in Name-only display.",
-            get = function() return CommanderPartyFramesDB.ShowTargeters end,
-            set = function(value) CommanderPartyFramesDB.ShowTargeters = value end,
-            isEnabled = function()
-                return CommanderPartyFramesDB.EnableShield
-                    and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
-            end,
-        })
-        panel:AddCheckbox({
-            label = "Target Marks",
-            tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
-            get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
-            set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddSlider({
-            label = "Name Length",
-            tooltip = "Trim ally names to this many characters (keeps rows compact). Applies when Show Unit As includes a name.",
-            min = 3, max = 12, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.NameMaxChars end,
-            set = function(value) CommanderPartyFramesDB.NameMaxChars = value end,
-            isEnabled = function()
-                return CommanderPartyFramesDB.EnableShield
-                    and (CommanderPartyFramesDB.UnitDisplay == "NAME" or CommanderPartyFramesDB.UnitDisplay == "ICON_NAME")
-            end,
-        })
-        panel:AddCheckbox({
-            label = "Color Shield Types",
-            tooltip = "Tint each embedded shield segment by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
-            get = function() return CommanderPartyFramesDB.ColorShieldTypes end,
-            set = function(value) CommanderPartyFramesDB.ColorShieldTypes = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddDropdown(BAR_TEXTURE_OPTION)
-        panel:AddDropdown(ICON_STYLE_OPTION)
-        panel:AddCheckbox(SWEEP_EDGE_OPTION)
+        AddIdentitySection(panel, LAYER_UI.INT)
 
         panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Enabling needs a /reload and fixes the roster order.")
         panel:AddCheckbox({
@@ -1716,78 +1752,7 @@ local function CreateCorePanel()
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
         })
 
-        panel:AddSection("Identity & Icons")
-        panel:AddDropdownPair({
-            label = "Show Unit As",
-            tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
-            options = {
-                { text = "Class Icon", value = "CLASS_ICON" },
-                { text = "Portrait", value = "PORTRAIT" },
-                { text = "Name", value = "NAME" },
-                { text = "Icon + Name", value = "ICON_NAME" },
-                { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
-                { text = "Specialization", value = "SPEC" },
-                { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
-            },
-            get = function() return CommanderPartyFramesDB.UnitDisplay end,
-            set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Grow",
-            tooltip = "Direction the board grows from its anchor.",
-            options = {
-                { text = "Down", value = "DOWN" },
-                { text = "Up", value = "UP" },
-            },
-            get = function() return CommanderPartyFramesDB.Grow end,
-            set = function(value) CommanderPartyFramesDB.Grow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Status Icons",
-            tooltip = "Show the left status slot and the hot strip beside it. The status slot carries Mark of the Wild only when it needs you — ghost when missing, amber inside the rebuff window, hidden while healthy — and unlike Arcane Intellect it applies to your rage and energy allies too.",
-            get = function() return CommanderPartyFramesDB.ShowSpellIcon end,
-            set = function(value) CommanderPartyFramesDB.ShowSpellIcon = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "NPC Target Counter",
-            tooltip = "Show, over each unit's class icon or portrait, how many enemy NPCs are currently targeting them — white 1, amber 2, red 3+. Reads the visible enemy nameplates, so turn enemy nameplates on (default V) for full coverage; needs an icon to sit on, so it hides in Name-only display.",
-            get = function() return CommanderPartyFramesDB.ShowTargeters end,
-            set = function(value) CommanderPartyFramesDB.ShowTargeters = value end,
-            isEnabled = function()
-                return CommanderPartyFramesDB.EnableShield
-                    and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
-            end,
-        })
-        panel:AddCheckbox({
-            label = "Target Marks",
-            tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
-            get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
-            set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddSlider({
-            label = "Name Length",
-            tooltip = "Trim ally names to this many characters (keeps rows compact). Applies when Show Unit As includes a name.",
-            min = 3, max = 12, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.NameMaxChars end,
-            set = function(value) CommanderPartyFramesDB.NameMaxChars = value end,
-            isEnabled = function()
-                return CommanderPartyFramesDB.EnableShield
-                    and (CommanderPartyFramesDB.UnitDisplay == "NAME" or CommanderPartyFramesDB.UnitDisplay == "ICON_NAME")
-            end,
-        })
-        panel:AddCheckbox({
-            label = "Color Shield Types",
-            tooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
-            get = function() return CommanderPartyFramesDB.ColorShieldTypes end,
-            set = function(value) CommanderPartyFramesDB.ColorShieldTypes = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddDropdown(BAR_TEXTURE_OPTION)
-        panel:AddDropdown(ICON_STYLE_OPTION)
-        panel:AddCheckbox(SWEEP_EDGE_OPTION)
+        AddIdentitySection(panel, LAYER_UI.HOT)
 
         panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Enabling needs a /reload and fixes the roster order.")
         panel:AddCheckbox({
@@ -2042,78 +2007,7 @@ local function CreateCorePanel()
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
         })
 
-        panel:AddSection("Identity & Icons")
-        panel:AddDropdownPair({
-            label = "Show Unit As",
-            tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
-            options = {
-                { text = "Class Icon", value = "CLASS_ICON" },
-                { text = "Portrait", value = "PORTRAIT" },
-                { text = "Name", value = "NAME" },
-                { text = "Icon + Name", value = "ICON_NAME" },
-                { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
-                { text = "Specialization", value = "SPEC" },
-                { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
-            },
-            get = function() return CommanderPartyFramesDB.UnitDisplay end,
-            set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Grow",
-            tooltip = "Direction the board grows from its anchor.",
-            options = {
-                { text = "Down", value = "DOWN" },
-                { text = "Up", value = "UP" },
-            },
-            get = function() return CommanderPartyFramesDB.Grow end,
-            set = function(value) CommanderPartyFramesDB.Grow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Status Icons",
-            tooltip = "Show the blessing slots and the Hand strip beside them. A blessing slot is ghosted when missing, amber inside the rebuff window, and dark-red only when the advisor says its absence is actually costing you — never when the ally already carries another of your blessings, because the game only allows them one.",
-            get = function() return CommanderPartyFramesDB.ShowSpellIcon end,
-            set = function(value) CommanderPartyFramesDB.ShowSpellIcon = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "NPC Target Counter",
-            tooltip = "Show, over each unit's class icon or portrait, how many enemy NPCs are currently targeting them — white 1, amber 2, red 3+. Reads the visible enemy nameplates, so turn enemy nameplates on (default V) for full coverage; needs an icon to sit on, so it hides in Name-only display.",
-            get = function() return CommanderPartyFramesDB.ShowTargeters end,
-            set = function(value) CommanderPartyFramesDB.ShowTargeters = value end,
-            isEnabled = function()
-                return CommanderPartyFramesDB.EnableShield
-                    and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
-            end,
-        })
-        panel:AddCheckbox({
-            label = "Target Marks",
-            tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
-            get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
-            set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddSlider({
-            label = "Name Length",
-            tooltip = "Trim ally names to this many characters (keeps rows compact). Applies when Show Unit As includes a name.",
-            min = 3, max = 12, step = 1,
-            format = "%.0f",
-            get = function() return CommanderPartyFramesDB.NameMaxChars end,
-            set = function(value) CommanderPartyFramesDB.NameMaxChars = value end,
-            isEnabled = function()
-                return CommanderPartyFramesDB.EnableShield
-                    and (CommanderPartyFramesDB.UnitDisplay == "NAME" or CommanderPartyFramesDB.UnitDisplay == "ICON_NAME")
-            end,
-        })
-        panel:AddCheckbox({
-            label = "Color Shield Types",
-            tooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
-            get = function() return CommanderPartyFramesDB.ColorShieldTypes end,
-            set = function(value) CommanderPartyFramesDB.ColorShieldTypes = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddDropdown(BAR_TEXTURE_OPTION)
-        panel:AddDropdown(ICON_STYLE_OPTION)
-        panel:AddCheckbox(SWEEP_EDGE_OPTION)
+        AddIdentitySection(panel, LAYER_UI.BLESS)
 
         panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Enabling needs a /reload and fixes the roster order.")
         panel:AddCheckbox({
@@ -2359,84 +2253,7 @@ local function CreateCorePanel()
 
     AddBuffSection(panel, "PWS")
 
-    panel:AddSection("Identity & Icons")
-    panel:AddDropdownPair({
-        label = "Show Unit As",
-        tooltip = "How each ally is labelled. Class Icon is the most compact (no name); Portrait shows their 2D model (class icon when off-screen); Name is text only; Icon + Name shows icon and name; Icon + Portrait shows the class icon beside the live portrait; the Specialization modes swap in the talent-tree icon once a player's spec has been learned from their casts (class icon until then).",
-        options = {
-            { text = "Class Icon", value = "CLASS_ICON" },
-            { text = "Portrait", value = "PORTRAIT" },
-            { text = "Name", value = "NAME" },
-            { text = "Icon + Name", value = "ICON_NAME" },
-            { text = "Icon + Portrait", value = "ICON_PORTRAIT" },
-            { text = "Specialization", value = "SPEC" },
-            { text = "Spec + Portrait", value = "SPEC_PORTRAIT" },
-        },
-        get = function() return CommanderPartyFramesDB.UnitDisplay end,
-        set = function(value) CommanderPartyFramesDB.UnitDisplay = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    }, {
-        label = "Grow",
-        tooltip = "Direction the board grows from its anchor.",
-        options = {
-            { text = "Down", value = "DOWN" },
-            { text = "Up", value = "UP" },
-        },
-        get = function() return CommanderPartyFramesDB.Grow end,
-        set = function(value) CommanderPartyFramesDB.Grow = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    })
-    panel:AddCheckboxPair({
-        label = "Spell Icon",
-        tooltip = "Show the Power Word: Shield icon at the start of each row (dimmed when no shield of yours is up).",
-        get = function() return CommanderPartyFramesDB.ShowSpellIcon end,
-        set = function(value) CommanderPartyFramesDB.ShowSpellIcon = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    }, {
-        label = "Shield Duration Sweep",
-        tooltip = "Draw a radial 30-second sweep over the spell icon showing the shield's remaining duration. Requires Spell Icon.",
-        get = function() return CommanderPartyFramesDB.ShieldSwipe end,
-        set = function(value) CommanderPartyFramesDB.ShieldSwipe = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowSpellIcon end,
-    })
-    panel:AddCheckboxPair({
-        label = "NPC Target Counter",
-        tooltip = "Show, over each unit's class icon or portrait, how many enemy NPCs are currently targeting them — white 1, amber 2, red 3+. Reads the visible enemy nameplates, so turn enemy nameplates on (default V) for full coverage; needs an icon to sit on, so it hides in Name-only display.",
-        get = function() return CommanderPartyFramesDB.ShowTargeters end,
-        set = function(value) CommanderPartyFramesDB.ShowTargeters = value end,
-        isEnabled = function()
-            return CommanderPartyFramesDB.EnableShield
-                and CommanderPartyFramesDB.UnitDisplay ~= "NAME"
-        end,
-    }, {
-        label = "Target Marks",
-        tooltip = "Show, at each row's right edge, the raid mark of the unit that ally is CURRENTLY targeting — watch your tank hold skull (or drift off it), and pair with the Assist click binding to jump onto their target.",
-        get = function() return CommanderPartyFramesDB.ShowTargetMarks end,
-        set = function(value) CommanderPartyFramesDB.ShowTargetMarks = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    })
-    panel:AddCheckbox({
-        label = "Color Shield Types",
-        tooltip = "Tint each embedded shield segment by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
-        get = function() return CommanderPartyFramesDB.ColorShieldTypes end,
-        set = function(value) CommanderPartyFramesDB.ColorShieldTypes = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    })
-    panel:AddDropdown(BAR_TEXTURE_OPTION)
-    panel:AddDropdown(ICON_STYLE_OPTION)
-    panel:AddCheckbox(SWEEP_EDGE_OPTION)
-    panel:AddSlider({
-        label = "Name Length",
-        tooltip = "Trim ally names to this many characters (keeps rows compact). Applies when Show Unit As includes a name.",
-        min = 3, max = 12, step = 1,
-        format = "%.0f",
-        get = function() return CommanderPartyFramesDB.NameMaxChars end,
-        set = function(value) CommanderPartyFramesDB.NameMaxChars = value end,
-        isEnabled = function()
-            return CommanderPartyFramesDB.EnableShield
-                and (CommanderPartyFramesDB.UnitDisplay == "NAME" or CommanderPartyFramesDB.UnitDisplay == "ICON_NAME")
-        end,
-    })
+    AddIdentitySection(panel, LAYER_UI.PWS)
 
     panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Enabling needs a /reload and fixes the roster order.")
     panel:AddCheckbox({
