@@ -622,6 +622,31 @@ SDATA.SELF_ARMOR = {
     INT = SDATA.ARMOR_LINES,
     PWS = SDATA.PRIEST_ARMOR,
 }
+
+-- Banner segments that double as a SWITCHER: click the segment, get a popout
+-- of secure cast buttons for every line of that kind you have trained.
+--
+-- The mage's armor switcher was the first, and for a long time the only one,
+-- because a mage picks an armor and leaves it. A paladin is the case that
+-- actually wanted this: eight auras and eight seals, the seal running out
+-- every thirty seconds, and both of them things you change BETWEEN pulls and
+-- sometimes during one. Two switchers on one banner, so each names the
+-- segment it hangs under.
+--
+--   seg    which banner segment is the toggle. Both banners put their
+--          switchable state first, which is what makes this a fixed index
+--          rather than a search.
+--   lines  the same best-first rank lists the scan already reads, so the
+--          button casts the top rank you know and nothing has to agree twice.
+SDATA.SWITCHERS = {
+    INT = {
+        { key = "ARMOR", label = "Armor", seg = 1, lines = SDATA.ARMOR_LINES },
+    },
+    BLESS = {
+        { key = "AURA", label = "Aura", seg = 1, lines = SDATA.PALADIN_AURAS },
+        { key = "SEAL", label = "Seal", seg = 2, lines = SDATA.PALADIN_SEALS },
+    },
+}
 local armorNames = {}   -- localized armor name -> spell icon (resolved at login)
 local selfArmor         -- { icon, expire } our current armor buff, nil when naked
 local barrierDef        -- Ice Barrier's tracked-spell def once known (debug info)
@@ -670,14 +695,13 @@ SDATA.BANDAGES = { 21991, 21990, 14530, 14529, 8545, 8544,
                    6451, 6450, 3531, 3530, 2581, 1251 }
 SDATA.RECENT_BANDAGE_ID = 11196    -- Recently Bandaged
 SDATA.FIRST_AID_ID = 3273
-local mageUtil, conjureBtn, consumeBtn, armorPop, armorBtn
+local mageUtil, conjureBtn, consumeBtn
 local gemBtn, bandageBtn
-local armorButtons = {}
 -- Everything the newer banner utilities need, in ONE table: this chunk sits
 -- close to Lua's 200-local cap (see the SDATA note above), so new state goes
 -- in here rather than adding chunk locals.
 --   gemBtn/portalBtn/bandageBtn  the secure buttons themselves
---   portalPop                    insecure popout frame (armorPop's pattern)
+--   portalPop                    insecure popout frame (a switcher's pattern)
 --   portalButtons                pooled popout children
 --   counts                       cached bag tallies (water/food/gem/bandage)
 local util = {
@@ -770,6 +794,11 @@ end
 function CommanderPartyFrames_ProfileLabel(p) return util.ProfileLabel(p) end
 function CommanderPartyFrames_ListProfiles(out) return util.ListProfiles(out) end
 function CommanderPartyFrames_GetSpellBook() return SDATA.BOOK_LIST end
+
+-- The banner switchers, for the harness. Nothing in the game reads this: the
+-- popouts carry secure children and are their own business, but a test has no
+-- other way to ask whether two of them got built and where they landed.
+function CommanderPartyFrames_GetSwitchers() return util.switchers end
 
 function CommanderPartyFrames_CopyProfile(from, to)
     local ok = util.CopyProfile(from, to)
@@ -2492,10 +2521,46 @@ local function BindMageUtilityButtons()
     end
     util.Layout()
 
-    -- Armor popout: one secure cast button per known armor line
-    local shown = 0
-    local known = {}
-    for _, line in ipairs(SDATA.ARMOR_LINES) do
+end
+
+-- ---------------------------------------------------------------------------
+-- Banner switchers: a segment you can click for a popout of secure cast
+-- buttons (the mage's armors, the paladin's auras and seals).
+--
+-- Every piece of this is shaped by one constraint: the popout carries
+-- PROTECTED children, so its anchor family is protected too. That is why the
+-- popout is anchored once to root — a Frame — rather than to the banner
+-- texture it visually belongs under, and why it is moved by rewriting that
+-- offset out of combat instead of re-anchoring at click time. Re-anchoring at
+-- click time is what threw in the field.
+-- ---------------------------------------------------------------------------
+util.switchers = {}     -- the active layer's, in banner order
+
+function util.EnsureSwitchers()
+    local book = SDATA.SWITCHERS[layer or ""]
+    if not book or #util.switchers > 0 then return end
+    for _, def in ipairs(book) do
+        local sw = { def = def, buttons = {} }
+        sw.pop = CreateFrame("Frame", nil, UIParent)
+        sw.pop:SetFrameStrata("DIALOG")
+        sw.pop:SetSize(24, 24)
+        sw.pop:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 1, -(HEADER_H + 3))
+        local bg = sw.pop:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(sw.pop)
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0, 0, 0, 0.75)
+        sw.pop:Hide()
+        util.switchers[#util.switchers + 1] = sw
+    end
+end
+
+-- One secure cast button per line of this kind the character has trained. A
+-- line whose superseding line is known stays out (Frost Armor once you have
+-- Ice), which is the only reason `known` is gathered before the second pass.
+function util.BindSwitcher(sw)
+    if not (sw.pop and GetSpellInfo) then return end
+    local known, shown = {}, 0
+    for _, line in ipairs(sw.def.lines) do
         for _, id in ipairs(line.ids) do
             local n = GetSpellInfo(id)
             if (n and knownSpells[n]) or (IsSpellKnown and IsSpellKnown(id)) then
@@ -2504,15 +2569,17 @@ local function BindMageUtilityButtons()
             end
         end
     end
-    for _, line in ipairs(SDATA.ARMOR_LINES) do
+    for _, line in ipairs(sw.def.lines) do
         local bestId = known[line.key]
         if bestId and not (line.supersededBy and known[line.supersededBy]) then
             shown = shown + 1
-            local b = armorButtons[shown]
+            local b = sw.buttons[shown]
             if not b then
-                b = CreateFrame("Button", "CommanderPartyFramesArmorBtn" .. shown, armorPop, "SecureActionButtonTemplate")
+                b = CreateFrame("Button",
+                    "CommanderPartyFrames" .. sw.def.key .. "Btn" .. shown,
+                    sw.pop, "SecureActionButtonTemplate")
                 b:SetSize(18, 18)
-                b:SetPoint("LEFT", armorPop, "LEFT", 3 + (shown - 1) * 21, 0)
+                b:SetPoint("LEFT", sw.pop, "LEFT", 3 + (shown - 1) * 21, 0)
                 b:RegisterForClicks("AnyDown", "AnyUp")
                 b.icon = b:CreateTexture(nil, "ARTWORK")
                 b.icon:SetAllPoints(b)
@@ -2522,8 +2589,8 @@ local function BindMageUtilityButtons()
                 hl:SetAllPoints(b)
                 hl:SetTexture("Interface\\Buttons\\WHITE8X8")
                 hl:SetVertexColor(1, 1, 1, 0.25)
-                b:SetScript("PostClick", function() SafeSetShown(armorPop, false) end)
-                armorButtons[shown] = b
+                b:SetScript("PostClick", function() SafeSetShown(sw.pop, false) end)
+                sw.buttons[shown] = b
             end
             local name, _, icon = GetSpellInfo(bestId)
             b:SetAttribute("type", "spell")
@@ -2532,8 +2599,64 @@ local function BindMageUtilityButtons()
             b:Show()
         end
     end
-    for i = shown + 1, #armorButtons do armorButtons[i]:Hide() end
-    armorPop:SetSize(math.max(shown, 1) * 21 + 3, 24)
+    for i = shown + 1, #sw.buttons do sw.buttons[i]:Hide() end
+    sw.known = shown
+    sw.pop:SetSize(math.max(shown, 1) * 21 + 3, 24)
+end
+
+function util.BindSwitchers()
+    for _, sw in ipairs(util.switchers) do util.BindSwitcher(sw) end
+end
+
+-- Put each switcher's toggle over its segment and its popout under it. Called
+-- per paint, after TruncSegs has decided where the segments landed; the
+-- protected move only happens when the offset actually changes and only out
+-- of combat, so the common case is a number compare.
+--
+-- A switcher with nothing to offer (one aura trained, or a truncated banner
+-- that dropped its segment) gets no toggle: a click target over an icon that
+-- opens an empty box is worse than no click target.
+function util.PlaceSwitchers(segs)
+    segs = segs or root.hdrSegs
+    if not segs then return end
+    for _, sw in ipairs(util.switchers) do
+        local seg = segs[sw.def.seg]
+        local live = seg and seg.icon:IsShown() and (sw.known or 0) > 1
+        if live and not sw.btn then
+            sw.btn = CreateFrame("Button", nil, root)
+            sw.btn:SetSize(16, 16)
+            sw.btn:SetPoint("CENTER", seg.icon, "CENTER", 0, 0)
+            sw.btn:SetScript("OnClick", function()
+                SafeSetShown(sw.pop, not sw.pop:IsShown())
+            end)
+            sw.btn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+                GameTooltip:SetText(sw.def.label)
+                GameTooltip:AddLine("Click to switch", 0.8, 0.8, 0.8)
+                GameTooltip:Show()
+            end)
+            sw.btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end
+        if sw.btn then sw.btn:SetShown(live and true or false) end
+        if not live then
+            SafeSetShown(sw.pop, false)
+        elseif sw._x ~= seg._x and seg._x and not InCombat() then
+            -- Its own record of where it was last put, never the segment's:
+            -- a deferred move must not leave the segment (a texture, free to
+            -- move in combat) reported as placed when it is not.
+            sw._x = seg._x
+            sw.pop:ClearAllPoints()
+            sw.pop:SetPoint("TOPLEFT", root, "TOPLEFT", seg._x,
+                -(1 + seg.icon:GetHeight() + 3))
+        end
+    end
+end
+
+function util.HideSwitchers()
+    for _, sw in ipairs(util.switchers) do
+        if sw.btn then sw.btn:Hide() end
+        if sw.pop then SafeSetShown(sw.pop, false) end
+    end
 end
 
 -- The cluster and its popouts are siblings of the board, so root's scale no
@@ -2545,7 +2668,9 @@ end
 function util.SyncCluster()
     if not mageUtil or InCombat() then return end
     local s = root:GetScale() or 1
-    for _, f in ipairs({ mageUtil, armorPop, util.portalPop }) do
+    local scaled = { mageUtil, util.portalPop }
+    for _, sw in ipairs(util.switchers) do scaled[#scaled + 1] = sw.pop end
+    for _, f in ipairs(scaled) do
         if f and (f:GetScale() or 1) ~= s then f:SetScale(s) end
     end
     -- Stacking order is the other thing a child got free. Above the board's
@@ -2649,6 +2774,9 @@ function util.TruncSegs(segX)
         local tw = (s.text.GetStringWidth and s.text:GetStringWidth()) or 0
         local w = 12 + 2 + tw
         if x + w > limit then n = i - 1; break end
+        -- Where this segment actually landed. A switcher popout hangs under
+        -- its own segment, and only this walk knows where that is.
+        s._x = x
         x = x + w + 8
     end
     for i = n + 1, #segs do
@@ -3103,20 +3231,10 @@ local function EnsureMageUtilButtons()
         ppbg:SetTexture("Interface\\Buttons\\WHITE8X8")
         ppbg:SetVertexColor(0, 0, 0, 0.75)
         util.portalPop:Hide()
-
-        armorPop = CreateFrame("Frame", nil, UIParent)
-        armorPop:SetFrameStrata("DIALOG")
-        armorPop:SetSize(24, 24)
-        -- Anchored ONCE to root (a Frame): the popout carries protected children,
-        -- and protected anchor families may not attach to regions like the banner
-        -- textures — re-anchoring at click time is what threw in the field.
-        armorPop:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 1, -(HEADER_H + 3))
-        local bg = armorPop:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints(armorPop)
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        bg:SetVertexColor(0, 0, 0, 0.75)
-        armorPop:Hide()
     end
+    -- Banner switchers are NOT mage-only: the paladin banner has two of them.
+    -- They self-gate on SDATA.SWITCHERS, so a layer without any builds none.
+    util.EnsureSwitchers()
     BindMageUtilityButtons()
 end
 
@@ -6096,44 +6214,11 @@ local function DrawHeader(now, showHeader)
                 -- Never eat the click: the icon under it is the armor toggle
                 root.armorCd:EnableMouse(false)
                 root.armorCd:Hide()
-                -- The armor segment doubles as the armor-switch popout toggle
-                if armorPop and not armorBtn then
-                    armorBtn = CreateFrame("Button", nil, root)
-                    armorBtn:SetSize(16, 16)
-                    armorBtn:SetPoint("CENTER", segs[1].icon, "CENTER", 0, 0)
-                    armorBtn:SetScript("OnClick", function()
-                        SafeSetShown(armorPop, not armorPop:IsShown())
-                    end)
-                    armorBtn:SetScript("OnEnter", function(self)
-                        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-                        GameTooltip:SetText("Armor")
-                        GameTooltip:AddLine("Click to switch armors", 0.8, 0.8, 0.8)
-                        GameTooltip:Show()
-                    end)
-                    armorBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                end
             end
             if mageUtil then SafeSetShown(mageUtil, true) end
-            if armorBtn then armorBtn:Show() end
             util.Paint(now)
             local segX = util.PlaceSegs()
             util.segN = 0
-            -- The armor popout hangs under the armor segment, which moved. It
-            -- may only follow by tracking the segment's offset off ROOT: the
-            -- popout's secure children pull it into their protected anchor
-            -- family, and a protected family may not attach to a region like
-            -- segs[1].icon (see the creation anchor). Moving it at all is a
-            -- protected call, so it keeps its OWN record of where it was last
-            -- put — sharing the segment's would have a deferred popout report
-            -- the segment as unplaced too, and the segment (a texture, free to
-            -- move in combat) would then be stranded wherever the fight caught
-            -- it once its cache finally caught up.
-            if armorPop and root._popX ~= segX and not InCombat() then
-                root._popX = segX
-                armorPop:ClearAllPoints()
-                armorPop:SetPoint("TOPLEFT", root, "TOPLEFT", segX,
-                    -(1 + segs[1].icon:GetHeight() + 3))
-            end
             -- 1) Armor upkeep, text-free: the radial carries the time left,
             -- the icon goes amber inside the last five minutes, and a naked
             -- mage gets the dim red icon that used to read OFF
@@ -6177,6 +6262,7 @@ local function DrawHeader(now, showHeader)
                     or "Interface\\Icons\\Spell_Nature_Polymorph", false, AlertText())
             end
             util.TruncSegs(segX)
+            util.PlaceSwitchers(segs)
             return
         end
         -- HOT layer: the druid's upkeep banner. Same segment grammar as the
@@ -6224,7 +6310,7 @@ local function DrawHeader(now, showHeader)
         -- removing.
         if layer == "BLESS" then
             root.header:Hide()
-            util.EnsureSegs()
+            local segs = util.EnsureSegs()
             if mageUtil then SafeSetShown(mageUtil, true) end
             util.Paint(now)
             local segX = util.PlaceSegs()
@@ -6266,6 +6352,7 @@ local function DrawHeader(now, showHeader)
                     or "Interface\\Icons\\Spell_Nature_Polymorph", false, AlertText())
             end
             util.TruncSegs(segX)
+            util.PlaceSwitchers(segs)
             return
         end
         -- The bandage control is chassis, not a class layer — it rides the
@@ -6338,8 +6425,7 @@ local function DrawHeader(now, showHeader)
         -- down is protected and waits for combat to drop; the plain toggles
         -- and textures go immediately.
         if mageUtil then SafeSetShown(mageUtil, false) end
-        if armorBtn then armorBtn:Hide() end
-        if armorPop then SafeSetShown(armorPop, false) end
+        util.HideSwitchers()
         if util.portalPop then SafeSetShown(util.portalPop, false) end
     end
 end
@@ -7453,6 +7539,13 @@ events:SetScript("OnEvent", function(self, event, arg1)
         if layer == "INT" then ResolveEleInfo() end
         -- Strip / form / aura / seal / banner-cooldown names, per layer
         ResolveStripInfo()
+        -- The switcher popouts offer what you have TRAINED, so they are
+        -- rebuilt exactly where every other trained-spell answer is: at login
+        -- and on SPELLS_CHANGED. Not in BindMageUtilityButtons, which is
+        -- gated on the mage's own cluster existing and so never ran for a
+        -- paladin at all.
+        util.EnsureSwitchers()
+        util.BindSwitchers()
         -- Banner utilities exist for every supported class (the bandage
         -- control is chassis); the mage-only ones self-gate inside
         util.recentName = (GetSpellInfo and GetSpellInfo(SDATA.RECENT_BANDAGE_ID))
@@ -7598,6 +7691,13 @@ events:SetScript("OnEvent", function(self, event, arg1)
         -- A respec can hand a druid Nature's Swiftness (or take it away), so
         -- the banner's cooldown segments re-filter with the spellbook
         ResolveStripInfo()
+        -- The switcher popouts offer what you have TRAINED, so they are
+        -- rebuilt exactly where every other trained-spell answer is: at login
+        -- and on SPELLS_CHANGED. Not in BindMageUtilityButtons, which is
+        -- gated on the mage's own cluster existing and so never ran for a
+        -- paladin at all.
+        util.EnsureSwitchers()
+        util.BindSwitchers()
         BindMageUtilityButtons()
     end
 end)

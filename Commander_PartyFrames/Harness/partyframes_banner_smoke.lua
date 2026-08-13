@@ -523,7 +523,9 @@ local SPELLS = {
     [853] = "Hammer of Justice", [31842] = "Divine Illumination",
     [20066] = "Repentance",
     [27149] = "Devotion Aura", [19746] = "Concentration Aura",
+    [32223] = "Crusader Aura", [27151] = "Shadow Resistance Aura",
     [20375] = "Seal of Command", [20165] = "Seal of Light",
+    [20164] = "Seal of Justice",
     [19750] = "Flash of Light", [4987] = "Cleanse",
     -- Priest layer: Inner Fire and the banner cooldowns. Shadowfiend is
     -- deliberately left UNTRAINED below, the way Rebirth and Repentance are
@@ -565,7 +567,9 @@ Learn(774, 8936, 33763, 1126, 21849, 467,
 Learn(20217, 25898, 19740, 25782, 19742, 1038, 19977,
     1044, 1022, 6940,
     633, 642, 498, 20216, 31884, 853, 31842,
-    27149, 19746, 20375, 20165, 19750, 4987)
+    27149, 19746, 32223, 20375, 20165, 20164, 19750, 4987)
+-- Shadow Resistance Aura is deliberately NOT trained, so the switcher has an
+-- untrained line to leave out of its popout.
 
 function GetSpellInfo(id)
     if type(id) == "string" then return id, nil, "Interface\\Icons\\Spell_" .. id end
@@ -1438,6 +1442,48 @@ if CLASS == "PALADIN" then
     CommanderPartyFramesDB.TrackUptime = false
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Refresh()
+
+    -- --- The aura and seal switchers ---------------------------------------
+    -- Two on one banner, which is the case the mage's single armor switcher
+    -- never exercised. Each hangs under its OWN segment and offers only the
+    -- lines this paladin has trained.
+    playerBuffs = {
+        { name = "Devotion Aura", expirationTime = 0, duration = 0,
+          icon = "Interface\\Icons\\Spell_27149", sourceUnit = "player" },
+        { name = "Seal of Command", expirationTime = now + 25, duration = 30,
+          icon = "Interface\\Icons\\Spell_20375", sourceUnit = "player" },
+    }
+    Refresh()
+    local sw = CommanderPartyFrames_GetSwitchers and CommanderPartyFrames_GetSwitchers()
+    CHECK(sw and #sw == 2, "the paladin banner built two switchers", sw and #sw)
+    if sw and #sw == 2 then
+        CHECK(sw[1].def.key == "AURA" and sw[2].def.key == "SEAL",
+            "...an aura one and a seal one, in banner order")
+        -- Three auras known, one of them untrained, so the popout offers the
+        -- three and not the fourth
+        CHECK(sw[1].known == 3, "the aura popout offers every trained aura", sw[1].known)
+        CHECK(sw[2].known == 3, "and the seal popout every trained seal", sw[2].known)
+        local casts = {}
+        for i = 1, sw[1].known do
+            casts[#casts + 1] = sw[1].buttons[i].__attr
+                and sw[1].buttons[i].__attr.spell
+        end
+        CHECK(casts[1] == "Devotion Aura",
+            "a switcher button casts by NAME, so it takes your best rank",
+            tostring(casts[1]))
+        -- Each popout sits under the segment it belongs to, not on top of the
+        -- other one
+        CHECK(sw[1]._x and sw[2]._x and sw[2]._x > sw[1]._x,
+            "the seal popout hangs to the right of the aura one",
+            tostring(sw[1]._x) .. " vs " .. tostring(sw[2]._x))
+        -- The toggle is a real click target over the segment
+        CHECK(sw[1].btn ~= nil and sw[1].btn.__shown == true,
+            "the aura segment carries a toggle")
+        sw[1].btn.__scripts.OnClick(sw[1].btn)
+        CHECK(sw[1].pop.__shown == true, "clicking it opens the popout")
+        sw[1].btn.__scripts.OnClick(sw[1].btn)
+        CHECK(sw[1].pop.__shown == false, "...and clicking again closes it")
+    end
 
     -- Click-cast keeps its own defaults, like every other layer
     CHECK(CommanderPartyFrames_GetBind("1") == 19750,
