@@ -153,6 +153,40 @@ local function ItemStats(link)
     return stats
 end
 
+-- Lua 5.1 has no bitwise operators; the client ships the bit library and so
+-- does luajit, but never assume — a missing library must not take the audit
+-- down with it.
+local band = bit and bit.band
+local function MaskHas(mask, index)
+    if not mask or mask == 0 then return true end   -- no mask = no restriction
+    if band then return band(mask, 2 ^ index) ~= 0 end
+    return math.floor(mask / (2 ^ index)) % 2 == 1
+end
+
+-- Can this enhancement land on this item? The equip location alone cannot
+-- say: a wand and a gun share INVTYPE_RANGEDRIGHT and only one takes a
+-- scope, and a fishing pole and a staff are both two-handers but only one
+-- takes a lure. The client answers with an item class and a subclass mask,
+-- which the generator carries onto every entry.
+function M.Accepts(entry, classID, subclassID)
+    if not entry or not entry.cls then return true end
+    -- Class 0 is Consumable, which nothing equips: reading it back off an
+    -- equipped item means the client did not answer, and an unanswered
+    -- question must not become a "no".
+    if not classID or classID == 0 then return true end
+    if entry.cls ~= classID then return false end
+    return MaskHas(entry.sub, subclassID or 0)
+end
+
+local function ItemClass(link)
+    local getter = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+    if not getter then return nil, nil end
+    local ok, _, _, _, _, _, classID, subclassID = pcall(getter, link)
+    if not ok then return nil, nil end
+    return classID, subclassID
+end
+M.ItemClass = ItemClass
+
 local function EquipLoc(link)
     if C_Item and C_Item.GetItemInfoInstant then
         local ok, _, _, _, equipLoc = pcall(C_Item.GetItemInfoInstant, link)
@@ -171,6 +205,19 @@ end
 function M.SlotOfLink(link)
     local slot = SLOT_OF_EQUIPLOC[EquipLoc(link) or ""]
     if not (slot and bySlot[slot]) then return nil end
+    -- And at least one enhancement for that slot has to accept this actual
+    -- item, or the slot is not enhanceable for it.
+    local classID, subclassID = ItemClass(link)
+    if classID and classID ~= 0 then
+        local any = false
+        for _, entry in ipairs(bySlot[slot]) do
+            if not entry.unobtainable and M.Accepts(entry, classID, subclassID) then
+                any = true
+                break
+            end
+        end
+        if not any then return nil end
+    end
     return slot
 end
 
@@ -352,10 +399,11 @@ function M.ScanGear(unit)
             row.id = parsed and parsed.id
             row.ench = parsed and parsed.enchant or 0
             row.entry = M.EntryForEnchant(row.ench ~= 0 and row.ench or nil)
-            row.slot = SLOT_OF_EQUIPLOC[EquipLoc(link) or ""] or nil
+            row.slot = M.SlotOfLink(link)
 
             -- Off-hand: a weapon takes an enchant, a held-in-off-hand does
-            -- not, and both live in slot 17.
+            -- not, and both live in slot 17. A wand and a gun share slot 18,
+            -- and only one of them takes a scope — SlotOfLink settles both.
             local takesEnchant = row.slot ~= nil and bySlot[row.slot] ~= nil
             -- A ring is only actionable for an enchanter; say so rather than
             -- nagging.

@@ -504,7 +504,10 @@ end
 
 function GetItemInfoInstant(link)
     local it = EquippedByLink(link)
-    return (it and it.id), "type", "sub", (it and it.loc), 134400, 0, 0
+    -- class/subclass default to armour, which is what most equipped gear is;
+    -- a fixture sets them explicitly to be a gun, a wand or a fishing pole
+    return (it and it.id), "type", "sub", (it and it.loc), 134400,
+        (it and it.cls) or 4, (it and it.sub) or 0
 end
 
 function GetNumSkillLines() return #(world.skills or {}) end
@@ -1284,7 +1287,7 @@ world.equipped = {
     [5] = { id = 28229, ench = 0, loc = "INVTYPE_CHEST" },
     [6] = { id = 28190, ench = 0, loc = "INVTYPE_WAIST" },
     [11] = { id = 28227, ench = 0, loc = "INVTYPE_FINGER" },
-    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON",
+    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON", cls = 2, sub = 7,
              sockets = { RED = 1, YELLOW = 1 }, gems = { 32409 } },
 }
 local report = E.ScanGear("player")
@@ -1356,7 +1359,7 @@ Sync()
 world.equipped = {
     [1] = { id = 28182, ench = 3002, loc = "INVTYPE_HEAD" },
     [5] = { id = 28229, ench = 0, loc = "INVTYPE_CHEST" },
-    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON",
+    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON", cls = 2, sub = 7,
              sockets = { RED = 1, YELLOW = 1 }, gems = { 32409 } },
 }
 Sync()
@@ -1501,7 +1504,8 @@ CHECK(threadTip:find("Pattern:", 1, true), "P: and how the pattern is obtained")
 -- On a piece of GEAR: the link is the authority
 world.items = {
     [28229] = { id = 28229, loc = "INVTYPE_CHEST" },
-    [28187] = { id = 28187, loc = "INVTYPE_WEAPON", sockets = { RED = 1, YELLOW = 1 } },
+    [28187] = { id = 28187, loc = "INVTYPE_WEAPON", cls = 2, sub = 7,
+                sockets = { RED = 1, YELLOW = 1 } },
     [28190] = { id = 28190, loc = "INVTYPE_WAIST" },
     [28227] = { id = 28227, loc = "INVTYPE_FINGER" },
 }
@@ -1565,7 +1569,8 @@ CHECK(Q.MaxMatch({ "RED", "RED" }, { ORANGE, BLUE }) == 1, "Q: a blue gem matche
 
 -- Socket bonus on a real item
 world.items = {
-    [28187] = { id = 28187, loc = "INVTYPE_WEAPON", sockets = { RED = 1, YELLOW = 1 } },
+    [28187] = { id = 28187, loc = "INVTYPE_WEAPON", cls = 2, sub = 7,
+                sockets = { RED = 1, YELLOW = 1 } },
 }
 local function Judge(gem1, gem2)
     local link = ("|cffffffff|Hitem:28187:0:%d:%d:0:0:0:0:70:0:0|h[Gear]|h|r"):format(gem1 or 0, gem2 or 0)
@@ -1592,7 +1597,7 @@ CHECK(MetaWith({ RED = 2, YELLOW = 2, BLUE = 1 }) == false, "Q: one blue short d
 
 world.equipped = {
     [1] = { id = 28182, ench = 3002, loc = "INVTYPE_HEAD", sockets = { META = 1 }, gems = { META } },
-    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON",
+    [16] = { id = 28187, ench = 2673, loc = "INVTYPE_WEAPON", cls = 2, sub = 7,
              sockets = { RED = 1, YELLOW = 1 }, gems = { ORANGE, ORANGE } },
 }
 local sockReport = Q.ScanGear("player")
@@ -1621,6 +1626,49 @@ CHECK(FindPrint("is active", beforeQ) ~= nil, "Q: the chat report states the met
 CHECK(FindPrint("socket bonus", beforeQ) ~= nil, "Q: and whether each item earned its bonus")
 
 world.equipped, world.items = {}, {}
+Sync()
+
+-- ===========================================================================
+-- R: the equip location is not enough — class and subclass settle it
+-- ===========================================================================
+
+local R = CommanderQuartermasterEnhance
+-- Weapon subclasses: 2 bow, 3 gun, 7 sword, 18 crossbow, 19 wand, 20 fishing pole
+world.equipped = {
+    [18] = { id = 28504, ench = 0, loc = "INVTYPE_RANGEDRIGHT", cls = 2, sub = 3 },
+}
+local gunReport = R.ScanGear("player")
+local function Row(report, slotID)
+    for _, row in ipairs(report.rows) do
+        if row.invSlot == slotID then return row end
+    end
+end
+CHECK(Row(gunReport, 18).slot == "RANGED", "R: a gun's ranged slot takes a scope",
+    tostring(Row(gunReport, 18).slot))
+CHECK(Row(gunReport, 18).bare == true, "R: and an unscoped gun says so")
+
+world.equipped[18] = { id = 28504, ench = 0, loc = "INVTYPE_RANGEDRIGHT", cls = 2, sub = 19 }
+local wandReport = R.ScanGear("player")
+CHECK(Row(wandReport, 18).slot == nil, "R: a wand shares the slot and takes nothing",
+    tostring(Row(wandReport, 18).slot))
+CHECK(Row(wandReport, 18).bare == nil, "R: so it is never called unenchanted")
+
+world.equipped[18] = { id = 28504, ench = 0, loc = "INVTYPE_THROWN", cls = 2, sub = 16 }
+CHECK(Row(R.ScanGear("player"), 18).slot == nil, "R: nor is a thrown weapon")
+
+-- A fishing pole is a two-hander that takes lures and no enchant
+CHECK(R.Accepts({ cls = 2, sub = 1048576 }, 2, 20), "R: a lure accepts a fishing pole")
+CHECK(not R.Accepts({ cls = 2, sub = 1048576 }, 2, 10), "R: and not a staff")
+CHECK(R.Accepts({ cls = 2, sub = 189939 }, 2, 7), "R: a weapon enchant accepts a sword")
+CHECK(not R.Accepts({ cls = 2, sub = 189939 }, 2, 19), "R: and not a wand")
+CHECK(R.Accepts({ cls = 4, sub = 64 }, 4, 6), "R: a shield enchant accepts a shield")
+CHECK(not R.Accepts({ cls = 4, sub = 64 }, 2, 6), "R: and not a weapon that shares the number")
+CHECK(R.Accepts({ cls = 2, sub = 189939 }, nil, nil),
+    "R: an unanswered class question is not a no")
+CHECK(R.Accepts({ cls = 2, sub = 189939 }, 0, 0),
+    "R: and neither is class 0, which nothing equips")
+
+world.equipped = {}
 Sync()
 
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])

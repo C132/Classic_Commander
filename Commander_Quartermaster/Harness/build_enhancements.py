@@ -286,6 +286,21 @@ class Client:
                 out.append(i)
         return out
 
+    def equip_filter(self, spell_id):
+        """The item class and subclass mask the enchant spell accepts.
+
+        This is what separates a wand from a gun and a fishing pole from a
+        staff: they share an equip location, and only the subclass mask says
+        which of them a scope or a lure may land on.
+        """
+        r = self.equipped.get(spell_id)
+        if not r:
+            return None, None
+        cls, sub = _int(r["EquippedItemClass"]), _int(r["EquippedItemSubclass"])
+        if cls < 0:
+            return None, None
+        return cls, (sub if sub > 0 else None)
+
     def slots_for_spell(self, spell_id):
         """Which equipment slots this enchant spell may land on."""
         r = self.equipped.get(spell_id)
@@ -585,6 +600,8 @@ def build():
                 "stats": parse_stats(short)[0],
                 "note": clean_desc(cl.spell_desc.get(spell)),
                 "slots": slots or ["OTHER"],
+                "cls": cl.equip_filter(spell)[0],
+                "sub": cl.equip_filter(spell)[1],
                 "kind": kind,
                 "prof": prof,
                 "quality": _int(row["OverallQualityID"]) if row is not None else None,
