@@ -52,6 +52,18 @@ function geterrorhandler()
     return function(err) caughtErrors[#caughtErrors + 1] = tostring(err) end
 end
 
+-- Drive one frame's OnUpdate and RECORD what it throws. Every scenario below
+-- pumps OnUpdate to make the board repaint, and they all used to do it under a
+-- bare pcall — which meant a repaint that errored looked exactly like a
+-- repaint that worked, and the run stayed green. That is how a live banner
+-- indexing past its segment pool got shipped past a full-green harness.
+local function PumpFrame(f, elapsed)
+    local u = f.__scripts and f.__scripts.OnUpdate
+    if not u then return end
+    local ok, err = pcall(u, f, elapsed or 10)
+    if not ok then caughtErrors[#caughtErrors + 1] = "OnUpdate: " .. tostring(err) end
+end
+
 local NUMERIC_GETTERS = {
     GetWidth = 100, GetHeight = 20, GetScale = 1, GetEffectiveScale = 1,
     GetFrameLevel = 2, GetLeft = 0, GetBottom = 0, GetTop = 0, GetRight = 0,
@@ -707,7 +719,7 @@ do
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     local function SomeRow()
@@ -888,7 +900,7 @@ if CLASS == "DRUID" then
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     local function SegTexts()
@@ -1233,7 +1245,7 @@ if CLASS == "PALADIN" then
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     local function SegCount()
@@ -1397,6 +1409,27 @@ if CLASS == "PALADIN" then
     CHECK(drawn["Interface\\Icons\\Spell_20066"] ~= true,
         "Repentance, which they do not, never does")
 
+    -- --- The banner outgrowing its segment pool ---------------------------
+    -- The pool used to be eight segments, fixed. This paladin has ten trained
+    -- banner cooldowns on top of an aura and a seal, so on a board wide
+    -- enough to show them the banner walks straight off the end of the pool —
+    -- which is a live error every draw, seventy-five of them in one session.
+    -- The default frame width truncates before it gets there, which is
+    -- exactly why nothing caught it, so this widens the board on purpose.
+    local keepWidth = CommanderPartyFramesDB.FrameWidth
+    CommanderPartyFramesDB.FrameWidth = 600
+    CommanderPartyFramesDB.TrackUptime = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    CHECK(#caughtErrors == 0, "a banner wider than the segment pool draws clean",
+        caughtErrors[1])
+    CHECK(SegCount() > 8, "...and actually shows more than the old fixed eight",
+        SegCount())
+    CommanderPartyFramesDB.FrameWidth = keepWidth
+    CommanderPartyFramesDB.TrackUptime = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+
     -- Click-cast keeps its own defaults, like every other layer
     CHECK(CommanderPartyFrames_GetBind("1") == 19750,
         "paladin left-click defaults to Flash of Light",
@@ -1430,7 +1463,7 @@ if CLASS == "PRIEST" then
             now = now + 1
             for _, f in ipairs(allFrames) do
                 local u = f.__scripts.OnUpdate
-                if u then pcall(u, f, 10) end
+                PumpFrame(f, 10)
             end
         end
         local function SegTextures()
@@ -1482,7 +1515,7 @@ if CLASS == "PRIEST" then
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     local function Row()
@@ -1595,7 +1628,7 @@ local function CheckBuffStrip()
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     local function IntRow()
@@ -1937,7 +1970,7 @@ local function CheckAbilityScope()
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     -- The parent row matters as much as the cell: pooled strips keep the cell
@@ -2206,7 +2239,7 @@ local function CheckShadowRead()
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     local function Row()
@@ -2287,7 +2320,7 @@ local function CheckBuffTargets()
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     local function Row()
@@ -2357,7 +2390,7 @@ local function CheckPets()
         now = now + 1
         for _, f in ipairs(allFrames) do
             local u = f.__scripts.OnUpdate
-            if u then pcall(u, f, 10) end
+            PumpFrame(f, 10)
         end
     end
     -- Ally rows only: the personal block (elemental / My Shields) is half-height
@@ -2476,7 +2509,7 @@ if CLASS ~= "MAGE" then
     CommanderPartyFramesDB.ShowHeader = true
     for _, f in ipairs(allFrames) do
         local u = f.__scripts.OnUpdate
-        if u then pcall(u, f, 10) end
+        PumpFrame(f, 10)
     end
     -- The other half of the same bug: with the cluster walk broken,
     -- ClusterWidth reported 0, so the banner's own content started hard left
@@ -2590,7 +2623,7 @@ local function DrawOnce()
     now = now + 1
     for _, f in ipairs(allFrames) do
         local u = f.__scripts.OnUpdate
-        if u then pcall(u, f, 10) end
+        PumpFrame(f, 10)
     end
 end
 CommanderPartyFramesDB.ShowHeader = true

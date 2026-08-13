@@ -2492,32 +2492,42 @@ function util.SyncCluster()
 end
 
 -- ---------------------------------------------------------------------------
--- The upkeep banner's readout: a row of icon+text segments. Both class layers
--- that HAVE a banner (mage armor/uptime/alerts, druid form/cooldowns/alerts)
--- draw the same shape, so the pool, the placement and the truncation live
--- here once and each layer only decides what the segments SAY.
+-- The upkeep banner's readout: a row of icon+text segments. Every class layer
+-- that HAS a banner draws the same shape, so the pool, the placement and the
+-- truncation live here once and each layer only decides what the segments SAY.
+--
+-- The pool GROWS on demand rather than sitting at a fixed size. It was eight,
+-- which comfortably covered the mage and druid banners and is nowhere near
+-- what a paladin asks for: aura, seal, up to eleven trained cooldowns, uptime
+-- and the alert segment is fifteen. Textures and font strings are unprotected,
+-- so growing one mid-combat is legal.
 -- ---------------------------------------------------------------------------
 util.segN = 0
+SDATA.MIN_SEGS = 8      -- what every banner gets up front
+SDATA.MAX_SEGS = 24     -- runaway backstop; width truncates long before this
 
-function util.EnsureSegs()
-    if root.hdrSegs then return root.hdrSegs end
-    local segs, prev = {}, nil
-    for i = 1, 8 do
+function util.EnsureSegs(want)
+    local segs = root.hdrSegs
+    if not segs then segs = {}; root.hdrSegs = segs end
+    want = math.min(math.max(want or SDATA.MIN_SEGS, SDATA.MIN_SEGS), SDATA.MAX_SEGS)
+    if #segs >= want then return segs end
+    for i = #segs + 1, want do
         local icon = root:CreateTexture(nil, "OVERLAY")
         icon:SetSize(12, 12)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         local text = root:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetJustifyH("LEFT")
-        if prev then
-            icon:SetPoint("LEFT", prev, "RIGHT", 8, 0)
+        if i > 1 then
+            icon:SetPoint("LEFT", segs[i - 1].text, "RIGHT", 8, 0)
         else
-            icon:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 4, -1)
+            -- PlaceSegs owns the first segment's x and only re-anchors it when
+            -- the cluster width changes, so a pool built after it last ran has
+            -- to start from the offset it settled on rather than the default.
+            icon:SetPoint("TOPLEFT", root, "TOPLEFT", root._segX or (STRIPE_W + 4), -1)
         end
         text:SetPoint("LEFT", icon, "RIGHT", 2, 0)
         segs[i] = { icon = icon, text = text }
-        prev = text
     end
-    root.hdrSegs = segs
     return segs
 end
 
@@ -2537,7 +2547,10 @@ end
 
 function util.Seg(icon, desat, text, tint)
     util.segN = util.segN + 1
-    local s = root.hdrSegs and root.hdrSegs[util.segN]
+    -- Grow to meet the ask. Past MAX_SEGS this returns nothing and the segment
+    -- is dropped — and segN keeps counting, which is exactly why TruncSegs
+    -- clamps to the pool rather than trusting it.
+    local s = util.EnsureSegs(util.segN)[util.segN]
     if not s then return end
     s.icon:SetTexture(icon)
     if s.icon.SetDesaturated then s.icon:SetDesaturated(desat or false) end
@@ -2563,7 +2576,10 @@ function util.TruncSegs(segX)
     if blizz and blizz.btn and blizz.btn:IsShown() then chromeW = chromeW + 12 + 3 end
     if settingsBtn and settingsBtn:IsShown() then chromeW = chromeW + 12 + 3 end
     local limit = FrameWidth() - (PAD - 3) - chromeW
-    local n, x = util.segN, segX
+    -- segN is what the layer ASKED for; #segs is what it actually got. They
+    -- diverge whenever a banner runs past MAX_SEGS, and walking segN over the
+    -- pool is an index into nil.
+    local n, x = math.min(util.segN, #segs), segX
     for i = 1, n do
         local s = segs[i]
         local tw = (s.text.GetStringWidth and s.text:GetStringWidth()) or 0
