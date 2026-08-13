@@ -438,6 +438,31 @@ class WorldDB:
                         "reqSkill": _int(r["reqskillvalue"]) or None})
         return out
 
+    def reputation(self, item_id):
+        """The item's own reputation gate, as a source of last resort.
+
+        The world DB's shelves are not complete — the Consortium's
+        quartermasters carry no inventory at all in this revision — but the
+        ITEM still knows it requires The Consortium at Exalted, because that
+        gate is enforced client-side. When nothing else sources an item, that
+        gate is the true and useful answer: go and earn the standing, and your
+        quartermaster will have it.
+        """
+        row = self.item_row(item_id)
+        if row is None:
+            return None
+        fid = _int(row["RequiredReputationFaction"])
+        if not fid:
+            return None
+        return {"k": "REP", "faction": {
+            "id": fid, "name": self.faction.get(fid),
+            "standing": STANDING.get(_int(row["RequiredReputationRank"]))}}
+
     def item_sources(self, item_id):
         """Every way to obtain the item itself (not counting crafting it)."""
-        return self.vendors(item_id) + self.drops(item_id) + self.quests(item_id)
+        found = self.vendors(item_id) + self.drops(item_id) + self.quests(item_id)
+        if not found:
+            rep = self.reputation(item_id)
+            if rep:
+                found.append(rep)
+        return found

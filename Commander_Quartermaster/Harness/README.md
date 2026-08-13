@@ -8,7 +8,8 @@ order; everything they download lands in the gitignored `.cache/`:
 ```
 python3 tbcdb_to_sqlite.py --fetch      # stage the CMaNGOS TBC world DB
 python3 build_enhancements.py           # write CommanderQuartermasterEnhanceData.lua
-python3 crosscheck_enhancements.py      # verify it against Wowhead
+python3 crosscheck_enhancements.py      # verify identity against Wowhead
+python3 crosscheck_atlasloot.py         # verify sourcing against AtlasLoot
 ```
 
 `tbcdb_to_sqlite.py` stages the server-side facts the client does not carry —
@@ -23,6 +24,22 @@ tooltip endpoint at dataEnv=5 — the live Anniversary dataset. It currently
 reports zero disagreements across all 629 entries, and it reports rather than
 rewrites: a disagreement is as likely to be Wowhead rendering a later patch as
 it is to be us.
+
+`crosscheck_atlasloot.py` covers what Wowhead's tooltip endpoint cannot:
+SOURCING. It reads the AtlasLoot Classic TBC tables installed alongside this
+addon — an independent, hand-curated dataset — and checks every enhancement
+and every recipe that AtlasLoot also knows: that we source it at all, and that
+our reputation gate and standing agree with theirs. 215 items overlap and
+nothing disagrees. Its `unseen` column (things we source and AtlasLoot does
+not list) is informational — AtlasLoot does not attempt trainers, world drops
+or vanilla-era content in its TBC files.
+
+That check found the one systematic hole worth finding: CMaNGOS ships the
+Consortium quartermasters with an empty shelf, so a reputation reward sold by
+nobody had no source at all. The generator now falls back to the item's OWN
+reputation gate, which the client enforces regardless of what the world DB
+knows about shelves — "Reputation reward: The Consortium - Exalted" is true
+and useful even when no vendor row exists.
 
 Both generators print their own coverage. `build_enhancements.py` names every
 enchantment display string containing a stat phrase its parser does not know

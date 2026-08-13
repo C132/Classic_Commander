@@ -458,12 +458,24 @@ def craft_sources(cl, world, item_id, seen_recipes=None):
 
 
 def learn_sources(cl, world, spell):
-    """Trainer taught, or a recipe item — and where THAT comes from."""
+    """Trainer taught, or a recipe item — and where THAT comes from.
+
+    The client sometimes carries two recipe items with the same name for one
+    craft (Design: Relentless Earthstorm Diamond is both 32412 and 33622), and
+    only one of them is on a shelf. Listing both would print the same line
+    twice with different answers, so the best-sourced one speaks for the name.
+    """
     out = list(world.trainers(spell)[:MAX_SOURCES])
+    best = {}
     for item in cl.recipe_items(spell):
-        rec = {"k": "RECIPE", "item": item, "name": cl.item_name(item)}
+        name = cl.item_name(item)
         src = world.item_sources(item)
-        rec["src"] = trim(src)
+        prior = best.get(name)
+        if prior and len(prior[1]) >= len(src):
+            continue
+        best[name] = (item, src)
+    for name, (item, src) in best.items():
+        rec = {"k": "RECIPE", "item": item, "name": name, "src": trim(src)}
         if len(src) > MAX_SOURCES:
             rec["more"] = len(src) - MAX_SOURCES
         out.append(rec)

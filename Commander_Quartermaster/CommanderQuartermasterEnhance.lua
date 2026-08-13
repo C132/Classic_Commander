@@ -520,6 +520,7 @@ M.Money = Money
 
 local KIND_LABEL = {
     VENDOR = "Vendor", TRAINER = "Trainer", QUEST = "Quest", CRAFT = "Crafted",
+    REP = "Reputation reward",
     RECIPE = "Recipe", DROP = "Drops", OBJECT = "Container", CONTAINER = "Inside",
     PROSPECT = "Prospecting", DISENCHANT = "Disenchanting", FISH = "Fishing",
     SKIN = "Skinning", PICKPOCKET = "Pickpocket", MAIL = "Mail",
@@ -537,6 +538,10 @@ function M.SourceText(src)
             out = ("%s (%s %s)"):format(out, src.prof.skill, tostring(src.prof.rank or "?"))
         end
         return out
+    end
+    if src.k == "REP" and src.faction then
+        return ("%s: |cffffd200%s%s|r"):format(out, src.faction.name or "?",
+            src.faction.standing and (" - " .. src.faction.standing) or "")
     end
     if src.name then out = out .. ": " .. src.name end
     if src.sub then out = out .. ", " .. src.sub end
