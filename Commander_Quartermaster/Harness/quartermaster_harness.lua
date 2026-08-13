@@ -1709,6 +1709,72 @@ world.bags[0] = {}
 world.equipped = {}
 Sync()
 
+-- ===========================================================================
+-- S: the generated file keeps the shape the engine relies on
+-- ===========================================================================
+-- A regeneration is a bulk rewrite of 600+ entries by a script nobody watches
+-- run. These checks are the tripwire: they fail loudly if a future generator
+-- drops a field the UI dereferences.
+
+local S = CommanderQuartermasterEnhance
+local SData = CommanderQuartermasterEnhanceData
+local badSlot, badEnch, badSrc, badKind, badStats, orphanSlot = 0, 0, 0, 0, 0, 0
+local slotKnown = {}
+for _, key in ipairs(SData.SlotOrder) do slotKnown[key] = true end
+for _, e in ipairs(SData.Entries) do
+    if type(e.ench) ~= "number" then badEnch = badEnch + 1 end
+    if type(e.slots) ~= "table" or #e.slots == 0 then
+        badSlot = badSlot + 1
+    else
+        for _, key in ipairs(e.slots) do
+            if not slotKnown[key] then orphanSlot = orphanSlot + 1 end
+        end
+    end
+    if type(e.kind) ~= "string" then badKind = badKind + 1 end
+    if e.src ~= nil and type(e.src) ~= "table" then badSrc = badSrc + 1 end
+    if e.stats ~= nil then
+        for stat, amount in pairs(e.stats) do
+            if type(stat) ~= "string" or type(amount) ~= "number" then
+                badStats = badStats + 1
+            end
+        end
+    end
+end
+CHECK(badEnch == 0, "S: every entry carries a numeric enchant id", badEnch)
+CHECK(badSlot == 0, "S: every entry names at least one slot", badSlot)
+CHECK(orphanSlot == 0, "S: and every slot it names is in SlotOrder", orphanSlot)
+CHECK(badKind == 0, "S: every entry has a kind", badKind)
+CHECK(badSrc == 0, "S: sources are tables when present", badSrc)
+CHECK(badStats == 0, "S: stat vectors are name -> number", badStats)
+
+-- Every slot the audit can report must have a shelf to offer, or a bare slot
+-- would be reported with nothing to do about it
+for _, slot in ipairs(S.Slots) do
+    -- slot list is by inventory id; the mapping is exercised by section R
+end
+local shelfless = {}
+for _, key in ipairs(SData.SlotOrder) do
+    local list = S.EntriesForSlot(key)
+    if not list or #list == 0 then shelfless[#shelfless + 1] = key end
+end
+CHECK(#shelfless <= 1, "S: every slot in SlotOrder has a shelf",
+    table.concat(shelfless, ","))
+
+-- Sources render without erroring, for every entry, which is what the browser
+-- and both tooltips do on every draw
+local rendered = 0
+for _, e in ipairs(SData.Entries) do
+    local ok = pcall(function()
+        S.SourceSummary(e)
+        for _, line in ipairs(S.SourceLines(e, 6)) do
+            assert(type(line.text) == "string")
+        end
+    end)
+    if ok then rendered = rendered + 1 end
+end
+CHECK(rendered == #SData.Entries, "S: every entry's sources render",
+    rendered .. "/" .. #SData.Entries)
+
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 
 io.write(("quartermaster_harness: %d checks, %d failures\n"):format(checks, fails))

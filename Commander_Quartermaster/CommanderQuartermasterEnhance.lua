@@ -635,7 +635,7 @@ function M.SourceText(src)
         out = out .. (" |cffffd200[%s%s]|r"):format(src.faction.name,
             src.faction.standing and (" - " .. src.faction.standing) or "")
     end
-    if src.cost and src.cost.tokens then
+    if type(src.cost) == "table" and src.cost.tokens then
         for _, token in ipairs(src.cost.tokens) do
             out = out .. (" |cff00ccff%d× %s|r"):format(token.count, token.name or ("#" .. token.item))
         end

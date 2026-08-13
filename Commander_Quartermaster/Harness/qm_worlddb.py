@@ -434,7 +434,7 @@ class WorldDB:
             out.append({"k": "TRAINER", "npc": npc, "name": ct["Name"],
                         "sub": ct["SubName"] or None,
                         "zone": self.zone_of(self.creature_zone, npc),
-                        "cost": _int(r["spellcost"]) or None,
+                        "price": _int(r["spellcost"]) or None,
                         "reqSkill": _int(r["reqskillvalue"]) or None})
         return out
 

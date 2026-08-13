@@ -51,7 +51,10 @@ INV_SLOT = {
     1: "HEAD", 3: "SHOULDER", 5: "CHEST", 20: "CHEST", 6: "BELT", 7: "LEGS",
     8: "BOOTS", 9: "BRACER", 10: "GLOVES", 11: "RING", 12: "TRINKET",
     13: "WEAPON", 14: "SHIELD", 15: "RANGED", 16: "CLOAK", 17: "TWOHAND",
-    21: "WEAPON", 22: "OFFHAND", 23: "HELD", 25: "THROWN", 26: "RANGED",
+    # 22 is an off-hand WEAPON, which takes weapon enchants and oils like any
+    # other weapon — the same key the runtime maps INVTYPE_WEAPONOFFHAND to.
+    # A separate slot here would leave twelve oils on a shelf with no sidebar.
+    21: "WEAPON", 22: "WEAPON", 23: "HELD", 25: "THROWN", 26: "RANGED",
     2: "NECK", 28: "RELIC",
 }
 
@@ -311,7 +314,8 @@ class Client:
         sub_mask = _int(r["EquippedItemSubclass"])
         slots = []
         if inv_mask:
-            for inv, slot in INV_SLOT.items():
+            for inv in sorted(INV_SLOT):
+                slot = INV_SLOT[inv]
                 if inv_mask & (1 << inv) and slot not in slots:
                     slots.append(slot)
         if not slots and cls == 2:      # a weapon enchant with no inv-type mask
