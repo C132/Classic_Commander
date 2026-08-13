@@ -1374,7 +1374,9 @@ local slotKeys = {}
 for _, btn in ipairs(sidebar) do
     if btn.__shown then slotKeys[btn.key] = true end
 end
-CHECK(slotKeys.HEAD and slotKeys.WEAPON and slotKeys.GEM, "O: slots listed in the sidebar")
+CHECK(slotKeys.HEAD and slotKeys.WEAPON, "O: slots listed in the sidebar")
+CHECK(slotKeys["GEM:META"] and slotKeys["GEM:ORANGE"] and not slotKeys.GEM,
+    "O: gems list by colour rather than as one wall of 242")
 
 -- The audit page: one row per equipped slot, verdict in the note
 local gearRows = {}
@@ -1435,6 +1437,23 @@ CHECK(E.Score({ stats = { SP = 20 } }, "CASTER") > E.Score({ stats = { SP_FIRE =
     "O: school-locked spell damage is discounted against the general kind")
 CHECK(E.Score({ short = "Mongoose" }, "MELEE") == nil,
     "O: a proc enchant scores nothing rather than scoring badly")
+
+-- Gem colour groups: a two-colour gem belongs to its own shelf, not to both
+local G = CommanderQuartermasterEnhance
+local function GroupOf(id) return G.GemGroup(G.EntryForItem(id)) end
+CHECK(GroupOf(32193) == "RED", "O: a red gem is on the red shelf", GroupOf(32193))
+CHECK(GroupOf(32218) == "ORANGE", "O: an orange gem is on the orange shelf", GroupOf(32218))
+CHECK(GroupOf(32215) == "PURPLE", "O: a purple gem is on the purple shelf", GroupOf(32215))
+CHECK(GroupOf(32409) == "META", "O: and the meta on its own")
+sidebarByKey("GEM:META").onClick()
+local metaOnly, metaCount = true, 0
+for _, item in ipairs(list) do
+    if item.kind == "enh" then
+        metaCount = metaCount + 1
+        if G.GemGroup(item.entry) ~= "META" then metaOnly = false end
+    end
+end
+CHECK(metaCount > 0 and metaOnly, "O: the meta shelf holds only metas", metaCount)
 
 -- Search reaches across every slot, and into the sources
 sidebarByKey("MYGEAR").onClick()
@@ -1668,6 +1687,25 @@ CHECK(R.Accepts({ cls = 2, sub = 189939 }, nil, nil),
 CHECK(R.Accepts({ cls = 2, sub = 189939 }, 0, 0),
     "R: and neither is class 0, which nothing equips")
 
+world.equipped = {}
+Sync()
+
+-- The shopping list carries gear gaps too
+world.equipped = {
+    [5] = { id = 28229, ench = 0, loc = "INVTYPE_CHEST" },
+    [1] = { id = 28182, ench = 0, loc = "INVTYPE_HEAD" },
+}
+world.bags[0] = { { id = 29191, count = 1 } }
+Sync()
+local shopText = CommanderQuartermasterFrame and ""
+CommanderQuartermaster_ShoppingList()
+shopText = CommanderQuartermasterShopFrame and CommanderQuartermasterShopFrame.edit.__text or ""
+CHECK(shopText:find("GEAR ENHANCEMENTS", 1, true) ~= nil,
+    "R: the shopping list has a gear section", shopText:sub(1, 120))
+CHECK(shopText:find("Glyph of Power", 1, true) ~= nil,
+    "R: naming the glyph already in your bags")
+CHECK(shopText:find("in your bags", 1, true) ~= nil, "R: and saying it is a trip to the bag, not the shop")
+world.bags[0] = {}
 world.equipped = {}
 Sync()
 

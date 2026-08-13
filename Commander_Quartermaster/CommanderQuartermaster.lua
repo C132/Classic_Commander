@@ -1292,6 +1292,8 @@ local function BuildGearList()
     end
     -- Searching from My Gear searches everything; otherwise one slot's shelf,
     -- ordered best-first for the role you actually play.
+    local gemGroup = slot:match("^GEM:(.+)$")
+    if gemGroup then slot = "GEM" end
     local slots = (slot == "MYGEAR") and EData.SlotOrder or { slot }
     local many = #slots > 1
     for _, key in ipairs(slots) do
@@ -1299,8 +1301,14 @@ local function BuildGearList()
         -- Permanent and temporary are not alternatives: a weapon carries an
         -- enchant AND a stone, so they get their own headers and their own
         -- ranking rather than competing in one list.
+        local filter = EnhanceMatches
+        if gemGroup then
+            filter = function(entry)
+                return Enhance.GemGroup(entry) == gemGroup and EnhanceMatches(entry)
+            end
+        end
         for _, half in ipairs({ "PERM", "TEMP" }) do
-            local ranked = Enhance.RankSlot(key, role, EnhanceMatches, half)
+            local ranked = Enhance.RankSlot(key, role, filter, half)
             if ranked and #ranked > 0 then
                 if many then
                     PushHeader(("|cffffd200%s|r%s"):format(label,
@@ -1580,22 +1588,40 @@ local function RefreshSidebar()
         end
         slotButton("MYGEAR", "|cffffd200My Gear|r", badge)
         if EData then
+            local function tally(list, group)
+                local owned, total = 0, 0
+                for _, entry in ipairs(list) do
+                    if not entry.unobtainable
+                        and (not group or Enhance.GemGroup(entry) == group) then
+                        total = total + 1
+                        if entry.item then
+                            local _, _, _, _, held = CountsFor(entry.item)
+                            if held > 0 then owned = owned + 1 end
+                        end
+                    end
+                end
+                return owned, total
+            end
+            local function countBadge(owned, total)
+                return owned > 0 and ("|cff33ff99%d|r|cff666666/%d|r"):format(owned, total)
+                    or ("|cff666666%d|r"):format(total)
+            end
             for _, key in ipairs(EData.SlotOrder) do
                 local list = Enhance and Enhance.EntriesForSlot(key)
                 if list and #list > 0 then
-                    local owned, total = 0, 0
-                    for _, entry in ipairs(list) do
-                        if not entry.unobtainable then
-                            total = total + 1
-                            if entry.item then
-                                local _, _, _, _, held = CountsFor(entry.item)
-                                if held > 0 then owned = owned + 1 end
+                    if key == "GEM" then
+                        -- 242 gems in one list is a wall. Colour is how a
+                        -- player shops for them, so colour is how they list.
+                        for _, group in ipairs(Enhance.GemGroups) do
+                            local owned, total = tally(list, group.key)
+                            if total > 0 then
+                                slotButton("GEM:" .. group.key, "Gem — " .. group.name,
+                                    countBadge(owned, total))
                             end
                         end
+                    else
+                        slotButton(key, EData.SlotNames[key] or key, countBadge(tally(list)))
                     end
-                    slotButton(key, EData.SlotNames[key] or key,
-                        owned > 0 and ("|cff33ff99%d|r|cff666666/%d|r"):format(owned, total)
-                        or ("|cff666666%d|r"):format(total))
                 end
             end
         end
@@ -2330,6 +2356,41 @@ local function BuildShoppingText()
         end
         wrote = true
     end
+    -- Gear gaps belong on the same list: a bare slot is a shopping trip, and
+    -- one you already own the answer to is a trip to the bank instead.
+    local E = CommanderQuartermasterEnhance
+    if E then
+        local report = E.ScanGear("player")
+        local gear = {}
+        for _, problem in ipairs(E.Problems(report)) do
+            if problem.kind == "BARE" then
+                local slot = problem.row.slot
+                local held = E.BestHeld(slot, CountsFor)
+                if held then
+                    local bags = select(1, CountsFor(held.entry.item))
+                    gear[#gear + 1] = bags > 0
+                        and ("- %s: apply %s (in your bags)"):format(problem.row.label, held.name)
+                        or ("- %s: %s ×%d — withdraw and apply"):format(
+                            problem.row.label, held.name, held.count)
+                else
+                    local pick = E.BestFor(slot, MyRole())
+                    if pick then
+                        gear[#gear + 1] = ("- %s: %s — %s"):format(
+                            problem.row.label, pick.name,
+                            (E.SourceSummary(pick):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")))
+                    end
+                end
+            elseif problem.kind == "SOCKET" or problem.kind == "META" then
+                gear[#gear + 1] = "- " .. problem.text
+            end
+        end
+        if #gear > 0 then
+            if wrote then lines[#lines + 1] = "" end
+            lines[#lines + 1] = "GEAR ENHANCEMENTS"
+            for _, line in ipairs(gear) do lines[#lines + 1] = line end
+            wrote = true
+        end
+    end
     local shorts = WatchShorts()
     if #shorts > 0 then
         if wrote then lines[#lines + 1] = "" end
@@ -2340,7 +2401,7 @@ local function BuildShoppingText()
         wrote = true
     end
     if not wrote then
-        lines[#lines + 1] = "Nothing to buy — loadout carried and watchlist stocked."
+        lines[#lines + 1] = "Nothing to buy — loadout carried, gear enhanced, watchlist stocked."
     end
     return table.concat(lines, "\n")
 end

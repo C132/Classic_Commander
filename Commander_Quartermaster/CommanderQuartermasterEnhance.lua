@@ -76,6 +76,38 @@ function M.EntriesForSlot(slotKey)
     return bySlot[slotKey]
 end
 
+-- Which shelf a gem belongs on. TBC's two-colour gems have no colour of
+-- their own in the data — they are simply red AND yellow — but a player
+-- shopping for gems thinks in seven groups, not four bits.
+local GEM_GROUPS = {
+    { key = "META", name = "Meta", colors = { META = true } },
+    { key = "RED", name = "Red", colors = { RED = true } },
+    { key = "YELLOW", name = "Yellow", colors = { YELLOW = true } },
+    { key = "BLUE", name = "Blue", colors = { BLUE = true } },
+    { key = "ORANGE", name = "Orange", colors = { RED = true, YELLOW = true } },
+    { key = "PURPLE", name = "Purple", colors = { RED = true, BLUE = true } },
+    { key = "GREEN", name = "Green", colors = { YELLOW = true, BLUE = true } },
+}
+M.GemGroups = GEM_GROUPS
+
+function M.GemGroup(entry)
+    if not (entry and entry.kind == "GEM") then return nil end
+    local colors = entry.colors or (entry.color and { entry.color }) or {}
+    local have = {}
+    for _, color in ipairs(colors) do have[color] = true end
+    for _, group in ipairs(GEM_GROUPS) do
+        local match = true
+        for color in pairs(group.colors) do
+            if not have[color] then match = false break end
+        end
+        for color in pairs(have) do
+            if not group.colors[color] then match = false break end
+        end
+        if match then return group.key end
+    end
+    return "OTHER"
+end
+
 -- ---------------------------------------------------------------------------
 -- Equipment
 -- ---------------------------------------------------------------------------
