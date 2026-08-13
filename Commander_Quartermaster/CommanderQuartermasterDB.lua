@@ -219,7 +219,7 @@ local function CreatePanel()
     })
     panel:AddCheckbox({
         label = "Tooltip Enhancements",
-        tooltip = "Two lines the enhancement database can add. On a glyph, gem, kit or oil: which slots it enhances and where to get another. On a piece of gear: what it is enchanted with — or that it is not, and how many sockets are still empty.",
+        tooltip = "The full enhancement entry on a tooltip. On a glyph, gem, kit or oil: what it enhances, what it grants, what it asks of you, and every way to obtain it — vendor, standing, price, profession, reagents, and where the recipe comes from. On a piece of gear: what it is enchanted with, what sits in each socket and whether it matches, whether the socket bonus is earned, and whether your meta gem is switched on.",
         get = function() return CommanderQuartermasterDB.TooltipEnhance end,
         set = function(value) CommanderQuartermasterDB.TooltipEnhance = value end,
         isEnabled = Enabled,

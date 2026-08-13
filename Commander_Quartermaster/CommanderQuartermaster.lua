@@ -404,6 +404,8 @@ end
 -- Tooltip integration
 -- ---------------------------------------------------------------------------
 
+local MyRole -- forward (browser section): the played spec's role
+
 local function JoinParts(parts)
     local out
     for _, part in ipairs(parts) do
@@ -420,14 +422,8 @@ local function AppendEnhancement(tooltip, itemID)
     if not (E and db.TooltipEnhance) then return end
     local entry = E.EntryForItem(itemID)
     if not entry then return end
-    local EData = CommanderQuartermasterEnhanceData
-    local slots = {}
-    for _, key in ipairs(entry.slots) do
-        slots[#slots + 1] = EData.SlotNames[key] or key
-    end
-    tooltip:AddLine(("|cff33ff99Enhances:|r %s"):format(table.concat(slots, ", ")))
-    for _, line in ipairs(E.SourceLines(entry, 4)) do
-        tooltip:AddLine(("%s|cffaaaaaa%s|r"):format(("  "):rep(line.depth + 1), line.text))
+    for _, line in ipairs(E.DetailLines(entry)) do
+        tooltip:AddLine(("%s%s"):format(("   "):rep(line.depth), line.text), 1, 1, 1, true)
     end
 end
 
@@ -437,24 +433,11 @@ end
 local function AppendGearVerdict(tooltip, link)
     local E = CommanderQuartermasterEnhance
     if not (E and db.TooltipEnhance) then return end
-    local parsed = E.ParseLink(link)
-    if not parsed then return end
-    local slot = E.SlotOfLink(link)
-    if not slot then return end
-    if parsed.enchant == 0 then
-        if slot ~= "RING" or E.SkillRank("Enchanting") then
-            tooltip:AddLine("|cffff4040Quartermaster:|r not enchanted")
-        end
-    else
-        local entry = E.EntryForEnchant(parsed.enchant)
-        if entry then
-            tooltip:AddLine(("|cff33ff99Quartermaster:|r %s"):format(entry.short or entry.name))
-        end
-    end
-    local empty = E.EmptySockets(link, parsed)
-    if empty and empty > 0 then
-        tooltip:AddLine(("|cffff4040Quartermaster:|r %d empty socket%s"):format(
-            empty, empty == 1 and "" or "s"))
+    local lines = E.GearLines(link, MyRole())
+    if #lines == 0 then return end
+    tooltip:AddLine(" ")
+    for _, line in ipairs(lines) do
+        tooltip:AddLine(("%s%s"):format(("   "):rep(line.depth), line.text), 1, 1, 1, true)
     end
 end
 
@@ -1258,7 +1241,7 @@ end
 
 -- The role the shelf is sorted for: the played spec's, never the class you
 -- happen to be sightseeing in the Loadout view.
-local function MyRole()
+function MyRole()
     local spec = MyLoadoutSpec()
     return spec and spec.role or nil
 end
@@ -2036,7 +2019,10 @@ local function EnsureBrowser()
     browser.viewBrowse = CreateFrame("Button", nil, toolbar, "UIPanelButtonTemplate")
     browser.viewBrowse:SetSize(74, 22)
     browser.viewBrowse:SetPoint("LEFT", toolbar, "LEFT", 0, 0)
-    browser.viewBrowse:SetText("Browse")
+    -- "Browse" stopped meaning anything the moment there were two things to
+    -- browse. This page is the consumables database; the Gear page is the
+    -- other one.
+    browser.viewBrowse:SetText("Consumables")
     browser.viewBrowse:SetScript("OnClick", function()
         db.BrowserView = "BROWSE"
         offset = 0

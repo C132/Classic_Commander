@@ -693,6 +693,205 @@ function M.SourceSummary(entry)
 end
 
 -- ---------------------------------------------------------------------------
+-- Full detail, for a tooltip
+-- ---------------------------------------------------------------------------
+
+-- The audit is wanted per tooltip and costs fourteen GetInventoryItemLink
+-- calls, so it is cached for a moment. A second is short enough that a gem
+-- socketed while a tooltip is up corrects itself before anyone reads it, and
+-- long enough that hovering a bag of gems does not rescan the character
+-- forty times.
+local cachedReport, cachedAt
+function M.Report()
+    local now = GetTime and GetTime() or 0
+    if cachedReport and cachedAt and (now - cachedAt) < 1 then
+        return cachedReport
+    end
+    cachedReport = M.ScanGear("player")
+    cachedAt = now
+    return cachedReport
+end
+
+function M.InvalidateReport()
+    cachedReport, cachedAt = nil, nil
+end
+
+local COLOR_TEXT = {
+    META = "Meta", RED = "Red", YELLOW = "Yellow", BLUE = "Blue",
+    PRISMATIC = "any",
+}
+
+-- Everything the database knows about one enhancement, as { depth, text }
+-- lines. Nothing is truncated: this is what the player asked to see when they
+-- put the pointer on it.
+function M.DetailLines(entry)
+    local out = {}
+    if not entry then return out end
+    local function add(depth, text)
+        if text then out[#out + 1] = { depth = depth, text = text } end
+    end
+
+    local slots = {}
+    for _, key in ipairs(entry.slots or {}) do
+        slots[#slots + 1] = Data.SlotNames[key] or key
+    end
+    if entry.kind == "GEM" then
+        local colors = {}
+        for _, color in ipairs(entry.colors or {}) do
+            colors[#colors + 1] = COLOR_TEXT[color] or color
+        end
+        add(0, ("|cff33ff99Fits:|r %s socket%s"):format(
+            table.concat(colors, " or "), #colors == 1 and "" or "s"))
+    elseif #slots > 0 then
+        add(0, ("|cff33ff99Enhances:|r %s"):format(table.concat(slots, ", ")))
+    end
+    if entry.short then
+        add(0, ("|cff33ff99Grants:|r %s"):format(entry.short))
+    end
+    if entry.recipe and entry.recipe ~= entry.name then
+        add(0, ("|cff888888Enchant:|r %s"):format(entry.recipe))
+    end
+
+    -- Everything that gates it
+    if entry.ilvl then
+        add(0, ("|cff888888Needs an item of level %d or higher|r"):format(entry.ilvl))
+    end
+    if entry.reqSkill then
+        add(0, ("|cffff8040Only usable by a %s%s|r"):format(entry.reqSkill.skill,
+            entry.reqSkill.rank and (" (%d)"):format(entry.reqSkill.rank) or ""))
+    end
+    if entry.unique then
+        local bits = {}
+        if entry.unique.family then
+            bits[#bits + 1] = ("%s (%d)"):format(entry.unique.family, entry.unique.max or 1)
+        elseif entry.unique.equipped then
+            bits[#bits + 1] = "unique-equipped"
+        end
+        if entry.unique.own then
+            bits[#bits + 1] = ("you may own %d"):format(entry.unique.own)
+        end
+        if #bits > 0 then
+            add(0, ("|cff888888Unique: %s|r"):format(table.concat(bits, ", ")))
+        end
+    end
+    if entry.classes then
+        add(0, ("|cff888888Only: %s|r"):format(table.concat(entry.classes, ", ")))
+    end
+
+    -- A meta gem's requirement, and whether YOUR gems currently meet it
+    if entry.cond and entry.condText then
+        local counts = M.Report().gemCounts
+        local active = M.MetaActive(entry, counts or {})
+        add(0, ("%s%s|r"):format(active and "|cff33ff99" or "|cffff4040", entry.condText))
+        if counts then
+            add(1, ("|cff888888you wear %d red, %d yellow, %d blue|r"):format(
+                counts.RED or 0, counts.YELLOW or 0, counts.BLUE or 0))
+        end
+    end
+
+    if entry.unobtainable then
+        add(0, "|cffff4040No known source in this build|r")
+        return out
+    end
+
+    add(0, "|cffffd200Sources|r")
+    for _, src in ipairs(entry.src or {}) do
+        add(1, M.SourceText(src))
+        if src.reagents then
+            local parts = {}
+            for _, r in ipairs(src.reagents) do
+                parts[#parts + 1] = ("%d× %s"):format(r.count, r.name or ("#" .. r.item))
+            end
+            add(2, ("|cff888888%s|r"):format(table.concat(parts, ", ")))
+        end
+        for _, learn in ipairs(src.learn or {}) do
+            add(2, M.SourceText(learn))
+            for _, deep in ipairs(learn.src or {}) do
+                add(3, M.SourceText(deep))
+            end
+            if learn.more then
+                add(3, ("|cff666666…and %d more|r"):format(learn.more))
+            end
+        end
+    end
+    if entry.more then
+        add(1, ("|cff666666…and %d more|r"):format(entry.more))
+    end
+    return out
+end
+
+-- The verdict on a piece of GEAR: what is on it, what is missing, and what
+-- belongs there. `role` is optional and only used to name a best pick.
+function M.GearLines(link, role)
+    local out = {}
+    local function add(depth, text)
+        if text then out[#out + 1] = { depth = depth, text = text } end
+    end
+    local parsed = ParseLink(link)
+    if not parsed then return out end
+    local slot = M.SlotOfLink(link)
+
+    if slot then
+        if parsed.enchant == 0 then
+            if slot ~= "RING" or SkillRank("Enchanting") then
+                add(0, "|cffff4040Not enchanted|r")
+                local best = M.BestFor(slot, role)
+                if best then
+                    add(1, ("|cffffd200%s|r |cff888888%s|r"):format(
+                        best.name, M.SourceSummary(best)))
+                end
+            else
+                add(0, "|cff888888Enchantable only by an enchanter|r")
+            end
+        else
+            local entry = M.EntryForEnchant(parsed.enchant)
+            add(0, ("|cff33ff99%s|r"):format(
+                entry and (entry.short or entry.name) or ("enchant #%d"):format(parsed.enchant)))
+            if entry and entry.name and entry.short and entry.name ~= entry.short then
+                add(1, ("|cff888888%s|r"):format(entry.name))
+            end
+        end
+    end
+
+    local judged = M.JudgeSockets(link, parsed)
+    if judged then
+        for i, color in ipairs(judged.sockets) do
+            local gemID = judged.gems[i]
+            local gem = gemID and byItem[gemID]
+            local colorName = COLOR_TEXT[color] or color
+            if not gemID then
+                add(0, ("|cffff4040Empty %s socket|r"):format(colorName))
+            else
+                local fits = Fits(GemColors(gemID), color)
+                add(0, ("%s%s|r |cff888888in the %s socket|r"):format(
+                    fits and "|cff33ff99" or "|cffff8040",
+                    gem and gem.name or ("gem #" .. gemID), colorName))
+            end
+        end
+        if #judged.sockets > 0 and judged.empty == 0 and not judged.unknown then
+            add(0, judged.bonus and "|cff33ff99Socket bonus earned|r"
+                or "|cffff4040Socket bonus forfeited|r")
+        end
+    end
+
+    -- If this item carries the meta, say whether the character activates it
+    for _, gemID in ipairs(judged and judged.gems or {}) do
+        local entry = byItem[gemID]
+        if entry and entry.cond then
+            local counts = M.Report().gemCounts or {}
+            local active = M.MetaActive(entry, counts)
+            add(0, ("%s%s is %s|r"):format(active and "|cff33ff99" or "|cffff4040",
+                entry.name, active and "active" or "INACTIVE"))
+            if not active then
+                add(1, ("|cff888888%s — you wear %d red, %d yellow, %d blue|r"):format(
+                    entry.condText or "", counts.RED or 0, counts.YELLOW or 0, counts.BLUE or 0))
+            end
+        end
+    end
+    return out
+end
+
+-- ---------------------------------------------------------------------------
 -- Reporting
 -- ---------------------------------------------------------------------------
 

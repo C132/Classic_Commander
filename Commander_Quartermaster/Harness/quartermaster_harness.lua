@@ -1532,22 +1532,42 @@ local function GearLink(id, ench, gem)
     return ("|cffffffff|Hitem:%d:%d:%d:0:0:0:0:0:70:0:0|h[Gear]|h|r"):format(id, ench or 0, gem or 0)
 end
 local bareTip = TipForLink(GearLink(28229, 0))
-CHECK(bareTip:find("not enchanted", 1, true), "P: bare gear says so on its own tooltip", bareTip)
+CHECK(bareTip:find("Not enchanted", 1, true), "P: bare gear says so on its own tooltip", bareTip)
+CHECK(bareTip:find("Enchant Chest", 1, true), "P: and names what belongs there", bareTip)
 local doneTip = TipForLink(GearLink(28187, 2673, 32409))
 CHECK(doneTip:find("Mongoose", 1, true), "P: an enchanted weapon is named", doneTip)
-CHECK(doneTip:find("1 empty socket", 1, true), "P: and its remaining socket counted", doneTip)
-CHECK(not TipForLink(GearLink(28190, 0)):find("not enchanted", 1, true),
+CHECK(doneTip:find("Empty Yellow socket", 1, true),
+    "P: its remaining socket is named by colour", doneTip)
+CHECK(doneTip:find("Relentless Earthstorm Diamond", 1, true),
+    "P: and the gem that is in the other one", doneTip)
+CHECK(not TipForLink(GearLink(28190, 0)):find("Not enchanted", 1, true),
     "P: a belt is never accused of missing an enchant")
-CHECK(not TipForLink(GearLink(28227, 0)):find("not enchanted", 1, true),
+CHECK(not TipForLink(GearLink(28227, 0)):find("Not enchanted", 1, true),
     "P: nor a ring, for someone who cannot enchant one")
+CHECK(TipForLink(GearLink(28227, 0)):find("only by an enchanter", 1, true),
+    "P: which it says out loud rather than staying silent")
 world.skills = { { "Enchanting", 375 } }
-CHECK(TipForLink(GearLink(28227, 0)):find("not enchanted", 1, true),
+CHECK(TipForLink(GearLink(28227, 0)):find("Not enchanted", 1, true),
     "P: but an enchanter's bare ring is called out")
 world.skills = {}
 
+-- Full detail on the enhancement itself, not a summary
+local fullTip = TipFor(29191)
+CHECK(fullTip:find("Grants:", 1, true) and fullTip:find("Sources", 1, true),
+    "P: the enhancement tooltip carries what it grants and where it comes from", fullTip)
+local gemTip = TipFor(32409)
+CHECK(gemTip:find("Fits:", 1, true) and gemTip:find("Meta socket", 1, true),
+    "P: a gem says which socket it fits", gemTip)
+CHECK(gemTip:find("Requires at least 2 Red Gems", 1, true),
+    "P: a meta carries its colour requirement", gemTip)
+CHECK(gemTip:find("you wear", 1, true), "P: measured against the gems you are wearing")
+local jcTip = TipFor(33132)
+CHECK(jcTip:find("Only usable by a Jewelcrafting", 1, true),
+    "P: a jeweller-only gem says so", jcTip)
+
 db.TooltipEnhance = false
 CHECK(not TipFor(29191):find("Enhances:", 1, true), "P: the setting silences both lines")
-CHECK(not TipForLink(GearLink(28229, 0)):find("not enchanted", 1, true), "P: gear verdict too")
+CHECK(not TipForLink(GearLink(28229, 0)):find("Not enchanted", 1, true), "P: gear verdict too")
 db.TooltipEnhance = true
 
 -- Counts still work for an enhancement, because the ledger now tracks them
