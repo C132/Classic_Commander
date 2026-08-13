@@ -1891,12 +1891,26 @@ local function CreateRow(parent, index)
     row.headerFS:SetJustifyH("LEFT")
     row.headerFS:SetWordWrap(false)
 
+    -- Rows are the full width of an 850px window, so anchoring to the row put
+    -- the tooltip a long way from the pointer that summoned it. ANCHOR_CURSOR
+    -- pins it to the cursor instead; the client handles flipping it when a
+    -- tall one would run off the bottom of the screen.
+    -- ANCHOR_CURSOR_RIGHT takes an offset and so keeps the tooltip clear of
+    -- the pointer itself; it is a newer anchor than ANCHOR_CURSOR, and an
+    -- anchor name SetOwner does not know is a hard error rather than a
+    -- fallback. Try it, and keep the one every client has in reserve.
+    local function TipAtCursor(owner)
+        if not pcall(GameTooltip.SetOwner, GameTooltip, owner, "ANCHOR_CURSOR_RIGHT", 12, -6) then
+            GameTooltip:SetOwner(owner, "ANCHOR_CURSOR")
+        end
+    end
+
     row:SetScript("OnEnter", function(self)
         local item = self.item
         if not item then return end
         if item.kind == "char" then
             local rec = item.rec
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            TipAtCursor(self)
             GameTooltip:SetText(("%s — %s"):format(item.name, item.realm), 1, 1, 1)
             GameTooltip:AddLine(("Last seen %s"):format(AgoText(rec.lastSeen)), 0.8, 0.8, 0.8)
             GameTooltip:AddLine(("Bags scanned %s"):format(AgoText(rec.bagsAt)), 0.8, 0.8, 0.8)
@@ -1917,7 +1931,7 @@ local function CreateRow(parent, index)
         -- where there is one, so the enhancement lines the addon appends land
         -- on it the same way they do in the bags.
         if item.kind == "gearslot" then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            TipAtCursor(self)
             local shown = item.row.invSlot and
                 pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", item.row.invSlot)
             if not shown and item.row.link then
@@ -1931,7 +1945,7 @@ local function CreateRow(parent, index)
         end
         if item.kind == "enh" then
             local entry = item.entry
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            TipAtCursor(self)
             local shown = entry.item and
                 pcall(GameTooltip.SetHyperlink, GameTooltip, ("item:%d"):format(entry.item))
             if not shown then
@@ -1948,7 +1962,7 @@ local function CreateRow(parent, index)
             return
         end
         if item.kind ~= "item" then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        TipAtCursor(self)
         local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, ("item:%d"):format(item.id))
         if not ok then
             GameTooltip:SetText(item.entry.name or "?")

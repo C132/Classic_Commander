@@ -411,7 +411,22 @@ local shiftDown = false
 function IsShiftKeyDown() return shiftDown end
 
 GameTooltip.__lines = {}
-function GameTooltip:SetOwner() self.__lines = {} self.__source = nil end
+-- The real SetOwner errors on an anchor name it does not know; the mock does
+-- too, so the addon's fallback is exercised rather than assumed.
+local KNOWN_ANCHORS = {
+    ANCHOR_CURSOR = true, ANCHOR_CURSOR_RIGHT = true, ANCHOR_RIGHT = true,
+    ANCHOR_LEFT = true, ANCHOR_TOP = true, ANCHOR_BOTTOM = true, ANCHOR_NONE = true,
+}
+local anchorsKnown = KNOWN_ANCHORS
+function GameTooltip:SetOwner(owner, anchor, x, y)
+    if anchor and not anchorsKnown[anchor] then
+        error("Unknown anchor point: " .. tostring(anchor))
+    end
+    self.__lines = {}
+    self.__source = nil
+    self.__owner, self.__anchor, self.__anchorX, self.__anchorY = owner, anchor, x, y
+end
+function GameTooltip:SetAnchorSupport(map) anchorsKnown = map end
 function GameTooltip:AddLine(text) self.__lines[#self.__lines + 1] = tostring(text) end
 function GameTooltip:AddDoubleLine(a, b) self:AddLine(tostring(a) .. " " .. tostring(b)) end
 function GameTooltip:SetHyperlink(link) self.__source = "hyperlink:" .. tostring(link) end
@@ -1892,6 +1907,21 @@ local built = GameTooltip:Text()
 CHECK(built:find("Enhances:", 1, true) and built:find("Sources", 1, true),
     "T: carrying the full detail, not just a name", built:sub(1, 160))
 CHECK(built:find("Enchanting", 1, true), "T: including the profession that applies it")
+
+-- The tooltip is anchored to the cursor, not to a row that is 850px wide
+sidebarByKey("MYGEAR").onClick()
+HoverRowWhere(function(item) return item.kind == "gearslot" end)
+CHECK(GameTooltip.__anchor == "ANCHOR_CURSOR_RIGHT",
+    "T: the tooltip is anchored to the cursor", tostring(GameTooltip.__anchor))
+CHECK(GameTooltip.__anchorX == 12, "T: with a small offset so it clears the pointer")
+
+-- On a client without the newer anchor, the older one carries it
+GameTooltip:SetAnchorSupport({ ANCHOR_CURSOR = true })
+HoverRowWhere(function(item) return item.kind == "gearslot" end)
+CHECK(GameTooltip.__anchor == "ANCHOR_CURSOR",
+    "T: and falls back rather than erroring on an anchor the client lacks",
+    tostring(GameTooltip.__anchor))
+GameTooltip:SetAnchorSupport(KNOWN_ANCHORS)
 
 -- Shift-click links what the row is about
 shiftDown = true
