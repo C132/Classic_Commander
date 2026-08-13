@@ -6641,7 +6641,7 @@ end
 -- ---------------------------------------------------------------------------
 function CommanderPartyFrames_Test()
     if not profile then
-        print("Commander Party Frames: no board for this class (boards exist for Priests, Mages and Druids)")
+        print("Commander Party Frames: no board for this class (boards exist for Priests, Mages, Druids and Paladins)")
         return
     end
     if not (CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield) then
@@ -6821,6 +6821,89 @@ function CommanderPartyFrames_Test()
         if DB("IncludePets", true) then
             strip.state["cshieldtest8"] = {
                 REJUV = { expire = now + 5, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
+            }
+            testRows[#testRows + 1] = { guid = "cshieldtest8", name = "Boar",
+                class = "HUNTER", isPet = true, petOwner = "party4",
+                health = 0.47, hpMax = 3300 }
+        end
+        Draw()
+        print("Commander Party Frames: test board injected — rows drain and clear themselves")
+        return
+    end
+
+    -- BLESS layer (Paladin): the whole grammar at once, and specifically the
+    -- half no other board has — Forbearance. Row 3 is EXPOSED (locked with
+    -- nothing up), row 5 is FADING (a Hand running out while locked), and the
+    -- pair sitting next to each other is the point: red and orange have to be
+    -- tellable apart at a glance the same way purple and green do on the hot
+    -- board. The blessing slots run the full range too, including the case
+    -- that ONLY this layer has: an ally carrying Kings whose Might slot must
+    -- stay quiet, because the game will not give them both.
+    if layer == "BLESS" then
+        local defs = {}
+        for _, d in ipairs(SDATA.PALADIN_HANDS) do defs[d.key] = d end
+        -- Blessings: healthy, inside the rebuff window (amber), one-per-target
+        -- suppression, and outright missing (the dark RED slot with the
+        -- advisor on, because a naked ally is never correct)
+        intState["cshieldtest1"] = { KINGS = { expire = now + 1500, duration = 1800 } }
+        intState["cshieldtest2"] = { MIGHT = { expire = now + 150, duration = 600 } }
+        intState["cshieldtest3"] = { WISDOM = { expire = now + 900, duration = 1800 } }
+        intState["cshieldtest5"] = { KINGS = { expire = now + 240, duration = 600 } }
+        -- Hands. Row 1 is covered and quiet; row 2 has a Freedom about to run
+        -- out (REFRESH); row 5 has one running out while Forbearance-locked,
+        -- which is FADING.
+        strip.state["cshieldtest1"] = {
+            SACRIFICE = { expire = now + 22, duration = 30, icon = defs.SACRIFICE.icon, stacks = 0 },
+        }
+        strip.state["cshieldtest2"] = {
+            FREEDOM = { expire = now + 2, duration = 10, icon = defs.FREEDOM.icon, stacks = 0 },
+        }
+        strip.state["cshieldtest5"] = {
+            BOP = { expire = now + 2, duration = 10, icon = defs.BOP.icon, stacks = 0 },
+        }
+        -- The lockout itself. Row 3 carries it with nothing up (EXPOSED);
+        -- row 5 carries it under a Hand that is falling off (FADING). The
+        -- ability bar reads the same record, so both rows also show its rim.
+        lockState["cshieldtest3"] = { forb = now + 41 }
+        lockState["cshieldtest5"] = { forb = now + 27 }
+        -- Two of the three schools a paladin cleanses, so both row colors show
+        curseState["cshieldtest4"] = { expire = now + 11, duration = 20, dispelName = "Poison" }
+        dispelState["cshieldtest4"] = { n = 1,
+            { icon = "Interface\\Icons\\Ability_Creature_Poison_06", name = "Test Poison",
+              dispelName = "Poison", expire = now + 11, duration = 20, cc = false, canDispel = true },
+        }
+        dispelState["cshieldtest3"] = { n = 1,
+            { icon = "Interface\\Icons\\Spell_Shadow_UnholyStrength", name = "Test Curse",
+              dispelName = "Magic", expire = now + 14, duration = 20, cc = false, canDispel = true },
+        }
+        ccState["cshieldtest6"] = { expire = now + 7, duration = 10, name = "Test Polymorph",
+            icon = "Interface\\Icons\\Spell_Nature_Polymorph" }
+        -- A priest bubble on the hurt one: absorbs stay embedded on this layer
+        allyAbsorbs["cshieldtest5"] = {
+            [PWS_NAME or "Power Word: Shield"] = { expire = now + 22, duration = 30,
+              capacity = 1265, absorbed = 315,
+              icon = "Interface\\Icons\\Spell_Holy_PowerWordShield" },
+        }
+        targeters["cshieldtest5"] = 2
+        specState["cshieldtest1"] = "DISC"
+        specState["cshieldtest5"] = "PROTECTION"
+        abilityState["cshieldtest5"] = { LASTSTAND = now + 60, PUMMEL = now + 4 }
+        testRows = {
+            { guid = "cshieldtest1", name = "Priest", class = "PRIEST", manaUser = true, health = 0.88, mana = 0.6, hpMax = 4100 },
+            { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.44, hpMax = 4300 },
+            { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 0.9, mana = 0.45, hpMax = 3800 },
+            { guid = "cshieldtest4", name = "Hunter", class = "HUNTER", manaUser = true, health = 0.83, mana = 0.7, hpMax = 4800 },
+            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.31, hpMax = 6200, raidMark = 8 },
+            { guid = "cshieldtest6", name = "Druid", class = "DRUID", manaUser = true, health = 0.55, mana = 0.5, hpMax = 4600 },
+            { guid = "cshieldtest7", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.95, mana = 0.8, hpMax = 5200 },
+        }
+        -- The hunter's pet (Include Pets). Might applies to anything that
+        -- swings, so a boar keeps that slot with no mana strip at all — and a
+        -- Freedom of yours rides it like any ally row.
+        if DB("IncludePets", true) then
+            intState["cshieldtest8"] = { MIGHT = { expire = now + 400, duration = 600 } }
+            strip.state["cshieldtest8"] = {
+                FREEDOM = { expire = now + 6, duration = 10, icon = defs.FREEDOM.icon, stacks = 0 },
             }
             testRows[#testRows + 1] = { guid = "cshieldtest8", name = "Boar",
                 class = "HUNTER", isPet = true, petOwner = "party4",

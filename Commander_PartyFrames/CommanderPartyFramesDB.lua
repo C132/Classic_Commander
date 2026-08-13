@@ -2063,7 +2063,7 @@ local function CreateCorePanel()
             },
         })
 
-        AddBuffSection(panel, "HOT")
+        AddBuffSection(panel, "BLESS")
 
         panel:AddSection("Hands", "Your own Blessing of Freedom, Protection and Sacrifice on each ally, one fixed slot each, timed by a radial sweep. The row's number is whichever falls off first — and when a target is carrying Forbearance, the red drain under the bar is the minute you cannot Protect them for.")
         panel:AddSlider({

@@ -4,6 +4,7 @@
 --     luajit partyframes_banner_smoke.lua MAGE
 --     luajit partyframes_banner_smoke.lua PRIEST
 --     luajit partyframes_banner_smoke.lua DRUID
+--     luajit partyframes_banner_smoke.lua PALADIN
 -- Verification for the 4.2.0
 -- banner utilities: the split drink/eat consume button, inventory counters,
 -- the mana gem control, the portals/teleports popout, and the all-class
@@ -12,6 +13,11 @@
 -- 4.3.0 adds the druid HOT layer: the per-row hot strip (own sweeps,
 -- Lifebloom stacks, ours-only sourcing), the state ladder including the two
 -- removal schools, and the upkeep banner (form, known-only cooldowns).
+-- 5.4.0 adds the paladin BLESS layer, and specifically the two things no
+-- other layer can exercise: the Forbearance lockout (EXPOSED with nothing up,
+-- FADING under an expiring Hand, plain REFRESH once it clears) and the
+-- one-blessing-per-target rule. Plus the Hand strip on the same machinery the
+-- hots ride, and the aura/seal/known-only-cooldown banner.
 
 local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
@@ -487,6 +493,25 @@ local SPELLS = {
     [783] = "Travel Form", [1066] = "Aquatic Form", [33943] = "Flight Form",
     [40120] = "Swift Flight Form", [24858] = "Moonkin Form",
     [33891] = "Tree of Life",
+    -- Paladin layer: the blessings (single and Greater), the three Hands,
+    -- the banner cooldowns, and one aura and one seal. Repentance is
+    -- deliberately left UNTRAINED below so the banner's known-only filter has
+    -- something to filter out, exactly as Rebirth does for the druid.
+    [20217] = "Blessing of Kings", [25898] = "Greater Blessing of Kings",
+    [19740] = "Blessing of Might", [25782] = "Greater Blessing of Might",
+    [19742] = "Blessing of Wisdom", [25894] = "Greater Blessing of Wisdom",
+    [1038] = "Blessing of Salvation", [25895] = "Greater Blessing of Salvation",
+    [20911] = "Blessing of Sanctuary", [25899] = "Greater Blessing of Sanctuary",
+    [19977] = "Blessing of Light", [25890] = "Greater Blessing of Light",
+    [1044] = "Blessing of Freedom", [1022] = "Blessing of Protection",
+    [6940] = "Blessing of Sacrifice", [25771] = "Forbearance",
+    [633] = "Lay on Hands", [642] = "Divine Shield", [498] = "Divine Protection",
+    [20216] = "Divine Favor", [31884] = "Avenging Wrath",
+    [853] = "Hammer of Justice", [31842] = "Divine Illumination",
+    [20066] = "Repentance",
+    [27149] = "Devotion Aura", [19746] = "Concentration Aura",
+    [20375] = "Seal of Command", [20165] = "Seal of Light",
+    [19750] = "Flash of Light", [4987] = "Cleanse",
 }
 local knownIds = {}
 local function Learn(...) for _, id in ipairs({ ... }) do knownIds[id] = true end end
@@ -503,6 +528,14 @@ Learn(17, 6788, 139, 1459, 23028, 5504, 587, 3273,
 Learn(774, 8936, 33763, 1126, 21849, 467,
     29166, 17116, 22812,
     5487, 768, 33891)
+-- Paladin book: every blessing single, the Greater versions of Kings and
+-- Might only (so the "Greater satisfies the slot" path and the single-only
+-- path are both exercised), all three Hands, one aura, one seal, and the
+-- banner cooldowns bar Repentance (see the SPELLS note above).
+Learn(20217, 25898, 19740, 25782, 19742, 1038, 19977,
+    1044, 1022, 6940,
+    633, 642, 498, 20216, 31884, 853, 31842,
+    27149, 19746, 20375, 20165, 19750, 4987)
 
 function GetSpellInfo(id)
     if type(id) == "string" then return id, nil, "Interface\\Icons\\Spell_" .. id end
@@ -836,7 +869,7 @@ if CLASS == "DRUID" then
 
     local function HotRow()
         for _, f in ipairs(allFrames) do
-            if f.hots and f.stripe then return f end
+            if f.strip and f.stripe then return f end
         end
     end
     -- The shared DrawOnce lives further down (it is part of the mage run), so
@@ -890,19 +923,19 @@ if CLASS == "DRUID" then
     local function LitHots()
         local n = 0
         for i = 1, 3 do
-            local h = row.hots[i]
+            local h = row.strip[i]
             if h.icon.__shown and h.icon.__desat == false then n = n + 1 end
         end
         return n
     end
     local lit = LitHots()
     CHECK(lit == 3, "all three hots light their own slot", lit)
-    CHECK(row.hots[1].cd.__cdDur == 12, "each sweep runs its own hot's duration", row.hots[1].cd.__cdDur)
-    CHECK(row.hots[2].cd.__cdDur == 21, "...Regrowth's 21s, not a shared constant", row.hots[2].cd.__cdDur)
-    CHECK(row.hots[3].cd.__cdDur == 7, "...and Lifebloom's 7s", row.hots[3].cd.__cdDur)
-    CHECK(row.hots[3].count.__shown == true and row.hots[3].count.__text == 3,
-        "Lifebloom carries its stack count", tostring(row.hots[3].count.__text))
-    CHECK(row.hots[1].count.__shown == false,
+    CHECK(row.strip[1].cd.__cdDur == 12, "each sweep runs its own hot's duration", row.strip[1].cd.__cdDur)
+    CHECK(row.strip[2].cd.__cdDur == 21, "...Regrowth's 21s, not a shared constant", row.strip[2].cd.__cdDur)
+    CHECK(row.strip[3].cd.__cdDur == 7, "...and Lifebloom's 7s", row.strip[3].cd.__cdDur)
+    CHECK(row.strip[3].count.__shown == true and row.strip[3].count.__text == 3,
+        "Lifebloom carries its stack count", tostring(row.strip[3].count.__text))
+    CHECK(row.strip[1].count.__shown == false,
         "a hot that does not stack carries no digit")
     -- Lifebloom (7s) is the soonest of the three, so it owns the number.
     -- Refresh advances the clock a tick, hence 5 rather than the 6 it was set to.
@@ -914,14 +947,14 @@ if CLASS == "DRUID" then
     playerBuffs[2].sourceUnit = "party1"
     Refresh()
     CHECK(LitHots() == 2, "a hot cast by someone else stays off our strip", LitHots())
-    CHECK(row.hots[1].icon.__shown == true and row.hots[1].icon.__desat == true,
+    CHECK(row.strip[1].icon.__shown == true and row.strip[1].icon.__desat == true,
         "...leaving a dark placeholder in Rejuvenation's own slot")
-    local g = row.hots[1].icon.__color or {}
+    local g = row.strip[1].icon.__color or {}
     CHECK(g[1] and g[1] < 0.5, "...tinted dark, not merely faded", tostring(g[1]))
-    CHECK(row.hots[1].cd.__shown == false, "...and running no sweep")
-    CHECK(row.hots[2].icon.__desat == false and row.hots[2].cd.__cdDur == 21,
+    CHECK(row.strip[1].cd.__shown == false, "...and running no sweep")
+    CHECK(row.strip[2].icon.__desat == false and row.strip[2].cd.__cdDur == 21,
         "...while Regrowth stays put in slot two rather than sliding left",
-        tostring(row.hots[2].cd.__cdDur))
+        tostring(row.strip[2].cd.__cdDur))
     playerBuffs[2].sourceUnit = "player"
     Refresh()
 
@@ -1129,7 +1162,7 @@ if CLASS == "DRUID" then
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Refresh()
     lit = 0
-    for i = 1, 3 do if row.hots[i].icon.__shown then lit = lit + 1 end end
+    for i = 1, 3 do if row.strip[i].icon.__shown then lit = lit + 1 end end
     CHECK(lit == 2, "untracking one hot retires its slot", lit)
 
     -- ...and an UNTRAINED hot never gets a slot at all, however it is
@@ -1141,14 +1174,14 @@ if CLASS == "DRUID" then
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Refresh()
     lit = 0
-    for i = 1, 3 do if row.hots[i].icon.__shown then lit = lit + 1 end end
+    for i = 1, 3 do if row.strip[i].icon.__shown then lit = lit + 1 end end
     CHECK(lit == 2, "an untrained hot takes no slot even when tracked", lit)
     knownIds[33763] = true
     Fire("SPELLS_CHANGED")
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Refresh()
     lit = 0
-    for i = 1, 3 do if row.hots[i].icon.__shown then lit = lit + 1 end end
+    for i = 1, 3 do if row.strip[i].icon.__shown then lit = lit + 1 end end
     CHECK(lit == 3, "...and training it puts the slot back without a reload", lit)
     CommanderPartyFramesDB.HotMaxIcons = 3
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
@@ -1164,6 +1197,208 @@ if CLASS == "DRUID" then
     unitDebuffs.player = {}
     Refresh()
     CHECK(#caughtErrors == 0, "no errors across the hot board", caughtErrors[1])
+end
+
+-- ===========================================================================
+-- Paladin blessing board (BLESS layer)
+-- ===========================================================================
+-- Same shape as the druid block above and for the same reason: the group mock
+-- has no party, so the board is the player's own row, and that is enough —
+-- Hands are read off a unit's auras with sourceUnit == player, and the player
+-- is a unit like any other. What is unique here is the lockout half of the
+-- grammar (Forbearance) and the one-blessing-per-target rule, neither of
+-- which any other layer exercises.
+if CLASS == "PALADIN" then
+    local segs = _G.CommanderPartyFramesFrame.hdrSegs
+    CHECK(segs ~= nil, "the paladin banner built the shared segment pool")
+    CHECK(_G.CommanderPartyFramesFrame.armorCd == nil,
+        "and NOT the mage banner's armor radial")
+
+    local function HandRow()
+        for _, f in ipairs(allFrames) do
+            if f.strip and f.stripe then return f end
+        end
+    end
+    local function Refresh()
+        Fire("UNIT_AURA", "player")
+        now = now + 1
+        for _, f in ipairs(allFrames) do
+            local u = f.__scripts.OnUpdate
+            if u then pcall(u, f, 10) end
+        end
+    end
+    local function SegCount()
+        local n = 0
+        for i = 1, #segs do if segs[i].icon.__shown then n = n + 1 end end
+        return n
+    end
+    local function SegTextures()
+        local out = {}
+        for i = 1, #segs do
+            if segs[i].icon.__shown then out[#out + 1] = segs[i].icon.__texture or "?" end
+        end
+        return out
+    end
+
+    CommanderPartyFramesDB.ShowHeader = true
+    CommanderPartyFramesDB.ShowSpellIcon = true
+    playerBuffs = {}
+    unitDebuffs.player = {}
+    Refresh()
+    local row = HandRow()
+    CHECK(row ~= nil, "the board draws an ally row with a Hand strip")
+
+    -- --- The Hand strip ----------------------------------------------------
+    -- All three of ours: every slot lit, each sweep scaled to its OWN aura
+    -- duration rather than a shared constant.
+    playerBuffs = {
+        { name = "Blessing of Kings", expirationTime = now + 1500, duration = 1800,
+          icon = "Interface\\Icons\\Spell_20217", sourceUnit = "player" },
+        { name = "Blessing of Freedom", expirationTime = now + 8, duration = 10,
+          icon = "Interface\\Icons\\Spell_1044", sourceUnit = "player" },
+        { name = "Blessing of Protection", expirationTime = now + 9, duration = 10,
+          icon = "Interface\\Icons\\Spell_1022", sourceUnit = "player" },
+        { name = "Blessing of Sacrifice", expirationTime = now + 25, duration = 30,
+          icon = "Interface\\Icons\\Spell_6940", sourceUnit = "player" },
+    }
+    Refresh()
+    local lit = 0
+    for i = 1, 3 do
+        local h = row.strip[i]
+        if h.icon.__shown and h.icon.__desat == false then lit = lit + 1 end
+    end
+    CHECK(lit == 3, "all three Hands light their own slot", lit)
+    CHECK(row.strip[1].cd.__cdDur == 10, "Freedom's sweep runs 10s", row.strip[1].cd.__cdDur)
+    CHECK(row.strip[3].cd.__cdDur == 30, "...and Sacrifice's 30s", row.strip[3].cd.__cdDur)
+
+    -- Ours-only: another paladin's Freedom does not spend our cooldown, so it
+    -- must not fill our slot either
+    playerBuffs = {
+        { name = "Blessing of Freedom", expirationTime = now + 8, duration = 10,
+          icon = "Interface\\Icons\\Spell_1044", sourceUnit = "party1" },
+    }
+    Refresh()
+    CHECK(row.strip[1].icon.__desat == true,
+        "another paladin's Freedom leaves our slot dark")
+
+    -- --- Forbearance: the lockout half of the grammar -----------------------
+    -- Nothing of ours up and Forbearance ticking is EXPOSED, with the minute
+    -- as the drain. The stripe carries the state colour, so it is what the
+    -- assertion reads.
+    local EXPOSED = { 0.95, 0.25, 0.25 }
+    local FADING  = { 1.00, 0.55, 0.15 }
+    local function StripeIs(want)
+        local c = row.stripe.__color
+        if not c then return false end
+        for i = 1, 3 do
+            if math.abs((c[i] or 0) - want[i]) > 0.01 then return false end
+        end
+        return true
+    end
+    playerHealth = 40
+    playerBuffs = {}
+    unitDebuffs.player = { { name = "Forbearance", expirationTime = now + 41, duration = 60 } }
+    Refresh()
+    CHECK(StripeIs(EXPOSED), "locked out with nothing up reads EXPOSED")
+    CHECK(row.wsBar.__shown == true, "...and the Forbearance minute draws the drain")
+
+    -- A Hand falling off while locked is FADING, not REFRESH: you can see it
+    -- going and you cannot replace it.
+    playerBuffs = {
+        { name = "Blessing of Protection", expirationTime = now + 2, duration = 10,
+          icon = "Interface\\Icons\\Spell_1022", sourceUnit = "player" },
+    }
+    Refresh()
+    CHECK(StripeIs(FADING), "a Hand expiring under Forbearance reads FADING")
+
+    -- The same Hand expiring with the lockout GONE is the ordinary REFRESH
+    unitDebuffs.player = {}
+    Refresh()
+    CHECK(not StripeIs(FADING), "...and plain REFRESH once the lockout is gone")
+
+    -- --- Blessings: one per target -----------------------------------------
+    -- The registry's `oneOf`: an ally carrying Kings is not MISSING Might, so
+    -- the advisor must not redden the Might slot.
+    local book = CommanderPartyFrames_GetBuffBook("BLESS")
+    CHECK(book ~= nil and #book == 6, "the blessing registry has six entries",
+        book and #book)
+    local byKey = {}
+    if book then for _, d in ipairs(book) do byKey[d.key] = d end end
+    CHECK(byKey.KINGS and byKey.KINGS.known == true, "Kings resolved from the book")
+    CHECK(byKey.SANCTUARY and byKey.SANCTUARY.known == false,
+        "Sanctuary is untrained here, so it can never take a slot")
+    CHECK(byKey.MIGHT and byKey.MIGHT.targets == "MELEE",
+        "Might only applies to allies who swing something")
+
+    -- Greater satisfies the single's slot (the Prayer of Fortitude pattern)
+    playerHealth = 100
+    playerBuffs = {
+        { name = "Greater Blessing of Kings", expirationTime = now + 1700, duration = 1800,
+          icon = "Interface\\Icons\\Spell_25898", sourceUnit = "player" },
+    }
+    unitDebuffs.player = {}
+    Refresh()
+    CHECK(row.buffs[1].icon.__desat == false,
+        "Greater Blessing of Kings fills the Kings slot")
+
+    -- --- The banner --------------------------------------------------------
+    -- No aura and no seal: both segments present and both red, because a
+    -- paladin running neither is always a mistake
+    playerBuffs = {}
+    Refresh()
+    local bare = SegTextures()
+    CHECK(#bare >= 2, "the banner draws an aura and a seal segment even when naked", #bare)
+    CHECK(segs[1].icon.__desat == true, "the aura segment is dark when there is no aura")
+    CHECK(segs[2].icon.__desat == true, "...and so is the seal segment")
+
+    playerBuffs = {
+        { name = "Devotion Aura", expirationTime = 0, duration = 0,
+          icon = "Interface\\Icons\\Spell_27149", sourceUnit = "player" },
+        { name = "Seal of Command", expirationTime = now + 18, duration = 30,
+          icon = "Interface\\Icons\\Spell_20375", sourceUnit = "player" },
+    }
+    Refresh()
+    CHECK(segs[1].icon.__desat == false, "a running aura lights its segment")
+    -- Refresh() advances the clock a second past the scan, so the paint sees 17
+    CHECK(segs[2].icon.__desat == false and segs[2].text.__text == "17",
+        "the seal segment counts its own seconds down", segs[2].text.__text)
+
+    -- Banner cooldowns are known-only: Repentance was never trained, so it
+    -- must not have a segment even though it is in the book
+    CommanderPartyFramesDB.BlessBannerCooldowns = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    local withCds = SegCount()
+    CommanderPartyFramesDB.BlessBannerCooldowns = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    local withoutCds = SegCount()
+    CHECK(withCds > withoutCds, "the banner cooldown segments answer their toggle",
+        withCds .. "/" .. withoutCds)
+    CommanderPartyFramesDB.BlessBannerCooldowns = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    -- How MANY fit is width-bounded (TruncSegs), so the assertion that
+    -- matters is the filter: a trained cooldown is drawn, an untrained one is
+    -- not, however many happen to fit.
+    local drawn = {}
+    for _, t in ipairs(SegTextures()) do drawn[t] = true end
+    CHECK(drawn["Interface\\Icons\\Spell_633"] == true,
+        "Lay on Hands, which this paladin knows, gets a segment")
+    CHECK(drawn["Interface\\Icons\\Spell_20066"] ~= true,
+        "Repentance, which they do not, never does")
+
+    -- Click-cast keeps its own defaults, like every other layer
+    CHECK(CommanderPartyFrames_GetBind("1") == 19750,
+        "paladin left-click defaults to Flash of Light",
+        CommanderPartyFrames_GetBind("1"))
+    CHECK(CommanderPartyFramesDB.ClickLeft == 17, "...and the priest binding is untouched")
+
+    playerHealth = 100
+    playerBuffs = {}
+    unitDebuffs.player = {}
+    Refresh()
+    CHECK(#caughtErrors == 0, "no errors across the blessing board", caughtErrors[1])
 end
 
 -- ===========================================================================
@@ -1830,6 +2065,9 @@ local function CheckBuffGrid()
     elseif CLASS == "MAGE" then
         CHECK(byKey.AI and byKey.AMP and byKey.DAMPEN,
             "the mage grid carries every buff the class puts on somebody else")
+    elseif CLASS == "PALADIN" then
+        CHECK(byKey.KINGS and byKey.MIGHT and byKey.WISDOM and byKey.FREEDOM and byKey.BOP,
+            "the paladin grid carries the blessings AND the Hands — one place for everything")
     else
         CHECK(byKey.FORT and byKey.SPIRIT and byKey.SHADOWPROT,
             "the priest grid carries every buff the class puts on somebody else")
@@ -1853,7 +2091,7 @@ local function CheckBuffGrid()
     end
 
     -- A trained one toggles, and the toggle reaches the board
-    local live = byKey.MOTW or byKey.AI or byKey.FORT
+    local live = byKey.MOTW or byKey.AI or byKey.KINGS or byKey.FORT
     CHECK(live ~= nil, "the grid has a trained buff to toggle")
     if live then
         CHECK(live.slash.__shown ~= true, "a trained spell is not struck through")
@@ -1953,7 +2191,7 @@ end
 
 local function CheckBuffTargets()
     local book = CommanderPartyFrames_GetBuffBook(CLASS == "MAGE" and "INT"
-        or CLASS == "DRUID" and "HOT" or "PWS")
+        or CLASS == "DRUID" and "HOT" or CLASS == "PALADIN" and "BLESS" or "PWS")
     CHECK(book ~= nil and #book > 0, "this class has ally buffs in the registry")
     if not book then return end
 
@@ -1968,7 +2206,8 @@ local function CheckBuffTargets()
     local keepTrack = CommanderPartyFramesDB.BuffTrack
     CommanderPartyFramesDB.BuffTrack = {}
     for _, def in ipairs(book) do CommanderPartyFramesDB.BuffTrack[def.dbKey] = false end
-    for _, def in ipairs({ "HOT:REJUV", "HOT:REGROWTH", "HOT:LIFEBLOOM" }) do
+    for _, def in ipairs({ "HOT:REJUV", "HOT:REGROWTH", "HOT:LIFEBLOOM",
+                           "HAND:FREEDOM", "HAND:BOP", "HAND:SACRIFICE" }) do
         CommanderPartyFramesDB.BuffTrack[def] = false
     end
     if manaOnly then CommanderPartyFramesDB.BuffTrack[manaOnly.dbKey] = true end
@@ -2020,7 +2259,10 @@ local function CheckPets()
     local basePortrait = SetPortraitTexture
     -- The pet is the HURT one, so the sort tiebreak is load-bearing: without
     -- it the lower-health pet would sort above its own owner.
-    local petHealth = { partypet1 = 30, party1 = 90 }
+    -- "Equally urgent" has to actually BE true for the tiebreak to be what
+    -- is under test, and the BLESS layer's READY bar sits at 50% rather than
+    -- the others' 90%, so its owner has to be under that bar too.
+    local petHealth = { partypet1 = 30, party1 = (CLASS == "PALADIN") and 40 or 90 }
     partyUp = { party1 = true, partypet1 = true }
     petOut = false                  -- no elemental: this is about ALLIES' pets
     function UnitExists(unit)
@@ -2925,14 +3167,14 @@ do
     -- Intellect are aura durations like any hot, so they follow the same rule.
     local function AuraSweeps(row)
         local out = { row.renewSwipe, row.swipe, row.inShieldCd }
-        for i = 1, #row.hots do out[#out + 1] = row.hots[i].cd end
+        for i = 1, #row.strip do out[#out + 1] = row.strip[i].cd end
         for i = 1, #row.dispels do out[#out + 1] = row.dispels[i].cd end
         return out
     end
     local function AllRows()
         local out = {}
         for _, f in ipairs(allFrames) do
-            if f.hots and f.dispels and f.renewSwipe then out[#out + 1] = f end
+            if f.strip and f.dispels and f.renewSwipe then out[#out + 1] = f end
         end
         return out
     end
