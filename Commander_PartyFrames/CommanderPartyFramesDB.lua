@@ -92,6 +92,18 @@ local DefaultSettings = {
     DruidClickMiddle = "TARGET",-- druid row middle-click = target the ally
     DruidClickModLeft = 8936,   -- druid row mod+left     = Regrowth
 
+    -- Paladin layer: the blessing board. Its own click keys for the same
+    -- reason every other layer's are separate — the DB is account-wide.
+    -- The Hands are emergency cooldowns rather than upkeep, so the READY bar
+    -- sits far lower than the druid's: an ally at 89% does not want a BoP.
+    BlessRefreshAt = 3,         -- seconds left at/under which a Hand counts as expiring
+    BlessReadyAt = 50,          -- health % at/under which an unhanded ally goes READY
+    BlessBannerCooldowns = true,-- Lay on Hands / bubble / wings segments on the banner
+    -- No legacy PalaClick* keys: the paladin layer was born after click
+    -- bindings moved into per-talent-profile stores, so its starting bindings
+    -- live in the engine's SDATA.BIND_DEFAULTS with everyone else's and there
+    -- is nothing here to migrate off.
+
     -- Banner utility buttons. Bandage is chassis (every class); the rest ride
     -- the mage layer alongside the armor switcher.
     ShowUtilityCounts = true,   -- inventory tallies over the water/food/gem/bandage icons
@@ -290,6 +302,13 @@ local function BuffCellTooltip(self)
     end
     if def.targets == "MANA" then
         GameTooltip:AddLine("Only appears on mana users.", 0.7, 0.7, 0.7, true)
+    elseif def.targets == "MELEE" then
+        GameTooltip:AddLine("Only appears on allies who swing a weapon (and on pets).",
+            0.7, 0.7, 0.7, true)
+    end
+    if def.oneOf then
+        GameTooltip:AddLine("One per ally: another of these already on them means this one is not missing.",
+            0.7, 0.7, 0.7, true)
     end
     GameTooltip:AddLine(" ")
     if BuffTrackedUI(def) then

@@ -64,6 +64,7 @@ SDATA.PWS_RANKS = {
 SDATA.SP_COEFF = 0.1            -- TBC PW:S bonus-healing coefficient (estimate)
 SDATA.SHIELD_DURATION = 30      -- fallback only; the aura's real expiration wins
 SDATA.WEAKENED_SOUL_MAX = 15    -- Weakened Soul duration, for the drain bar scale
+SDATA.FORBEARANCE_MAX = 60      -- Forbearance duration, the BLESS layer's drain scale
 SDATA.PWS_ICON = "Interface\\Icons\\Spell_Holy_PowerWordShield"
 SDATA.RENEW_ICON = "Interface\\Icons\\Spell_Holy_Renew"
 SDATA.RENEW_DURATION = 15       -- Renew HoT duration, for the sweep scale
@@ -132,8 +133,50 @@ SDATA.DRUID_HOTS = {
       default = true, icon = "Interface\\Icons\\INV_Misc_Herb_Felblossom" },
 }
 for _, def in ipairs(SDATA.DRUID_HOTS) do def.dbKey = "HOT:" .. def.key end
+
+-- Paladin Hands, in the order they ride a row's strip. They answer the same
+-- question the druid's hots do — "what have I got on this ally right now" —
+-- but a paladin's are EMERGENCY spells rather than upkeep. Ten seconds of
+-- Freedom is the difference between a healer kiting and a healer dead, and
+-- the reason the slot has to read at a glance is that you get one of these
+-- every twenty-five seconds at best: the strip is not asking you to top
+-- something up, it is telling you what you have already spent.
+--
+-- Blessing of Protection is the one that costs something. It stamps
+-- Forbearance on the target for a minute, which locks out the next BoP and
+-- their own Divine Shield with it — so Forbearance is this layer's drain bar,
+-- exactly as Weakened Soul is the priest board's. Lay on Hands and a friendly
+-- Divine Shield stamp it too, which is why the row reads the debuff itself
+-- rather than remembering what it cast.
+--
+-- `cooldown` is the spell's own recharge. It is not the strip's clock (the
+-- aura's is), but it is what turns an empty slot from an invitation into a
+-- fact: a dark Freedom slot on a snared healer means something very different
+-- when Freedom has eighteen seconds left on it.
+SDATA.PALADIN_HANDS = {
+    { key = "FREEDOM", label = "Freedom", baseId = 1044, duration = 10,
+      cooldown = 25, default = true,
+      icon = "Interface\\Icons\\Spell_Holy_SealOfValor" },
+    { key = "BOP", label = "Protection", baseId = 1022, duration = 10,
+      cooldown = 300, forbears = true, default = true,
+      icon = "Interface\\Icons\\Spell_Holy_SealOfProtection" },
+    { key = "SACRIFICE", label = "Sacrifice", baseId = 6940, duration = 30,
+      cooldown = 120, default = true,
+      icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice" },
+}
+for _, def in ipairs(SDATA.PALADIN_HANDS) do def.dbKey = "HAND:" .. def.key end
+
+-- The own-aura strip is CHASSIS, not druid code. A layer names a book of
+-- auras it puts on allies and watches ours-only; the strip renders that book
+-- in fixed slots with radial sweeps and stack counts. Two layers fill it so
+-- far, and the shape of the entries is identical (key, label, baseId,
+-- duration, default, dbKey) precisely so a third costs nothing but its data.
+SDATA.STRIP_BOOKS = {
+    HOT   = SDATA.DRUID_HOTS,
+    BLESS = SDATA.PALADIN_HANDS,
+}
 SDATA.MAX_STRIP_ICONS = 3
-SDATA.STRIP_ACTIVE = {}       -- the hots actually tracked AND trained, in order
+SDATA.STRIP_ACTIVE = {}       -- the active book's entries, tracked AND trained
 
 -- ---------------------------------------------------------------------------
 -- The ally-buff registry: every buff a supported class maintains on OTHER
@@ -225,6 +268,46 @@ SDATA.CLASS_BUFFS = {
           targets = "ALL", default = false,
           icon = "Interface\\Icons\\Spell_Nature_NullifyPoison" },
     },
+    -- The paladin's blessings. A paladin may have exactly ONE blessing on a
+    -- given target, which is what `oneOf` says: an ally already carrying your
+    -- Kings is not MISSING Might, they are spent, and a slot that reddens
+    -- about it is lying. That is the same superseded grammar Amplify and
+    -- Dampen use (`excludes`), widened from a pair to a whole family.
+    --
+    -- `groupId` is the Greater version, which satisfies the slot exactly the
+    -- way Prayer of Fortitude satisfies Fortitude — and is what a paladin
+    -- actually presses once they have it, so a board that only knew the
+    -- single would call a fully-blessed team naked.
+    --
+    -- Kings, Might and Wisdom are on out of the box because they are the
+    -- three an arena paladin really hands out; Salvation, Sanctuary and Light
+    -- are off, being either a PvE threat tool or a choice you make once per
+    -- match rather than a slot you watch.
+    BLESS = {
+        { key = "KINGS", label = "Kings", id = 20217, groupId = 25898,
+          duration = 600, targets = "ALL", default = true, advise = "ALWAYS",
+          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Magic_MageArmor" },
+        -- Might is strength and it is for people who swing things. A mage's
+        -- row should no more carry a dark Might slot than a rogue's should
+        -- carry Intellect, which is what targets = "MELEE" buys.
+        { key = "MIGHT", label = "Might", id = 19740, groupId = 25782,
+          duration = 600, targets = "MELEE", default = true, advise = "ALWAYS",
+          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Holy_FistOfJustice" },
+        { key = "WISDOM", label = "Wisdom", id = 19742, groupId = 25894,
+          duration = 600, targets = "MANA", default = true, advise = "ALWAYS",
+          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Holy_SealOfWisdom" },
+        -- Threat management: real in a raid, close to noise in an arena. It
+        -- gets a slot for the player who wants it and never an opinion.
+        { key = "SALVATION", label = "Salvation", id = 1038, groupId = 25895,
+          duration = 600, targets = "ALL", default = false,
+          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Holy_SealOfSalvation" },
+        { key = "SANCTUARY", label = "Sanctuary", id = 20911, groupId = 25899,
+          duration = 600, targets = "ALL", default = false, advise = "VS_MELEE",
+          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Nature_LightningShield" },
+        { key = "LIGHT", label = "Light", id = 19977, groupId = 25890,
+          duration = 600, targets = "ALL", default = false,
+          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Holy_PrayerOfHealing02" },
+    },
 }
 -- ---------------------------------------------------------------------------
 -- Click bindings: the full modifier x button matrix, per talent build.
@@ -295,6 +378,23 @@ SDATA.BINDABLE = {
         { id = 2782, group = "Dispels" }, { id = 2893, group = "Dispels" },
         { id = 8946, group = "Dispels" }, { id = 17116, group = "Cooldowns" },
     },
+    -- The paladin's friendly-target book. Both halves of every blessing are
+    -- listed because both are real keys a paladin binds: the single for the
+    -- ally who just died and came back, the Greater for the pre-game pass.
+    BLESS = {
+        { id = 635, group = "Heals" }, { id = 19750, group = "Heals" },
+        { id = 20473, group = "Heals" }, { id = 633, group = "Cooldowns" },
+        { id = 1044, group = "Cooldowns" }, { id = 1022, group = "Cooldowns" },
+        { id = 6940, group = "Cooldowns" }, { id = 19752, group = "Cooldowns" },
+        { id = 4987, group = "Dispels" }, { id = 1152, group = "Dispels" },
+        { id = 20217, group = "Buffs" }, { id = 25898, group = "Buffs" },
+        { id = 19740, group = "Buffs" }, { id = 25782, group = "Buffs" },
+        { id = 19742, group = "Buffs" }, { id = 25894, group = "Buffs" },
+        { id = 1038, group = "Buffs" },  { id = 25895, group = "Buffs" },
+        { id = 20911, group = "Buffs" }, { id = 25899, group = "Buffs" },
+        { id = 19977, group = "Buffs" }, { id = 25890, group = "Buffs" },
+        { id = 7328, group = "Utility" },
+    },
 }
 SDATA.BIND_GROUPS = { "Heals", "Absorbs", "Hots", "Buffs", "Dispels", "Cooldowns", "Utility" }
 SDATA.BIND_LIST = {}        -- the active layer's known bindables, resolved at login
@@ -336,10 +436,19 @@ SDATA.DRUID_FORMS = {
     [33891] = { key = "TREE",    heals = true },
 }
 local CLASS_PROFILES = {
-    PRIEST = { layer = "PWS" },
-    MAGE   = { layer = "INT", selfSpells = SDATA.MAGE_SPELLS },
-    DRUID  = { layer = "HOT" },
+    PRIEST  = { layer = "PWS" },
+    MAGE    = { layer = "INT", selfSpells = SDATA.MAGE_SPELLS },
+    DRUID   = { layer = "HOT" },
+    PALADIN = { layer = "BLESS" },
 }
+-- Which layers draw the party-frame chassis — health as the main bar, mana as
+-- a strip beneath it, no own-status icon slot because their upkeep lives on
+-- the buff strip instead. The priest board is the odd one out: its main bar is
+-- an absorb, not health, so it keeps the spell-icon slot and spends no width
+-- on mana. Asked by name rather than spelled out at each site, because "is
+-- this a health-bar layer" is one question and it was being answered in seven
+-- places.
+SDATA.HEALTH_LAYERS = { INT = true, HOT = true, BLESS = true }
 local profile               -- resolved at login; nil = unsupported class (module inert)
 local layer                 -- the active profile's layer ("PWS" / "INT"), nil when inert
 local playerClass           -- our class token, for self-row name coloring
@@ -519,9 +628,13 @@ function CommanderPartyFrames_ResetProfile(p)
 end
 
 function CommanderPartyFrames_GetStripBook(layerKey)
-    if layerKey ~= "HOT" then return nil end
-    for _, def in ipairs(SDATA.DRUID_HOTS) do def.isHot = true end
-    return SDATA.DRUID_HOTS
+    local book = SDATA.STRIP_BOOKS[layerKey or ""]
+    if not book then return nil end
+    -- Flagged so the settings grid can word its tooltip correctly: strip
+    -- entries are YOURS-only, ally buffs are any-caster, and that distinction
+    -- is the single most confusing thing about the two grids sharing a page.
+    for _, def in ipairs(book) do def.isHot = true end
+    return book
 end
 
 function CommanderPartyFrames_GetProfileMode()
@@ -790,11 +903,13 @@ function util.RefreshBuffs()
             sig[#sig + 1] = def.key
         end
     end
-    -- The druid's hot strip answers to exactly the same two questions
+    -- The own-aura strip answers to exactly the same two questions, whichever
+    -- book the active layer put in it (druid hots, paladin Hands)
     wipe(SDATA.STRIP_ACTIVE)
-    if layer == "HOT" then
+    local book = SDATA.STRIP_BOOKS[layer or ""]
+    if book then
         sig[#sig + 1] = "|"
-        for _, def in ipairs(SDATA.DRUID_HOTS) do
+        for _, def in ipairs(book) do
             if def.known and util.BuffTracked(def) then
                 SDATA.STRIP_ACTIVE[#SDATA.STRIP_ACTIVE + 1] = def
                 sig[#sig + 1] = def.key
@@ -1583,6 +1698,10 @@ SDATA.BIND_DEFAULTS = {
     PWS = { ["1"] = 17, ["2"] = 139, ["3"] = 2061, ["shift-1"] = 2060 },
     INT = { ["1"] = 1459, ["2"] = 475, ["3"] = "TARGET", ["shift-1"] = 1008 },
     HOT = { ["1"] = 774, ["2"] = 33763, ["3"] = "TARGET", ["shift-1"] = 8936 },
+    -- Flash of Light and Cleanse are what a paladin's hands are on all match;
+    -- Freedom takes the modifier because it is the one you press without
+    -- looking, at the exact moment you cannot afford to go hunting for it.
+    BLESS = { ["1"] = 19750, ["2"] = 4987, ["3"] = "TARGET", ["shift-1"] = 1044 },
 }
 
 function util.MigrateBinds()
@@ -1791,15 +1910,17 @@ end
 -- button CONTAINER are insecure frames, so showing/hiding them stays legal
 -- mid-combat even though the buttons themselves are protected.
 -- ---------------------------------------------------------------------------
--- HOT layer name resolution (login + respec/SPELLS_CHANGED). Every lookup the
--- druid layer does at runtime is by LOCALIZED NAME — hots on an ally, the
--- form we are wearing — so the whole locale problem is solved once, here,
--- from stable base IDs. Banner cooldowns are filtered to what this druid
--- actually knows, so a feral never sees a Nature's Swiftness segment.
-local function ResolveDruidInfo()
-    if layer ~= "HOT" or not GetSpellInfo then return end
+-- Strip-layer name resolution (login + respec/SPELLS_CHANGED). Every lookup
+-- a strip layer does at runtime is by LOCALIZED NAME — the auras of ours on
+-- an ally, the form we are wearing — so the whole locale problem is solved
+-- once, here, from stable base IDs. Banner cooldowns are filtered to what the
+-- character actually knows, so a feral never sees a Nature's Swiftness
+-- segment and a retribution paladin never sees Divine Illumination.
+local function ResolveStripInfo()
+    local book = SDATA.STRIP_BOOKS[layer or ""]
+    if not book or not GetSpellInfo then return end
     wipe(strip.names)
-    for _, def in ipairs(SDATA.DRUID_HOTS) do
+    for _, def in ipairs(book) do
         local n, _, icon = GetSpellInfo(def.baseId)
         def.known = false
         if n then
@@ -1812,6 +1933,7 @@ local function ResolveDruidInfo()
             end
         end
     end
+    if layer ~= "HOT" then return end
     wipe(strip.forms)
     for id, form in pairs(SDATA.DRUID_FORMS) do
         local n, _, icon = GetSpellInfo(id)
@@ -2917,10 +3039,10 @@ local function ScanUnit(unit, reliable)
     local pwsExpire, pwsSpellId, pwsMine, pwsIndex
     local renewExpire
     local renewOn = DB("RenewTrack", false)
-    -- The two layers with an ally-buff slot and the curse/CC escalation share
-    -- one gate; the hot strip is the druid's alone.
-    local intOn = layer == "INT" or layer == "HOT"
-    local stripOn = layer == "HOT"
+    -- The health-bar layers share one gate for the curse/CC escalation; the
+    -- own-aura strip runs for whichever layers brought a book to fill it.
+    local intOn = SDATA.HEALTH_LAYERS[layer or ""]
+    local stripOn = SDATA.STRIP_BOOKS[layer or ""] and true or false
     local isPlayer = guid == playerGUID
     -- Ally buffs are read off the registry now: one pass fills a scratch pair
     -- keyed by buff, whatever class this is (see SDATA.CLASS_BUFFS)
@@ -2951,10 +3073,11 @@ local function ScanUnit(unit, reliable)
             armorFound = { icon = armorNames[aura.name], expire = aura.expirationTime,
                 duration = aura.duration }
         end
-        -- OUR hots only (HOT layer): the strip exists to answer "what have I
-        -- got rolling here" — another druid's Rejuvenation does not gate our
-        -- next global, so sourceUnit decides membership exactly the way the
-        -- Renew tracker does. No early break: hots sit anywhere in the list.
+        -- OURS only: the strip exists to answer "what have I got on this ally
+        -- right now" — another druid's Rejuvenation does not gate our next
+        -- global, and another paladin's Freedom does not spend our cooldown —
+        -- so sourceUnit decides membership exactly the way the Renew tracker
+        -- does. No early break: these sit anywhere in the aura list.
         local stripDef = stripOn and strip.names[aura.name]
         if stripDef and not strip.scan[stripDef.key]
             and aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") then
@@ -2964,7 +3087,7 @@ local function ScanUnit(unit, reliable)
         end
         -- The player's own form (HOT layer): the banner's first segment, and
         -- the only aura on this pass we read off ourselves rather than an ally
-        if stripOn and isPlayer and not formFound and strip.forms[aura.name] then
+        if layer == "HOT" and isPlayer and not formFound and strip.forms[aura.name] then
             formFound = strip.forms[aura.name]
         end
         -- Spec inference from visible marker auras (Shadowform, forms, Tree…)
@@ -2995,7 +3118,7 @@ local function ScanUnit(unit, reliable)
     -- reliable, so absence here genuinely means "naked" / "caster form"
     if layer == "INT" and isPlayer then
         selfArmor = armorFound
-    elseif stripOn and isPlayer then
+    elseif layer == "HOT" and isPlayer then
         strip.form = formFound
     end
 
@@ -3616,6 +3739,22 @@ function util.CastBlocked()
     return nil
 end
 
+-- Is this buff even FOR this ally? Three answers so far, and each of them is
+-- the difference between a strip that reads and one that nags:
+--   MANA   the mana users (Intellect, Spirit, Wisdom)
+--   MELEE  whoever swings a weapon (Might). A pet always counts — every pet
+--          in the game melees, and a pet has no class of its own to ask.
+--   ALL    everybody, which is most of the registry.
+function util.BuffApplies(def, r)
+    local t = def.targets
+    if t == "MANA" then return r.manaUser and true or false end
+    if t == "MELEE" then
+        if r.isPet then return true end
+        return (r.class and SDATA.MELEE_CLASSES[r.class]) and true or false
+    end
+    return true
+end
+
 function util.AdviseBuff(def, r, rec)
     -- Urgency you cannot act on is not urgency. Three ways that happens, and
     -- all of them mean the same thing to a slot: report the absence, do not
@@ -3646,6 +3785,20 @@ function util.AdviseBuff(def, r, rec)
             return false, "its sibling is already up"
         end
     end
+    -- Same idea one size up: a whole FAMILY where only one member may be on a
+    -- target at a time. A paladin gets exactly one blessing per ally, so an
+    -- ally carrying Kings is not missing Might — asking for both would be
+    -- asking for something the game will not let you have.
+    if def.oneOf and rec then
+        for _, other in ipairs(SDATA.BUFF_ACTIVE) do
+            if other ~= def and other.oneOf == def.oneOf then
+                local sib = rec[other.key]
+                if sib and not (sib.expire and sib.expire > 0 and sib.expire <= GetTime()) then
+                    return false, "they already carry your " .. (other.label or other.key)
+                end
+            end
+        end
+    end
     local rule = def.advise and SDATA.BUFF_ADVICE[def.advise]
     if not rule then return false end
     local ok, urgent, why = pcall(rule, r)
@@ -3671,9 +3824,10 @@ function util.ResolveBuffs(r, now)
     for i = 1, n do
         local def = SDATA.BUFF_ACTIVE[i]
         -- A buff nobody would cast here earns no slot at all: Intellect and
-        -- Spirit are for mana users, and a rogue's row should not carry a
-        -- permanent dark reminder of a spell that does nothing for them.
-        if def.targets ~= "MANA" or r.manaUser then
+        -- Spirit are for mana users, Blessing of Might is for people who swing
+        -- things, and a rogue's row should not carry a permanent dark reminder
+        -- of a spell that does nothing for them.
+        if util.BuffApplies(def, r) then
             shown = shown + 1
             local slot = r.buffs[shown]
             if not slot then slot = {}; r.buffs[shown] = slot end
@@ -3746,15 +3900,28 @@ local function ResolveIntState(r, now)
     return r
 end
 
--- HOT layer (Druid ally rows). Same chassis as INT — health is the bar, mana
--- rides the strip under it, the ally-buff slot carries Mark of the Wild — and
--- the same alert ladder tops it. What differs is the middle: the row's
--- managed thing is YOUR hots, and the states are the reshield grammar read
--- for them. READY means a hurt ally is carrying none of yours (cast one now);
--- REFRESH means one is inside the refresh window, which is also exactly the
--- Lifebloom-about-to-bloom case; SHIELDED means it is rolling and you can
+-- The strip layers (Druid ally rows, Paladin ally rows). Same chassis as INT
+-- — health is the bar, mana rides the strip under it, the ally-buff slots
+-- carry the class's upkeep — and the same alert ladder tops it. What differs
+-- is the middle: the row's managed thing is YOUR auras on that ally, and the
+-- states are the priest board's reshield grammar read for them.
+--
+-- HOT (Druid): READY means a hurt ally is carrying none of yours (cast one
+-- now); REFRESH means one is inside the refresh window, which is also exactly
+-- the Lifebloom-about-to-bloom case; SHIELDED means it is rolling and you can
 -- look elsewhere. A full-health ally with no hots is not a decision, so it
 -- stays quiet at OTHER rather than lighting the board up yellow.
+--
+-- BLESS (Paladin): the same ladder, but the Hands are emergency spells rather
+-- than upkeep, so READY is deliberately much stingier — an ally has to be in
+-- actual trouble before an empty Freedom slot is a decision. What the paladin
+-- board adds is the LOCKOUT half of the priest's grammar, which no other
+-- strip layer has: Forbearance. A target carrying it cannot be given
+-- Protection and cannot bubble themselves, so a row with nothing up AND
+-- Forbearance ticking is EXPOSED (red, drain = the minute running down), and
+-- one whose Hand is falling off while locked is FADING. That is the exact
+-- Weakened Soul reading the PWS board does, and it is worth just as much
+-- here: knowing you cannot BoP is what makes you peel instead.
 local function ResolveStripState(r, now)
     if r.dead then
         r.state = "DEAD"
@@ -3762,12 +3929,14 @@ local function ResolveStripState(r, now)
         return r
     end
 
-    -- Mark of the Wild and Thorns ride the same registry strip every other
-    -- layer's ally buffs do: a permanent slot each, the icon never leaving,
-    -- its sweep carrying what is left and the art going dark when it is gone.
+    -- Mark of the Wild, Thorns, the blessings: they ride the same registry
+    -- strip every other layer's ally buffs do — a permanent slot each, the
+    -- icon never leaving, its sweep carrying what is left and the art going
+    -- dark when it is gone.
     util.ResolveBuffs(r, now)
 
-    -- A druid heals through absorbs too, so an ally's shields stay embedded
+    -- A druid and a paladin both heal through absorbs, so an ally's shields
+    -- stay embedded
     ResolveAbsorbSegs(r, now)
     -- ...and the Shield Broke Flash arms off the same edge it does on INT:
     -- the moment an ally's last absorb breaks is the moment to pre-hot them,
@@ -3778,16 +3947,16 @@ local function ResolveStripState(r, now)
         r.rightText = string.format("%d%%", math.floor(r.health * 100 + 0.5))
     end
 
-    -- Our hots, in book order, pruning any that ran out. `soonest` is the one
-    -- that decides the row: it is what falls off first and what the number
-    -- counts down.
+    -- Our auras from this layer's book, in book order, pruning any that ran
+    -- out. `soonest` is the one that decides the row: it is what falls off
+    -- first and what the number counts down.
     --
-    -- Each hot owns a FIXED slot — Rejuvenation, Regrowth, Lifebloom, always
-    -- in that order — so a missing one leaves a dark placeholder of itself
-    -- rather than a hole, and the strip never reshuffles as hots tick off.
-    -- Position alone then tells you which hot you are looking at, which is
-    -- what makes the strip readable at a glance instead of one you have to
-    -- re-parse every time something falls.
+    -- Each entry owns a FIXED slot — Rejuvenation, Regrowth, Lifebloom; or
+    -- Freedom, Protection, Sacrifice — always in that order, so a missing one
+    -- leaves a dark placeholder of itself rather than a hole, and the strip
+    -- never reshuffles as things tick off. Position alone then tells you what
+    -- you are looking at, which is what makes the strip readable at a glance
+    -- instead of one you have to re-parse every time something falls.
     local rec = strip.state[r.guid]
     local n, soonest = 0, nil
     r.strip = r.strip or {}
@@ -3813,25 +3982,70 @@ local function ResolveStripState(r, now)
     r.stripCount = n
     r.stripSlots = #SDATA.STRIP_ACTIVE
 
+    -- The paladin's lockout. Forbearance is read off the target rather than
+    -- remembered from what we cast, because three different spells stamp it
+    -- (Protection, Lay on Hands, their own Divine Shield) and only two of
+    -- them are ours. The chassis already scans it for the ability bar, so
+    -- this is a lookup, not a second pass.
+    local lockLeft = 0
+    if layer == "BLESS" then
+        local l = lockState[r.guid]
+        local forb = l and l.forb
+        if forb and forb > now then lockLeft = forb - now end
+    end
+
+    -- Is an empty strip a decision on this layer? On HOT, yes for anyone
+    -- taking damage: a hot is upkeep and there is always room for another.
+    -- On BLESS the Hands are a cooldown you get once a fight, so the bar is
+    -- much higher — genuinely hurt, or being chewed on by a melee, which is
+    -- the case Protection and Freedom actually answer.
+    local wants
+    if layer == "BLESS" then
+        local hp = r.health or 1
+        wants = hp <= (DB("BlessReadyAt", 50) / 100)
+            or (r.meleeOnMe and hp <= 0.85)
+    else
+        wants = (r.health or 1) <= (DB("HotReadyAt", 90) / 100)
+    end
+    local refreshAt = layer == "BLESS" and DB("BlessRefreshAt", 3)
+        or DB("HotRefreshAt", 4)
+    local emptyWord = layer == "BLESS" and "HAND" or "HOT"
+
     if n == 0 then
-        -- No hots of ours. Only a damaged ally is a decision; everyone else
-        -- is quiet, and among the quiet rows the sort's time key floats the
-        -- lowest health to the top.
-        if (r.health or 1) <= (DB("HotReadyAt", 90) / 100) then
-            r.state, r.mainText = "READY", "HOT"
+        -- Nothing of ours here. Only an ally who wants something is a
+        -- decision; everyone else is quiet, and among the quiet rows the
+        -- sort's time key floats the lowest health to the top.
+        if lockLeft > 0 then
+            -- Forbearance with nothing up: the priest board's EXPOSED, and it
+            -- means the same thing — the answer you would reach for is locked
+            -- out, so plan around it rather than pressing it.
+            r.state, r.mainText = "EXPOSED", "FORB"
+            r.wsLeft, r.lockMax = lockLeft, SDATA.FORBEARANCE_MAX
+            r.rightText = string.format("%ds", math.ceil(lockLeft))
+            r.tLeft = lockLeft
+        elseif wants then
+            r.state, r.mainText = "READY", emptyWord
+            r.tLeft = (r.health or 1) * 1000
         else
             r.state, r.mainText = "OTHER", ""
+            r.tLeft = (r.health or 1) * 1000
         end
-        r.tLeft = (r.health or 1) * 1000
-    elseif soonest and soonest <= DB("HotRefreshAt", 4) then
-        -- Urgent rows sort by how long is actually left, not by health
-        r.state = "REFRESH"
+    elseif soonest and soonest <= refreshAt then
+        -- Urgent rows sort by how long is actually left, not by health.
+        -- Expiring while locked out is FADING rather than REFRESH: you can
+        -- see it going and you cannot replace it.
+        r.state = (lockLeft > 0) and "FADING" or "REFRESH"
         r.tLeft = soonest
         r.mainText = string.format("%ds", math.max(0, math.ceil(soonest)))
     else
         r.state = "SHIELDED"
         r.tLeft = (r.health or 1) * 1000
         r.mainText = soonest and string.format("%ds", math.ceil(soonest)) or ""
+    end
+    -- A locked-out row still shows the lockout on its drain even when the
+    -- state above it came from something up: the minute is the fact.
+    if lockLeft > 0 and not r.wsLeft then
+        r.wsLeft, r.lockMax = lockLeft, SDATA.FORBEARANCE_MAX
     end
 
     ApplyAlertStates(r, now)
@@ -3843,7 +4057,7 @@ local function ResolveState(r, now)
     -- their bar IS an absorb and their lockout IS a cooldown
     if not r.selfSpell then
         if layer == "INT" then return ResolveIntState(r, now) end
-        if layer == "HOT" then return ResolveStripState(r, now) end
+        if SDATA.STRIP_BOOKS[layer or ""] then return ResolveStripState(r, now) end
     end
     return ResolveShieldState(r, now)
 end
@@ -3911,7 +4125,7 @@ local function ResolveRow(unit, now)
     end
     -- Buff layers: mana strip for mana users (read live; the ticker repaints).
     -- Same contract, same clamp.
-    if (layer == "INT" or layer == "HOT") and r.manaUser and UnitPower and UnitPowerMax then
+    if SDATA.HEALTH_LAYERS[layer or ""] and r.manaUser and UnitPower and UnitPowerMax then
         local m, mMax = UnitPower(unit, 0), UnitPowerMax(unit, 0)
         if mMax and mMax > 0 then r.mana = math.min(1, math.max(0, m / mMax)) end
     end
@@ -4397,7 +4611,7 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     -- Health is the main bar on every layer now; the underlay slot carries
     -- MANA on the mage board and is retired on the priest board
     local showHealth
-    if compact or (layer ~= "INT" and layer ~= "HOT") then
+    if compact or not SDATA.HEALTH_LAYERS[layer or ""] then
         showHealth = false
     else
         showHealth = DB("ShowManaBar", true)
@@ -4434,7 +4648,7 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     -- strip above: the priest board's Power Word: Shield tracker, or a
     -- personal row's spell icon. The two buff layers have nothing left to put
     -- here now that their upkeep moved to the strip, so they spend no width.
-    local ownSlot = showIcon and (compact or (layer ~= "INT" and layer ~= "HOT"))
+    local ownSlot = showIcon and (compact or not SDATA.HEALTH_LAYERS[layer or ""])
     if ownSlot then
         local iconSize = compact and SDATA.PERSONAL_ICON or ICON_SIZE
         row.spellIcon:ClearAllPoints()
@@ -4473,7 +4687,7 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     -- a row that jitters mid-fight is a row you cannot read. Unlike the
     -- dispel strip this lives INSIDE the frame: it is the board's subject, not
     -- an annotation, so it is worth the width it costs.
-    local stripSlots = (not compact and layer == "HOT") and #SDATA.STRIP_ACTIVE or 0
+    local stripSlots = (not compact and SDATA.STRIP_BOOKS[layer or ""]) and #SDATA.STRIP_ACTIVE or 0
     for n = 1, SDATA.MAX_STRIP_ICONS do
         local h = row.strip[n]
         if n <= stripSlots then
@@ -4805,7 +5019,7 @@ local function PaintRow(row, r, now, index)
             end
             row.spellIcon:Hide()
             row.swipe:Hide()
-        elseif layer == "HOT" and not r.selfSpell then
+        elseif SDATA.STRIP_BOOKS[layer or ""] and not r.selfSpell then
             -- The druid board's upkeep all lives on the strip above
             row.spellIcon:Hide(); row.swipe:Hide()
             row.inShield:Hide(); row.inShieldCd:Hide()
@@ -4884,7 +5098,7 @@ local function PaintRow(row, r, now, index)
     -- The slots were reserved by the layout, so an empty one leaves a gap
     -- rather than sliding the rest of the row around.
     local stripShown = 0
-    if layer == "HOT" and not r.selfSpell and DB("ShowSpellIcon", true)
+    if SDATA.STRIP_BOOKS[layer or ""] and not r.selfSpell and DB("ShowSpellIcon", true)
         and r.state ~= "EMPTY" and not r.dead then
         for i = 1, (r.stripSlots or 0) do
             local e = r.strip and r.strip[i]
@@ -5085,7 +5299,7 @@ local function PaintRow(row, r, now, index)
 
     -- Underlay strip: MANA on the buff boards' ally rows, the elemental's
     -- HEALTH on its row (health is the main bar everywhere else now)
-    if (layer == "INT" or layer == "HOT") and not r.selfSpell and r.mana
+    if SDATA.HEALTH_LAYERS[layer or ""] and not r.selfSpell and r.mana
         and DB("ShowManaBar", true) then
         row.healthBar:SetVertexColor(0.25, 0.5, 0.95, 0.9)
         row.healthBar:SetWidth(math.max(barW * math.min(1, math.max(0, r.mana)), 1))
@@ -5235,7 +5449,7 @@ local function PaintRow(row, r, now, index)
     -- (CURSED/POISONED), start or refresh a hot, cast a missing Int/Mark, or
     -- rebuff one that is due.
     local glowOn = DB("WSReadyGlow", false) and (CASTABLE_STATES[r.state]
-        or ((layer == "INT" or layer == "HOT") and not r.selfSpell and not r.dead
+        or (SDATA.HEALTH_LAYERS[layer or ""] and not r.selfSpell and not r.dead
             and r.buffMissing))
     if glowOn then
         row.glow:SetAlpha(0.1 + 0.18 * math.abs(math.sin(now * 4)))
@@ -5754,6 +5968,14 @@ local function DrawHeader(now, showHeader)
         -- priest banner too (the class-layer branches above returned already)
         if mageUtil then SafeSetShown(mageUtil, true) end
         util.Paint(now)
+        -- Everything below is the PRIEST banner: a Power Word: Shield cooldown
+        -- and its absorb estimate, which would be a lie on any other board.
+        -- A layer with no banner of its own gets the utility cluster and the
+        -- gear and nothing else, rather than somebody else's numbers.
+        if layer ~= "PWS" then
+            root.header:Hide()
+            return
+        end
         -- The text starts after the cluster, exactly as the segment banners
         -- do — the bandage button shares this block. Re-anchored only when
         -- that width changes, since this runs at the draw rate.
@@ -6059,7 +6281,7 @@ local function Draw()
     local now = GetTime()
     ScanTargeters(now)
     -- Buff-layer header tallies rebuild as this pass resolves rows
-    if layer == "INT" or layer == "HOT" then intCurses, intCCs = 0, 0 end
+    if SDATA.HEALTH_LAYERS[layer or ""] then intCurses, intCCs = 0, 0 end
     local showHeader = DB("ShowHeader", true)
     local topOffset = showHeader and HEADER_H or 0
     local grow = DB("Grow", "DOWN")
@@ -6790,7 +7012,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
             ResolveEleInfo()
         end
         -- Hot / form / banner-cooldown names for the druid banner and strip
-        ResolveDruidInfo()
+        ResolveStripInfo()
         -- Banner utilities exist for every supported class (the bandage
         -- control is chassis); the mage-only ones self-gate inside
         util.recentName = (GetSpellInfo and GetSpellInfo(SDATA.RECENT_BANDAGE_ID))
@@ -6935,7 +7157,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
         end
         -- A respec can hand a druid Nature's Swiftness (or take it away), so
         -- the banner's cooldown segments re-filter with the spellbook
-        ResolveDruidInfo()
+        ResolveStripInfo()
         BindMageUtilityButtons()
     end
 end)
