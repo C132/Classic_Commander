@@ -3064,22 +3064,43 @@ local function EnsureSettingsButton()
     -- already builds its glyph from SetColorTexture quads, which need no art
     -- file and so have no path to go stale. This one now matches.
     --
-    -- Four bars through the center at 45-degree steps give eight teeth; the
-    -- hub sits on top. They overlap at the middle, and the extra blend there
-    -- is wanted — it is what reads as the cog's hub rather than an asterisk.
+    -- A cog reads as a cog because of three things in this order: teeth
+    -- around a rim, a solid body, and a HOLE through the middle. The first
+    -- version had the first two and, in place of the third, a hub in the same
+    -- grey as everything else — so the middle filled in solid and eight
+    -- spokes radiated out of a bright blob. That is an asterisk, which is
+    -- what a settings glyph must not be mistaken for.
+    --
+    -- Same four bars at 45-degree steps for eight teeth, slightly narrower so
+    -- they stay countable; a body that merges their roots into one disc; and
+    -- the axle punched dark on top of it. Nothing here is loaded from an art
+    -- path, so nothing here can go stale the way the old
+    -- Interface\WorldMap\Gear_64Grey did.
     settingsBtn.cog = {}
     for i = 1, 4 do
         local t = settingsBtn:CreateTexture(nil, "ARTWORK")
         t:SetColorTexture(0.8, 0.8, 0.8, 0.75)
-        t:SetSize(2.5, 12)
+        t:SetSize(2.2, 12)
         t:SetPoint("CENTER", settingsBtn, "CENTER", 0, 0)
         t:SetRotation(math.rad((i - 1) * 45))
         settingsBtn.cog[i] = t
     end
-    settingsBtn.hub = settingsBtn:CreateTexture(nil, "OVERLAY")
-    settingsBtn.hub:SetColorTexture(0.8, 0.8, 0.8, 0.9)
-    settingsBtn.hub:SetSize(6, 6)
+    -- The body, sized so its CORNERS tuck under the diagonal teeth rather
+    -- than poking out between them — that overhang is what was left reading
+    -- as a star. At 6.5 across in a 12px button the corners land just inside
+    -- the diagonals and the eight teeth stand clear of a solid rim.
+    settingsBtn.hub = settingsBtn:CreateTexture(nil, "ARTWORK")
+    settingsBtn.hub:SetColorTexture(0.8, 0.8, 0.8, 0.85)
+    settingsBtn.hub:SetSize(6.5, 6.5)
     settingsBtn.hub:SetPoint("CENTER", settingsBtn, "CENTER", 0, 0)
+    -- The axle. Quads cannot cut a hole, so this is the header backdrop's own
+    -- black painted back over the body — which is exactly what a hole looks
+    -- like there, and still reads as one against the world when the backdrop
+    -- is switched off.
+    settingsBtn.bore = settingsBtn:CreateTexture(nil, "OVERLAY")
+    settingsBtn.bore:SetColorTexture(0, 0, 0, 0.85)
+    settingsBtn.bore:SetSize(3, 3)
+    settingsBtn.bore:SetPoint("CENTER", settingsBtn, "CENTER", 0, 0)
     local hl = settingsBtn:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints(settingsBtn)
     hl:SetColorTexture(1, 1, 1, 0.25)

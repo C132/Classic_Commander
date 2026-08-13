@@ -198,6 +198,14 @@ WidgetMT.__index = function(self, key)
         local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
         rawset(self, key, fn); return fn
     end
+    -- Recorded into the SAME field SetVertexColor uses, because to a test the
+    -- question is "what colour is this" and not which call put it there. All
+    -- of this board's chrome is drawn rather than loaded, so without this the
+    -- colour of every glyph was simply invisible to the harness.
+    if key == "SetColorTexture" then
+        local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
+        rawset(self, key, fn); return fn
+    end
     if key == "SetDesaturated" then
         local fn = function(s, d) s.__desat = not not d end
         rawset(self, key, fn); return fn
@@ -706,13 +714,27 @@ do
     end
     CHECK(cog ~= nil, "the header carries a settings cog")
     if cog then
-        CHECK(#cog.cog == 4 and cog.hub ~= nil,
-            "its glyph is four crossed bars and a hub", cog.cog and #cog.cog)
+        CHECK(#cog.cog == 4 and cog.hub ~= nil and cog.bore ~= nil,
+            "its glyph is four crossed bars, a body and a bore",
+            cog.cog and #cog.cog)
         -- SetColorTexture leaves __texture nil; a file path would set it.
-        local fromFile = cog.hub.__texture
+        local fromFile = cog.hub.__texture or (cog.bore and cog.bore.__texture)
         for _, t in ipairs(cog.cog) do fromFile = fromFile or t.__texture end
         CHECK(fromFile == nil,
             "...drawn with SetColorTexture, so no art path can go stale", fromFile)
+        -- What makes it a cog rather than an asterisk: the middle is DARKER
+        -- than the body, so it reads as a hole instead of a bright hub. The
+        -- first version had them the same grey and eight spokes radiating out
+        -- of a blob.
+        local body = cog.hub.__color or {}
+        local bore = cog.bore and cog.bore.__color or {}
+        CHECK(bore[1] and body[1] and bore[1] < body[1],
+            "the bore is punched darker than the body it sits in",
+            tostring(bore[1]) .. " vs " .. tostring(body[1]))
+        -- ...and it has to be smaller than the body, or there is no body left
+        CHECK((cog.bore.__w or 0) < (cog.hub.__w or 0),
+            "and smaller than it, so the body survives around it",
+            tostring(cog.bore.__w) .. " vs " .. tostring(cog.hub.__w))
         local p = cog.__points[#cog.__points]
         CHECK(p and p.point == "TOPRIGHT", "and it sits in the right-edge chrome", p and p.point)
     end
