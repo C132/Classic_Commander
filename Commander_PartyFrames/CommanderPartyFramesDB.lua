@@ -1035,6 +1035,15 @@ end
 -- identical across all four and lives in the shared builders above.
 local LAYER_UI = {
     INT = {
+        rangeTooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
+        glowLabel = "Action Glow",
+        glowTooltip = "Softly glow any row with an open action — a curse to remove, a missing Int, or a rebuff window — so the next cast jumps out.",
+        uptimeTooltip = "Track your SHIELD uptime — the share of the session you keep an absorb up on yourself (Mana Shield, Ice Barrier, a priest's bubble). Shown in the banner; detailed by /cpf report.",
+        breakLabel = "Shield Broke Flash",
+        breakTooltip = "Flash a row red the moment a teammate's LAST shield breaks — that is exactly when the enemy team commits. Also flashes a self-shield row when that shield breaks.",
+        breakSoundLabel = "Break Sound",
+        breakSoundTooltip = "Also play an alert sound with the flash.",
+        manaBarTooltip = "Show a blue mana strip under each mana user's health bar — the health bar itself is always on (it IS the row's main bar).",
         iconLabel = "Status Icons",
         iconTooltip = "Show the two team-synergy icons on the left of each row: Arcane Intellect only when it needs you (ghost when missing, amber inside the rebuff window — hidden while healthy) and the ally's biggest shield with a sweep for its remaining time. The row's number is their TOTAL shielding — Power Word: Shield, Ice Barrier, Mana Shield, wards, Sacrifice, whoever cast them.",
         shieldTypesTooltip = "Tint each embedded shield segment by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
@@ -1043,6 +1052,15 @@ local LAYER_UI = {
         dispelHealGlow = "Pulse a red glow on debuffs that cut healing received. Worth acting on: absorbs ignore Mortal Strike effects, so a shield lands at full value where a heal does not.",
     },
     HOT = {
+        rangeTooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
+        glowLabel = "Action Glow",
+        glowTooltip = "Softly glow any row with an open action — something to remove, a hot to start or refresh, or a missing Mark — so the next global jumps out.",
+        uptimeTooltip = "Track your HOT uptime — the share of the session your living teammates were carrying at least one hot of yours. Shown in the banner; detailed by /cpf report.",
+        breakLabel = "Shield Broke Flash",
+        breakTooltip = "Flash a row red the moment a teammate's LAST absorb breaks — that is exactly when the enemy team commits, and on this board it is the cue to pre-hot before the damage lands.",
+        breakSoundLabel = "Break Sound",
+        breakSoundTooltip = "Also play an alert sound with the flash.",
+        manaBarTooltip = "Show a blue mana strip under each mana user's health bar — the health bar itself is always on (it IS the row's main bar).",
         iconLabel = "Status Icons",
         iconTooltip = "Show the left status slot and the hot strip beside it. The status slot carries Mark of the Wild only when it needs you — ghost when missing, amber inside the rebuff window, hidden while healthy — and unlike Arcane Intellect it applies to your rage and energy allies too.",
         shieldTypesTooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
@@ -1051,6 +1069,15 @@ local LAYER_UI = {
         dispelHealGlow = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a hot board that is the cue to stop topping and start pre-hotting through it.",
     },
     BLESS = {
+        rangeTooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
+        glowLabel = "Action Glow",
+        glowTooltip = "Softly glow any row with an open action — something to cleanse, a Hand to give or refresh, or a missing blessing — so the next global jumps out.",
+        uptimeTooltip = "Track your BLESSING uptime — the share of the session your living teammates were carrying at least one blessing of yours. Hands are deliberately not counted: they are emergencies, and a number near zero would mean nothing. Shown in the banner; detailed by /cpf report.",
+        breakLabel = "Shield Broke Flash",
+        breakTooltip = "Flash a row red the moment a teammate's LAST absorb breaks — that is exactly when the enemy team commits, and on this board it is the cue to have a Hand ready before the damage lands.",
+        breakSoundLabel = "Break Sound",
+        breakSoundTooltip = "Also play an alert sound with the flash.",
+        manaBarTooltip = "Show a blue mana strip under each mana user's health bar — the health bar itself is always on (it IS the row's main bar).",
         iconLabel = "Status Icons",
         iconTooltip = "Show the blessing slots and the Hand strip beside them. A blessing slot is ghosted when missing, amber inside the rebuff window, and dark-red only when the advisor says its absence is actually costing you — never when the ally already carries another of your blessings, because the game only allows them one.",
         shieldTypesTooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
@@ -1059,6 +1086,14 @@ local LAYER_UI = {
         dispelHealGlow = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a paladin board that is the cue to stop trading Flash of Light against it and spend a cooldown instead.",
     },
     PWS = {
+        rangeTooltip = "Dim allies who are out of your shield range, so you only act on the ones you can actually reach. (Each row's bar is the ally's health with their absorbs embedded — always on.)",
+        glowLabel = "Reshield Glow",
+        glowTooltip = "Softly glow any row whose reshield window is open — no shield and no Weakened Soul (or a low shield you can top off) — so the next cast jumps out.",
+        uptimeTooltip = "Track how much of your group is carrying your shield over the session (shown in the header, detailed by /cpf report).",
+        breakLabel = "Expose Alert",
+        breakTooltip = "Flash a row red the moment your shield breaks off a living ally — they need a reshield now.",
+        breakSoundLabel = "Expose Sound",
+        breakSoundTooltip = "Also play an alert sound with the expose flash.",
         iconLabel = "Spell Icon",
         iconTooltip = "Show the Power Word: Shield icon at the start of each row (dimmed when no shield of yours is up).",
         shieldTypesTooltip = "Tint each embedded shield segment by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
@@ -1230,6 +1265,74 @@ local function AddIdentitySection(panel, ui)
                 and (CommanderPartyFramesDB.UnitDisplay == "NAME" or CommanderPartyFramesDB.UnitDisplay == "ICON_NAME")
         end,
     })
+end
+
+-- Decision aids. Every layer offers the same five, and every layer means
+-- something different by them — a mage's action glow is a curse to remove,
+-- a paladin's is a Hand to give — so this is the section where LAYER_UI
+-- carries the most wording. What actually differs in SHAPE is one control:
+-- the mana strip, which only the health-bar layers have.
+local function AddDecisionAids(panel, ui)
+        panel:AddSection("Decision Aids")
+        -- The mana strip only exists where the main bar is health, so the layer
+        -- that has no mana strip pairs Range Fade with nothing.
+        local rangeFade = {
+            label = "Range Fade",
+            tooltip = ui.rangeTooltip,
+            get = function() return CommanderPartyFramesDB.RangeFade end,
+            set = function(value) CommanderPartyFramesDB.RangeFade = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }
+        if ui.manaBarTooltip then
+            panel:AddCheckboxPair({
+                label = "Mana Bar",
+                tooltip = ui.manaBarTooltip,
+                get = function() return CommanderPartyFramesDB.ShowManaBar end,
+                set = function(value) CommanderPartyFramesDB.ShowManaBar = value end,
+                isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+            }, rangeFade)
+        else
+            panel:AddCheckbox(rangeFade)
+        end
+        panel:AddCheckboxPair({
+            label = ui.glowLabel,
+            tooltip = ui.glowTooltip,
+            get = function() return CommanderPartyFramesDB.WSReadyGlow end,
+            set = function(value) CommanderPartyFramesDB.WSReadyGlow = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Pin Focus",
+            tooltip = "Keep your focus unit's row at the top of the board. No effect in Click-Cast mode (fixed roster order).",
+            get = function() return CommanderPartyFramesDB.PinFocus end,
+            set = function(value) CommanderPartyFramesDB.PinFocus = value end,
+            isEnabled = SortableMode,
+        })
+        panel:AddCheckboxPair({
+            label = "Combat Only",
+            tooltip = "Only show the board while you are in combat.",
+            get = function() return CommanderPartyFramesDB.CombatOnly end,
+            set = function(value) CommanderPartyFramesDB.CombatOnly = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = "Track Uptime",
+            tooltip = ui.uptimeTooltip,
+            get = function() return CommanderPartyFramesDB.TrackUptime end,
+            set = function(value) CommanderPartyFramesDB.TrackUptime = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckboxPair({
+            label = ui.breakLabel,
+            tooltip = ui.breakTooltip,
+            get = function() return CommanderPartyFramesDB.ExposeAlert end,
+            set = function(value) CommanderPartyFramesDB.ExposeAlert = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        }, {
+            label = ui.breakSoundLabel,
+            tooltip = ui.breakSoundTooltip,
+            get = function() return CommanderPartyFramesDB.ExposeAlertSound end,
+            set = function(value) CommanderPartyFramesDB.ExposeAlertSound = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
+        })
 end
 
 local function CreateCorePanel()
@@ -1483,59 +1586,7 @@ local function CreateCorePanel()
         })
         AddClickMatrix(panel)
 
-        panel:AddSection("Decision Aids")
-        panel:AddCheckboxPair({
-            label = "Mana Bar",
-            tooltip = "Show a blue mana strip under each mana user's health bar — the health bar itself is always on (it IS the row's main bar).",
-            get = function() return CommanderPartyFramesDB.ShowManaBar end,
-            set = function(value) CommanderPartyFramesDB.ShowManaBar = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Range Fade",
-            tooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
-            get = function() return CommanderPartyFramesDB.RangeFade end,
-            set = function(value) CommanderPartyFramesDB.RangeFade = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Action Glow",
-            tooltip = "Softly glow any row with an open action — a curse to remove, a missing Int, or a rebuff window — so the next cast jumps out.",
-            get = function() return CommanderPartyFramesDB.WSReadyGlow end,
-            set = function(value) CommanderPartyFramesDB.WSReadyGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Pin Focus",
-            tooltip = "Keep your focus unit's row at the top of the board. No effect in Click-Cast mode (fixed roster order).",
-            get = function() return CommanderPartyFramesDB.PinFocus end,
-            set = function(value) CommanderPartyFramesDB.PinFocus = value end,
-            isEnabled = SortableMode,
-        })
-        panel:AddCheckboxPair({
-            label = "Combat Only",
-            tooltip = "Only show the board while you are in combat.",
-            get = function() return CommanderPartyFramesDB.CombatOnly end,
-            set = function(value) CommanderPartyFramesDB.CombatOnly = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Track Uptime",
-            tooltip = "Track your SHIELD uptime — the share of the session you keep an absorb up on yourself (Mana Shield, Ice Barrier, a priest's bubble). Shown in the banner; detailed by /cpf report.",
-            get = function() return CommanderPartyFramesDB.TrackUptime end,
-            set = function(value) CommanderPartyFramesDB.TrackUptime = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Shield Broke Flash",
-            tooltip = "Flash a row red the moment a teammate's LAST shield breaks — that is exactly when the enemy team commits. Also flashes a self-shield row when that shield breaks.",
-            get = function() return CommanderPartyFramesDB.ExposeAlert end,
-            set = function(value) CommanderPartyFramesDB.ExposeAlert = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Break Sound",
-            tooltip = "Also play an alert sound with the flash.",
-            get = function() return CommanderPartyFramesDB.ExposeAlertSound end,
-            set = function(value) CommanderPartyFramesDB.ExposeAlertSound = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
-        })
+        AddDecisionAids(panel, LAYER_UI.INT)
 
         panel:AddCheckbox({
             label = "Banner Cooldowns",
@@ -1781,59 +1832,7 @@ local function CreateCorePanel()
         })
         AddClickMatrix(panel)
 
-        panel:AddSection("Decision Aids")
-        panel:AddCheckboxPair({
-            label = "Mana Bar",
-            tooltip = "Show a blue mana strip under each mana user's health bar — the health bar itself is always on (it IS the row's main bar).",
-            get = function() return CommanderPartyFramesDB.ShowManaBar end,
-            set = function(value) CommanderPartyFramesDB.ShowManaBar = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Range Fade",
-            tooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
-            get = function() return CommanderPartyFramesDB.RangeFade end,
-            set = function(value) CommanderPartyFramesDB.RangeFade = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Action Glow",
-            tooltip = "Softly glow any row with an open action — something to remove, a hot to start or refresh, or a missing Mark — so the next global jumps out.",
-            get = function() return CommanderPartyFramesDB.WSReadyGlow end,
-            set = function(value) CommanderPartyFramesDB.WSReadyGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Pin Focus",
-            tooltip = "Keep your focus unit's row at the top of the board. No effect in Click-Cast mode (fixed roster order).",
-            get = function() return CommanderPartyFramesDB.PinFocus end,
-            set = function(value) CommanderPartyFramesDB.PinFocus = value end,
-            isEnabled = SortableMode,
-        })
-        panel:AddCheckboxPair({
-            label = "Combat Only",
-            tooltip = "Only show the board while you are in combat.",
-            get = function() return CommanderPartyFramesDB.CombatOnly end,
-            set = function(value) CommanderPartyFramesDB.CombatOnly = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Track Uptime",
-            tooltip = "Track your HOT uptime — the share of the session your living teammates were carrying at least one hot of yours. Shown in the banner; detailed by /cpf report.",
-            get = function() return CommanderPartyFramesDB.TrackUptime end,
-            set = function(value) CommanderPartyFramesDB.TrackUptime = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Shield Broke Flash",
-            tooltip = "Flash a row red the moment a teammate's LAST absorb breaks — that is exactly when the enemy team commits, and on this board it is the cue to pre-hot before the damage lands.",
-            get = function() return CommanderPartyFramesDB.ExposeAlert end,
-            set = function(value) CommanderPartyFramesDB.ExposeAlert = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Break Sound",
-            tooltip = "Also play an alert sound with the flash.",
-            get = function() return CommanderPartyFramesDB.ExposeAlertSound end,
-            set = function(value) CommanderPartyFramesDB.ExposeAlertSound = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
-        })
+        AddDecisionAids(panel, LAYER_UI.HOT)
 
         panel:AddSection("Banner Buttons", "First Aid is not a class layer, so the bandage control rides this banner too.")
         panel:AddCheckboxPair({
@@ -2036,59 +2035,7 @@ local function CreateCorePanel()
         })
         AddClickMatrix(panel)
 
-        panel:AddSection("Decision Aids")
-        panel:AddCheckboxPair({
-            label = "Mana Bar",
-            tooltip = "Show a blue mana strip under each mana user's health bar — the health bar itself is always on (it IS the row's main bar).",
-            get = function() return CommanderPartyFramesDB.ShowManaBar end,
-            set = function(value) CommanderPartyFramesDB.ShowManaBar = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Range Fade",
-            tooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
-            get = function() return CommanderPartyFramesDB.RangeFade end,
-            set = function(value) CommanderPartyFramesDB.RangeFade = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Action Glow",
-            tooltip = "Softly glow any row with an open action — something to cleanse, a Hand to give or refresh, or a missing blessing — so the next global jumps out.",
-            get = function() return CommanderPartyFramesDB.WSReadyGlow end,
-            set = function(value) CommanderPartyFramesDB.WSReadyGlow = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Pin Focus",
-            tooltip = "Keep your focus unit's row at the top of the board. No effect in Click-Cast mode (fixed roster order).",
-            get = function() return CommanderPartyFramesDB.PinFocus end,
-            set = function(value) CommanderPartyFramesDB.PinFocus = value end,
-            isEnabled = SortableMode,
-        })
-        panel:AddCheckboxPair({
-            label = "Combat Only",
-            tooltip = "Only show the board while you are in combat.",
-            get = function() return CommanderPartyFramesDB.CombatOnly end,
-            set = function(value) CommanderPartyFramesDB.CombatOnly = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Track Uptime",
-            tooltip = "Track your BLESSING uptime — the share of the session your living teammates were carrying at least one blessing of yours. Hands are deliberately not counted: they are emergencies, and a number near zero would mean nothing. Shown in the banner; detailed by /cpf report.",
-            get = function() return CommanderPartyFramesDB.TrackUptime end,
-            set = function(value) CommanderPartyFramesDB.TrackUptime = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
-        panel:AddCheckboxPair({
-            label = "Shield Broke Flash",
-            tooltip = "Flash a row red the moment a teammate's LAST absorb breaks — that is exactly when the enemy team commits, and on this board it is the cue to have a Hand ready before the damage lands.",
-            get = function() return CommanderPartyFramesDB.ExposeAlert end,
-            set = function(value) CommanderPartyFramesDB.ExposeAlert = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        }, {
-            label = "Break Sound",
-            tooltip = "Also play an alert sound with the flash.",
-            get = function() return CommanderPartyFramesDB.ExposeAlertSound end,
-            set = function(value) CommanderPartyFramesDB.ExposeAlertSound = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
-        })
+        AddDecisionAids(panel, LAYER_UI.BLESS)
 
         panel:AddSection("Banner Buttons", "First Aid is not a class layer, so the bandage control rides this banner too.")
         panel:AddCheckboxPair({
@@ -2282,53 +2229,7 @@ local function CreateCorePanel()
     })
     AddClickMatrix(panel)
 
-    panel:AddSection("Decision Aids")
-    panel:AddCheckbox({
-        label = "Range Fade",
-        tooltip = "Dim allies who are out of your shield range, so you only act on the ones you can actually reach. (Each row's bar is the ally's health with their absorbs embedded — always on.)",
-        get = function() return CommanderPartyFramesDB.RangeFade end,
-        set = function(value) CommanderPartyFramesDB.RangeFade = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    })
-    panel:AddCheckboxPair({
-        label = "Reshield Glow",
-        tooltip = "Softly glow any row whose reshield window is open — no shield and no Weakened Soul (or a low shield you can top off) — so the next cast jumps out.",
-        get = function() return CommanderPartyFramesDB.WSReadyGlow end,
-        set = function(value) CommanderPartyFramesDB.WSReadyGlow = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    }, {
-        label = "Pin Focus",
-        tooltip = "Keep your focus unit's row at the top of the board. No effect in Click-Cast mode (fixed roster order).",
-        get = function() return CommanderPartyFramesDB.PinFocus end,
-        set = function(value) CommanderPartyFramesDB.PinFocus = value end,
-        isEnabled = SortableMode,
-    })
-    panel:AddCheckboxPair({
-        label = "Combat Only",
-        tooltip = "Only show the board while you are in combat.",
-        get = function() return CommanderPartyFramesDB.CombatOnly end,
-        set = function(value) CommanderPartyFramesDB.CombatOnly = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    }, {
-        label = "Track Uptime",
-        tooltip = "Track how much of your group is carrying your shield over the session (shown in the header, detailed by /cpf report).",
-        get = function() return CommanderPartyFramesDB.TrackUptime end,
-        set = function(value) CommanderPartyFramesDB.TrackUptime = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    })
-    panel:AddCheckboxPair({
-        label = "Expose Alert",
-        tooltip = "Flash a row red the moment your shield breaks off a living ally — they need a reshield now.",
-        get = function() return CommanderPartyFramesDB.ExposeAlert end,
-        set = function(value) CommanderPartyFramesDB.ExposeAlert = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-    }, {
-        label = "Expose Sound",
-        tooltip = "Also play an alert sound with the expose flash.",
-        get = function() return CommanderPartyFramesDB.ExposeAlertSound end,
-        set = function(value) CommanderPartyFramesDB.ExposeAlertSound = value end,
-        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ExposeAlert end,
-    })
+    AddDecisionAids(panel, LAYER_UI.PWS)
     panel:AddSection("Banner Buttons", "First Aid is not a class layer, so the bandage control rides this banner too.")
     panel:AddCheckboxPair({
         label = "Bandage",
