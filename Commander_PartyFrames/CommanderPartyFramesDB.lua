@@ -61,6 +61,7 @@ local DefaultSettings = {
     RenewTrack = false,         -- per-row Renew HoT indicator (pairs with the shield)
     RenewFlash = true,          -- pulse the Renew icon when it is about to expire
     RenewRefreshAt = 4,         -- seconds left at/under which Renew counts as expiring
+    PriestBannerCooldowns = true, -- Pain Suppression/PI/Fear Ward/... segments on the banner
 
     -- Mage layer: Int/Brilliance upkeep, mage click bindings (their own keys —
     -- the DB is account-wide, so priest bindings must survive untouched), and
@@ -2396,7 +2397,7 @@ local function CreateCorePanel()
         set = function(value) CommanderPartyFramesDB.EnableShield = value end,
     }, {
         label = "Show Header",
-        tooltip = "Show the strip at the top: your live Power Word: Shield cooldown and your current nominal shield value (and session coverage, when Track Uptime is on).",
+        tooltip = "Show your upkeep banner at the top: Inner Fire (red when it has fallen off), your Power Word: Shield cooldown — or its current absorb estimate once it is back — your Pain Suppression / Power Infusion / Fear Ward / Psychic Scream / Silence / Inner Focus / Shadowfiend / Mass Dispel / Desperate Prayer cooldowns, session shield uptime when tracked, team alerts (what you can dispel, who is in CC), and the bandage/settings buttons.",
         get = function() return CommanderPartyFramesDB.ShowHeader end,
         set = function(value) CommanderPartyFramesDB.ShowHeader = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
@@ -2686,7 +2687,7 @@ local function CreateCorePanel()
             and CommanderPartyFramesDB.ShowBandageButton end,
     })
 
-    panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs your class can remove, color-coded by school, with a glow on crowd control.")
+    panel:AddSection("Dispellable Debuffs", "A strip of icons to the right of each row showing debuffs you can remove — a priest dispels Magic and Disease — color-coded by school, with a glow on crowd control. A removable debuff also colors the whole row, and a teammate in crowd control turns it orange.")
     panel:AddCheckboxPair({
         label = "Show Dispellable Debuffs",
         tooltip = "Show, to the right of each ally's row, the debuffs your class can actually dispel — Priests see Magic and Disease, Paladins Magic/Poison/Disease, Druids Curse/Poison, Mages Curse, Shamans Poison/Disease. Each icon's rim is colored by school (blue Magic, purple Curse, brown Disease, green Poison) and carries a countdown sweep.",
@@ -2743,6 +2744,14 @@ local function CreateCorePanel()
         get = function() return CommanderPartyFramesDB.DispelIconSize end,
         set = function(value) CommanderPartyFramesDB.DispelIconSize = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
+    })
+
+    panel:AddCheckbox({
+        label = "Banner Cooldowns",
+        tooltip = "Show Pain Suppression, Power Infusion, Fear Ward, Psychic Scream, Silence, Inner Focus, Shadowfiend, Mass Dispel and Desperate Prayer on the banner — lit when ready, dimmed with the time left when not. Only the ones you have actually trained appear, so a holy priest never sees a Pain Suppression slot.",
+        get = function() return CommanderPartyFramesDB.PriestBannerCooldowns end,
+        set = function(value) CommanderPartyFramesDB.PriestBannerCooldowns = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowHeader end,
     })
 
     panel:AddSection("Renew")

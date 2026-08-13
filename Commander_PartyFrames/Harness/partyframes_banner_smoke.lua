@@ -512,6 +512,14 @@ local SPELLS = {
     [27149] = "Devotion Aura", [19746] = "Concentration Aura",
     [20375] = "Seal of Command", [20165] = "Seal of Light",
     [19750] = "Flash of Light", [4987] = "Cleanse",
+    -- Priest layer: Inner Fire and the banner cooldowns. Shadowfiend is
+    -- deliberately left UNTRAINED below, the way Rebirth and Repentance are
+    -- for the other two, so the known-only filter has something to drop.
+    [25431] = "Inner Fire", [33206] = "Pain Suppression",
+    [10060] = "Power Infusion", [8122] = "Psychic Scream",
+    [15487] = "Silence", [14751] = "Inner Focus",
+    [34433] = "Shadowfiend", [32375] = "Mass Dispel",
+    [19236] = "Desperate Prayer",
 }
 local knownIds = {}
 local function Learn(...) for _, id in ipairs({ ... }) do knownIds[id] = true end end
@@ -522,7 +530,8 @@ Learn(17, 6788, 139, 1459, 23028, 5504, 587, 3273,
     27125, 27124,
     11426, 1463,                                   -- Ice Barrier, Mana Shield
     1008,                                          -- Amplify Magic (Dampen untrained)
-    1243, 21562, 14752, 27681, 976)                -- the priest's ally buffs
+    1243, 21562, 14752, 27681, 976,                -- the priest's ally buffs
+    25431, 33206, 10060, 6346, 8122, 15487, 14751, 32375, 19236)  -- priest banner (no Shadowfiend)
 -- Druid book: the whole hot kit and three of the four banner cooldowns.
 -- Rebirth stays untrained on purpose (see the SPELLS note above).
 Learn(774, 8936, 33763, 1126, 21849, 467,
@@ -1409,6 +1418,65 @@ end
 -- three questions the shield does: is it up, how long has it got, and is it
 -- about to drop.
 if CLASS == "PRIEST" then
+    -- --- The upkeep banner -------------------------------------------------
+    -- The priest board carried a one-line string ("PW:S CD Ready ~1265")
+    -- while the other three layers grew segment banners, so this is the
+    -- newest of the four and gets the same three questions asked of it.
+    do
+        local segs = _G.CommanderPartyFramesFrame.hdrSegs
+        CHECK(segs ~= nil, "the priest banner built the shared segment pool")
+        local function Beat()
+            Fire("UNIT_AURA", "player")
+            now = now + 1
+            for _, f in ipairs(allFrames) do
+                local u = f.__scripts.OnUpdate
+                if u then pcall(u, f, 10) end
+            end
+        end
+        local function SegTextures()
+            local out = {}
+            for i = 1, #segs do
+                if segs[i].icon.__shown then out[#out + 1] = segs[i].icon.__texture or "?" end
+            end
+            return out
+        end
+        CommanderPartyFramesDB.ShowHeader = true
+        CommanderPartyFramesDB.PriestBannerCooldowns = true
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        playerBuffs = {}
+        Beat()
+        CHECK(_G.CommanderPartyFramesFrame.header.__shown == false,
+            "the old text header is gone")
+        CHECK(segs[1].icon.__desat == true,
+            "no Inner Fire leaves the first segment dark red")
+
+        playerBuffs = {
+            { name = "Inner Fire", expirationTime = now + 500, duration = 600,
+              icon = "Interface\\Icons\\Spell_25431", sourceUnit = "player" },
+        }
+        Beat()
+        CHECK(segs[1].icon.__desat == false, "Inner Fire up lights it")
+
+        local drawn = {}
+        for _, t in ipairs(SegTextures()) do drawn[t] = true end
+        CHECK(drawn["Interface\\Icons\\Spell_33206"] == true,
+            "Pain Suppression, which this priest knows, gets a segment")
+        CHECK(drawn["Interface\\Icons\\Spell_34433"] ~= true,
+            "Shadowfiend, which they do not, never does")
+
+        CommanderPartyFramesDB.PriestBannerCooldowns = false
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        Beat()
+        local off = {}
+        for _, t in ipairs(SegTextures()) do off[t] = true end
+        CHECK(off["Interface\\Icons\\Spell_33206"] ~= true,
+            "the banner cooldowns answer their toggle")
+        CommanderPartyFramesDB.PriestBannerCooldowns = true
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        playerBuffs = {}
+        Beat()
+    end
+
     local function Tick()
         Fire("UNIT_AURA", "player")
         now = now + 1

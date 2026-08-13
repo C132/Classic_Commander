@@ -488,9 +488,32 @@ SDATA.PALADIN_BANNER_CDS = {
 }
 -- Which book of banner cooldowns the active layer draws, so the segment loop
 -- is one loop rather than one per class.
+-- The priest banner's cooldown segments, in banner order: the two that decide
+-- a game outright, then the ones you spend every fight, then the rest.
+-- Filtered at login to what this priest actually trained, so a holy priest
+-- never sees a Pain Suppression slot.
+SDATA.PRIEST_BANNER_CDS = {
+    { key = "PAINSUPP", id = 33206, cd = 120, icon = "Interface\\Icons\\Spell_Holy_PainSupression" },
+    { key = "PI",       id = 10060, cd = 180, icon = "Interface\\Icons\\Spell_Holy_PowerInfusion" },
+    { key = "FEARWARD", id = 6346,  cd = 180, icon = "Interface\\Icons\\Spell_Holy_Excorcism" },
+    { key = "SCREAM",   id = 8122,  cd = 30,  icon = "Interface\\Icons\\Spell_Shadow_PsychicScream" },
+    { key = "SILENCE",  id = 15487, cd = 45,  icon = "Interface\\Icons\\Spell_Shadow_ImpPhaseShift" },
+    { key = "INNERFOCUS", id = 14751, cd = 180, icon = "Interface\\Icons\\Spell_Frost_WindWalkOn" },
+    { key = "FIEND",    id = 34433, cd = 300, icon = "Interface\\Icons\\Spell_Shadow_Shadowfiend" },
+    { key = "MASSDISPEL", id = 32375, cd = 15, icon = "Interface\\Icons\\Spell_Arcane_MassDispel" },
+    { key = "DESPERATE", id = 19236, cd = 600, icon = "Interface\\Icons\\Spell_Holy_Restoration" },
+}
 SDATA.BANNER_CDS = {
+    PWS   = SDATA.PRIEST_BANNER_CDS,
     HOT   = SDATA.DRUID_BANNER_CDS,
     BLESS = SDATA.PALADIN_BANNER_CDS,
+}
+-- Inner Fire, the priest's answer to the mage's armor: one permanent-ish self
+-- buff that is always meant to be up and is the easiest thing on the board to
+-- lose without noticing. Same line shape SDATA.ARMOR_LINES uses, so the same
+-- scan and the same banner segment serve both.
+SDATA.PRIEST_ARMOR = {
+    { key = "INNERFIRE", ids = { 25431, 10952, 10951, 1006, 602, 7128, 588 } },
 }
 
 local CLASS_PROFILES = {
@@ -525,6 +548,13 @@ SDATA.ARMOR_LINES = {
     { key = "MAGE",   ids = { 27125, 22783, 22782, 6117 } },
     { key = "ICE",    ids = { 27124, 10220, 10219, 7320, 7302 } },
     { key = "FROST",  ids = { 7301, 7300, 168 }, supersededBy = "ICE" },
+}
+-- Which self-buff line book the active layer watches. The mage has four and a
+-- switcher; the priest has one and no choice to make about it, and both are
+-- read by the same pass and drawn by the same banner segment.
+SDATA.SELF_ARMOR = {
+    INT = SDATA.ARMOR_LINES,
+    PWS = SDATA.PRIEST_ARMOR,
 }
 local armorNames = {}   -- localized armor name -> spell icon (resolved at login)
 local selfArmor         -- { icon, expire } our current armor buff, nil when naked
@@ -1066,12 +1096,31 @@ local STATES = {
     OTHER    = { rank = 5, color = { 0.55, 0.60, 0.78 } }, -- an ally priest's shield / no buff target
     DEAD     = { rank = 9, color = { 0.42, 0.42, 0.42 } }, -- dead / offline
     EMPTY    = { rank = 10, color = { 0, 0, 0 } },          -- an empty secure slot
+    -- The other two removal schools, added when the paladin layer arrived and
+    -- a Magic debuff started reading as "CURSED" on a board whose owner
+    -- cannot remove a curse at all. A row's colour has to be the colour of
+    -- the thing you are about to press, so each school gets its own — and
+    -- they all share the CURSED rank, because "there is something on them I
+    -- can take off" outranks everything else whichever school it is.
+    MAGIC    = { rank = -2, color = DISPEL_COLORS.Magic },  -- PWS/BLESS: removable magic
+    DISEASED = { rank = -2, color = DISPEL_COLORS.Disease },-- PWS/BLESS: removable disease
+}
+-- Every state that means "an ally is carrying something you can remove". One
+-- table rather than four comparisons, because three separate places ask.
+local DISPEL_STATES = { CURSED = true, POISONED = true, MAGIC = true, DISEASED = true }
+-- What each removable school escalates to, and the word the row wears.
+local DISPEL_STATE_BY_SCHOOL = {
+    Curse   = { state = "CURSED",   word = "CURSED" },
+    Poison  = { state = "POISONED", word = "POISON" },
+    Magic   = { state = "MAGIC",    word = "MAGIC" },
+    Disease = { state = "DISEASED", word = "DISEASE" },
 }
 -- Rows the player usually acts on; the rest are hidden by Only Show Alerts
-local ALERT_STATES = { CURSED = true, POISONED = true, CCED = true, READY = true,
+local ALERT_STATES = { CCED = true, READY = true,
     EXPOSED = true, REFRESH = true, FADING = true }
 -- The recast/act window is open (castable and wanted) in these states
-local CASTABLE_STATES = { CURSED = true, POISONED = true, READY = true, REFRESH = true }
+local CASTABLE_STATES = { READY = true, REFRESH = true }
+for k in pairs(DISPEL_STATES) do ALERT_STATES[k] = true; CASTABLE_STATES[k] = true end
 
 -- Persistent per-unit state, keyed by GUID so every token that points at a unit
 -- (party3, target, mouseover) refines one record.
@@ -1976,10 +2025,11 @@ end
 -- character actually knows, so a feral never sees a Nature's Swiftness
 -- segment and a retribution paladin never sees Divine Illumination.
 local function ResolveStripInfo()
-    local book = SDATA.STRIP_BOOKS[layer or ""]
-    if not book or not GetSpellInfo then return end
+    if not GetSpellInfo then return end
+    -- The banner-cooldown pass runs for every layer that brought a book,
+    -- including the priest's, which has no per-ally strip at all.
     wipe(strip.names)
-    for _, def in ipairs(book) do
+    for _, def in ipairs(SDATA.STRIP_BOOKS[layer or ""] or {}) do
         local n, _, icon = GetSpellInfo(def.baseId)
         def.known = false
         if n then
@@ -3122,9 +3172,12 @@ local function ScanUnit(unit, reliable)
     local pwsExpire, pwsSpellId, pwsMine, pwsIndex
     local renewExpire
     local renewOn = DB("RenewTrack", false)
-    -- The health-bar layers share one gate for the curse/CC escalation; the
-    -- own-aura strip runs for whichever layers brought a book to fill it.
-    local intOn = SDATA.HEALTH_LAYERS[layer or ""]
+    -- Every supported layer gets the removable-debuff and CC escalation now:
+    -- what a row is FOR differs per class, but "there is something on them I
+    -- can take off" and "a teammate is in crowd control" are the same two
+    -- facts on every board. The own-aura strip runs for whichever layers
+    -- brought a book to fill it.
+    local intOn = layer and true or false
     local stripOn = SDATA.STRIP_BOOKS[layer or ""] and true or false
     local isPlayer = guid == playerGUID
     -- Ally buffs are read off the registry now: one pass fills a scratch pair
@@ -3152,7 +3205,7 @@ local function ScanUnit(unit, reliable)
             local bkey = SDATA.BUFF_BY_NAME[aura.name].key
             util.buffExp[bkey] = aura.expirationTime or 0
             util.buffDur[bkey] = aura.duration
-        elseif layer == "INT" and isPlayer and not armorFound and armorNames[aura.name] then
+        elseif isPlayer and not armorFound and armorNames[aura.name] then
             armorFound = { icon = armorNames[aura.name], expire = aura.expirationTime,
                 duration = aura.duration }
         end
@@ -3213,7 +3266,10 @@ local function ScanUnit(unit, reliable)
 
     -- Our armor / our form (upkeep banners); the player's own scan is always
     -- reliable, so absence here genuinely means "naked" / "caster form"
-    if layer == "INT" and isPlayer then
+    -- The mage's armor and the priest's Inner Fire commit through one slot:
+    -- both are "the self-buff this layer's banner watches", and only one
+    -- layer's names are ever in the map (see SDATA.SELF_ARMOR).
+    if SDATA.SELF_ARMOR[layer or ""] and isPlayer then
         selfArmor = armorFound
     elseif layer == "HOT" and isPlayer then
         strip.form = formFound
@@ -3723,9 +3779,14 @@ local function ApplyAlertStates(r, now)
         curseState[r.guid], c = nil, nil
     end
     if c then
-        local poison = c.dispelName == "Poison"
-        r.state = poison and "POISONED" or "CURSED"
-        r.mainText = poison and "POISON" or "CURSED"
+        -- Whichever school it is, in its own colour and its own word. An
+        -- unrecognised school still escalates — the point is that something
+        -- removable is on them — and falls back to the purple the board has
+        -- always used for "there is a debuff here you can take off".
+        local kind = DISPEL_STATE_BY_SCHOOL[c.dispelName or ""]
+            or DISPEL_STATE_BY_SCHOOL.Curse
+        r.state = kind.state
+        r.mainText = kind.word
         if c.expire and c.expire > now then
             r.wsLeft = c.expire - now
             if c.duration and c.duration > 0 then r.lockMax = c.duration end
@@ -3740,7 +3801,7 @@ local function ApplyAlertStates(r, now)
     end
     if cc then
         intCCs = intCCs + 1
-        if r.state ~= "CURSED" and r.state ~= "POISONED" then
+        if not DISPEL_STATES[r.state] then
             r.state = "CCED"
             local nm = cc.name
             r.mainText = (nm and #nm > 10) and nm:sub(1, 10) or nm or "CC"
@@ -4157,6 +4218,15 @@ local function ResolveState(r, now)
     if not r.selfSpell then
         if layer == "INT" then return ResolveIntState(r, now) end
         if SDATA.STRIP_BOOKS[layer or ""] then return ResolveStripState(r, now) end
+        -- PWS ally rows: the shield grammar, and then the same alert ladder
+        -- every other board tops itself with. The priest board went without
+        -- it for three layers' worth of releases, which meant the one class
+        -- on this board that removes Magic was also the only one whose row
+        -- never said so — and a teammate in a fear did not reshape the board
+        -- for the healer it was aimed at.
+        local res = ResolveShieldState(r, now)
+        if res then ApplyAlertStates(res, now) end
+        return res
     end
     return ResolveShieldState(r, now)
 end
@@ -6155,37 +6225,66 @@ local function DrawHeader(now, showHeader)
         -- priest banner too (the class-layer branches above returned already)
         if mageUtil then SafeSetShown(mageUtil, true) end
         util.Paint(now)
-        -- Everything below is the PRIEST banner: a Power Word: Shield cooldown
-        -- and its absorb estimate, which would be a lie on any other board.
-        -- A layer with no banner of its own gets the utility cluster and the
-        -- gear and nothing else, rather than somebody else's numbers.
+        -- Everything below is the PRIEST banner. A layer with no banner of
+        -- its own gets the utility cluster and the gear and nothing else,
+        -- rather than somebody else's numbers.
         if layer ~= "PWS" then
             root.header:Hide()
             return
         end
-        -- The text starts after the cluster, exactly as the segment banners
-        -- do — the bandage button shares this block. Re-anchored only when
-        -- that width changes, since this runs at the draw rate.
-        local hdrX = util.ClusterOffset()
-        if root._hdrX ~= hdrX then
-            root._hdrX = hdrX
-            root.header:ClearAllPoints()
-            root.header:SetPoint("TOPLEFT", root, "TOPLEFT", hdrX, -1)
+        -- PWS layer: the priest's upkeep banner. This was a one-line string
+        -- ("PW:S CD Ready ~1265") long after the other three layers had grown
+        -- segment banners, which meant the class the board was BUILT for was
+        -- the one that could not see its own cooldowns. Same grammar as the
+        -- others now, asking a priest's questions in the order they bite.
+        root.header:Hide()
+        util.EnsureSegs()
+        local segX = util.PlaceSegs()
+        util.segN = 0
+        -- 1) Inner Fire. The priest's armor: a buff you are supposed to have
+        -- on at all times and the one nobody notices falling off, so it wears
+        -- the naked mage's dim red icon when it is gone.
+        if selfArmor then
+            util.Seg(selfArmor.icon or "Interface\\Icons\\Spell_Holy_InnerFire", false)
+        else
+            util.Seg("Interface\\Icons\\Spell_Holy_InnerFire", true, nil, { 1, 0.25, 0.25 })
         end
-        local cdText = "Ready"
-        if GetSpellCooldown and PWS_NAME then
-            local start, duration = GetSpellCooldown(PWS_NAME)
-            if start and duration and duration > 1.5 then
-                local left = start + duration - now
-                if left > 0 then cdText = string.format("%.1fs", left) end
+        -- 2) The shield itself: its cooldown while it is running, and its
+        -- current absorb estimate once it is back. That estimate is the one
+        -- number the old text header carried that nothing else on the board
+        -- shows, so it keeps a home.
+        do
+            local left = 0
+            if GetSpellCooldown and PWS_NAME then
+                local start, duration = GetSpellCooldown(PWS_NAME)
+                if start and duration and duration > 1.5 then
+                    left = start + duration - now
+                end
+            end
+            if left > 0 then
+                util.Seg(SDATA.PWS_ICON, true, string.format("%.1f", left))
+            else
+                util.Seg(SDATA.PWS_ICON, false, FormatAmount(myShieldValue))
             end
         end
-        local text = string.format("|cff66ccffPW:S|r  CD %s   ~%d", cdText, math.floor(myShieldValue + 0.5))
-        if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
-            text = text .. string.format("   Up %d%%", math.floor(uptime.coverageSum / uptime.coverageSamples * 100 + 0.5))
+        -- 3) The cooldowns that decide games, filtered at login to what this
+        -- priest actually trained — a disc priest never sees Shadowfiend
+        if DB("PriestBannerCooldowns", true) then
+            for _, e in ipairs(strip.cds) do
+                util.SegCooldown(e.name, e.icon, e.cd, now)
+            end
         end
-        root.header:SetText(text)
-        root.header:Show()
+        -- 4) Session shield uptime
+        if DB("TrackUptime", false) and uptime and (uptime.coverageSamples or 0) > 0 then
+            util.Seg(SDATA.PWS_ICON, false,
+                string.format("%d%%", math.floor(uptime.coverageSum / uptime.coverageSamples * 100 + 0.5)))
+        end
+        -- 5) Team alerts: what you can remove, teammates in CC
+        if intCurses > 0 or intCCs > 0 then
+            util.Seg(intCurses > 0 and "Interface\\Icons\\Spell_Holy_DispelMagic"
+                or "Interface\\Icons\\Spell_Nature_Polymorph", false, AlertText())
+        end
+        util.TruncSegs(segX)
     else
         if root.header then root.header:Hide() end
         if root.hdrSegs then
@@ -6468,7 +6567,7 @@ local function Draw()
     local now = GetTime()
     ScanTargeters(now)
     -- Buff-layer header tallies rebuild as this pass resolves rows
-    if SDATA.HEALTH_LAYERS[layer or ""] then intCurses, intCCs = 0, 0 end
+    if layer then intCurses, intCCs = 0, 0 end
     local showHeader = DB("ShowHeader", true)
     local topOffset = showHeader and HEADER_H or 0
     local grow = DB("Grow", "DOWN")
@@ -7280,19 +7379,26 @@ events:SetScript("OnEvent", function(self, event, arg1)
         util.MigrateBinds()
         EnsureSettingsButton()
         blizz.EnsureButton()
-        -- Armor names/icons for the upkeep banner (INT layer only)
-        if layer == "INT" and GetSpellInfo then
-            for _, line in ipairs(SDATA.ARMOR_LINES) do
+        -- The self-buff this layer's banner watches: the mage's armor line,
+        -- or the priest's Inner Fire. One map, whichever book applies, so the
+        -- scan and the banner segment do not have to know which class they
+        -- are looking at.
+        if SDATA.SELF_ARMOR[layer or ""] and GetSpellInfo then
+            for _, line in ipairs(SDATA.SELF_ARMOR[layer]) do
                 for _, id in ipairs(line.ids) do
                     local n, _, icon = GetSpellInfo(id)
                     if n and not armorNames[n] then
-                        armorNames[n] = icon or "Interface\\Icons\\Spell_Frost_FrostArmor02"
+                        armorNames[n] = icon
+                            or (layer == "PWS" and "Interface\\Icons\\Spell_Holy_InnerFire"
+                                or "Interface\\Icons\\Spell_Frost_FrostArmor02")
                     end
                 end
             end
-            ResolveEleInfo()
         end
-        -- Hot / form / banner-cooldown names for the druid banner and strip
+        -- The Water Elemental is the mage's alone; it rode the armor block
+        -- until Inner Fire moved in there
+        if layer == "INT" then ResolveEleInfo() end
+        -- Strip / form / aura / seal / banner-cooldown names, per layer
         ResolveStripInfo()
         -- Banner utilities exist for every supported class (the bandage
         -- control is chassis); the mage-only ones self-gate inside
