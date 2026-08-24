@@ -11,6 +11,7 @@ local DefaultSettings = {
     AutoShare = false,
     BagGlow = true,
     AarStyle = "CLASSIC",
+    IconRecess = "SOFT",   -- shared suite icon shading: OFF|SOFT|DEEP|CARVED
     AarScale = 1.0,
     AarPos = false,
 }
@@ -131,6 +132,14 @@ local function CreateOptionsPanel()
         set = function(value) CommanderEconomyDB.AarStyle = value end,
         isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
     }, nil)
+    panel:AddDropdown({
+        label = "Icon Recess",
+        tooltip = "Shading laid over every icon here so it reads as set into the frame rather than pasted on it. The art is shared across the suite, so an icon here is cut the same way as one on any other Commander board.",
+        options = Commander.ICON_STYLES,
+        get = function() return CommanderEconomyDB.IconRecess end,
+        set = function(value) CommanderEconomyDB.IconRecess = value end,
+        isEnabled = function() return CommanderEconomyDB.EnableEconomy end,
+    })
     panel:AddSlider({
         label = "Report Scale",
         tooltip = "Overall size of the After Action Report window.",

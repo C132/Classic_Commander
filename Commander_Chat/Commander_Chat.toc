@@ -1,7 +1,7 @@
 ## Interface: 20506
 ## Category: Commander
 ## Title: Commander Chat
-## Notes: Chat window visibility controls and sound pings for whispers and party messages.
+## Notes: Shrink chat to a footnote: size, scale, and font controls, mouseover-only fading, tab hiding, world-channel muting, plus visibility toggles and sound pings.
 ## Author: Devin
 ## Version: 2.1.0
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
@@ -9,4 +9,5 @@
 ## RequiredDeps: Commander_Events
 
 CommanderChatDB.lua
+CommanderChatFrame.lua
 CommanderChat.lua

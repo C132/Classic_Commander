@@ -97,6 +97,11 @@ local function Refresh()
             worst = math.min(worst, pct)
             row.icon:SetTexture(GetInventoryItemTexture("player", row.slotID)
                 or "Interface\\Icons\\INV_Misc_QuestionMark")
+            -- Suite icon recess (Commander_Events' shared art)
+            if Commander.DebossIcon then
+                Commander.DebossIcon(row.icon,
+                    (CommanderVitalsDB and CommanderVitalsDB.IconRecess) or "SOFT")
+            end
             row.bar:SetSize(math.max(BAR_WIDTH * pct, 1), BAR_HEIGHT)
             row.bar:SetVertexColor(ConditionColor(pct))
             row:ClearAllPoints()

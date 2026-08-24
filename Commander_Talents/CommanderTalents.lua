@@ -775,6 +775,20 @@ local function TalentOnClick(self, mouseButton)
     end
 end
 
+-- Shared suite icon shading, drawn by Commander_Events (a RequiredDep, so it
+-- is always loaded). Talent buttons and the briefing rows are both built once
+-- and reused, so the registry is what carries a changed style back to them.
+local styledIcons = {}
+
+local function ApplyIconRecess(icon)
+    if not Commander.DebossIcon then return end
+    Commander.DebossIcon(icon, (db and db.IconRecess) or "SOFT")
+end
+
+local function RestyleIcons()
+    for icon in pairs(styledIcons) do ApplyIconRecess(icon) end
+end
+
 local function CreateTalentButton(pane)
     local btn = CreateFrame("Button", nil, pane)
     btn:SetSize(BTN, BTN)
@@ -794,6 +808,8 @@ local function CreateTalentButton(pane)
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
     btn.icon:SetAllPoints()
     btn.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    styledIcons[btn.icon] = true
+    ApplyIconRecess(btn.icon)
 
     local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
     highlight:SetAllPoints()
@@ -2065,6 +2081,8 @@ local function EnsureCalculator()
         rowBtn.icon:SetSize(18, 18)
         rowBtn.icon:SetPoint("LEFT", rowBtn, "LEFT", 0, 0)
         rowBtn.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        styledIcons[rowBtn.icon] = true
+        ApplyIconRecess(rowBtn.icon)
         rowBtn.nameFS = rowBtn:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         rowBtn.nameFS:SetPoint("LEFT", rowBtn, "LEFT", 24, 0)
         rowBtn.nameFS:SetJustifyH("LEFT")
@@ -2197,6 +2215,7 @@ end
 
 local function ApplySettings()
     if not loaded then return end
+    RestyleIcons()
     if calc then
         ApplyFraming()
         ApplyPosition()

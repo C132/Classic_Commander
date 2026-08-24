@@ -10,3 +10,4 @@
 
 CommanderTooltipDB.lua
 CommanderTooltip.lua
+CommanderTooltipDownrank.lua

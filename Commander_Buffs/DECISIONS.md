@@ -100,3 +100,67 @@ icon, sentinel ring, editor preview) call `SetReverse(true)` at build time,
 so the shade or ring GROWS toward expiry and "dark/full" always means "about
 to drop". Guarded, like every other cooldown call here: a client without
 `SetReverse` keeps the old direction instead of erroring.
+
+**D17. The block wears Blizzard's aura language, measured not guessed.**
+The first version mirrored the TARGET frame — a 21px trimmed grid with a rim
+on every icon — and the result read as an addon sitting next to the unit
+frame rather than as part of the client. The geometry now comes from this
+client's own UI source (`Blizzard_BuffFrame/BuffFrameTemplates.xml` and
+`Classic/BuffFrame.lua` on `Gethe/wow-ui-source`, branch
+`classic_anniversary`): 30px icons, **untrimmed** art, `UI-Debuff-Overlays`
+at 33x32 CENTERED so it overhangs, no border on buffs at all,
+`NumberFontNormal` count inside the icon at (-2,2), `GameFontNormalSmall`
+duration below in `NORMAL` yellow turning `HIGHLIGHT` white under
+`BUFF_DURATION_WARNING_TIME`, `iconStride` 8 and `iconPadding` 5, and a cell
+40 tall so the duration text has its own 10px lane. The old look survives as
+the COMMANDER style, because the trimmed grid is genuinely tidier — it is
+just not what "looks like WoW" means.
+
+**D18. Loss of control is a TAXONOMY, not a spell-id bag.** The retired flat
+`CC_IDS` list could say "something is on you" and nothing more, so the
+sentinel showed a square of art that looked exactly like a buff. Each aura is
+now filed under what it actually took from you — STUN, INCAP, FEAR, CHARM,
+SILENCE, ROOT, DISARM — which is what lets the portrait print the word, tint
+the ring by category, and let a rule match "only silences". The categories
+are ORDERED, and that order is the severity ladder both the shipped rules and
+the editor's checkbox row read. `CC_IDS` still exists for the rest of the
+suite, derived from the categories so the two descriptions cannot drift.
+
+**D19. ALERT is a third action, not a flag on SHOW.** "Never quiet this one"
+had to be expressible inside the ordered policy rather than special-cased in
+the render layer, or loss of control would be a hardcoded exception the
+editor could not show, explain, or let you change. ALERT is SHOW that is
+exempt from Minimum Score — it buys exemption from the floor, NOT the top of
+the list, so a higher-scoring aura still outranks it and an earlier HIDE
+still vetoes it.
+
+**D20. Minimum Score is the PORTRAIT's dial, spent at the last moment.**
+It used to be passed into `E.Evaluate`, which meant raising it also gutted
+the block's Rules Applied mode and blanked rows out of the editor's trace —
+the one place you go to ask why something is missing. The shared ranking is
+now computed with no floor and every consumer reads it whole; only
+`SentinelPasses` applies the floor. The trace tells the two kinds of missing
+apart: HIDDEN was vetoed or matched nothing, BELOW FLOOR scored fine and is
+merely too quiet today.
+
+**D21. The shipped policy is score BANDS, and the upgrade respects your
+edits.** ALERT 110-130 is loss of control, 90-100 is emergencies you can act
+on, 20-80 is everything that belongs in the block; the floor ships at 90.
+Because rules are prized state (D9), the v3 migration replaces the rule list
+ONLY when it is still verbatim a set we shipped — `E.IsUntouchedRuleSet`
+checks both the current and the previous default names in order. A player who
+edited theirs keeps them and gets one line at login pointing at Restore
+Default Rules. The retuned scalars (icon sizes, spacing, Minimum Score) move
+only where the saved value is still exactly the old default.
+**D22. Enlarging my own buffs grows the CELL, not just the icon.** "Draw my
+buffs bigger" has an obvious cheap implementation — scale the texture inside
+the existing grid slot — and it produces overlapping icons the moment the
+enlargement exceeds the gap (at the shipped 30px/5px that is anything past
+about 117%). Instead the row's cell is sized for the largest icon the group
+can hold and every icon is anchored by its BOTTOM CENTER to the foot of its
+cell: enlarged icons grow UPWARD into space that was already reserved, small
+ones sit on the same baseline, and the duration texts stay on one line per
+row. The cost is a wider block, which is honest and visible, rather than
+icons quietly colliding. Scoped to BUFFS only, matching the gold rim: the
+feature separates your upkeep from the raid's, and a debuff you applied to
+yourself is not upkeep.

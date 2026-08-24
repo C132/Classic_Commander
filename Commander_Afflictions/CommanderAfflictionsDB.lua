@@ -16,6 +16,7 @@ local DefaultSettings = {
     AlwaysShow = false,
     FixedHeight = false,
     Layout = "BARS_DOWN",
+    IconRecess = "SOFT",    -- shared suite icon shading: OFF|SOFT|DEEP|CARVED
     BarWidth = 130,
     DrainOverlay = "BAR",
 }
@@ -112,6 +113,14 @@ local function CreateOptionsPanel()
         set = function(value) CommanderAfflictionsDB.Layout = value end,
         isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
     }, {
+        label = "Icon Recess",
+        tooltip = "Shading laid over every debuff icon on the board so it reads as set into the row rather than pasted on it — the suite's shared art, so an icon here is cut the same way as one on any other Commander board. Soft is a shallow press, which is what a small row icon wants.",
+        options = Commander.ICON_STYLES,
+        get = function() return CommanderAfflictionsDB.IconRecess end,
+        set = function(value) CommanderAfflictionsDB.IconRecess = value end,
+        isEnabled = function() return CommanderAfflictionsDB.EnableAfflictions end,
+    })
+    panel:AddDropdownPair({
         label = "Drain Overlay",
         tooltip = "How each icon shows the remaining time: the slim Drain Bar, a Radial Sweep over the icon, both at once, or Timer Text. Sweep and Timer also apply to the small icons in the Bars layouts; unknown-duration afflictions keep their full bar.",
         options = {

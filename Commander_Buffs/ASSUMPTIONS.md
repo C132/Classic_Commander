@@ -77,4 +77,42 @@ lands on the face rather than the frame's center.
 **A12. The block's anchor offsets suit the default player frame art.**
 Defaults are +8, -4 below the frame; they were chosen by reading the frame's
 geometry, not by measuring on screen. *Test:* look at it, then nudge Offset
-X/Y.
+X/Y. NOTE: icons went 21 -> 30 with the Blizzard style, so a row is now 280px
+wide rather than 192 — this is the assumption most likely to need a nudge.
+
+**A13. The Blizzard block style renders identically to the client's own aura
+frames.** The path, size and texcoords all came out of this client's
+`Blizzard_BuffFrame` source rather than measurement, so the individual
+numbers are not in doubt — what is untested is the WHOLE thing side by side.
+A missing texture draws nothing, so the worst failure mode is borderless
+debuffs, not an error. *Test:* turn Hide Default Auras off for a moment so
+both are on screen at once, and compare a debuff in each: border shape,
+overhang, icon crop, count position, timer color. Anything that differs is a
+constant to re-read from the source, not to eyeball.
+
+**A14. `NORMAL_FONT_COLOR` / `HIGHLIGHT_FONT_COLOR` exist as tables with
+`.r`.** Used for Blizzard's yellow-until-90s duration text. Guarded: a client
+without them gets plain white timers. *Test:* a long buff's timer should be
+yellow and turn white as it drops under 90 seconds.
+
+(Not an assumption, recorded so nobody re-derives it: `SecondsToTimeAbbrev`
+was read from this client's `Blizzard_SharedXML/TimeUtil.lua` and does return
+a plural-aware FORMAT plus its value, which is why the duration text goes
+through `SetFormattedText` and not `string.format`.)
+
+**A15. The loss-of-control spell ids are the ones this client actually
+applies.** The categories were built from TBC base ids; every rank shares its
+base id in aura data, so ranks are covered, but an id that is simply wrong
+means that aura silently never counts as control. The failure mode is a
+missing alert, not an error — which is the dangerous kind. *Test:* the
+editor's live trace now prints the category for every aura, so get hit with
+one of each (a stun, a fear, a silence, a root) in a battleground and confirm
+the trace names it. Anything unlabeled is a missing id.
+
+**A16. `GameFontNormalSmall` is legible as the sentinel's category label at
+its default 26px icon size.** The word sits ABOVE the icon and is wider than
+it — "DISARMED" at this font is roughly 55px against a 26px icon, so it
+overhangs on both sides by design. *Test:* trigger the test stack (`/cbuffs
+test`, which now seeds a Kidney Shot) and look at the portrait. If the word
+collides with anything, the Sentinel X/Y nudges or a smaller Icon Size are
+the dials; if it is unreadable, the label wants an OUTLINE font object.

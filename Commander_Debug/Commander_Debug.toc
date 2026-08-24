@@ -1,0 +1,14 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Debug
+## Author: Devin
+## Version: 1.0.0
+## Notes: Collects every Lua error raised since login — read out of BugGrabber when it is installed, captured by its own error hook when it is not — and hands the whole pile over as one markdown prompt, ready to paste into Claude.
+## IconTexture: Interface\Icons\INV_Misc_Wrench_01
+## SavedVariables: CommanderDebugDB
+## RequiredDeps: Commander_Events
+## OptionalDeps: !BugGrabber, BugSack, Commander_Console
+
+CommanderDebugDB.lua
+CommanderDebugCapture.lua
+CommanderDebug.lua

@@ -1,0 +1,24 @@
+<Bindings>
+    <!-- Auto-loaded from the addon folder. Deliberately NOT listed in the TOC:
+         doing so loads it twice and the second pass silently wins.
+
+         Note for anyone editing the prose in these comments: a double hyphen is
+         illegal inside an XML comment, and the parser rejects the WHOLE file on
+         one. That is not a cosmetic failure. It means zero bindings register,
+         and the only in-combat weapon swap path this addon has goes with them,
+         silently, with nothing but a LUA_WARNING at load to say so.
+
+         The weapon swap is a CLICK binding on a SecureActionButton rather than
+         a script binding, and that is the entire point of it. Out of combat the
+         cursor state machine handles every slot. In combat nothing scripted can
+         move a weapon: PickupInventoryItem is restricted under combat lockdown
+         and EquipItemByName degrades to a pickup. A secure button carrying
+         macrotext, fired by a hardware keypress, is the only channel that
+         works, so this binding is not a convenience. It is the sole in-combat
+         path. -->
+    <Binding name="CLICK CommanderArmoryEquipWeapons:LeftButton" header="COMMANDERARMORY" runOnUp="false"/>
+
+    <Binding name="COMMANDERARMORY_TOGGLE" runOnUp="false">
+        CommanderArmory_Toggle()
+    </Binding>
+</Bindings>

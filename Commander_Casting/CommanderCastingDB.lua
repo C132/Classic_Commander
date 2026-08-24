@@ -89,6 +89,58 @@ function CommanderCasting_SchoolOf(spellName)
 end
 
 -- ---------------------------------------------------------------------------
+-- Paladin seals. The swing ring's twist assist is only ever advice about a
+-- seal you are already running, so all it has to answer is "is one up". Every
+-- rank of a seal line shares one localized name, so rank 1 of each line
+-- resolves the whole line -- Commander_PartyFrames keeps the full per-rank
+-- canon because its seal strip has to name the exact rank; this does not.
+-- ---------------------------------------------------------------------------
+
+local SEAL_IDS = {
+    20375,      -- Seal of Command
+    31892,      -- Seal of Blood
+    31801,      -- Seal of Vengeance
+    21082,      -- Seal of the Crusader
+    21084,      -- Seal of Righteousness
+    20164,      -- Seal of Justice
+    20165,      -- Seal of Light
+    20166,      -- Seal of Wisdom
+}
+
+local sealNames
+
+-- Built once, and only once something actually resolved: an empty answer cached
+-- at login (before the client has the spell text) would never be retried, and
+-- the assist would silently believe you were never sealed.
+local function SealNames()
+    if sealNames then return sealNames end
+    local names, resolved = {}, 0
+    for i = 1, #SEAL_IDS do
+        local name = GetSpellInfo and GetSpellInfo(SEAL_IDS[i])
+        if name then
+            names[name] = true
+            resolved = resolved + 1
+        end
+    end
+    if resolved == 0 then return names end
+    sealNames = names
+    return names
+end
+
+-- The localized name of the seal the player is running, or nil. Names rather
+-- than spell IDs, so every rank of a line answers to the same lookup.
+function CommanderCasting_ActiveSeal()
+    if not (C_UnitAuras and C_UnitAuras.GetBuffDataByIndex) then return nil end
+    local names = SealNames()
+    for i = 1, 40 do
+        local aura = C_UnitAuras.GetBuffDataByIndex("player", i, "HELPFUL")
+        if not aura then break end
+        if aura.name and names[aura.name] then return aura.name end
+    end
+    return nil
+end
+
+-- ---------------------------------------------------------------------------
 -- Settings
 -- ---------------------------------------------------------------------------
 
@@ -130,14 +182,26 @@ local DefaultSettings = {
     PlayerRingTrackOpacity = 0.25,
     PlayerRingTint = false,             -- wash the portrait in the cast's color
     PlayerRingTintStrength = 0.25,
-    PlayerRingText = "NONE",            -- NONE | TIME | NAME
+    PlayerRingText = "NONE",            -- NONE | TIME | NAME | ICON
     PlayerRingTextPlace = "BELOW",      -- CENTER | ABOVE | BELOW
     PlayerRingTextSize = 12,
+    PlayerRingIconDeboss = "DEEP",      -- OFF | SOFT | DEEP | CARVED | WELL
     PlayerRingLatency = false,          -- tick where the next cast can be queued
     PlayerRingGCD = false,
     PlayerRingGCDColor = "STEEL",
     PlayerRingGCDPlacement = "INSIDE",  -- INSIDE the arc | OUTSIDE it
     PlayerRingGCDThickness = 3,
+    PlayerRingSwing = false,            -- when the weapon lands next
+    PlayerRingSwingHand = "MAIN",       -- MAIN | OFF
+    PlayerRingSwingColor = "BONE",
+    PlayerRingSwingPlacement = "OUTSIDE",
+    PlayerRingSwingThickness = 3,
+    PlayerRingSwingFill = true,         -- fills toward the blow landing
+    PlayerRingTwist = false,            -- seal twist assist on the swing ring
+    PlayerRingTwistLead = 0.4,          -- seconds of window before the swing
+    PlayerRingTwistColor = "VERDANT",
+    PlayerRingTwistSeal = true,         -- only while a seal is actually running
+    PlayerRingTwistSound = false,
     PlayerRingSuccessFlash = true,
     PlayerRingFailFlash = true,
     PlayerRingPushbackFlash = true,
@@ -162,6 +226,7 @@ local DefaultSettings = {
     TargetRingText = "TIME",            -- what is left to kick, on the face casting it
     TargetRingTextPlace = "BELOW",
     TargetRingTextSize = 12,
+    TargetRingIconDeboss = "DEEP",
     TargetRingSuccessFlash = false,
     TargetRingFailFlash = true,         -- their cast died: that is worth a flash
     TargetRingPushbackFlash = false,
@@ -341,6 +406,13 @@ local function RingsOn()
     return CommanderCastingDB.EnablePortraitRings
 end
 
+-- Size and position belong to the written label alone: the icon form is not
+-- text beside the ring, it is the portrait, and the ring's own size sets it
+local function TextLabel(Get)
+    local mode = Get("Text")
+    return mode == "TIME" or mode == "NAME"
+end
+
 -- Both rings offer the same controls, so they are built from one description
 -- keyed by the setting prefix -- there is no way for the two halves of the page
 -- to drift apart, and a new option lands on both at once.
@@ -486,21 +558,22 @@ local function AddRingOptions(panel, prefix, opts)
         isEnabled = function() return On() and Get("Tint") end,
     }, {
         label = "Text Size",
-        tooltip = "Font size of the label beside the ring.",
+        tooltip = "Font size of the label beside the ring. The spell icon takes the portrait's place instead of sitting beside the ring, so it is sized by Ring Size rather than by this.",
         min = 8, max = 20, step = 1,
         format = "%d pt",
         get = function() return Get("TextSize") end,
         set = Set("TextSize"),
-        isEnabled = function() return On() and Get("Text") ~= "NONE" end,
+        isEnabled = function() return On() and TextLabel(Get) end,
     })
 
     panel:AddDropdownPair({
         label = "Label",
-        tooltip = "What to write beside the ring: nothing, the seconds left on the cast, or the spell's name.",
+        tooltip = "How the ring names the spell. Time Left and Spell Name write it beside the ring; Spell Icon puts the icon in the portrait's place instead — rounded off and cut to the ring's inner edge, so it fills the frame without costing a pixel of new space.",
         options = {
             { text = "None", value = "NONE" },
             { text = "Time Left", value = "TIME" },
             { text = "Spell Name", value = "NAME" },
+            { text = "Spell Icon", value = "ICON" },
         },
         width = 130,
         get = function() return Get("Text") end,
@@ -508,7 +581,7 @@ local function AddRingOptions(panel, prefix, opts)
         isEnabled = On,
     }, {
         label = "Label Position",
-        tooltip = "Where the label sits. Center puts it over the portrait, which is the most readable and the most occluding.",
+        tooltip = "Where the written label sits. Center puts it over the portrait, which is the most readable and the most occluding.",
         options = {
             { text = "Below", value = "BELOW" },
             { text = "Above", value = "ABOVE" },
@@ -517,8 +590,24 @@ local function AddRingOptions(panel, prefix, opts)
         width = 130,
         get = function() return Get("TextPlace") end,
         set = Set("TextPlace"),
-        isEnabled = function() return On() and Get("Text") ~= "NONE" end,
+        isEnabled = function() return On() and TextLabel(Get) end,
     })
+
+    panel:AddDropdownPair({
+        label = "Deboss Icon",
+        tooltip = "Shade the spell icon's rim — dark where the light is blocked, bright where it catches — so it reads as cut into the frame rather than pasted over it. Soft is a shallow press; Deep drives the same light harder; Carved is a narrow hard bevel, like a stamp in metal; Well drops the light entirely and closes darkness in from every side. Only applies while the Label is set to Spell Icon.",
+        options = {
+            { text = "Off", value = "OFF" },
+            { text = "Soft", value = "SOFT" },
+            { text = "Deep", value = "DEEP" },
+            { text = "Carved", value = "CARVED" },
+            { text = "Well", value = "WELL" },
+        },
+        width = 130,
+        get = function() return Get("IconDeboss") end,
+        set = Set("IconDeboss"),
+        isEnabled = function() return On() and Get("Text") == "ICON" end,
+    }, nil)
 
     panel:AddCheckboxPair({
         label = "Flash on Success",
@@ -548,7 +637,7 @@ local function CreateRingsPanel()
         key = "CastingRings",
         title = "Casting Rings",
         addonName = "Commander_Casting",
-        description = "Puts the cast where the cast belongs: an arc sweeping around the trim of the portrait, on your own frame and on your target's. Your eyes stay on the unit instead of dropping to a bar at the bottom of the screen — and since the arc rides the portrait's rim, it costs no new screen real estate. Color by spell school, fill or unwind, label it with the seconds left, and switch the original Blizzard cast bars off entirely at the bottom of this page.",
+        description = "Puts the cast where the cast belongs: an arc sweeping around the trim of the portrait, on your own frame and on your target's. Your eyes stay on the unit instead of dropping to a bar at the bottom of the screen — and since the arc rides the portrait's rim, it costs no new screen real estate. Color by spell school, fill or unwind, label it with the seconds left or the spell's own icon, and switch the original Blizzard cast bars off entirely at the bottom of this page. Your own portrait carries two more rings on their own radii: the global cooldown, and a melee swing timer with a seal twist window marked on it.",
         event = COMMANDER_CASTING_EVENTS.UPDATE,
         slash = { "/cring", "/crings" },
         slashHandlers = {
@@ -639,6 +728,118 @@ local function CreateRingsPanel()
         get = function() return CommanderCastingDB.PlayerRingGCDThickness end,
         set = function(value) CommanderCastingDB.PlayerRingGCDThickness = value end,
         isEnabled = GCDOn,
+    })
+
+    panel:AddSection("Swing Timer", "A third ring answering the melee question neither of the others does: not what you are casting and not whether you may act, but when your weapon lands next. No API on this client reports it, so it is read from your own swings in the combat log — exact from your first swing of a fight onward, and blank before it. Haste landing mid-swing bends the ring with it.")
+
+    local function SwingOn()
+        return RingsOn() and CommanderCastingDB.PlayerRingEnabled and CommanderCastingDB.PlayerRingSwing
+    end
+
+    panel:AddCheckboxPair({
+        label = "Show Swing Ring",
+        tooltip = "Draw your melee swing timer as its own ring around your portrait, on its own radius so it never reads as the cast.",
+        get = function() return CommanderCastingDB.PlayerRingSwing end,
+        set = function(value) CommanderCastingDB.PlayerRingSwing = value end,
+        isEnabled = function() return RingsOn() and CommanderCastingDB.PlayerRingEnabled end,
+    }, {
+        label = "Swing Fills Clockwise",
+        tooltip = "On, the ring fills toward the blow landing, so a full circle is the moment of impact. Off, it unwinds like a cooldown.",
+        get = function() return CommanderCastingDB.PlayerRingSwingFill end,
+        set = function(value) CommanderCastingDB.PlayerRingSwingFill = value end,
+        isEnabled = SwingOn,
+    })
+
+    panel:AddDropdownPair({
+        label = "Swing Hand",
+        tooltip = "Which weapon the ring counts. One arc can only carry one clock; with a weapon in each hand, pick the one you are timing against.",
+        options = {
+            { text = "Main Hand", value = "MAIN" },
+            { text = "Off Hand", value = "OFF" },
+        },
+        width = 130,
+        get = function() return CommanderCastingDB.PlayerRingSwingHand end,
+        set = function(value) CommanderCastingDB.PlayerRingSwingHand = value end,
+        isEnabled = SwingOn,
+    }, {
+        label = "Swing Ring Place",
+        tooltip = "Inside tucks the swing ring within the cast arc; Outside puts it beyond. Two extras on the same side stack outward rather than landing on top of one another.",
+        options = {
+            { text = "Inside", value = "INSIDE" },
+            { text = "Outside", value = "OUTSIDE" },
+        },
+        width = 130,
+        get = function() return CommanderCastingDB.PlayerRingSwingPlacement end,
+        set = function(value) CommanderCastingDB.PlayerRingSwingPlacement = value end,
+        isEnabled = SwingOn,
+    })
+
+    panel:AddDropdownPair({
+        label = "Swing Ring Color",
+        tooltip = "Color of the swing ring while it is simply counting. The twist window below recolors it on its own.",
+        options = COLOR_OPTIONS,
+        width = 130,
+        get = function() return CommanderCastingDB.PlayerRingSwingColor end,
+        set = function(value) CommanderCastingDB.PlayerRingSwingColor = value end,
+        isEnabled = SwingOn,
+    }, nil)
+
+    panel:AddSlider({
+        label = "Swing Ring Thickness",
+        tooltip = "Weight of the swing ring in pixels.",
+        min = 1, max = 10, step = 1,
+        format = "%d px",
+        get = function() return CommanderCastingDB.PlayerRingSwingThickness end,
+        set = function(value) CommanderCastingDB.PlayerRingSwingThickness = value end,
+        isEnabled = SwingOn,
+    })
+
+    panel:AddSection("Seal Twist Assist", "Twisting is a timing problem, and the swing ring is already the clock: a seal recast in the last fraction of a swing still rides the blow it was cast under, so the only thing missing is knowing where that fraction begins. A tick marks where the window opens and the ring changes color once you are inside it. Paladin work — with Only While Sealed on, it stays quiet for everyone else.")
+
+    local function TwistOn()
+        return SwingOn() and CommanderCastingDB.PlayerRingTwist
+    end
+
+    panel:AddCheckboxPair({
+        label = "Seal Twist Assist",
+        tooltip = "Mark the twist window on the swing ring and recolor the ring while you are inside it. Needs the swing ring above.",
+        get = function() return CommanderCastingDB.PlayerRingTwist end,
+        set = function(value) CommanderCastingDB.PlayerRingTwist = value end,
+        isEnabled = SwingOn,
+    }, {
+        label = "Only While Sealed",
+        tooltip = "Hold the window back until a seal is actually running, so it never marks a swing there is nothing to twist into.",
+        get = function() return CommanderCastingDB.PlayerRingTwistSeal end,
+        set = function(value) CommanderCastingDB.PlayerRingTwistSeal = value end,
+        isEnabled = TwistOn,
+    })
+
+    panel:AddCheckboxPair({
+        label = "Sound on the Window",
+        tooltip = "A soft click the moment the window opens, for twisting by ear instead of by eye.",
+        get = function() return CommanderCastingDB.PlayerRingTwistSound end,
+        set = function(value) CommanderCastingDB.PlayerRingTwistSound = value end,
+        isEnabled = TwistOn,
+    }, nil)
+
+    panel:AddDropdownPair({
+        label = "Twist Window Color",
+        tooltip = "What the swing ring turns while the window is open, and the color of the tick that marks where it opens. Pick something the swing color never gets close to.",
+        options = COLOR_OPTIONS,
+        width = 130,
+        get = function() return CommanderCastingDB.PlayerRingTwistColor end,
+        set = function(value) CommanderCastingDB.PlayerRingTwistColor = value end,
+        isEnabled = TwistOn,
+    }, nil)
+
+    panel:AddSlider({
+        label = "Twist Window",
+        tooltip = "How long before the swing lands the window opens. Around four tenths of a second is the usual reading; widen it if your latency is high, narrow it if the window feels like it is lying to you.",
+        min = 0.1, max = 1, step = 0.05,
+        format = "%.2f s",
+        get = function() return CommanderCastingDB.PlayerRingTwistLead end,
+        set = function(value) CommanderCastingDB.PlayerRingTwistLead = value end,
+        isEnabled = TwistOn,
     })
 
     panel:AddSection("Target Ring", "The arc around your target's portrait. This is the one that matters for interrupts: the cast you need to kick, drawn on the face casting it.")

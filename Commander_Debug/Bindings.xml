@@ -1,0 +1,8 @@
+<Bindings>
+    <Binding name="COMMANDERDEBUG_TOGGLE" header="COMMANDERDEBUG" runOnUp="false">
+        CommanderDebug_Toggle()
+    </Binding>
+    <Binding name="COMMANDERDEBUG_COPY" runOnUp="false">
+        CommanderDebug_Copy()
+    </Binding>
+</Bindings>

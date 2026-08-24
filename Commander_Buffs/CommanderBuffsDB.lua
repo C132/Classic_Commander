@@ -11,12 +11,41 @@ COMMANDER_BUFFS_EVENTS = {
 -- migration clears them instead of leaving dead weight in the file forever.
 -- ---------------------------------------------------------------------------
 
-local DB_VERSION = 2
+local DB_VERSION = 3
+
+-- v2 -> v3 carries two changes of intent, and both must respect what the
+-- player has already decided. A value that still holds its OLD DEFAULT was
+-- never chosen, so moving it is a correction; a value that differs was
+-- chosen, so it is left alone. Same test for the rule list, which is prized
+-- state (D9): it is replaced only when it is still verbatim what we shipped,
+-- and otherwise kept with a one-line note pointing at the editor's own
+-- Restore Default Rules button.
+local V3_RETUNED = {
+    BuffSize = { 21, 30 },   -- Blizzard's own aura icon is 30
+    DebuffSize = { 21, 30 },
+    IconGap = { 3, 5 },      -- Blizzard's own iconPadding
+    MinScore = { 40, 90 },   -- the sentinel's quiet floor: control + emergencies
+}
+
+local rulesKeptOnUpgrade = false
+
 local MIGRATIONS = {
     [1] = function(db)
         for _, key in ipairs({ "BuffScale", "LockBuffFrames", "BuffFramePoint",
             "BuffFrameX", "BuffFrameY", "ShowAnchorInCombat", "BuffsPerRow" }) do
             db[key] = nil
+        end
+    end,
+    [2] = function(db)
+        for key, pair in pairs(V3_RETUNED) do
+            if db[key] == nil or db[key] == pair[1] then db[key] = pair[2] end
+        end
+        local E = CommanderBuffsEngine
+        if type(db.Rules) ~= "table" or #db.Rules == 0
+            or E.IsUntouchedRuleSet(db.Rules) then
+            db.Rules = E.DefaultRules()
+        else
+            rulesKeptOnUpgrade = true
         end
     end,
 }
@@ -48,17 +77,20 @@ local DefaultSettings = {
     HideDefaultAuras = true,
     HideTempEnchants = false,
     BuffsOnTopMode = "MIRROR_TARGET",  -- MIRROR_TARGET | ON | OFF
+    BlockStyle = "BLIZZARD",           -- BLIZZARD | COMMANDER
+    IconRecess = "SOFT",               -- shared suite shading: OFF|SOFT|DEEP|CARVED
     Placement = "BELOW",               -- BELOW | ABOVE the player frame
     GrowLeft = false,
-    IconsPerRow = 8,
-    BuffSize = 21,                     -- the client's own LARGE_AURA_SIZE
-    DebuffSize = 21,
-    IconGap = 3,                       -- the client's own AURA_OFFSET_Y
+    IconsPerRow = 8,                   -- the client's own iconStride
+    BuffSize = 30,                     -- the client's own aura icon size
+    DebuffSize = 30,
+    IconGap = 5,                       -- the client's own iconPadding
     OffsetX = 8,
     OffsetY = -4,
     ShowTimers = true,
     IconSweep = false,
     MineRim = true,
+    MineScale = 1,                     -- 1 = off; buffs I cast drawn larger
     RoundBlockIcons = false,
     BlockOpacity = 1,
     BlockFilter = "ALL",               -- ALL | RULES | SCORED
@@ -78,7 +110,9 @@ local DefaultSettings = {
     PortraitStacks = true,
     PortraitTimer = false,
     PulseUnder = 3,
-    MinScore = 40,
+    LocLabel = true,                   -- name the control category in a word
+    LocSolo = true,                    -- control takes the sentinel alone
+    MinScore = 90,
     FallbackMode = "IGNORE",           -- IGNORE | DEBUFFS | ALL
 
     -- Editor window chrome
@@ -157,7 +191,7 @@ local function CreatePanel()
         key = "Buffs",
         title = "Buffs",
         addonName = "Commander_Buffs",
-        description = "Your buffs and debuffs move to your unit frame and wear the TARGET frame's layout — the same tight grid, the same dispel-school rims — with Blizzard's own buff frame hidden. On the portrait, a priority engine picks the one aura that matters this second and draws it with a radial duration ring. Open the editor to shape that policy: /cbuffs.",
+        description = "Your buffs and debuffs move to your unit frame wearing Blizzard's own aura art, with the client's buff frame hidden. On the portrait, a loss-of-control light: stunned, silenced, feared, rooted — named in a word, in that category's color, the instant it lands. Everything quieter stays in the block. Open the editor to shape the policy: /cbuffs.",
         event = COMMANDER_BUFFS_EVENTS.UPDATE,
         slash = { "/cbuffs", "/cbuff" },
         slashHandlers = {
@@ -193,7 +227,7 @@ local function CreatePanel()
         },
         {
             label = "Test Stack",
-            tooltip = "Seed a fake aura stack for 15 seconds — a mix of buffs, debuffs of every school, a stacking debuff, and one about to expire — so you can see the block and the sentinel without a fight. Same as /cbuffs test.",
+            tooltip = "Seed a fake aura stack for 15 seconds — a mix of buffs, debuffs of every school, a stacking debuff, one about to expire, and a real loss-of-control aura so the sentinel's category label is visible — so you can see the block and the sentinel without a fight. Same as /cbuffs test.",
             onClick = function()
                 if CommanderBuffs_Test then CommanderBuffs_Test() end
             end,
@@ -201,7 +235,7 @@ local function CreatePanel()
     })
 
     panel:AddSection("The Block",
-        "Player auras drawn beside the player unit frame in the target frame's layout language: a wrapping grid of small icons, debuffs rimmed by dispel school.")
+        "Your auras drawn beside the player unit frame, wearing Blizzard's own aura art by default — same icon size, same debuff overlay, same fonts — so the block reads as part of the client rather than as an addon.")
 
     panel:AddCheckboxPair({
         label = "Show Block",
@@ -262,6 +296,27 @@ local function CreatePanel()
         end)
     end
 
+    panel:AddDropdown({
+        label = "Icon Style",
+        tooltip = "Blizzard draws the block in the client's own aura language, measured from its UI source rather than approximated: 30px icons with NO art trimmed off the edges, the real UI-Debuff-Overlays border on debuffs, no border at all on buffs, the count inside the icon's corner, and the duration underneath in yellow that turns white under 90 seconds. Commander is the suite's own look — trimmed icons in a tight grid, every icon rimmed. Both keep the options below.",
+        options = {
+            { text = "Blizzard", value = "BLIZZARD" },
+            { text = "Commander", value = "COMMANDER" },
+        },
+        get = function() return CommanderBuffsDB.BlockStyle end,
+        set = function(value) CommanderBuffsDB.BlockStyle = value end,
+        isEnabled = BlockOn,
+    })
+
+    panel:AddDropdown({
+        label = "Icon Recess",
+        tooltip = "Shading laid over every aura icon so it reads as set into the frame rather than pasted on it — the suite's shared art, so an aura here and an icon on any other Commander board are cut the same way. Soft is a shallow press, which is what a 30px icon wants; Deep and Carved drive it harder. Ignored while the block is in Blizzard style, which exists to look like the client's own auras. Round icons get the round cut automatically.",
+        options = Commander.ICON_STYLES,
+        get = function() return CommanderBuffsDB.IconRecess end,
+        set = function(value) CommanderBuffsDB.IconRecess = value end,
+        isEnabled = BlockOn,
+    })
+
     panel:AddDropdownPair({
         label = "Placement",
         tooltip = "Whether the block hangs below the player frame or sits above it. Rows always grow away from the frame.",
@@ -293,7 +348,7 @@ local function CreatePanel()
         isEnabled = BlockOn,
     }, {
         label = "My Buffs Rimmed",
-        tooltip = "Give buffs you cast a faint gold rim, so your own upkeep is separable from what the raid put on you at a glance. Debuffs always wear their dispel-school rim instead.",
+        tooltip = "Give buffs you cast a gold border, so your own upkeep is separable from what the raid put on you at a glance. This is the one deliberate departure from Blizzard, which borders no buff at all — in Blizzard style the gold uses the client's own overlay art, so it still looks native. Debuffs always wear their dispel-school border instead.",
         get = function() return CommanderBuffsDB.MineRim end,
         set = function(value) CommanderBuffsDB.MineRim = value end,
         isEnabled = BlockOn,
@@ -339,17 +394,27 @@ local function CreatePanel()
 
     panel:AddSliderPair({
         label = "Buff Size",
-        tooltip = "Buff icon size in pixels. The target frame's own large aura size is 21.",
+        tooltip = "Buff icon size in pixels. Blizzard's own aura icon is 30, and the debuff border art is drawn to match — moving far off it is the fastest way to stop looking native.",
         min = 12, max = 40, step = 1, format = "%d",
         get = function() return CommanderBuffsDB.BuffSize end,
         set = function(value) CommanderBuffsDB.BuffSize = value end,
         isEnabled = BlockOn,
     }, {
         label = "Debuff Size",
-        tooltip = "Debuff icon size in pixels. Raising it above the buff size is the cheapest way to make incoming harm louder than upkeep.",
+        tooltip = "Debuff icon size in pixels. Blizzard's is 30, the same as a buff. Raising it above the buff size is the cheapest way to make incoming harm louder than upkeep.",
         min = 12, max = 40, step = 1, format = "%d",
         get = function() return CommanderBuffsDB.DebuffSize end,
         set = function(value) CommanderBuffsDB.DebuffSize = value end,
+        isEnabled = BlockOn,
+    })
+
+    panel:AddSlider({
+        label = "My Buffs Larger",
+        tooltip = "Draw buffs you cast at this percentage of the normal buff size, so your own upkeep is the thing your eye lands on first. 100% is off. Buffs only — a debuff is not upkeep, so debuffs keep their own size, the same scoping My Buffs Rimmed uses. The grid stays a grid: the row's cell grows to fit the largest icon and every icon sits on the same baseline, so enlarging costs a little width rather than making icons overlap.",
+        min = 1, max = 2, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderBuffsDB.MineScale end,
+        set = function(value) CommanderBuffsDB.MineScale = value end,
         isEnabled = BlockOn,
     })
 
@@ -380,7 +445,7 @@ local function CreatePanel()
     })
 
     panel:AddSection("The Portrait Sentinel",
-        "One icon on your portrait showing the most interesting aura in your stack, with a radial duration ring. What counts as interesting is the rule editor's job; these options are only how it looks.")
+        "A loss-of-control light on your portrait. Stuns, incapacitates, fears, charms, silences, roots and disarms take it immediately and name themselves in a word; when nothing is holding you, boss debuffs and your own major cooldowns can use it. Everything else stays in the block. What qualifies is the rule editor's job — Minimum Score below is the one dial for how much else gets through.")
 
     panel:AddCheckboxPair({
         label = "Show Sentinel",
@@ -477,6 +542,20 @@ local function CreatePanel()
         isEnabled = PortraitOn,
     })
 
+    panel:AddCheckboxPair({
+        label = "Name the Control",
+        tooltip = "Write the category above the icon — STUNNED, INCAP, FEARED, CHARMED, SILENCED, ROOTED, DISARMED — in that category's color. An icon alone cannot tell you which control you are under; Polymorph and Arcane Intellect are both a square of art, and the sentinel is meant to be read without being looked at.",
+        get = function() return CommanderBuffsDB.LocLabel end,
+        set = function(value) CommanderBuffsDB.LocLabel = value end,
+        isEnabled = PortraitOn,
+    }, {
+        label = "Control Takes Over",
+        tooltip = "While you are under a loss-of-control effect, the extra slots stand down so nothing shares the portrait with it. With Slots set to 1 this changes nothing; above 1 it is the difference between a warning and a row of icons.",
+        get = function() return CommanderBuffsDB.LocSolo end,
+        set = function(value) CommanderBuffsDB.LocSolo = value end,
+        isEnabled = PortraitOn,
+    })
+
     panel:AddSliderPair({
         label = "Pulse Under",
         tooltip = "Pulse the sentinel when the aura has this many seconds left. Zero turns the pulse off.",
@@ -486,8 +565,8 @@ local function CreatePanel()
         isEnabled = PortraitOn,
     }, {
         label = "Minimum Score",
-        tooltip = "How interesting an aura must be to occupy your portrait. This one number is the quiet/chatty dial: raise it and only emergencies show, drop it to zero and the sentinel is never empty. The editor's live trace shows what each of your auras currently scores.",
-        min = 0, max = 120, step = 5, format = "%d",
+        tooltip = "How interesting an aura must be to occupy your portrait — the one quiet/chatty dial. Loss of control ignores it entirely (those rules are ALERT, not SHOW), so no setting here can hide being stunned. The shipped rules score in bands: boss debuffs 95, your own defensives 92, dispellable debuffs 80, any other debuff 55, your short buffs 45, everything else 20. At the default 90 only the emergencies get through; drop it to 80 to invite dispellables back, to 50 for every debuff, to 0 for a sentinel that is never empty. The editor's live trace shows what each of your auras currently scores.",
+        min = 0, max = 130, step = 5, format = "%d",
         get = function() return CommanderBuffsDB.MinScore end,
         set = function(value) CommanderBuffsDB.MinScore = value end,
         isEnabled = PortraitOn,
@@ -562,5 +641,12 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         frame:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         CreatePanel()
+        -- Said once, at a point where the chat frame certainly exists: the
+        -- upgrade brought a new shipped policy built around loss of control,
+        -- and this player's own rules were kept instead. Tell them where the
+        -- new one lives rather than silently doing nothing.
+        if rulesKeptOnUpgrade then
+            print("|cff66ccffCommander Buffs|r: the shipped priority rules were rebuilt around loss of control, but yours are hand-edited so they were kept. /cbuffs -> Restore Default Rules takes the new set.")
+        end
     end
 end)

@@ -1,7 +1,13 @@
 -- Commander Buffs: the render layer. Scans the player's aura stack, draws it
--- next to the player unit frame in the TARGET frame's layout language, and
--- puts the single most interesting aura (per CommanderBuffsEngine) on the
--- portrait with a radial duration ring.
+-- next to the player unit frame in BLIZZARD'S OWN aura language (sizes, art
+-- and fonts read out of this client's UI source, see the constants below),
+-- and puts a loss-of-control light on the portrait — the category named in a
+-- word, tinted by what it took from you, with a radial duration ring.
+--
+-- The two halves answer different questions. The block is "what is on me",
+-- and its job is to look like it came with the game. The sentinel is "what
+-- has hold of me right now", and its job is to be readable without being
+-- looked at — which is why it stays empty most of the time.
 --
 -- Everything here is INSECURE by design. A frame built from a secure
 -- template is protected: it cannot be moved, shown, or re-attributed in
@@ -24,6 +30,37 @@ local CIRCLE_MASK = TEXTURES .. "CircleMask.png"
 local CIRCLE_RIM = TEXTURES .. "CircleRim.png"
 
 local MAX_BUFFS, MAX_DEBUFFS = 40, 40
+
+-- ---------------------------------------------------------------------------
+-- Blizzard's own aura-button geometry, read out of this client's UI source
+-- (Gethe/wow-ui-source, branch classic_anniversary:
+-- Blizzard_BuffFrame/BuffFrameTemplates.xml and Classic/BuffFrame.lua) rather
+-- than eyeballed. These are what "looks native" actually means, and every one
+-- of them is a visible tell when it is wrong:
+--
+--   icon        30x30, NO texcoord trim — Blizzard never trims aura art, so
+--               trimming is the single loudest sign a block is an addon's
+--   cell        30 wide x 40 tall: the extra 10 is the duration text's lane
+--   padding     5 between icons, 8 icons per row (iconStride/iconPadding)
+--   debuff art  UI-Debuff-Overlays at 33x32 CENTERED on the icon (it
+--               deliberately overhangs), tinted by dispel school
+--   buff art    none at all — a bordered buff is not a Blizzard buff
+--   count       NumberFontNormal, bottom-right INSIDE the icon at (-2, 2)
+--   duration    GameFontNormalSmall directly under the icon, NORMAL (yellow)
+--               until BUFF_DURATION_WARNING_TIME, HIGHLIGHT (white) below it
+-- ---------------------------------------------------------------------------
+
+local BLIZZ_OVERLAY = "Interface\\Buttons\\UI-Debuff-Overlays"
+local BLIZZ_OVERLAY_COORDS = { 0.296875, 0.5703125, 0, 0.515625 }
+local BLIZZ_ICON = 30            -- the size the ratios below were measured at
+local BLIZZ_BORDER_W = 33
+local BLIZZ_BORDER_H = 32
+local BLIZZ_DURATION_LANE = 10   -- cell height 40 - icon height 30
+local BLIZZ_WARNING_TIME = 90    -- BUFF_DURATION_WARNING_TIME
+
+local function IsBlizzardStyle()
+    return not db or db.BlockStyle ~= "COMMANDER"
+end
 
 -- ---------------------------------------------------------------------------
 -- Palette. Debuff rims speak the client's own dispel-school grammar so the
@@ -99,6 +136,17 @@ local function Now()
     return GetTime and GetTime() or 0
 end
 
+-- Does this result clear the portrait's quiet dial? The shared ranking is
+-- computed with no floor (see EvalOptions), so this is where Minimum Score
+-- is actually spent — and ALERT results never have to clear it, which is the
+-- whole contract of that action.
+local function SentinelPasses(entry)
+    if not entry then return false end
+    if entry.alert then return true end
+    return (entry.score or 0) >= ((db and db.MinScore) or 0)
+end
+CommanderBuffs_SentinelPasses = SentinelPasses
+
 -- ---------------------------------------------------------------------------
 -- Aura scanning
 -- ---------------------------------------------------------------------------
@@ -151,6 +199,11 @@ local function IngestTestStack()
         { name = "Arcane Intellect", icon = 135932, spellId = 10157, duration = 1800, left = 1400 },
         { name = "Blessing of Kings", icon = 135993, spellId = 20217, duration = 0, left = 0 },
         { name = "Renew", icon = 135953, spellId = 139, duration = 15, left = 9, mine = true },
+        -- Kidney Shot is here to be a STUN, not just a debuff: without a real
+        -- loss-of-control aura the test stack could never show the sentinel
+        -- doing its actual job.
+        { name = "Kidney Shot", icon = 132298, spellId = 408, duration = 6, left = 4,
+          harmful = true },
         { name = "Polymorph", icon = 136071, spellId = 118, duration = 10, left = 6,
           harmful = true, dispelName = "Magic" },
         { name = "Sunder Armor", icon = 132363, spellId = 7386, duration = 30, left = 22,
@@ -331,6 +384,7 @@ local function BuildIcon(parent, named)
 
     icon.timer = icon:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     icon.timer:SetPoint("TOP", icon, "BOTTOM", 0, -1)
+    icon.textStyle = nil
 
     icon:EnableMouse(true)
     icon:SetScript("OnEnter", function(self)
@@ -366,24 +420,148 @@ local function BuildIcon(parent, named)
     return icon
 end
 
+-- The count and duration fontstrings wear whichever client's typography the
+-- style asks for. Applied only on a change, because re-pointing a fontstring
+-- every repaint is churn the 10 Hz tick would pay for forever.
+local function ApplyTextStyle(icon, native)
+    local wanted = native and "BLIZZARD" or "COMMANDER"
+    if icon.textStyle == wanted then return end
+    icon.textStyle = wanted
+    -- The Commander style writes plain white over whatever the yellow/white
+    -- warning color left behind, so the cached warning state is now a lie:
+    -- clear it, or switching back would skip the SetTextColor that restores it.
+    icon.timerWarn = nil
+
+    icon.count:ClearAllPoints()
+    icon.timer:ClearAllPoints()
+    if native then
+        icon.count:SetFontObject("NumberFontNormal")
+        icon.count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -2, 2)
+        icon.timer:SetFontObject("GameFontNormalSmall")
+        icon.timer:SetPoint("TOP", icon, "BOTTOM", 0, 0)
+    else
+        icon.count:SetFontObject("NumberFontNormalSmall")
+        icon.count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, 0)
+        icon.timer:SetFontObject("GameFontHighlightSmall")
+        icon.timer:SetPoint("TOP", icon, "BOTTOM", 0, -1)
+        icon.timer:SetTextColor(1, 1, 1)
+    end
+end
+
+-- Blizzard's duration text. SecondsToTimeAbbrev returns a PLURAL-AWARE FORMAT
+-- plus its argument, so it has to go through SetFormattedText — the |4 escape
+-- is resolved by the client, not by string.format. The (format, value) pair
+-- is what gets cached rather than the rendered string, so the 10 Hz tick can
+-- still skip work without rendering the text just to compare it.
+local function SetDurationText(icon, remaining, native)
+    if native and SecondsToTimeAbbrev then
+        local ok, fmt, value = pcall(SecondsToTimeAbbrev, remaining)
+        if ok and fmt then
+            if icon.timerFmt ~= fmt or icon.timerValue ~= value then
+                icon.timerFmt, icon.timerValue, icon.timerText = fmt, value, nil
+                icon.timer:SetFormattedText(fmt, value)
+            end
+            local warn = remaining < BLIZZ_WARNING_TIME
+            if icon.timerWarn ~= warn then
+                icon.timerWarn = warn
+                local color = warn and _G.HIGHLIGHT_FONT_COLOR or _G.NORMAL_FONT_COLOR
+                if color and color.r then
+                    icon.timer:SetTextColor(color.r, color.g, color.b)
+                else
+                    -- No font colors on this client: the yellow/white split is
+                    -- decoration, so fall back to plain white rather than skip
+                    -- the number entirely.
+                    icon.timer:SetTextColor(1, 1, 1)
+                end
+            end
+            return
+        end
+    end
+    local text = E.FormatTime(remaining)
+    if icon.timerText ~= text then
+        icon.timerText = text
+        icon.timerFmt, icon.timerValue, icon.timerWarn = nil, nil, nil
+        icon.timer:SetText(text)
+    end
+end
+
+-- The border. Blizzard's debuff overlay deliberately overhangs its icon
+-- (33x32 art centered on 30x30), which is why it is sized by ratio here
+-- instead of anchored to the icon's edges — anchoring it would squash the
+-- art and lose exactly the silhouette we are matching. A buff gets no border
+-- at all in this style unless My Buffs Rimmed is asking for one, and then it
+-- wears the same overlay in gold rather than a second kind of frame.
+local function ApplyBorder(icon, size, native, show, r, g, b)
+    if not show then
+        icon.rim:Hide()
+        return
+    end
+    if native and not icon.round then
+        icon.rim:SetTexture(BLIZZ_OVERLAY)
+        icon.rim:SetTexCoord(BLIZZ_OVERLAY_COORDS[1], BLIZZ_OVERLAY_COORDS[2],
+            BLIZZ_OVERLAY_COORDS[3], BLIZZ_OVERLAY_COORDS[4])
+        icon.rim:ClearAllPoints()
+        icon.rim:SetPoint("CENTER", icon, "CENTER", 0, 0)
+        icon.rim:SetSize(size * BLIZZ_BORDER_W / BLIZZ_ICON,
+            size * BLIZZ_BORDER_H / BLIZZ_ICON)
+    else
+        icon.rim:SetTexture(icon.round and CIRCLE_RIM or RIM)
+        icon.rim:SetTexCoord(0, 1, 0, 1)
+        icon.rim:ClearAllPoints()
+        icon.rim:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
+        icon.rim:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
+    end
+    icon.rim:SetVertexColor(r, g, b, 1)
+    icon.rim:Show()
+end
+
 local function PaintIcon(icon, entry, size, opts)
+    local native = opts.native == true
     icon:SetSize(size, size)
     icon.texture:SetTexture(entry.icon)
+    -- The client's icon art carries a border in its outer 7%. Trimming it
+    -- makes a grid read as a grid, which is why the Commander style does —
+    -- but Blizzard never trims, so the native style must not either.
+    if native then
+        icon.texture:SetTexCoord(0, 1, 0, 1)
+    else
+        icon.texture:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    end
     icon.auraIndex = entry.index
     icon.auraFilter = entry.filter
     icon.auraName = entry.name
     icon.entry = entry
     icon.showTimer = opts.timers and true or false
+    icon.native = native
+    -- The sentinel owns its own typography and anchors (its timer hangs
+    -- lower, clear of the ring), so it opts out of the block's text style.
+    if not opts.keepText then ApplyTextStyle(icon, native) end
 
-    local r, g, b
+    local r, g, b, show = nil, nil, nil, true
     if entry.isHarmful then
         r, g, b = SchoolColor(E.SchoolOf(entry))
     elseif opts.mineRim and entry.mine then
         r, g, b = MINE_RIM[1], MINE_RIM[2], MINE_RIM[3]
+    elseif native then
+        show = false     -- a Blizzard buff has no border, full stop
     else
         r, g, b = PLAIN_RIM[1], PLAIN_RIM[2], PLAIN_RIM[3]
     end
-    icon.rim:SetVertexColor(r, g, b, 1)
+    if opts.borderColor then
+        r, g, b = opts.borderColor[1], opts.borderColor[2], opts.borderColor[3]
+        show = true
+    end
+    ApplyBorder(icon, size, native, show, r, g, b)
+
+    -- The suite's icon recess, drawn from Commander_Events' shared art so a
+    -- buff here and an icon on any other Commander board are cut the same way.
+    -- Off for native, which exists precisely to look like Blizzard's own
+    -- buffs, and shaped to whatever ApplyRound settled on -- a round icon gets
+    -- the round cut, and a client that refused the mask gets the square one.
+    if Commander.DebossIcon then
+        local style = (not native) and (db and db.IconRecess or "SOFT") or nil
+        Commander.DebossIcon(icon.texture, style, icon.round)
+    end
 
     local stacks = entry.stacks or 0
     if stacks > 1 then
@@ -402,11 +580,10 @@ local function PaintIcon(icon, entry, size, opts)
     end
 
     if opts.timers and remaining then
-        icon.timerText = E.FormatTime(remaining)
-        icon.timer:SetText(icon.timerText)
+        SetDurationText(icon, remaining, native)
         icon.timer:Show()
     else
-        icon.timerText = nil
+        icon.timerText, icon.timerFmt, icon.timerValue = nil, nil, nil
         icon.timer:Hide()
     end
 
@@ -419,9 +596,15 @@ end
 -- portrait pattern: guarded and pcall'd, so a client without mask textures
 -- simply keeps square icons instead of breaking the sentinel. The rim only
 -- goes circular if the mask actually took.
+--
+-- Only the MASK lives here. Which art the rim wears is ApplyBorder's job, and
+-- it reads slot.round — so a client that refuses the mask keeps square icons
+-- AND a square rim rather than a round rim around a square face.
 local function ApplyRound(slot, round)
-    if slot.round == round then return end
-    slot.round = round
+    -- Guarded on what was ASKED for, not on what was achieved: a client that
+    -- cannot mask would otherwise retry the pcall on every single repaint.
+    if slot.roundWanted == round then return end
+    slot.roundWanted = round
     if round then
         if not slot.mask and slot.CreateMaskTexture and slot.texture.AddMaskTexture then
             pcall(function()
@@ -433,13 +616,13 @@ local function ApplyRound(slot, round)
         end
         if slot.mask then
             pcall(slot.texture.AddMaskTexture, slot.texture, slot.mask)
-            slot.rim:SetTexture(CIRCLE_RIM)
         end
+        slot.round = slot.mask ~= nil
     else
         if slot.mask and slot.texture.RemoveMaskTexture then
             pcall(slot.texture.RemoveMaskTexture, slot.texture, slot.mask)
         end
-        slot.rim:SetTexture(RIM)
+        slot.round = false
     end
 end
 
@@ -498,10 +681,27 @@ local function BuildBlockList()
     end
 end
 
+-- Does this entry get the "mine" enlargement? Buffs only, deliberately: the
+-- point is separating YOUR upkeep from what the raid put on you, and a debuff
+-- you applied to yourself is not that. Same scoping as the gold rim.
+local function MineScaleFor(entry, opts)
+    local scale = opts.mineScale or 1
+    if scale <= 1 then return 1 end
+    if entry.isHarmful or not entry.mine then return 1 end
+    return scale
+end
+
 local function LayoutGroup(startSlot, list, count, size, top, opts)
     local perRow = opts.perRow
     local gap = opts.gap
-    local stride = size + gap + (opts.timers and 9 or 0)
+    -- The cell is sized for the LARGEST icon this group can hold, and every
+    -- icon is top-centered inside its own cell. Growing one icon inside a
+    -- fixed cell would just make it overlap its neighbours; growing the cell
+    -- keeps a grid a grid, at the cost of a little air around the small ones.
+    local cell = size * math.max(1, opts.mineScale or 1)
+    -- Blizzard's cell is 30 wide by 40 tall: the extra 10 is the lane the
+    -- duration text lives in, and rows that do not reserve it overlap.
+    local stride = cell + gap + (opts.timers and BLIZZ_DURATION_LANE or 0)
     local slot = startSlot
     local rows = 0
     for i = 1, count do
@@ -511,14 +711,18 @@ local function LayoutGroup(startSlot, list, count, size, top, opts)
         rows = row + 1
         local icon = AcquireBlockIcon(slot)
         ApplyRound(icon, opts.round)
-        PaintIcon(icon, entry, size, opts)
+        PaintIcon(icon, entry, size * MineScaleFor(entry, opts), opts)
         icon:ClearAllPoints()
-        local x = col * (size + gap)
-        local y = top - row * stride
+        -- Anchored by its BOTTOM CENTER to the foot of the cell. Bottom-aligned
+        -- rather than top-aligned so every icon in a row sits on one baseline
+        -- and their duration texts stay on one line — an enlarged icon grows
+        -- UPWARD into the space the cell already reserved for it.
+        local x = col * (cell + gap) + cell / 2
+        local y = top - row * stride - cell
         if opts.growLeft then
-            icon:SetPoint("TOPRIGHT", block, "TOPRIGHT", -x, y)
+            icon:SetPoint("BOTTOM", block, "TOPRIGHT", -x, y)
         else
-            icon:SetPoint("TOPLEFT", block, "TOPLEFT", x, y)
+            icon:SetPoint("BOTTOM", block, "TOPLEFT", x, y)
         end
         slot = slot + 1
     end
@@ -550,12 +754,14 @@ local function LayoutBlock()
 
     local opts = {
         perRow = db.IconsPerRow or 8,
-        gap = db.IconGap or 3,
+        gap = db.IconGap or 5,
         timers = db.ShowTimers,
         sweep = db.IconSweep,
         mineRim = db.MineRim,
         growLeft = db.GrowLeft,
         round = db.RoundBlockIcons == true,
+        native = IsBlizzardStyle(),
+        mineScale = db.MineScale or 1,
     }
 
     local slot, top = 1, 0
@@ -572,18 +778,21 @@ local function LayoutBlock()
     end
 
     if buffsFirst then
-        drawGroup(buffs, buffN, db.BuffSize or 21)
-        drawGroup(debuffs, debuffN, db.DebuffSize or 21)
+        drawGroup(buffs, buffN, db.BuffSize or BLIZZ_ICON)
+        drawGroup(debuffs, debuffN, db.DebuffSize or BLIZZ_ICON)
     else
-        drawGroup(debuffs, debuffN, db.DebuffSize or 21)
-        drawGroup(buffs, buffN, db.BuffSize or 21)
+        drawGroup(debuffs, debuffN, db.DebuffSize or BLIZZ_ICON)
+        drawGroup(buffs, buffN, db.BuffSize or BLIZZ_ICON)
     end
 
     for i = slot, #blockIcons do
         if blockIcons[i] then blockIcons[i]:Hide() end
     end
 
-    local widest = math.max(db.BuffSize or 21, db.DebuffSize or 21)
+    -- The enlargement widens the BUFF cell only, so the block's own width is
+    -- measured off whichever group actually ends up wider.
+    local widest = math.max((db.BuffSize or BLIZZ_ICON) * math.max(1, opts.mineScale),
+        db.DebuffSize or BLIZZ_ICON)
     local width = opts.perRow * (widest + opts.gap)
     block:SetSize(math.max(width, 1), math.max(usedHeight, 1))
     block:SetAlpha(db.BlockOpacity or 1)
@@ -615,11 +824,7 @@ local function TickBlockTimers()
         if icon.showTimer and icon.entry then
             local remaining = E.Remaining(icon.entry, now)
             if remaining then
-                local text = E.FormatTime(remaining)
-                if icon.timerText ~= text then
-                    icon.timerText = text
-                    icon.timer:SetText(text)
-                end
+                SetDurationText(icon, remaining, icon.native)
             end
         end
     end
@@ -655,6 +860,15 @@ local function AcquireSlot(index)
     if slot.ring.SetReverse then slot.ring:SetReverse(true) end
     slot.timer:ClearAllPoints()
     slot.timer:SetPoint("TOP", slot, "BOTTOM", 0, -2)
+
+    -- The word. An icon alone cannot tell you WHICH control you are under —
+    -- Polymorph and Arcane Intellect are both a square of art, and the whole
+    -- point of the sentinel is being read without being looked at. The label
+    -- goes ABOVE the icon so it never collides with the remaining-time text.
+    slot.loc = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    slot.loc:SetPoint("BOTTOM", slot, "TOP", 0, 3)
+    slot.loc:Hide()
+
     sentinelSlots[index] = slot
     return slot
 end
@@ -691,19 +905,42 @@ local function UpdateSentinel()
     local now = Now()
     local shown = 0
 
+    -- What the portrait is actually allowed to show, in order. The ranking
+    -- itself carries everything (the block and the trace read it); Minimum
+    -- Score is spent here.
+    local shortlist = {}
+    for i = 1, #ranked do
+        if SentinelPasses(ranked[i]) then shortlist[#shortlist + 1] = ranked[i] end
+    end
+
+    -- Loss of control takes the whole sentinel. When something is holding you
+    -- down, the runners-up are not context, they are competition — so the
+    -- trailing slots stand down until you have your character back.
+    if shortlist[1] and shortlist[1].loc and db.LocSolo ~= false then slots = 1 end
+
     for index = 1, slots do
-        local entry = ranked[index]
+        local entry = shortlist[index]
         local slot = AcquireSlot(index)
         ApplyRound(slot, db.RoundSentinel ~= false)
         if entry then
+            local locInfo = E.LocInfo(entry.loc)
+            -- Category beats rule color: RED means stunned on every character
+            -- you play, whatever the rule that claimed it happens to be named.
+            local color = locInfo and locInfo.color or ColorByKey(entry.color)
             PaintIcon(slot, entry.aura, size, {
                 timers = db.PortraitTimer,
                 sweep = false,          -- the ring below owns the radial duration
                 mineRim = true,
+                keepText = true,
+                borderColor = color,
             })
-            local color = ColorByKey(entry.color)
-            if color then
-                slot.rim:SetVertexColor(color[1], color[2], color[3], 1)
+
+            if locInfo and db.LocLabel ~= false then
+                slot.loc:SetText(locInfo.label)
+                slot.loc:SetTextColor(locInfo.color[1], locInfo.color[2], locInfo.color[3])
+                slot.loc:Show()
+            else
+                slot.loc:Hide()
             end
 
             local remaining = E.Remaining(entry.aura, now)
@@ -769,11 +1006,18 @@ end
 
 local evalOpts = {}
 
+-- The shared ranking is computed with NO floor. Minimum Score is the
+-- PORTRAIT's dial, and applying it here would take the rest of the module
+-- down with it: the block's Rules Applied mode is documented as borrowing
+-- only the policy's HIDE vetoes, and the editor's trace exists to show what
+-- was dropped and why. Both read this list. The floor is applied at the last
+-- moment, by SentinelPasses, where it belongs.
 local function EvalOptions()
     evalOpts.fallback = db and db.FallbackMode or "IGNORE"
-    evalOpts.minScore = db and db.MinScore or 0
+    evalOpts.minScore = 0
     return evalOpts
 end
+
 
 local function Rules()
     if not db then return {} end

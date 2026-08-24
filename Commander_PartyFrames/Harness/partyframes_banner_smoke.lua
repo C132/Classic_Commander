@@ -1397,6 +1397,129 @@ if CLASS == "PALADIN" then
     CHECK(row.buffs[1].icon.__desat == false,
         "Greater Blessing of Kings fills the Kings slot")
 
+    -- --- The combined blessing slot ----------------------------------------
+    -- The board's default shape: six mutually exclusive blessings collapse
+    -- into ONE slot per ally, carrying whatever that ally is assigned. Three
+    -- things have to hold, and none of them is testable on any other layer:
+    --
+    --   1. one slot, not six, whatever is tracked in the buff grid
+    --   2. the slot follows the ASSIGNMENT, and a different blessing of yours
+    --      reads as missing rather than as cover
+    --   3. another paladin's blessing is not yours and never counts
+    CHECK(CommanderPartyFramesDB.BlessCombine ~= false,
+        "the blessing family is combined out of the box")
+
+    local function BuffSlots()
+        local n = 0
+        for i = 1, 6 do
+            if row.buffs[i] and row.buffs[i].icon.__shown then n = n + 1 end
+        end
+        return n
+    end
+
+    -- Every blessing tracked, and the strip is still one slot wide: what the
+    -- buff grid tracks stops deciding the family's width entirely.
+    CommanderPartyFramesDB.BuffTrack = {}
+    for _, d in ipairs(book or {}) do CommanderPartyFramesDB.BuffTrack[d.dbKey] = true end
+    CommanderPartyFramesDB.BlessAssign = {}
+    CommanderPartyFramesDB.BlessClass = {}
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    playerBuffs = {
+        { name = "Blessing of Kings", expirationTime = now + 500, duration = 600,
+          icon = "Interface\\Icons\\Spell_20217", sourceUnit = "player" },
+    }
+    Refresh()
+    CHECK(BuffSlots() == 1, "six blessings collapse into one slot", BuffSlots())
+    CHECK(row.buffs[1].icon.__desat == false,
+        "the assigned blessing being up lights the slot")
+
+    -- Assign Wisdom (the mock paladin is a mana user, so it applies) and the
+    -- SAME Kings aura must now read as missing: covered is not the question,
+    -- covered with what you decided is.
+    CommanderPartyFramesDB.BlessClass = { PALADIN = "WISDOM" }
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    CHECK(BuffSlots() == 1, "reassigning does not change the strip's width", BuffSlots())
+    CHECK(row.buffs[1].icon.__desat == true,
+        "a different blessing of yours reads as MISSING against the assignment")
+
+    playerBuffs = {
+        { name = "Blessing of Wisdom", expirationTime = now + 500, duration = 600,
+          icon = "Interface\\Icons\\Spell_19742", sourceUnit = "player" },
+    }
+    Refresh()
+    CHECK(row.buffs[1].icon.__desat == false, "...and the assigned one lights it")
+
+    -- A per-player override beats the class default. The mock's player is
+    -- "Tester", which is the name the row resolves and the key an override is
+    -- stored under. Proved the only way it can be: the class still says
+    -- Wisdom, the aura on the target is KINGS, and the slot lights — which
+    -- can only happen if the override actually won.
+    playerBuffs = {
+        { name = "Blessing of Kings", expirationTime = now + 500, duration = 600,
+          icon = "Interface\\Icons\\Spell_20217", sourceUnit = "player" },
+    }
+    Refresh()
+    CHECK(row.buffs[1].icon.__desat == true,
+        "with the class on Wisdom, a Kings aura leaves the slot dark")
+    CommanderPartyFramesDB.BlessAssign = { Tester = "KINGS" }
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    CHECK(row.buffs[1].icon.__desat == false,
+        "a per-player override outranks the class default")
+
+    -- ...and NONE means the slot has nothing to say at all
+    CommanderPartyFramesDB.BlessAssign = { Tester = "NONE" }
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    CHECK(BuffSlots() == 0, "an ally assigned NONE spends no slot", BuffSlots())
+
+    -- --- Only mine ---------------------------------------------------------
+    -- The reason this rework exists. Two paladins may each hold a DIFFERENT
+    -- blessing on one target, so another paladin's Kings sitting in the aura
+    -- list says nothing about whether yours is on them.
+    CommanderPartyFramesDB.BlessAssign = {}
+    CommanderPartyFramesDB.BlessClass = { PALADIN = "KINGS" }
+    CommanderPartyFramesDB.BlessMineOnly = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    playerBuffs = {
+        { name = "Blessing of Kings", expirationTime = now + 500, duration = 600,
+          icon = "Interface\\Icons\\Spell_20217", sourceUnit = "party1" },
+    }
+    Refresh()
+    CHECK(row.buffs[1].icon.__desat == true,
+        "another paladin's Kings does NOT satisfy your slot")
+
+    playerBuffs[1].sourceUnit = "player"
+    Refresh()
+    CHECK(row.buffs[1].icon.__desat == false, "...and your own does")
+
+    -- With the strict read off it goes back to the registry's any-caster rule,
+    -- which is the behaviour someone who is the only paladin might want back
+    CommanderPartyFramesDB.BlessMineOnly = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    playerBuffs[1].sourceUnit = "party1"
+    Refresh()
+    CHECK(row.buffs[1].icon.__desat == false,
+        "Only Mine off lets another paladin's blessing count again")
+    CommanderPartyFramesDB.BlessMineOnly = true
+
+    -- --- Sanctuary is tracked once it is trained ---------------------------
+    -- It is a 31-point Protection talent, so `known` is the only gate that
+    -- should matter — it must not ALSO need finding in the buff grid.
+    CHECK(byKey.SANCTUARY and byKey.SANCTUARY.default == true,
+        "Sanctuary is tracked by default, gated only by having trained it")
+    local opts = CommanderPartyFrames_BlessOptions("PALADIN")
+    local sancOffered = false
+    for _, d in ipairs(opts) do if d.key == "SANCTUARY" then sancOffered = true end end
+    CHECK(sancOffered == false,
+        "an untrained Sanctuary is not offered as an assignment")
+
+    CommanderPartyFramesDB.BuffTrack = {}
+    CommanderPartyFramesDB.BlessAssign = {}
+    CommanderPartyFramesDB.BlessClass = {}
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
     -- --- The banner --------------------------------------------------------
     -- No aura and no seal: both segments present and both red, because a
     -- paladin running neither is always a mistake
@@ -2279,6 +2402,37 @@ local function CheckBuffGrid()
     CHECK(refresh and refresh.Refresh ~= nil, "the grid registered a refresher")
     if refresh then refresh:Refresh() end
 
+    -- The paladin's blessings share ONE assigned slot by default, which makes
+    -- their per-buff track switches decide nothing. A switch that silently
+    -- does nothing is the bug; a switch that says so and refuses the click is
+    -- the fix, so that is asserted here before the generic toggle machinery
+    -- below is exercised with the family expanded again.
+    local keepCombine = CommanderPartyFramesDB.BlessCombine
+    if CLASS == "PALADIN" and byKey.KINGS then
+        CommanderPartyFramesDB.BlessCombine = true
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        if refresh then refresh:Refresh() end
+        CHECK(byKey.KINGS.icon.__desat == true,
+            "a blessing cell is drawn inert while the family shares one slot")
+        CHECK(byKey.KINGS.slash.__shown ~= true,
+            "...as inert, NOT as untrained — the spellbook claim has to stay true")
+        local before = CommanderPartyFramesDB.BuffTrack
+            and CommanderPartyFramesDB.BuffTrack["BLESS:KINGS"]
+        Press(byKey.KINGS, "LeftButton")
+        local after = CommanderPartyFramesDB.BuffTrack
+            and CommanderPartyFramesDB.BuffTrack["BLESS:KINGS"]
+        CHECK(before == after, "...and refuses the click rather than writing a dead setting")
+        -- A Hand is not a blessing and never shared that slot, so its switch
+        -- has to keep working right beside them
+        CHECK(byKey.FREEDOM and byKey.FREEDOM.icon.__desat ~= nil,
+            "the Hands beside them are untouched by any of this")
+        -- Expanded, the same cell goes live again: the toggles below are the
+        -- generic grid machinery, and the paladin has to reach it too.
+        CommanderPartyFramesDB.BlessCombine = false
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        if refresh then refresh:Refresh() end
+    end
+
     -- The untrained case, which is the bug that started this: Dampen Magic is
     -- deliberately absent from the mage's mock spellbook.
     if CLASS == "MAGE" and byKey.DAMPEN then
@@ -2327,6 +2481,76 @@ local function CheckBuffGrid()
         Press(advisable, "RightButton")
         if refresh then refresh:Refresh() end
     end
+
+    CommanderPartyFramesDB.BlessCombine = keepCombine
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    if refresh then refresh:Refresh() end
+end
+
+-- The paladin settings page's assignment grids: a cell per class, a cell per
+-- known player. What matters is that a cell you have never touched still shows
+-- what the board is ACTUALLY going to do — an inherited answer drawn dimmed
+-- rather than an empty square — because the whole point of the grid is to be
+-- able to read your comp's blessings off one screen.
+local function CheckBlessAssign()
+    if CLASS ~= "PALADIN" then return end
+    local cells, roster = {}, {}
+    for _, f in ipairs(allFrames) do
+        if f.assignKey and f.field == "BlessClass" then cells[f.assignKey] = f end
+        if f.field == "BlessAssign" then roster[#roster + 1] = f end
+    end
+    CHECK(cells.MAGE ~= nil and cells.WARRIOR ~= nil,
+        "the settings page built a per-class assignment cell")
+    CHECK(cells.PET ~= nil, "...including one for pets, which have no class of their own")
+    CHECK(#roster > 0, "...and a per-player list beside it")
+    if not cells.MAGE then return end
+
+    local keepClass = CommanderPartyFramesDB.BlessClass
+    local keepAssign = CommanderPartyFramesDB.BlessAssign
+    CommanderPartyFramesDB.BlessClass = {}
+    CommanderPartyFramesDB.BlessAssign = {}
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    local panel = cells.MAGE.owner
+    if panel then panel:Refresh() end
+
+    -- Untouched: the built-in answer, drawn as inherited rather than as chosen
+    CHECK(cells.MAGE.showDef ~= nil,
+        "an untouched class cell still shows what the board will do")
+    CHECK(cells.MAGE.stored ~= true, "...marked as inherited, not as your choice")
+    CHECK(cells.MAGE.border.__shown ~= true, "...so it wears no chosen-border")
+
+    -- Wisdom is mana-only, so it must not even be offered on a warrior
+    local warOpts = CommanderPartyFrames_BlessOptions("WARRIOR")
+    local sawWisdom = false
+    for _, d in ipairs(warOpts) do if d.key == "WISDOM" then sawWisdom = true end end
+    CHECK(sawWisdom == false, "Wisdom is not offered as a warrior's blessing")
+    local mageOpts = CommanderPartyFrames_BlessOptions("MAGE")
+    local sawMight = false
+    for _, d in ipairs(mageOpts) do if d.key == "MIGHT" then sawMight = true end end
+    CHECK(sawMight == false, "...nor Might as a mage's")
+
+    -- Choosing marks the cell as yours; clearing hands it back to the default
+    CommanderPartyFrames_BlessSet("BlessClass", "MAGE", "SALVATION")
+    if panel then panel:Refresh() end
+    CHECK(cells.MAGE.stored == true and cells.MAGE.showDef
+        and cells.MAGE.showDef.key == "SALVATION",
+        "a chosen class blessing shows as chosen")
+    CHECK(cells.MAGE.border.__shown == true, "...and wears the border that says so")
+    CommanderPartyFrames_BlessSet("BlessClass", "MAGE", nil)
+    if panel then panel:Refresh() end
+    CHECK(cells.MAGE.stored ~= true, "clearing hands the cell back to the default")
+
+    -- NONE is a real answer, not an absence: the cell has to read as
+    -- "deliberately unblessed" rather than as "not loaded"
+    CommanderPartyFrames_BlessSet("BlessClass", "MAGE", CommanderPartyFrames_BlessNone())
+    if panel then panel:Refresh() end
+    CHECK(cells.MAGE.showDef == nil and cells.MAGE.empty.__shown == true,
+        "a class set to NONE draws the deliberate-blank mark")
+
+    CommanderPartyFramesDB.BlessClass = keepClass or {}
+    CommanderPartyFramesDB.BlessAssign = keepAssign or {}
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    if panel then panel:Refresh() end
 end
 
 local function CheckShadowRead()
@@ -2405,6 +2629,12 @@ local function CheckBuffTargets()
 
     -- Silence everything first: with the registry grown to five or six buffs
     -- a class, "whatever happens to default on" is not a countable baseline.
+    -- The paladin's blessings normally collapse into ONE assigned slot, which
+    -- is a different mechanism with its own block below; what is under test
+    -- here is the per-buff `targets` filter, so the family is expanded for the
+    -- duration and put back after.
+    local keepCombine = CommanderPartyFramesDB.BlessCombine
+    CommanderPartyFramesDB.BlessCombine = false
     local keepTrack = CommanderPartyFramesDB.BuffTrack
     CommanderPartyFramesDB.BuffTrack = {}
     for _, def in ipairs(book) do CommanderPartyFramesDB.BuffTrack[def.dbKey] = false end
@@ -2446,6 +2676,7 @@ local function CheckBuffTargets()
     end
 
     CommanderPartyFramesDB.BuffTrack = keepTrack or {}
+    CommanderPartyFramesDB.BlessCombine = keepCombine
     UnitPowerType = basePower
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Pump()
@@ -2595,6 +2826,7 @@ if CLASS ~= "MAGE" then
     CheckAbilityScope()
     CheckClickMatrix()
     CheckBuffGrid()
+    CheckBlessAssign()
     CheckShadowRead()
     CheckBuffTargets()
     CheckPets()
@@ -3488,6 +3720,7 @@ CheckBuffStrip()
 CheckAbilityScope()
 CheckClickMatrix()
 CheckBuffGrid()
+CheckBlessAssign()
 CheckShadowRead()
 CheckBuffTargets()
 CheckPets()

@@ -1,0 +1,15 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Dossier
+## Author: Devin
+## Version: 2.1.0
+## Notes: Intelligence on the enemy. A live diminishing-returns board — one row per player, one pip per category, each saying what your next crowd control will land at and when the window resets — plus a persistent file on every enemy you meet: class, guild, the spells you have watched them use, the specialisation that implies, and your record against them.
+## IconTexture: Interface\Icons\INV_Misc_Spyglass_02
+## SavedVariables: CommanderDossierDB, CommanderDossierFile
+## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Talents
+
+CommanderDossierData.lua
+CommanderDossierEngine.lua
+CommanderDossierDB.lua
+CommanderDossier.lua

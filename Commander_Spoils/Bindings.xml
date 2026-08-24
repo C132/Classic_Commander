@@ -1,0 +1,20 @@
+<Bindings>
+    <Binding name="COMMANDERSPOILS_TOGGLE" header="COMMANDERSPOILS" runOnUp="false">
+        CommanderSpoils_Toggle()
+    </Binding>
+    <Binding name="COMMANDERSPOILS_ROLL_NEED" runOnUp="false">
+        CommanderSpoils_RollNeed()
+    </Binding>
+    <Binding name="COMMANDERSPOILS_ROLL_GREED" runOnUp="false">
+        CommanderSpoils_RollGreed()
+    </Binding>
+    <Binding name="COMMANDERSPOILS_ROLL_PASS" runOnUp="false">
+        CommanderSpoils_RollPass()
+    </Binding>
+    <Binding name="COMMANDERSPOILS_ROLL_PASSALL" runOnUp="false">
+        CommanderSpoils_PassAll()
+    </Binding>
+    <Binding name="COMMANDERSPOILS_ROLL_CYCLE" runOnUp="false">
+        CommanderSpoils_CycleRoll()
+    </Binding>
+</Bindings>

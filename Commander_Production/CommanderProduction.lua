@@ -13,12 +13,32 @@ local ICON_GAP = 4
 local ICON_BAR_HEIGHT = 4
 local SWEEP_THROTTLE = 0.25
 local DRAW_THROTTLE = 0.1
--- Linger When Ready: finished cooldowns hold on the queue this long...
-local READY_HOLD = 60
--- ...then fade out over this long (90s total lingering)
-local READY_FADE = 30
+-- Linger When Ready: finished cooldowns hold on the queue for the
+-- configured Linger Time, then fade out over half that again
+local READY_FADE_SHARE = 0.5
 
 local active = {}     -- name -> { texture, start, duration }
+-- An interrupt lockout masquerades as a cooldown: a kicked school reports
+-- the lock as a cooldown on every spell it covers, so one Counterspell
+-- fills the queue with a dozen spells that are not recharging at all.
+-- Showing them while the school is down is honest — that is exactly what
+-- is unavailable — but they must not outlive it: a lock lifting is not a
+-- cooldown coming back, so these entries leave the queue the moment it
+-- ends, with no linger and no ready alert.
+local MAX_LOCKOUT = 10.5       -- the longest school lock in TBC; a longer
+                               -- cooldown is the spell's own, kick or not
+local LOCKOUT_TOLERANCE = 0.5  -- the lock starts with the kick that caused it
+local lockoutAt
+local playerGUID
+
+local function IsLockoutCooldown(start, duration)
+    if not lockoutAt then return false end
+    if GetTime() - lockoutAt > MAX_LOCKOUT then
+        lockoutAt = nil
+        return false
+    end
+    return duration <= MAX_LOCKOUT and math.abs(start - lockoutAt) <= LOCKOUT_TOLERANCE
+end
 local rowPool = {}
 local sinceSweep, sinceDraw = 0, 0
 local sweepQueued = false
@@ -32,6 +52,12 @@ root:Hide()
 
 local function BarWidth()
     return (CommanderProductionDB and CommanderProductionDB.BarWidth) or 110
+end
+
+-- Hold at full opacity, then the fade tail, from the Linger Time setting
+local function LingerWindow()
+    local hold = (CommanderProductionDB and CommanderProductionDB.LingerTime) or 10
+    return hold, hold * READY_FADE_SHARE
 end
 
 local function LayoutMode()
@@ -281,9 +307,13 @@ local function Sweep()
                             texture = GetSpellBookItemTexture(slot, BOOKTYPE),
                             start = start, duration = duration,
                             spellID = spellID,
+                            lockout = IsLockoutCooldown(start, duration),
                         }
                     else
                         entry.start, entry.duration = start, duration
+                        -- Re-tested every refresh: a real cast starts a
+                        -- cooldown of its own and clears the flag
+                        entry.lockout = IsLockoutCooldown(start, duration)
                         -- Recast while lingering: back to a pending bar
                         entry.readyAt = nil
                     end
@@ -297,12 +327,18 @@ local function Sweep()
     -- later, and either drop the bar or park it as READY
     for name, entry in pairs(active) do
         if scanned[name] and not stillOn[name] and not entry.readyAt then
-            if CommanderProductionDB.LingerReady then
-                entry.readyAt = now
-            else
+            if entry.lockout then
+                -- The school is back, which is not news the queue should
+                -- hold onto (nor announce a dozen times over)
                 active[name] = nil
+            else
+                if CommanderProductionDB.LingerReady then
+                    entry.readyAt = now
+                else
+                    active[name] = nil
+                end
+                ReadyAlert(name)
             end
-            ReadyAlert(name)
         end
     end
 end
@@ -341,17 +377,18 @@ end
 
 local function Draw()
     local now = GetTime()
+    local readyHold, readyFade = LingerWindow()
     wipe(queue)
     for name, entry in pairs(active) do
         if entry.readyAt then
-            -- Lingering READY entry: 60s hold, 30s fade, then gone
+            -- Lingering READY entry: hold, fade, then gone
             local lingering = now - entry.readyAt
-            if lingering > (READY_HOLD + READY_FADE) or not CommanderProductionDB.LingerReady then
+            if lingering > (readyHold + readyFade) or not CommanderProductionDB.LingerReady then
                 active[name] = nil
             else
                 local alpha = 1
-                if lingering > READY_HOLD then
-                    alpha = 1 - (lingering - READY_HOLD) / READY_FADE
+                if lingering > readyHold then
+                    alpha = 1 - (lingering - readyHold) / readyFade
                 end
                 local it = NextQueueItem()
                 it.name, it.entry, it.ready, it.alpha = name, entry, true, alpha
@@ -359,14 +396,18 @@ local function Draw()
         else
             local remaining = entry.start + entry.duration - now
             if remaining <= 0 then
-                if CommanderProductionDB.LingerReady then
+                if entry.lockout then
+                    -- Lockout over: drop it, no linger, no alert
+                    active[name] = nil
+                elseif CommanderProductionDB.LingerReady then
                     entry.readyAt = now
                     local it = NextQueueItem()
                     it.name, it.entry, it.ready, it.alpha = name, entry, true, 1
+                    ReadyAlert(name)
                 else
                     active[name] = nil
+                    ReadyAlert(name)
                 end
-                ReadyAlert(name)
             else
                 local it = NextQueueItem()
                 it.name, it.entry, it.remaining = name, entry, remaining
@@ -391,6 +432,10 @@ local function Draw()
         local item = queue[i]
         local overlay = CommanderProductionDB.CooldownOverlay or "BAR"
         row.icon:SetTexture(item.entry.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+        -- Suite icon recess (Commander_Events' shared art)
+        if Commander.DebossIcon then
+            Commander.DebossIcon(row.icon, CommanderProductionDB.IconRecess or "SOFT")
+        end
         -- In the icon strip the slim bar is itself an overlay choice; in
         -- the bar layouts the big bar is the row and always stays
         local showBar = not IsIconStrip(layout) or overlay == "BAR" or overlay == "BOTH"
@@ -526,6 +571,9 @@ end
 local watcher = CreateFrame("Frame")
 watcher:RegisterEvent("PLAYER_LOGIN")
 watcher:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+-- Only for the interrupt stamp above: the cooldowns a kick creates are
+-- indistinguishable from real ones without it
+watcher:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 
 local function Apply()
     if CommanderProductionDB and CommanderProductionDB.EnableProduction then
@@ -545,8 +593,16 @@ end
 
 watcher:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
+        playerGUID = UnitGUID("player")
         Commander.AddListener(COMMANDER_PRODUCTION_EVENTS.UPDATE, Apply)
         Apply()
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        if not (CommanderProductionDB and CommanderProductionDB.EnableProduction) then return end
+        local _, subevent, _, _, _, _, _, destGUID = CombatLogGetCurrentEventInfo()
+        if subevent == "SPELL_INTERRUPT"
+            and destGUID == (playerGUID or UnitGUID("player")) then
+            lockoutAt = GetTime()
+        end
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         if CommanderProductionDB and CommanderProductionDB.EnableProduction then
             -- IsVisible, not IsShown: with the UI hidden (Alt+Z, cinematic)

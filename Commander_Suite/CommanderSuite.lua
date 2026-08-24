@@ -15,7 +15,7 @@ local GROUP_HEADER_HEIGHT = 30
 -- not know yet falls through to Other Modules, so nothing ever vanishes.
 local PILLARS = {
     { title = "Command & Control",
-      keys = { "Comms", "Orders", "Ping", "Camera", "Radar" } },
+      keys = { "Comms", "Orders", "Ping", "Camera", "Radar", "Dossier" } },
     { title = "Battle HUD",
       keys = { "Production", "Afflictions", "Buffs", "PartyFrames", "Vitals", "Nameplate", "Casting", "Reticle", "Resources", "Meters", "Threat" } },
     { title = "Feedback & Alerts",
@@ -23,7 +23,7 @@ local PILLARS = {
     { title = "Operations",
       keys = { "Economy", "Logistics", "Quartermaster", "Talents", "Objectives", "ObjectivesBoard", "Recovery", "Who" } },
     { title = "Interface",
-      keys = { "ActionBar", "ActionBarButtons", "RankCheck", "Bags", "Inventory", "Chat", "Minimap", "TopBar", "Tooltip", "Console" } },
+      keys = { "ActionBar", "ActionBarButtons", "RankCheck", "Armory", "Bags", "Inventory", "Chat", "Minimap", "TopBar", "Tooltip", "Console" } },
 }
 
 local function AddSectionHeader(panel, anchor, text)

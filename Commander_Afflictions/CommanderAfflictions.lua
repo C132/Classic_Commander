@@ -48,12 +48,31 @@ local function IsIconStrip(layout)
     return layout == "ICONS" or layout == "ICONS_RTL"
 end
 
+-- Shared suite icon shading, drawn by Commander_Events (a RequiredDep, so it
+-- is always loaded). The registry lets a setting changed mid-session reach
+-- rows that already exist.
+local styledIcons = {}
+
+local function ApplyIconRecess(icon)
+    if not Commander.DebossIcon then return end
+    Commander.DebossIcon(icon,
+        (CommanderAfflictionsDB and CommanderAfflictionsDB.IconRecess) or "SOFT")
+end
+
+local function RestyleIcons()
+    for icon in pairs(styledIcons) do ApplyIconRecess(icon) end
+end
+
 local function AcquireRow(index)
     local row = rowPool[index]
     if row then return row end
     row = CreateFrame("Frame", nil, root)
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
+    -- The suite's shared icon recess (Commander_Events' art). Rows are pooled
+    -- and built once, so Apply carries a changed style back to them.
+    styledIcons[row.icon] = true
+    ApplyIconRecess(row.icon)
     row.barBG = row:CreateTexture(nil, "BACKGROUND")
     row.barBG:SetTexture("Interface\\Buttons\\WHITE8X8")
     row.barBG:SetVertexColor(0, 0, 0, 0.55)
@@ -681,6 +700,7 @@ local function OnCombatLog()
 end
 
 local function Apply()
+    RestyleIcons()
     if CommanderAfflictionsDB and CommanderAfflictionsDB.EnableAfflictions then
         -- Turning ally buffs off clears any that are still on the board
         if not CommanderAfflictionsDB.IncludeBuffs then

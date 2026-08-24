@@ -1,0 +1,15 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Armory
+## Author: Devin
+## Version: 1.0.0
+## Notes: A full equipment manager on the character panel — every candidate item for a slot one click away, named sets that pre-flight before they touch anything and say which piece is missing and which is sitting in your bank, and per-slot ignore so a hit-cap swap changes two pieces and leaves the other seventeen alone.
+## IconTexture: Interface\Icons\INV_Chest_Plate06
+## SavedVariables: CommanderArmoryDB, CommanderArmorySets
+## RequiredDeps: Commander_Events
+
+CommanderArmoryData.lua
+CommanderArmoryEngine.lua
+CommanderArmoryDB.lua
+CommanderArmory.lua
+CommanderArmoryUI.lua

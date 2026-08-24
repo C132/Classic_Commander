@@ -9,6 +9,7 @@ local DefaultSettings = {
 
     -- Calculator window (the Quartermaster browser conventions)
     BrowserStyle = "WINDOW",    -- WINDOW | DARK | CLASSIC
+    IconRecess = "SOFT",        -- shared suite icon shading: OFF|SOFT|DEEP|CARVED
     BrowserScale = 1.0,
     -- false (not nil) so Restore Defaults clears a saved drag position
     BrowserPos = false,
@@ -71,6 +72,14 @@ local function CreatePanel()
         },
         get = function() return CommanderTalentsDB.BrowserStyle end,
         set = function(value) CommanderTalentsDB.BrowserStyle = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddDropdown({
+        label = "Icon Recess",
+        tooltip = "Shading laid over every talent and consumable icon so it reads as set into the tree rather than pasted on it. The art is shared with the rest of the suite, so an icon here is cut the same way as one on any other Commander board. Soft is a shallow press, which is what a 32px talent button wants.",
+        options = Commander.ICON_STYLES,
+        get = function() return CommanderTalentsDB.IconRecess end,
+        set = function(value) CommanderTalentsDB.IconRecess = value end,
         isEnabled = Enabled,
     })
     panel:AddSlider({

@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Buffs
 ## Author: Devin
-## Version: 2.1.0
-## Notes: Player buffs and debuffs on the player unit frame, laid out like the target frame's — with Blizzard's own aura frames hidden — plus a priority icon on your portrait showing the one aura that matters right now, with a radial duration ring. The whole policy is editable in a live rule editor.
+## Version: 2.2.0
+## Notes: Player buffs and debuffs on the player unit frame wearing Blizzard's own aura art — with the client's aura frames hidden — plus a loss-of-control light on your portrait: stunned, silenced, feared, rooted, named in a word the instant it lands, with a radial duration ring. The whole policy is editable in a live rule editor.
 ## IconTexture: Interface\Icons\Spell_Holy_WordFortitude
 ## SavedVariables: CommanderBuffsDB
 ## RequiredDeps: Commander_Events

@@ -104,6 +104,11 @@ local DefaultSettings = {
     -- world cursor no matter what, but unit frames are interface, so the case
     -- this module exists for is covered.
     HideSystemCursor = false,
+    -- The cast shim: for the length of a cast, stand a transparent interface
+    -- frame between the pointer and the world so the swap above is allowed to
+    -- land there too. OFF | HOVER (motion only, clicks fall through) | FULL
+    -- (real mouse input, guaranteed focus, eats world left-clicks).
+    CastCursorShim = "OFF",
 
     -- Outside the ring
     ShowSpellName = false,
@@ -586,6 +591,18 @@ local function CreateCorePanel()
         tooltip = "Take the game's arrow away over the interface, so the hotspot is your whole pointer and nothing opaque sits on the health bar. It comes back over the 3D world — the engine locks the world cursor to whatever you are pointing at and no addon can override that — but unit frames are interface, so the case this module exists for is covered. The hotspot is forced on wherever the arrow is hidden, so you are never left with no pointer at all.",
         get = function() return CommanderReticleDB.HideSystemCursor end,
         set = function(value) CommanderReticleDB.HideSystemCursor = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddDropdown({
+        label = "Hide While Casting",
+        tooltip = "The engine only locks the cursor because the pointer is over the 3D world — so for the length of a cast, put a transparent interface frame there instead, and the arrow can be taken away over the world too. Hover puts the frame in the pointer's way for hover only and leaves clicking alone; if your client will not resolve the cursor from a hover-only frame, the option quietly does nothing and you should try Full. Full takes real mouse input for the length of the cast: the hide is guaranteed, right-drag still turns the camera, but a left-click on the world is swallowed until the cast ends. Independent of Hide System Cursor, and never armed during a test cast or while something is riding on the cursor.",
+        options = {
+            { text = "Off", value = "OFF" },
+            { text = "Hover (clicks pass through)", value = "HOVER" },
+            { text = "Full (blocks world clicks)", value = "FULL" },
+        },
+        get = function() return CommanderReticleDB.CastCursorShim end,
+        set = function(value) CommanderReticleDB.CastCursorShim = value end,
         isEnabled = Enabled,
     })
 

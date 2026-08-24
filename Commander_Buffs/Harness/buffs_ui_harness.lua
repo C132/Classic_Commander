@@ -89,7 +89,23 @@ WidgetMT.__index = function(self, key)
         return fn
     end
     if key == "CreateTexture" then
-        local fn = function(s) local t = NewWidget("Texture"); t.__parent = s; return t end
+        -- Layer and sublevel are kept: anything laid OVER an icon has to land
+        -- above it in the parent's draw order
+        local fn = function(s, _, layer, _, sublevel)
+            local t = NewWidget("Texture")
+            t.__parent, t.__layer, t.__sublevel = s, layer, sublevel or 0
+            return t
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetParent" then
+        local fn = function(s) return s.__parent end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetDrawLayer" then
+        local fn = function(s) return s.__layer or "ARTWORK", s.__sublevel or 0 end
         rawset(self, key, fn)
         return fn
     end
@@ -392,6 +408,13 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    -- Recorded because whether the icon art is TRIMMED is the loudest single
+    -- tell that a block is an addon's rather than the client's.
+    if key == "SetTexCoord" then
+        local fn = function(s, l, r, t, b) s.__texcoord = { l, r, t, b } end
+        rawset(self, key, fn)
+        return fn
+    end
     return baseIndex(self, key)
 end
 
@@ -609,13 +632,17 @@ end
 
 Fire("ADDON_LOADED", "Commander_Buffs")
 
-CHECK(CommanderBuffsDB.DBVersion == 2, "L: schema stamped", CommanderBuffsDB.DBVersion)
+CHECK(CommanderBuffsDB.DBVersion == 3, "L: schema stamped", CommanderBuffsDB.DBVersion)
 CHECK(CommanderBuffsDB.BuffScale == nil, "L: retired module's keys migrated away")
 CHECK(CommanderBuffsDB.BuffFramePoint == nil, "L: retired module's anchor migrated away")
 CHECK(CommanderBuffsDB.EnableBuffs == true, "L: defaults applied")
-CHECK(CommanderBuffsDB.BuffSize == 21, "L: buff size mirrors the client's large aura size")
-CHECK(type(CommanderBuffsDB.Rules) == "table" and #CommanderBuffsDB.Rules == 9,
-    "L: the nine shipped rules are seeded", CommanderBuffsDB.Rules and #CommanderBuffsDB.Rules)
+CHECK(CommanderBuffsDB.BuffSize == 30, "L: buff size is the client's own aura icon size")
+CHECK(CommanderBuffsDB.IconGap == 5, "L: icon spacing is the client's own iconPadding")
+CHECK(CommanderBuffsDB.IconsPerRow == 8, "L: row width is the client's own iconStride")
+CHECK(CommanderBuffsDB.BlockStyle == "BLIZZARD", "L: the block ships in the client's own style")
+CHECK(CommanderBuffsDB.MinScore == 90, "L: the sentinel ships quiet")
+CHECK(type(CommanderBuffsDB.Rules) == "table" and #CommanderBuffsDB.Rules == 12,
+    "L: the twelve shipped rules are seeded", CommanderBuffsDB.Rules and #CommanderBuffsDB.Rules)
 
 Fire("PLAYER_LOGIN")
 
@@ -659,8 +686,19 @@ do
     CHECK(auras[2].mine, "B: my own aura is flagged mine")
     CHECK(auras[5].stacks == 5, "B: stack count read")
     CHECK(#ranked > 0, "B: the policy ranked the stack")
-    CHECK(ranked[1].aura.spellId == 45438, "B: Ice Block about to drop leads the ranking",
+    -- Polymorph is an INCAP, claimed by an ALERT rule at 130: control leads
+    -- the ranking even against a defensive that is two seconds from dropping.
+    CHECK(ranked[1].aura.spellId == 118, "B: loss of control leads the ranking",
         ranked[1] and ranked[1].aura.name)
+    -- The ranking carries the WHOLE policy, floor and all — the block and the
+    -- trace both read it, so Minimum Score must not have thinned it here.
+    local scored = 0
+    for _, entry in ipairs(ranked) do
+        if entry.score < CommanderBuffsDB.MinScore and not entry.alert then
+            scored = scored + 1
+        end
+    end
+    CHECK(scored > 0, "B: the shared ranking keeps auras below the portrait's floor", scored)
 end
 
 -- Fewer auras must release the extra icons
@@ -707,6 +745,125 @@ CHECK(#harnessFailedErrors == 0, "B: round block icons degrade cleanly without m
     harnessFailedErrors[1])
 CHECK(_G.CommanderBuffsIcon1.__shown, "B: the block still draws with rounding on")
 CommanderBuffsDB.RoundBlockIcons = false
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+
+-- ===========================================================================
+-- The Blizzard block style. Every constant here was read out of this client's
+-- own UI source (Blizzard_BuffFrame), so these checks are the guard against
+-- the block drifting back into looking like an addon.
+-- ===========================================================================
+
+local BLIZZ_OVERLAY = "Interface\\Buttons\\UI-Debuff-Overlays"
+
+SetStack({
+    { name = "Blessing of Kings", id = 20217, duration = 300, left = 200 },
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+})
+CommanderBuffsDB.BlockStyle = "BLIZZARD"
+CommanderBuffsDB.MineRim = true
+CommanderBuffsDB.BuffsOnTopMode = "ON"
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+Fire("UNIT_AURA", "player")
+
+do
+    -- Buffs first, so icon 1 is the foreign buff, 2 is mine, 3 is the debuff.
+    local foreign, mine, debuff =
+        _G.CommanderBuffsIcon1, _G.CommanderBuffsIcon2, _G.CommanderBuffsIcon3
+    CHECK(foreign.auraName == "Blessing of Kings", "K: layout order as expected",
+        foreign.auraName)
+    CHECK(debuff.auraName == "Polymorph", "K: the debuff is third", debuff.auraName)
+
+    CHECK(foreign.texture.__texcoord and foreign.texture.__texcoord[1] == 0
+        and foreign.texture.__texcoord[2] == 1,
+        "K: Blizzard style does not trim the icon art")
+    CHECK(not foreign.rim.__shown, "K: and puts no border on someone else's buff")
+    CHECK(mine.rim.__shown, "K: My Buffs Rimmed still marks my own")
+    CHECK(mine.rim.__texture == BLIZZ_OVERLAY,
+        "K: and does it with the client's own overlay art", mine.rim.__texture)
+    CHECK(debuff.rim.__shown and debuff.rim.__texture == BLIZZ_OVERLAY,
+        "K: debuffs wear the client's overlay border", debuff.rim.__texture)
+    CHECK(debuff.rim.__w and math.abs(debuff.rim.__w - 30 * 33 / 30) < 0.01,
+        "K: the border overhangs its icon exactly as Blizzard's does", debuff.rim.__w)
+
+    CommanderBuffsDB.MineRim = false
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    CHECK(not _G.CommanderBuffsIcon2.rim.__shown,
+        "K: with the gold off, no buff carries a border at all")
+    CommanderBuffsDB.MineRim = true
+
+    CommanderBuffsDB.BlockStyle = "COMMANDER"
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    local suite = _G.CommanderBuffsIcon1
+    CHECK(suite.texture.__texcoord and suite.texture.__texcoord[1] > 0,
+        "K: Commander style trims the icon art back",
+        suite.texture.__texcoord and suite.texture.__texcoord[1])
+    CHECK(suite.rim.__shown and suite.rim.__texture ~= BLIZZ_OVERLAY,
+        "K: and rims every icon with the suite's own art", suite.rim.__texture)
+
+    -- Icon recess: the suite's shared shading, from Commander_Events so an
+    -- aura here is cut the same way as an icon on any other Commander board
+    local shade = suite.texture.commanderDeboss
+    CHECK(shade ~= nil and shade.__shown, "K: Commander style recesses the icon art")
+    if shade then
+        CHECK(shade.__texture:find("Commander_Events", 1, true) ~= nil,
+            "K: ...from the shared art, not a copy in this addon", shade.__texture)
+        CommanderBuffsDB.IconRecess = "OFF"
+        Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+        CHECK(not shade.__shown, "K: ...and Flat takes it back off")
+        CommanderBuffsDB.IconRecess = "SOFT"
+    end
+
+    CommanderBuffsDB.BlockStyle = "BLIZZARD"
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    CHECK(not (shade and shade.__shown),
+        "K: Blizzard style takes no recess — it exists to look like the client's own")
+end
+
+-- My Buffs Larger: scoped to buffs, and it must not break the grid.
+do
+    SetStack({
+        { name = "Blessing of Kings", id = 20217, duration = 300, left = 200 },
+        { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    }, {
+        { name = "Rend", id = 772, duration = 21, left = 12, mine = true },
+        { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+    })
+    CommanderBuffsDB.MineScale = 1
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player")
+    local base = _G.CommanderBuffsIcon1.__w
+    CHECK(base == 30, "G: buffs start at the client's own size", base)
+    CHECK(_G.CommanderBuffsIcon2.__w == base, "G: and my own buff matches it while off")
+
+    CommanderBuffsDB.MineScale = 1.4
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player")
+    CHECK(_G.CommanderBuffsIcon1.__w == base,
+        "G: someone else's buff keeps its size", _G.CommanderBuffsIcon1.__w)
+    CHECK(math.abs(_G.CommanderBuffsIcon2.__w - base * 1.4) < 0.01,
+        "G: the buff I cast is enlarged", _G.CommanderBuffsIcon2.__w)
+    -- Icons 3 and 4 are the debuff group. Rend is MINE and must be untouched:
+    -- a debuff is not upkeep, so the enlargement does not reach it.
+    CHECK(_G.CommanderBuffsIcon3.auraName == "Rend" and _G.CommanderBuffsIcon3.entry.mine,
+        "G: my own debuff is in the debuff group", _G.CommanderBuffsIcon3.auraName)
+    CHECK(_G.CommanderBuffsIcon3.__w == 30,
+        "G: and a debuff I applied is NOT enlarged", _G.CommanderBuffsIcon3.__w)
+
+    -- The block widens to hold the bigger cell rather than letting icons
+    -- overlap, and the border scales with the icon it belongs to.
+    CHECK(_G.CommanderBuffsBlock.__w >= 8 * (30 * 1.4 + 5),
+        "G: the block widens for the larger cell", _G.CommanderBuffsBlock.__w)
+    CHECK(math.abs(_G.CommanderBuffsIcon2.rim.__w - 30 * 1.4 * 33 / 30) < 0.01,
+        "G: the border scales with its icon", _G.CommanderBuffsIcon2.rim.__w)
+
+    CommanderBuffsDB.MineScale = 1
+    Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player")
+    CHECK(_G.CommanderBuffsIcon2.__w == base, "G: turning it back off restores the size")
+end
+CommanderBuffsDB.BuffsOnTopMode = "MIRROR_TARGET"
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 
 -- ===========================================================================
@@ -808,16 +965,34 @@ Fire("UNIT_AURA", "player")
 
 CHECK(_G.CommanderBuffsSentinel.__shown, "S: sentinel shows")
 CHECK(_G.CommanderBuffsSentinel1.__shown, "S: slot one is painted")
-CHECK(_G.CommanderBuffsSentinel1.auraName == "Polymorph"
-    or _G.CommanderBuffsSentinel1.auraName == "Ice Block",
-    "S: slot one carries a top-priority aura", _G.CommanderBuffsSentinel1.auraName)
+CHECK(_G.CommanderBuffsSentinel1.auraName == "Polymorph",
+    "S: loss of control takes slot one", _G.CommanderBuffsSentinel1.auraName)
 CHECK(_G.CommanderBuffsSentinel2 == nil or not _G.CommanderBuffsSentinel2.__shown,
     "S: a single slot by default")
 
+-- Control takes over: even with three slots asked for, nothing shares the
+-- portrait with a stun.
 CommanderBuffsDB.Slots = 3
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(_G.CommanderBuffsSentinel2 == nil or not _G.CommanderBuffsSentinel2.__shown,
+    "S: control takes the sentinel alone")
+CommanderBuffsDB.LocSolo = false
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 CHECK(_G.CommanderBuffsSentinel2 and _G.CommanderBuffsSentinel2.__shown,
-    "S: extra slots appear on request")
+    "S: turning the takeover off lets the runners-up back in")
+CommanderBuffsDB.LocSolo = true
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(not _G.CommanderBuffsSentinel2.__shown, "S: and the takeover reasserts itself")
+
+-- Extra slots still work when nothing is controlling you.
+SetStack({
+    { name = "Ice Block", id = 45438, duration = 10, left = 2, mine = true },
+}, {
+    { name = "Fel Rage", id = 40604, duration = 30, left = 20, boss = true },
+})
+Fire("UNIT_AURA", "player")
+CHECK(_G.CommanderBuffsSentinel2 and _G.CommanderBuffsSentinel2.__shown,
+    "S: extra slots appear on request when nothing has hold of you")
 CommanderBuffsDB.Slots = 1
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 CHECK(not _G.CommanderBuffsSentinel2.__shown, "S: extra slots retire again")
@@ -829,8 +1004,25 @@ CHECK(not _G.CommanderBuffsSentinel.__shown, "S: a high floor silences the senti
 CommanderBuffsDB.MinScore = 0
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 CHECK(_G.CommanderBuffsSentinel.__shown, "S: a floor of zero is never empty")
-CommanderBuffsDB.MinScore = 40
-Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+
+-- ...but it can never reach an ALERT. This is the whole promise of the
+-- redesign: no amount of quieting hides being controlled.
+SetStack({}, { { name = "Kidney Shot", id = 408, duration = 6, left = 4 } })
+CommanderBuffsDB.MinScore = 200
+Fire("UNIT_AURA", "player")
+CHECK(_G.CommanderBuffsSentinel.__shown, "S: no floor can silence loss of control")
+CHECK(_G.CommanderBuffsSentinel1.auraName == "Kidney Shot",
+    "S: and it is the controlling aura on the portrait",
+    _G.CommanderBuffsSentinel1.auraName)
+
+SetStack({
+    { name = "Arcane Intellect", id = 10157, duration = 1800, left = 1500 },
+    { name = "Ice Block", id = 45438, duration = 10, left = 2, mine = true },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+})
+CommanderBuffsDB.MinScore = 90
+Fire("UNIT_AURA", "player")
 
 CommanderBuffsDB.PortraitOpacity = 0.35
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
@@ -881,7 +1073,7 @@ CHECK(not _G.CommanderBuffsSentinel.__shown, "S: nothing to show means nothing s
 -- ===========================================================================
 
 CommanderBuffs_Test()
-CHECK(ShownIcons("CommanderBuffsIcon") == 9, "T: the test stack renders nine auras",
+CHECK(ShownIcons("CommanderBuffsIcon") == 10, "T: the test stack renders ten auras",
     ShownIcons("CommanderBuffsIcon"))
 CHECK(_G.CommanderBuffsIcon1.auraIndex == nil,
     "T: test auras carry no aura index — a bogus one would tooltip the wrong aura")
@@ -894,8 +1086,8 @@ CHECK(PrintedMatching("test stack"), "T: the tester says so")
 CommanderBuffs_ToggleEditor()
 local win = _G.CommanderBuffsEditorFrame
 CHECK(win ~= nil and win.__shown, "E: the editor opens")
-CHECK(TextShownSomewhere("Silence & incapacitate"), "E: the rule list renders rule names")
-CHECK(TextMatching("^9 rules$") ~= nil, "E: the rule count is reported",
+CHECK(TextShownSomewhere("Stunned or incapacitated"), "E: the rule list renders rule names")
+CHECK(TextMatching("^12 rules$") ~= nil, "E: the rule count is reported",
     TextMatching("rules"))
 CHECK(TextShownSomewhere("Priority Rules"), "E: the list is headed")
 CHECK(TextMatching("auras on you") ~= nil, "E: the trace counts your auras")
@@ -941,8 +1133,10 @@ do
     local wasAction = rule.action
     Click(action)
     CHECK(rule.action ~= wasAction, "E: cycling changes the rule's action", rule.action)
+    -- Three actions now: Show, Hide, Alert. Round trip is three clicks.
     Click(action)
-    CHECK(rule.action == wasAction, "E: cycling all the way round restores it")
+    Click(action)
+    CHECK(rule.action == wasAction, "E: cycling all the way round restores it", rule.action)
 
     local typeButton = ButtonStartingWith("Type:")
     local wasType = rule.match.auraType
@@ -974,7 +1168,7 @@ end
 
 -- Restore Default Rules is the only thing that replaces the list
 Click(ButtonWithText("Defaults"))
-CHECK(#CommanderBuffsDB.Rules == 9, "E: Defaults restores the shipped nine",
+CHECK(#CommanderBuffsDB.Rules == 12, "E: Defaults restores the shipped twelve",
     #CommanderBuffsDB.Rules)
 CHECK(PrintedMatching("restored to the shipped nine"), "E: and says so")
 
@@ -985,7 +1179,7 @@ do
     local reset = ButtonStartingWith("Restore Defaults")
     CHECK(reset ~= nil, "E: the settings page has a Restore Defaults button")
     CHECK(Click(reset), "E: Restore Defaults is clickable")
-    CHECK(CommanderBuffsDB.BuffSize == 21, "E: the settings reset does reset settings",
+    CHECK(CommanderBuffsDB.BuffSize == 30, "E: the settings reset does reset settings",
         CommanderBuffsDB.BuffSize)
     CHECK(CommanderBuffsDB.Rules[1].name == "Hand written",
         "E: the settings page's reset leaves hand-authored rules alone")
@@ -1048,8 +1242,32 @@ Fire("UNIT_AURA", "player")
 Tick(0.2)
 Tick(0.2)
 CHECK(#harnessFailedErrors == 0, "F: a full tick is clean", harnessFailedErrors[1])
-CHECK(_G.CommanderBuffsSentinel1.auraName == "Ice Block",
-    "F: the expiring defensive holds the portrait", _G.CommanderBuffsSentinel1.auraName)
+-- The test stack is still seeded here (its 15s window outlives this
+-- section on the harness clock), which makes it the fixture under test: it
+-- carries a stun, a Polymorph, and an Ice Block with three seconds left.
+-- Control must lead it, and the expiring bonus must still be doing its job
+-- underneath — a defensive at 92 + 25 outscoring every debuff on the stack.
+do
+    local _, _, ranked = CommanderBuffs_GetTrace()
+    CHECK(ranked[1] and ranked[1].loc ~= nil,
+        "F: loss of control leads the test stack", ranked[1] and ranked[1].aura.name)
+    CHECK(_G.CommanderBuffsSentinel1.auraName == ranked[1].aura.name,
+        "F: and the portrait is drawing it", _G.CommanderBuffsSentinel1.auraName)
+
+    local iceBlock
+    for _, entry in ipairs(ranked) do
+        if entry.aura.name == "Ice Block" then iceBlock = entry end
+    end
+    CHECK(iceBlock and iceBlock.score == 117,
+        "F: the expiring defensive still takes its expiry bonus",
+        iceBlock and iceBlock.score)
+    for _, entry in ipairs(ranked) do
+        if entry.aura.isHarmful and not entry.alert then
+            CHECK(entry.score < iceBlock.score,
+                "F: and outscores every ordinary debuff", entry.aura.name)
+        end
+    end
+end
 
 CommanderBuffsDB.SweepStyle = "RING"
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)

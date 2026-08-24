@@ -69,6 +69,11 @@ LAYER_SCOPED = {
     "BlessReadyAt": {"BLESS"},
     "BlessRefreshAt": {"BLESS"},
     "BlessBannerCooldowns": {"BLESS"},
+    # ...and the blessing assignment, which is the one family with a slot per
+    # ally rather than a slot per buff. Nothing on another layer reads these.
+    "BlessCombine": {"BLESS"},
+    "BlessMineOnly": {"BLESS"},
+    "BlessRowMenu": {"BLESS"},
     # The mana strip only exists on the layers whose main bar is health
     "ShowManaBar": {"INT", "HOT", "BLESS"},
 }

@@ -41,12 +41,26 @@ local function Aura(t)
     }
 end
 
+-- Rule fixture: NewRule's shape with the fields under test overlaid, then
+-- normalized exactly as SavedVariables content would be.
+local function Rule(t)
+    local rule = E.NewRule({}, t.name)
+    rule.action = t.action or "SHOW"
+    rule.score = t.score or 50
+    rule.expiringUnder = t.expiringUnder or 0
+    rule.expiringBonus = t.expiringBonus or 0
+    rule.stackBonus = t.stackBonus or 0
+    for k, v in pairs(t.match or {}) do rule.match[k] = v end
+    E.NormalizeRule(rule, {})
+    return rule
+end
+
 -- ===========================================================================
 -- Defaults
 -- ===========================================================================
 
 local defaults = E.DefaultRules()
-CHECK(#defaults == 9, "nine shipped rules", #defaults)
+CHECK(#defaults == 12, "twelve shipped rules", #defaults)
 for i, rule in ipairs(defaults) do
     CHECK(E.NormalizeRule(rule, defaults) ~= nil, "default rule " .. i .. " normalizes")
     CHECK(type(rule.name) == "string" and rule.name ~= "", "default rule " .. i .. " named")
@@ -61,6 +75,203 @@ end
 CHECK(#E.CC_IDS > 30, "cc list is substantial", #E.CC_IDS)
 CHECK(#E.MAJOR_IDS > 20, "major list is substantial", #E.MAJOR_IDS)
 
+-- ===========================================================================
+-- Loss of control: the categories, the map, and the matcher
+-- ===========================================================================
+
+do
+    CHECK(#E.LOC_CATEGORIES == 7, "seven control categories", #E.LOC_CATEGORIES)
+    local seen = {}
+    for _, category in ipairs(E.LOC_CATEGORIES) do
+        CHECK(not seen[category.key], "category keys are unique", category.key)
+        seen[category.key] = true
+        CHECK(type(category.label) == "string" and category.label ~= "",
+            "category " .. category.key .. " has a label")
+        CHECK(type(category.color) == "table" and #category.color == 3,
+            "category " .. category.key .. " has an rgb color")
+        CHECK(E.LOC_INFO[category.key] == category,
+            "category " .. category.key .. " is reachable by key")
+    end
+
+    -- The flat list the rest of the suite reads must be exactly the union of
+    -- the categories, or the two descriptions of "what is CC" have drifted.
+    local flat = 0
+    for _, id in ipairs(E.CC_IDS) do
+        CHECK(E.LOC_IDS[id] ~= nil, "every flat id is categorized", id)
+        flat = flat + 1
+    end
+    local mapped = 0
+    for _ in pairs(E.LOC_IDS) do mapped = mapped + 1 end
+    CHECK(flat == mapped, "the flat list and the map are the same set", flat .. " vs " .. mapped)
+
+    CHECK(E.LocCategory(Aura({ spellId = 408 })) == "STUN", "Kidney Shot is a stun")
+    CHECK(E.LocCategory(Aura({ spellId = 118 })) == "INCAP", "Polymorph is an incapacitate")
+    CHECK(E.LocCategory(Aura({ spellId = 5782 })) == "FEAR", "Fear is a fear")
+    CHECK(E.LocCategory(Aura({ spellId = 605 })) == "CHARM", "Mind Control is a charm")
+    CHECK(E.LocCategory(Aura({ spellId = 15487 })) == "SILENCE", "Silence is a silence")
+    CHECK(E.LocCategory(Aura({ spellId = 122 })) == "ROOT", "Frost Nova is a root")
+    CHECK(E.LocCategory(Aura({ spellId = 676 })) == "DISARM", "Disarm is a disarm")
+    CHECK(E.LocCategory(Aura({ spellId = 10157 })) == nil, "Arcane Intellect is not control")
+    CHECK(E.LocCategory(nil) == nil, "a nil aura has no category")
+    CHECK(E.LocInfo(nil) == nil, "a nil category has no info")
+    CHECK(E.LocInfo("NOPE") == nil, "an unknown category has no info")
+
+    -- The retired flat list carried Mind Soothe, which is cast on mobs and
+    -- could never land on the player. It must not have survived the split.
+    CHECK(E.LOC_IDS[453] == nil, "Mind Soothe is gone from the control set")
+
+    local locRule = Rule({ name = "stuns", match = { loc = { STUN = true } } })
+    CHECK(E.MatchRule(locRule, Aura({ spellId = 408 }), NOW), "a loc matcher claims its category")
+    CHECK(not E.MatchRule(locRule, Aura({ spellId = 118 }), NOW),
+        "a loc matcher rejects a different category")
+    CHECK(not E.MatchRule(locRule, Aura({ spellId = 10157 }), NOW),
+        "a loc matcher rejects an aura that is not control at all")
+
+    local multi = Rule({ name = "both", match = { loc = { STUN = true, ROOT = true } } })
+    CHECK(E.MatchRule(multi, Aura({ spellId = 408 }), NOW), "a multi-category matcher takes the first")
+    CHECK(E.MatchRule(multi, Aura({ spellId = 122 }), NOW), "a multi-category matcher takes the second")
+
+    -- An empty set means "does not care", exactly like the dispel row.
+    local empty = Rule({ name = "empty", match = { loc = {} } })
+    E.NormalizeRule(empty, {})
+    CHECK(empty.match.loc == nil, "an empty control set normalizes away")
+    CHECK(E.MatchRule(empty, Aura({ spellId = 10157 }), NOW),
+        "a rule with no control set still matches ordinary auras")
+
+    local junk = Rule({ name = "junk", match = { loc = { NOPE = true, STUN = true } } })
+    E.NormalizeRule(junk, {})
+    CHECK(junk.match.loc and junk.match.loc.NOPE == nil, "unknown categories are dropped")
+    CHECK(junk.match.loc and junk.match.loc.STUN == true, "known categories survive")
+end
+
+-- ===========================================================================
+-- ALERT: SHOW that the minimum-score gate cannot reach
+-- ===========================================================================
+
+do
+    local rules = {
+        Rule({ name = "alarm", action = "ALERT", score = 10, match = { spellIds = { 408 } } }),
+        Rule({ name = "quiet", action = "SHOW", score = 10, match = {} }),
+    }
+    local stack = { Aura({ spellId = 408, name = "Kidney Shot", isHarmful = true }),
+                    Aura({ spellId = 999, name = "Something" }) }
+    local out = E.Evaluate(stack, rules, { minScore = 500 }, NOW)
+    CHECK(#out == 1, "a floor above every score keeps only the ALERT", #out)
+    CHECK(out[1] and out[1].aura.spellId == 408, "and it is the alerting aura")
+    CHECK(out[1] and out[1].alert == true, "the result is flagged as an alert")
+    CHECK(out[1] and out[1].loc == "STUN", "the result carries its control category")
+
+    -- ALERT still loses to a higher score: it buys exemption from the floor,
+    -- not the top of the list.
+    local ranked = E.Evaluate(stack, {
+        Rule({ name = "alarm", action = "ALERT", score = 10, match = { spellIds = { 408 } } }),
+        Rule({ name = "loud", action = "SHOW", score = 99, match = {} }),
+    }, {}, NOW)
+    CHECK(ranked[1] and ranked[1].aura.spellId == 999, "ALERT does not outrank a higher score")
+
+    -- A HIDE rule is still a veto even when a later rule would alert.
+    local vetoed = E.Evaluate({ Aura({ spellId = 408 }) }, {
+        Rule({ name = "veto", action = "HIDE", match = { spellIds = { 408 } } }),
+        Rule({ name = "alarm", action = "ALERT", score = 130, match = {} }),
+    }, {}, NOW)
+    CHECK(#vetoed == 0, "an earlier HIDE still beats a later ALERT", #vetoed)
+
+    local plain = E.Evaluate({ Aura({ spellId = 999 }) },
+        { Rule({ name = "s", action = "SHOW", score = 10, match = {} }) },
+        { minScore = 500 }, NOW)
+    CHECK(#plain == 0, "a plain SHOW is still gated by the floor", #plain)
+end
+
+-- ===========================================================================
+-- The shipped policy actually focuses on loss of control
+-- ===========================================================================
+
+do
+    local shipped = E.NormalizeRules(E.DefaultRules())
+    local FLOOR = { minScore = 90 }   -- the shipped Minimum Score
+
+    local function winner(stack)
+        local ranked = E.Evaluate(stack, shipped, FLOOR, NOW)
+        return ranked[1]
+    end
+
+    -- The noise the sentinel used to carry must no longer reach it.
+    CHECK(winner({ Aura({ spellId = 3409, name = "Crippling Poison", duration = 12,
+        left = 4, isHarmful = true, dispelName = "Poison" }) }) == nil,
+        "a dispellable debuff no longer occupies the portrait")
+    CHECK(winner({ Aura({ spellId = 7386, name = "Sunder Armor", duration = 30,
+        left = 22, isHarmful = true, stacks = 5 }) }) == nil,
+        "an ordinary stacking debuff no longer occupies the portrait")
+    CHECK(winner({ Aura({ spellId = 139, name = "Renew", duration = 15, left = 9,
+        mine = true }) }) == nil, "a short buff of mine no longer occupies the portrait")
+    CHECK(winner({ Aura({ spellId = 10157, name = "Arcane Intellect", duration = 1800,
+        left = 1400 }) }) == nil, "a raid buff never did and still does not")
+
+    -- The emergencies still do.
+    local boss = winner({ Aura({ spellId = 40604, name = "Fel Rage", duration = 30,
+        left = 20, isHarmful = true, isBossAura = true }) })
+    CHECK(boss ~= nil, "a boss debuff still reaches the portrait")
+    local defensive = winner({ Aura({ spellId = 45438, name = "Ice Block",
+        duration = 10, left = 8, mine = true }) })
+    CHECK(defensive ~= nil, "my own defensive still reaches the portrait")
+
+    -- And control beats all of it, from every category.
+    for _, case in ipairs({
+        { id = 408, category = "STUN" }, { id = 118, category = "INCAP" },
+        { id = 5782, category = "FEAR" }, { id = 605, category = "CHARM" },
+        { id = 15487, category = "SILENCE" }, { id = 122, category = "ROOT" },
+        { id = 676, category = "DISARM" },
+    }) do
+        local top = winner({
+            Aura({ spellId = case.id, name = case.category, duration = 8, left = 5,
+                isHarmful = true }),
+            Aura({ spellId = 40604, name = "Fel Rage", duration = 30, left = 20,
+                isHarmful = true, isBossAura = true }),
+            Aura({ spellId = 45438, name = "Ice Block", duration = 10, left = 8,
+                mine = true }),
+        })
+        CHECK(top and top.loc == case.category,
+            case.category .. " takes the portrait over a boss debuff and a defensive",
+            top and tostring(top.loc))
+    end
+
+    -- Even with the dial pushed past every score in the policy.
+    local silenced = E.Evaluate({ Aura({ spellId = 15487, duration = 5, left = 3,
+        isHarmful = true }) }, shipped, { minScore = 999 }, NOW)
+    CHECK(#silenced == 1, "no floor can hide a silence", #silenced)
+end
+
+-- ===========================================================================
+-- The untouched-rule-set test that guards the migration
+-- ===========================================================================
+
+do
+    CHECK(E.IsUntouchedRuleSet(E.DefaultRules()), "the shipped set is recognized as untouched")
+    local legacy = {}
+    for _, name in ipairs({ "Silence & incapacitate", "Boss debuffs",
+        "My defensives & burst", "Dispellable on me", "Any other debuff",
+        "Hide raid buffs", "Hide auras with no timer", "My short buffs",
+        "Any other buff" }) do
+        legacy[#legacy + 1] = { name = name }
+    end
+    CHECK(E.IsUntouchedRuleSet(legacy), "the previous shipped set is recognized too")
+
+    local edited = E.DefaultRules()
+    edited[1].name = "Mine"
+    CHECK(not E.IsUntouchedRuleSet(edited), "a renamed rule makes the set touched")
+
+    local trimmed = E.DefaultRules()
+    table.remove(trimmed, 1)
+    CHECK(not E.IsUntouchedRuleSet(trimmed), "a deleted rule makes the set touched")
+
+    local extended = E.DefaultRules()
+    extended[#extended + 1] = { name = "Extra" }
+    CHECK(not E.IsUntouchedRuleSet(extended), "an added rule makes the set touched")
+
+    CHECK(not E.IsUntouchedRuleSet(nil), "a missing rule list is not untouched")
+    CHECK(not E.IsUntouchedRuleSet({}), "an empty rule list is not untouched")
+end
+
 -- Derived lookups must NEVER live on the rule: the rule table is the
 -- SavedVariables record.
 E.NormalizeRules(defaults)
@@ -72,18 +283,6 @@ end
 -- ===========================================================================
 -- Matchers
 -- ===========================================================================
-
-local function Rule(t)
-    local rule = E.NewRule({}, t.name)
-    rule.action = t.action or "SHOW"
-    rule.score = t.score or 50
-    rule.expiringUnder = t.expiringUnder or 0
-    rule.expiringBonus = t.expiringBonus or 0
-    rule.stackBonus = t.stackBonus or 0
-    for k, v in pairs(t.match or {}) do rule.match[k] = v end
-    E.NormalizeRule(rule, {})
-    return rule
-end
 
 local buff = Aura({ name = "Arcane Intellect", spellId = 10157, duration = 1800 })
 local debuff = Aura({ name = "Corruption", spellId = 172, duration = 18, isHarmful = true,

@@ -35,6 +35,7 @@ local DefaultSettings = {
     hideHotkeys = false,
     abbrevHotkeys = false,
     pushedFlash = "CYAN",
+    iconRecess = "SOFT",   -- shared suite icon shading: OFF|SOFT|DEEP|CARVED
     rangeTint = false,
     manaTint = false,
     cooldownText = false,
@@ -250,6 +251,13 @@ local function CreateButtonsPanel()
         tooltip = "Tint a button's icon red while its target is out of range.",
         get = function() return db().rangeTint end,
         set = function(value) db().rangeTint = value end,
+    })
+    panel:AddDropdown({
+        label = "Icon Recess",
+        tooltip = "Shading laid over every action button's icon so it reads as set into the bar rather than pasted on it. The art is the suite's shared set, so a button here is cut the same way as an icon on any other Commander board. Soft is a shallow press; Deep and Carved drive it harder, which suits the larger button sizes.",
+        options = Commander.ICON_STYLES,
+        get = function() return db().iconRecess end,
+        set = function(value) db().iconRecess = value end,
     })
     panel:AddCheckboxPair({
         label = "No-Resource Tint",

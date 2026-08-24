@@ -312,6 +312,11 @@ local function FillReportIcons(items)
                 texture = select(10, C_Item.GetItemInfo(itemID))
             end
             icon.texture:SetTexture(texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+            -- Suite icon recess (Commander_Events' shared art)
+            if Commander.DebossIcon then
+                Commander.DebossIcon(icon.texture,
+                    (CommanderEconomyDB and CommanderEconomyDB.IconRecess) or "SOFT")
+            end
             icon:Show()
         end
     end

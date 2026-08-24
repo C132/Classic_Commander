@@ -3,7 +3,7 @@
 ## Title: Commander Minimap
 ## Notes: Minimap module for Commander
 ## Author: Devin
-## Version: 2.1.0
+## Version: 2.2.0
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderMinimapDB
 ## RequiredDeps: Commander_Events
@@ -11,3 +11,5 @@
 CommanderMinimapDB.lua
 CommanderMinimap.lua
 CommanderMinimapButton.lua
+CommanderMinimapFogData.lua
+CommanderMinimapWorldMap.lua

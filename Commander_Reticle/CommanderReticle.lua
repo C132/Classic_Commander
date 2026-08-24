@@ -293,6 +293,40 @@ local hotAlpha, hotAlphaTarget = 0, 0
 local smoothX, smoothY
 local cursorHidden = false
 
+-- ---------------------------------------------------------------------------
+-- The cast shim
+--
+-- SetCursor is overruled while the pointer is over WorldFrame. That is the
+-- engine and it cannot be out-raced (see the note above HideSystemCursor).
+-- But the lock is about WHAT the pointer is over, not about casting: over a
+-- real interface frame the swap lands every time. So to take the arrow away
+-- over the game view, put an interface frame there -- one transparent,
+-- screen-filling frame that lives underneath every other piece of UI and is
+-- only on screen for the length of a cast.
+--
+-- HOVER arms it for mouse motion only, which is what the cursor is resolved
+-- from, and leaves clicking alone. FULL arms real mouse input, which is
+-- certain to take the focus but swallows world clicks while it is up. Neither
+-- is a guess we have to live with: the shim only claims the pointer once the
+-- mouse focus actually comes back as the shim, so a mode this client will not
+-- honor turns into a no-op rather than an arrow and a dot at the same time.
+local shim = CreateFrame("Frame", "CommanderReticleCastShim", UIParent)
+shim:SetFrameStrata("BACKGROUND")
+shim:SetFrameLevel(0)
+shim:SetAllPoints(UIParent)
+shim:EnableMouse(false)
+shim:Hide()
+
+local shimArmed = false
+local shimFocused = false      -- the shim is genuinely what the pointer is on
+local shimMouselook = false    -- a camera turn this frame started, and owns
+
+-- Is the arrow meant to be off the screen right now? Either the standing
+-- setting says so, or a cast has the shim up and the pointer is on it.
+local function CursorHideWanted()
+    return DB("HideSystemCursor", false) or shimFocused
+end
+
 -- Demo mode: a standing pretend cast and a pretend unit draining from full, so
 -- every option on both pages can be judged from the settings panel instead of
 -- requiring a real target and a real fight to look at.
@@ -356,7 +390,7 @@ end
 -- the player with no pointer at all, so the dot is forced on in that case.
 local function HotspotStyle()
     local style = DB("HotspotStyle", "NONE")
-    if style == "NONE" and DB("HideSystemCursor", false) then return "DOT" end
+    if style == "NONE" and CursorHideWanted() then return "DOT" end
     return style
 end
 
@@ -920,8 +954,14 @@ end
 local MouseFocusFrame   -- defined with the follow loop, below
 local cachedFocus
 
+-- The shim is answered separately from the real focus. Everything downstream
+-- of cachedFocus -- the dodge in particular -- wants the frame the pointer is
+-- actually standing on, and a screen-filling shim is not one of those.
 local function RefreshMouseFocus()
-    cachedFocus = MouseFocusFrame and MouseFocusFrame() or nil
+    local focus = MouseFocusFrame and MouseFocusFrame() or nil
+    shimFocused = shimArmed and focus == shim
+    if focus == shim then focus = nil end
+    cachedFocus = focus
 end
 
 -- Where the arrow is allowed to be taken away: anywhere over the interface.
@@ -929,7 +969,7 @@ end
 -- there, since WorldFrame/UIParent are filtered out), so there is nothing to
 -- decide -- if the pointer is on a real UI frame, the swap can land.
 local function CursorScopeAllows()
-    return cachedFocus ~= nil
+    return cachedFocus ~= nil or shimFocused
 end
 
 -- ---------------------------------------------------------------------------
@@ -968,8 +1008,66 @@ local function ShouldShowHotspot(ringVisible)
     end
     -- With the arrow gone, the hotspot is the only pointer there is -- but
     -- only where it is actually gone, or you get two pointers at once
-    if DB("HideSystemCursor", false) and CursorScopeAllows() then return true end
+    if CursorHideWanted() and CursorScopeAllows() then return true end
     return ringVisible
+end
+
+-- ---------------------------------------------------------------------------
+-- Arming the shim
+-- ---------------------------------------------------------------------------
+
+local function ShimMode()
+    local mode = DB("CastCursorShim", "OFF")
+    if mode == "HOVER" or mode == "FULL" then return mode end
+    return "OFF"
+end
+
+-- A real cast only. Never a test cast -- that one is watched from the settings
+-- panel, where blanking the pointer would take the panel away with it -- and
+-- never while the arrow is carrying an item or a spell, or while the camera
+-- already owns the pointer and has hidden it for us.
+local function ShimWanted()
+    if ShimMode() == "OFF" then return false end
+    if not DB("EnableReticle", true) then return false end
+    if not cast.active or cast.test then return false end
+    if GetCursorInfo and GetCursorInfo() then return false end
+    if IsMouselooking and IsMouselooking() then return false end
+    return true
+end
+
+local function SetShim(on)
+    if on == shimArmed then return end
+    shimArmed = on
+    if on then
+        -- Motion is what the cursor is resolved from; clicks are what FULL
+        -- additionally takes, and the only reason to reach for it
+        shim:EnableMouse(ShimMode() == "FULL")
+        if shim.EnableMouseMotion then shim:EnableMouseMotion(true) end
+        shim:Show()
+    else
+        shim:Hide()
+        shim:EnableMouse(false)
+        if shim.EnableMouseMotion then shim:EnableMouseMotion(false) end
+        shimFocused = false
+    end
+end
+
+-- FULL swallows the press that would have started a camera turn, so it hands
+-- the turn back by hand. The release is checked outside the armed state on
+-- purpose: a cast that ends mid-turn must not leave the camera stuck to the
+-- mouse just because the shim came down first.
+shim:SetScript("OnMouseDown", function(_, button)
+    if button == "RightButton" and MouselookStart and not shimMouselook then
+        shimMouselook = true
+        MouselookStart()
+    end
+end)
+
+local function ReleaseShimMouselook()
+    if not shimMouselook then return end
+    if IsMouseButtonDown and IsMouseButtonDown("RightButton") then return end
+    shimMouselook = false
+    if MouselookStop then MouselookStop() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1162,6 +1260,8 @@ local function Sleep()
     root:Hide()
     hot:SetAlpha(0)
     hot:Hide()
+    SetShim(false)
+    ReleaseShimMouselook()
     RestoreSystemCursor()
 end
 
@@ -1174,6 +1274,8 @@ local function Fade(current, target, elapsed)
 end
 
 local function DriverUpdate(_, elapsed)
+    ReleaseShimMouselook()
+    SetShim(ShimWanted())
     Follow(elapsed)
     RenderFlash()
 
@@ -1203,14 +1305,16 @@ local function DriverUpdate(_, elapsed)
     -- re-applied every frame while it is meant to be gone. Never while
     -- something is being dragged: that cursor is carrying an item or a spell,
     -- and blanking it would hide what you are holding.
-    if hotWants and DB("HideSystemCursor", false) and CursorScopeAllows()
+    if hotWants and CursorHideWanted() and CursorScopeAllows()
         and not (GetCursorInfo and GetCursorInfo()) then
         HideSystemCursor()
     elseif cursorHidden then
         RestoreSystemCursor()
     end
 
-    if alpha <= 0 and hotAlpha <= 0 then Sleep() end
+    -- An armed shim outlives an invisible ring: a cast under a "hover a unit"
+    -- visibility rule would otherwise sleep, disarm, wake, and arm again
+    if alpha <= 0 and hotAlpha <= 0 and not shimArmed then Sleep() end
 end
 
 local function Wake()
@@ -1347,7 +1451,7 @@ local function Watch()
     -- only when the feature that needs it is on.
     if DB("HideSystemCursor", false) then RefreshMouseFocus() end
     local ringWants = ShouldShowRing()
-    if ringWants or ShouldShowHotspot(ringWants) then Wake() end
+    if ringWants or ShouldShowHotspot(ringWants) or ShimWanted() then Wake() end
 end
 
 -- Cast-relevant UI errors, resolved from the client's own localized strings so
@@ -1374,14 +1478,17 @@ local function Apply()
         ApplyArc()
         ApplyGCD()
         -- Turning the swap off in settings has to hand the arrow straight back
-        if not DB("HideSystemCursor", false) then
+        if not CursorHideWanted() then
             RestoreSystemCursor()
         end
+        -- Turning the shim off in settings has to take it down now, not at the
+        -- end of a cast that is already running
+        if not ShimWanted() then SetShim(false) end
         if not watchTicker then
             watchTicker = C_Timer.NewTicker(WATCH_INTERVAL, Watch)
         end
         local ringWants = ShouldShowRing()
-        if ringWants or ShouldShowHotspot(ringWants) then
+        if ringWants or ShouldShowHotspot(ringWants) or ShimWanted() then
             Wake()
         end
     else

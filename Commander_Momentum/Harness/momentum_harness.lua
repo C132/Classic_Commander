@@ -189,6 +189,30 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    -- Real enough to assert placement on: the player-frame display picks an
+    -- anchor frame and point per placement setting, and nothing else can
+    -- tell whether it picked the right one
+    if key == "SetPoint" then
+        local fn = function(s, point, relative, relativePoint, x, y)
+            s.__points = s.__points or {}
+            s.__points[#s.__points + 1] = {
+                point = point, relative = relative, relativePoint = relativePoint,
+                x = x, y = y,
+            }
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "ClearAllPoints" then
+        local fn = function(s) s.__points = nil end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "IsShown" or key == "IsVisible" then
+        local fn = function(s) return s.__shown and true or false end
+        rawset(self, key, fn)
+        return fn
+    end
     if key == "GetThumbTexture" then
         local fn = function() return NewWidget("Texture") end
         rawset(self, key, fn)
@@ -283,6 +307,8 @@ function UIDropDownMenu_DisableDropDown() end
 function ToggleDropDownMenu() end
 
 local playerGuid = "Player-0-ME"
+local inCombat = false
+function UnitAffectingCombat(unit) return unit == "player" and inCombat end
 function UnitGUID(unit) if unit == "player" then return playerGuid end return nil end
 function UnitName(unit) if unit == "player" then return "Devinp" end return nil end
 function UnitClass(unit) if unit == "player" then return "Warrior", "WARRIOR" end return nil end
@@ -570,6 +596,115 @@ CommanderMomentumDB.Window = 45
 SlashCmdList.COMMANDERUI_MOMENTUM("reset")
 CHECK(CommanderMomentumDB.Window == 20, "M: settings reset to defaults")
 CHECK(Records().Westfall and Records().Westfall.best == 16, "M: records survive the reset")
+
+-- ===========================================================================
+-- N: the public lines name the window clock — someone reading the emote
+-- nearby should learn the game being played, not just see a number. The
+-- window is read live, so a non-default setting has to show up verbatim.
+-- ===========================================================================
+
+CommanderMomentumDB.Window = 30
+CommanderMomentumDB.MilestoneEmotes = true
+CommanderMomentumDB.BreakEmotes = true
+chatMark = #sentChat
+Chain(11)
+local brag = sentChat[chatMark + 1]
+CHECK(brag and brag.channel == "EMOTE"
+    and brag.msg:find("x5 chain on a 30s kill clock", 1, true),
+    "N: milestone brag spells out the window", brag and brag.msg)
+Expire()
+lament = sentChat[#sentChat]
+CHECK(lament and lament.channel == "EMOTE"
+    and lament.msg:find("x11", 1, true) and lament.msg:find("30s", 1, true),
+    "N: lament spells out the window", lament and lament.msg)
+CommanderMomentumDB.MilestoneEmotes = false
+CommanderMomentumDB.BreakEmotes = false
+
+-- ===========================================================================
+-- O: player-frame display — every style draws, placement resolves to the
+-- right anchor, and the readout says exactly what the toggles asked for
+-- ===========================================================================
+
+CommanderMomentumDB.Window = 20
+local function Notify() Commander.Notify(COMMANDER_MOMENTUM_EVENTS.UPDATE) end
+
+-- The one player-frame mode that predates the styles: saved settings still
+-- carry "PORTRAIT" and it has to land on the ring style, not on nothing
+CommanderMomentumDB.Display = "PORTRAIT"
+Chain(3)
+local pf = _G.CommanderMomentumPlayer
+CHECK(pf and pf:IsShown(), "O: legacy PORTRAIT draws the player-frame readout")
+local reportedMode = CommanderMomentum_DisplayReport()
+CHECK(reportedMode == "RING", "O: legacy PORTRAIT reports as the ring style", reportedMode)
+CHECK(not CommanderMomentumFrame:IsShown(), "O: floating meter stays down in a player mode")
+
+local everyStyle = true
+for _, style in ipairs({ "RING", "GLOW", "BADGE", "BAR", "PIPS", "TICKER", "FLARE" }) do
+    CommanderMomentumDB.Display = style
+    Notify()
+    local mode = CommanderMomentum_DisplayReport()
+    if not (pf:IsShown() and mode == style) then everyStyle = style end
+end
+CHECK(everyStyle == true, "O: every player-frame style draws", everyStyle)
+
+CommanderMomentumDB.Display = "BADGE"
+CommanderMomentumDB.Placement = "BELOW"
+CommanderMomentumDB.PlayerX, CommanderMomentumDB.PlayerY = 12, -7
+Notify()
+local point = pf.__points and pf.__points[1]
+CHECK(point and point.point == "TOP" and point.relative == PlayerFrame
+    and point.relativePoint == "BOTTOM" and point.x == 12 and point.y == -9,
+    "O: BELOW hangs under the player frame with the offsets applied",
+    point and (point.point .. "/" .. tostring(point.relativePoint)
+        .. " " .. tostring(point.x) .. "," .. tostring(point.y)))
+
+CommanderMomentumDB.Placement = "PORTRAIT"
+CommanderMomentumDB.PlayerX, CommanderMomentumDB.PlayerY = 0, 0
+Notify()
+point = pf.__points and pf.__points[1]
+CHECK(point and point.relative == PlayerPortrait,
+    "O: the portrait placement hangs off the portrait art itself")
+
+CommanderMomentumDB.ShowSeconds = true
+CommanderMomentumDB.ShowBest = true
+CommanderMomentumDB.ShowWindow = true
+CommanderMomentumDB.ShowLabel = true
+Notify()
+local _, _, shown, mainText, subText = CommanderMomentum_DisplayReport()
+CHECK(shown and mainText == "x3", "O: the multiplier is the main line", mainText)
+CHECK(subText:match("^%d+s") and subText:find("best x", 1, true)
+    and subText:find("20s clock", 1, true) and subText:find("MOMENTUM", 1, true),
+    "O: the info line carries countdown, best chain, window and label", subText)
+
+CommanderMomentumDB.Display = "TICKER"
+Notify()
+local _, _, _, tickerMain, tickerSub = CommanderMomentum_DisplayReport()
+CHECK(tickerMain:find("x3 · ", 1, true) and tickerMain:find("MOMENTUM", 1, true)
+    and tickerSub == "", "O: the ticker folds everything onto one line",
+    tickerMain .. " | " .. tickerSub)
+
+CommanderMomentumDB.Display = "RING"
+CommanderMomentumDB.ShowMultiplier = false
+Notify()
+local _, _, _, bareMain = CommanderMomentum_DisplayReport()
+CHECK(bareMain == "", "O: multiplier off leaves the art to speak for itself", bareMain)
+CommanderMomentumDB.ShowMultiplier = true
+
+CommanderMomentumDB.CombatOnly = true
+inCombat = false
+Fire("PLAYER_REGEN_ENABLED")
+CHECK(not pf:IsShown(), "O: Combat Only hides the readout out of combat")
+CHECK(CommanderMomentum_GetStreakInfo() == 3, "O: ...while the chain itself keeps running")
+inCombat = true
+Fire("PLAYER_REGEN_DISABLED")
+CHECK(pf:IsShown(), "O: the readout returns when the next fight starts")
+CommanderMomentumDB.CombatOnly = false
+
+CommanderMomentumDB.Display = "HUD"
+Notify()
+CHECK(not pf:IsShown(), "O: back on the floating meter, the player readout goes away")
+CHECK(CommanderMomentumFrame:IsShown(), "O: ...and the meter itself comes back")
+Expire()
 
 -- ===========================================================================
 

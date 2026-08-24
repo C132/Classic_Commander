@@ -2,11 +2,13 @@
 ## Category: Commander
 ## Title: Commander Spoils
 ## Author: Devin
-## Version: 2.1.0
-## Notes: Loot feedback: SUPPLY ACQUIRED toasts with item icons, quality colors, and an epic screen flash.
+## Version: 3.0.0
+## Notes: One window for every piece of loot: replaces the loot frame, the roll pop-ups and the chat loot lines with a feed, a haul ledger, a roll log, a bag census and party income.
 ## IconTexture: Interface\Icons\INV_Box_01
-## SavedVariables: CommanderSpoilsDB
+## SavedVariables: CommanderSpoilsDB, CommanderSpoilsData
 ## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Console, Commander_Bags, Commander_Logistics, Commander_Quartermaster, Auctionator
 
 CommanderSpoilsDB.lua
+CommanderSpoilsEngine.lua
 CommanderSpoils.lua

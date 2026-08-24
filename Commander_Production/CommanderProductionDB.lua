@@ -12,9 +12,11 @@ local DefaultSettings = {
     ReadySound = "CLICK",
     ReadyCallout = "CHAT",
     LingerReady = false,
+    LingerTime = 10,
     AlwaysShow = false,
     FixedHeight = false,
     Layout = "BARS_DOWN",
+    IconRecess = "SOFT",   -- shared suite icon shading: OFF|SOFT|DEEP|CARVED
     BarWidth = 110,
     CooldownOverlay = "BAR",
 }
@@ -166,12 +168,31 @@ local function CreateOptionsPanel()
             end
         end,
     })
+    panel:AddDropdown({
+        label = "Icon Recess",
+        tooltip = "Shading laid over every icon here so it reads as set into the frame rather than pasted on it. The art is shared across the suite, so an icon here is cut the same way as one on any other Commander board.",
+        options = Commander.ICON_STYLES,
+        get = function() return CommanderProductionDB.IconRecess end,
+        set = function(value) CommanderProductionDB.IconRecess = value end,
+        isEnabled = function() return CommanderProductionDB.EnableProduction end,
+    })
     panel:AddCheckbox({
         label = "Linger When Ready",
-        tooltip = "Finished cooldowns stay on the queue as a green READY entry for a minute, then fade out over 30 seconds — a running record of what came available. Casting the spell puts it straight back on the clock.",
+        tooltip = "Finished cooldowns stay on the queue as a green READY entry for the Linger Time below, then fade out — a running record of what came available. Casting the spell puts it straight back on the clock.",
         get = function() return CommanderProductionDB.LingerReady end,
         set = function(value) CommanderProductionDB.LingerReady = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
+    })
+    panel:AddSlider({
+        label = "Linger Time",
+        tooltip = "How long a finished cooldown holds its green READY entry before fading out, which takes half as long again.",
+        min = 3, max = 120, step = 1,
+        format = "%.0fs",
+        get = function() return CommanderProductionDB.LingerTime end,
+        set = function(value) CommanderProductionDB.LingerTime = value end,
+        isEnabled = function()
+            return CommanderProductionDB.EnableProduction and CommanderProductionDB.LingerReady
+        end,
     })
 
     panel:AddButtonRow({

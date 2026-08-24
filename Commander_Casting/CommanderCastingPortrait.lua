@@ -31,6 +31,27 @@ local RING_OUTER = 0.485
 local GLOW_FILE = TEXTURES .. "RingGlow.png"
 local TICK_FILE = TEXTURES .. "Tick.png"
 local EDGE_FILE = TEXTURES .. "Edge.png"
+-- A filled circle spanning its whole texture: the alpha mask that rounds the
+-- square spell icon off into something the shape of a portrait
+local MASK_FILE = TEXTURES .. "CircleMask.png"
+-- Transparent through the middle, dark at the top rim and light at the bottom
+-- one: an inner shadow that reads as the icon sitting down inside the frame.
+-- Four cuts of the same idea, from a shallow press to a socket.
+local SHADE_FILES = {
+    SOFT   = TEXTURES .. "IconShadeSoft.png",
+    DEEP   = TEXTURES .. "IconShadeDeep.png",
+    CARVED = TEXTURES .. "IconShadeCarved.png",
+    WELL   = TEXTURES .. "IconShadeWell.png",
+}
+
+-- The setting was a checkbox before it was a list of styles. A saved true
+-- still means the shading that checkbox drew, and a saved false still means
+-- none, so nobody's setting flips to something they never chose.
+local function ShadeFile(value)
+    if value == true then return SHADE_FILES.SOFT end
+    if not value then return nil end
+    return SHADE_FILES[value]
+end
 
 -- Half-length of the spark's flat-alpha core, as a fraction of its texture
 -- (mirrored from Harness/make_rings.py, where the art also fades out over
@@ -43,6 +64,18 @@ local EDGE_CORE = 0.30
 local PORTRAIT_DISC = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
 
 local FONT = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+
+-- The spell icon does not sit beside the ring: it takes the portrait's place,
+-- rounded off and cut to the arc's inner edge, so the face you were looking at
+-- becomes the spell being cast without anything moving or growing.
+--
+-- Icon art carries its own dark border, and the mask would round that border
+-- rather than the picture. Trimming it first is what makes the circle read as
+-- a portrait instead of a rounded-off tile.
+local ICON_INSET = 0.08
+-- Without mask textures the icon stays square, so it shrinks to the square
+-- that fits inside the hole rather than spilling over the arc
+local INSCRIBED = 0.7071        -- 1 / sqrt(2)
 
 local TEXT_INTERVAL = 1 / 20     -- dirty-checked label / marker refresh
 local TEST_DURATION = 3
@@ -109,7 +142,7 @@ for _, key in ipairs(RING_ORDER) do
         spec = SPECS[key],
         built = false,
         laid = {},
-        cast = { active = false, channel = false, test = false, name = nil, start = 0, finish = 0 },
+        cast = { active = false, channel = false, test = false, name = nil, icon = nil, start = 0, finish = 0 },
         flashKind = nil,
         flashStart = 0,
         lastLabel = "",
@@ -162,6 +195,42 @@ local function Build(ring)
     holder:Hide()
     ring.holder = holder
 
+    -- The spell's own art standing in for the portrait. It goes on the
+    -- portrait's OWN frame, one sublevel above it -- not on the ring holder.
+    -- The frame's metal, the level number and the unit's name are drawn by
+    -- child frames sitting above the portrait, so anything on the holder (five
+    -- levels up) would bury them. Down here the icon covers the face and
+    -- nothing else: everything Blizzard draws over a portrait still draws over
+    -- this. Read off the portrait rather than hardcoded, so a unit-frame skin
+    -- that moves its portrait art takes the icon with it.
+    local portraitOwner = (portrait.GetParent and portrait:GetParent()) or parent
+    local iconLayer, iconSublevel = "ARTWORK", 0
+    if portrait.GetDrawLayer then
+        local layer, sublevel = portrait:GetDrawLayer()
+        iconLayer = layer or iconLayer
+        iconSublevel = sublevel or 0
+    end
+    ring.icon = portraitOwner:CreateTexture(nil, iconLayer, nil, iconSublevel + 1)
+    ring.icon:SetTexCoord(ICON_INSET, 1 - ICON_INSET, ICON_INSET, 1 - ICON_INSET)
+    ring.icon:Hide()
+
+    -- The inner shadow that presses it into the frame. Its own art, drawn over
+    -- the icon rather than tinted, because it is dark at the top rim and light
+    -- at the bottom one -- a single vertex color could not be both.
+    ring.shade = portraitOwner:CreateTexture(nil, iconLayer, nil, iconSublevel + 2)
+    ring.shade:Hide()
+
+    -- Guarded the way the rest of the suite guards masks: a client without them
+    -- keeps a square icon (sized to fit the hole) instead of losing the option
+    if portraitOwner.CreateMaskTexture and ring.icon.AddMaskTexture then
+        ring.iconMasked = pcall(function()
+            local mask = portraitOwner:CreateMaskTexture()
+            mask:SetTexture(MASK_FILE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            mask:SetAllPoints(ring.icon)
+            ring.icon:AddMaskTexture(mask)
+        end)
+    end
+
     -- The wash over the portrait itself, anchored to the portrait rather than
     -- to the ring so growing the ring never grows the tint
     ring.tint = holder:CreateTexture(nil, "BACKGROUND")
@@ -182,6 +251,10 @@ local function Build(ring)
     if spec.extras then
         ring.gcd = NewSweep(holder, base + 7)
         ring.gcd:SetPoint("CENTER", holder, "CENTER")
+        -- The swing timer's own ring, on its own radius again: a third
+        -- question, and the only one of the three that is about the weapon
+        ring.swing = NewSweep(holder, base + 8)
+        ring.swing:SetPoint("CENTER", holder, "CENTER")
     end
 
     -- Everything that must never be eaten by the sweep sits on its own frame
@@ -207,6 +280,11 @@ local function Build(ring)
         ring.tick = overlay:CreateTexture(nil, "OVERLAY")
         ring.tick:SetTexture(TICK_FILE)
         ring.tick:Hide()
+        -- Where to press for the twist, marked on the swing ring exactly the
+        -- way the latency tick marks the queue point on the cast arc
+        ring.twistTick = overlay:CreateTexture(nil, "OVERLAY")
+        ring.twistTick:SetTexture(TICK_FILE)
+        ring.twistTick:Hide()
     end
 
     ring.label = overlay:CreateFontString(nil, "OVERLAY")
@@ -252,9 +330,17 @@ local function Layout(ring)
     local textPlace = DB(prefix .. "TextPlace", "BELOW")
     local gcdThickness = DB(prefix .. "GCDThickness", 3)
     local gcdPlace = DB(prefix .. "GCDPlacement", "INSIDE")
+    local swingThickness = DB(prefix .. "SwingThickness", 3)
+    local swingPlace = DB(prefix .. "SwingPlacement", "OUTSIDE")
+    -- Which radius an extra ring gets depends on which extras are switched ON,
+    -- never on which happens to be sweeping right now: a swing ring that
+    -- stepped inward every time the global cooldown finished would be unreadable
+    local gcdOn = DB(prefix .. "GCD", false) and true or false
+    local swingOn = DB(prefix .. "Swing", false) and true or false
 
-    local signature = string.format("%.2f:%d:%d:%d:%d:%s:%d:%s",
-        frameSize, thickness, offsetX, offsetY, textSize, textPlace, gcdThickness, gcdPlace)
+    local signature = string.format("%.2f:%d:%d:%d:%d:%s:%d:%s:%s:%d:%s:%s",
+        frameSize, thickness, offsetX, offsetY, textSize, textPlace,
+        gcdThickness, gcdPlace, tostring(gcdOn), swingThickness, swingPlace, tostring(swingOn))
     if ring.laid.signature == signature then return end
     ring.laid.signature = signature
 
@@ -283,6 +369,24 @@ local function Layout(ring)
 
     ring.glow:SetSize(frameSize * 1.3, frameSize * 1.3)
 
+    -- The icon stands in for the portrait, so it fills the hole the arc leaves
+    -- -- cut off exactly where the band begins, at whatever ring size and
+    -- weight are set. Past the portrait's own width it stops growing: a ring
+    -- riding the frame's metal trim is not an invitation to paint over it.
+    local hole = math.min(outer * ratio * 2, portraitSize)
+    local iconSize = ring.iconMasked and hole or hole * INSCRIBED
+    ring.icon:SetSize(iconSize, iconSize)
+    ring.icon:ClearAllPoints()
+    -- Anchored to the portrait, not to the holder: it lives on the portrait's
+    -- frame now, and this is the holder's own anchor written out again, so the
+    -- two move together under the ring's offsets
+    ring.icon:SetPoint("CENTER", portrait, "CENTER", offsetX, offsetY)
+
+    -- The shadow is the icon's rim, so it is exactly the icon
+    ring.shade:SetSize(iconSize, iconSize)
+    ring.shade:ClearAllPoints()
+    ring.shade:SetPoint("CENTER", portrait, "CENTER", offsetX, offsetY)
+
     ring.label:SetFont(FONT, textSize, "OUTLINE")
     ring.label:ClearAllPoints()
     if textPlace == "CENTER" then
@@ -295,17 +399,34 @@ local function Layout(ring)
 
     if ring.gcd then
         -- Both placements come down to "where should this ring's outer edge
-        -- land"; the weight of art is then chosen for the pixel thickness.
-        local gcdSize
-        if gcdPlace == "OUTSIDE" then
-            gcdSize = (frameSize * RING_OUTER + 1 + gcdThickness) / RING_OUTER
-        else
-            local hole = frameSize * RING_OUTER * ratio
-            gcdSize = math.max(8, (hole - 1) / RING_OUTER)
+        -- land"; the weight of art is then chosen for the pixel thickness. Two
+        -- extras pointed at the same side take consecutive slots rather than
+        -- landing on top of one another, so the cursors walk outward and
+        -- inward from the cast arc as each one is placed.
+        local outerEdge, innerEdge = outer, outer * ratio
+        local function Place(sweep, place, thick)
+            local edge
+            if place == "OUTSIDE" then
+                edge = outerEdge + 1 + thick
+                outerEdge = edge
+            else
+                edge = innerEdge - 1
+                innerEdge = edge - thick
+            end
+            local size = math.max(8, edge / RING_OUTER)
+            sweep:SetSize(size, size)
+            local file, subRatio = RingTexture(size, thick)
+            if sweep.SetSwipeTexture then sweep:SetSwipeTexture(file) end
+            -- Measured, not requested, for the same reason the cast arc's band
+            -- is: anything riding this ring has to sit on the art that landed
+            local subOuter = size * RING_OUTER
+            local subBand = subOuter * (1 - subRatio)
+            return subBand, subOuter - subBand / 2
         end
-        ring.gcd:SetSize(gcdSize, gcdSize)
-        if ring.gcd.SetSwipeTexture then
-            ring.gcd:SetSwipeTexture((RingTexture(gcdSize, gcdThickness)))
+        if gcdOn then Place(ring.gcd, gcdPlace, gcdThickness) end
+        if swingOn then
+            ring.laid.swingBand, ring.laid.swingRadius =
+                Place(ring.swing, swingPlace, swingThickness)
         end
     end
 end
@@ -359,12 +480,13 @@ local function ReadCast(ring)
     local unit = ring.spec.unit
     local cast = ring.cast
 
-    local name, _, _, startMS, endMS = UnitCastingInfo(unit)
+    local name, _, icon, startMS, endMS = UnitCastingInfo(unit)
     local channel = false
     if not name then
-        local channelName, _, _, channelStart, channelEnd = UnitChannelInfo(unit)
+        local channelName, _, channelIcon, channelStart, channelEnd = UnitChannelInfo(unit)
         if channelName then
-            name, startMS, endMS, channel = channelName, channelStart, channelEnd, true
+            name, icon, channel = channelName, channelIcon, true
+            startMS, endMS = channelStart, channelEnd
         end
     end
 
@@ -372,14 +494,106 @@ local function ReadCast(ring)
         -- A pretend cast is only ever ended by its own clock, never by the
         -- absence of a real one
         if cast.active and not cast.test then
-            cast.active, cast.channel, cast.name = false, false, nil
+            cast.active, cast.channel, cast.name, cast.icon = false, false, nil, nil
         end
         return
     end
 
     cast.active, cast.test, cast.channel = true, false, channel
-    cast.name = name
+    cast.name, cast.icon = name, icon
     cast.start, cast.finish = startMS / 1000, endMS / 1000
+end
+
+-- ---------------------------------------------------------------------------
+-- The swing timer. Nothing on this client reports when your weapon lands next,
+-- so it is inferred from the one thing that is reported: a swing of your own in
+-- the combat log is the clock starting over, and UnitAttackSpeed says how long
+-- the new one has to run. That makes the ring exact from your first swing of a
+-- fight onward and blank before it -- there is no honest way to draw a swing
+-- nobody has seen yet.
+--
+-- Haste is followed rather than ignored: a proc landing mid-swing leaves the
+-- same SHARE of the swing to run, so the clock is rewritten in place instead of
+-- finishing late. Parry-haste is deliberately not modeled -- it pulls in the
+-- swing of whoever did the parrying, which is the other side of the fight.
+-- ---------------------------------------------------------------------------
+
+local swings = {
+    MAIN = { start = 0, duration = 0 },
+    OFF  = { start = 0, duration = 0 },
+}
+local playerGUID
+local sealDirty, sealName = true, nil
+
+local function SwingHand()
+    return DB("PlayerRingSwingHand", "MAIN") == "OFF" and "OFF" or "MAIN"
+end
+
+local function SwingSpeed(hand)
+    if not UnitAttackSpeed then return nil end
+    local main, off = UnitAttackSpeed("player")
+    if hand == "OFF" then return off end
+    return main
+end
+
+local function SwingRunning(swing)
+    return swing.duration > 0 and (GetTime() - swing.start) < swing.duration
+end
+
+-- Whether the ring has a swing to draw at all, option included: this is what
+-- decides whether the driver stays awake, so it must never be true for a swing
+-- nobody asked to see.
+local function SwingActive()
+    return DB("PlayerRingSwing", false) and SwingRunning(swings[SwingHand()])
+end
+
+local function StartSwing(hand)
+    local speed = SwingSpeed(hand)
+    if not speed or speed <= 0 then return end
+    local swing = swings[hand]
+    swing.start, swing.duration = GetTime(), speed
+end
+
+local function RetimeSwing(hand)
+    local swing = swings[hand]
+    if not SwingRunning(swing) then
+        swing.duration = 0
+        return
+    end
+    local speed = SwingSpeed(hand)
+    if not speed or speed <= 0 then return end
+    local left = (swing.start + swing.duration - GetTime()) / swing.duration
+    swing.duration = speed
+    swing.start = GetTime() - (1 - left) * speed
+end
+
+local function ClearSwings()
+    swings.MAIN.duration, swings.OFF.duration = 0, 0
+end
+
+-- Scanning forty auras at the label's tick rate to answer one yes/no would be
+-- pure churn; UNIT_AURA is what actually changes the answer, so it is what
+-- dirties it
+local function ActiveSeal()
+    if sealDirty then
+        sealDirty = false
+        sealName = CommanderCasting_ActiveSeal()
+    end
+    return sealName
+end
+
+-- Where the twist window opens, as a share of the swing, and whether the swing
+-- is inside it now. Nil when the assist has nothing to say: no swing running,
+-- no seal to twist out of, or a window that would not fit inside the swing.
+local function TwistState()
+    if not DB("PlayerRingTwist", false) then return nil end
+    local swing = swings[SwingHand()]
+    if not SwingRunning(swing) then return nil end
+    if DB("PlayerRingTwistSeal", true) and not ActiveSeal() then return nil end
+    local lead = DB("PlayerRingTwistLead", 0.4)
+    if lead <= 0 or lead >= swing.duration then return nil end
+    local opens = 1 - lead / swing.duration
+    return opens, ((GetTime() - swing.start) / swing.duration) >= opens
 end
 
 -- ---------------------------------------------------------------------------
@@ -479,15 +693,121 @@ local function UpdateLatency(ring)
     tick:Show()
 end
 
+-- The mark on the swing ring saying where the twist window opens -- the same
+-- job the latency tick does on the cast arc, on the swing ring's own radius
+local function UpdateTwistTick(ring, opens)
+    local tick = ring.twistTick
+    if not tick then return end
+    if not opens then
+        if tick:IsShown() then tick:Hide() end
+        return
+    end
+    local theta = opens * math.pi * 2
+    local band = ring.laid.swingBand or 3
+    local radius = ring.laid.swingRadius or 0
+    local size = band + 6
+    tick:SetSize(size, size)
+    tick:SetPoint("CENTER", ring.overlay, "CENTER",
+        math.sin(theta) * radius, math.cos(theta) * radius)
+    tick:SetRotation(-theta)
+    tick:SetVertexColor(Color(DB("PlayerRingTwistColor", "VERDANT")))
+    if not tick:IsShown() then tick:Show() end
+end
+
+local function HideSwing(ring)
+    if not ring.swing then return end
+    if ring.swingApplied then
+        ClearSweep(ring.swing)
+        ring.swing:Hide()
+        ring.swingApplied = nil
+    end
+    UpdateTwistTick(ring, nil)
+    ring.twistOpen = false
+end
+
+local function UpdateSwing(ring)
+    local swing = ring.swing
+    if not swing then return end
+    local prefix = ring.spec.prefix
+    local clock = swings[SwingHand()]
+    if not (DB(prefix .. "Swing", false) and SwingRunning(clock)) then
+        HideSwing(ring)
+        return
+    end
+
+    local opens, inside = TwistState()
+    -- Only on the way in: a cue that re-fired every tick of the window would be
+    -- a buzz rather than a mark
+    if inside and not ring.twistOpen and DB(prefix .. "TwistSound", false) then
+        pcall(PlaySound, (SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB) or 841, "Master")
+    end
+    ring.twistOpen = inside and true or false
+
+    local r, g, b = Color(inside and DB(prefix .. "TwistColor", "VERDANT")
+        or DB(prefix .. "SwingColor", "BONE"))
+    if swing.SetReverse then swing:SetReverse(DB(prefix .. "SwingFill", true) and true or false) end
+    if swing.SetSwipeColor then swing:SetSwipeColor(r, g, b, 1) end
+
+    -- The clock itself is only handed over when it actually changed: re-setting
+    -- the same cooldown restarts an animation the client is already running
+    if ring.swingApplied ~= clock.start then
+        ring.swingApplied = clock.start
+        swing:SetCooldown(clock.start, clock.duration)
+        swing:Show()
+    end
+
+    UpdateTwistTick(ring, opens)
+end
+
+local function HideIcon(ring)
+    if ring.icon:IsShown() then ring.icon:Hide() end
+    if ring.shade:IsShown() then ring.shade:Hide() end
+end
+
+local function ClearLabel(ring)
+    if ring.label:IsShown() then ring.label:Hide() end
+    HideIcon(ring)
+    ring.lastLabel = ""
+end
+
 local function UpdateLabel(ring)
     local prefix = ring.spec.prefix
     local mode = DB(prefix .. "Text", "NONE")
     local cast = ring.cast
     if mode == "NONE" or not cast.active then
-        if ring.label:IsShown() then ring.label:Hide() end
-        ring.lastLabel = ""
+        ClearLabel(ring)
         return
     end
+
+    if mode == "ICON" then
+        if ring.label:IsShown() then ring.label:Hide() end
+        -- A cast with no art to show leaves the portrait alone rather than
+        -- covering a face with a blank disc
+        if not cast.icon then
+            ClearLabel(ring)
+            return
+        end
+        -- One dirty-check slot serves both forms: only one is ever on screen
+        if cast.icon ~= ring.lastLabel then
+            ring.lastLabel = cast.icon
+            ring.icon:SetTexture(cast.icon)
+        end
+        if not ring.icon:IsShown() then ring.icon:Show() end
+        -- The recess is only ever drawn on top of art that is actually there
+        local shade = ShadeFile(DB(prefix .. "IconDeboss", "DEEP"))
+        if not shade then
+            if ring.shade:IsShown() then ring.shade:Hide() end
+        else
+            if shade ~= ring.shadeFile then
+                ring.shadeFile = shade
+                ring.shade:SetTexture(shade)
+            end
+            if not ring.shade:IsShown() then ring.shade:Show() end
+        end
+        return
+    end
+
+    HideIcon(ring)
 
     local text
     if mode == "TIME" then
@@ -498,8 +818,7 @@ local function UpdateLabel(ring)
         text = cast.name
     end
     if not text then
-        ring.label:Hide()
-        ring.lastLabel = ""
+        ClearLabel(ring)
         return
     end
 
@@ -545,8 +864,10 @@ function ApplyRing(ring)
     if not (DB("EnablePortraitRings", true) and DB(prefix .. "Enabled", true)) then
         ClearSweep(ring.arc)
         ClearSweep(ring.gcd)
+        HideSwing(ring)
         ring.flashKind = nil
         ring.edgeLive = false
+        ClearLabel(ring)
         ring.holder:Hide()
         return
     end
@@ -558,17 +879,26 @@ function ApplyRing(ring)
     local casting = cast.active and duration > 0
     local always = DB(prefix .. "ShowWhen", "CASTING") == "ALWAYS"
     local gcdWants = ring.gcd and DB(prefix .. "GCD", false) and GCDActive()
+    local swingWants = ring.swing and SwingActive()
 
-    if not (casting or always or ring.flashKind or gcdWants) then
+    if not (casting or always or ring.flashKind or gcdWants or swingWants) then
         ClearSweep(ring.arc)
         ClearSweep(ring.gcd)
+        HideSwing(ring)
         ring.edgeLive = false
+        ClearLabel(ring)
         ring.holder:Hide()
         return
     end
 
-    ring.holder:SetAlpha(DB(prefix .. "Opacity", 1))
+    local opacity = DB(prefix .. "Opacity", 1)
+    ring.holder:SetAlpha(opacity)
     ring.holder:Show()
+
+    -- The icon and its recess hang off the portrait's frame rather than the
+    -- holder, so the ring's opacity has to be handed to them by hand
+    ring.icon:SetAlpha(opacity)
+    ring.shade:SetAlpha(opacity)
 
     -- The empty circle belongs to the cast arc, so it comes up with it -- a
     -- ring on screen for the cooldown sweep alone does not drag it along
@@ -607,6 +937,7 @@ function ApplyRing(ring)
     end
 
     ApplyGCD(ring)
+    UpdateSwing(ring)
     UpdateLatency(ring)
     UpdateLabel(ring)
 end
@@ -624,6 +955,7 @@ local function Busy()
         local ring = rings[RING_ORDER[i]]
         if ring.cast.active or ring.flashKind then return true end
     end
+    if SwingActive() then return true end
     return GCDActive()
 end
 
@@ -666,6 +998,9 @@ driver:SetScript("OnUpdate", function(_, elapsed)
                 UpdateLabel(ring)
             end
         end
+        -- The swing arc animates itself; what needs a tick is the twist window,
+        -- which opens partway through a sweep nothing else is watching
+        if rings.player.built then UpdateSwing(rings.player) end
         if gcdDuration > 0 and not GCDActive() then
             gcdDuration = 0
             for i = 1, #RING_ORDER do
@@ -739,15 +1074,22 @@ end
 -- judged without waiting for a fight to hand you one.
 -- ---------------------------------------------------------------------------
 
+-- Art comes with each one: these are rarely spells the player knows, so asking
+-- the client for their icons would hand back nothing on most characters
 local TEST_SPELLS = {
-    "Greater Heal", "Frostbolt", "Immolate", "Shadow Bolt", "Lightning Bolt", "Arcane Missiles",
+    { name = "Greater Heal",    icon = "Interface\\Icons\\Spell_Holy_GreaterHeal" },
+    { name = "Frostbolt",       icon = "Interface\\Icons\\Spell_Frost_FrostBolt02" },
+    { name = "Immolate",        icon = "Interface\\Icons\\Spell_Fire_Immolation" },
+    { name = "Shadow Bolt",     icon = "Interface\\Icons\\Spell_Shadow_ShadowBolt" },
+    { name = "Lightning Bolt",  icon = "Interface\\Icons\\Spell_Nature_Lightning" },
+    { name = "Arcane Missiles", icon = "Interface\\Icons\\Spell_Nature_StarFall" },
 }
 local testIndex = 0
 
-local function StartTestCast(ring, name)
+local function StartTestCast(ring, spell)
     local cast = ring.cast
     cast.active, cast.test, cast.channel = true, true, false
-    cast.name = name
+    cast.name, cast.icon = spell.name, spell.icon
     cast.start = GetTime()
     cast.finish = cast.start + TEST_DURATION
     ApplyRing(ring)
@@ -766,13 +1108,13 @@ function CommanderCasting_TestRings()
     end
 
     testIndex = testIndex % #TEST_SPELLS + 1
-    local name = TEST_SPELLS[testIndex]
-    if player then StartTestCast(rings.player, name) end
-    if target then StartTestCast(rings.target, name) end
+    local spell = TEST_SPELLS[testIndex]
+    if player then StartTestCast(rings.player, spell) end
+    if target then StartTestCast(rings.target, spell) end
     Wake()
 
     print(string.format("Commander Casting: test cast — %s, %d seconds. Change any setting and watch it take effect live.",
-        name, TEST_DURATION))
+        spell.name, TEST_DURATION))
     if target and not UnitExists("target") then
         print("Commander Casting: no target — the target ring has no portrait to draw on yet.")
     end
@@ -782,7 +1124,71 @@ end
 -- Wiring
 -- ---------------------------------------------------------------------------
 
+-- The swing timer's events live on their own frame so they can be dropped
+-- entirely while the ring is off: the combat log is the noisiest event in the
+-- game, and nobody who never asked for a swing timer should be paying to parse it.
+local swingEvents = CreateFrame("Frame")
+local swingWatching = false
+
+local function UpdateSwingWatch()
+    local want = (DB("EnablePortraitRings", true) and DB("PlayerRingEnabled", true)
+        and DB("PlayerRingSwing", false)) and true or false
+    if want == swingWatching then return end
+    swingWatching = want
+    if want then
+        swingEvents:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+        swingEvents:RegisterEvent("UNIT_ATTACK_SPEED")
+        swingEvents:RegisterEvent("UNIT_ATTACK")
+        swingEvents:RegisterEvent("UNIT_AURA")
+        swingEvents:RegisterEvent("PLAYER_LEAVE_COMBAT")
+        sealDirty = true
+    else
+        swingEvents:UnregisterAllEvents()
+        ClearSwings()
+    end
+end
+
+swingEvents:SetScript("OnEvent", function(_, event, unit)
+    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        local _, subevent, _, sourceGUID, _, _, _, _, _, _, _,
+            _, a13, _, _, _, _, _, _, _, a21 = CombatLogGetCurrentEventInfo()
+        if subevent ~= "SWING_DAMAGE" and subevent ~= "SWING_MISSED" then return end
+        if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
+        -- A missed swing is still a spent swing; only a parry hastens anything,
+        -- and that is the other unit's clock. isOffHand sits at a different
+        -- argument on the two subevents, and anything short of an explicit true
+        -- is read as the main hand -- a client that never reports it then keeps
+        -- the main-hand ring honest instead of scrambling both.
+        local offHand = (subevent == "SWING_DAMAGE" and a21 == true)
+            or (subevent == "SWING_MISSED" and a13 == true)
+        StartSwing(offHand and "OFF" or "MAIN")
+        ApplyRing(rings.player)
+        if Busy() then Wake() end
+        return
+    end
+
+    if event == "PLAYER_LEAVE_COMBAT" then
+        -- Auto-attack switched off: there is no next swing to count toward
+        ClearSwings()
+        ApplyRing(rings.player)
+        return
+    end
+
+    if event == "UNIT_AURA" then
+        if unit == "player" then sealDirty = true end
+        return
+    end
+
+    -- UNIT_ATTACK_SPEED (haste came or went) and UNIT_ATTACK (the weapon
+    -- itself changed) both mean the swing in flight is running to a new clock
+    if unit ~= "player" then return end
+    RetimeSwing("MAIN")
+    RetimeSwing("OFF")
+    ApplyRing(rings.player)
+end)
+
 local function ApplyAll()
+    UpdateSwingWatch()
     for i = 1, #RING_ORDER do
         ApplyRing(rings[RING_ORDER[i]])
     end
@@ -818,6 +1224,7 @@ events:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 
 events:SetScript("OnEvent", function(_, event, unit, _, spellID)
     if event == "PLAYER_LOGIN" then
+        playerGUID = UnitGUID and UnitGUID("player")
         Commander.AddListener(COMMANDER_CASTING_EVENTS.UPDATE, ApplyAll)
         -- Logging in or reloading mid-cast still gets an arc
         for i = 1, #RING_ORDER do

@@ -146,7 +146,25 @@ function PanelMethods.AddRow(panel, height, spacing)
     row:SetPoint("TOPLEFT", panel._anchor, "BOTTOMLEFT", 0, -(spacing or ROW_SPACING))
     row:SetPoint("RIGHT", panel, "RIGHT", -RIGHT_MARGIN, 0)
     panel._anchor = row
+    -- Running total of what has been flowed. A panel that scrolls its rows
+    -- needs it to size the scroll child; GrowRow keeps it honest when a row
+    -- turns out taller than it could be declared. Tracked here so GrowRow's
+    -- contract is the same whether or not the caller overrode AddRow.
+    panel._contentHeight = (panel._contentHeight or 0) + height + (spacing or ROW_SPACING)
     return row
+end
+
+-- Grow a row after the fact, keeping the panel's running content height in
+-- step. AddRow has to commit a height before its contents exist, so anything
+-- whose real size depends on text wrapping has to come back and correct it —
+-- and a panel that flows its rows into a scroll frame is tracking that total.
+function PanelMethods.GrowRow(panel, row, height)
+    local cur = row:GetHeight() or 0
+    if not height or height <= cur then return end
+    row:SetHeight(height)
+    if panel._contentHeight then
+        panel._contentHeight = panel._contentHeight + (height - cur)
+    end
 end
 
 function PanelMethods.AddSection(panel, text, subtext)
@@ -166,6 +184,21 @@ function PanelMethods.AddSection(panel, text, subtext)
         note:SetJustifyH("LEFT")
         note:SetTextColor(0.75, 0.75, 0.75)
         note:SetText(subtext)
+        -- Two lines is all the 40 above pays for. A longer note used to draw
+        -- straight over whatever control came next, which is not a subtle
+        -- failure — it is a checkbox sitting on top of a paragraph. The
+        -- wrapped height is only knowable once the panel has a real width, so
+        -- it is measured on refresh (when the page is shown) rather than here.
+        panel:AddRefresher(function()
+            if row._sized then return end
+            -- Guarded: a fontstring that cannot measure itself yet (no
+            -- resolved width) must leave the row alone rather than collapse it
+            if not note.GetStringHeight then return end
+            local h = note:GetStringHeight()
+            if not h or h <= 0 then return end
+            row._sized = true
+            panel:GrowRow(row, 22 + math.ceil(h) + 6)
+        end)
     end
     return row
 end
@@ -621,6 +654,7 @@ function UI.NewPanel(opts)
     panel._slash = opts.slash
     panel._slashHandlers = opts.slashHandlers
     panel._refreshers = {}
+    panel._contentHeight = 0
     panel._loading = false
 
     for name, fn in pairs(PanelMethods) do

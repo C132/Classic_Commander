@@ -261,24 +261,48 @@ end
 -- ---------------------------------------------------------------------------
 -- Interrupt callouts: a successful kick is announced to the group — who
 -- you kicked, which cast you stopped, and with what ability — so the team
--- knows interrupts are covered without anyone typing. (The old targeted
+-- knows interrupts are covered without anyone typing. Both spells go out
+-- as real spell links, so the group can hover the callout and read what
+-- was stopped instead of taking a bare name on faith. (The old targeted
 -- /silence emote resolved unreliably from combat-log names and fell back
 -- to shushing everyone nearby.) Short dedupe window so AoE interrupts
 -- hitting several casters don't burst-spam the channel.
 -- ---------------------------------------------------------------------------
 local ANNOUNCE_COOLDOWN = 2
 local lastInterruptAnnounce = -math.huge
+local lastKickedAnnounce = -math.huge
 local lastDispelAnnounce = -math.huge
 local playerGUID
 
-local function OnInterrupt(destName, kickName, stoppedName)
+-- Spell links survive the trip through SendChatMessage, so a callout can
+-- hand the group a clickable spell instead of a bare name. The global
+-- GetSpellLink is still native on this client; C_Spell.GetSpellLink is the
+-- modern spelling, and the hand-built link is the floor when an id
+-- resolves through neither. With no id at all (an event that stops
+-- carrying one) the plain name still ships — a callout is never lost to
+-- a missing link.
+local function SpellLink(spellID, spellName)
+    if spellID then
+        local link = (GetSpellLink and GetSpellLink(spellID))
+            or (C_Spell and C_Spell.GetSpellLink and C_Spell.GetSpellLink(spellID))
+        if type(link) == "string" and link ~= "" then return link end
+        if spellName then
+            return string.format("|cff71d5ff|Hspell:%d|h[%s]|h|r", spellID, spellName)
+        end
+    end
+    return spellName
+end
+
+local function OnInterrupt(destName, kickName, kickID, stoppedName, stoppedID)
     if not CommanderCommsDB.InterruptSilence then return end
     if GetTime() - lastInterruptAnnounce < ANNOUNCE_COOLDOWN then return end
     lastInterruptAnnounce = GetTime()
+    local kickLink = SpellLink(kickID, kickName)
+    local stoppedLink = SpellLink(stoppedID, stoppedName)
     local message
-    if stoppedName and destName then
-        message = string.format("Interrupted %s's %s%s", destName, stoppedName,
-            kickName and (" with " .. kickName .. ".") or ".")
+    if stoppedLink and destName then
+        message = string.format("Interrupted %s's %s%s", destName, stoppedLink,
+            kickLink and (" with " .. kickLink .. ".") or ".")
     elseif destName then
         message = string.format("Interrupted %s.", destName)
     else
@@ -287,21 +311,270 @@ local function OnInterrupt(destName, kickName, stoppedName)
     SendChatMessage(message, PickChannel())
 end
 
+-- ---------------------------------------------------------------------------
+-- Kicked on me: the callout going the other way. When a kick lands on
+-- YOU the team needs more than "I got countered" — which of your spells
+-- died, which school went down with it and for how long (that is what
+-- decides whether you can still heal, sheep or dispel), who did it, and
+-- with what. Everything here is read off the one combat-log event plus
+-- what the client already knows; nothing is guessed.
+-- ---------------------------------------------------------------------------
+
+-- Combat-log school masks. The singles cover every TBC cast; hybrids
+-- (Frostfire, Shadowflame) are named by joining their bits, so a hybrid
+-- still reports what it actually locked.
+local SCHOOL_NAMES = {
+    [0x01] = "Physical", [0x02] = "Holy", [0x04] = "Fire", [0x08] = "Nature",
+    [0x10] = "Frost", [0x20] = "Shadow", [0x40] = "Arcane",
+}
+local SCHOOL_BITS = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40 }
+
+local function SchoolName(mask)
+    if not mask or mask == 0 then return nil end
+    if SCHOOL_NAMES[mask] then return SCHOOL_NAMES[mask] end
+    local parts
+    for _, schoolBit in ipairs(SCHOOL_BITS) do
+        if bit.band(mask, schoolBit) > 0 then
+            parts = parts and (parts .. "/" .. SCHOOL_NAMES[schoolBit])
+                or SCHOOL_NAMES[schoolBit]
+        end
+    end
+    return parts
+end
+
+local PLAYER_FLAG = COMBATLOG_OBJECT_TYPE_PLAYER or 0x00000400
+
+-- The class is the most useful thing about the kicker ("Levira (Mage)"
+-- says what is coming next as much as what just happened), and the combat
+-- log does not carry it — it has to be resolved from whichever unit token
+-- happens to point at the same GUID. Built once; only ever walked on an
+-- interrupt, so the length costs nothing.
+local classScan
+local function ClassOfGUID(guid)
+    if not guid then return nil end
+    if not classScan then
+        classScan = { "target", "focus", "mouseover", "targettarget" }
+        for i = 1, 5 do classScan[#classScan + 1] = "arena" .. i end
+        for i = 1, 40 do classScan[#classScan + 1] = "nameplate" .. i end
+        for i = 1, 4 do classScan[#classScan + 1] = "party" .. i end
+    end
+    for _, unit in ipairs(classScan) do
+        if UnitGUID(unit) == guid then
+            local class = UnitClass(unit)
+            if class and class ~= "" then return class end
+            return nil
+        end
+    end
+    return nil
+end
+
+-- A creature has no class worth printing, so only players get the suffix
+local function DescribeSource(guid, name, flags)
+    if not name then return nil end
+    if not (flags and bit.band(flags, PLAYER_FLAG) > 0) then return name end
+    local class = ClassOfGUID(guid)
+    return class and (name .. " (" .. class .. ")") or name
+end
+
+-- A school lockout is reported by the client as a COOLDOWN on the spells
+-- it covers, which is the only place the duration is readable at all.
+-- Anything longer than the longest TBC lock is the spell's own cooldown
+-- answering instead, and gets dropped rather than announced as a lie.
+local MAX_LOCKOUT = 10.5
+local LOCKOUT_READ_DELAY = 0.1   -- the cooldown lands a beat after the event
+
+local function LockoutSeconds(spellID)
+    if not spellID then return nil end
+    local start, duration
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local info = C_Spell.GetSpellCooldown(spellID)
+        if type(info) == "table" then start, duration = info.startTime, info.duration end
+    end
+    if not duration and GetSpellCooldown then
+        start, duration = GetSpellCooldown(spellID)
+    end
+    if type(start) ~= "number" or type(duration) ~= "number" then return nil end
+    if duration <= 0 or duration > MAX_LOCKOUT then return nil end
+    if start + duration <= GetTime() then return nil end
+    return math.floor(duration + 0.5)
+end
+
+-- info: sourceGUID, sourceName, sourceFlags, kickName, kickID,
+--       spellName, spellID, school
+local function OnKickedOnMe(info)
+    if not CommanderCommsDB.KickedCallouts then return end
+    if GetTime() - lastKickedAnnounce < ANNOUNCE_COOLDOWN then return end
+    lastKickedAnnounce = GetTime()
+    -- The lockout arrives as a cooldown a beat after the combat-log event;
+    -- waiting for it is the difference between "Frost locked" and the
+    -- number the team actually plans around
+    C_Timer.After(LOCKOUT_READ_DELAY, function()
+        local stopped = SpellLink(info.spellID, info.spellName) or "my cast"
+        local by = DescribeSource(info.sourceGUID, info.sourceName, info.sourceFlags)
+        local kick = SpellLink(info.kickID, info.kickName)
+        local school = SchoolName(info.school)
+        local seconds = LockoutSeconds(info.spellID)
+        local lock = ""
+        if school and seconds then
+            lock = string.format(" — %s locked %ds", school, seconds)
+        elseif school then
+            lock = " — " .. school .. " locked"
+        elseif seconds then
+            lock = string.format(" — locked %ds", seconds)
+        end
+        SendChatMessage(string.format("Interrupted on %s%s%s%s.", stopped,
+            by and (" by " .. by) or "", kick and (" with " .. kick) or "", lock),
+            PickChannel())
+    end)
+end
+
+-- ---------------------------------------------------------------------------
+-- Channels: interrupting one is silent in the combat log. SPELL_INTERRUPT
+-- is a cast-bar event — a kicked channel simply stops — so Drain Life,
+-- Mind Flay, Evocation, Tranquility and every other channel got no
+-- callout at all, which is exactly backwards: the channels are the casts
+-- worth kicking. They are caught from the other side instead.
+-- UNIT_SPELLCAST_CHANNEL_* remembers what each unit carrying a unit token
+-- (your target, your focus, a nameplate) is channeling and when it should
+-- end, and an interrupt of yours that lands on such a unit while its
+-- channel dies EARLY is announced like any other kick. Whatever the
+-- client does report through SPELL_INTERRUPT still wins: the inferred
+-- path stands down for a moment per target, so a channel that somehow
+-- emits both is announced once.
+-- ---------------------------------------------------------------------------
+
+-- Name-keyed so every rank matches. Only true interrupts are listed:
+-- stuns cut a channel short too, but announcing every Cheap Shot as an
+-- interrupt would bury the callouts that matter. Spell Lock is absent for
+-- a different reason — a felhunter's kick is sourced to the PET, and
+-- every callout in this file is about what YOU did.
+local INTERRUPT_SPELLS = {
+    ["Kick"] = true, ["Pummel"] = true, ["Shield Bash"] = true,
+    ["Counterspell"] = true, ["Earth Shock"] = true,
+    ["Feral Charge"] = true, ["Arcane Torrent"] = true,
+}
+
+local CHANNEL_MEMORY = 3         -- how long a finished channel stays askable
+local KICK_CONFIRM_DELAY = 0.35  -- the kick's CLEU and the channel's stop
+                                 -- race each other; let both land first
+local KICK_WINDOW = 1            -- kick and stop this far apart are unrelated
+local EARLY_MARGIN = 0.25        -- a channel that ends this close to its own
+                                 -- end time ran out; nobody kicked it
+
+local channels = {}         -- destGUID -> { name, spellID, endsAt, stoppedAt }
+local realInterruptAt = {}  -- destGUID -> when SPELL_INTERRUPT already told it
+local kickMissedAt = {}     -- destGUID -> when an interrupt of ours failed
+
+local function SweepChannelWatch(now)
+    -- Three tiny tables (one live channel per visible caster), so aging
+    -- them on each new channel is cheaper than owning a ticker
+    for guid, channel in pairs(channels) do
+        local finishedAt = channel.stoppedAt or channel.endsAt
+        if finishedAt and now - finishedAt > CHANNEL_MEMORY then channels[guid] = nil end
+    end
+    for guid, at in pairs(realInterruptAt) do
+        if now - at > CHANNEL_MEMORY then realInterruptAt[guid] = nil end
+    end
+    for guid, at in pairs(kickMissedAt) do
+        if now - at > CHANNEL_MEMORY then kickMissedAt[guid] = nil end
+    end
+end
+
+local function NoteChannelStart(unit)
+    if not (CommanderCommsDB and CommanderCommsDB.EnableComms
+        and CommanderCommsDB.InterruptSilence) then return end
+    local guid = UnitGUID(unit)
+    if not guid then return end
+    local name, _, _, _, endTime, _, _, spellID = UnitChannelInfo(unit)
+    if not name then return end
+    local now = GetTime()
+    SweepChannelWatch(now)
+    -- Only the end time matters afterwards: "was this channel killed early"
+    -- is the whole question the kick asks
+    channels[guid] = { name = name, spellID = spellID,
+        endsAt = endTime and (endTime / 1000) or now }
+end
+
+local function NoteChannelUpdate(unit)
+    local guid = UnitGUID(unit)
+    local channel = guid and channels[guid]
+    if not channel then return NoteChannelStart(unit) end
+    local name, _, _, _, endTime = UnitChannelInfo(unit)
+    -- Pushback shortens a channel, and the end time is what "ended early"
+    -- is measured against — keep it current or a pushed-back channel
+    -- finishing normally reads as a kick
+    if name == channel.name and endTime then channel.endsAt = endTime / 1000 end
+end
+
+local function NoteChannelStop(unit)
+    local guid = UnitGUID(unit)
+    local channel = guid and channels[guid]
+    if not channel or channel.stoppedAt then return end
+    channel.stoppedAt = GetTime()
+end
+
+-- Runs a beat after the kick's own combat-log event, once the channel has
+-- had time to report its stop. Serves both directions: `ctx.incoming` is
+-- a channel of YOURS that an enemy kicked, and the victim GUID is the key
+-- either way.
+local function ConfirmChannelKick(ctx)
+    local victimGUID = ctx.victimGUID
+    if not victimGUID then return end
+    -- Runs once per kick, which is the other place worth aging the tables
+    -- (a session of missed kicks without a single channel would otherwise
+    -- keep every stamp)
+    SweepChannelWatch(GetTime())
+    local channel = channels[victimGUID]
+    if not channel then return end
+    local castAt = ctx.castAt
+    -- The client's own event already announced this one
+    if (realInterruptAt[victimGUID] or -math.huge) >= castAt - KICK_WINDOW then return end
+    -- Dodged, parried, immune: the kick was cast but never landed
+    if (kickMissedAt[victimGUID] or -math.huge) >= castAt - KICK_WINDOW then return end
+    if channel.stoppedAt then
+        -- Unrelated: the channel died before the kick, or well after it
+        if math.abs(channel.stoppedAt - castAt) > KICK_WINDOW then return end
+        -- Ran its course on its own. Earth Shock in particular lands on
+        -- channelers who were finishing anyway, and that is not a kick
+        if channel.stoppedAt >= channel.endsAt - EARLY_MARGIN then return end
+    elseif GetTime() >= channel.endsAt then
+        -- No stop seen and the channel is past its end time: it finished
+        return
+    end
+    -- (No stop seen while the channel still had time left means the unit
+    -- lost its token before reporting — a nameplate that scrolled away.
+    -- The channel cannot have finished, and the kick landed, so it died.)
+    channels[victimGUID] = nil
+    if ctx.incoming then
+        -- No school on this path: the combat log never described the
+        -- channel, so the lockout is reported by duration alone
+        OnKickedOnMe({ sourceGUID = ctx.sourceGUID, sourceName = ctx.sourceName,
+            sourceFlags = ctx.sourceFlags, kickName = ctx.kickName, kickID = ctx.kickID,
+            spellName = channel.name, spellID = channel.spellID })
+    else
+        OnInterrupt(ctx.victimName, ctx.kickName, ctx.kickID, channel.name, channel.spellID)
+    end
+end
+
 -- Cleanse callouts mirror the interrupt ones: dispelling a debuff off a
 -- friendly target announces who was cleansed and what came off, so the
--- invisible support work is visible. DEBUFF-only keeps offensive purges
--- (stripping enemy buffs) out of the channel.
-local function OnDispel(destName, dispelName, removedName, auraType)
+-- invisible support work is visible. Both spells are links, same as the
+-- interrupt callout — the debuff that came off is the one worth reading,
+-- since it says what the group is actually being hit with. DEBUFF-only
+-- keeps offensive purges (stripping enemy buffs) out of the channel.
+local function OnDispel(destName, dispelName, dispelID, removedName, removedID, auraType)
     if not CommanderCommsDB.DispelCallouts then return end
     if auraType ~= "DEBUFF" then return end
     if GetTime() - lastDispelAnnounce < ANNOUNCE_COOLDOWN then return end
     lastDispelAnnounce = GetTime()
     if destName == UnitName("player") then destName = "myself" end
+    local dispelLink = SpellLink(dispelID, dispelName)
+    local removedLink = SpellLink(removedID, removedName)
     local message
-    if removedName then
-        message = string.format("Removed %s from %s%s", removedName,
+    if removedLink then
+        message = string.format("Removed %s from %s%s", removedLink,
             destName or "the target",
-            dispelName and (" (" .. dispelName .. ").") or ".")
+            dispelLink and (" (" .. dispelLink .. ").") or ".")
     else
         message = string.format("Cleansed %s.", destName or "the target")
     end
@@ -390,7 +663,7 @@ end
 local lastCCBreakAnnounce = -math.huge
 
 local function OnCCBroken(sourceGUID, sourceName, sourceFlags, destGUID, destName,
-        destFlags, auraName, breakerSpell)
+        destFlags, auraName, auraID, breakerSpell, breakerID)
     if not CommanderCommsDB.CCBreakCallouts then return end
     -- Only CC parked on enemies is guarded: a mob's fear breaking off a
     -- teammate is good news and needs no blame
@@ -420,15 +693,19 @@ local function OnCCBroken(sourceGUID, sourceName, sourceFlags, destGUID, destNam
     else
         whose = ""
     end
-    local how = breakerSpell and (" (" .. breakerSpell .. ")") or " (melee)"
+    -- Both spells link, same as the interrupt and cleanse callouts: the CC
+    -- so nobody has to guess which one died, the breaker so the blame is
+    -- checkable rather than a name someone has to take on faith
+    local breakerLink = SpellLink(breakerID, breakerSpell)
+    local how = breakerLink and (" (" .. breakerLink .. ")") or " (melee)"
     SendChatMessage(string.format("%s broke %s%s on %s%s.", breaker, whose,
-        auraName, destName or "the target", how), PickChannel())
+        SpellLink(auraID, auraName), destName or "the target", how), PickChannel())
 end
 
 local function OnCombatLog()
     if not (CommanderCommsDB and CommanderCommsDB.EnableComms) then return end
     local _, subevent, _, sourceGUID, sourceName, sourceFlags, _, destGUID, destName, destFlags, _,
-        _, actionName, _, _, extraName, _, auraType = CombatLogGetCurrentEventInfo()
+        actionID, actionName, _, extraID, extraName, extraSchool, auraType = CombatLogGetCurrentEventInfo()
 
     -- CC bookkeeping watches everyone's events, not just the player's —
     -- the whole point is catching OTHER people's breaks
@@ -441,25 +718,73 @@ local function OnCombatLog()
             -- Plain BROKEN is a melee-swing break and carries no extra
             -- spell (arg16 is nil there anyway, but be explicit)
             OnCCBroken(sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags,
-                actionName, subevent == "SPELL_AURA_BROKEN_SPELL" and extraName or nil)
+                actionName, actionID,
+                subevent == "SPELL_AURA_BROKEN_SPELL" and extraName or nil,
+                subevent == "SPELL_AURA_BROKEN_SPELL" and extraID or nil)
         end
     elseif subevent == "UNIT_DIED" or subevent == "UNIT_DESTROYED" then
         trackedCC[destGUID] = nil
+        -- A channel that stopped because its caster died is not a kick
+        channels[destGUID] = nil
     end
 
-    if sourceGUID ~= (playerGUID or UnitGUID("player")) then return end
+    local me = playerGUID or UnitGUID("player")
     -- Team comms only: solo callouts have no audience
     if not InAnyGroup() then return end
+
+    -- The kicked-on-me callout is the mirror image — the source is the
+    -- enemy — so it is handled before the player-source gate below
+    if destGUID == me and sourceGUID ~= me then
+        if subevent == "SPELL_INTERRUPT" then
+            realInterruptAt[me] = GetTime()
+            channels[me] = nil
+            OnKickedOnMe({ sourceGUID = sourceGUID, sourceName = sourceName,
+                sourceFlags = sourceFlags, kickName = actionName, kickID = actionID,
+                spellName = extraName, spellID = extraID, school = extraSchool })
+        elseif actionName and INTERRUPT_SPELLS[actionName] then
+            -- ...and a kick on a channel of yours is as silent in the log
+            -- as one of your own, so it is inferred the same way
+            if subevent == "SPELL_CAST_SUCCESS" then
+                local ctx = { victimGUID = me, incoming = true, castAt = GetTime(),
+                    sourceGUID = sourceGUID, sourceName = sourceName,
+                    sourceFlags = sourceFlags, kickName = actionName, kickID = actionID }
+                C_Timer.After(KICK_CONFIRM_DELAY, function() ConfirmChannelKick(ctx) end)
+            elseif subevent == "SPELL_MISSED" then
+                kickMissedAt[me] = GetTime()
+            end
+        end
+    end
+
+    if sourceGUID ~= me then return end
     if subevent == "SPELL_INTERRUPT" then
-        OnInterrupt(destName, actionName, extraName)
+        if destGUID then
+            realInterruptAt[destGUID] = GetTime()
+            channels[destGUID] = nil
+        end
+        OnInterrupt(destName, actionName, actionID, extraName, extraID)
     elseif subevent == "SPELL_DISPEL" then
-        OnDispel(destName, actionName, extraName, auraType)
+        OnDispel(destName, actionName, actionID, extraName, extraID, auraType)
+    elseif actionName and INTERRUPT_SPELLS[actionName] and destGUID then
+        -- The channel half of the interrupt callouts: the kick reports
+        -- itself, the stopped channel has to be inferred
+        if subevent == "SPELL_CAST_SUCCESS" then
+            local ctx = { victimGUID = destGUID, victimName = destName, castAt = GetTime(),
+                kickName = actionName, kickID = actionID }
+            C_Timer.After(KICK_CONFIRM_DELAY, function() ConfirmChannelKick(ctx) end)
+        elseif subevent == "SPELL_MISSED" then
+            kickMissedAt[destGUID] = GetTime()
+        end
     end
 end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+-- Deliberately unfiltered: the channels worth kicking belong to whoever
+-- currently has a unit token, not to the player
+events:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+events:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+events:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 -- Player-only registration: these fire constantly for every visible unit
 if events.RegisterUnitEvent then
     events:RegisterUnitEvent("UNIT_HEALTH", "player")
@@ -478,6 +803,12 @@ events:SetScript("OnEvent", function(self, event, unit)
         end)
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         OnCombatLog()
+    elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
+        NoteChannelStart(unit)
+    elseif event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
+        NoteChannelUpdate(unit)
+    elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+        NoteChannelStop(unit)
     elseif unit == "player" then
         CheckAutoEmotes()
     end

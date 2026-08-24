@@ -6,6 +6,7 @@ COMMANDER_VITALS_EVENTS = {
 
 local DefaultSettings = {
     EnableVitals = true,
+    IconRecess = "SOFT",   -- shared suite icon shading: OFF|SOFT|DEEP|CARVED
     AlwaysShow = false,
     WarnThreshold = 0.5,
 }
@@ -47,6 +48,14 @@ local function CreateOptionsPanel()
         tooltip = "Keep the wireframe visible at all times instead of only when gear condition drops below the warning threshold.",
         get = function() return CommanderVitalsDB.AlwaysShow end,
         set = function(value) CommanderVitalsDB.AlwaysShow = value end,
+        isEnabled = function() return CommanderVitalsDB.EnableVitals end,
+    })
+    panel:AddDropdown({
+        label = "Icon Recess",
+        tooltip = "Shading laid over each equipment icon so it reads as set into the wireframe rather than pasted on it. The art is shared across the suite, so an icon here is cut the same way as one on any other Commander board.",
+        options = Commander.ICON_STYLES,
+        get = function() return CommanderVitalsDB.IconRecess end,
+        set = function(value) CommanderVitalsDB.IconRecess = value end,
         isEnabled = function() return CommanderVitalsDB.EnableVitals end,
     })
     panel:AddSlider({

@@ -11,6 +11,7 @@ local defaultSettings = {
     tooltips = true,
     showFrame = true,
     frameStyle = "WINDOW",
+    iconRecess = "SOFT",    -- shared suite icon shading: OFF|SOFT|DEEP|CARVED
     -- false (not nil) so Restore Defaults clears a saved drag position
     position = false,
 }
@@ -85,6 +86,14 @@ local function CreateOptionsPanel()
         width = 140,
         get = function() return CommanderInventoryDB.frameStyle or "WINDOW" end,
         set = function(value) CommanderInventoryDB.frameStyle = value end,
+    })
+    panel:AddDropdown({
+        label = "Icon Recess",
+        tooltip = "Shading laid over every item icon in the grid so it reads as set into the panel rather than pasted on it. The art is shared with the rest of the suite, so an icon here is cut the same way as one on any other Commander board. Takes effect as the grid refreshes.",
+        options = Commander.ICON_STYLES,
+        width = 140,
+        get = function() return CommanderInventoryDB.iconRecess or "SOFT" end,
+        set = function(value) CommanderInventoryDB.iconRecess = value end,
     })
     panel:AddButtonRow({
         {

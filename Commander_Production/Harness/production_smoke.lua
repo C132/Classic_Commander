@@ -264,6 +264,11 @@ end
 
 SlashCmdList = {}
 
+-- Combat log: only the interrupt stamp is read out of it
+function UnitGUID(unit) return unit == "player" and "Player-1" or nil end
+local cleuArgs = {}
+function CombatLogGetCurrentEventInfo() return unpack(cleuArgs, 1, 18) end
+
 -- Spellbook: two spells, cooldown state the harness controls
 local cooldowns = {}  -- slot -> { start, duration }
 local SPELLBOOK = {
@@ -331,6 +336,8 @@ Fire("ADDON_LOADED", "Commander_Production")
 CHECK(CommanderProductionDB.ReadyCallout == "CHAT" and CommanderProductionDB.ReadySound == "CLICK",
     "C: fresh defaults CHAT + CLICK")
 CHECK(CommanderProductionDB.Layout == "BARS_DOWN", "C: layout default")
+CHECK(CommanderProductionDB.LingerTime == 10, "C: linger time defaults to 10s",
+    tostring(CommanderProductionDB.LingerTime))
 
 -- Only the LAST DB watcher may run PLAYER_LOGIN (earlier scenario frames
 -- would build duplicate panels against their stale DB upvalues)
@@ -534,6 +541,134 @@ if calloutDropdown then
             bannerFS and tostring(bannerFS.__text))
     end
 end
+
+-- ===========================================================================
+-- Linger When Ready: the configured Linger Time drives hold, fade, and drop
+-- ===========================================================================
+
+CommanderProductionDB.Layout = "BARS_DOWN"
+CommanderProductionDB.ReadyAlert = false
+CommanderProductionDB.LingerReady = true
+CommanderProductionDB.LingerTime = 10
+cooldowns[1] = { start = now, duration = 30 }
+Redraw()
+now = now + 31
+cooldowns[1] = nil
+Redraw()
+rows = ShownRows()
+CHECK(#rows == 1, "linger: finished cooldown parks as a READY row", #rows)
+CHECK(rows[1] and (rows[1].__alpha or 1) == 1, "linger: full opacity during the hold",
+    rows[1] and tostring(rows[1].__alpha))
+
+-- Still inside the 10s hold
+now = now + 9
+Redraw()
+rows = ShownRows()
+CHECK(#rows == 1 and (rows[1].__alpha or 1) == 1, "linger: holds the full 10 seconds",
+    #rows .. "/" .. tostring(rows[1] and rows[1].__alpha))
+
+-- 11.5s in: 1.5s into the 5s fade tail (half the linger time)
+now = now + 2.5
+Redraw()
+rows = ShownRows()
+local lingerAlpha = rows[1] and (rows[1].__alpha or 1)
+CHECK(#rows == 1 and lingerAlpha and math.abs(lingerAlpha - 0.7) < 0.01,
+    "linger: fades across the tail", tostring(lingerAlpha))
+
+-- Past hold + fade: gone
+now = now + 4
+Redraw()
+CHECK(#ShownRows() == 0, "linger: dropped after hold plus fade", #ShownRows())
+
+-- A shorter Linger Time expires sooner: 4s hold + 2s fade
+CommanderProductionDB.LingerTime = 4
+cooldowns[1] = { start = now, duration = 30 }
+Redraw()
+now = now + 31
+cooldowns[1] = nil
+Redraw()
+CHECK(#ShownRows() == 1, "linger: short setting still parks the row", #ShownRows())
+now = now + 5
+Redraw()
+rows = ShownRows()
+lingerAlpha = rows[1] and (rows[1].__alpha or 1)
+CHECK(#rows == 1 and lingerAlpha and math.abs(lingerAlpha - 0.5) < 0.01,
+    "linger: 4s setting is half faded at 5s", tostring(lingerAlpha))
+now = now + 2
+Redraw()
+CHECK(#ShownRows() == 0, "linger: 4s setting is gone by 7s", #ShownRows())
+CommanderProductionDB.LingerReady = false
+
+local function FireInterruptOnPlayer(destGUID)
+    cleuArgs = { now, "SPELL_INTERRUPT", false, "Player-2", "Levira", 0, 0,
+        destGUID or "Player-1", "Me", 0, 0, 2139, "Counterspell", 0, 116, "Frostbolt", 0x10, nil }
+    Fire("COMBAT_LOG_EVENT_UNFILTERED")
+end
+
+-- ===========================================================================
+-- Interrupt lockouts: shown while the school is down, gone the moment it
+-- lifts — a lock is not a cooldown, so it must not linger or alert
+-- ===========================================================================
+
+CommanderProductionDB.Layout = "BARS_DOWN"
+CommanderProductionDB.LingerReady = true
+CommanderProductionDB.LingerTime = 10
+CommanderProductionDB.ReadyAlert = true
+CommanderProductionDB.ReadyCallout = "CHAT"
+cooldowns[1], cooldowns[2] = nil, nil
+Redraw()
+
+-- Kicked: the school reports a 10s "cooldown" on both spells
+now = now + 1
+FireInterruptOnPlayer()
+cooldowns[1] = { start = now, duration = 10 }
+cooldowns[2] = { start = now, duration = 10 }
+Redraw()
+CHECK(#ShownRows() == 2, "lockout: locked spells still show while the school is down",
+    #ShownRows())
+
+-- Lock lifts: gone at once, no READY hold and no alert
+local printsBefore = #printLog
+now = now + 11
+cooldowns[1], cooldowns[2] = nil, nil
+Redraw()
+CHECK(#ShownRows() == 0, "lockout: no linger once the school is back", #ShownRows())
+CHECK(#printLog == printsBefore, "lockout: no ready alert for a lock lifting",
+    printLog[#printLog])
+
+-- A real cooldown cast during the same lockout window still behaves
+now = now + 1
+FireInterruptOnPlayer()
+cooldowns[1] = { start = now, duration = 10 }    -- the lock
+cooldowns[2] = { start = now, duration = 30 }    -- a real 30s cooldown
+Redraw()
+CHECK(#ShownRows() == 2, "lockout: a real cooldown alongside it still queues", #ShownRows())
+now = now + 11
+cooldowns[1] = nil
+Redraw()
+CHECK(#ShownRows() == 1, "lockout: only the locked spell drops out", #ShownRows())
+now = now + 20
+cooldowns[2] = nil
+Redraw()
+rows = ShownRows()
+CHECK(#rows == 1, "lockout: the real cooldown still parks as a READY row", #rows)
+now = now + 16
+Redraw()
+
+-- An interrupt on someone else is not my lockout
+now = now + 5
+FireInterruptOnPlayer("Player-9")
+cooldowns[1] = { start = now, duration = 10 }
+Redraw()
+now = now + 11
+cooldowns[1] = nil
+Redraw()
+CHECK(#ShownRows() == 1, "lockout: a kick on someone else leaves cooldowns alone",
+    #ShownRows())
+now = now + 16
+Redraw()
+CommanderProductionDB.LingerReady = false
+CommanderProductionDB.ReadyAlert = false
 
 CHECK(#harnessFailedErrors == 0, "no errors across the run", harnessFailedErrors[1])
 

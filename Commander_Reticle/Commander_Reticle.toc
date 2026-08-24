@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Reticle
 ## Author: Devin
-## Version: 2.1.0
+## Version: 2.2.0
 ## Notes: The cursor is the cast bar — a hollow, cursor-sized radial cast bar that follows the pointer, so mouseover casting never hides the health bar you are aiming at.
 ## IconTexture: Interface\Icons\Ability_Marksmanship
 ## SavedVariables: CommanderReticleDB

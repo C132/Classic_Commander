@@ -35,6 +35,12 @@ local function CreateOptionsPanel()
             [""] = function()
                 if CommanderRankCheck_Run then CommanderRankCheck_Run() end
             end,
+            -- Dumps every spell action the scan actually sees, with the rank it
+            -- read and the highest rank it found in the spellbook — the way to
+            -- tell "nothing is out of date" apart from "nothing was scanned".
+            ["debug"] = function()
+                if CommanderRankCheck_Run then CommanderRankCheck_Run(false, true) end
+            end,
         },
     })
 

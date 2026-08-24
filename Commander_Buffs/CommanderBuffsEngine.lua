@@ -10,6 +10,11 @@
 -- readable top-to-bottom, and what makes a HIDE rule a one-line veto
 -- instead of a separate blacklist system.
 --
+-- Three actions, not two. SHOW competes on score. HIDE is a veto. ALERT is
+-- SHOW that is EXEMPT from the minimum-score gate — the way to say "this is
+-- never noise, no matter how quiet I have made everything else". Loss of
+-- control is what ALERT exists for: being stunned outranks the quiet dial.
+--
 -- Final score = base + expiring bonus + per-stack bonus. Ties break on
 -- LEAST time remaining (the thing about to matter wins), then on rule
 -- order, then on spell id so the order is fully deterministic — a portrait
@@ -33,52 +38,156 @@ E.DISPEL_SCHOOLS = { "Magic", "Curse", "Disease", "Poison", "NONE" }
 -- id list stays both rank-proof and locale-proof (a name list is neither).
 -- ---------------------------------------------------------------------------
 
--- Loss of control: stuns, fears, incapacitates, silences. These are the
--- auras where knowing instantly changes what you press next.
-E.CC_IDS = {
-    118,    -- Polymorph
-    3355,   -- Freezing Trap Effect
-    122,    -- Frost Nova
-    339,    -- Entangling Roots
-    2637,   -- Hibernate
-    33786,  -- Cyclone
-    5211,   -- Bash
-    9005,   -- Pounce
-    22570,  -- Maim
-    5782,   -- Fear
-    5484,   -- Howl of Terror
-    6358,   -- Seduction
-    6789,   -- Death Coil
-    8122,   -- Psychic Scream
-    605,    -- Mind Control
-    15487,  -- Silence
-    453,    -- Mind Soothe (harmless, but it is a control aura)
-    853,    -- Hammer of Justice
-    20066,  -- Repentance
-    2094,   -- Blind
-    1776,   -- Gouge
-    6770,   -- Sap
-    408,    -- Kidney Shot
-    1833,   -- Cheap Shot
-    1330,   -- Garrote - Silence
-    5246,   -- Intimidating Shout
-    7922,   -- Charge Stun
-    20253,  -- Intercept Stun
-    12809,  -- Concussion Blow
-    12355,  -- Impact (stun)
-    15269,  -- Blackout
-    19503,  -- Scatter Shot
-    19386,  -- Wyvern Sting
-    19577,  -- Intimidation
-    30283,  -- Shadowfury
-    24259,  -- Spell Lock (silence)
-    18469,  -- Counterspell - Silenced
-    34490,  -- Silencing Shot
-    28730,  -- Arcane Torrent (silence)
-    710,    -- Banish
-    9484,   -- Shackle Undead
-    2878,   -- Turn Undead
+-- ---------------------------------------------------------------------------
+-- Loss of control. This is the ONE thing on the player's aura stack that
+-- changes what you press before you have finished reading it, so it is not a
+-- flat "CC" bag any more: each aura is filed under the category that says
+-- what you have actually lost. A stun and a snare are not the same news, and
+-- the portrait says which one it is in a word.
+--
+-- Ordered, because the order IS the severity ladder and both the shipped
+-- rules and the editor's category row read it top-to-bottom. Colors are the
+-- suite's — the same encoding Commander_PartyFrames puts on an ally who is
+-- controlled, so the meaning transfers between the two modules.
+-- ---------------------------------------------------------------------------
+
+E.LOC_CATEGORIES = {
+    { key = "STUN",    label = "STUNNED",  short = "Stunned",
+      color = { 0.95, 0.25, 0.25 } },
+    { key = "INCAP",   label = "INCAP",    short = "Incapacitated",
+      color = { 0.95, 0.45, 0.85 } },
+    { key = "FEAR",    label = "FEARED",   short = "Feared",
+      color = { 1.00, 0.55, 0.15 } },
+    { key = "CHARM",   label = "CHARMED",  short = "Charmed",
+      color = { 0.70, 0.45, 0.95 } },
+    { key = "SILENCE", label = "SILENCED", short = "Silenced",
+      color = { 0.85, 0.55, 0.30 } },
+    { key = "ROOT",    label = "ROOTED",   short = "Rooted",
+      color = { 0.35, 0.70, 0.95 } },
+    { key = "DISARM",  label = "DISARMED", short = "Disarmed",
+      color = { 0.78, 0.72, 0.50 } },
 }
+
+-- Base spell ids per category. Every rank of a spell shares its base id in
+-- this client's aura data, so an id list is both rank-proof and locale-proof
+-- (a name list is neither). Only auras that can land ON THE PLAYER are here:
+-- Mind Soothe, which the retired flat list carried, is cast on mobs and could
+-- never have matched.
+local LOC_MEMBERS = {
+    STUN = {
+        853,    -- Hammer of Justice
+        408,    -- Kidney Shot
+        1833,   -- Cheap Shot
+        5211,   -- Bash
+        9005,   -- Pounce
+        22570,  -- Maim
+        7922,   -- Charge Stun
+        20253,  -- Intercept Stun
+        12809,  -- Concussion Blow
+        12355,  -- Impact
+        15269,  -- Blackout
+        30283,  -- Shadowfury
+        20549,  -- War Stomp
+        12798,  -- Revenge Stun
+        5530,   -- Mace Stun Effect (Mace Specialization)
+        16922,  -- Celestial Focus (Starfire stun)
+        18093,  -- Pyroclasm
+        19410,  -- Improved Concussive Shot
+        19577,  -- Intimidation
+        24394,  -- Intimidation (stun component)
+        39796,  -- Stoneclaw Stun
+    },
+    INCAP = {
+        118,    -- Polymorph
+        28271,  -- Polymorph: Turtle
+        28272,  -- Polymorph: Pig
+        3355,   -- Freezing Trap Effect
+        2637,   -- Hibernate
+        700,    -- Sleep
+        9484,   -- Shackle Undead
+        710,    -- Banish
+        6770,   -- Sap
+        1776,   -- Gouge
+        2094,   -- Blind
+        19503,  -- Scatter Shot
+        19386,  -- Wyvern Sting
+        33786,  -- Cyclone
+        20066,  -- Repentance
+    },
+    FEAR = {
+        5782,   -- Fear
+        5484,   -- Howl of Terror
+        8122,   -- Psychic Scream
+        5246,   -- Intimidating Shout
+        1513,   -- Scare Beast
+        6789,   -- Death Coil
+        6358,   -- Seduction
+        2878,   -- Turn Undead
+        10326,  -- Turn Evil
+    },
+    CHARM = {
+        605,    -- Mind Control
+        1098,   -- Enslave Demon
+    },
+    SILENCE = {
+        15487,  -- Silence
+        18469,  -- Counterspell - Silenced
+        19647,  -- Spell Lock
+        24259,  -- Spell Lock (silence)
+        34490,  -- Silencing Shot
+        28730,  -- Arcane Torrent
+        1330,   -- Garrote - Silence
+        18425,  -- Improved Kick
+    },
+    ROOT = {
+        339,    -- Entangling Roots
+        122,    -- Frost Nova
+        12494,  -- Frostbite
+        33395,  -- Freeze (Water Elemental)
+        19306,  -- Counterattack
+        19185,  -- Entrapment
+        19675,  -- Feral Charge Effect
+        23694,  -- Improved Hamstring
+    },
+    DISARM = {
+        676,    -- Disarm
+        14251,  -- Riposte
+    },
+}
+
+-- spellId -> category key. Built in category order, so an id that appears
+-- twice belongs to the earlier (more severe) category and the map is
+-- deterministic regardless of table iteration order.
+E.LOC_IDS = {}
+for _, category in ipairs(E.LOC_CATEGORIES) do
+    for _, id in ipairs(LOC_MEMBERS[category.key]) do
+        if E.LOC_IDS[id] == nil then E.LOC_IDS[id] = category.key end
+    end
+end
+
+E.LOC_INFO = {}
+for _, category in ipairs(E.LOC_CATEGORIES) do
+    E.LOC_INFO[category.key] = category
+end
+
+-- The flat list the rest of the suite still speaks, derived rather than
+-- hand-kept so the two can never drift apart.
+E.CC_IDS = {}
+for _, category in ipairs(E.LOC_CATEGORIES) do
+    for _, id in ipairs(LOC_MEMBERS[category.key]) do
+        E.CC_IDS[#E.CC_IDS + 1] = id
+    end
+end
+
+-- Which control category this aura is, or nil for everything else.
+function E.LocCategory(aura)
+    if not aura then return nil end
+    return E.LOC_IDS[aura.spellId or 0]
+end
+
+function E.LocInfo(key)
+    return key and E.LOC_INFO[key] or nil
+end
 
 -- The defensive and burst cooldowns that decide a fight while they are up.
 -- Class-agnostic on purpose: you only ever have your own class's auras, so
@@ -196,6 +305,7 @@ function E.NewRule(rules, name)
             spellIds = {},
             namePart = "",
             dispel = nil,
+            loc = nil,
             minStacks = 0,
             minDuration = nil,
             maxDuration = nil,
@@ -211,22 +321,67 @@ function E.NewRule(rules, name)
     }
 end
 
--- The shipped policy. Nine rules, each demonstrating a different matcher so
--- the default list doubles as documentation for the editor.
+-- The shipped policy, written as SCORE BANDS rather than a flat list of
+-- preferences. The bands are what make the portrait quiet:
+--
+--   ALERT (110-130)  loss of control — exempt from the minimum-score gate,
+--                    so no amount of quieting can hide being stunned
+--   90-100           emergencies you can still act on: boss debuffs, your
+--                    own major cooldowns while they are up
+--   20-80            everything else — real information, but it belongs in
+--                    the block, not on your face
+--
+-- The shipped Minimum Score sits at 90, so the sentinel is empty unless you
+-- are controlled or something is actually happening. Dropping the slider is
+-- how you invite the lower bands back in, one at a time.
+--
+-- Each rule also demonstrates a different matcher, so the default list
+-- doubles as documentation for the editor.
 function E.DefaultRules()
     local rules = {}
     local function add(rule) rules[#rules + 1] = rule end
 
+    -- The control ladder. Four rules rather than one, because "you cannot
+    -- act" and "you cannot cast" are different emergencies and deserve
+    -- separately tunable scores. They are disjoint by category, so their
+    -- relative order only settles ties.
     add({
-        id = 1, name = "Silence & incapacitate", enabled = true, action = "SHOW",
-        match = { auraType = "ANY", source = "ANY", spellIds = ListCopy(E.CC_IDS),
-                  namePart = "", minStacks = 0, bossOnly = false,
+        id = 1, name = "Stunned or incapacitated", enabled = true, action = "ALERT",
+        match = { auraType = "ANY", source = "ANY", spellIds = {}, namePart = "",
+                  loc = { STUN = true, INCAP = true },
+                  minStacks = 0, bossOnly = false,
                   stealableOnly = false, permanentOnly = false },
-        score = 100, expiringUnder = 0, expiringBonus = 0, stackBonus = 0,
-        color = "RED",
+        score = 130, expiringUnder = 0, expiringBonus = 0, stackBonus = 0,
     })
     add({
-        id = 2, name = "Boss debuffs", enabled = true, action = "SHOW",
+        id = 2, name = "Feared or charmed", enabled = true, action = "ALERT",
+        match = { auraType = "ANY", source = "ANY", spellIds = {}, namePart = "",
+                  loc = { FEAR = true, CHARM = true },
+                  minStacks = 0, bossOnly = false,
+                  stealableOnly = false, permanentOnly = false },
+        score = 125, expiringUnder = 0, expiringBonus = 0, stackBonus = 0,
+    })
+    add({
+        id = 3, name = "Silenced", enabled = true, action = "ALERT",
+        match = { auraType = "ANY", source = "ANY", spellIds = {}, namePart = "",
+                  loc = { SILENCE = true },
+                  minStacks = 0, bossOnly = false,
+                  stealableOnly = false, permanentOnly = false },
+        score = 120, expiringUnder = 0, expiringBonus = 0, stackBonus = 0,
+    })
+    add({
+        id = 4, name = "Rooted or disarmed", enabled = true, action = "ALERT",
+        match = { auraType = "ANY", source = "ANY", spellIds = {}, namePart = "",
+                  loc = { ROOT = true, DISARM = true },
+                  minStacks = 0, bossOnly = false,
+                  stealableOnly = false, permanentOnly = false },
+        score = 110, expiringUnder = 0, expiringBonus = 0, stackBonus = 0,
+    })
+
+    -- The emergency band: above the shipped floor, so these still reach the
+    -- portrait, but they lose to anything on the control ladder.
+    add({
+        id = 5, name = "Boss debuffs", enabled = true, action = "SHOW",
         match = { auraType = "DEBUFF", source = "ANY", spellIds = {}, namePart = "",
                   minStacks = 0, bossOnly = true, stealableOnly = false,
                   permanentOnly = false },
@@ -234,15 +389,19 @@ function E.DefaultRules()
         color = "RED",
     })
     add({
-        id = 3, name = "My defensives & burst", enabled = true, action = "SHOW",
+        id = 6, name = "My defensives & burst", enabled = true, action = "SHOW",
         match = { auraType = "BUFF", source = "ANY", spellIds = ListCopy(E.MAJOR_IDS),
                   namePart = "", minStacks = 0, bossOnly = false,
                   stealableOnly = false, permanentOnly = false },
         score = 92, expiringUnder = 3, expiringBonus = 25, stackBonus = 0,
         color = "GOLD",
     })
+
+    -- Below the shipped floor. These score honestly — the block's Rules
+    -- Applied and By Priority modes read them, and the editor's trace shows
+    -- them — they simply do not occupy the portrait until you lower the dial.
     add({
-        id = 4, name = "Dispellable on me", enabled = true, action = "SHOW",
+        id = 7, name = "Dispellable on me", enabled = true, action = "SHOW",
         match = { auraType = "DEBUFF", source = "ANY", spellIds = {}, namePart = "",
                   dispel = { Magic = true, Curse = true, Disease = true, Poison = true },
                   minStacks = 0, bossOnly = false, stealableOnly = false,
@@ -250,43 +409,70 @@ function E.DefaultRules()
         score = 80, expiringUnder = 0, expiringBonus = 0, stackBonus = 3,
     })
     add({
-        id = 5, name = "Any other debuff", enabled = true, action = "SHOW",
+        id = 8, name = "Any other debuff", enabled = true, action = "SHOW",
         match = { auraType = "DEBUFF", source = "ANY", spellIds = {}, namePart = "",
                   minStacks = 0, bossOnly = false, stealableOnly = false,
                   permanentOnly = false },
-        score = 60, expiringUnder = 0, expiringBonus = 0, stackBonus = 3,
+        score = 55, expiringUnder = 0, expiringBonus = 0, stackBonus = 3,
     })
     add({
-        id = 6, name = "Hide raid buffs", enabled = true, action = "HIDE",
+        id = 9, name = "Hide raid buffs", enabled = true, action = "HIDE",
         match = { auraType = "BUFF", source = "ANY", spellIds = {}, namePart = "",
                   minStacks = 0, minDuration = 600, bossOnly = false,
                   stealableOnly = false, permanentOnly = false },
         score = 0, expiringUnder = 0, expiringBonus = 0, stackBonus = 0,
     })
     add({
-        id = 7, name = "Hide auras with no timer", enabled = true, action = "HIDE",
+        id = 10, name = "Hide auras with no timer", enabled = true, action = "HIDE",
         match = { auraType = "BUFF", source = "ANY", spellIds = {}, namePart = "",
                   minStacks = 0, bossOnly = false, stealableOnly = false,
                   permanentOnly = true },
         score = 0, expiringUnder = 0, expiringBonus = 0, stackBonus = 0,
     })
     add({
-        id = 8, name = "My short buffs", enabled = true, action = "SHOW",
+        id = 11, name = "My short buffs", enabled = true, action = "SHOW",
         match = { auraType = "BUFF", source = "MINE", spellIds = {}, namePart = "",
                   minStacks = 0, maxDuration = 60, bossOnly = false,
                   stealableOnly = false, permanentOnly = false },
         score = 45, expiringUnder = 3, expiringBonus = 15, stackBonus = 1,
     })
     add({
-        id = 9, name = "Any other buff", enabled = true, action = "SHOW",
+        id = 12, name = "Any other buff", enabled = true, action = "SHOW",
         match = { auraType = "BUFF", source = "ANY", spellIds = {}, namePart = "",
                   minStacks = 0, bossOnly = false, stealableOnly = false,
                   permanentOnly = false },
         score = 20, expiringUnder = 0, expiringBonus = 0, stackBonus = 0,
     })
 
-    nextId = 10
+    nextId = 13
     return rules
+end
+
+-- The rule list as shipped by the PREVIOUS policy, by name and in order.
+-- Rules are prized state (D9): a schema migration may only replace the list
+-- if the player never touched it, and this is how that is decided. Names,
+-- not ids — an untouched list is exactly the one we wrote.
+local LEGACY_RULE_NAMES = {
+    "Silence & incapacitate", "Boss debuffs", "My defensives & burst",
+    "Dispellable on me", "Any other debuff", "Hide raid buffs",
+    "Hide auras with no timer", "My short buffs", "Any other buff",
+}
+
+-- True only for a rule list that is still verbatim one of our shipped sets.
+function E.IsUntouchedRuleSet(rules)
+    if type(rules) ~= "table" then return false end
+    local function matches(names)
+        if #rules ~= #names then return false end
+        for i = 1, #names do
+            if type(rules[i]) ~= "table" or rules[i].name ~= names[i] then return false end
+        end
+        return true
+    end
+    if matches(LEGACY_RULE_NAMES) then return true end
+    local current = E.DefaultRules()
+    local names = {}
+    for i = 1, #current do names[i] = current[i].name end
+    return matches(names)
 end
 
 -- Repair whatever came back from SavedVariables: a hand-edited or
@@ -294,7 +480,7 @@ end
 -- the same table (repaired in place) so callers can assign it back safely.
 local VALID_TYPE = { ANY = true, BUFF = true, DEBUFF = true }
 local VALID_SOURCE = { ANY = true, MINE = true, OTHER = true }
-local VALID_ACTION = { SHOW = true, HIDE = true }
+local VALID_ACTION = { SHOW = true, HIDE = true, ALERT = true }
 
 function E.NormalizeRule(rule, rules)
     if type(rule) ~= "table" then return nil end
@@ -326,6 +512,20 @@ function E.NormalizeRule(rule, rules)
         if not any then m.dispel = nil end
     else
         m.dispel = nil
+    end
+    -- Same shape as the dispel set, and normalized the same way: an empty or
+    -- all-junk set collapses to nil, which means "this rule does not care".
+    if type(m.loc) == "table" then
+        local any = false
+        for _, category in ipairs(E.LOC_CATEGORIES) do
+            if m.loc[category.key] then any = true else m.loc[category.key] = nil end
+        end
+        for key in pairs(m.loc) do
+            if not E.LOC_INFO[key] then m.loc[key] = nil end
+        end
+        if not any then m.loc = nil end
+    else
+        m.loc = nil
     end
     m.minStacks = tonumber(m.minStacks) or 0
     m.minDuration = tonumber(m.minDuration) or nil
@@ -450,6 +650,14 @@ function E.MatchRule(rule, aura, now)
         if not m.dispel[E.SchoolOf(aura)] then return false end
     end
 
+    -- A control-category set is an allow-list too, and an aura that is not
+    -- loss of control at all fails it — that is what lets one rule mean
+    -- "only when I have actually lost control of my character".
+    if m.loc then
+        local category = E.LocCategory(aura)
+        if not category or not m.loc[category] then return false end
+    end
+
     if (m.minStacks or 0) > 0 and (aura.stacks or 0) < m.minStacks then return false end
 
     local permanent = E.IsPermanent(aura)
@@ -531,7 +739,8 @@ end
 -- already dropped.
 --
 --   opts.fallback = "IGNORE" | "DEBUFFS" | "ALL"
---   opts.minScore = number   (results below it are dropped)
+--   opts.minScore = number   (results below it are dropped, EXCEPT results
+--                             claimed by an ALERT rule, which are exempt)
 function E.Evaluate(auras, rules, opts, now, out)
     out = out or {}
     ReleaseResults(out)
@@ -545,11 +754,13 @@ function E.Evaluate(auras, rules, opts, now, out)
         local aura = auras[i]
         if aura then
             local rule, ruleIndex = E.Claim(rules, aura, now)
-            local score, keep
+            local score, keep, alert
             if rule then
                 if rule.action ~= "HIDE" then
                     score = E.ScoreFor(rule, aura, now)
                     keep = true
+                    -- ALERT is SHOW that the quiet dial cannot reach.
+                    alert = rule.action == "ALERT"
                 end
             elseif fallbackScore then
                 if not fallbackDebuffsOnly or aura.isHarmful then
@@ -558,7 +769,7 @@ function E.Evaluate(auras, rules, opts, now, out)
                     keep = true
                 end
             end
-            if keep and score >= minScore then
+            if keep and (alert or score >= minScore) then
                 local entry = AcquireResult()
                 entry.aura = aura
                 entry.rule = rule
@@ -566,6 +777,8 @@ function E.Evaluate(auras, rules, opts, now, out)
                 entry.score = score
                 entry.remaining = E.Remaining(aura, now)
                 entry.color = rule and rule.color or nil
+                entry.alert = alert == true
+                entry.loc = E.LocCategory(aura)
                 out[#out + 1] = entry
             end
         end

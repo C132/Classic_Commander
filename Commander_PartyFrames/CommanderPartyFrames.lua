@@ -302,35 +302,94 @@ SDATA.CLASS_BUFFS = {
     -- actually presses once they have it, so a board that only knew the
     -- single would call a fully-blessed team naked.
     --
-    -- Kings, Might and Wisdom are on out of the box because they are the
-    -- three an arena paladin really hands out; Salvation, Sanctuary and Light
-    -- are off, being either a PvE threat tool or a choice you make once per
-    -- match rather than a slot you watch.
+    -- `mine` is the one place this family breaks the registry's any-caster
+    -- rule, and it is not a preference — it is the game. Two paladins may each
+    -- hold a DIFFERENT blessing on the same target at the same time, so the
+    -- other paladin's Kings neither satisfies your slot nor stops your global.
+    -- A board that counted it would tell you a target is handled when your own
+    -- blessing has been off them for ten minutes. See util.BuffMineOnly.
+    --
+    -- Sanctuary is `default = true` like the other three you actually hand out:
+    -- it is a 31-point Protection talent, so the TRAINED gate is already the
+    -- only switch that matters, and a prot paladin who has spent those points
+    -- wants it watched. Salvation and Light stay off — both are choices you
+    -- make once rather than upkeep you watch — but in combined mode every
+    -- trained blessing is offered as an assignment regardless, because a line
+    -- in a dropdown costs no width (see util.BlessOptions).
     BLESS = {
         { key = "KINGS", label = "Kings", id = 20217, groupId = 25898,
           duration = 600, targets = "ALL", default = true, advise = "ALWAYS",
-          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Magic_MageArmor" },
+          oneOf = "BLESSING", mine = true, icon = "Interface\\Icons\\Spell_Magic_MageArmor" },
         -- Might is strength and it is for people who swing things. A mage's
         -- row should no more carry a dark Might slot than a rogue's should
         -- carry Intellect, which is what targets = "MELEE" buys.
         { key = "MIGHT", label = "Might", id = 19740, groupId = 25782,
           duration = 600, targets = "MELEE", default = true, advise = "ALWAYS",
-          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Holy_FistOfJustice" },
+          oneOf = "BLESSING", mine = true, icon = "Interface\\Icons\\Spell_Holy_FistOfJustice" },
         { key = "WISDOM", label = "Wisdom", id = 19742, groupId = 25894,
           duration = 600, targets = "MANA", default = true, advise = "ALWAYS",
-          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Holy_SealOfWisdom" },
+          oneOf = "BLESSING", mine = true, icon = "Interface\\Icons\\Spell_Holy_SealOfWisdom" },
         -- Threat management: real in a raid, close to noise in an arena. It
         -- gets a slot for the player who wants it and never an opinion.
         { key = "SALVATION", label = "Salvation", id = 1038, groupId = 25895,
           duration = 600, targets = "ALL", default = false,
-          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Holy_SealOfSalvation" },
+          oneOf = "BLESSING", mine = true, icon = "Interface\\Icons\\Spell_Holy_SealOfSalvation" },
         { key = "SANCTUARY", label = "Sanctuary", id = 20911, groupId = 25899,
-          duration = 600, targets = "ALL", default = false, advise = "VS_MELEE",
-          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Nature_LightningShield" },
+          duration = 600, targets = "ALL", default = true, advise = "VS_MELEE",
+          oneOf = "BLESSING", mine = true, icon = "Interface\\Icons\\Spell_Nature_LightningShield" },
         { key = "LIGHT", label = "Light", id = 19977, groupId = 25890,
           duration = 600, targets = "ALL", default = false,
-          oneOf = "BLESSING", icon = "Interface\\Icons\\Spell_Holy_PrayerOfHealing02" },
+          oneOf = "BLESSING", mine = true, icon = "Interface\\Icons\\Spell_Holy_PrayerOfHealing02" },
     },
+}
+
+-- ---------------------------------------------------------------------------
+-- The combined blessing slot: Pally Power's answer, in this board's grammar.
+--
+-- Six blessings sharing one exclusive slot on the target is six icons asking a
+-- question that only ever has ONE answer, and five of them are always dark. So
+-- the family collapses into a single slot per ally that shows the blessing you
+-- decided that ally should be carrying, and reads lit / amber / dark against
+-- THAT — the same three states every other upkeep slot on this board uses.
+--
+-- What the slot shows is an ASSIGNMENT, resolved per row in this order:
+--
+--   1. a per-player override    (BlessAssign, keyed by name — "Grimtusk")
+--   2. a per-class default      (BlessClass,  keyed by class token)
+--   3. BLESS_CLASS_DEFAULT below
+--   4. the first trained blessing that suits the target at all
+--
+-- Steps 2-4 are what make a stranger who just joined show something sensible
+-- instead of nothing, and step 1 is the exception you actually reach for.
+SDATA.BLESS_FAMILY = "BLESSING"
+SDATA.BLESS_NONE = "NONE"       -- an assignment of "leave this one alone"
+
+-- Kings across the board, because in TBC it simply is the best blessing for
+-- every class that can hold one — this is a starting point you are meant to
+-- edit, not a claim about your comp. Pets get Might: they swing, they have no
+-- stats worth a percentage, and Kings on a pet is a wasted global.
+SDATA.BLESS_CLASS_DEFAULT = {
+    WARRIOR = "KINGS", PALADIN = "KINGS", HUNTER = "KINGS", ROGUE = "KINGS",
+    PRIEST  = "KINGS", SHAMAN  = "KINGS", MAGE   = "KINGS", WARLOCK = "KINGS",
+    DRUID   = "KINGS",
+    PET     = "MIGHT",
+}
+-- The classes the assignment grid offers, plus the pet pseudo-class. Ordered
+-- rather than pairs()'d so the settings grid is stable between draws.
+SDATA.BLESS_CLASS_ORDER = {
+    "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
+    "SHAMAN", "MAGE", "WARLOCK", "DRUID", "PET",
+}
+
+-- The synthetic def that stands in for the whole family in SDATA.BUFF_ACTIVE.
+-- It carries no `oneOf`: the supersede rule exists to stop six slots nagging
+-- past each other, and with one slot there is nothing to supersede — an ally
+-- carrying the wrong blessing of yours is a slot that should be asking.
+SDATA.BLESS_SLOT = {
+    key = "BLESSING", label = "Blessing", dbKey = "BLESS:BLESSING",
+    combined = true, targets = "ALL", duration = 600,
+    default = true, advise = "ALWAYS", mine = true,
+    icon = "Interface\\Icons\\Spell_Magic_MageArmor",
 }
 -- ---------------------------------------------------------------------------
 -- Click bindings: the full modifier x button matrix, per talent build.
@@ -828,6 +887,138 @@ function CommanderPartyFrames_GetProfileMode()
 end
 
 -- ---------------------------------------------------------------------------
+-- The blessing assignment, as the settings page sees it. Everything here is a
+-- thin wrapper over util.Bless* so the two ways in — the row's menu and the
+-- settings grid — cannot drift apart on what "assigned" means.
+-- ---------------------------------------------------------------------------
+
+-- One table rather than half a dozen file locals: the main chunk of this file
+-- is within sight of Lua 5.1's 200-local ceiling, and a feature that wants
+-- several scratch tables is exactly how a file walks into it. Everything the
+-- blessing UI keeps between calls lives in here, on both sides of the export
+-- boundary — the row's menu below reaches the same table.
+local bless = {
+    optScratch = {},    -- the row menu's option list
+    optOut = {},        -- the settings grid's option list (same shape, other caller)
+    probe = {},         -- a stand-in row for a whole class
+    roster = {}, seen = {},
+}
+
+-- A stand-in row for a whole CLASS, so the class grid can ask exactly the
+-- questions a real row asks: does Wisdom do a warrior any good (no), does
+-- Might do a mage any good (no).
+function CommanderPartyFrames_BlessProbe(classKey)
+    local probe = bless.probe
+    wipe(probe)
+    if classKey == "PET" then
+        -- Every pet in the game melees and drinks from a mana bar it does not
+        -- spend on your buffs, so a pet is MELEE and not a mana user.
+        probe.isPet, probe.manaUser = true, nil
+    else
+        probe.class = classKey
+        probe.manaUser = SDATA.MANA_CLASSES[classKey or ""] or nil
+    end
+    return probe
+end
+
+function CommanderPartyFrames_BlessClassOrder() return SDATA.BLESS_CLASS_ORDER end
+function CommanderPartyFrames_BlessNone() return SDATA.BLESS_NONE end
+
+-- Which blessings this character can put on that class at all.
+function CommanderPartyFrames_BlessOptions(classKey)
+    return util.BlessOptions(CommanderPartyFrames_BlessProbe(classKey), bless.optOut)
+end
+
+function CommanderPartyFrames_BlessGet(field, key)
+    return util.BlessStored(field, key)
+end
+
+function CommanderPartyFrames_BlessSet(field, key, value)
+    util.BlessAssign(field, key, value)
+end
+
+-- What a class row actually resolves to right now, and whether that came from
+-- a stored choice or the built-in table. The grid draws the resolved icon
+-- either way — a class showing nothing because you never touched it would be
+-- a lie about what the board is going to do.
+function CommanderPartyFrames_BlessResolve(classKey)
+    local probe = CommanderPartyFrames_BlessProbe(classKey)
+    local stored = util.BlessStored("BlessClass", classKey)
+    if stored == SDATA.BLESS_NONE then return nil, true end
+    -- Deliberately NOT util.BlessFor(probe): that would consult BlessAssign
+    -- with the probe's (absent) name and could only ever miss, but reading a
+    -- class cell through the player ladder is the kind of thing that becomes
+    -- true by accident later. The class ladder is stored -> built-in, full stop.
+    local def = bless.DefFor(stored, probe)
+        or bless.DefFor(SDATA.BLESS_CLASS_DEFAULT[classKey or ""], probe)
+    return def, stored ~= nil
+end
+
+-- The same question for a NAMED player: what will their row actually show?
+-- The settings list needs the resolved answer, not the stored one, or a name
+-- you have never touched would draw blank while the board blesses them fine.
+function CommanderPartyFrames_BlessResolveFor(assignKey, classKey)
+    local probe = CommanderPartyFrames_BlessProbe(classKey)
+    local stored = util.BlessStored("BlessAssign", assignKey)
+    if stored == SDATA.BLESS_NONE then return nil end
+    local def = bless.DefFor(stored, probe)
+    if def then return def end
+    local byClass = util.BlessStored("BlessClass", classKey)
+    if byClass == SDATA.BLESS_NONE then return nil end
+    return bless.DefFor(byClass, probe)
+        or bless.DefFor(SDATA.BLESS_CLASS_DEFAULT[classKey or ""], probe)
+end
+
+-- The people a per-player override could name: everyone in the group now,
+-- plus everyone who already has one saved (they may be offline, and an
+-- override you cannot see is an override you cannot clear).
+function CommanderPartyFrames_BlessRoster()
+    local list, seen = bless.roster, bless.seen
+    wipe(list); wipe(seen)
+    local function add(unit)
+        if not (unit and UnitExists(unit)) then return end
+        local name, realm = UnitName(unit)
+        if not name then return end
+        local key = (realm and realm ~= "") and (name .. "-" .. realm) or name
+        if seen[key] then return end
+        seen[key] = true
+        list[#list + 1] = {
+            key = key, name = name,
+            class = select(2, UnitClass(unit)),
+            online = true,
+        }
+    end
+    add("player")
+    if IsInRaid and IsInRaid() then
+        for i = 1, 40 do add("raid" .. i) end
+    else
+        for i = 1, 4 do add("party" .. i) end
+    end
+    local stored = CommanderPartyFramesDB and CommanderPartyFramesDB.BlessAssign
+    if stored then
+        for key in pairs(stored) do
+            -- Pet overrides are keyed "pet:Owner" and belong to the owner's
+            -- row conceptually, but they are still assignments you may want
+            -- back — listed under their own readable name rather than hidden.
+            if not seen[key] then
+                seen[key] = true
+                local pet = key:match("^pet:(.+)$")
+                list[#list + 1] = {
+                    key = key, name = pet and (pet .. "'s pet") or key,
+                    isPet = pet and true or nil,
+                    online = false,
+                }
+            end
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.online ~= b.online then return a.online end
+        return a.name < b.name
+    end)
+    return list
+end
+
+-- ---------------------------------------------------------------------------
 -- Dispels. What each class can actually remove from a friendly target on this
 -- client (TBC): Priest Magic+Disease, Paladin Magic+Poison+Disease, Druid
 -- Curse+Poison, Mage Curse, Shaman Poison+Disease. Everyone else dispels
@@ -1028,6 +1219,7 @@ end
 -- SDATA note at the top).
 -- ---------------------------------------------------------------------------
 util.buffExp, util.buffDur = {}, {}   -- per-scan scratch, wiped per unit
+util.buffMine = {}                    -- ...and who cast it (blessings care)
 
 -- What the other side is made of, refreshed by the quarter-second hostile
 -- scan. `enemySeen` is how many enemies we could actually read: zero means we
@@ -1072,20 +1264,301 @@ function util.BuffAdvised(def)
     return def.advise and true or false
 end
 
+-- ---------------------------------------------------------------------------
+-- The blessing family's own questions. All three are cheap and asked per row
+-- per frame, so they stay lookups rather than scans.
+-- ---------------------------------------------------------------------------
+
+-- Is the family collapsed into one assigned slot? Paladin board only: on every
+-- other layer there is no family to collapse and the setting means nothing.
+function util.BlessCombined()
+    return layer == "BLESS" and DB("BlessCombine", true) or false
+end
+
+-- Does this def only count when WE cast it? Blessings do (two paladins can
+-- each hold a different one on the same target, so another paladin's is not
+-- yours and never satisfies your slot); everything else in the registry is
+-- deliberately any-caster, because another druid's Mark really does stop you
+-- recasting. The setting exists to turn the strict read off, not to turn a
+-- wrong one on — leave it alone unless you are the only paladin, ever.
+function util.BuffMineOnly(def)
+    if not (def and def.mine) then return false end
+    return DB("BlessMineOnly", true) and true or false
+end
+
+-- The blessings this character can actually put on THIS row, in registry
+-- order. Trained is the hard gate; `targets` drops the ones that would do
+-- nothing (Wisdom on a rogue, Might on a mage). In combined mode the per-buff
+-- track toggle deliberately does NOT filter this: it decides which blessings
+-- earn a SLOT, and there is only one slot now, so using it to shorten a
+-- dropdown would just hide the blessing you reached for.
+function util.BlessOptions(r, out)
+    out = out or {}
+    wipe(out)
+    for _, def in ipairs(SDATA.CLASS_BUFFS.BLESS) do
+        if def.known and (not r or util.BuffApplies(def, r)) then
+            out[#out + 1] = def
+        end
+    end
+    return out
+end
+
+-- The key a per-player override is stored under. Name, plus realm when the
+-- ally is from another one — the same identity the client itself shows, and
+-- stable across sessions in a way a GUID would be to read but not to edit.
+function util.BlessAssignKey(r)
+    if not r then return nil end
+    if r.isPet then
+        -- A pet's name is whatever its owner named it, which is stable enough
+        -- to key on, but its OWNER is what you actually think about. Keyed by
+        -- owner so "Grimtusk's pet" survives a Call Pet of a different beast.
+        return r.petOwnerName and ("pet:" .. r.petOwnerName) or nil
+    end
+    return r.fullName
+end
+
+-- Which class bucket answers for this row. Pets have no class of their own,
+-- and borrowing the owner's would put Kings on a warlock's felguard because
+-- the warlock wants it — so they get a bucket of their own.
+function util.BlessClassKey(r)
+    if not r then return nil end
+    if r.isPet then return "PET" end
+    return r.class
+end
+
+-- Read a stored assignment (nil = nothing stored). Split out because the
+-- settings grid needs the RAW answer — "is there an override here" is a
+-- different question from "what will this row be told to cast".
+function util.BlessStored(field, key)
+    if not key then return nil end
+    local tbl = CommanderPartyFramesDB and CommanderPartyFramesDB[field]
+    return tbl and tbl[key] or nil
+end
+
+function util.BlessSetStored(field, key, value)
+    if not key then return end
+    local tbl = CommanderPartyFramesDB and CommanderPartyFramesDB[field]
+    if not tbl then
+        if not CommanderPartyFramesDB then return end
+        tbl = {}
+        CommanderPartyFramesDB[field] = tbl
+    end
+    tbl[key] = value
+end
+
+-- Resolve a blessing key to its def, but only if this character can cast it
+-- and it would do the target any good. A stored assignment that fails either
+-- test is not an error — you respecced out of Sanctuary, or the warrior you
+-- had Wisdom on left and a mage took the slot — so it falls through to the
+-- next step of the ladder rather than leaving the row blank.
+function bless.DefFor(key, r)
+    if not key or key == SDATA.BLESS_NONE then return nil end
+    for _, def in ipairs(SDATA.CLASS_BUFFS.BLESS) do
+        if def.key == key then
+            if not def.known then return nil end
+            if r and not util.BuffApplies(def, r) then return nil end
+            return def
+        end
+    end
+    return nil
+end
+
+-- What should I be casting on this ally? Returns the def and where the answer
+-- came from ("player" / "class" / "default" / "any"), or nil when the answer
+-- is genuinely "nothing" — either an explicit NONE, or a character with no
+-- blessing trained at all.
+function util.BlessFor(r)
+    if not r then return nil end
+    local pk = util.BlessAssignKey(r)
+    local stored = util.BlessStored("BlessAssign", pk)
+    if stored == SDATA.BLESS_NONE then return nil, "player" end
+    local def = bless.DefFor(stored, r)
+    if def then return def, "player" end
+
+    local ck = util.BlessClassKey(r)
+    local byClass = util.BlessStored("BlessClass", ck)
+    if byClass == SDATA.BLESS_NONE then return nil, "class" end
+    def = bless.DefFor(byClass, r)
+    if def then return def, "class" end
+
+    def = bless.DefFor(SDATA.BLESS_CLASS_DEFAULT[ck or ""], r)
+    if def then return def, "default" end
+
+    -- Last resort: anything at all this paladin can put on them. A level-20
+    -- paladin with only Might trained still gets a working board.
+    for _, d in ipairs(SDATA.CLASS_BUFFS.BLESS) do
+        if d.known and util.BuffApplies(d, r) then return d, "any" end
+    end
+    return nil, "none"
+end
+
+-- ---------------------------------------------------------------------------
+-- The row's assignment menu. Right-click the blessing slot for the list, left
+-- for the same list — both buttons open it, because a slot that answers one
+-- click and ignores the other is a slot you click twice.
+--
+-- Live only out of combat (see the note where row.blessBtn is built), and only
+-- while the family is actually collapsed into one slot: with six separate
+-- slots there is no assignment to make.
+-- ---------------------------------------------------------------------------
+function util.BlessMenuLive()
+    if not util.BlessCombined() then return false end
+    if not DB("BlessRowMenu", true) then return false end
+    return not (InCombatLockdown and InCombatLockdown())
+end
+
+-- Where the assignment lands. The per-player row writes an override; the class
+-- row writes the class default; both clear back to "inherit" when you pick the
+-- entry they already resolve to, so the DB never fills with rows that say
+-- exactly what the fallback already said.
+function util.BlessAssign(field, key, value)
+    if not key then return end
+    util.BlessSetStored(field, key, value)
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+end
+
+function bless.MenuInit(_, level)
+    local btn = bless.menuBtn
+    if not btn then return end
+    level = level or 1
+    local who = btn.who
+    local pk, ck = btn.assignKey, btn.classKey
+    local stored = util.BlessStored("BlessAssign", pk)
+    local info
+
+    info = UIDropDownMenu_CreateInfo()
+    info.text = btn.rowName and ("Bless " .. btn.rowName) or "Blessing"
+    info.isTitle, info.notCheckable = true, true
+    UIDropDownMenu_AddButton(info, level)
+
+    for _, def in ipairs(util.BlessOptions(who, bless.optScratch)) do
+        info = UIDropDownMenu_CreateInfo()
+        info.text, info.icon = def.label, def.icon
+        info.checked = (stored == def.key)
+        info.func = function()
+            util.BlessAssign("BlessAssign", pk, def.key)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
+
+    info = UIDropDownMenu_CreateInfo()
+    info.text, info.notCheckable = "Don't bless them", true
+    info.checked = (stored == SDATA.BLESS_NONE)
+    info.func = function()
+        util.BlessAssign("BlessAssign", pk, SDATA.BLESS_NONE)
+        CloseDropDownMenus()
+    end
+    UIDropDownMenu_AddButton(info, level)
+
+    -- Clearing is a separate verb from picking, and it has to say what you
+    -- fall back TO — otherwise "Use the class default" is a promise with no
+    -- content and you clear it just to find out.
+    local fallback = util.BlessStored("BlessClass", ck)
+        or SDATA.BLESS_CLASS_DEFAULT[ck or ""]
+    local fbLabel
+    for _, def in ipairs(SDATA.CLASS_BUFFS.BLESS) do
+        if def.key == fallback then fbLabel = def.label end
+    end
+    info = UIDropDownMenu_CreateInfo()
+    info.text = fbLabel and (ck == "PET" and ("Follow pets (" .. fbLabel .. ")")
+            or ("Follow " .. (ck or "class") .. " (" .. fbLabel .. ")"))
+        or "Follow the class default"
+    info.notCheckable = true
+    info.disabled = (stored == nil)
+    info.func = function()
+        util.BlessAssign("BlessAssign", pk, nil)
+        CloseDropDownMenus()
+    end
+    UIDropDownMenu_AddButton(info, level)
+end
+
+function util.BlessSlotClick(self)
+    if not util.BlessMenuLive() then return end
+    if not self.assignKey then return end
+    bless.menuBtn = self
+    if not bless.menu then
+        bless.menu = CreateFrame("Frame", "CommanderPartyFramesBlessMenu", UIParent,
+            "UIDropDownMenuTemplate")
+    end
+    UIDropDownMenu_Initialize(bless.menu, bless.MenuInit, "MENU")
+    ToggleDropDownMenu(1, nil, bless.menu, self, 0, 0)
+end
+
+function util.BlessSlotTooltip(self)
+    local want, have = self.blessWant, self.blessHave
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(self.rowName or "Blessing", 1, 1, 1)
+    if want then
+        GameTooltip:AddLine("Assigned: " .. want.label, 1, 0.82, 0.25)
+    else
+        GameTooltip:AddLine("Assigned: nothing — leave them alone", 0.7, 0.7, 0.7)
+    end
+    -- WHERE the assignment came from, because "why is this Kings" is the first
+    -- question the slot provokes and the answer is three tables deep.
+    local why = self.blessWhy
+    if why == "player" then
+        GameTooltip:AddLine("Set on them by name.", 0.6, 0.6, 0.6, true)
+    elseif why == "class" then
+        GameTooltip:AddLine("From your class default.", 0.6, 0.6, 0.6, true)
+    elseif why == "default" then
+        GameTooltip:AddLine("From the built-in class default.", 0.6, 0.6, 0.6, true)
+    elseif why == "any" then
+        GameTooltip:AddLine("Nothing assigned — this is the only blessing you have for them.",
+            0.6, 0.6, 0.6, true)
+    end
+    GameTooltip:AddLine(" ")
+    if have and want and have.key == want.key then
+        GameTooltip:AddLine("Yours is up.", 0.4, 0.9, 0.4)
+    elseif have then
+        -- The case this whole rework exists for: covered, but not with what
+        -- you decided, so the slot is dark and this says exactly why.
+        GameTooltip:AddLine("They are carrying your " .. have.label .. " instead.", 1, 0.65, 0.3, true)
+        GameTooltip:AddLine("The slot reads dark because that is not the assignment.",
+            0.6, 0.6, 0.6, true)
+    else
+        GameTooltip:AddLine("None of your blessings are on them.", 1, 0.4, 0.4)
+    end
+    if DB("BlessMineOnly", true) then
+        GameTooltip:AddLine("Only blessings YOU cast count here.", 0.6, 0.6, 0.6, true)
+    end
+    GameTooltip:AddLine(" ")
+    if util.BlessMenuLive() then
+        GameTooltip:AddLine("Click to reassign.", 0.6, 0.6, 0.6)
+    elseif util.BlessCombined() and DB("BlessRowMenu", true) then
+        GameTooltip:AddLine("Reassign out of combat.", 0.6, 0.6, 0.6)
+    end
+    GameTooltip:Show()
+end
+
 -- Rebuild the tracked subset and the layout signature. Called from Apply, so
 -- a toggle in the settings panel re-shapes every row on the next draw rather
 -- than on the next reload.
 function util.RefreshBuffs()
     wipe(SDATA.BUFF_ACTIVE)
     local sig = {}
+    -- Combined mode spends ONE slot on the whole family, whatever is tracked
+    -- inside it: which blessing that slot shows is a per-row assignment, not a
+    -- layout question, so the strip's shape stops depending on it entirely.
+    -- Anything in the book that is not a blessing still gets its own slot —
+    -- there is nothing like that today, and the day there is, it works.
+    local combined = util.BlessCombined()
+    local anyBlessing = false
     for _, def in ipairs(SDATA.BUFF_LIST) do
         -- A spell you have not trained earns no slot. A level-20 mage has no
         -- Dampen Magic, and a permanent dark reminder of a spell that is not
         -- in the book is the emptiest pixel on the board.
-        if def.known and util.BuffTracked(def) then
+        if combined and def.oneOf == SDATA.BLESS_FAMILY then
+            if def.known then anyBlessing = true end
+        elseif def.known and util.BuffTracked(def) then
             SDATA.BUFF_ACTIVE[#SDATA.BUFF_ACTIVE + 1] = def
             sig[#sig + 1] = def.key
         end
+    end
+    SDATA.BLESS_SLOT.known = anyBlessing
+    if anyBlessing then
+        table.insert(SDATA.BUFF_ACTIVE, 1, SDATA.BLESS_SLOT)
+        table.insert(sig, 1, SDATA.BLESS_SLOT.key)
     end
     -- The own-aura strip answers to exactly the same two questions, whichever
     -- book the active layer put in it (druid hots, paladin Hands)
@@ -1680,10 +2153,14 @@ end
 -- Classes whose members run on mana (TBC): the INT layer's buff targets.
 -- Judged by class, not live power type, so a shapeshifted druid stays a
 -- target instead of flapping between target and not each form change.
-local MANA_CLASSES = {
+-- On SDATA rather than a file local, next to MELEE_CLASSES and for the same
+-- reason: the settings page asks the same question of a class with no unit
+-- behind it, and that call site sits above this line.
+SDATA.MANA_CLASSES = {
     MAGE = true, PRIEST = true, WARLOCK = true, DRUID = true,
     SHAMAN = true, PALADIN = true, HUNTER = true,
 }
+local MANA_CLASSES = SDATA.MANA_CLASSES
 -- Pets on the ally board (Include Pets). Every pet in the group has its own
 -- fixed token, so "is this a pet, and whose" is a static lookup rather than a
 -- UnitIsUnit walk — and the owner is what a pet row borrows for the two
@@ -3413,7 +3890,7 @@ local function ScanUnit(unit, reliable)
     local buffOn = #SDATA.BUFF_ACTIVE > 0
     local armorFound, formFound, auraFound, sealFound
     wipe(scanAbsorbs)
-    if buffOn then wipe(util.buffExp); wipe(util.buffDur) end
+    if buffOn then wipe(util.buffExp); wipe(util.buffDur); wipe(util.buffMine) end
     if stripOn then wipe(strip.scan) end
     for i = 1, 40 do
         local aura = C_UnitAuras.GetBuffDataByIndex(unit, i, "HELPFUL")
@@ -3423,13 +3900,26 @@ local function ScanUnit(unit, reliable)
             pwsSpellId = aura.spellId
             pwsMine = aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") or false
             pwsIndex = i
-        elseif buffOn and SDATA.BUFF_BY_NAME[aura.name]
-            and not util.buffExp[SDATA.BUFF_BY_NAME[aura.name].key] then
+        elseif buffOn and SDATA.BUFF_BY_NAME[aura.name] then
             -- Any caster's buff counts as covered, and the group version
-            -- satisfies the same slot as the single (both map to one def)
-            local bkey = SDATA.BUFF_BY_NAME[aura.name].key
-            util.buffExp[bkey] = aura.expirationTime or 0
-            util.buffDur[bkey] = aura.duration
+            -- satisfies the same slot as the single (both map to one def).
+            --
+            -- ...except the blessings, which are the one family where "who
+            -- cast it" is the whole question: two paladins may each hold a
+            -- different blessing on the same target, so another paladin's
+            -- Kings sitting in this list means nothing about whether YOUR
+            -- blessing is on them. Rejected outright rather than recorded and
+            -- filtered later, so nothing downstream can mistake it for cover.
+            local bdef = SDATA.BUFF_BY_NAME[aura.name]
+            local bkey = bdef.key
+            if not util.buffExp[bkey] then
+                local mine = (aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player")) or false
+                if mine or not util.BuffMineOnly(bdef) then
+                    util.buffExp[bkey] = aura.expirationTime or 0
+                    util.buffDur[bkey] = aura.duration
+                    util.buffMine[bkey] = mine
+                end
+            end
         elseif isPlayer and not armorFound and armorNames[aura.name] then
             armorFound = { icon = armorNames[aura.name], expire = aura.expirationTime,
                 duration = aura.duration }
@@ -3560,6 +4050,7 @@ local function ScanUnit(unit, reliable)
                 local slot = rec[k]
                 if not slot then slot = {}; rec[k] = slot end
                 slot.expire, slot.duration = exp, util.buffDur[k]
+                slot.mine = util.buffMine[k] or false
             end
             if reliable then
                 for k in pairs(rec) do
@@ -4186,6 +4677,10 @@ end
 -- `r.buffMissing` is the row-level summary the action glow reads: anything
 -- tracked that is absent or inside its rebuff window.
 function util.ResolveBuffs(r, now)
+    -- Cleared before the early return, not after it: the test board reuses its
+    -- row tables between passes, so a stale assignment left on one would put a
+    -- blessing under a row that is no longer asking for one.
+    r.blessWant, r.blessWantWhy, r.blessHave = nil, nil, nil
     local n = #SDATA.BUFF_ACTIVE
     if n == 0 or r.selfSpell then r.buffCount = 0; return end
     local rec = intState[r.guid]
@@ -4194,26 +4689,55 @@ function util.ResolveBuffs(r, now)
     local shown = 0
     for i = 1, n do
         local def = SDATA.BUFF_ACTIVE[i]
+        -- The combined blessing slot resolves per ROW, not per registry entry:
+        -- which blessing it watches is this ally's assignment, so the answer
+        -- differs down the board while the layout stays one slot wide.
+        --
+        -- An ally carrying a DIFFERENT blessing of yours reads as missing, on
+        -- purpose. The alternative — "covered, near enough" — is how you end a
+        -- match having never noticed the healer took Might off a stray cast.
+        -- What they are actually carrying is kept in r.blessHave so the
+        -- tooltip can say so in words instead of the slot lying with colour.
+        local want, wantWhy
+        if def.combined then
+            want, wantWhy = util.BlessFor(r)
+            r.blessWant, r.blessWantWhy = want, wantWhy
+            if rec then
+                for _, b in ipairs(SDATA.CLASS_BUFFS.BLESS) do
+                    local e = rec[b.key]
+                    if e and not (e.expire and e.expire > 0 and e.expire <= now) then
+                        r.blessHave = b
+                        break
+                    end
+                end
+            end
+        end
         -- A buff nobody would cast here earns no slot at all: Intellect and
         -- Spirit are for mana users, Blessing of Might is for people who swing
         -- things, and a rogue's row should not carry a permanent dark reminder
-        -- of a spell that does nothing for them.
-        if util.BuffApplies(def, r) then
+        -- of a spell that does nothing for them. The combined slot answers the
+        -- same question through its assignment: NONE, or nothing trained that
+        -- suits them, and it spends no slot either. The width stays reserved
+        -- by the layout, so the row keeps its shape with nothing to say here.
+        if (not def.combined or want) and util.BuffApplies(def, r) then
             shown = shown + 1
             local slot = r.buffs[shown]
             if not slot then slot = {}; r.buffs[shown] = slot end
-            local e = rec and rec[def.key]
+            local key = want and want.key or def.key
+            local e = rec and rec[key]
             local left
             if e and e.expire and e.expire > 0 then
                 left = e.expire - now
-                if left <= 0 then rec[def.key], e, left = nil, nil, nil end
+                if left <= 0 then rec[key], e, left = nil, nil, nil end
             end
             slot.def = def
-            slot.icon = def.icon
+            slot.want = want
+            slot.icon = want and want.icon or def.icon
             slot.up = e and true or false
             -- expire 0 is a permanent aura (no readable clock): up, no sweep
             slot.expire = e and e.expire or nil
-            slot.duration = (e and e.duration and e.duration > 0) and e.duration or def.duration
+            slot.duration = (e and e.duration and e.duration > 0) and e.duration
+                or (want or def).duration
             slot.due = (left and left <= rebuffAt) or false
             if not slot.up then
                 r.buffMissing = true
@@ -4486,10 +5010,16 @@ local function ResolveRow(unit, now)
     else
         manaUser = MANA_CLASSES[className or ""] or nil
     end
+    local uname, urealm = UnitName(unit)
     local r = {
         guid = guid,
         unit = unit,
-        name = UnitName(unit) or "?",
+        name = uname or "?",
+        -- Name plus realm when there is one: the identity a per-player blessing
+        -- assignment is keyed by, and the only one that survives a session.
+        -- GUIDs would too, but nobody can read one in a settings list.
+        fullName = uname and (urealm and urealm ~= "" and (uname .. "-" .. urealm) or uname) or nil,
+        petOwnerName = owner and UnitName(owner) or nil,
         class = className,
         isSelf = (not owner) and UnitIsUnit(unit, "player") or false,
         isPet = owner and true or nil,
@@ -4748,6 +5278,30 @@ local function BuildRowWidgets(row)
         b.cd:Hide()
         row.buffs[n] = b
     end
+
+    -- The blessing slot's assignment handle: a hit area over the combined
+    -- blessing icon that opens "what should I be casting on them" as a menu,
+    -- right where you are already looking. Pally Power's move, and the reason
+    -- the assignment is worth having at all — a per-ally choice you can only
+    -- reach through a settings page is a choice you make once and then live
+    -- with, which is not what an arena wants.
+    --
+    -- OUT OF COMBAT ONLY, and that is a design decision rather than a caveat.
+    -- An insecure frame over a secure row swallows every click in its own few
+    -- pixels, so leaving this live in combat would quietly eat a click-cast
+    -- binding at the exact moment it matters. Assignments are something you do
+    -- at the gate; in combat the icon goes back to being an icon and every
+    -- click on the row is your binding again. util.BlessMenuLive gates it.
+    row.blessBtn = CreateFrame("Button", nil, row)
+    row.blessBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row.blessBtn.who = {}       -- refreshed per paint; never a live rowData ref
+    -- Looked up through `util` at call time rather than bound here: these rows
+    -- are built long after load, but the indirection means the handlers can
+    -- live wherever they read best without a declaration-order trap.
+    row.blessBtn:SetScript("OnClick", function(self, button) util.BlessSlotClick(self, button) end)
+    row.blessBtn:SetScript("OnEnter", function(self) util.BlessSlotTooltip(self) end)
+    row.blessBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row.blessBtn:Hide()
 
     -- The own-aura strip: up to three auras of OURS on this ally, each a
     -- small icon with a radial sweep for what is left of it. Lifebloom and
@@ -5018,6 +5572,7 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     -- whole fight — which is also what keeps Click-Cast legal, since a secure
     -- row cannot be re-laid-out mid-combat.
     local buffSlots = (not compact and showIcon) and #SDATA.BUFF_ACTIVE or 0
+    local blessSlot
     for n = 1, SDATA.MAX_BUFF_SLOTS do
         local b = row.buffs[n]
         if n <= buffSlots then
@@ -5026,10 +5581,24 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
             b.icon:SetPoint("LEFT", row, "LEFT", x, 0)
             b.cd:ClearAllPoints()
             b.cd:SetAllPoints(b.icon)
+            if SDATA.BUFF_ACTIVE[n] and SDATA.BUFF_ACTIVE[n].combined then blessSlot = b end
             x = x + SMALL_ICON + 3
         else
             b.icon:Hide(); b.cd:Hide()
         end
+    end
+    -- The assignment hit area sits exactly on the combined blessing icon.
+    -- Parked here rather than shown: whether it is LIVE is a combat question
+    -- answered per paint, and layout only runs when the strip's shape changes.
+    if row.blessBtn then
+        row.blessBtn:ClearAllPoints()
+        if blessSlot then
+            row.blessBtn:SetAllPoints(blessSlot.icon)
+        else
+            row.blessBtn:SetPoint("LEFT", row, "LEFT", 0, 0)
+            row.blessBtn:SetSize(SMALL_ICON, SMALL_ICON)
+        end
+        row.blessBtn.slot = blessSlot
     end
 
     -- The layer's OWN status slot, which is a different job from the buff
@@ -5337,6 +5906,7 @@ local function PaintRow(row, r, now, index)
         row.left:SetText(""); row.right:SetText(""); row.glow:Hide(); row.flash:Hide()
         row.tgtCount:Hide()
         row.stripe:SetAlpha(0)
+        if row.blessBtn then row.blessBtn:Hide() end
         return
     end
     row:SetAlpha(r.outOfRange and 0.4 or 1)
@@ -5369,6 +5939,27 @@ local function PaintRow(row, r, now, index)
         local b = row.buffs[i]
         b._exp = nil
         b.icon:Hide(); b.cd:Hide()
+    end
+
+    -- The blessing slot's assignment handle. Everything it needs is copied off
+    -- the row data rather than referenced: rowData tables are recycled between
+    -- passes, and a menu that read one a frame later would be assigning a
+    -- blessing to whoever inherited the table.
+    local bb = row.blessBtn
+    if bb then
+        local slot = bb.slot
+        local live = slot and slot.icon:IsShown() and util.BlessMenuLive()
+        if live then
+            bb.assignKey = util.BlessAssignKey(r)
+            bb.classKey = util.BlessClassKey(r)
+            bb.rowName = r.isPet and (r.name .. " (pet)") or r.name
+            bb.blessWant, bb.blessHave, bb.blessWhy = r.blessWant, r.blessHave, r.blessWantWhy
+            local who = bb.who
+            who.class, who.isPet, who.manaUser = r.class, r.isPet, r.manaUser
+            bb:Show()
+        else
+            bb:Hide()
+        end
     end
 
     -- The layer's own status slot: Power Word: Shield on the priest board, the
@@ -6954,6 +7545,11 @@ function CommanderPartyFrames_Test()
             { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200, raidMark = 8 },
             { guid = "cshieldtest6", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.75, mana = 0.8, hpMax = 4000 },
         }
+        -- The test board is a preview of the real thing, so its rows carry the
+        -- identity the real resolver builds — otherwise the paladin's blessing
+        -- slot would have nobody to assign a blessing TO, and the one control
+        -- on the board you can actually click would be dead in the preview.
+        for _, tr in ipairs(testRows) do tr.fullName = tr.name end
         -- An ally's pet (Include Pets): a mana pet, so it takes the mana strip
         -- and the Intellect slot — unbuffed here, which is the ghost icon that
         -- says "cast it". It carries no ability strip and no spec, and it
@@ -6966,6 +7562,7 @@ function CommanderPartyFrames_Test()
             }
             testRows[#testRows + 1] = { guid = "cshieldtest7", name = "Felhunter",
                 class = "WARLOCK", isPet = true, petOwner = "party4",
+                petOwnerName = "Lock", fullName = "Felhunter",
                 manaUser = true, health = 0.68, mana = 0.35, hpMax = 2900 }
         end
         if DB("SelfShieldRows", true) then
@@ -7288,6 +7885,13 @@ function CommanderPartyFrames_Buffs()
     end
     print(string.format("|cff66ccffCPF buffs|r: layer=%s  advisor=%s", layer,
         tostring(DB("BuffAdvisor", true))))
+    if util.BlessCombined() then
+        -- On this layer `tracked` stops being the interesting column: the
+        -- blessings share one slot, so what decides each row is the
+        -- ASSIGNMENT, and trained is the only per-blessing fact left.
+        print(string.format("  |cffffd100one blessing slot|r, only-mine=%s, row menu=%s",
+            tostring(DB("BlessMineOnly", true)), tostring(DB("BlessRowMenu", true))))
+    end
     for _, def in ipairs(SDATA.BUFF_LIST) do
         print(string.format("  %-13s known=%-5s tracked=%-5s advised=%s",
             def.label, tostring(def.known and true or false),
@@ -7324,9 +7928,17 @@ function CommanderPartyFrames_Buffs()
                 else
                     state = "|cff999999missing|r"
                 end
+                -- On the combined slot the label is the ASSIGNED blessing, and
+                -- "missing" is worth qualifying: they may well be carrying a
+                -- different one of yours, which is the whole reason the slot
+                -- is dark rather than a mystery.
+                local label = (slot.want and slot.want.label) or slot.def.label
+                local note = (not slot.up and slot.why) and ("  (" .. slot.why .. ")") or ""
+                if slot.want and not slot.up and r.blessHave then
+                    note = "  (carrying your " .. r.blessHave.label .. ")"
+                end
                 print(string.format("    %-10s %-13s %s%s", r.name or "?",
-                    slot.def.label, state,
-                    (not slot.up and slot.why) and ("  (" .. slot.why .. ")") or ""))
+                    label, state, note))
             end
         end
     end

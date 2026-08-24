@@ -133,130 +133,491 @@ local function StreakColor()
 end
 
 -- ---------------------------------------------------------------------------
--- Player-portrait overlay mode: the streak lives on the default player
--- frame instead of a floating meter — a radial cooldown sweep over the
--- portrait counts down the momentum window, with the multiplier centered.
+-- Player-frame display: the streak rides the default player frame instead of
+-- the floating meter. The suite already crowds that corner (Casting's bar,
+-- Buffs' rows, the PartyFrames banner), so no single spot can be the right
+-- one — instead there are seven readout styles, a dozen places to hang them,
+-- and offsets/size/opacity/contents on top, so the streak can be tucked into
+-- whatever gap the rest of your layout leaves free.
+--
+--   RING   radial window sweep wrapping the portrait (the original)
+--   GLOW   number only, with the portrait disc fading as the clock runs out
+--   BADGE  compact bordered chip: multiplier and the seconds left
+--   BAR    slim drain bar, horizontal or vertical
+--   PIPS   one pip per kill in the chain; the newest pip fades as it drains
+--   TICKER one plain text line, no art — "x7 · 12s · 6.4/min"
+--   FLARE  a colored glow around the whole player frame, fading with the clock
 -- ---------------------------------------------------------------------------
-local portraitOverlay, portraitCooldown, portraitText, portraitTint
+
+-- widgetPoint, anchorPoint, default nudge x/y. PORTRAIT hangs off the
+-- portrait texture; every other placement off the player frame itself.
+local PLACEMENTS = {
+    PORTRAIT    = { "CENTER", "CENTER", 0, 0, portrait = true },
+    OVER        = { "CENTER", "CENTER", 0, 0 },
+    ABOVE       = { "BOTTOM", "TOP", 0, 2 },
+    BELOW       = { "TOP", "BOTTOM", 0, -2 },
+    LEFT        = { "RIGHT", "LEFT", -4, 0 },
+    RIGHT       = { "LEFT", "RIGHT", 4, 0 },
+    TOPLEFT     = { "BOTTOMRIGHT", "TOPLEFT", 12, -4 },
+    TOPRIGHT    = { "BOTTOMLEFT", "TOPRIGHT", -12, -4 },
+    BOTTOMLEFT  = { "TOPRIGHT", "BOTTOMLEFT", 12, 6 },
+    BOTTOMRIGHT = { "TOPLEFT", "BOTTOMRIGHT", -12, 6 },
+    BARS        = { "LEFT", "LEFT", 84, 4 },       -- over the health/mana bars
+    UNDERBARS   = { "TOPLEFT", "BOTTOMLEFT", 84, -2 },
+}
+
+local player   -- widget bundle, built lazily on the first player-frame draw
+local OnDrain  -- forward declaration: the drain driver lives with the meter
+               -- below, but the player display re-attaches it on every draw
+               -- (Combat Only can hide the frame mid-chain, which drops it)
 
 local function DisplayMode()
-    return (CommanderMomentumDB and CommanderMomentumDB.Display) or "HUD"
+    local mode = (CommanderMomentumDB and CommanderMomentumDB.Display) or "HUD"
+    -- "PORTRAIT" was the one and only player-frame mode before the styles
+    -- split out; saved settings still carry it
+    if mode == "PORTRAIT" then return "RING" end
+    return mode
 end
 
-local function EnsurePortraitOverlay()
-    if portraitOverlay then return true end
-    local anchor = PlayerPortrait or PlayerFrame
-    if not anchor then return false end
-    portraitOverlay = CreateFrame("Frame", "CommanderMomentumPortrait", PlayerFrame or UIParent)
-    if PlayerPortrait then
-        portraitOverlay:SetAllPoints(PlayerPortrait)
-    else
-        portraitOverlay:SetSize(60, 60)
-        portraitOverlay:SetPoint("CENTER", anchor, "CENTER", 0, 0)
-    end
-    -- Circular tint over the portrait while a streak is alive: the round
-    -- alpha-mask art used as a texture gives a clean disc, additive so the
-    -- face glows in the streak's color instead of being painted over
-    portraitTint = portraitOverlay:CreateTexture(nil, "ARTWORK")
-    portraitTint:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
-    portraitTint:SetAllPoints(portraitOverlay)
-    portraitTint:SetBlendMode("ADD")
-    portraitTint:Hide()
+local function PlayerMode()
+    return DisplayMode() ~= "HUD"
+end
 
-    portraitCooldown = CreateFrame("Cooldown", nil, portraitOverlay, "CooldownFrameTemplate")
-    -- Slightly larger than the portrait so the ring wraps its rim
-    portraitCooldown:SetPoint("TOPLEFT", portraitOverlay, "TOPLEFT", -4, 4)
-    portraitCooldown:SetPoint("BOTTOMRIGHT", portraitOverlay, "BOTTOMRIGHT", 4, -4)
-    -- The swipe texture is a ring, so the radial sweep only ever draws
-    -- ring pixels: a blue progress ring around the portrait instead of a
-    -- dark wedge over the face. No client countdown numbers or edge line.
-    if portraitCooldown.SetHideCountdownNumbers then
-        portraitCooldown:SetHideCountdownNumbers(true)
-    end
-    if portraitCooldown.SetDrawEdge then
-        portraitCooldown:SetDrawEdge(false)
-    end
-    if portraitCooldown.SetSwipeTexture then
-        portraitCooldown:SetSwipeTexture("Interface\\AddOns\\Commander_Momentum\\Textures\\Ring")
-        if portraitCooldown.SetSwipeColor then
-            portraitCooldown:SetSwipeColor(0.25, 0.55, 1, 0.95)
+-- Accent: the escalating streak tiers by default, or a fixed color — your
+-- class, or any Commander_Console palette entry read live from the shared
+-- canon (soft-failing back to the tiers when Console isn't installed)
+local function AccentColor()
+    local key = (CommanderMomentumDB and CommanderMomentumDB.Accent) or "TIERS"
+    if key == "CLASS" then
+        local _, class = UnitClass("player")
+        local color = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+        if color then return color.r, color.g, color.b end
+    elseif key ~= "TIERS" then
+        for _, color in ipairs(CommanderConsole_Colors or {}) do
+            if color.value == key and color.r then
+                return color.r, color.g, color.b
+            end
         end
-    elseif portraitCooldown.SetUseCircularEdge then
+    end
+    return StreakColor()
+end
+
+local function PlayerSize()
+    return (CommanderMomentumDB and CommanderMomentumDB.PlayerSize) or 52
+end
+
+local function EnsurePlayerWidgets()
+    if player then return true end
+    if not PlayerFrame then return false end
+    local p = {}
+    local baseLevel = (PlayerFrame:GetFrameLevel() or 1)
+
+    p.root = CreateFrame("Frame", "CommanderMomentumPlayer", PlayerFrame)
+    p.root:SetSize(52, 52)
+    p.root:SetFrameStrata(PlayerFrame:GetFrameStrata() or "MEDIUM")
+    p.root:SetFrameLevel(baseLevel + 8)
+    p.root:Hide()
+
+    -- Portrait disc tint: an optional layer for any style, on its own frame
+    -- glued to the portrait so it stays put even when the readout itself is
+    -- parked somewhere else. The round alpha-mask art used as a texture
+    -- gives a clean disc; additive, so the face glows instead of being
+    -- painted over.
+    p.tintHost = CreateFrame("Frame", nil, PlayerFrame)
+    if PlayerPortrait then
+        p.tintHost:SetAllPoints(PlayerPortrait)
+    else
+        p.tintHost:SetSize(56, 56)
+        p.tintHost:SetPoint("TOPLEFT", PlayerFrame, "TOPLEFT", 42, -12)
+    end
+    p.tintHost:SetFrameLevel(baseLevel + 7)
+    p.tint = p.tintHost:CreateTexture(nil, "OVERLAY")
+    p.tint:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
+    p.tint:SetAllPoints(p.tintHost)
+    p.tint:SetBlendMode("ADD")
+    p.tintHost:Hide()
+
+    -- RING: the client animates the radial sweep itself, and the ring art
+    -- means the swipe only ever draws ring pixels — an arc around the
+    -- portrait, never a dark wedge over the face
+    p.cooldown = CreateFrame("Cooldown", nil, p.root, "CooldownFrameTemplate")
+    p.cooldown:SetAllPoints(p.root)
+    if p.cooldown.SetHideCountdownNumbers then
+        p.cooldown:SetHideCountdownNumbers(true)
+    end
+    if p.cooldown.SetDrawEdge then
+        p.cooldown:SetDrawEdge(false)
+    end
+    if p.cooldown.SetSwipeTexture then
+        p.cooldown:SetSwipeTexture("Interface\\AddOns\\Commander_Momentum\\Textures\\Ring")
+    elseif p.cooldown.SetUseCircularEdge then
         -- Old-style fallback: at least clip the default wedge round
-        portraitCooldown:SetUseCircularEdge(true)
+        p.cooldown:SetUseCircularEdge(true)
     end
-    -- Text must sit above the cooldown sweep, so it lives on its own
-    -- higher-level frame
-    local textHolder = CreateFrame("Frame", nil, portraitOverlay)
-    textHolder:SetAllPoints(portraitOverlay)
-    textHolder:SetFrameLevel((portraitCooldown:GetFrameLevel() or 1) + 2)
-    portraitText = textHolder:CreateFontString(nil, "OVERLAY")
-    portraitText:SetFontObject(GameFontNormalLarge)
-    -- Outlined so the multiplier stays readable over the portrait art
-    do
-        local fontPath, fontSize = portraitText:GetFont()
-        if fontPath then
-            portraitText:SetFont(fontPath, fontSize or 16, "OUTLINE")
-        end
-    end
-    portraitText:SetPoint("CENTER")
-    portraitOverlay:Hide()
+    p.cooldown:Hide()
+
+    -- FLARE: the soft square glow art blown up around the whole player
+    -- frame, additive so it reads as light on the chassis
+    p.flare = p.root:CreateTexture(nil, "BACKGROUND")
+    p.flare:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    p.flare:SetBlendMode("ADD")
+    p.flare:SetAllPoints(p.root)
+    p.flare:Hide()
+
+    -- BADGE chrome and the BAR's track/fill share the root
+    p.badge = CreateFrame("Frame", nil, p.root, "BackdropTemplate")
+    p.badge:SetAllPoints(p.root)
+    p.badge:SetFrameLevel(baseLevel + 8)
+    p.badge:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = false, edgeSize = 10,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
+    })
+    p.badge:Hide()
+
+    p.barBG = p.root:CreateTexture(nil, "BACKGROUND")
+    p.barBG:SetTexture("Interface\\Buttons\\WHITE8X8")
+    p.barBG:SetVertexColor(0, 0, 0, 0.55)
+    p.barBG:SetAllPoints(p.root)
+    p.barBG:Hide()
+    p.barFill = p.root:CreateTexture(nil, "ARTWORK")
+    p.barFill:SetTexture("Interface\\Buttons\\WHITE8X8")
+    p.barFill:Hide()
+
+    p.pips = {}
+
+    -- Text rides its own higher frame so it always sits above the sweep
+    local textHolder = CreateFrame("Frame", nil, p.root)
+    textHolder:SetAllPoints(p.root)
+    textHolder:SetFrameLevel(baseLevel + 14)
+    p.textHolder = textHolder
+    p.main = textHolder:CreateFontString(nil, "OVERLAY")
+    p.main:SetFontObject(GameFontNormalLarge)
+    p.sub = textHolder:CreateFontString(nil, "OVERLAY")
+    p.sub:SetFontObject(GameFontHighlightSmall)
+
+    player = p
     return true
 end
 
-local function ClearPortraitCooldown()
-    if not portraitCooldown then return end
-    if portraitCooldown.Clear then
-        portraitCooldown:Clear()
-    else
-        portraitCooldown:SetCooldown(0, 0)
+-- Outlined text keeps the numbers legible over portrait art and bar fills
+local function SetOutlinedFont(text, size)
+    local path = text:GetFont()
+    if path then
+        pcall(text.SetFont, text, path, size, "OUTLINE")
     end
 end
 
-local function UpdatePortrait()
-    if DisplayMode() ~= "PORTRAIT"
-        or not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) then
-        if portraitOverlay then
-            portraitOverlay:Hide()
-            ClearPortraitCooldown()
+local function EnsurePips(count)
+    local p = player
+    for i = #p.pips + 1, count do
+        local pip = p.root:CreateTexture(nil, "ARTWORK")
+        pip:SetTexture("Interface\\Buttons\\WHITE8X8")
+        p.pips[i] = pip
+    end
+    for i = count + 1, #p.pips do
+        p.pips[i]:Hide()
+    end
+end
+
+local function HidePlayerDisplay()
+    if not player then return end
+    player.root:Hide()
+    player.root:SetScript("OnUpdate", nil)
+    player.tintHost:Hide()
+    if player.cooldown.Clear then
+        player.cooldown:Clear()
+    else
+        player.cooldown:SetCooldown(0, 0)
+    end
+end
+
+-- Seconds left on the window and that as a 0..1 fraction
+local function WindowRemaining()
+    local window = (CommanderMomentumDB and CommanderMomentumDB.Window) or 20
+    if streak < 1 then return 0, 0, window end
+    local remaining = (lastKill + window) - GetTime()
+    if remaining <= 0 then return 0, 0, window end
+    return remaining, remaining / window, window
+end
+
+-- The optional extras, in a fixed order, joined into one line. Which of
+-- them appear is entirely up to the settings — the readout can be a bare
+-- multiplier or a full status line.
+local function InfoLine(remaining)
+    local db = CommanderMomentumDB
+    local parts = {}
+    if db.ShowSeconds and remaining > 0 then
+        parts[#parts + 1] = string.format("%ds", math.ceil(remaining))
+    end
+    if db.ShowPace and streak >= 2 then
+        local elapsed = GetTime() - streakStart
+        if elapsed > 5 then
+            parts[#parts + 1] = string.format("%.1f/min", streak / (elapsed / 60))
         end
+    end
+    if db.ShowBest then
+        parts[#parts + 1] = string.format("best x%d", math.max(bestStreak, streak))
+    end
+    if db.ShowWindow then
+        parts[#parts + 1] = string.format("%ds clock",
+            math.floor((db.Window or 20) + 0.5))
+    end
+    if db.ShowLabel then
+        parts[#parts + 1] = "MOMENTUM"
+    end
+    return table.concat(parts, " · ")
+end
+
+-- The ticker has no art to give it a footprint, so its frame takes the
+-- width of the line itself — otherwise a 1px-wide anchor would sit the
+-- text half on top of whatever it was placed next to
+local function SizeTicker()
+    local p = player
+    p.root:SetSize(math.max(p.main:GetStringWidth() or 20, 8), p.tickerHeight or 12)
+end
+
+-- Per-frame half of the player display: only what the draining clock
+-- actually changes. Layout, colors and text that don't tick live in
+-- UpdatePlayerDisplay.
+local function TickPlayerDisplay()
+    local p = player
+    if not (p and p.root:IsShown()) then return end
+    local db = CommanderMomentumDB
+    local mode = DisplayMode()
+    local remaining, fraction = WindowRemaining()
+
+    if mode == "BAR" then
+        local length = math.max(p.barLength * fraction, 1)
+        if db.PlayerVertical then
+            p.barFill:SetSize(p.barThickness, length)
+        else
+            p.barFill:SetSize(length, p.barThickness)
+        end
+    elseif mode == "PIPS" then
+        local lead = p.pips[math.min(streak, p.pipCount or 0)]
+        if lead then
+            lead:SetAlpha(0.25 + fraction * 0.75)
+        end
+    elseif mode == "FLARE" then
+        p.flare:SetAlpha(0.15 + fraction * 0.65)
+    elseif mode == "GLOW" and db.PortraitGlow then
+        p.tint:SetAlpha(0.1 + fraction * 0.5)
+    end
+
+    -- Text only rewrites when the displayed second actually changes
+    if db.ShowSeconds then
+        local seconds = math.ceil(remaining)
+        if seconds ~= p.lastSeconds then
+            p.lastSeconds = seconds
+            local line = InfoLine(remaining)
+            if mode == "TICKER" then
+                p.main:SetText(p.mainPrefix .. line)
+                SizeTicker()
+            else
+                p.sub:SetText(line)
+                -- The line can appear or empty out mid-window (the seconds
+                -- piece dies with the clock), so visibility follows it
+                p.sub:SetShown(line ~= "")
+            end
+        end
+    end
+end
+
+-- Full re-draw of the player-frame readout: placement, geometry, colors,
+-- which pieces are shown. Called on kills, on settings changes, and
+-- whenever the streak ends.
+local function UpdatePlayerDisplay()
+    if not (CommanderMomentumDB and CommanderMomentumDB.EnableMomentum) or not PlayerMode() then
+        HidePlayerDisplay()
         return
     end
-    if not EnsurePortraitOverlay() then return end
-    local show = streak >= 2 or CommanderMomentumDB.AlwaysShow
-    portraitOverlay:SetShown(show)
+    if not EnsurePlayerWidgets() then return end
+    local db = CommanderMomentumDB
+    local p = player
+    local mode = DisplayMode()
+
+    local show = streak >= 2 or db.AlwaysShow
+    if show and db.CombatOnly and not UnitAffectingCombat("player") then
+        show = false
+    end
     if not show then
-        ClearPortraitCooldown()
+        HidePlayerDisplay()
         return
     end
-    local r, g, b = StreakColor()
-    if streak < 2 then
-        r, g, b = 0.6, 0.6, 0.6
+
+    local r, g, b = AccentColor()
+    if streak < 2 then r, g, b = 0.6, 0.6, 0.6 end
+    local remaining, fraction = WindowRemaining()
+    local size = PlayerSize()
+
+    -- Placement: anchor the readout wherever the rest of your UI has room
+    local place = PLACEMENTS[db.Placement or "PORTRAIT"] or PLACEMENTS.PORTRAIT
+    local anchorFrame = (place.portrait and PlayerPortrait) or PlayerFrame
+    p.root:ClearAllPoints()
+    p.root:SetPoint(place[1], anchorFrame, place[2],
+        place[3] + (db.PlayerX or 0), place[4] + (db.PlayerY or 0))
+    p.root:SetAlpha(db.PlayerAlpha or 1)
+
+    -- Every style starts from a clean slate: only the pieces the selected
+    -- style uses get shown again below
+    p.cooldown:Hide()
+    p.flare:Hide()
+    p.badge:Hide()
+    p.barBG:Hide()
+    p.barFill:Hide()
+    for _, pip in ipairs(p.pips) do pip:Hide() end
+    p.main:ClearAllPoints()
+    p.sub:ClearAllPoints()
+    p.main:Hide()
+    p.sub:Hide()
+    p.lastSeconds = nil
+
+    local mainText = db.ShowMultiplier and string.format("x%d", streak) or ""
+    local infoText = InfoLine(remaining)
+    p.mainPrefix = ""
+
+    if mode == "RING" then
+        p.root:SetSize(size, size)
+        p.cooldown:Show()
+        if p.cooldown.SetSwipeColor then
+            p.cooldown:SetSwipeColor(r, g, b, 0.95)
+        end
+        local window = db.Window or 20
+        if streak >= 1 and remaining > 0 then
+            p.cooldown:SetCooldown(lastKill, window)
+        elseif p.cooldown.Clear then
+            p.cooldown:Clear()
+        end
+        p.main:SetPoint("CENTER")
+        p.sub:SetPoint("TOP", p.root, "BOTTOM", 0, -1)
+        SetOutlinedFont(p.main, math.max(10, math.floor(size * 0.38)))
+    elseif mode == "GLOW" then
+        p.root:SetSize(size, size)
+        p.main:SetPoint("CENTER")
+        p.sub:SetPoint("TOP", p.root, "BOTTOM", 0, -1)
+        SetOutlinedFont(p.main, math.max(10, math.floor(size * 0.42)))
+    elseif mode == "BADGE" then
+        local height = math.max(18, math.floor(size * 0.52))
+        p.root:SetSize(math.max(34, math.floor(size * 1.15)),
+            (infoText ~= "" and height + 12) or height)
+        p.badge:SetBackdropColor(0, 0, 0, 0.6)
+        p.badge:SetBackdropBorderColor(r, g, b, 0.9)
+        p.badge:Show()
+        if infoText ~= "" then
+            p.main:SetPoint("TOP", p.root, "TOP", 0, -3)
+            p.sub:SetPoint("BOTTOM", p.root, "BOTTOM", 0, 3)
+        else
+            p.main:SetPoint("CENTER")
+            p.sub:SetPoint("TOP", p.root, "BOTTOM", 0, -1)
+        end
+        SetOutlinedFont(p.main, math.max(10, math.floor(height * 0.62)))
+    elseif mode == "BAR" then
+        p.barLength = math.max(20, math.floor(size * 2.4))
+        p.barThickness = math.max(4, math.floor(size * 0.2))
+        if db.PlayerVertical then
+            p.root:SetSize(p.barThickness, p.barLength)
+            p.barFill:SetPoint("BOTTOM", p.root, "BOTTOM", 0, 0)
+        else
+            p.root:SetSize(p.barLength, p.barThickness)
+            p.barFill:SetPoint("LEFT", p.root, "LEFT", 0, 0)
+        end
+        p.barBG:Show()
+        p.barFill:SetVertexColor(r, g, b, 0.9)
+        p.barFill:Show()
+        p.main:SetPoint("CENTER")
+        p.sub:SetPoint("TOP", p.root, "BOTTOM", 0, -1)
+        SetOutlinedFont(p.main, math.max(9, math.floor(p.barThickness * 1.1)))
+    elseif mode == "PIPS" then
+        -- One pip per kill in the chain, so the chain is countable at a
+        -- glance; past the cap the pips stop and the multiplier carries it
+        local cap = db.PipCap or 10
+        local count = math.max(math.min(streak, cap), 1)
+        local pipSize = math.max(4, math.floor(size * 0.22))
+        local gap = math.max(2, math.floor(pipSize * 0.35))
+        p.pipCount = count
+        EnsurePips(count)
+        local span = count * pipSize + (count - 1) * gap
+        if db.PlayerVertical then
+            p.root:SetSize(pipSize, span)
+        else
+            p.root:SetSize(span, pipSize)
+        end
+        for i = 1, count do
+            local pip = p.pips[i]
+            pip:SetSize(pipSize, pipSize)
+            pip:ClearAllPoints()
+            if db.PlayerVertical then
+                pip:SetPoint("BOTTOM", p.root, "BOTTOM", 0, (i - 1) * (pipSize + gap))
+            else
+                pip:SetPoint("LEFT", p.root, "LEFT", (i - 1) * (pipSize + gap), 0)
+            end
+            pip:SetVertexColor(r, g, b, 0.95)
+            pip:SetAlpha(1)
+            pip:Show()
+        end
+        p.main:SetPoint(db.PlayerVertical and "LEFT" or "BOTTOM",
+            p.root, db.PlayerVertical and "RIGHT" or "TOP", db.PlayerVertical and 4 or 0, 2)
+        p.sub:SetPoint("TOP", p.root, "BOTTOM", 0, -2)
+        SetOutlinedFont(p.main, math.max(9, math.floor(size * 0.28)))
+    elseif mode == "TICKER" then
+        -- No art at all: one line of text that says everything you asked for
+        p.mainPrefix = (mainText ~= "" and infoText ~= "") and (mainText .. " · ")
+            or mainText
+        mainText = p.mainPrefix .. infoText
+        infoText = ""
+        p.tickerHeight = math.max(10, math.floor(size * 0.3))
+        p.root:SetSize(8, p.tickerHeight)
+        p.main:SetPoint("CENTER")
+        SetOutlinedFont(p.main, math.max(9, math.floor(size * 0.26)))
+    elseif mode == "FLARE" then
+        -- The glow wraps the whole chassis; placement offsets still nudge it
+        p.root:SetSize((PlayerFrame:GetWidth() or 200) * 0.92,
+            (PlayerFrame:GetHeight() or 100) * 1.1)
+        p.flare:SetVertexColor(r, g, b)
+        p.flare:Show()
+        p.main:SetPoint("CENTER", p.root, "CENTER", 0, 0)
+        p.sub:SetPoint("TOP", p.root, "BOTTOM", 0, -1)
+        SetOutlinedFont(p.main, math.max(10, math.floor(size * 0.34)))
     end
-    portraitText:SetText(string.format("x%d", streak))
-    portraitText:SetTextColor(r, g, b)
-    -- Streak alive: glow the portrait in the streak's color, a touch
-    -- stronger as the chain climbs
-    if streak >= 2 then
-        portraitTint:SetVertexColor(r, g, b, 0.18 + math.min(streak, 20) / 20 * 0.17)
-        portraitTint:Show()
+
+    if mainText ~= "" then
+        p.main:SetText(mainText)
+        p.main:SetTextColor(r, g, b)
+        p.main:Show()
+        if mode == "TICKER" then SizeTicker() end
+    end
+    if infoText ~= "" then
+        p.sub:SetText(infoText)
+        p.sub:SetTextColor(0.85, 0.85, 0.85)
+        p.sub:Show()
+    end
+
+    -- The portrait glow is available to every style, not just the ones
+    -- living on the portrait — a chain is readable from the face alone
+    if db.PortraitGlow and streak >= 2 then
+        p.tint:SetVertexColor(r, g, b)
+        p.tint:SetAlpha(mode == "GLOW" and (0.1 + fraction * 0.5)
+            or (0.18 + math.min(streak, 20) / 20 * 0.17))
+        p.tintHost:Show()
     else
-        portraitTint:Hide()
+        p.tintHost:Hide()
     end
-    local window = CommanderMomentumDB.Window or 20
-    if streak >= 1 and (GetTime() - lastKill) < window then
-        portraitCooldown:SetCooldown(lastKill, window)
-    else
-        ClearPortraitCooldown()
-    end
+
+    p.root:Show()
+    p.root:SetScript("OnUpdate", streak >= 2 and OnDrain or nil)
+    TickPlayerDisplay()
 end
 
 -- Public lament when a real streak dies on the clock; only chains over
 -- x10 are worth announcing, and only chains over x15 earn the audible
--- /cry sob (sent after the lament so the chat log reads in order)
+-- /cry sob (sent after the lament so the chat log reads in order).
+-- The window is named out loud: a bystander who reads "broken by 20s
+-- without a kill" learns the rules of the game from the lament itself.
 local BREAK_LINES = {
-    "loses momentum — the x%d chain is broken! (%s)",
-    "watches a x%d streak slip away... (%s)",
+    "loses momentum — the x%d chain is broken by %ds without a kill! (%s)",
+    "watches a x%d streak slip away — the %ds kill clock ran out. (%s)",
 }
 
 local function EndStreak(announceBreak)
@@ -323,8 +684,9 @@ local function EndStreak(announceBreak)
         elseif atBest >= 2 then
             stats = string.format("%s, all-time high x%d", stats, atBest)
         end
+        local window = math.floor((CommanderMomentumDB.Window or 20) + 0.5)
         SendChatMessage(string.format(BREAK_LINES[math.random(#BREAK_LINES)],
-            endedStreak, stats), "EMOTE")
+            endedStreak, window, stats), "EMOTE")
         if endedStreak > 15 then
             DoEmote("CRY")
         end
@@ -347,14 +709,15 @@ local function EndStreak(announceBreak)
         streakText:SetTextColor(0.6, 0.6, 0.6)
         bar:SetSize(1, BAR_HEIGHT)
     end
-    if portraitOverlay then
-        portraitOverlay:SetScript("OnUpdate", nil)
-        UpdatePortrait()
+    if player then
+        player.root:SetScript("OnUpdate", nil)
+        UpdatePlayerDisplay()
     end
 end
 
 local sinceDraw = 0
-local function OnDrain(self, elapsed)
+-- Assigns the forward-declared local above, not a new global
+function OnDrain(self, elapsed)
     sinceDraw = sinceDraw + elapsed
     if sinceDraw < 0.05 then return end
     sinceDraw = 0
@@ -366,6 +729,9 @@ local function OnDrain(self, elapsed)
         return
     end
     bar:SetSize(math.max(BAR_WIDTH * (remaining / window), 1), BAR_HEIGHT)
+    -- The drain driver rides whichever frame is actually on screen, so the
+    -- player-frame styles animate from the same tick as the floating meter
+    TickPlayerDisplay()
 end
 
 local function Refresh()
@@ -393,7 +759,10 @@ function CommanderMomentum_GetStreakInfo()
 end
 
 -- Public brag at each milestone: a flavor line escalating with the tier
--- plus the session's numbers, sent as a custom emote for everyone nearby
+-- plus the session's numbers, sent as a custom emote for everyone nearby.
+-- The chain window rides along ("x10 chain on a 20s kill clock") — without
+-- it "x10 chain" is just a number and reads as noise; with it, anyone
+-- nearby knows a clock is running and what the chain costs to hold.
 local FLAVOR_TIERS = {
     { min = 20, lines = { "erupts in TOTAL ANNIHILATION!", "is beyond containment!" } },
     { min = 15, lines = { "is absolutely unstoppable!", "has become the battlefield!" } },
@@ -414,8 +783,10 @@ local function BuildBrag()
     if elapsed > 10 then
         pace = string.format(", %.1f kills/min", streak / (elapsed / 60))
     end
-    return string.format("%s (x%d chain%s — %d kills this session, best chain x%d)",
-        flavor, streak, pace, totalKills, math.max(bestStreak, streak))
+    local window = math.floor((CommanderMomentumDB.Window or 20) + 0.5)
+    return string.format(
+        "%s (x%d chain on a %ds kill clock%s — %d kills this session, best chain x%d)",
+        flavor, streak, window, pace, totalKills, math.max(bestStreak, streak))
 end
 
 local warnedThisWindow = false
@@ -472,13 +843,13 @@ local function OnKill()
     end
     SyncSession()
     if streak >= 2 then
-        if DisplayMode() == "PORTRAIT" then
-            -- The drain driver rides the overlay so window expiry still
-            -- ends the streak while the floating meter stays hidden
+        if PlayerMode() then
+            -- The drain driver rides the player-frame readout so window
+            -- expiry still ends the streak while the floating meter is down
             root:Hide()
-            UpdatePortrait()
-            if portraitOverlay then
-                portraitOverlay:SetScript("OnUpdate", OnDrain)
+            UpdatePlayerDisplay()
+            if player then
+                player.root:SetScript("OnUpdate", OnDrain)
             end
         else
             Refresh()
@@ -489,8 +860,8 @@ local function OnKill()
             root:SetScript("OnUpdate", OnDrain)
         end
     end
-    if DisplayMode() == "PORTRAIT" then
-        UpdatePortrait()
+    if PlayerMode() then
+        UpdatePlayerDisplay()
     end
     local milestone = math.floor(streak / 5) * 5
     if milestone >= 5 and milestone > announcedMilestone then
@@ -504,6 +875,33 @@ local function OnKill()
             SendChatMessage(BuildBrag(), "EMOTE")
         end
     end
+end
+
+-- Where the player-frame readout is and what it says right now — the answer
+-- to "I changed the placement and now I can't find it" (/cmom display).
+-- Returns what it prints so the harness can assert on the same values.
+function CommanderMomentum_DisplayReport()
+    local db = CommanderMomentumDB
+    local mode = DisplayMode()
+    if mode == "HUD" then
+        print("Commander Momentum: the floating meter owns the display — unlock it (Frame Style options) to drag it anywhere.")
+        return mode
+    end
+    local shown = (player and player.root:IsShown()) and true or false
+    local mainText = (player and player.main:IsShown() and player.main:GetText()) or ""
+    local subText = (player and player.sub:IsShown() and player.sub:GetText()) or ""
+    local reading = mainText
+    if subText ~= "" then
+        reading = (reading ~= "" and (reading .. " / " .. subText)) or subText
+    end
+    print(string.format(
+        "Commander Momentum: %s style on the player frame at %s (%d, %d), size %d — %s",
+        mode, db.Placement or "PORTRAIT",
+        math.floor(db.PlayerX or 0), math.floor(db.PlayerY or 0),
+        math.floor(db.PlayerSize or 52),
+        shown and (reading ~= "" and ("reading \"" .. reading .. "\"") or "on screen, art only")
+            or "hidden right now (no live chain, or Combat Only out of combat)"))
+    return mode, db.Placement or "PORTRAIT", shown, mainText, subText
 end
 
 -- Standard suite report and tester
@@ -585,19 +983,19 @@ local function Apply()
         root:Hide()
         return
     end
-    UpdatePortrait()
-    if DisplayMode() == "PORTRAIT" then
-        -- Portrait mode owns the display; keep the floating meter down but
-        -- move its drain driver to the overlay if a streak is live
+    UpdatePlayerDisplay()
+    if PlayerMode() then
+        -- A player-frame style owns the display; keep the floating meter
+        -- down but move its drain driver over if a streak is live
         root:Hide()
         root:SetScript("OnUpdate", nil)
-        if streak >= 2 and portraitOverlay then
-            portraitOverlay:SetScript("OnUpdate", OnDrain)
+        if streak >= 2 and player then
+            player.root:SetScript("OnUpdate", OnDrain)
         end
         return
     end
-    if portraitOverlay then
-        portraitOverlay:SetScript("OnUpdate", nil)
+    if player then
+        player.root:SetScript("OnUpdate", nil)
     end
     if streak >= 2 then
         root:SetScript("OnUpdate", OnDrain)
@@ -647,7 +1045,7 @@ C_Timer.NewTicker(1, function()
             if text then text:SetTextColor(1, 0.25, 0.2) end
         end
         flashRed(streakText)
-        flashRed(portraitText)
+        flashRed(player and player.main)
     end
 end)
 
@@ -670,6 +1068,10 @@ events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_DEAD")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+-- Combat Only lives or dies on these two: without them the readout would
+-- linger until the next kill or settings touch
+events:RegisterEvent("PLAYER_REGEN_ENABLED")
+events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         -- A /reload must not eat a live streak: restore it with the kill
@@ -725,6 +1127,11 @@ events:SetScript("OnEvent", function(self, event)
                 ResetSessionStats()
             end
             session.zoneKey = key
+        end
+        return
+    elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" then
+        if CommanderMomentumDB.CombatOnly then
+            UpdatePlayerDisplay()
         end
         return
     end

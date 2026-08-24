@@ -226,6 +226,19 @@ local function UpdateButtons()
                         
                         local button = buttons[index]
                         button.icon:SetTexture(C_Item.GetItemIconByID(itemID))
+                        -- The suite's shared icon recess. Manual mode: this is
+                        -- ActionButtonTemplate's own icon texture, and wrapping
+                        -- a Blizzard texture's Show/Hide would put addon code
+                        -- inside a secure button's paths. Nothing here hides the
+                        -- icon on its own -- an unused slot hides the whole
+                        -- button, which takes the shading with it.
+                        if Commander and Commander.DebossIcon then
+                            local recess = (CommanderInventoryDB
+                                and CommanderInventoryDB.iconRecess) or "SOFT"
+                            local shade = Commander.DebossIcon(button.icon,
+                                recess ~= "OFF" and recess or nil, false, true)
+                            if shade and recess ~= "OFF" then shade:Show() end
+                        end
                         button.itemLink = C_Container.GetContainerItemLink(bag, slot)
                         button.itemID = itemID
                         button:SetAttribute("item", "item:"..itemID)

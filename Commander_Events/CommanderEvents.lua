@@ -189,3 +189,143 @@ function Commander.GetClassInfo(classToken)
     classInfoCache[classToken] = info
     return info
 end
+
+-- ---------------------------------------------------------------------------
+-- Shared icon art. Every Commander addon lists this one as a RequiredDep, so
+-- the suite's icon shading lives here: one copy of the art, loaded before
+-- anything that draws with it, rather than the same files in forty folders.
+--
+-- The shading is drawn OVER an icon at the icon's own size -- transparent
+-- through the middle, dark where a recess blocks the light and bright where it
+-- catches -- so a flat spell icon reads as set into the frame it sits in.
+-- Squares for spell icons, discs for anything standing in for a portrait.
+-- ---------------------------------------------------------------------------
+
+local ICON_TEXTURES = "Interface\\AddOns\\Commander_Events\\Textures\\"
+
+local DEBOSS_FILES = {
+    SOFT   = ICON_TEXTURES .. "IconDebossSoft.png",
+    DEEP   = ICON_TEXTURES .. "IconDebossDeep.png",
+    CARVED = ICON_TEXTURES .. "IconDebossCarved.png",
+}
+local DEBOSS_ROUND_FILES = {
+    SOFT   = ICON_TEXTURES .. "IconWellSoft.png",
+    DEEP   = ICON_TEXTURES .. "IconWellDeep.png",
+    CARVED = ICON_TEXTURES .. "IconWellCarved.png",
+}
+Commander.ICON_MASK = ICON_TEXTURES .. "IconCircleMask.png"
+
+-- The styles offered, in the order a settings dropdown should list them
+Commander.ICON_STYLES = {
+    { text = "Flat", value = "OFF" },
+    { text = "Soft", value = "SOFT" },
+    { text = "Deep", value = "DEEP" },
+    { text = "Carved", value = "CARVED" },
+}
+
+-- On screen only where BOTH are true: a style asked for it, and the icon it
+-- shades is actually showing. The second half is the whole reason the wrapping
+-- below exists.
+local function SyncShade(icon)
+    local shade = icon.commanderDeboss
+    if not shade then return end
+    if shade.commanderShadeOn and icon:IsShown() then shade:Show() else shade:Hide() end
+end
+
+-- Shade `icon` so it reads as recessed. Style is one of the values above (nil
+-- or "OFF" takes the shading back off); `round` picks the disc art.
+--
+-- The shading texture is cached on the icon itself and tracks it with
+-- SetAllPoints, so a caller may re-anchor or resize the icon freely and call
+-- this again with the same style for free. Returns the texture, or nil if the
+-- icon has no parent to draw on.
+--
+-- `manual` is for icons the addon does NOT own -- Blizzard's action button
+-- art, most of all. Normally the icon's Show/Hide are wrapped so the shading
+-- follows it; on a Blizzard texture that would mean Blizzard's own code
+-- running an addon closure, and a tainted execution path through an action
+-- button is how "Interface action failed because of an AddOn" happens. With
+-- `manual` the wrapping is skipped and the CALLER owns the returned texture's
+-- visibility.
+function Commander.DebossIcon(icon, style, round, manual)
+    if not (icon and icon.GetParent) then return nil end
+    local file = style and (round and DEBOSS_ROUND_FILES or DEBOSS_FILES)[style]
+    local shade = icon.commanderDeboss
+
+    if not file then
+        if shade then
+            shade.commanderShadeOn = false
+            shade:Hide()
+        end
+        return shade
+    end
+
+    if not shade then
+        local parent = icon:GetParent()
+        if not (parent and parent.CreateTexture) then return nil end
+        -- One sublevel above the icon on the icon's own frame: over the art,
+        -- under anything the frame draws on top of it
+        local layer, sublevel = "ARTWORK", 0
+        if icon.GetDrawLayer then
+            local iconLayer, iconSublevel = icon:GetDrawLayer()
+            layer = iconLayer or layer
+            sublevel = iconSublevel or 0
+        end
+        shade = parent:CreateTexture(nil, layer, nil, sublevel + 1)
+        shade:SetAllPoints(icon)
+        icon.commanderDeboss = shade
+
+        -- A texture has no OnShow to hook, and the icons this gets laid over
+        -- are hidden and shown constantly -- an empty dispel slot, a row with
+        -- no renew on it. Left to itself the shading would stay up over
+        -- nothing, which is a row of lit rectangles hanging off an empty
+        -- board. Wrapping the three visibility calls is what keeps the recess
+        -- with the art it belongs to.
+        shade.commanderManual = manual and true or false
+        if not manual then
+            local rawShow, rawHide, rawSetShown = icon.Show, icon.Hide, icon.SetShown
+            icon.Show = function(self, ...)
+                rawShow(self, ...)
+                SyncShade(self)
+            end
+            icon.Hide = function(self, ...)
+                rawHide(self, ...)
+                SyncShade(self)
+            end
+            if rawSetShown then
+                icon.SetShown = function(self, shown, ...)
+                    rawSetShown(self, shown, ...)
+                    SyncShade(self)
+                end
+            end
+        end
+    end
+
+    if shade.commanderShadeFile ~= file then
+        shade.commanderShadeFile = file
+        shade:SetTexture(file)
+    end
+    shade.commanderShadeOn = true
+    -- A manual shade belongs to the caller: this must not decide it is visible
+    -- on their behalf, only hand it back
+    if not shade.commanderManual then SyncShade(icon) end
+    return shade
+end
+
+-- Round an icon off into a disc. Guarded and pcall-wrapped: a client without
+-- mask textures keeps a square icon rather than losing it. Returns true if the
+-- mask took.
+function Commander.RoundIcon(icon)
+    if not (icon and icon.AddMaskTexture and icon.GetParent) then return false end
+    if icon.commanderRounded then return true end
+    local parent = icon:GetParent()
+    if not (parent and parent.CreateMaskTexture) then return false end
+    local ok = pcall(function()
+        local mask = parent:CreateMaskTexture()
+        mask:SetTexture(Commander.ICON_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(icon)
+        icon:AddMaskTexture(mask)
+    end)
+    icon.commanderRounded = ok
+    return ok
+end

@@ -230,6 +230,11 @@ local function RefreshList()
                 row.chip:SetVertexColor(0.45, 0.45, 0.48, 1)
                 row.score:SetText("hide")
                 row.score:SetTextColor(0.55, 0.55, 0.58)
+            elseif rule.action == "ALERT" then
+                -- Red chip: this row is the one that outranks the quiet dial.
+                row.chip:SetVertexColor(0.92, 0.30, 0.26, 1)
+                row.score:SetText(tostring(rule.score or 0))
+                row.score:SetTextColor(1.00, 0.82, 0.30)
             else
                 row.chip:SetVertexColor(0.35, 0.80, 0.45, 1)
                 row.score:SetText(tostring(rule.score or 0))
@@ -318,15 +323,32 @@ local function RefreshTrace()
     local now = GetTime and GetTime() or 0
     local rules = Rules()
 
-    -- The sentinel preview: exactly what slot 1 is drawing right now.
-    local top = ranked and ranked[1]
+    -- The sentinel preview: exactly what slot 1 is drawing right now. The
+    -- ranking carries every scored aura — Minimum Score is the portrait's
+    -- gate, not the policy's — so the preview asks the same question the
+    -- portrait does rather than taking the top of the list on faith.
+    local top
+    for _, entry in ipairs(ranked or {}) do
+        if not CommanderBuffs_SentinelPasses or CommanderBuffs_SentinelPasses(entry) then
+            top = entry
+            break
+        end
+    end
     if top then
         editor.previewIcon:SetTexture(top.aura.icon)
         editor.previewIcon:Show()
         editor.previewName:SetText(Truncate(top.aura.name, 22))
         local remaining = E.Remaining(top.aura, now)
-        editor.previewInfo:SetText(("score %d   %s"):format(top.score,
+        local locInfo = E.LocInfo(top.loc)
+        editor.previewInfo:SetText(("%s%d   %s"):format(
+            locInfo and (locInfo.short .. "   ") or "score ",
+            top.score,
             remaining and (E.FormatTime(remaining) .. "s left") or "no timer"))
+        if locInfo then
+            editor.previewInfo:SetTextColor(locInfo.color[1], locInfo.color[2], locInfo.color[3])
+        else
+            editor.previewInfo:SetTextColor(0.7, 0.7, 0.72)
+        end
         local duration = top.aura.duration or 0
         if duration > 0 and remaining then
             editor.previewRing:SetCooldown(top.aura.expirationTime - duration, duration)
@@ -343,10 +365,11 @@ local function RefreshTrace()
 
     -- Score/claim lookup for every aura, including the ones that were
     -- dropped — seeing WHY something is missing is the point of a trace.
-    local scoreByAura, ruleByAura = {}, {}
+    local scoreByAura, ruleByAura, entryByAura = {}, {}, {}
     for _, entry in ipairs(ranked or {}) do
         scoreByAura[entry.aura] = entry.score
         ruleByAura[entry.aura] = entry.rule
+        entryByAura[entry.aura] = entry
     end
 
     local list = {}
@@ -354,12 +377,20 @@ local function RefreshTrace()
         local aura = auras[i]
         local rule = ruleByAura[aura]
         local claimed, claimIndex = E.Claim(rules, aura, now)
+        local entry = entryByAura[aura]
         list[#list + 1] = {
             aura = aura,
             score = scoreByAura[aura],
             rule = rule or claimed,
             ruleIndex = claimIndex,
-            hidden = scoreByAura[aura] == nil,
+            -- Two different kinds of missing, and the trace must tell them
+            -- apart: HIDDEN was vetoed or matched nothing and is gone from
+            -- the policy entirely; BELOW FLOOR scored fine and is simply too
+            -- quiet for the portrait today. "Raise/lower Minimum Score" only
+            -- helps with the second.
+            hidden = entry == nil,
+            belowFloor = entry ~= nil and CommanderBuffs_SentinelPasses
+                and not CommanderBuffs_SentinelPasses(entry) or false,
         }
     end
     table.sort(list, function(a, b)
@@ -381,6 +412,13 @@ local function RefreshTrace()
                 row.score:SetText("—")
                 row.score:SetTextColor(0.45, 0.45, 0.48)
                 row.icon:SetDesaturated(true)
+            elseif item.belowFloor then
+                -- Scored, but too quiet for the portrait: the number is real,
+                -- so it stays legible — it is only dimmed.
+                row.name:SetTextColor(0.70, 0.70, 0.74)
+                row.score:SetText(tostring(item.score))
+                row.score:SetTextColor(0.62, 0.56, 0.40)
+                row.icon:SetDesaturated(true)
             else
                 row.name:SetTextColor(0.95, 0.95, 0.95)
                 row.score:SetText(tostring(item.score))
@@ -391,8 +429,22 @@ local function RefreshTrace()
                 or (item.hidden and "no rule" or "unmatched")
             if item.rule and item.rule.action == "HIDE" then
                 ruleName = "hidden by " .. item.rule.name
+            elseif item.rule and item.rule.action == "ALERT" then
+                -- Say WHY this one is on your face regardless of the dial.
+                ruleName = "alert: " .. item.rule.name
+            end
+            -- The control category leads, because for these auras it is the
+            -- answer to "what is happening to me" and the rule name is not.
+            local locInfo = E.LocInfo(E.LocCategory(item.aura))
+            if locInfo then
+                ruleName = locInfo.short .. " — " .. ruleName
             end
             row.rule:SetText(Truncate(ruleName, 30))
+            if locInfo and not item.hidden then
+                row.rule:SetTextColor(locInfo.color[1], locInfo.color[2], locInfo.color[3])
+            else
+                row.rule:SetTextColor(0.62, 0.62, 0.66)
+            end
             row.select:SetShown(traceSelected == item.aura.spellId)
             row:Show()
         else
@@ -536,8 +588,9 @@ local function BuildInspector(parent)
     enabled:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y + 2)
 
     local action = MakeCycle(parent, "Action",
-        "Show scores the aura and lets it compete for the portrait. Hide claims it and drops it — a one-line veto that also removes it from the block when Block Contents is not Everything.",
-        { { text = "Show", value = "SHOW" }, { text = "Hide", value = "HIDE" } },
+        "Show scores the aura and lets it compete for the portrait. Hide claims it and drops it — a one-line veto that also removes it from the block when Block Contents is not Everything. Alert is Show that IGNORES Minimum Score: however quiet you have made the sentinel, an Alert rule still reaches it. That is what the shipped loss-of-control rules use, so no setting can hide being stunned.",
+        { { text = "Show", value = "SHOW" }, { text = "Hide", value = "HIDE" },
+          { text = "Alert", value = "ALERT" } },
         function() local r = rule(); return r and r.action end,
         function(value)
             local r = rule()
@@ -621,6 +674,44 @@ local function BuildInspector(parent)
             end)
         check:SetPoint("TOPLEFT", parent, "TOPLEFT", schoolX, y + 2)
         schoolX = schoolX + 58
+    end
+    y = y - 26
+
+    -- The control matcher, laid out exactly like the school row above it
+    -- because it works exactly like it: an allow-list of categories, and
+    -- nothing ticked means the rule does not care. Two rows of four, since
+    -- seven categories will not fit on one line at this width.
+    local locLabel = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    locLabel:SetText("Control")
+    locLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", 2, y - 4)
+
+    local LOC_ABBREV = {
+        STUN = "Stun", INCAP = "Incap", FEAR = "Fear", CHARM = "MC",
+        SILENCE = "Sil", ROOT = "Root", DISARM = "Dis",
+    }
+    local locX, locCol = 46, 0
+    for _, category in ipairs(E.LOC_CATEGORIES) do
+        local key = category.key
+        local check = MakeCheck(parent, LOC_ABBREV[key] or key,
+            "Match only auras that " .. category.short:lower() ..
+            " you. With none of the seven ticked the rule ignores loss of control entirely; with any ticked, an aura that is not one of those categories can never match this rule.",
+            function() local m = match(); return m.loc and m.loc[key] end,
+            function(value)
+                local r = rule()
+                if not r then return end
+                r.match.loc = r.match.loc or {}
+                r.match.loc[key] = value or nil
+                Changed(r)
+            end)
+        check:SetPoint("TOPLEFT", parent, "TOPLEFT", locX, y + 2)
+        locCol = locCol + 1
+        if locCol == 4 then
+            locCol = 0
+            locX = 46
+            y = y - 20
+        else
+            locX = locX + 58
+        end
     end
     y = y - 26
 

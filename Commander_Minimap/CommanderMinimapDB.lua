@@ -12,6 +12,7 @@ local defaultSettings = {
     TidyAddonButtons = true,
     TidyFadedOpacity = 0,
     BoardStyle = "NONE",
+    DefogWorldMap = true,
 }
 
 local XP_DISPLAY_MODES = {
@@ -40,7 +41,7 @@ local function CreateOptionsPanel()
         key = "Minimap",
         title = "Minimap",
         addonName = "Commander_Minimap",
-        description = "Reshapes the minimap into a square, movable RTS-style map: scroll to zoom, drag to reposition, clock tucked into the corner, and an information button that answers 'how far to the next level?'",
+        description = "Reshapes the minimap into a square, movable RTS-style map: scroll to zoom, drag to reposition, clock tucked into the corner, and an information button that answers 'how far to the next level?' The world map is here too, defogged — unexplored ground drawn in full.",
         event = COMMANDER_MINIMAP_EVENTS.COMMANDER_MINIMAP,
         slash = { "/cmap" },
     })
@@ -103,6 +104,14 @@ local function CreateOptionsPanel()
         get = function() return CommanderMinimapDB.XPDisplayMode end,
         set = function(value) CommanderMinimapDB.XPDisplayMode = value end,
         isEnabled = function() return CommanderMinimapDB.ShowMinimapButton end,
+    })
+
+    panel:AddSection("World Map", "Takes effect the next time the map is drawn — reopen it, or change zones.")
+    panel:AddCheckbox({
+        label = "Defog the World Map",
+        tooltip = "Draw every zone's terrain in full, including ground you have not explored yet. Blizzard's own map is untouched underneath: turn this off and the fog of war comes straight back. Exploration itself is unaffected — this only changes what the map draws.",
+        get = function() return CommanderMinimapDB.DefogWorldMap end,
+        set = function(value) CommanderMinimapDB.DefogWorldMap = value end,
     })
 
     panel:Finalize({ onDefaults = Reset })

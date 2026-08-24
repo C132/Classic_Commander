@@ -102,6 +102,14 @@ local DefaultSettings = {
     BlessRefreshAt = 3,         -- seconds left at/under which a Hand counts as expiring
     BlessReadyAt = 50,          -- health % at/under which an unhanded ally goes READY
     BlessBannerCooldowns = true,-- Lay on Hands / bubble / wings segments on the banner
+    -- The blessing family as ONE assigned slot per ally (Pally Power's shape).
+    -- On by default: six mutually exclusive slots is six icons answering a
+    -- question that only ever has one answer, five of them always dark.
+    BlessCombine = true,        -- collapse the blessings into one assigned slot
+    BlessMineOnly = true,       -- only blessings YOU cast count as cover
+    BlessRowMenu = true,        -- click an ally's blessing slot to reassign (out of combat)
+    BlessAssign = {},           -- per-player override   ("Grimtusk" -> "KINGS" / "NONE")
+    BlessClass = {},            -- per-class default     ("MAGE"     -> "KINGS" / "NONE")
     -- No legacy PalaClick* keys: the paladin layer was born after click
     -- bindings moved into per-talent-profile stores, so its starting bindings
     -- live in the engine's SDATA.BIND_DEFAULTS with everyone else's and there
@@ -277,6 +285,13 @@ end
 local function BuffTrackedUI(def) return BuffFlag("BuffTrack", def, def.default and true or false) end
 local function BuffAdvisedUI(def) return BuffFlag("BuffAdvise", def, def.advise and true or false) end
 
+-- Is this cell's toggle currently inert? The blessings share ONE assigned slot
+-- while Combine is on, so their per-buff track switches decide nothing — and a
+-- switch that does nothing has to say so rather than sit there looking live.
+local function BuffCellMoot(def)
+    return def.oneOf == "BLESSING" and CommanderPartyFramesDB.BlessCombine and true or false
+end
+
 local function BuffCellTooltip(self)
     local def = self.def
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -291,9 +306,23 @@ local function BuffCellTooltip(self)
     if def.isHot then
         GameTooltip:AddLine("Your own, on that ally — the slot carries its remaining time as a sweep.",
             0.7, 0.7, 0.7, true)
+    elseif def.mine and CommanderPartyFramesDB.BlessMineOnly then
+        GameTooltip:AddLine("Only yours counts; the Greater version fills the same slot.",
+            0.7, 0.7, 0.7, true)
     else
         GameTooltip:AddLine("Any caster's counts as covered; the group version fills the same slot.",
             0.7, 0.7, 0.7, true)
+    end
+    -- Said before the track/advise lines below, because if the switch is inert
+    -- there is no point reading what it would have done.
+    if BuffCellMoot(def) then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("The blessings share one assigned slot right now, so this switch decides nothing.",
+            1, 0.65, 0.3, true)
+        GameTooltip:AddLine("Set who gets it under Blessings below, or turn One Blessing Slot off to give each blessing its own slot again.",
+            0.6, 0.6, 0.6, true)
+        GameTooltip:Show()
+        return
     end
     if def.targets == "MANA" then
         GameTooltip:AddLine("Only appears on mana users.", 0.7, 0.7, 0.7, true)
@@ -329,6 +358,10 @@ end
 local function BuffCellClick(self, button)
     local def = self.def
     if not def.known then return end
+    -- Inert while the blessings share one slot: taking the click and silently
+    -- storing a preference that changes nothing on screen reads as broken.
+    -- The tooltip says where the live control is.
+    if BuffCellMoot(def) then return end
     if button == "RightButton" then
         if not def.advise then return end
         BuffOverride("BuffAdvise", def, not BuffAdvisedUI(def), def.advise and true or false)
@@ -718,6 +751,16 @@ local function AddBuffSection(panel, layerMode)
                 cell.icon:SetVertexColor(0.6, 0.6, 0.6, 0.85)
                 cell.border:Hide(); cell.pip:Hide(); cell.slash:Show()
                 cell.label:SetTextColor(0.75, 0.4, 0.4)
+            elseif BuffCellMoot(def) then
+                -- Trained, but its switch is currently moot. Drawn as the
+                -- assignment grid draws an inherited answer — legible, plainly
+                -- not a live decision — rather than as the untrained strike,
+                -- which would claim something false about the spellbook.
+                cell.slash:Hide()
+                cell.icon:SetDesaturated(true)
+                cell.icon:SetVertexColor(0.6, 0.6, 0.6, 0.6)
+                cell.border:Hide(); cell.pip:Hide()
+                cell.label:SetTextColor(0.5, 0.5, 0.5)
             else
                 cell.slash:Hide()
                 cell.icon:SetDesaturated(not tracked)
@@ -738,6 +781,302 @@ local function AddBuffSection(panel, layerMode)
                 end
             end
             cell.label:SetText(def.label)
+        end
+    end)
+end
+
+-- ---------------------------------------------------------------------------
+-- Blessing assignment: who should be carrying what.
+--
+-- Two grids over one idea. The class grid is the answer for everybody — set
+-- Kings on mages once and every mage you ever group with is handled. The
+-- player list is the exception: the one warrior you want on Sanctuary, the
+-- healer you want on Wisdom. A player row that has never been touched shows
+-- the class answer greyed, so "what will actually happen here" is visible
+-- without having to hold the fallback ladder in your head.
+--
+-- The board itself carries the same menu on each ally's blessing slot, which
+-- is where you will really use it; this page exists so the class defaults are
+-- editable while you are alone, and so an override on someone who is offline
+-- can still be found and cleared.
+-- ---------------------------------------------------------------------------
+local BLESS_CELL, BLESS_PER_ROW, BLESS_ROSTER_MAX = 30, 5, 12
+local BLESS_LABEL_H, BLESS_ROSTER_H = 16, 22
+
+local assignMenu, assignCell
+
+local function ClassLabel(classKey)
+    if classKey == "PET" then return "Pets" end
+    local name = classKey and LOCALIZED_CLASS_NAMES_MALE
+        and LOCALIZED_CLASS_NAMES_MALE[classKey]
+    if name then return name end
+    if not classKey then return "?" end
+    return classKey:sub(1, 1) .. classKey:sub(2):lower()
+end
+
+local function ClassRGB(classKey)
+    local cc = classKey and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classKey]
+    if cc then return cc.r, cc.g, cc.b end
+    return 0.85, 0.85, 0.85
+end
+
+local function AssignMenuInit(_, level)
+    local cell = assignCell
+    if not cell then return end
+    level = level or 1
+    local stored = CommanderPartyFrames_BlessGet(cell.field, cell.assignKey)
+    local none = CommanderPartyFrames_BlessNone()
+    local info
+
+    info = UIDropDownMenu_CreateInfo()
+    info.text, info.isTitle, info.notCheckable = cell.title or "Blessing", true, true
+    UIDropDownMenu_AddButton(info, level)
+
+    for _, def in ipairs(CommanderPartyFrames_BlessOptions(cell.probeKey)) do
+        info = UIDropDownMenu_CreateInfo()
+        info.text, info.icon = def.label, def.icon
+        info.checked = (stored == def.key)
+        info.func = function()
+            CommanderPartyFrames_BlessSet(cell.field, cell.assignKey, def.key)
+            CloseDropDownMenus()
+            if cell.owner then cell.owner:Refresh() end
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
+
+    info = UIDropDownMenu_CreateInfo()
+    info.text, info.notCheckable = "Don't bless them", true
+    info.checked = (stored == none)
+    info.func = function()
+        CommanderPartyFrames_BlessSet(cell.field, cell.assignKey, none)
+        CloseDropDownMenus()
+        if cell.owner then cell.owner:Refresh() end
+    end
+    UIDropDownMenu_AddButton(info, level)
+
+    info = UIDropDownMenu_CreateInfo()
+    info.text = cell.field == "BlessAssign" and "Follow their class" or "Back to the default"
+    info.notCheckable, info.disabled = true, (stored == nil)
+    info.func = function()
+        CommanderPartyFrames_BlessSet(cell.field, cell.assignKey, nil)
+        CloseDropDownMenus()
+        if cell.owner then cell.owner:Refresh() end
+    end
+    UIDropDownMenu_AddButton(info, level)
+end
+
+local function AssignCellClick(self, button)
+    if not self.assignKey then return end
+    -- Right-click clears, the same verb it has in the binding grid and the
+    -- buff grid: on this page right-click always means "undo this cell".
+    if button == "RightButton" then
+        CommanderPartyFrames_BlessSet(self.field, self.assignKey, nil)
+        if self.owner then self.owner:Refresh() end
+        return
+    end
+    assignCell = self
+    if not assignMenu then
+        assignMenu = CreateFrame("Frame", "CommanderPartyFramesAssignMenu", UIParent,
+            "UIDropDownMenuTemplate")
+    end
+    UIDropDownMenu_Initialize(assignMenu, AssignMenuInit, "MENU")
+    ToggleDropDownMenu(1, nil, assignMenu, self, 0, 0)
+end
+
+local function AssignCellTooltip(self)
+    if not self.assignKey then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(self.title or "Blessing", 1, 1, 1)
+    if self.showDef then
+        GameTooltip:AddLine(self.showDef.label, 1, 0.82, 0.25)
+    else
+        GameTooltip:AddLine("Nothing — leave them unblessed", 0.7, 0.7, 0.7)
+    end
+    if not self.stored then
+        GameTooltip:AddLine(self.field == "BlessAssign"
+            and "Inherited from their class — nothing set on them by name."
+            or "The built-in default; nothing set here yet.", 0.6, 0.6, 0.6, true)
+    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Click to choose, right-click to clear.", 0.6, 0.6, 0.6)
+    GameTooltip:Show()
+end
+
+-- Draw one assignment cell from its current answer. Shared by both grids: the
+-- only difference between a class cell and a player cell is which table the
+-- answer is stored in, and an inherited answer draws dimmed so a cell that is
+-- merely showing you the fallback never looks like a decision you made.
+local function PaintAssignCell(cell, def, stored)
+    cell.showDef, cell.stored = def, stored
+    if def then
+        cell.icon:SetTexture(def.icon)
+        cell.icon:SetDesaturated(not stored)
+        cell.icon:SetVertexColor(1, 1, 1, stored and 1 or 0.55)
+        cell.icon:Show()
+        cell.empty:Hide()
+    else
+        cell.icon:Hide()
+        cell.empty:Show()
+    end
+    if stored then cell.border:Show() else cell.border:Hide() end
+end
+
+local function NewAssignCell(parent, panel, field)
+    local cell = CreateFrame("Button", nil, parent)
+    cell:SetSize(BLESS_CELL, BLESS_CELL)
+    cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    cell.owner, cell.field = panel, field
+    cell.border = cell:CreateTexture(nil, "BACKGROUND")
+    cell.border:SetPoint("TOPLEFT", cell, "TOPLEFT", -2, 2)
+    cell.border:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", 2, -2)
+    cell.border:SetColorTexture(1, 0.82, 0.25, 0.85)
+    cell.border:Hide()
+    cell.icon = cell:CreateTexture(nil, "ARTWORK")
+    cell.icon:SetAllPoints(cell)
+    cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    -- The "nothing" state needs to be a mark, not an absence: an empty square
+    -- reads as "not loaded yet" rather than "deliberately unblessed".
+    cell.empty = cell:CreateTexture(nil, "ARTWORK")
+    cell.empty:SetAllPoints(cell)
+    cell.empty:SetColorTexture(0.18, 0.18, 0.2, 0.9)
+    cell.empty:Hide()
+    cell:SetScript("OnClick", AssignCellClick)
+    cell:SetScript("OnEnter", AssignCellTooltip)
+    cell:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    return cell
+end
+
+local function AddBlessingSection(panel)
+    panel:AddSection("Blessings",
+        "One slot per ally carrying the blessing you decided they should have, rather than six slots where five are always dark. Set the answer per class below, override it per player, or just click an ally's blessing slot on the board.")
+    panel:AddCheckboxPair({
+        label = "One Blessing Slot",
+        tooltip = "Collapse Kings, Might, Wisdom, Salvation, Sanctuary and Light into a single slot on each ally's row, showing the one blessing you assigned them. The game only lets you hold ONE blessing on a target, so six slots were six icons answering a question with one answer. Off gives you back a slot per tracked blessing, chosen in the Ally Buffs grid above.",
+        get = function() return CommanderPartyFramesDB.BlessCombine end,
+        set = function(value) CommanderPartyFramesDB.BlessCombine = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    }, {
+        label = "Only Mine",
+        tooltip = "Count only blessings YOU cast. Two paladins may each hold a different blessing on the same target, so another paladin's Kings tells you nothing about whether yours is on them — with this off, their buff makes your slot look handled while your own blessing has been gone for ten minutes. Leave it on unless you have a reason.",
+        get = function() return CommanderPartyFramesDB.BlessMineOnly end,
+        set = function(value) CommanderPartyFramesDB.BlessMineOnly = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    })
+    panel:AddCheckbox({
+        label = "Click to Reassign",
+        tooltip = "Click an ally's blessing slot on the board to pick what they should be carrying, without opening this page. Out of combat only, and deliberately: the slot is a small insecure target sitting on top of a click-cast row, so leaving it live in combat would quietly swallow a binding at the worst possible moment. In combat the icon goes back to being an icon and every click on the row is your binding again.",
+        get = function() return CommanderPartyFramesDB.BlessRowMenu end,
+        set = function(value) CommanderPartyFramesDB.BlessRowMenu = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield
+            and CommanderPartyFramesDB.BlessCombine end,
+    })
+
+    -- ---- By class: the answer for everybody ----
+    local order = CommanderPartyFrames_BlessClassOrder and CommanderPartyFrames_BlessClassOrder()
+    if not order then return end
+    panel:AddSection("By Class",
+        "What a member of each class should be carrying. This is the answer for anyone you have not named below — set it once and every mage you ever group with is handled.")
+    local lines = math.ceil(#order / BLESS_PER_ROW)
+    local pitch = math.floor(BLESS_CELL * 2.2)
+    local gridH = lines * (BLESS_CELL + BLESS_LABEL_H + 8)
+    local grid = panel:AddRow(gridH + 4, 10)
+    grid.probeReach = gridH
+    grid.probeChildren = {}
+    local classCells = {}
+    for i, classKey in ipairs(order) do
+        local col, line = (i - 1) % BLESS_PER_ROW, math.floor((i - 1) / BLESS_PER_ROW)
+        local cell = NewAssignCell(grid, panel, "BlessClass")
+        cell:SetPoint("TOPLEFT", grid, "TOPLEFT",
+            col * pitch + (pitch - BLESS_CELL) / 2,
+            -line * (BLESS_CELL + BLESS_LABEL_H + 8))
+        cell.assignKey, cell.probeKey = classKey, classKey
+        cell.title = ClassLabel(classKey)
+        cell.label = cell:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        cell.label:SetPoint("TOP", cell, "BOTTOM", 0, -2)
+        cell.label:SetWidth(pitch - 2)
+        cell.label:SetHeight(BLESS_LABEL_H)
+        cell.label:SetJustifyH("CENTER")
+        cell.label:SetText(ClassLabel(classKey))
+        cell.label:SetTextColor(ClassRGB(classKey))
+        grid.probeChildren[#grid.probeChildren + 1] = cell
+        classCells[i] = cell
+    end
+
+    -- ---- By player: the exceptions ----
+    panel:AddSection("By Player",
+        "Everyone in your group right now, plus anyone who already has an override saved. A name you have not touched shows its class answer greyed — that is what the board will do, not a choice you made.")
+    local listH = BLESS_ROSTER_MAX * BLESS_ROSTER_H
+    local list = panel:AddRow(listH + 4, 6)
+    list.probeReach = listH
+    list.probeChildren = {}
+    local rosterRows = {}
+    for n = 1, BLESS_ROSTER_MAX do
+        local rr = {}
+        rr.frame = CreateFrame("Frame", nil, list)
+        rr.frame:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(n - 1) * BLESS_ROSTER_H)
+        rr.frame:SetPoint("RIGHT", list, "RIGHT", 0, 0)
+        rr.frame:SetHeight(BLESS_ROSTER_H)
+        rr.name = rr.frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        rr.name:SetPoint("LEFT", rr.frame, "LEFT", 2, 0)
+        rr.name:SetJustifyH("LEFT")
+        rr.cell = NewAssignCell(rr.frame, panel, "BlessAssign")
+        rr.cell:SetSize(BLESS_ROSTER_H - 4, BLESS_ROSTER_H - 4)
+        rr.cell:SetPoint("LEFT", rr.frame, "LEFT", 150, 0)
+        rr.frame:Hide()
+        list.probeChildren[#list.probeChildren + 1] = rr.cell
+        rosterRows[n] = rr
+    end
+    local more = list:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    more:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 2, 2)
+    more:Hide()
+
+    panel:AddRefresher(function()
+        -- Both grids go flat when the family is not collapsed: with six
+        -- separate slots there is no assignment for them to be about, and a
+        -- live-looking grid that changes nothing is worse than a dim one.
+        local enabled = (CommanderPartyFramesDB.EnableShield
+            and CommanderPartyFramesDB.BlessCombine) and true or false
+        for _, cell in ipairs(classCells) do
+            local def, stored = CommanderPartyFrames_BlessResolve(cell.assignKey)
+            PaintAssignCell(cell, def, stored)
+            cell:SetEnabled(enabled)
+            cell:SetAlpha(enabled and 1 or 0.4)
+        end
+        local roster = CommanderPartyFrames_BlessRoster and CommanderPartyFrames_BlessRoster() or {}
+        local shown = math.min(#roster, BLESS_ROSTER_MAX)
+        for n = 1, BLESS_ROSTER_MAX do
+            local rr, e = rosterRows[n], roster[n]
+            if n <= shown and e then
+                rr.cell.assignKey = e.key
+                rr.cell.probeKey = e.isPet and "PET" or e.class
+                rr.cell.title = e.name
+                rr.name:SetText(e.name)
+                rr.name:SetTextColor(ClassRGB(e.class))
+                rr.name:SetAlpha(e.online and 1 or 0.6)
+                -- The RESOLVED answer, not the stored one: a row showing
+                -- nothing because you never named this person would be hiding
+                -- exactly what the board is about to do on their row.
+                local stored = CommanderPartyFrames_BlessGet("BlessAssign", e.key)
+                local def
+                if stored == CommanderPartyFrames_BlessNone() then
+                    def = nil
+                else
+                    def = CommanderPartyFrames_BlessResolveFor(e.key, rr.cell.probeKey)
+                end
+                PaintAssignCell(rr.cell, def, stored ~= nil)
+                rr.cell:SetEnabled(enabled)
+                rr.frame:SetAlpha(enabled and 1 or 0.4)
+                rr.frame:Show()
+            else
+                rr.frame:Hide()
+            end
+        end
+        if #roster > BLESS_ROSTER_MAX then
+            more:SetText(string.format("...and %d more — assign those from their row on the board.",
+                #roster - BLESS_ROSTER_MAX))
+            more:Show()
+        else
+            more:Hide()
         end
     end)
 end
@@ -1091,7 +1430,7 @@ local LAYER_UI = {
         alertsTooltip = "Hide the quiet rows and keep only the ones that want a global — Hands about to fall off, allies in real trouble with none, anyone Forbearance-locked, and anyone with something you can cleanse or in CC (you always stay visible). No effect in Click-Cast mode (fixed roster order).",
         backdropTooltip = "Dark panel behind the banner across the top of the board, so the icons and text read against it instead of against the world. Independent of the frame's own styled backdrop.",
         maxRowsTooltip = "Most ally rows shown at once (most urgent first).",
-        widthTooltip = "Overall width of the board — widen until the blessing slots, the Hand strip, names and numbers sit comfortably.",
+        widthTooltip = "Overall width of the board — widen until the blessing slot, the Hand strip, names and numbers sit comfortably.",
         rebuffTooltip = "Treat an ally's blessing as due when this much time or less remains — its slot turns amber so you can rebless before it drops. Greater blessings run thirty minutes and singles ten, so this is the one number that decides how often the strip asks you for anything.",
         rangeTooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
         glowLabel = "Action Glow",
@@ -1103,7 +1442,7 @@ local LAYER_UI = {
         breakSoundTooltip = "Also play an alert sound with the flash.",
         manaBarTooltip = "Show a blue mana strip under each mana user's health bar — the health bar itself is always on (it IS the row's main bar).",
         iconLabel = "Status Icons",
-        iconTooltip = "Show the blessing slots and the Hand strip beside them. A blessing slot is ghosted when missing, amber inside the rebuff window, and dark-red only when the advisor says its absence is actually costing you — never when the ally already carries another of your blessings, because the game only allows them one.",
+        iconTooltip = "Show the blessing slot and the Hand strip beside it. Each ally gets ONE blessing slot carrying the blessing you assigned them (set it under Blessings below, or click the slot itself out of combat): lit with its remaining time while yours is up, amber inside the rebuff window, ghosted when it is gone, dark-red when the advisor says that absence is costing you. Only blessings YOU cast count, so another paladin's Kings never makes a naked ally look handled.",
         shieldTypesTooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
         dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — a paladin cleanses Magic, Poison and Disease, which is more schools than anyone else on this board — and a glow on crowd control. A removable debuff also colors the whole row, whatever is shown here.",
         dispelShow = "Show, to the right of each ally's row, the Magic, Poison and Disease debuffs you can cleanse (rim colored by school, countdown sweep). The row states work even with this strip off; the strip tells you WHICH debuff it is.",
@@ -1531,7 +1870,7 @@ local function CreateCorePanel()
             "Swiss-army-knife party frames with a class layer. Priests get the reshield board (Power Word: Shield, Weakened Soul, dispels); Mages get buff-upkeep frames (Arcane Intellect, decursing, an optional self-shield strip); Druids get the hot board (Rejuvenation, Regrowth, Lifebloom stacks, curses and poisons); Paladins get the blessing board (blessings, the Hands, Forbearance). %s has no layer yet, so the module stays dormant on this character. Settings here are shared account-wide — boards on your Priest, Mage, Druid or Paladin characters are unaffected.",
             localizedClass or "This class")
     elseif palaMode then
-        description = "Arena party frames with a paladin's brain. Health and mana per ally, absorbs embedded in the bar, and — leading each row — the blessings you keep up and the Hands you have spent there: Freedom, Protection and Sacrifice, each in a fixed slot timed by a radial sweep. Forbearance draws the red drain under the bar, because a target who cannot be Protected is a target you plan around. A removable debuff turns the row purple or green, crowd control orange. The banner on top is your own upkeep: aura, seal, cooldowns, blessing uptime, team alerts. Allies' pets get full rows too."
+        description = "Arena party frames with a paladin's brain. Health and mana per ally, absorbs embedded in the bar, and — leading each row — the one blessing you decided that ally should be carrying, plus the Hands you have spent there: Freedom, Protection and Sacrifice, each in a fixed slot timed by a radial sweep. Blessings are counted only when YOU cast them, so a second paladin never makes a naked teammate look handled. Forbearance draws the red drain under the bar, because a target who cannot be Protected is a target you plan around. A removable debuff turns the row purple or green, crowd control orange. The banner on top is your own upkeep: aura, seal, cooldowns, blessing uptime, team alerts. Allies' pets get full rows too."
     elseif druidMode then
         description = "Arena party frames with a resto druid's brain. Health and mana per ally, absorbs embedded in the bar, and — leading each row — your ally buffs and the hots you have rolling there, each in a fixed slot timed by a radial sweep. A removable Curse turns the row purple, a Poison green, crowd control orange. The banner on top is your own upkeep: form, cooldowns, hot uptime, team alerts. Allies' pets get full rows too."
     elseif mageMode then
@@ -1807,6 +2146,7 @@ local function CreateCorePanel()
     if palaMode then
         AddPageHead(panel, LAYER_UI.BLESS)
         AddBuffSection(panel, "BLESS")
+        AddBlessingSection(panel)
 
         panel:AddSection("Hands", "Your own Blessing of Freedom, Protection and Sacrifice on each ally, one fixed slot each, timed by a radial sweep. The row's number is whichever falls off first — and when a target is carrying Forbearance, the red drain under the bar is the minute you cannot Protect them for.")
         panel:AddSlider({

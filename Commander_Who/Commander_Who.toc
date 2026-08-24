@@ -2,11 +2,13 @@
 ## Category: Commander
 ## Title: Commander Who
 ## Author: Devin
-## Version: 2.1.0
-## Notes: Adds selection checkboxes and mass whisper tools to the Who window.
+## Version: 3.0.0
+## Notes: Selection and mass whisper for the Who window. Ticks belong to the player, not the row, so scrolling and re-sorting keep them; the mass whisper sends to exactly what is ticked, throttled, with a running count and a stop button.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderWhoDB
 ## RequiredDeps: Commander_Events
 
+CommanderWhoEngine.lua
 CommanderWhoDB.lua
 CommanderWho.lua
+CommanderWhoUI.lua
