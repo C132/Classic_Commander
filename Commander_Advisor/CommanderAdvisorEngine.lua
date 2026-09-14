@@ -148,6 +148,7 @@ function E.IntakeSummary(book, now, hp)
         lastHitAge = lastHit and (now - lastHit) or nil,
         melee = melee, casters = casters, attackers = attackers, enemyPlayers = enemyPlayers,
         school = school, schoolShare = schoolShare or 0,
+        attackerSet = anySrc,
     }
 end
 
@@ -221,6 +222,11 @@ function E.RungHolds(rung, S, cfg)
         elseif (S.enemyPlayers or 0) < rung.enemyPlayers then return false end
     end
     if rung.enemyPlayersNear ~= nil and (S.enemyPlayersNear or 0) < rung.enemyPlayersNear then return false end
+    if rung.enemyBurst ~= nil then
+        local burst = S.enemyBurst
+        if not burst then return false end
+        if rung.enemyBurst ~= "any" and not burst[rung.enemyBurst] then return false end
+    end
     if rung.enemyClassNear ~= nil then
         local near = S.enemyClassesNear
         local found = false
@@ -472,6 +478,11 @@ function E.Explain(rule, rung, S, expiring, spellName)
         if rung.mana then parts[#parts + 1] = string.format("mana %d%%", math.floor((S.mana or 0) * 100 + 0.5)) end
         if rung.petHp then parts[#parts + 1] = string.format("pet at %d%%", math.floor((S.petHp or 0) * 100 + 0.5)) end
         if rung.combat == false and not expiring and rule.role == "maintain" then parts[#parts + 1] = "out of combat" end
+        if rung.enemyBurst then
+            local burst = S.enemyBurst or {}
+            local name = burst.name or (rung.enemyBurst == "spell" and "a spell burst") or "a burst"
+            parts[#parts + 1] = name .. " on the enemy"
+        end
         if rung.enemyClassNear then
             local near = S.enemyClassesNear or {}
             for _, token in ipairs(rung.enemyClassNear) do

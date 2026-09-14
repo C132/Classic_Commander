@@ -25,6 +25,7 @@ local knownPet = {}
 local state = E.NewState()
 local intake = E.NewIntake()
 local incoming = {}         -- casterGUID -> { name, spellID, endTime, unit }
+local bursts = {}           -- sourceGUID -> { name, kind, until }: offensive cooldowns seen on enemies
 local recentCasts = {}      -- spell name -> GetTime() of the last cast
 local lastSnapshot
 local lastSignals = {}
@@ -466,6 +467,20 @@ local function BuildSnapshot(now)
     S.melee, S.casters, S.attackers, S.enemyPlayers = sum.melee, sum.casters, sum.attackers, sum.enemyPlayers
     S.school, S.schoolShare = sum.school, sum.schoolShare
 
+    -- Offensive cooldowns running on someone who is on you: melee and spell
+    -- flavours, the most recent name for the tooltip
+    local burst
+    for guid, b in pairs(bursts) do
+        if b.until_ < now then
+            bursts[guid] = nil
+        elseif sum.attackerSet[b.guid or guid] or b.onMe then
+            burst = burst or {}
+            burst[b.kind] = true
+            if not burst.at or b.at > burst.at then burst.name, burst.at = b.name, b.at end
+        end
+    end
+    S.enemyBurst = burst
+
     -- Casts aimed at you, pruned by their own end time
     local casts = {}
     for guid, cast in pairs(incoming) do
@@ -781,8 +796,53 @@ local function OnCleu()
         end
     end
 
-    if sourceGUID == playerGUID and subevent == "SPELL_CAST_SUCCESS" and type(a13) == "string" then
-        DropSignalsFor(a13)
+    if sourceGUID == playerGUID then
+        if subevent == "SPELL_CAST_SUCCESS" and type(a13) == "string" then DropSignalsFor(a13) end
+        return
+    end
+
+    -- An enemy popping an offensive cooldown. Hostile by flag; counted only
+    -- if they are on you already or have you targeted, which is read off any
+    -- unit token they are currently held under.
+    if (subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_CAST_SUCCESS") and type(a13) == "string"
+        and type(sourceFlags) == "number" and sourceFlags % 0x80 >= 0x40 then
+        local kind, duration
+        if D.BURST_MELEE[a13] then kind, duration = "melee", D.BURST_MELEE[a13] end
+        if D.BURST_SPELL[a13] then kind, duration = "spell", D.BURST_SPELL[a13] end
+        if kind and sourceGUID then
+            local now = GetTime()
+            local onMe = false
+            for _, unit in ipairs({ "target", "focus", "arena1", "arena2", "arena3", "arena4", "arena5" }) do
+                if UnitGUID(unit) == sourceGUID then
+                    onMe = UnitIsUnit(unit .. "target", "player") and true or false
+                    break
+                end
+            end
+            if not onMe and C_NamePlate and C_NamePlate.GetNamePlates then
+                for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
+                    local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+                    if unit and UnitGUID(unit) == sourceGUID then
+                        onMe = UnitIsUnit(unit .. "target", "player") and true or false
+                        break
+                    end
+                end
+            end
+            -- Avenging Wrath is both: a paladin swings and casts harder
+            local both = D.BURST_MELEE[a13] and D.BURST_SPELL[a13]
+            bursts[sourceGUID] = { name = a13, kind = kind, until_ = now + duration, at = now, onMe = onMe, both = both }
+            if both then
+                bursts[sourceGUID .. ":2"] = { name = a13, kind = "melee", until_ = now + duration, at = now, onMe = onMe, guid = sourceGUID }
+            end
+        end
+    elseif subevent == "SPELL_AURA_REMOVED" and type(a13) == "string" and sourceGUID
+        and (D.BURST_MELEE[a13] or D.BURST_SPELL[a13]) then
+        local b = bursts[sourceGUID]
+        if b and b.name == a13 then bursts[sourceGUID] = nil end
+        b = bursts[sourceGUID .. ":2"]
+        if b and b.name == a13 then bursts[sourceGUID .. ":2"] = nil end
+    elseif subevent == "UNIT_DIED" and destGUID then
+        bursts[destGUID] = nil
+        bursts[destGUID .. ":2"] = nil
     end
 end
 
@@ -1045,6 +1105,7 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4)
     if event == "PLAYER_ENTERING_WORLD" then
         E.IntakeClear(intake)
         incoming = {}
+        bursts = {}
         state = E.NewState()
         slotsDirty = true
         return

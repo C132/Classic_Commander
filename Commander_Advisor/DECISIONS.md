@@ -60,3 +60,13 @@ to test against.
 **D10 — The book is filtered by what you have TRAINED.** A rule for a spell
 not in your spellbook never fires, whatever it is set to, and every class's
 racial priest spells are simply listed — an untrained one is silent.
+
+**D11 — The enemy's offensive cooldowns are a defensive signal.** Recklessness,
+Death Wish, Blade Flurry, Adrenaline Rush, Bestial Wrath, Arcane Power,
+Presence of Mind, Icy Veins, Power Infusion... seen (CLEU aura/cast, hostile
+by flag) on someone who is already hitting you or has you targeted, raise
+the shield / barrier / Evasion / Cloak / Shield Block rung to medium at
+once, at any health. That is the one place the advisor speaks BEFORE the
+damage: the burst is a fact the moment the aura lands, not an estimate. A
+burst on a stranger is ignored; melee and spell bursts are told apart so
+Evasion does not answer Arcane Power.

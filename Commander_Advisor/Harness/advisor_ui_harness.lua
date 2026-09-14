@@ -739,6 +739,26 @@ Tick(30)
 CHECK(not Holder(2).tier, "quiet once nothing has hit you for seconds")
 CHECK(not Holder(5).tier, "healthstone quiet once nothing is hitting you")
 
+-- An enemy warrior who is hitting you pops Recklessness: the shield is
+-- medium at full health, before any of the burst has landed
+me.hp = 8000
+FireCleu(now, "SWING_DAMAGE", false, "Player-0-ENEMY", "Enemy", 0x548, 0, "Player-0-ME", "Devinp", 0, 0, 200, 0, 1, 0)
+FireCleu(now, "SPELL_AURA_APPLIED", false, "Player-0-ENEMY", "Enemy", 0x548, 0, "Player-0-ENEMY", "Enemy", 0x548, 0, 1719, "Recklessness", 1, "BUFF")
+Tick(4)
+CHECK(Holder(2).tier == 2, "Recklessness on the warrior hitting you: shield medium at full health", Holder(2).tier)
+GameTooltip.__lines = {}
+GameTooltip.SetAction(GameTooltip, 2)
+local sawReck = false
+for _, line in ipairs(GameTooltip.__lines) do if tostring(line):find("Recklessness") then sawReck = true end end
+CHECK(sawReck, "tooltip names Recklessness")
+FireCleu(now, "SPELL_AURA_REMOVED", false, "Player-0-ENEMY", "Enemy", 0x548, 0, "Player-0-ENEMY", "Enemy", 0x548, 0, 1719, "Recklessness", 1, "BUFF")
+Tick(30)
+CHECK(not Holder(2).tier, "... and clears when it fades")
+-- A burst on someone NOT on you and not targeting you is ignored
+FireCleu(now, "SPELL_AURA_APPLIED", false, "Player-0-OTHER", "Other", 0x548, 0, "Player-0-OTHER", "Other", 0x548, 0, 1719, "Recklessness", 1, "BUFF")
+Tick(4)
+CHECK(not Holder(2).tier, "a burst on a stranger says nothing")
+
 -- A fear being cast at you lights Fear Ward high (on bar 8)
 slots[8] = { "spell", 6346 }
 Fire("ACTIONBAR_SLOT_CHANGED", 8)

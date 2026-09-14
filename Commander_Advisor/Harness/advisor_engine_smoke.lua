@@ -417,6 +417,22 @@ do
     EQ(t7, 2, "D Grounding: medium with a cast aimed at you")
     CHECK(r7:find("Frostbolt"), "D ... naming the cast", r7)
 
+    -- An enemy burst: the shield goes up before the damage, not after
+    S = Known(Snap({ inCombat = true, hp = 0.95 }), "Power Word: Shield")
+    EQ(E.Assess(pws, S, Cfg()), nil, "D PWS: nothing at 95% with nothing happening")
+    S.enemyBurst = { melee = true, name = "Recklessness" }
+    local tb, rb = E.Assess(pws, S, Cfg())
+    EQ(tb, 2, "D PWS: medium the moment Recklessness is seen on someone on you")
+    CHECK(rb:find("Recklessness on the enemy"), "D ... naming it", rb)
+    local evasion = Rule("ROGUE_EVASION")
+    S = Known(Snap({ class = "ROGUE", inCombat = true, melee = 1, enemyBurst = { spell = true, name = "Arcane Power" } }), "Evasion")
+    EQ(E.Assess(evasion, S, Cfg()), nil, "D Evasion: a spell burst is not a melee burst")
+    S.enemyBurst = { melee = true, name = "Blade Flurry" }
+    EQ(E.Assess(evasion, S, Cfg()), 2, "D Evasion: medium on a melee burst with melee on you")
+    local cloak = Rule("ROGUE_CLOAK")
+    S = Known(Snap({ class = "ROGUE", inCombat = true, casters = 1, enemyBurst = { spell = true, name = "Arcane Power" } }), "Cloak of Shadows")
+    EQ(E.Assess(cloak, S, Cfg()), 2, "D Cloak: medium on a caster burst with a caster on you")
+
     -- Mana Shield needs mana to spend
     local ms = Rule("MAGE_MANA_SHIELD")
     S = Known(Snap({ class = "MAGE", inCombat = true, taking = true, hp = 0.4, mana = 0.2 }), "Mana Shield")

@@ -20,6 +20,7 @@
 --   control       one of the control words below is on you
 --   incomingCast  true (any hostile cast aimed at you) or a list of spell names
 --   enemyClassNear a list of class tokens: a hostile player of one is in nameplate range
+--   enemyBurst    "melee" | "spell" | "any": someone on you has an offensive cooldown running
 --   school        damage school word: most of the recent intake is this school
 --   debuffType    "Magic" | "Curse" | "Disease" | "Poison" is on you
 --   debuff        a named debuff is on you
@@ -113,6 +114,23 @@ D.FEAR_CASTS = { "Fear", "Psychic Scream", "Howl of Terror", "Intimidating Shout
 -- Classes that carry a fear: a ward or a totem is worth having up BEFORE
 -- one of these is standing next to you
 D.FEAR_CLASSES = { "WARLOCK", "PRIEST", "WARRIOR" }
+
+-- Offensive cooldowns an enemy can be seen popping. Seen on someone who is
+-- on you (or targeting you), they mean a burst is coming in the next
+-- seconds — the moment a shield, a barrier, Evasion or Cloak is worth the
+-- global BEFORE the damage, not after. Duration is how long the window is
+-- taken to last when the aura's own end is not readable.
+D.BURST_MELEE = {
+    ["Recklessness"] = 15, ["Death Wish"] = 30, ["Sweeping Strikes"] = 10,
+    ["Blade Flurry"] = 15, ["Adrenaline Rush"] = 15, ["Cold Blood"] = 12, ["Shadowstep"] = 5,
+    ["Bestial Wrath"] = 18, ["The Beast Within"] = 18, ["Rapid Fire"] = 15,
+    ["Avenging Wrath"] = 20, ["Tiger's Fury"] = 6, ["Enrage"] = 10,
+}
+D.BURST_SPELL = {
+    ["Arcane Power"] = 15, ["Presence of Mind"] = 10, ["Icy Veins"] = 20, ["Combustion"] = 15,
+    ["Power Infusion"] = 15, ["Inner Focus"] = 10, ["Elemental Mastery"] = 10,
+    ["Nature's Swiftness"] = 10, ["Amplify Curse"] = 10, ["Avenging Wrath"] = 20,
+}
 
 -- Casts you can see coming, by school: a ward pressed while the bar is still
 -- filling eats the bolt; pressed after, it eats the next one
@@ -224,6 +242,7 @@ D.RULES = {
       tiers = {
         { tier = 3, hp = 0.40, taking = true },
         { tier = 3, ttl = 6, hpBelowCeiling = true },
+        { tier = 2, enemyBurst = "any", combat = true },
         { tier = 2, hp = 0.75, taking = true },
         { tier = 1, combat = true, taking = true },
       } },
@@ -255,6 +274,7 @@ D.RULES = {
       tiers = {
         { tier = 3, hp = 0.40, taking = true },
         { tier = 3, ttl = 6, hpBelowCeiling = true },
+        { tier = 2, enemyBurst = "any", hp = 0.70 },
       } },
     { key = "PRIEST_SCREAM", class = "PRIEST", role = "escape", weight = 80,
       spell = "Psychic Scream", default = "AUTO",
@@ -331,6 +351,7 @@ D.RULES = {
       desc = "Ice Barrier whenever it is down in combat, louder while you are being hit.",
       tiers = {
         { tier = 3, hp = 0.40, taking = true },
+        { tier = 2, enemyBurst = "any", combat = true },
         { tier = 2, taking = true },
         { tier = 1, combat = true },
       } },
@@ -338,6 +359,7 @@ D.RULES = {
       spell = "Mana Shield", default = "AUTO", notWhile = { "Mana Shield", "Ice Barrier" },
       desc = "Mana Shield when you are being hit and have mana to spend on staying alive.",
       tiers = {
+        { tier = 2, enemyBurst = "any", combat = true, manaAbove = 0.40 },
         { tier = 2, hp = 0.50, taking = true, manaAbove = 0.30 },
         { tier = 1, hp = 0.75, taking = true, manaAbove = 0.50 },
       } },
@@ -411,6 +433,7 @@ D.RULES = {
       spell = "Shadow Ward", default = "AUTO", notWhile = { "Shadow Ward" },
       desc = "Shadow Ward while a shadow spell is being cast at you, or when shadow is what is landing on you.",
       tiers = {
+        { tier = 2, enemyBurst = "spell", casters = 1 },
         { tier = 2, incomingCast = D.SHADOW_CASTS },
         { tier = 2, school = "shadow", taking = true },
       } },
@@ -454,6 +477,7 @@ D.RULES = {
       spell = { "Water Shield", "Lightning Shield", "Earth Shield" }, default = "AUTO",
       desc = "A shield — Lightning, Water or Earth — on yourself.",
       tiers = {
+        { tier = 2, enemyBurst = "any", combat = true },
         { tier = 2, combat = true, taking = true },
         { tier = 1 },
       } },
@@ -483,6 +507,7 @@ D.RULES = {
       desc = "Shamanistic Rage under pressure — damage taken down, mana back.",
       tiers = {
         { tier = 3, hp = 0.35, taking = true },
+        { tier = 2, enemyBurst = "any", combat = true },
         { tier = 2, hp = 0.60, taking = true },
       } },
     { key = "SHAMAN_STONECLAW", class = "SHAMAN", role = "escape", weight = 30,
@@ -545,6 +570,7 @@ D.RULES = {
       desc = "Barkskin under pressure — it works in every form.",
       tiers = {
         { tier = 3, hp = 0.40, taking = true },
+        { tier = 2, enemyBurst = "any", combat = true },
         { tier = 2, hp = 0.65, taking = true },
       } },
     { key = "DRUID_REJUV", class = "DRUID", role = "react", weight = 50,
@@ -708,6 +734,7 @@ D.RULES = {
       spell = "Holy Shield", default = "AUTO", notWhile = { "Holy Shield" },
       desc = "Holy Shield with a shield equipped and melee on you.",
       tiers = {
+        { tier = 2, enemyBurst = "melee", shield = true },
         { tier = 2, melee = 1, shield = true },
       } },
     { key = "PALADIN_RESIST_AURA", class = "PALADIN", role = "react", weight = 15,
@@ -744,6 +771,7 @@ D.RULES = {
       desc = "Deterrence with melee on you.",
       tiers = {
         { tier = 3, hp = 0.35, melee = 1 },
+        { tier = 2, enemyBurst = "melee", melee = 1 },
         { tier = 2, hp = 0.60, melee = 1 },
       } },
     { key = "HUNTER_MONKEY", class = "HUNTER", role = "react", weight = 50,
@@ -797,6 +825,7 @@ D.RULES = {
       desc = "Evasion with melee on you.",
       tiers = {
         { tier = 3, hp = 0.35, melee = 1 },
+        { tier = 2, enemyBurst = "melee", melee = 1 },
         { tier = 2, hp = 0.65, melee = 1 },
       } },
     { key = "ROGUE_VANISH", class = "ROGUE", role = "escape", weight = 95,
@@ -810,6 +839,7 @@ D.RULES = {
       desc = "Cloak of Shadows against magic on you or a caster working on you.",
       tiers = {
         { tier = 3, hp = 0.40, casters = 1 },
+        { tier = 2, enemyBurst = "spell", casters = 1 },
         { tier = 2, debuffType = "Magic", combat = true },
         { tier = 2, hp = 0.65, casters = 1 },
       } },
@@ -869,6 +899,7 @@ D.RULES = {
       spell = "Shield Block", default = "AUTO", notWhile = { "Shield Block" },
       desc = "Shield Block in Defensive Stance with a shield and melee on you.",
       tiers = {
+        { tier = 2, enemyBurst = "melee", form = "Defensive Stance", shield = true },
         { tier = 2, hp = 0.60, melee = 1, form = "Defensive Stance", shield = true },
         { tier = 1, melee = 1, form = "Defensive Stance", shield = true },
       } },
