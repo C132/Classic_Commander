@@ -708,6 +708,11 @@ local found = false
 for _, line in ipairs(GameTooltip.__lines) do if tostring(line):find("health 30%%") then found = true end end
 CHECK(found, "tooltip names the health", GameTooltip.__lines[3])
 
+-- The settings page's live readout says the same thing
+local situation, signalText = CommanderAdvisor.Status()
+CHECK(situation:find("health 30%%") and situation:find("In combat"), "status line reads the snapshot", situation)
+CHECK(signalText:find("Power Word: Shield"), "status names the shield", signalText)
+
 -- Weakened Soul blocks the shield; the glow is gone the same tick
 me.debuffs = { { name = "Weakened Soul", kind = "", expire = now + 15 } }
 Tick(1)

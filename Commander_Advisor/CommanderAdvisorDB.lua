@@ -274,6 +274,34 @@ local function CreateOptionsPanel()
         },
     })
 
+    -- What it sees right now: refreshed on show and on every change, and
+    -- once a second while the page is open so it reads as live
+    do
+        local row = panel:AddRow(64, 10)
+        local situation = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        situation:SetPoint("TOPLEFT", row, "TOPLEFT", 2, 0)
+        situation:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        situation:SetJustifyH("LEFT")
+        local signals = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        signals:SetPoint("TOPLEFT", situation, "BOTTOMLEFT", 0, -4)
+        signals:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        signals:SetJustifyH("LEFT")
+        local function Paint()
+            if not CommanderAdvisor.Status then return end
+            local a, b = CommanderAdvisor.Status()
+            situation:SetText("|cffffd100Right now:|r " .. a)
+            signals:SetText(b)
+            if signals.GetStringHeight then
+                local h = (situation:GetStringHeight() or 12) + 4 + (signals:GetStringHeight() or 12)
+                panel:GrowRow(row, math.ceil(h) + 8)
+            end
+        end
+        panel:AddRefresher(Paint)
+        C_Timer.NewTicker(1, function()
+            if panel:IsVisible() then Paint() end
+        end)
+    end
+
     panel:AddSection("Advisor")
     panel:AddCheckboxPair({
         label = "Enable Advisor",

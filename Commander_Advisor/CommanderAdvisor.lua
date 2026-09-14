@@ -30,6 +30,7 @@ local lastSnapshot
 local lastSignals = {}
 local lastReport = {}       -- rule key -> reason, from the last tick, for the report
 local enemyPlayersNear = 0
+local enemyClassesNear = {}   -- class token -> true, hostile players in nameplate range
 
 -- Blizzard's bars only, as in Commander Forecast: the suite's own bar
 -- module reuses these frames, and a button not found simply never glows.
@@ -408,6 +409,7 @@ local function BuildSnapshot(now)
         outdoors = IsOutdoors and IsOutdoors() or false,
         form = FormName(),
         enemyPlayersNear = enemyPlayersNear,
+        enemyClassesNear = enemyClassesNear,
     }
 
     if UnitPowerType("player") == 0 then
@@ -812,15 +814,19 @@ end
 
 local function CountEnemyPlayers()
     local count = 0
+    local classes = {}
     if C_NamePlate and C_NamePlate.GetNamePlates then
         for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
             local unit = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
             if unit and UnitIsPlayer(unit) and UnitCanAttack("player", unit) then
                 count = count + 1
+                local _, token = UnitClass(unit)
+                if token then classes[token] = true end
             end
         end
     end
     enemyPlayersNear = count
+    enemyClassesNear = classes
 end
 
 -- ---------------------------------------------------------------------------
@@ -890,6 +896,31 @@ function CommanderAdvisor_Report()
         end
         print(string.format("  %s |cffaaaaaa[%s]|r %s", label, mode, status))
     end
+end
+
+-- What the advisor sees right now, for the settings page: one short line
+-- of situation and the signals it is raising.
+function CommanderAdvisor.Status()
+    if not IsOn() then return "Off.", "" end
+    local S = lastSnapshot
+    if not S then return "Waiting for the first tick.", "" end
+    local situation = string.format("%s · health %d%%%s%s · %d melee, %d caster%s on you%s%s",
+        S.inCombat and "In combat" or "Out of combat",
+        math.floor(S.hp * 100 + 0.5),
+        S.taking and " · taking damage" or "",
+        S.ttl and string.format(" · ~%.0fs to live at this rate", S.ttl) or "",
+        S.melee or 0, S.casters or 0, (S.casters or 0) == 1 and "" or "s",
+        #S.incomingCasts > 0 and (" · " .. S.incomingCasts[1].name .. " being cast at you") or "",
+        (S.control.stunned and " · stunned") or (S.control.feared and " · feared")
+            or (S.control.silenced and " · silenced") or (S.control.rooted and " · rooted")
+            or (S.control.snared and " · snared") or "")
+    local lines = {}
+    for _, signal in ipairs(lastSignals) do
+        lines[#lines + 1] = string.format("%s%s|r %s — %s%s", TIER_COLORS[signal.tier], E.TierName(signal.tier),
+            signal.spell or signal.rule.key, signal.reason or "",
+            signal.onBar and "" or " |cff888888(not on a bar)|r")
+    end
+    return situation, #lines > 0 and table.concat(lines, "\n") or "|cff888888Nothing to say right now.|r"
 end
 
 function CommanderAdvisor_Test()
@@ -983,7 +1014,13 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4)
         pcall(frame.RegisterEvent, frame, "PLAYER_ENTERING_WORLD")
         pcall(frame.RegisterEvent, frame, "PLAYER_REGEN_DISABLED")
         pcall(frame.RegisterEvent, frame, "PLAYER_REGEN_ENABLED")
-        pcall(frame.RegisterEvent, frame, "UNIT_HEALTH")
+        -- The player's health only: UNIT_HEALTH unfiltered fires for every
+        -- unit in a raid
+        if frame.RegisterUnitEvent then
+            pcall(frame.RegisterUnitEvent, frame, "UNIT_HEALTH", "player")
+        else
+            pcall(frame.RegisterEvent, frame, "UNIT_HEALTH")
+        end
         if GetCLEU then
             local ok = pcall(frame.RegisterEvent, frame, "COMBAT_LOG_EVENT_UNFILTERED")
             if not ok and frame.RegisterEventCallback then

@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit advisor_engine_smoke.lua   # engine, no mock — 1128 checks
-/opt/homebrew/bin/luajit advisor_ui_harness.lua     # wiring under a WoW mock — 50 checks
+/opt/homebrew/bin/luajit advisor_engine_smoke.lua   # engine, no mock — 1148 checks
+/opt/homebrew/bin/luajit advisor_ui_harness.lua     # wiring under a WoW mock — 52 checks
 /opt/homebrew/bin/luajit globals_lint.lua           # 4 files, 0 undeclared globals
 ```
 

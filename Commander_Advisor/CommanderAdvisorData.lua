@@ -19,6 +19,7 @@
 --   enemyPlayers  at least N of those attackers are players
 --   control       one of the control words below is on you
 --   incomingCast  true (any hostile cast aimed at you) or a list of spell names
+--   enemyClassNear a list of class tokens: a hostile player of one is in nameplate range
 --   school        damage school word: most of the recent intake is this school
 --   debuffType    "Magic" | "Curse" | "Disease" | "Poison" is on you
 --   debuff        a named debuff is on you
@@ -109,14 +110,24 @@ D.FAMILIES = {
 -- Fear effects an enemy can be seen CASTING at you. A ward or an immunity is
 -- worth pressing while the bar is still filling; after that it is too late.
 D.FEAR_CASTS = { "Fear", "Psychic Scream", "Howl of Terror", "Intimidating Shout", "Scare Beast", "Seduction" }
+-- Classes that carry a fear: a ward or a totem is worth having up BEFORE
+-- one of these is standing next to you
+D.FEAR_CLASSES = { "WARLOCK", "PRIEST", "WARRIOR" }
+
+-- Casts you can see coming, by school: a ward pressed while the bar is still
+-- filling eats the bolt; pressed after, it eats the next one
+D.FIRE_CASTS   = { "Fireball", "Pyroblast", "Scorch", "Flamestrike", "Immolate", "Searing Pain", "Soul Fire", "Incinerate", "Lava Burst", "Flame Shock" }
+D.FROST_CASTS  = { "Frostbolt", "Frost Shock", "Blizzard", "Cone of Cold", "Ice Lance" }
+D.SHADOW_CASTS = { "Shadow Bolt", "Mind Blast", "Mind Flay", "Shadow Word: Death", "Death Coil", "Shadowburn", "Drain Life", "Drain Soul", "Corruption", "Curse of Agony", "Vampiric Touch" }
+
 
 -- Snares: the loss-of-control API reports stuns, fears, roots and silences,
 -- and says nothing about a slow. These are read off your own debuffs.
 D.SNARES = {
     "Hamstring", "Wing Clip", "Crippling Poison", "Frost Shock", "Chilled", "Cone of Cold",
     "Concussive Shot", "Earthbind", "Curse of Exhaustion", "Dazed", "Piercing Howl",
-    "Frostbolt", "Slow", "Mind Flay", "Thunder Clap", "Ice Barrier", "Improved Wing Clip",
-    "Frost Trap Aura", "Wing Clip", "Slowing Poison", "Frostbrand Attack",
+    "Frostbolt", "Slow", "Mind Flay", "Thunder Clap", "Frost Trap Aura", "Frostbrand Attack",
+    "Deadly Throw", "Chains of Ice", "Frost Nova",
 }
 D.SNARE_SET = {}
 for _, name in ipairs(D.SNARES) do D.SNARE_SET[name] = true end
@@ -177,9 +188,10 @@ D.RULES = {
       } },
     { key = "PRIEST_SHADOW_PROT", class = "PRIEST", role = "maintain", family = "PRIEST_SHADOW_PROT", weight = 22,
       spell = { "Shadow Protection", "Prayer of Shadow Protection" }, default = "AUTO",
-      desc = "Shadow Protection — raised only when shadow damage is what is actually landing on you.",
+      desc = "Shadow Protection — raised only when shadow is being cast at you or is what is actually landing on you.",
       tiers = {
         { tier = 2, combat = true, school = "shadow" },
+        { tier = 2, incomingCast = D.SHADOW_CASTS },
         { tier = 1, combat = false, school = "shadow" },
       } },
     { key = "PRIEST_TOUCH", class = "PRIEST", role = "maintain", family = "PRIEST_TOUCH", weight = 24,
@@ -201,8 +213,9 @@ D.RULES = {
       desc = "Fear Ward on yourself: kept up in PvP, and shouted for when an enemy is casting a fear at you.",
       tiers = {
         { tier = 3, incomingCast = D.FEAR_CASTS },
+        { tier = 2, enemyClassNear = D.FEAR_CLASSES, combat = true },
+        { tier = 1, enemyClassNear = D.FEAR_CLASSES },
         { tier = 1, zone = { "arena", "pvp" } },
-        { tier = 1, combat = false, enemyPlayersNear = 1 },
       } },
     { key = "PRIEST_PWS", class = "PRIEST", role = "react", weight = 90,
       spell = "Power Word: Shield", default = "AUTO",
@@ -347,14 +360,16 @@ D.RULES = {
       } },
     { key = "MAGE_FIRE_WARD", class = "MAGE", role = "react", weight = 50,
       spell = "Fire Ward", default = "AUTO", notWhile = { "Fire Ward" },
-      desc = "Fire Ward when fire damage is what is landing on you.",
+      desc = "Fire Ward while a fire spell is being cast at you, or when fire is what is landing on you.",
       tiers = {
+        { tier = 2, incomingCast = D.FIRE_CASTS },
         { tier = 2, school = "fire", taking = true },
       } },
     { key = "MAGE_FROST_WARD", class = "MAGE", role = "react", weight = 50,
       spell = "Frost Ward", default = "AUTO", notWhile = { "Frost Ward" },
-      desc = "Frost Ward when frost damage is what is landing on you.",
+      desc = "Frost Ward while a frost spell is being cast at you, or when frost is what is landing on you.",
       tiers = {
+        { tier = 2, incomingCast = D.FROST_CASTS },
         { tier = 2, school = "frost", taking = true },
       } },
     { key = "MAGE_DECURSE", class = "MAGE", role = "cure", weight = 30,
@@ -394,8 +409,9 @@ D.RULES = {
       } },
     { key = "WARLOCK_SHADOW_WARD", class = "WARLOCK", role = "react", weight = 50,
       spell = "Shadow Ward", default = "AUTO", notWhile = { "Shadow Ward" },
-      desc = "Shadow Ward when shadow damage is what is landing on you.",
+      desc = "Shadow Ward while a shadow spell is being cast at you, or when shadow is what is landing on you.",
       tiers = {
+        { tier = 2, incomingCast = D.SHADOW_CASTS },
         { tier = 2, school = "shadow", taking = true },
       } },
     { key = "WARLOCK_FEAR", class = "WARLOCK", role = "escape", weight = 70,
@@ -484,9 +500,10 @@ D.RULES = {
       } },
     { key = "SHAMAN_TREMOR", class = "SHAMAN", role = "react", weight = 55,
       spell = "Tremor Totem", default = "AUTO",
-      desc = "Tremor Totem while an enemy is casting a fear at you.",
+      desc = "Tremor Totem while an enemy is casting a fear at you, or a fear-carrying class is close.",
       tiers = {
         { tier = 3, incomingCast = D.FEAR_CASTS },
+        { tier = 1, enemyClassNear = D.FEAR_CLASSES, combat = true },
       } },
     { key = "SHAMAN_CURE_POISON", class = "SHAMAN", role = "cure", weight = 30,
       spell = { "Cure Poison", "Poison Cleansing Totem" }, default = "AUTO",

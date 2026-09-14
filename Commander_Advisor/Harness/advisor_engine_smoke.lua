@@ -254,6 +254,24 @@ do
     EQ(E.Assess(fw, S, Cfg()), 3, "C Fear Ward: high while Fear is being cast at you")
     S = Known(Snap({ zone = "arena" }), "Fear Ward")
     EQ(E.Assess(fw, S, Cfg()), 1, "C Fear Ward: low in an arena")
+    S = Known(Snap({ enemyClassesNear = { WARLOCK = true } }), "Fear Ward")
+    local tfw, rfw = E.Assess(fw, S, Cfg())
+    EQ(tfw, 1, "C Fear Ward: low with a warlock in nameplate range")
+    CHECK(rfw:find("enemy warlock nearby"), "C ... and says so", rfw)
+    S.inCombat = true
+    EQ(E.Assess(fw, S, Cfg()), 2, "C Fear Ward: medium in combat with a warlock near")
+    S.enemyClassesNear = { MAGE = true }
+    EQ(E.Assess(fw, S, Cfg()), nil, "C Fear Ward: a mage is not a fear")
+
+    -- A ward goes up while the bolt is still being cast
+    local fireWard = Rule("MAGE_FIRE_WARD")
+    S = Known(Snap({ class = "MAGE", inCombat = true, incomingCasts = { { name = "Pyroblast" } } }), "Fire Ward")
+    local tfire, rfire = E.Assess(fireWard, S, Cfg())
+    EQ(tfire, 2, "C Fire Ward: medium while Pyroblast is cast at you")
+    CHECK(rfire:find("Pyroblast"), "C ... naming the cast", rfire)
+    S.incomingCasts = { { name = "Frostbolt" } }
+    EQ(E.Assess(fireWard, S, Cfg()), nil, "C Fire Ward: not for a Frostbolt")
+    EQ(E.Assess(Rule("MAGE_FROST_WARD"), Known(S, "Frost Ward"), Cfg()), 2, "C Frost Ward: the Frostbolt one")
 end
 
 -- === D: react rules =========================================================

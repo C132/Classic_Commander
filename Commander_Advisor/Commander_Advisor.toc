@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Advisor
 ## Author: Devin
-## Version: 1.0.0
+## Version: 1.1.0
 ## Notes: Glows the button you should be pressing. A conservative rules engine — not a language model — that watches your health, what is hitting you and how fast, who is on you, what is being cast at you, what is on you and what is not, and your cooldowns, and lights the action button for the defensive answer at one of three tiers: a low note, a medium prompt, a high alarm. Missing self-buffs (Inner Fire, Touch of Weakness, an armour, a shield, a blessing, an aspect) ride the same ladder. Every rule has its own switch and tier pin; hover a glowing button for the reason.
 ## IconTexture: Interface\Icons\Spell_Holy_PowerWordShield
 ## SavedVariables: CommanderAdvisorDB

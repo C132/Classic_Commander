@@ -221,6 +221,16 @@ function E.RungHolds(rung, S, cfg)
         elseif (S.enemyPlayers or 0) < rung.enemyPlayers then return false end
     end
     if rung.enemyPlayersNear ~= nil and (S.enemyPlayersNear or 0) < rung.enemyPlayersNear then return false end
+    if rung.enemyClassNear ~= nil then
+        local near = S.enemyClassesNear
+        local found = false
+        if near then
+            for _, token in ipairs(rung.enemyClassNear) do
+                if near[token] then found = true break end
+            end
+        end
+        if not found then return false end
+    end
     if rung.control ~= nil then
         local c = S.control or {}
         if rung.control == "any" then
@@ -462,6 +472,12 @@ function E.Explain(rule, rung, S, expiring, spellName)
         if rung.mana then parts[#parts + 1] = string.format("mana %d%%", math.floor((S.mana or 0) * 100 + 0.5)) end
         if rung.petHp then parts[#parts + 1] = string.format("pet at %d%%", math.floor((S.petHp or 0) * 100 + 0.5)) end
         if rung.combat == false and not expiring and rule.role == "maintain" then parts[#parts + 1] = "out of combat" end
+        if rung.enemyClassNear then
+            local near = S.enemyClassesNear or {}
+            for _, token in ipairs(rung.enemyClassNear) do
+                if near[token] then parts[#parts + 1] = "enemy " .. string.lower(token) .. " nearby" break end
+            end
+        end
         if rung.zone then parts[#parts + 1] = "PvP zone" end
     end
     if #parts == 0 then parts[1] = "conditions met" end
