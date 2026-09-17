@@ -58,9 +58,10 @@ Symptom if wrong: the confirm dialog appears every cast. Test: Craft twice on th
 
 ## A6 — A `SecureActionButton` with `type=spell, spell=<profession name>` opens the craft window
 
-The Open button. `RegisterForClicks("AnyDown", "AnyUp")` so it fires whichever way
-`ActionButtonUseKeyDown` points (same as Commander_Inventory). The button is inside an ordinary
-holder frame so nothing protected is ever shown, hidden or moved by the layout.
+The Open button. Mouse-only, so it registers `AnyUp` alone — one fire per click, whichever way
+`ActionButtonUseKeyDown` points (that CVar decides which edge a *binding* delivers; a mouse click
+always has an up). The button is inside an ordinary holder frame so nothing protected is ever
+shown, hidden or moved by the layout.
 
 Symptom if wrong: the button does nothing. `/cast Enchanting` still works. Test: click it.
 
