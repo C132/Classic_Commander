@@ -99,3 +99,16 @@ town, not on arrival at 156.
 
 `+` done, `>` current, `-` skipped, `–` (en dash) for ranges. The client's fonts drop shape glyphs
 (the suite learned this the hard way with `‖`), so ✓ and ▸ and → never went in.
+
+## D11 — The route and the shopping list are grouped by trainer bracket
+
+A bracket is one trainer rank's span (1–75, 75–150, 150–225, 225–300, 300–375) and it is the
+natural shopping trip: buy for the bracket, level it, train, buy for the next. The engine tags each
+step with the bracket it *starts* in for the route view, and splits its reagents at every boundary
+the remaining range crosses for the shopping view — Minor Health 2–90 is listed once under
+Apprentice, but its last fifteen crafts' dust is Journeyman's to buy.
+
+What you already hold pays for the earliest bracket that wants it and only the remainder flows on,
+so the first trip is the one your bank covers. The whole-route totals close the list for anyone who
+shops once, and the Auctionator hand-off defaults to the current bracket ("All to Auctionator" for
+the lot). Harness C15 is the split and the allocation.

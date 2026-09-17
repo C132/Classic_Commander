@@ -80,6 +80,7 @@ local function CreateOptionsPanel()
             hide = function() Call("CommanderTradecraft_Hide") end,
             route = function() Call("CommanderTradecraft_Route") end,
             shop = function() Call("CommanderTradecraft_Shopping") end,
+            ah = function(arg) Call("CommanderTradecraft_AuctionatorList", arg) end,
             skip = function() Call("CommanderTradecraft_Skip") end,
             back = function() Call("CommanderTradecraft_Unskip") end,
             alt = function(arg) Call("CommanderTradecraft_Alternative", arg) end,
@@ -207,7 +208,7 @@ local function CreateOptionsPanel()
         {
             label = "Shopping List",
             width = 120,
-            tooltip = "Everything the rest of the route needs, less what you hold (also: /ctc shop).",
+            tooltip = "What each trainer bracket needs, less what you hold, then the whole route (also: /ctc shop; /ctc ah sends the current bracket to Auctionator, /ctc ah all the lot).",
             onClick = function() Call("CommanderTradecraft_Shopping") end,
         },
         {

@@ -161,6 +161,34 @@ function E.Build(guide, world, state, opts)
         warnings = {},
     }
 
+    -- Brackets: one per trainer rank, bounded by the caps (1-75, 75-150,
+    -- ...). They are the natural shopping trips — you buy for a bracket,
+    -- level it, train, buy for the next — so the route and the shopping
+    -- list are both grouped by them. A step belongs to the bracket it
+    -- starts in; its reagents are split between every bracket it crosses.
+    local brackets = {}
+    if prof then
+        local prevCap = 1
+        for i, r in ipairs(prof.ranks) do
+            brackets[#brackets + 1] = {
+                index = i, rank = r, name = r.name,
+                from = prevCap, to = r.cap,
+                steps = {}, need = {}, shopping = {}, formulaCost = 0,
+                done = rank >= r.cap,
+            }
+            prevCap = r.cap
+        end
+    end
+    local function BracketAt(value)
+        for _, b in ipairs(brackets) do
+            if value < b.to then return b end
+        end
+        return brackets[#brackets]
+    end
+    plan.brackets = brackets
+    plan.bracket = BracketAt(rank)
+    if plan.bracket then plan.bracket.current = true end
+
     -- The chosen path through every segment, and how far each recipe is
     -- used along it (for deciding when a formula stops mattering)
     local paths, usedUntil = {}, {}
@@ -219,7 +247,21 @@ function E.Build(guide, world, state, opts)
                             need[line.id] = (need[line.id] or 0) + line.need
                         end
                     end
+                    -- The same reagents, split at every bracket boundary
+                    -- the remaining range crosses
+                    for _, b in ipairs(brackets) do
+                        local lo, hi = math.max(from, b.from), math.min(def.to, b.to)
+                        if lo < hi then
+                            local part = E.PlannedCrafts(recipe, lo, hi, margin)
+                            if part ~= math.huge then
+                                for _, pair in ipairs(recipe.reagents) do
+                                    b.need[pair[1]] = (b.need[pair[1]] or 0) + pair[2] * part
+                                end
+                            end
+                        end
+                    end
                 end
+                step.bracket = BracketAt(def.from)
             elseif def.kind == "buy" then
                 local formula = D.FORMULAS[def.item]
                 step.item = def.item
@@ -246,6 +288,10 @@ function E.Build(guide, world, state, opts)
                     end
                 end
                 step.status = BuyDone(formula, segment, world, usedUntil) and "done" or "pending"
+                step.bracket = BracketAt(formula.at or segment.from)
+            end
+            if step.bracket then
+                step.bracket.steps[#step.bracket.steps + 1] = step
             end
 
             if step.status ~= "done" and skipped[step.key] then
@@ -328,6 +374,44 @@ function E.Build(guide, world, state, opts)
         return a.id < b.id
     end)
     plan.shopping = list
+
+    -- The same, per bracket. What you hold goes to the earliest bracket
+    -- that wants it, and only what is left flows on to the next, so the
+    -- first trip is the one your bank pays for.
+    local held = {}
+    for _, b in ipairs(brackets) do
+        local rows = {}
+        for id, total in pairs(b.need) do
+            local info = D.ITEMS[id]
+            if not (info and info.made) then
+                if held[id] == nil then
+                    local bags = world.count(id, false) or 0
+                    local all = world.count(id, true) or bags
+                    if all < bags then all = bags end
+                    held[id] = useBank and all or bags
+                end
+                local covered = math.min(held[id], total)
+                held[id] = held[id] - covered
+                rows[#rows + 1] = {
+                    id = id, need = total, covered = covered,
+                    buy = total - covered,
+                    have = world.count(id, false) or 0,
+                    note = info and info.note, vendor = info and info.vendor,
+                }
+            end
+        end
+        table.sort(rows, function(x, y)
+            if x.buy ~= y.buy then return x.buy > y.buy end
+            if x.need ~= y.need then return x.need > y.need end
+            return x.id < y.id
+        end)
+        b.shopping = rows
+        for _, step in ipairs(b.steps) do
+            if step.kind == "buy" and step.status ~= "done" and step.status ~= "skipped" then
+                b.formulaCost = b.formulaCost + (step.cost or 0)
+            end
+        end
+    end
 
     -- Warnings: a runed rod that a later step needs and that you do not hold
     if cur and cur.kind == "craft" and cur.reagents then

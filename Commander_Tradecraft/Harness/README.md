@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 756 checks
-/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 107 checks
+/opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 772 checks
+/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 112 checks
 /opt/homebrew/bin/luajit globals_lint.lua              # 4 files, 0 undeclared globals
 ```
 
@@ -29,7 +29,9 @@ characters through `Build`. A failure here is a real logic or data bug, never a 
   done); the buy step at 110 through holding and learning the formula; the alternatives; skipping;
   **C7** the Moonglade case (the Arcanite formula at 299 is still wanted); **C10** the Superior
   Defense formula still wanted at 300 for the 301–317 step; the bank option; finished; the shopping
-  list against the guide's own list within fifteen percent.
+  list against the guide's own list within fifteen percent; **C15** the trainer brackets — a step
+  listed once where it starts, its reagents split at the boundary, held stock allocated to the
+  earliest bracket first, bracket sums adding up to the route.
 
 ## `tradecraft_ui_harness.lua` — the UI and the host
 

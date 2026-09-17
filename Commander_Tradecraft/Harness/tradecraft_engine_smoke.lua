@@ -404,6 +404,54 @@ do
     end
 end
 
+-- C15 brackets: one per trainer rank, steps tagged by where they start,
+-- reagents split at the boundary, held stock allocated earliest first
+do
+    local plan = E.Build(GUIDE, World(1, 75, { [7421] = true, [7418] = true }, { [10940] = 50 }))
+    CHECK(#plan.brackets == 5, "C15 five brackets", #plan.brackets)
+    CHECK(plan.brackets[1].from == 1 and plan.brackets[1].to == 75 and plan.brackets[1].name == "Apprentice", "C15 first bracket")
+    CHECK(plan.brackets[5].from == 300 and plan.brackets[5].to == 375, "C15 last bracket")
+    CHECK(plan.bracket == plan.brackets[1] and plan.brackets[1].current, "C15 current bracket at rank 1")
+    -- Minor Health 2-90 starts in bracket 1 and is listed there once
+    local listed = 0
+    for _, b in ipairs(plan.brackets) do
+        for _, step in ipairs(b.steps) do if step.spell == 7418 then listed = listed + 1 end end
+    end
+    CHECK(listed == 1 and plan.steps[2].bracket == plan.brackets[1], "C15 straddling step listed once, where it starts")
+    -- but its dust is split: bracket 1 wants 1 (rod) + 68 orange (2..69) +
+    -- the yellow 70..74 with the margin (5.27 -> 6) = 75; bracket 2 wants
+    -- the yellow tail 75..90 plus Minor Stamina and the silver rod
+    local b1, b2 = plan.brackets[1].need[10940], plan.brackets[2].need[10940]
+    CHECK(b1 == 75, "C15 bracket 1 strange dust", b1)
+    CHECK(b2 and b2 > 30 + 6 and b2 < 74, "C15 bracket 2 strange dust", b2)
+    -- The 50 held go to bracket 1 first; bracket 2 buys everything
+    local function row(b, id) for _, r in ipairs(b.shopping) do if r.id == id then return r end end end
+    local r1, r2 = row(plan.brackets[1], 10940), row(plan.brackets[2], 10940)
+    CHECK(r1 and r1.covered == 50 and r1.buy == 25, "C15 held stock covers bracket 1 first", r1 and r1.buy)
+    CHECK(r2 and r2.covered == 0 and r2.buy == r2.need, "C15 nothing left for bracket 2")
+    -- Bracket sums equal the whole-route need (the split is exact for orange
+    -- runs, and never under)
+    local whole
+    for _, r in ipairs(plan.shopping) do if r.id == 10940 then whole = r.need end end
+    local sum = 0
+    for _, b in ipairs(plan.brackets) do sum = sum + (b.need[10940] or 0) end
+    CHECK(sum >= whole and sum <= whole + 5, "C15 bracket needs add up to the route", sum .. " vs " .. whole)
+    -- A buy step lands in the bracket of its skill requirement
+    for _, step in ipairs(plan.steps) do
+        if step.kind == "buy" and step.item == 11039 then
+            CHECK(step.bracket == plan.brackets[2], "C15 formula at 110 in 75-150")
+        end
+    end
+    CHECK(plan.brackets[2].formulaCost == 800 + 2500, "C15 bracket formula cost", plan.brackets[2].formulaCost)
+    -- Done brackets
+    plan = E.Build(GUIDE, World(200, 225, {}))
+    CHECK(plan.brackets[1].done and plan.brackets[2].done and not plan.brackets[3].done, "C15 done flags")
+    CHECK(plan.bracket == plan.brackets[3], "C15 current bracket 150-225 at 200")
+    CHECK(next(plan.brackets[1].need) == nil, "C15 nothing needed for a done bracket")
+    plan = E.Build(GUIDE, World(375, 375, {}))
+    CHECK(plan.bracket == plan.brackets[5], "C15 375 sits in the last bracket")
+end
+
 -- C14 helpers
 CHECK(E.FormatMoney(0) == "0c" and E.FormatMoney(800) == "8s" and E.FormatMoney(100000) == "10g"
     and E.FormatMoney(12000) == "1g 20s" and E.FormatMoney(124) == "1s 24c", "C14 money", E.FormatMoney(12000))

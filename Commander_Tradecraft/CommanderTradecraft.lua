@@ -921,9 +921,12 @@ Repaint = function()
     y = -(18 + 4 + 6 + PAD)
     heightMissing = false
 
-    -- Step counter
+    -- Step counter, and the bracket you are levelling through
     if p.current then
-        Line(("%sSTEP %d OF %d|r"):format(HEX.dim, p.current.index, p.totalSteps), { font = GameFontDisableSmall, gap = 3 })
+        local b = p.bracket
+        Line(("%sSTEP %d OF %d%s|r"):format(HEX.dim, p.current.index, p.totalSteps,
+            b and ("  ·  " .. b.name:upper() .. " " .. b.from .. " – " .. b.to) or ""),
+            { font = GameFontDisableSmall, gap = 3 })
     end
 
     PaintTrainBanner(p)
@@ -997,8 +1000,15 @@ local function BuildRouteText(p)
     out[#out + 1] = ("%s%s|r  %s"):format(HEX.title, Guide().title, RankText(p))
     out[#out + 1] = HEX.dim .. Guide().credit .. "|r"
     out[#out + 1] = ""
-    local lastSeg
+    local lastSeg, lastBracket
     for _, step in ipairs(p.steps) do
+        if step.bracket and step.bracket ~= lastBracket then
+            lastBracket = step.bracket
+            local b = step.bracket
+            local tag = b.done and (HEX.green .. "  done") or b.current and (HEX.title .. "  you are here") or ""
+            out[#out + 1] = ""
+            out[#out + 1] = ("%s%s %d – %d|r%s|r"):format(HEX.title, b.name:upper(), b.from, b.to, tag)
+        end
         if step.segment ~= lastSeg then
             lastSeg = step.segment
             local seg = step.segment
@@ -1044,68 +1054,96 @@ local function BuildRouteText(p)
     return table.concat(out, "\n")
 end
 
-local function BuildShoppingText(p)
-    local out = {}
-    out[#out + 1] = ("%sShopping list|r  %s  %s%s|r"):format(HEX.title, RankText(p), HEX.dim,
-        db.CountBank and "(bags and bank counted)" or "(bags counted)")
-    out[#out + 1] = HEX.dim .. ("Planned with a %d%% margin on yellow and green crafts; rods you make along the way are left off."):format(math.floor((db.Margin or 0) * 100 + 0.5)) .. "|r"
-    out[#out + 1] = ""
-    if #p.shopping == 0 then
-        out[#out + 1] = "Nothing left to buy."
-    end
+-- One bracket's shopping rows as lines: to buy, covered, formulas, and a
+-- plain paste list
+local function ShoppingRows(out, rows, formulas, formulaCost, pasteLabel)
     local toBuy, held = {}, {}
-    for _, row in ipairs(p.shopping) do
+    for _, row in ipairs(rows) do
         if row.buy > 0 then toBuy[#toBuy + 1] = row else held[#held + 1] = row end
     end
+    if #toBuy == 0 and #held == 0 and #formulas == 0 then
+        out[#out + 1] = HEX.dim .. "  Nothing needed." .. "|r"
+        return
+    end
     if #toBuy > 0 then
-        out[#out + 1] = HEX.white .. "To buy" .. "|r"
+        out[#out + 1] = HEX.white .. "  To buy" .. "|r"
         for _, row in ipairs(toBuy) do
-            local line = ("  %s%d|r × %s"):format(HEX.bad, row.buy, ItemName(row.id))
-            if row.have + row.bank > 0 then
+            local line = ("    %s%d|r × %s"):format(HEX.bad, row.buy, ItemName(row.id))
+            if row.covered and row.covered > 0 then
+                line = line .. HEX.dim .. ("   (need %d, %d already yours)"):format(row.need, row.covered) .. "|r"
+            elseif row.have and row.have + (row.bank or 0) > 0 and not row.covered then
                 line = line .. HEX.dim .. ("   (need %d, have %d%s)"):format(row.need, row.have,
-                    row.bank > 0 and (" + %d in bank"):format(row.bank) or "") .. "|r"
+                    (row.bank or 0) > 0 and (" + %d in bank"):format(row.bank) or "") .. "|r"
             end
             if row.note then line = line .. HEX.dim .. "   " .. row.note .. "|r" end
             out[#out + 1] = line
         end
     end
     if #held > 0 then
-        out[#out + 1] = ""
-        out[#out + 1] = HEX.white .. "Covered" .. "|r"
+        out[#out + 1] = HEX.white .. "  Covered" .. "|r"
         for _, row in ipairs(held) do
-            out[#out + 1] = ("  %s%d|r × %s %s(have %d%s)|r"):format(HEX.green, row.need, ItemName(row.id), HEX.dim, row.have,
-                row.bank > 0 and (" + %d in bank"):format(row.bank) or "")
-        end
-    end
-    -- Formulas still to buy, with their price
-    local formulas = {}
-    for _, step in ipairs(p.steps) do
-        if step.kind == "buy" and (step.status == "current" or step.status == "pending") then
-            formulas[#formulas + 1] = step
+            out[#out + 1] = ("    %s%d|r × %s %s(already yours)|r"):format(HEX.green, row.need, ItemName(row.id), HEX.dim)
         end
     end
     if #formulas > 0 then
-        out[#out + 1] = ""
-        out[#out + 1] = HEX.white .. "Formulas" .. "|r" .. HEX.dim .. ("  %s in all"):format(E.FormatMoney(E.FormulaCosts(p))) .. "|r"
+        out[#out + 1] = HEX.white .. "  Formulas" .. "|r" .. HEX.dim .. ("  %s in all"):format(E.FormatMoney(formulaCost)) .. "|r"
         for _, step in ipairs(formulas) do
             local v = step.vendors[1]
-            out[#out + 1] = ("  %s  %s%s — %s%s|r"):format(ItemName(step.item), HEX.dim, E.FormatMoney(step.cost or 0),
+            out[#out + 1] = ("    %s  %s%s — %s%s|r"):format(ItemName(step.item), HEX.dim, E.FormatMoney(step.cost or 0),
                 v and (v.name .. ", " .. v.zone) or "no vendor for your faction",
                 step.rep and ("  (" .. step.rep.label .. ")") or "")
         end
     end
-    out[#out + 1] = ""
-    out[#out + 1] = HEX.dim .. "Plain names, one per line, for pasting into an auction search:" .. "|r"
-    for _, row in ipairs(toBuy) do
-        out[#out + 1] = ItemName(row.id)
+    if #toBuy > 0 and pasteLabel then
+        out[#out + 1] = HEX.dim .. "  " .. pasteLabel .. "|r"
+        for _, row in ipairs(toBuy) do
+            out[#out + 1] = "    " .. ItemName(row.id)
+        end
     end
+end
+
+local function PendingFormulas(steps)
+    local formulas = {}
+    for _, step in ipairs(steps) do
+        if step.kind == "buy" and (step.status == "current" or step.status == "pending") then
+            formulas[#formulas + 1] = step
+        end
+    end
+    return formulas
+end
+
+-- Grouped by trainer bracket: a bracket is one shopping trip. What you
+-- hold is counted against the earliest bracket that wants it; the whole
+-- route's totals close the list for anyone shopping once.
+local function BuildShoppingText(p)
+    local out = {}
+    out[#out + 1] = ("%sShopping list|r  %s  %s%s|r"):format(HEX.title, RankText(p), HEX.dim,
+        db.CountBank and "(bags and bank counted)" or "(bags counted)")
+    out[#out + 1] = HEX.dim .. ("By trainer bracket — each one is a shopping trip. Planned with a %d%% margin on yellow and green crafts; what you hold pays for the earliest bracket first; rods you make along the way are left off."):format(math.floor((db.Margin or 0) * 100 + 0.5)) .. "|r"
+    if p.finished then
+        out[#out + 1] = ""
+        out[#out + 1] = "Nothing left to buy."
+        return table.concat(out, "\n")
+    end
+    for _, b in ipairs(p.brackets or {}) do
+        if not b.done then
+            out[#out + 1] = ""
+            out[#out + 1] = ("%s%s %d – %d|r%s"):format(HEX.title, b.name:upper(), b.from, b.to,
+                b.current and (HEX.title .. "  you are here|r") or "")
+            ShoppingRows(out, b.shopping, PendingFormulas(b.steps), b.formulaCost,
+                b.current and "Plain names for an auction search:" or nil)
+        end
+    end
+    out[#out + 1] = ""
+    out[#out + 1] = HEX.title .. "EVERYTHING LEFT, ALL BRACKETS" .. "|r"
+    ShoppingRows(out, p.shopping, PendingFormulas(p.steps), E.FormulaCosts(p), nil)
     return table.concat(out, "\n")
 end
 
 local function EnsureLedger()
     if ledger then return ledger end
     ledger = CreateFrame("Frame", "CommanderTradecraftLedger", UIParent, "BackdropTemplate")
-    ledger:SetSize(520, 420)
+    ledger:SetSize(620, 460)
     ledger:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
     ledger:SetFrameStrata("DIALOG")
     ledger:SetToplevel(true)
@@ -1141,7 +1179,7 @@ local function EnsureLedger()
     edit:SetMultiLine(true)
     edit:SetAutoFocus(false)
     edit:SetFontObject(GameFontHighlightSmall)
-    edit:SetWidth(470)
+    edit:SetWidth(570)
     edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     -- Read-only in effect: any typed change is thrown away on the next paint
     edit:SetScript("OnTextChanged", function(self, userInput)
@@ -1186,11 +1224,18 @@ local function EnsureLedger()
     ledger.shopButton = shop
 
     local auc = CreateFrame("Button", nil, ledger, "UIPanelButtonTemplate")
-    auc:SetSize(120, 22)
+    auc:SetSize(150, 22)
     auc:SetPoint("LEFT", shop, "RIGHT", 6, 0)
-    auc:SetText("To Auctionator")
-    auc:SetScript("OnClick", function() CommanderTradecraft_AuctionatorList() end)
+    auc:SetText("Bracket to Auctionator")
+    auc:SetScript("OnClick", function() CommanderTradecraft_AuctionatorList("bracket") end)
     ledger.aucButton = auc
+
+    local aucAll = CreateFrame("Button", nil, ledger, "UIPanelButtonTemplate")
+    aucAll:SetSize(120, 22)
+    aucAll:SetPoint("LEFT", auc, "RIGHT", 6, 0)
+    aucAll:SetText("All to Auctionator")
+    aucAll:SetScript("OnClick", function() CommanderTradecraft_AuctionatorList("all") end)
+    ledger.aucAllButton = aucAll
     return ledger
 end
 
@@ -1208,8 +1253,10 @@ PaintLedger = function()
     ledger.edit:SetText(text)
     ledger.routeButton:SetEnabled(ledgerMode ~= "route")
     ledger.shopButton:SetEnabled(ledgerMode ~= "shop")
-    ledger.aucButton:SetShown(ledgerMode == "shop" and Auctionator and Auctionator.API and Auctionator.API.v1
-        and Auctionator.API.v1.CreateShoppingList and true or false)
+    local haveAuc = ledgerMode == "shop" and Auctionator and Auctionator.API and Auctionator.API.v1
+        and Auctionator.API.v1.CreateShoppingList and true or false
+    ledger.aucButton:SetShown(haveAuc)
+    ledger.aucAllButton:SetShown(haveAuc)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1375,16 +1422,22 @@ function CommanderTradecraft_Status()
     end
 end
 
--- Hand the to-buy list to Auctionator as a shopping list
-function CommanderTradecraft_AuctionatorList()
+-- Hand the to-buy list to Auctionator as a shopping list: the current
+-- bracket's (the default — one trip) or the whole route's
+function CommanderTradecraft_AuctionatorList(scope)
     if not (loaded and plan) then return end
     local api = Auctionator and Auctionator.API and Auctionator.API.v1
     if not (api and api.CreateShoppingList) then
         Announce("Auctionator is not installed")
         return
     end
+    local rows, label = plan.shopping, Guide().title
+    if scope ~= "all" and plan.bracket then
+        rows = plan.bracket.shopping
+        label = ("%s %d-%d"):format(plan.profession.name, plan.bracket.from, plan.bracket.to)
+    end
     local terms = {}
-    for _, row in ipairs(plan.shopping) do
+    for _, row in ipairs(rows) do
         if row.buy > 0 then
             local name = ItemName(row.id)
             if api.ConvertToSearchString then
@@ -1399,9 +1452,9 @@ function CommanderTradecraft_AuctionatorList()
         Announce("nothing left to buy")
         return
     end
-    local ok, err = pcall(api.CreateShoppingList, "Commander_Tradecraft", "Tradecraft: " .. Guide().title, terms)
+    local ok, err = pcall(api.CreateShoppingList, "Commander_Tradecraft", "Tradecraft: " .. label, terms)
     if ok then
-        Announce(("%d items sent to the Auctionator shopping list 'Tradecraft: %s'"):format(#terms, Guide().title))
+        Announce(("%d items sent to the Auctionator shopping list 'Tradecraft: %s'"):format(#terms, label))
     else
         Announce("Auctionator refused the list: " .. tostring(err))
     end
