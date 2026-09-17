@@ -58,6 +58,12 @@ which buys the Arcanite rod's formula in the 285–299 segment for a step in the
 Superior Defense formula, which the 301–317 step still needs after 285–299 is over. Harness C7 and
 C10 are those two cases.
 
+**And a formula you cannot learn yet never blocks the crafting that gets you there.** The current
+step is the first pending step that can be acted on; a buy step whose skill requirement is above
+you is left pending, shown in the preview with "needs N", and becomes current at that rank. The
+Moonglade trip at 285 buys the Arcanite rod's formula, which needs 290, while Superior Defense is
+what you should be crafting (harness C7b).
+
 ## D6 — Known recipes: the spellbook first, the craft window as memory
 
 `IsSpellKnown` is asked first. Whether it answers for craft recipes on this client is ASSUMPTIONS A2;

@@ -312,6 +312,22 @@ do
     end
 end
 
+-- C7b at 285 with Superior Defense learned but the Arcanite formula not,
+-- the craft step is current (the formula needs 290) and the buy step is
+-- still ahead in the preview; at 290 it becomes current
+do
+    local w = World(285, 300, { [20015] = true })
+    local plan = E.Build(GUIDE, w)
+    CHECK(plan.current and plan.current.kind == "craft" and plan.current.spell == 20015, "C7b unlearnable formula does not block", plan.current and plan.current.key)
+    local up = E.Upcoming(plan, 3)
+    CHECK(up[1] and up[1].kind == "buy" and up[1].item == 16243, "C7b formula still previewed", up[1] and up[1].key)
+    plan = E.Build(GUIDE, World(290, 300, { [20015] = true }))
+    CHECK(plan.current and plan.current.kind == "buy" and plan.current.item == 16243, "C7b current once learnable", plan.current and plan.current.key)
+    -- and with nothing else left, an unlearnable formula is still shown
+    plan = E.Build(GUIDE, World(360, 375, { [33995] = true }, {}, {}, nil))
+    CHECK(plan.current ~= nil, "C7b never without a current step while pending steps exist")
+end
+
 -- C8 a trainer-taught recipe you do not know yet says so
 do
     local w = World(90, 150, {})

@@ -754,6 +754,20 @@ b["Alternative"].__scripts.OnClick(b["Alternative"])
 Settle()
 CHECK(CommanderTradecraftChar.choices["156-185"] == "main", "C3 and back")
 
+-- C3b a later segment can be decided ahead by key
+CommanderTradecraft_Alternative("320-340 alt")
+Settle()
+CHECK(CommanderTradecraftChar.choices["320-340"] == "alt", "C3b segment key sets a later choice")
+CommanderTradecraft_Alternative("320-340")
+Settle()
+CHECK(CommanderTradecraftChar.choices["320-340"] == "main", "C3b segment key alone toggles")
+printLog = {}
+CommanderTradecraft_Alternative("999-1000 alt")
+CHECK(printLog[#printLog]:find("no segment"), "C3b unknown segment refused")
+CommanderTradecraft_Alternative("90-100 alt")
+CHECK(printLog[#printLog]:find("no alternative"), "C3b single-path segment refused")
+CommanderTradecraftChar.choices["320-340"] = nil
+
 -- C4 holding the formula
 me.bags[11101] = 1
 Fire("BAG_UPDATE_DELAYED")

@@ -737,7 +737,21 @@ end
 local function PaintCraftStep(step, p)
     local colour = ColourFor(step.colour)
     local title = SpellName(step.spell)
+    local rowY = y
     IconLine(SpellIcon(step.spell), title, { font = GameFontNormal, color = colour, size = 18 })
+    -- Hover the title for the recipe's own tooltip (craft recipes link as
+    -- enchant:<spell> on this client)
+    local hover = NewHover()
+    hover:SetPoint("TOPLEFT", guide, "TOPLEFT", 0, rowY)
+    hover:SetPoint("RIGHT", guide, "RIGHT", 0, 0)
+    hover:SetHeight(rowY - y)
+    AttachTooltip(hover, function(tip)
+        if not pcall(tip.SetHyperlink, tip, "enchant:" .. step.spell) then
+            tip:AddLine(title)
+        end
+        tip:AddLine(("%s at %d — yellow %d, green %d, grey %d"):format(
+            step.colour, p.rank, step.recipe.yellow, step.recipe.green, step.recipe.grey), 0.7, 0.7, 0.7)
+    end)
 
     -- How many more
     local count
@@ -942,7 +956,8 @@ Repaint = function()
                     text = ("%s  %s%d – %d|r"):format(SpellName(step.spell), HEX.dim, step.from, step.to)
                     IconLine(SpellIcon(step.spell), text, { indent = 4, alpha = 0.6, size = 14 })
                 else
-                    text = ("Buy %s  %s%s|r"):format(ItemName(step.item), HEX.dim, step.vendors[1] and (step.vendors[1].zone) or "")
+                    text = ("Buy %s  %s%s · needs %d|r"):format(ItemName(step.item), HEX.dim,
+                        step.vendors[1] and (step.vendors[1].zone .. " ") or "", step.at or 0)
                     IconLine(ItemIcon(step.item), text, { indent = 4, alpha = 0.6, size = 14 })
                 end
             end
@@ -1025,6 +1040,7 @@ local function BuildRouteText(p)
     for _, tip in ipairs(Guide().tips or {}) do
         out[#out + 1] = HEX.dim .. "- " .. tip .. "|r"
     end
+    out[#out + 1] = HEX.dim .. "- Decide a later segment now with /ctc alt <range> <main|alt>, e.g. /ctc alt 320-340 alt." .. "|r"
     return table.concat(out, "\n")
 end
 
@@ -1272,17 +1288,38 @@ function CommanderTradecraft_Unskip()
     end
 end
 
--- Toggle (or set, with "main" / "alt" / a path key) the path through the
--- current step's segment
-function CommanderTradecraft_Alternative(which)
-    if not (loaded and plan and plan.current) then
-        Announce("no current step")
-        return
-    end
-    local seg, currentPath = AltSegment(plan)
-    if not seg then
-        Announce("nothing ahead of you has an alternative")
-        return
+-- Toggle (or set, with "main" / "alt") the path through the next segment
+-- that has one. A segment key first ("/ctc alt 320-340 alt") picks any
+-- segment on the route instead, for deciding ahead.
+function CommanderTradecraft_Alternative(arg)
+    if not (loaded and plan) then return end
+    local which = arg and arg:match("^%s*(.-)%s*$") or ""
+    local seg, currentPath
+    local segKey, rest = which:match("^(%d+%-%d+)%s*(.*)$")
+    if segKey then
+        for _, candidate in ipairs(Guide().segments) do
+            if candidate.key == segKey then seg = candidate end
+        end
+        if not seg then
+            Announce("no segment called " .. segKey .. " — the keys are the skill ranges, like 320-340")
+            return
+        end
+        if #seg.paths < 2 then
+            Announce(segKey .. " has no alternative")
+            return
+        end
+        currentPath = E.PathFor(seg, char.choices)
+        which = rest
+    else
+        if not plan.current then
+            Announce("no current step")
+            return
+        end
+        seg, currentPath = AltSegment(plan)
+        if not seg then
+            Announce("nothing ahead of you has an alternative")
+            return
+        end
     end
     local target
     if which and which ~= "" then

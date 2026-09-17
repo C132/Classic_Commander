@@ -254,14 +254,25 @@ function E.Build(guide, world, state, opts)
         end
     end
 
-    -- The current step is the first one still pending
+    -- The current step is the first one still pending that can be acted
+    -- on. A formula you cannot learn yet (its skill requirement is above
+    -- you) must not stand in front of the crafting that gets you there: the
+    -- Moonglade trip buys the Arcanite rod's formula (needs 290) at 285, and
+    -- Superior Defense has to be crafted meanwhile. Such a step stays
+    -- pending, shows in the preview, and becomes current at its rank.
+    local fallback
     for _, step in ipairs(plan.steps) do
         if step.status == "pending" then
-            step.status = "current"
-            plan.current = step
-            break
+            fallback = fallback or step
+            local eligible = step.kind ~= "buy" or rank >= (step.at or 0)
+            if eligible then
+                plan.current = step
+                break
+            end
         end
     end
+    plan.current = plan.current or fallback
+    if plan.current then plan.current.status = "current" end
 
     -- A craft step whose recipe you do not know yet needs a trainer (or the
     -- formula, which is its own step); a step past your cap needs a rank.
@@ -342,13 +353,14 @@ end
 -- Questions the window asks after Build
 -- ---------------------------------------------------------------------------
 
--- The next few steps after the current one, for the preview lines
+-- The next few pending steps, for the preview lines. Route order, which
+-- puts a deferred formula (pending, but earlier in the list than the
+-- current craft step because it cannot be learned yet) first.
 function E.Upcoming(plan, n)
     local out = {}
-    if not plan.current then return out end
-    for i = plan.current.index + 1, #plan.steps do
-        local step = plan.steps[i]
-        if step.status ~= "done" and step.status ~= "skipped" then
+    if not plan.current or n <= 0 then return out end
+    for _, step in ipairs(plan.steps) do
+        if step.status == "pending" then
             out[#out + 1] = step
             if #out >= n then break end
         end
