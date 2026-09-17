@@ -4,7 +4,7 @@ Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 775 checks
-/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 121 checks
+/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 126 checks
 /opt/homebrew/bin/luajit globals_lint.lua              # 4 files, 0 undeclared globals
 ```
 
@@ -55,9 +55,10 @@ Checks worth naming:
 - **B0** — a hunter's Beast Training (same frame, no skill line) does not open the guide.
 - **A11/B3/B4** — the Craft button's macro: `/cast <recipe>` + `/use 9` worn, `/use 0 3` from bags,
   cast-only with nothing to target or the option off; a tome in the shield slot is not a shield.
-- **A11/A13/F2b** — both click edges registered on the secure buttons; the `Tradecraft` macro is
-  created per character, mirrors the button, is not rewritten when unchanged, and is left alone with
-  the option off.
+- **A11/A13/A14/F2b** — both click edges registered on the secure buttons; the `Tradecraft` macro
+  is created per character only after `UPDATE_MACROS`, mirrors the button, is not rewritten when
+  unchanged, and is left alone with the option off; the binding's off-screen key button exists from
+  login and carries the same macro.
 - **B2** — the replace answer is the macro's `/click StaticPopup1Button1` line, present only with
   the option on; `ReplaceEnchant` is never called.
 - **The mock's `DoCraft` and `ReplaceEnchant` throw** the way the client does (both are protected

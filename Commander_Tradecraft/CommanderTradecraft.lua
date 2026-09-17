@@ -37,6 +37,12 @@ local db, char
 local plan
 local loaded = false
 
+-- Key bindings (Bindings.xml)
+BINDING_HEADER_COMMANDERTRADECRAFT = "Commander Tradecraft"
+_G["BINDING_NAME_CLICK CommanderTradecraftCraftKey:LeftButton"] = "Craft the current step"
+BINDING_NAME_COMMANDERTRADECRAFT_TOGGLE = "Show / hide the guide"
+BINDING_NAME_COMMANDERTRADECRAFT_SHOP = "Open the shopping list"
+
 local WIDTH = 300
 local LINE = 14
 local PAD = 6
@@ -673,17 +679,44 @@ local function CraftMacro(step)
     return table.concat(lines, "\n")
 end
 
+-- The binding's target: a second secure button with the same macro, parked
+-- off-screen and always shown, so "Craft the current step" works from a key
+-- whether or not the guide window is on screen (Commander_Armory parks its
+-- weapon-swap button the same way, for the same reason). Made once, out of
+-- combat, at login or the first paint after.
+local keyButton, keyMacro
+local function EnsureKeyButton()
+    if keyButton then return keyButton end
+    if InCombat() then return nil end
+    local host = CreateFrame("Frame", nil, UIParent)
+    host:SetSize(1, 1)
+    host:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", -512, -512)
+    keyButton = CreateFrame("Button", "CommanderTradecraftCraftKey", host, "SecureActionButtonTemplate")
+    keyButton:SetSize(1, 1)
+    keyButton:SetPoint("CENTER", host, "CENTER", 0, 0)
+    keyButton:EnableMouse(false)
+    keyButton:RegisterForClicks("AnyDown", "AnyUp")
+    keyButton:SetAttribute("type", "macro")
+    keyButton:SetAttribute("macrotext", "")
+    return keyButton
+end
+
 -- Written on every paint, out of combat only (attributes on a protected
--- frame). Returns false when it could not be written.
+-- frame), to the guide's button and the binding's. Returns false when it
+-- could not be written.
 local function SetCraftMacro(step)
-    local s = secure.Craft
-    if not s or InCombat() then return false end
+    if InCombat() then return false end
     local text = CraftMacro(step)
-    if s.macro ~= text then
+    local s = secure.Craft
+    if s and s.macro ~= text then
         s.macro = text
         s.button:SetAttribute("macrotext", text)
     end
-    return true
+    if EnsureKeyButton() and keyMacro ~= text then
+        keyMacro = text
+        keyButton:SetAttribute("macrotext", text)
+    end
+    return s ~= nil
 end
 
 -- A real macro, kept up to date with the button's text, for anyone who
@@ -694,10 +727,13 @@ end
 local MACRO_NAME = "Tradecraft"
 local macroWarned = false
 local lastMacroBody
+-- The macro list is not there at PLAYER_LOGIN; UPDATE_MACROS (or entering
+-- the world) says when it is. Writing before that failed silently.
+local macrosReady = false
 
 local function UpdateMacro(step)
     if not (db.KeepMacro and CreateMacro and EditMacro and GetMacroInfo) then return end
-    if InCombat() then return end
+    if InCombat() or not macrosReady then return end
     local body = CraftMacro(step)
     if body == "" then
         body = "/run print('Commander Tradecraft: nothing to craft right now')"
@@ -712,16 +748,24 @@ local function UpdateMacro(step)
             end
             return
         end
-        local ok = pcall(CreateMacro, MACRO_NAME, icon or "INV_Misc_QuestionMark", body, true)
+        local ok, err = pcall(CreateMacro, MACRO_NAME, icon or "INV_Misc_QuestionMark", body, true)
         if ok then
             lastMacroBody = body
-            Announce(("a macro called %s%s|r is kept up to date with the Craft button — drag it from the macro window (/macro) to a bar and bind it"):format(HEX.white, MACRO_NAME))
+            Announce(("a macro called %s%s|r is kept up to date with the Craft button — it is on the character-specific tab of the macro window (/macro); drag it to a bar and bind it, or bind 'Craft the current step' under Key Bindings"):format(HEX.white, MACRO_NAME))
+        elseif not macroWarned then
+            macroWarned = true
+            Announce("could not create the Tradecraft macro: " .. tostring(err))
         end
         return
     end
     if body ~= lastMacroBody then
-        local ok = pcall(EditMacro, MACRO_NAME, MACRO_NAME, icon, body)
-        if ok then lastMacroBody = body end
+        local ok, err = pcall(EditMacro, MACRO_NAME, MACRO_NAME, icon, body)
+        if ok then
+            lastMacroBody = body
+        elseif not macroWarned then
+            macroWarned = true
+            Announce("could not update the Tradecraft macro: " .. tostring(err))
+        end
     end
 end
 
@@ -1564,7 +1608,7 @@ local WATCHED = {
     "SPELLS_CHANGED", "NEW_RECIPE_LEARNED",
     "UPDATE_FACTION", "PLAYER_ENTERING_WORLD",
     "UNIT_INVENTORY_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
-    "GET_ITEM_INFO_RECEIVED",
+    "GET_ITEM_INFO_RECEIVED", "UPDATE_MACROS",
 }
 
 events:SetScript("OnEvent", function(_, event, arg1)
@@ -1577,6 +1621,8 @@ events:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "CRAFT_CLOSE" then
         craftOpen = false
         craftIndexBySpell = {}
+    elseif event == "UPDATE_MACROS" or event == "PLAYER_ENTERING_WORLD" then
+        macrosReady = true
     elseif event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then
         return
     end
@@ -1602,5 +1648,7 @@ function CommanderTradecraft_OnLogin()
         end
         ScheduleRebuild()
     end)
+    -- The binding's button, so the key works before the guide ever paints
+    EnsureKeyButton()
     Rebuild()
 end

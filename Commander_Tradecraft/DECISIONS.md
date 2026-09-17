@@ -114,11 +114,17 @@ mouse click always has an up and one edge would avoid a doubled cast; in game th
 nothing, because the up-click it delivered was the edge the handler throws away. Registering both
 is what the suite's other secure buttons do, and it is one `/cast` per click, not two.
 
-**A real macro mirrors the button.** `Tradecraft`, per character, created once and `EditMacro`'d
-whenever the text changes (out of combat only), with the recipe's icon — the way RXPGuides keeps
-its `RXPTargeting` macro. Drag it to a bar, bind it, and it follows the route. An option, on by
-default; it costs one of the eighteen character slots and says so if they are full. Harness A11,
-A13, B2–B4, F2 and F2b cover the edges, the macro, the popup rule and the combat rule.
+**A key binding, and a real macro.** "Craft the current step" under Key Bindings is a `CLICK`
+binding (Bindings.xml) on a second secure button, `CommanderTradecraftCraftKey`, parked off-screen
+and always shown and carrying the same macro — the guide window's own button is hidden whenever
+the window is, and a binding needs a live target (Commander_Armory parks its weapon-swap button the
+same way). The macro `Tradecraft`, per character, is created once and `EditMacro`'d whenever the
+text changes, with the recipe's icon — the way RXPGuides keeps its `RXPTargeting` macro — for
+anyone who would rather drag it to a bar. It is written only after `UPDATE_MACROS` (the list is not
+there at `PLAYER_LOGIN`; the first build wrote at login and nothing appeared) and a failure is
+printed once rather than swallowed. An option, on by default; it costs one of the eighteen
+character slots and says so if they are full. Harness A11, A13, A14, B2–B4, F2 and F2b cover the
+edges, the key button, the macro, the popup rule and the combat rule.
 
 ## D8 — Progress is per character; settings are per account; Restore Defaults cannot reach progress
 

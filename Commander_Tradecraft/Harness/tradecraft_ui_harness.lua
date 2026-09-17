@@ -486,7 +486,7 @@ ADDON_LOADED PLAYER_LOGIN PLAYER_LOGOUT PLAYER_ENTERING_WORLD
 SKILL_LINES_CHANGED CHAT_MSG_SKILL BAG_UPDATE_DELAYED PLAYERBANKSLOTS_CHANGED BANKFRAME_OPENED
 CRAFT_SHOW CRAFT_UPDATE CRAFT_CLOSE SPELLS_CHANGED NEW_RECIPE_LEARNED UPDATE_FACTION
 UNIT_INVENTORY_CHANGED PLAYER_REGEN_ENABLED PLAYER_REGEN_DISABLED REPLACE_ENCHANT
-GET_ITEM_INFO_RECEIVED
+GET_ITEM_INFO_RECEIVED UPDATE_MACROS
 ]]):gmatch("%S+") do KNOWN_EVENTS[name] = true end
 -- Buttons remember whether they are enabled
 local baseIndex = WidgetMT.__index
@@ -653,8 +653,17 @@ CHECK(b["Craft"] ~= nil and b["Craft"].__attr and b["Craft"].__attr.type == "mac
 CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 9\n/click StaticPopup1Button1", "A11 macro casts, targets the worn bracers, answers the replace question", b["Craft"].__attr.macrotext)
 CHECK(_G.CommanderTradecraftCraft == b["Craft"], "A11 the button has its global name")
 CHECK(b["Craft"].__clicks and b["Craft"].__clicks[1] == "AnyDown" and b["Craft"].__clicks[2] == "AnyUp", "A11 both click edges registered (the secure handler keeps one)", b["Craft"].__clicks and table.concat(b["Craft"].__clicks, ","))
--- A13 a per-character macro is made and mirrors the button
+-- A13 a per-character macro is made once the macro list is ready (not at
+-- login, where writing it failed silently in game) and mirrors the button
+CHECK(macros.Tradecraft == nil, "A13 no macro written before UPDATE_MACROS")
+Fire("UPDATE_MACROS")
+Settle()
 CHECK(macros.Tradecraft and macros.Tradecraft.perChar == true, "A13 Tradecraft macro created per character")
+-- A14 the binding's button exists from login, off screen, with the same macro
+local key = _G.CommanderTradecraftCraftKey
+CHECK(key ~= nil and key.__attr and key.__attr.type == "macro", "A14 key button exists")
+CHECK(key.__attr.macrotext == b["Craft"].__attr.macrotext, "A14 key button carries the same macro")
+CHECK(_G["BINDING_NAME_CLICK CommanderTradecraftCraftKey:LeftButton"] ~= nil and BINDING_HEADER_COMMANDERTRADECRAFT ~= nil, "A14 binding names set")
 CHECK(macros.Tradecraft.body == b["Craft"].__attr.macrotext, "A13 macro mirrors the button", macros.Tradecraft and macros.Tradecraft.body)
 local writesBefore = macroWrites
 Fire("BAG_UPDATE_DELAYED")
@@ -732,6 +741,7 @@ Settle()
 b = Buttons()
 CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 0 3\n/click StaticPopup1Button1", "B3 bag bracers targeted", b["Craft"].__attr.macrotext)
 CHECK(macros.Tradecraft.body == b["Craft"].__attr.macrotext, "B3 macro follows the button")
+CHECK(_G.CommanderTradecraftCraftKey.__attr.macrotext == b["Craft"].__attr.macrotext, "B3 key button follows too")
 bagSlots[0] = nil
 Fire("UNIT_INVENTORY_CHANGED", "player")
 Settle()

@@ -1,0 +1,26 @@
+<Bindings>
+    <!-- Auto-loaded from the addon folder. Deliberately NOT listed in the TOC:
+         doing so loads it twice and the second pass silently wins.
+
+         Note for anyone editing the prose in these comments: a double hyphen is
+         illegal inside an XML comment and the parser rejects the WHOLE file on
+         one, which means zero bindings register with nothing but a LUA_WARNING
+         at load to say so.
+
+         Craft is a CLICK binding on a SecureActionButton, because crafting is
+         a protected action on this client (DoCraft, casting by name and
+         ReplaceEnchant all raise ADDON_ACTION_FORBIDDEN from insecure code) and
+         a hardware keypress delivered to a secure button carrying macrotext is
+         the only channel that works. The button it clicks is parked off-screen
+         and always shown, so the key works whether or not the guide window is
+         on screen. -->
+    <Binding name="CLICK CommanderTradecraftCraftKey:LeftButton" header="COMMANDERTRADECRAFT" runOnUp="false"/>
+
+    <Binding name="COMMANDERTRADECRAFT_TOGGLE" runOnUp="false">
+        CommanderTradecraft_Toggle()
+    </Binding>
+
+    <Binding name="COMMANDERTRADECRAFT_SHOP" runOnUp="false">
+        CommanderTradecraft_Shopping()
+    </Binding>
+</Bindings>

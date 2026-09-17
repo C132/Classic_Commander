@@ -67,14 +67,23 @@ or moved by the layout.
 
 Symptom if wrong: the button does nothing. `/cast Enchanting` still works. Test: click it.
 
-## A6b — `CreateMacro(name, icon, body, true)` / `EditMacro(name, name, icon, body)` maintain the Tradecraft macro
+## A6b — `CreateMacro(name, icon, body, true)` / `EditMacro(name, name, icon, body)` maintain the Tradecraft macro, after `UPDATE_MACROS`
 
-The RXPGuides pattern (`Targeting.lua`), with the per-character flag added. The icon passed is
-whatever `GetSpellTexture` returns for the recipe (a file id on this client); both calls are
-`pcall`ed, so a rejected icon costs the icon, not the macro.
+The RXPGuides pattern (`Targeting.lua`), with the per-character flag added. In game (2026-09-17)
+writing it at `PLAYER_LOGIN` produced no macro and no error; it now waits for `UPDATE_MACROS` or
+`PLAYER_ENTERING_WORLD`, and a failed call prints its error once. The icon passed is whatever
+`GetSpellTexture` returns for the recipe (a file id on this client).
 
-Symptom if wrong: no `Tradecraft` macro appears in `/macro`, or it keeps a question-mark icon. The
-Craft button is unaffected. Test: open `/macro` after the guide has painted a craft step.
+Symptom if wrong: a "could not create the Tradecraft macro" line in chat, or still no macro on the
+character-specific tab of `/macro`. Test: open `/macro` after the guide has painted a craft step.
+
+## A6c — A `CLICK` binding on an always-shown, off-screen secure button fires from a key
+
+Commander_Armory's weapon swap is the precedent on this client. "Craft the current step" appears
+under Key Bindings → Commander Tradecraft.
+
+Symptom if wrong: the key does nothing while the Craft button works. Test: bind it, close the guide
+window, press it.
 
 ## A7 — `GetItemCount(id, true)` includes the bank once the bank has been opened this session
 
