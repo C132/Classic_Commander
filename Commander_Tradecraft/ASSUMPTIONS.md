@@ -29,30 +29,30 @@ Symptom if wrong: after learning a formula the buy step stays current until you 
 Not a data bug. Test: learn a formula with the craft window closed and watch whether the step moves
 before you open it.
 
-## A3 — Enchanting uses the CRAFT frame and `DoCraft(index)` crafts once
+## A3 — `/cast <recipe name>` from a secure macro button casts a craft recipe
 
-**Load bearing for the Craft button.** Auctionator gates its `CraftFrame` / `GetCraftInfo` path on
-`tbc` and this client's `Blizzard_CraftUI/TBC` wires its Create button to
-`DoCraft(GetCraftSelectionIndex())`, so both are settled from source. What is not settled from
-source: whether `DoCraft` is callable from an addon click (it is not on the protected list anywhere
-in the suite's notes, and Skillet-Classic calls it).
+**Load bearing for the Craft button.** `DoCraft` is protected on this client — **verified in game
+2026-09-17**, it raised `ADDON_ACTION_FORBIDDEN` — so the button is a `SecureActionButton` running
+`/cast Enchant Bracer - Minor Health`. Casting recipes by name is how the hand-written leveling
+macros have always worked, and the craft window does not need to be open.
 
-Symptom if wrong: an "action blocked" error on Craft. Test: press Craft on any step with reagents.
+Symptom if wrong: nothing happens on Craft, or "spell not found". Test: press Craft on a known step;
+the tooltip shows the exact macro, which can also be pasted into a real macro to compare.
 
-## A4 — After `DoCraft` on an enchant, `SpellIsTargeting()` is true and `PickupInventoryItem(slot)` casts it on that slot
+## A4 — `/use <slot>` on the line after the `/cast` lands the enchant on that worn piece
 
-This is what the character sheet does when you click a slot with the glowing cursor
-(`PaperDollItemSlotButton_OnClick` → `PickupInventoryItem`), and `PickupContainerItem` is the bag
-equivalent. The module waits 0.05s after `DoCraft` before checking, in case targeting is not up on
-the same frame.
+The second line of the same hand-written macro (`/use 9` for bracers); `/use <bag> <slot>` is the
+bag form. `SecureCmdUseItem` → `UseInventoryItem` / `UseContainerItem`, which target the pending
+spell at the item when one is up.
 
 Symptom if wrong: the cursor glows and nothing happens; the enchant is still yours to place by hand.
-"Cast On My Own Gear" turns the attempt off. Test: Craft on Minor Health with bracers equipped.
+"Cast On My Own Gear" turns the line off. Test: Craft on Minor Health with bracers equipped.
 
-## A5 — The replace question is `StaticPopup "REPLACE_ENCHANT"` and `ReplaceEnchant()` answers it
+## A5 — The replace question is `StaticPopup "REPLACE_ENCHANT"`, raised by the event of that name, and `ReplaceEnchant()` answers it
 
-Answered only within three seconds of a cast the module started, and hidden afterwards. If the popup
-has another name on this client the question simply stays up for the player.
+Answered only within eight seconds of a press of our button (a `PreClick` hook notes the time) and
+hidden afterwards. `ReplaceEnchant` is listed as an ordinary function in the client's
+ItemDocumentation. If the popup has another name the question simply stays up for the player.
 
 Symptom if wrong: the confirm dialog appears every cast. Test: Craft twice on the same bracers.
 

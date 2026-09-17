@@ -61,16 +61,15 @@ C_Timer GetTime PlaySound SOUNDKIT UISpecialFrames InCombatLockdown
 -- The skill line, the craft window and the spellbook
 allow [[
 GetNumSkillLines GetSkillLineInfo ExpandSkillHeader
-CraftFrame GetCraftDisplaySkillLine GetNumCrafts GetCraftInfo DoCraft
-IsSpellKnown IsPlayerSpell GetSpellInfo GetSpellTexture
-SpellIsTargeting PickupInventoryItem GetInventoryItemID
+CraftFrame GetCraftDisplaySkillLine GetNumCrafts GetCraftInfo
+IsSpellKnown IsPlayerSpell GetSpellInfo GetSpellTexture GetInventoryItemID
 StaticPopup_Visible StaticPopup_Hide ReplaceEnchant
 ]]
 
 -- Items and bags
 allow [[
 C_Item C_Container GetItemInfo GetItemCount GetItemIcon
-GetContainerNumSlots GetContainerItemID PickupContainerItem
+GetContainerNumSlots GetContainerItemID
 ]]
 
 -- The player

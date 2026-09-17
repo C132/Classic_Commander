@@ -149,10 +149,10 @@ local function CreateOptionsPanel()
     })
 
     panel:AddSection("Crafting",
-        "What the Craft button does beyond pressing Create for you.")
+        "The Craft button runs a macro: /cast the recipe, then /use your own gear as the target. What else it does:")
     panel:AddCheckboxPair({
         label = "Cast On My Own Gear",
-        tooltip = "Enchants need something to land on. With this on, the Craft button casts the enchant straight onto the matching piece you are wearing (bracers, cloak, chest, gloves, boots, shield, ring), or the first one in your bags. Off, it leaves the glowing cursor for you to click a target with.",
+        tooltip = "Enchants need something to land on. With this on, the Craft button's macro adds a /use line that lands the enchant on the matching piece you are wearing (bracers, cloak, chest, gloves, boots, shield, ring), or the first one in your bags. Off, it leaves the glowing cursor for you to click a target with.",
         get = function() return CommanderTradecraftDB.AutoTargetGear end,
         set = function(value) CommanderTradecraftDB.AutoTargetGear = value end,
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,

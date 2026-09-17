@@ -71,17 +71,32 @@ if it does not, the fallback is that every open of the craft window records what
 `CommanderTradecraftChar.knownRecipes`. Either way a formula you learn resolves its step the next time
 the window is open, and the step's own text says to right-click the formula while you hold it.
 
-## D7 — The Craft button does the three things you would do a hundred times
+## D7 — The Craft button is a secure macro button, because DoCraft is protected
 
-`DoCraft(index)`, then for an enchant `PickupInventoryItem(slot)` on the matching worn piece (or
-`PickupContainerItem` on the first one in the bags), then `ReplaceEnchant()` if the replace question
-is up. The last two are options, on by default, and the popup is answered only within three seconds
-of a cast this module started — a replace question from anywhere else is left for the player.
+The first in-game press of the original Craft button raised `ADDON_ACTION_FORBIDDEN` for `DoCraft()`:
+on this client crafting is a protected action, like casting. So the button is a `SecureActionButton`
+of type `macro`, and its macro is the one enchanters have typed by hand since vanilla:
 
-The Open button is a `SecureActionButton` casting the profession, because `CastSpellByName` is not
-ours to call. It lives inside a plain holder frame that the layout shows, hides and anchors; the
-protected button itself is never touched after creation, so combat cannot throw. Harness F2 is the
-combat case.
+    /cast Enchant Bracer - Minor Health
+    /use 9
+
+`/cast` by the recipe's localised name (no craft window needed), then `/use <slot>` (worn) or
+`/use <bag> <slot>` (bags) hands the glowing cursor its target on the same click. The macro is
+rewritten on every paint, out of combat only, from the current step and whatever the character is
+wearing; in combat the button is replaced by a disabled plain one and nothing protected is touched.
+"Cast On My Own Gear" drops the `/use` line. The tooltip shows the macro, so anyone who would rather
+bind it can copy it.
+
+The replace-enchant question is answered from the `REPLACE_ENCHANT` event with `ReplaceEnchant()`
+(an ordinary function per the client's docs), but only within eight seconds of a press of *our*
+button (a `PreClick` hook notes the time) — a replace question from anywhere else is left for the
+player. `/click StaticPopup1Button1` in the macro was considered and rejected: with no popup up it
+would fire whatever that button last meant.
+
+Both secure buttons (Open, Craft) live inside plain holder frames that the layout shows, hides and
+anchors; hiding an ordinary parent takes a protected child with it and is allowed at any time.
+Mouse-only buttons register `AnyUp` alone, so a click is one `/cast`, never two. Harness A11, B2–B4
+and F2 cover the macro, the popup rule and the combat rule.
 
 ## D8 — Progress is per character; settings are per account; Restore Defaults cannot reach progress
 

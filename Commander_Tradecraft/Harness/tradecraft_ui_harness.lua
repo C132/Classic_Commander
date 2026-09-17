@@ -442,16 +442,9 @@ function GetCraftInfo(i)
     if not row then return nil end
     return row.name, nil, row.header and "header" or "optimal", row.available or 5
 end
-local crafted = {}
-local targeting = false
-function DoCraft(i)
-    crafted[#crafted + 1] = craft.list[i] and craft.list[i].name
-    local row = craft.list[i]
-    local D = CommanderTradecraft_Data
-    local spell = row and row.spell
-    targeting = spell and D.RECIPES[spell] and D.RECIPES[spell].target and true or false
-end
-function SpellIsTargeting() return targeting end
+-- DoCraft is protected on this client; the mock makes calling it a hard
+-- error so no insecure path back to it can creep in
+function DoCraft() error("ADDON_ACTION_FORBIDDEN: DoCraft()") end
 local popup = nil
 local replaced = 0
 function StaticPopup_Visible(which) return popup == which and 1 or nil end
@@ -501,6 +494,20 @@ WidgetMT.__index = function(self, key)
     end
     if key == "IsEnabled" then
         local fn = function(s) return s.__enabled ~= false end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetAttribute" then
+        local fn = function(s, name, value)
+            if me.combat then error("attribute written in combat") end
+            s.__attr = s.__attr or {}
+            s.__attr[name] = value
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetAttribute" then
+        local fn = function(s, name) return s.__attr and s.__attr[name] end
         rawset(self, key, fn)
         return fn
     end
@@ -622,7 +629,9 @@ CHECK(Has("STEP"), "A8 step counter")
 CHECK(Has("Expert"), "A9 expert trainer banner (rank 146 >= 125)")
 CHECK(Has("Runed Golden Rod"), "A10 preview shows the next step")
 local b = Buttons()
-CHECK(b["Craft"] ~= nil and b["Craft"].__enabled == false, "A11 craft disabled with window closed")
+CHECK(b["Craft"] ~= nil and b["Craft"].__attr and b["Craft"].__attr.type == "macro", "A11 craft is a secure macro button, window or no window")
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 9", "A11 macro casts and targets the worn bracers", b["Craft"].__attr.macrotext)
+CHECK(_G.CommanderTradecraftCraft == b["Craft"], "A11 the button has its global name")
 CHECK(b["Open Enchanting"] ~= nil, "A11 secure open button offered")
 CHECK(b["Skip"] and b["Route"] and b["Shopping"], "A11 footer buttons")
 CHECK(b["Alternative"] ~= nil, "A11 alternative offered: 156-185 is coming and has two paths")
@@ -658,63 +667,61 @@ Settle()
 CHECK(CommanderTradecraftChar.knownRecipes[13419] == true, "B1 craft window scan remembers recipes")
 CHECK(CommanderTradecraftDB.ShowGuide == true and guide.__shown, "B1 guide auto-opened with the craft window")
 b = Buttons()
-CHECK(b["Craft"] and b["Craft"].__enabled ~= false, "B1 craft enabled with the window open")
+CHECK(b["Craft"] and b["Craft"].__attr, "B1 craft still the secure button with the window open")
 CHECK(b["Open Enchanting"] == nil, "B1 open button gone while open")
 
--- B2 the craft button: DoCraft, then the bracers, then the replace answer
+-- B2 a click notes the time (PreClick), and the replace question raised
+-- by the client afterwards is answered; one raised long after is not
 me.lastPickup = nil
+b["Craft"].__scripts.PreClick(b["Craft"])
 popup = "REPLACE_ENCHANT"
-b["Craft"].__scripts.OnClick(b["Craft"])
-CHECK(crafted[#crafted] == "Enchant Bracer - Lesser Stamina", "B2 DoCraft on the right index", crafted[#crafted])
-Advance(0.05)
-CHECK(me.lastPickup and me.lastPickup[1] == "slot" and me.lastPickup[2] == 9, "B2 cast on equipped bracers", me.lastPickup and me.lastPickup[2])
-Advance(0.1)
-CHECK(replaced == 1 and popup == nil, "B2 replace-enchant answered and hidden", replaced)
--- A popup that appears long after our cast is not ours to answer
+Fire("REPLACE_ENCHANT")
+CHECK(replaced == 1 and popup == nil, "B2 replace-enchant answered from the event", replaced)
 popup = "REPLACE_ENCHANT"
-Advance(5)
+Advance(20)
+Fire("REPLACE_ENCHANT")
 CHECK(replaced == 1 and popup == "REPLACE_ENCHANT", "B2 a late popup is left alone")
-Fire("REPLACE_ENCHANT")
-CHECK(replaced == 1, "B2 nor via the event")
 popup = nil
--- The event path: the client raises REPLACE_ENCHANT as the cursor lands
-b["Craft"].__scripts.OnClick(b["Craft"])
-Advance(0.05)
+-- with the option off, never
+CommanderTradecraftDB.AutoConfirmReplace = false
+b["Craft"].__scripts.PreClick(b["Craft"])
 popup = "REPLACE_ENCHANT"
 Fire("REPLACE_ENCHANT")
-CHECK(replaced == 2 and popup == nil, "B2 answered from the event", replaced)
-Advance(1)
-CHECK(replaced == 2, "B2 timers find nothing left to answer")
--- A tome in the shield slot is not a shield
+CHECK(replaced == 1 and popup == "REPLACE_ENCHANT", "B2 option off -> not answered")
+popup = nil
+CommanderTradecraftDB.AutoConfirmReplace = true
+
+-- B3 no bracers worn: the macro targets the ones in the bags; none at all:
+-- the macro just casts and the step warns
 me.equipped[17] = 9999
 EQUIPLOC[9999] = "INVTYPE_HOLDABLE"
 me.equipped[9] = nil
-bagSlots[0] = nil
-
--- B3 no bracers equipped: the one in the bags is used; none at all: refused
 bagSlots[0] = { [3] = 2140 }
-b["Craft"].__scripts.OnClick(b["Craft"])
-Advance(0.05)
-CHECK(me.lastPickup[1] == "bag" and me.lastPickup[2] == 0 and me.lastPickup[3] == 3, "B3 bag bracers targeted")
-bagSlots[0] = nil
-local before = #crafted
-printLog = {}
-b["Craft"].__scripts.OnClick(b["Craft"])
-CHECK(#crafted == before, "B3 no target -> no craft")
-CHECK(printLog[#printLog] and printLog[#printLog]:find("bracers"), "B3 told what to equip", printLog[#printLog])
 Fire("UNIT_INVENTORY_CHANGED", "player")
 Settle()
+b = Buttons()
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 0 3", "B3 bag bracers targeted", b["Craft"].__attr.macrotext)
+bagSlots[0] = nil
+Fire("UNIT_INVENTORY_CHANGED", "player")
+Settle()
+b = Buttons()
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina", "B3 no target -> cast only", b["Craft"].__attr.macrotext)
 CHECK(Has("You need bracers"), "B3 warning painted on the step")
+-- /ctc craft can only explain
+printLog = {}
+CommanderTradecraft_Craft()
+CHECK(printLog[#printLog] and printLog[#printLog]:find("protected") and printLog[#printLog]:find("/cast"), "B3 slash craft explains the macro", printLog[#printLog])
 me.equipped[9] = 2140
 
--- B4 turning off auto-target leaves the cursor alone
+-- B4 turning off auto-target drops the /use line
 CommanderTradecraftDB.AutoTargetGear = false
-me.lastPickup = nil
+Fire("UNIT_INVENTORY_CHANGED", "player")
+Settle()
 b = Buttons()
-b["Craft"].__scripts.OnClick(b["Craft"])
-Advance(0.2)
-CHECK(me.lastPickup == nil, "B4 no targeting when off")
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina", "B4 no /use when off", b["Craft"].__attr.macrotext)
 CommanderTradecraftDB.AutoTargetGear = true
+Fire("UNIT_INVENTORY_CHANGED", "player")
+Settle()
 
 -- B5 a skill-up: rank climbs to 155, the step completes with a chat line
 -- and a sound, the next step (the golden rod) is current
@@ -923,11 +930,20 @@ Fire("PLAYER_REGEN_DISABLED")
 Settle()
 b = Buttons()
 CHECK(b["Open Enchanting"] == nil, "F2 no secure button in combat")
+CHECK(b["Craft"] and b["Craft"].__attr == nil and b["Craft"].__enabled == false, "F2 craft is a disabled plain button in combat (no attribute writes)")
+CHECK(#harnessFailedErrors == 0, "F2 no attribute written in combat", harnessFailedErrors[1])
 me.combat = false
 Fire("PLAYER_REGEN_ENABLED")
 Settle()
 b = Buttons()
 CHECK(b["Open Enchanting"] ~= nil, "F2 back after combat", (function() local t = {} for k in pairs(b) do t[#t+1] = k end return table.concat(t, ",") end)())
+-- The tome in the off-hand slot is not a shield: cast only. A shield is.
+CHECK(b["Craft"] and b["Craft"].__attr and b["Craft"].__attr.macrotext == "/cast Enchant Shield - Greater Stamina", "F2 a tome in the off-hand is not targeted", b["Craft"] and b["Craft"].__attr and b["Craft"].__attr.macrotext)
+me.equipped[17] = 2143
+Fire("UNIT_INVENTORY_CHANGED", "player")
+Settle()
+b = Buttons()
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Shield - Greater Stamina\n/use 17", "F2 shield step targets the worn shield", b["Craft"].__attr.macrotext)
 
 -- F3 finished: hidden by default, and Show explains why
 me.rank, me.maxRank = 375, 375

@@ -15,17 +15,19 @@
 --     a fixed position, which is what lets a buy step (vendors, coordinates,
 --     a waypoint button) and a craft step (reagents, a craft button) share
 --     one window without either leaving gaps in the other.
---   * The Craft button presses Create for you, then, for an enchant, clicks
---     your own bracers with the glowing cursor and answers the "replace the
---     enchant?" question — the three things you would otherwise do a hundred
---     times between 2 and 90.
+--   * The Craft button is a secure macro button running "/cast <recipe>"
+--     and "/use <slot>": it casts the enchant and lands it on your own
+--     bracers in one click, and the module answers the "replace the
+--     enchant?" question — the three things you would otherwise do a
+--     hundred times between 2 and 90. DoCraft is protected on this client,
+--     so there is no insecure way to craft (DECISIONS D7).
 --
 -- Enchanting on this client goes through the CRAFT frame and its API
--- (GetNumCrafts / GetCraftInfo / DoCraft), which is only populated while the
--- window is open. Recipes seen there are remembered per character so the
--- guide can tell a formula you have learned from one you have not while the
--- window is closed; IsSpellKnown is asked first and the memory is the
--- fallback (ASSUMPTIONS.md A2).
+-- (GetNumCrafts / GetCraftInfo), which is only populated while the window
+-- is open. Recipes seen there are remembered per character so the guide can
+-- tell a formula you have learned from one you have not while the window is
+-- closed; IsSpellKnown is asked first and the memory is the fallback
+-- (ASSUMPTIONS.md A2).
 
 local D = CommanderTradecraft_Data
 local E = CommanderTradecraft_Engine
@@ -67,7 +69,6 @@ local GetItemCount_ = (C_Item and C_Item.GetItemCount) or GetItemCount
 local GetItemIcon_ = (C_Item and C_Item.GetItemIconByID) or GetItemIcon
 local ContainerNumSlots = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
 local ContainerItemID = (C_Container and C_Container.GetContainerItemID) or GetContainerItemID
-local ContainerPickup = (C_Container and C_Container.PickupContainerItem) or PickupContainerItem
 
 local function ItemName(id)
     local name = GetItemInfo_ and GetItemInfo_(id)
@@ -412,32 +413,69 @@ local function NewHover()
     return h
 end
 
--- One secure button, made once: casts the profession to open its window.
--- It is a protected frame, so nothing may show, hide or move it in combat.
--- It therefore sits inside a plain holder frame that is the thing the
--- layout shows, hides and anchors: hiding an ordinary parent takes a
--- protected child with it and is allowed at any time. The button itself is
--- sized, titled and given its attributes once, out of combat, at creation.
-local openHolder, openButton
-local OPEN_WIDTH = 130
-local function EnsureOpenButton()
-    if openHolder then return openHolder end
+-- Secure buttons. DoCraft is a protected function on this client (it threw
+-- ADDON_ACTION_FORBIDDEN the first time it was pressed), and so is casting
+-- by name, so both the Open button and the Craft button are
+-- SecureActionButtons. Each is a protected frame that nothing may show,
+-- hide or move in combat, so each sits inside a plain holder frame that is
+-- the thing the layout shows, hides and anchors: hiding an ordinary parent
+-- takes a protected child with it and is allowed at any time. Attributes
+-- are only ever written out of combat.
+--
+-- The Craft button runs the macro enchanters have typed by hand since
+-- vanilla: "/cast <recipe>" and then "/use <slot>" to land it on your own
+-- gear, which does not even need the craft window open.
+local OPEN_WIDTH, CRAFT_WIDTH = 130, 70
+local secure = {}   -- key -> { holder, button }
+
+local function EnsureSecure(key, width, text, tooltipFn)
+    if secure[key] then return secure[key] end
     if InCombat() then return nil end
-    openHolder = CreateFrame("Frame", nil, guide)
-    openHolder:SetSize(OPEN_WIDTH, 20)
-    openButton = CreateFrame("Button", "CommanderTradecraftOpen", openHolder,
+    local holder = CreateFrame("Frame", nil, guide)
+    holder:SetSize(width, 20)
+    local button = CreateFrame("Button", "CommanderTradecraft" .. key, holder,
         "SecureActionButtonTemplate, UIPanelButtonTemplate")
-    openButton:SetAllPoints(openHolder)
-    openButton:RegisterForClicks("AnyDown", "AnyUp")
-    openButton:SetAttribute("type", "spell")
-    openButton:SetAttribute("spell", SpellName(Profession().abilitySpell))
-    openButton:SetText("Open " .. Profession().name)
-    AttachTooltip(openButton, function(tip)
+    button:SetAllPoints(holder)
+    -- Mouse only, so one edge is enough: "AnyUp" fires once per click and
+    -- never doubles a /cast the way registering both edges would
+    button:RegisterForClicks("AnyUp")
+    button:SetText(text)
+    AttachTooltip(button, tooltipFn)
+    holder:Hide()
+    secure[key] = { holder = holder, button = button }
+    return secure[key]
+end
+
+local function EnsureOpenButton()
+    local s = EnsureSecure("Open", OPEN_WIDTH, "Open " .. Profession().name, function(tip)
         tip:AddLine("Open " .. Profession().name)
-        tip:AddLine("The craft list has to be open for the Craft button to work; this casts the profession for you.", 1, 1, 1, true)
+        tip:AddLine("Casts the profession to open its window — handy for watching the list, though the Craft button does not need it open.", 1, 1, 1, true)
     end)
-    openHolder:Hide()
-    return openHolder
+    if s and not s.ready then
+        s.ready = true
+        s.button:SetAttribute("type", "spell")
+        s.button:SetAttribute("spell", SpellName(Profession().abilitySpell))
+    end
+    return s and s.holder
+end
+
+local craftingSince = 0
+local craftTooltip -- set per paint
+
+local function EnsureCraftButton()
+    local s = EnsureSecure("Craft", CRAFT_WIDTH, "Craft", function(tip)
+        if craftTooltip then craftTooltip(tip) end
+    end)
+    if s and not s.ready then
+        s.ready = true
+        s.button:SetAttribute("type", "macro")
+        s.button:SetAttribute("macrotext", "")
+        -- Insecure hooks are allowed on a secure button; this one just
+        -- notes when we cast, so the replace question can be told apart
+        -- from anyone else's
+        s.button:SetScript("PreClick", function() craftingSince = GetTime() end)
+    end
+    return s and s.holder
 end
 
 -- Layout cursor
@@ -523,7 +561,7 @@ local function ButtonRow(defs)
     for _, def in ipairs(defs) do
         local b
         if def.secure then
-            b = EnsureOpenButton()
+            b = def.secure == "Craft" and EnsureCraftButton() or EnsureOpenButton()
             if b then
                 b:ClearAllPoints()
                 b:Show()
@@ -611,29 +649,44 @@ local function TargetFor(recipe)
     return nil
 end
 
-local craftingSince = 0
-
--- After DoCraft, the enchant is on the cursor: put it on our own gear
-local function PlaceEnchant(recipe)
-    local where, a, b = TargetFor(recipe)
-    if where == "equipped" and PickupInventoryItem then
-        PickupInventoryItem(a)
-        return true
-    elseif where == "bags" and ContainerPickup then
-        ContainerPickup(a, b)
-        return true
+-- The macro the Craft button runs for a step. "/cast" by the recipe's
+-- localised name; for an enchant, "/use <slot>" (worn) or "/use <bag> <slot>"
+-- (bags) hands the glowing cursor its target on the same click.
+local function CraftMacro(step)
+    if not (step and step.kind == "craft") then return "" end
+    local lines = { "/cast " .. SpellName(step.spell) }
+    local recipe = step.recipe
+    if recipe.target and db.AutoTargetGear then
+        local where, a, b = TargetFor(recipe)
+        if where == "equipped" then
+            lines[#lines + 1] = "/use " .. a
+        elseif where == "bags" then
+            lines[#lines + 1] = "/use " .. a .. " " .. b
+        end
     end
-    return false
+    return table.concat(lines, "\n")
+end
+
+-- Written on every paint, out of combat only (attributes on a protected
+-- frame). Returns false when it could not be written.
+local function SetCraftMacro(step)
+    local s = secure.Craft
+    if not s or InCombat() then return false end
+    local text = CraftMacro(step)
+    if s.macro ~= text then
+        s.macro = text
+        s.button:SetAttribute("macrotext", text)
+    end
+    return true
 end
 
 -- The replace-enchant question, answered only for casts we started in the
--- last couple of seconds. The client raises REPLACE_ENCHANT when the glowing
+-- last few seconds. The client raises REPLACE_ENCHANT when the glowing
 -- cursor lands on a piece that already carries one and UIParent shows the
--- popup from it; our handler runs after UIParent's, and the two timers
--- below are the fallback if the event never reaches us.
+-- popup from it; our handler runs after UIParent's.
 local function AnswerReplace()
     if not (db.AutoConfirmReplace and StaticPopup_Visible and ReplaceEnchant) then return end
-    if GetTime() - craftingSince > 3 then return end
+    if GetTime() - craftingSince > 8 then return end
     local which = StaticPopup_Visible("REPLACE_ENCHANT")
     if which then
         ReplaceEnchant()
@@ -641,49 +694,15 @@ local function AnswerReplace()
     end
 end
 
+-- /ctc craft: there is no insecure way to cast, so this can only say how
 local function CraftCurrent()
     if not (plan and plan.current and plan.current.kind == "craft") then
         Announce("nothing to craft right now")
         return
     end
     local step = plan.current
-    if not CraftWindowIsOurs() then
-        Announce("open your " .. Profession().name .. " window first — the Open button will do it")
-        return
-    end
-    if InCombatLockdown and InCombatLockdown() then
-        Announce("not in combat")
-        return
-    end
-    ScanCraftWindow()
-    local index = craftIndexBySpell[step.spell]
-    if not index then
-        Announce(("%s is not in your craft list yet"):format(SpellName(step.spell)))
-        return
-    end
-    local _, _, _, numAvailable = GetCraftInfo(index)
-    if (numAvailable or 0) < 1 then
-        Announce("not enough reagents for " .. SpellName(step.spell))
-        return
-    end
-    local recipe = step.recipe
-    if recipe.target and db.AutoTargetGear and not TargetFor(recipe) then
-        Announce(("you need %s to enchant — equip one or keep one in your bags"):format(D.TARGET_WORDS[recipe.target] or "a target"))
-        return
-    end
-    craftingSince = GetTime()
-    DoCraft(index)
-    if recipe.target and db.AutoTargetGear then
-        -- The targeting cursor is up as soon as DoCraft returns for an
-        -- enchant; a beat later is safer on a slow frame
-        C_Timer.After(0.05, function()
-            if SpellIsTargeting and SpellIsTargeting() then
-                PlaceEnchant(recipe)
-                C_Timer.After(0.1, AnswerReplace)
-                C_Timer.After(0.4, AnswerReplace)
-            end
-        end)
-    end
+    Announce(("crafting is a protected action — press the Craft button on the guide, or put this in a macro:\n%s"):format(
+        CraftMacro(step):gsub("\n", "  ")))
 end
 
 -- ---------------------------------------------------------------------------
@@ -792,25 +811,47 @@ local function PaintCraftStep(step, p)
     end
     Gap(2)
 
-    -- Buttons
+    -- Buttons. The Craft button is secure: its macro is written here, out
+    -- of combat, and the holder is shown only when it could be written and
+    -- the recipe is known
     local open = CraftWindowIsOurs()
     local inCombat = InCombat()
     local buttons = {}
-    buttons[#buttons + 1] = {
-        text = "Craft", width = 70, onClick = CraftCurrent,
-        disabled = not open or not step.known,
-        tooltip = function(tip)
+    local canCraft = step.known and not inCombat and not step.capped
+    local shortReagent = false
+    for _, line in ipairs(step.reagents or {}) do
+        if line.have < line.per then shortReagent = true end
+    end
+    if canCraft and EnsureCraftButton() and SetCraftMacro(step) then
+        craftTooltip = function(tip)
             tip:AddLine("Craft " .. title)
             if step.recipe.target then
-                tip:AddLine("Presses Create, then casts it on your own " .. (D.TARGET_WORDS[step.recipe.target] or "gear") .. " and answers the replace question.", 1, 1, 1, true)
+                local where = TargetFor(step.recipe)
+                if where == "equipped" then
+                    tip:AddLine("Casts it on the " .. (D.TARGET_WORDS[step.recipe.target] or "gear") .. " you are wearing.", 1, 1, 1, true)
+                elseif where == "bags" then
+                    tip:AddLine("Casts it on the " .. (D.TARGET_WORDS[step.recipe.target] or "gear") .. " in your bags.", 1, 1, 1, true)
+                else
+                    tip:AddLine("Leaves the glowing cursor for you to pick a target with.", 1, 0.6, 0.2, true)
+                end
             else
-                tip:AddLine("Presses Create for you.", 1, 1, 1, true)
+                tip:AddLine("Casts the recipe once.", 1, 1, 1, true)
             end
-            if not open then tip:AddLine("Open your " .. p.profession.name .. " window first.", 1, 0.6, 0.2, true) end
-        end,
-    }
+            if shortReagent then tip:AddLine("You are short of a reagent.", 1, 0.35, 0.3, true) end
+            tip:AddLine(("Macro: %s"):format((CraftMacro(step):gsub("\n", "  "))), 0.6, 0.6, 0.6, true)
+        end
+        buttons[#buttons + 1] = { secure = "Craft", width = CRAFT_WIDTH }
+    else
+        buttons[#buttons + 1] = { text = "Craft", width = CRAFT_WIDTH, disabled = true,
+            tooltip = function(tip)
+                tip:AddLine("Craft " .. title)
+                if inCombat then tip:AddLine("Not in combat.", 1, 0.6, 0.2, true)
+                elseif not step.known then tip:AddLine("You do not know this recipe yet.", 1, 0.6, 0.2, true)
+                elseif step.capped then tip:AddLine("You are at your skill cap.", 1, 0.6, 0.2, true) end
+            end }
+    end
     if not open and not inCombat and p.hasProfession then
-        buttons[#buttons + 1] = { secure = true, width = OPEN_WIDTH }
+        buttons[#buttons + 1] = { secure = "Open", width = OPEN_WIDTH }
     end
     ButtonRow(buttons)
 end
@@ -904,7 +945,8 @@ end
 Repaint = function()
     if not loaded then return end
     ReleaseAll()
-    if openHolder then openHolder:Hide() end
+    -- Holders are plain frames: hiding them is fine in combat too
+    for _, entry in pairs(secure) do entry.holder:Hide() end
     local p = plan
     if not p then guide:Hide() return end
 
