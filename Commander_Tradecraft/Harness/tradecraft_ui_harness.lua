@@ -608,10 +608,21 @@ CHECK(b["Alternative"] ~= nil, "A11 alternative offered: 156-185 is coming and h
 -- B. Skill-ups and the craft window
 -- ===========================================================================
 
--- B1 opening the craft window scans it: a formula learned on this session
--- shows up as known, and the guide auto-opens
+-- B0 a hunter's Beast Training is the same frame with no skill line: not ours
+craft.shown = true
+craft.skill = nil
+craft.list = { { name = "Growl", spell = nil } }
 CommanderTradecraftDB.ShowGuide = false
 guide:Hide()
+Fire("CRAFT_SHOW")
+Settle()
+CHECK(CommanderTradecraftDB.ShowGuide == false, "B0 beast training does not open the guide")
+Fire("CRAFT_CLOSE")
+Settle()
+craft.skill = "Enchanting"
+
+-- B1 opening the craft window scans it: a formula learned on this session
+-- shows up as known, and the guide auto-opens
 craft.shown = true
 craft.list = {
     { name = "Bracer", header = true },
@@ -640,10 +651,24 @@ CHECK(replaced == 1 and popup == nil, "B2 replace-enchant answered and hidden", 
 popup = "REPLACE_ENCHANT"
 Advance(5)
 CHECK(replaced == 1 and popup == "REPLACE_ENCHANT", "B2 a late popup is left alone")
+Fire("REPLACE_ENCHANT")
+CHECK(replaced == 1, "B2 nor via the event")
 popup = nil
+-- The event path: the client raises REPLACE_ENCHANT as the cursor lands
+b["Craft"].__scripts.OnClick(b["Craft"])
+Advance(0.05)
+popup = "REPLACE_ENCHANT"
+Fire("REPLACE_ENCHANT")
+CHECK(replaced == 2 and popup == nil, "B2 answered from the event", replaced)
+Advance(1)
+CHECK(replaced == 2, "B2 timers find nothing left to answer")
+-- A tome in the shield slot is not a shield
+me.equipped[17] = 9999
+EQUIPLOC[9999] = "INVTYPE_HOLDABLE"
+me.equipped[9] = nil
+bagSlots[0] = nil
 
 -- B3 no bracers equipped: the one in the bags is used; none at all: refused
-me.equipped[9] = nil
 bagSlots[0] = { [3] = 2140 }
 b["Craft"].__scripts.OnClick(b["Craft"])
 Advance(0.05)
@@ -790,6 +815,10 @@ Fire("SKILL_LINES_CHANGED")
 Settle()
 plan = CommanderTradecraft_Plan()
 CHECK(not plan.hasProfession, "D4 no profession")
+CHECK(guide.__shown == false, "D4 hidden for a character without the profession")
+CommanderTradecraft_Show()
+Settle()
+CHECK(guide.__shown == true, "D4 but shown when asked")
 CHECK(Has("Learn Enchanting"), "D4 learn banner")
 b = Buttons()
 CHECK(b["Craft"] == nil and b["Skip"] == nil, "D4 no step buttons without a profession")

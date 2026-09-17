@@ -118,7 +118,10 @@ end
 
 -- The skill line: rank and max rank, 0/0 when the profession is not known.
 -- Collapsed headers hide their lines from GetSkillLineInfo, so a miss is
--- retried once with every header expanded (the same thing Questie does).
+-- retried once with every header expanded (the same thing Questie does) —
+-- once per session, not once per bag update, for a character who simply
+-- does not have the profession.
+local expandTried = false
 local function ReadSkill(prof)
     if not (GetNumSkillLines and GetSkillLineInfo) then return 0, 0 end
     local wanted = SpellName(prof.abilitySpell)
@@ -132,7 +135,8 @@ local function ReadSkill(prof)
         return nil
     end
     local rank, maxRank = scan()
-    if rank == nil and ExpandSkillHeader then
+    if rank == nil and ExpandSkillHeader and not expandTried then
+        expandTried = true
         ExpandSkillHeader(0)
         rank, maxRank = scan()
     end
@@ -151,8 +155,9 @@ local function CraftWindowIsOurs()
     local shown = craftOpen or (CraftFrame and CraftFrame.IsShown and CraftFrame:IsShown())
     if not shown then return false end
     if not GetCraftDisplaySkillLine then return true end
-    local name = GetCraftDisplaySkillLine()
-    return name == nil or name == SpellName(Profession().abilitySpell)
+    -- Strict: a hunter's Beast Training uses the same frame and answers
+    -- nil here, and the guide must not pop for it
+    return GetCraftDisplaySkillLine() == SpellName(Profession().abilitySpell)
 end
 
 local function ScanCraftWindow()
@@ -344,6 +349,7 @@ local function NewText()
     end
     fs:ClearAllPoints()
     fs:SetFontObject(GameFontHighlightSmall)
+    fs:SetJustifyH("LEFT")
     fs:SetTextColor(unpack(C.text))
     fs:SetAlpha(1)
     fs:Show()
@@ -436,6 +442,10 @@ end
 
 -- Layout cursor
 local y -- negative offset from the top of the content area
+-- Set when a wrapped line could not report its height yet (a font string
+-- on a frame that has never been shown may answer 0); the paint is redone
+-- once the frame is on screen so nothing overlaps
+local heightMissing = false
 
 local function Line(text, opts)
     opts = opts or {}
@@ -448,6 +458,7 @@ local function Line(text, opts)
     if opts.alpha then fs:SetAlpha(opts.alpha) end
     fs:SetText(text)
     local h = fs:GetStringHeight()
+    if not h or h <= 0 then heightMissing = true end
     if not h or h < LINE then h = LINE end
     y = y - h - (opts.gap or 2)
     return fs
@@ -572,11 +583,20 @@ local function FindInBags(target)
     return nil
 end
 
+-- The worn piece an enchant can land on. The off-hand slot is checked by
+-- what is in it, not just that something is: a tome in the shield slot
+-- is not a shield.
 local function FindEquipped(target)
     local slots = D.TARGET_SLOTS[target]
     if not (slots and GetInventoryItemID) then return nil end
+    local accepts = D.TARGET_ACCEPTS[target] or { [target] = true }
     for _, slot in ipairs(slots) do
-        if GetInventoryItemID("player", slot) then return slot end
+        local id = GetInventoryItemID("player", slot)
+        if id then
+            local equipLoc = GetItemInfo_ and select(9, GetItemInfo_(id))
+            -- An uncached item answers nil; trust the slot then
+            if equipLoc == nil or accepts[equipLoc] then return slot end
+        end
     end
     return nil
 end
@@ -607,7 +627,10 @@ local function PlaceEnchant(recipe)
 end
 
 -- The replace-enchant question, answered only for casts we started in the
--- last couple of seconds
+-- last couple of seconds. The client raises REPLACE_ENCHANT when the glowing
+-- cursor lands on a piece that already carries one and UIParent shows the
+-- popup from it; our handler runs after UIParent's, and the two timers
+-- below are the fallback if the event never reaches us.
 local function AnswerReplace()
     if not (db.AutoConfirmReplace and StaticPopup_Visible and ReplaceEnchant) then return end
     if GetTime() - craftingSince > 3 then return end
@@ -850,10 +873,16 @@ local function PaintFooter(p)
     ButtonRow(buttons)
 end
 
+-- Set by /ctc show for the session, so a character without the profession
+-- can still look at the guide on purpose without every non-enchanter in
+-- the suite being told to go and learn Enchanting at login
+local openedByHand = false
+
 local function GuideWanted()
     if not (db and db.EnableTradecraft) then return false end
     if Commander.UI.HudUnlocked(db, "Guide") then return true end
     if not db.ShowGuide then return false end
+    if plan and not plan.hasProfession and not openedByHand then return false end
     if plan and plan.finished and db.HideWhenFinished then return false end
     return true
 end
@@ -876,6 +905,7 @@ Repaint = function()
     end
 
     y = -(18 + 4 + 6 + PAD)
+    heightMissing = false
 
     -- Step counter
     if p.current then
@@ -927,9 +957,17 @@ Repaint = function()
     guide:SetSize(WIDTH, -y + 2)
     Commander.UI.ApplyHudChrome(guide, db, "Guide", {
         title = "Tradecraft",
-        defaultPoint = { point = "RIGHT", x = -40, y = 0 },
+        defaultPoint = { point = "RIGHT", x = -40, y = -160 },
     })
+    local wasShown = guide:IsShown()
     guide:SetShown(GuideWanted())
+    if heightMissing and guide:IsShown() and not wasShown and not guide._repaintQueued then
+        guide._repaintQueued = true
+        C_Timer.After(0, function()
+            guide._repaintQueued = nil
+            Repaint()
+        end)
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1165,6 +1203,7 @@ end
 function CommanderTradecraft_Show()
     if not loaded then return end
     db.ShowGuide = true
+    openedByHand = true
     Commander.Notify(Events.UPDATE)
     Rebuild()
     if not guide:IsShown() and plan and plan.finished and db.HideWhenFinished then
@@ -1349,6 +1388,7 @@ local WATCHED = {
     "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB",
     "UPDATE_FACTION", "PLAYER_ENTERING_WORLD",
     "UNIT_INVENTORY_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
+    "REPLACE_ENCHANT",
 }
 
 events:SetScript("OnEvent", function(_, event, arg1)
@@ -1361,6 +1401,9 @@ events:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "CRAFT_CLOSE" then
         craftOpen = false
         craftIndexBySpell = {}
+    elseif event == "REPLACE_ENCHANT" then
+        AnswerReplace()
+        return
     elseif event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then
         return
     end
