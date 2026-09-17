@@ -1,0 +1,16 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Tradecraft
+## Author: Devin
+## Version: 1.0.0
+## Notes: Guided profession leveling, one step on screen at a time: the recipe to craft now, how many more it takes, what you hold against what it needs, and a Craft button that casts it on your own gear. Formula steps name the vendor and the coordinates; a banner says when a trainer has a new rank for you; the shopping list is the rest of the route less what you already own. Enchanting 1 to 375.
+## IconTexture: Interface\Icons\Trade_Engraving
+## SavedVariables: CommanderTradecraftDB
+## SavedVariablesPerCharacter: CommanderTradecraftChar
+## RequiredDeps: Commander_Events
+## OptionalDeps: TomTom, Auctionator
+
+CommanderTradecraftData.lua
+CommanderTradecraftEngine.lua
+CommanderTradecraftDB.lua
+CommanderTradecraft.lua
