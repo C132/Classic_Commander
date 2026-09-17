@@ -1718,6 +1718,18 @@ function CommanderTradecraft_Status()
     if p.train then
         Announce(("trainer: %s %s (needs %d)"):format(p.train.rank.name, p.profession.name, p.train.rank.at))
     end
+    -- How recipes are being detected (ASSUMPTIONS A2): by the spellbook
+    -- call, by the craft-window memory, or not at all yet
+    local bySpellbook, byMemory = 0, 0
+    for spell in pairs(D.RECIPES) do
+        if (IsSpellKnown and IsSpellKnown(spell)) or (IsPlayerSpell and IsPlayerSpell(spell)) then
+            bySpellbook = bySpellbook + 1
+        end
+        if char.knownRecipes[spell] then byMemory = byMemory + 1 end
+    end
+    Announce(("recipes on the route you know: %d by the spellbook, %d seen in the craft window%s"):format(
+        bySpellbook, byMemory,
+        (bySpellbook == 0 and byMemory > 0) and " — the spellbook call does not answer for recipes on this client; the craft window is doing the work" or ""))
 end
 
 -- Hand the to-buy list to Auctionator as a shopping list: the current

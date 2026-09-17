@@ -1070,6 +1070,7 @@ Fire("SKILL_LINES_CHANGED")
 Settle()
 CommanderTradecraft_Status()
 CHECK(#printLog >= 2 and printLog[1]:find("200") and printLog[2]:find("step"), "F5 status", printLog[1])
+CHECK(printLog[#printLog]:find("by the spellbook"), "F5 status reports recipe detection", printLog[#printLog])
 
 CHECK(#harnessFailedErrors == 0, "Z no errors were swallowed", harnessFailedErrors[1])
 -- The headers were expanded exactly once: for the no-profession case in
