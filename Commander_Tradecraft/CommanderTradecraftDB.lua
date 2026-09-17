@@ -82,8 +82,6 @@ local function CreateOptionsPanel()
             route = function() Call("CommanderTradecraft_Route") end,
             shop = function() Call("CommanderTradecraft_Shopping") end,
             ah = function(arg) Call("CommanderTradecraft_AuctionatorList", arg) end,
-            skip = function() Call("CommanderTradecraft_Skip") end,
-            back = function() Call("CommanderTradecraft_Unskip") end,
             alt = function(arg) Call("CommanderTradecraft_Alternative", arg) end,
             craft = function() Call("CommanderTradecraft_Craft") end,
             reset = function() Call("CommanderTradecraft_ResetProgress") end,
@@ -223,14 +221,14 @@ local function CreateOptionsPanel()
         {
             label = "Reset Progress",
             width = 120,
-            tooltip = "Forget this character's path choices and skipped steps. Skill is skill; the guide simply re-reads it.",
+            tooltip = "Forget this character's path choices. Skill is skill; the guide simply re-reads it.",
             onClick = function() Call("CommanderTradecraft_ResetProgress") end,
         },
     })
 
     panel:Finalize({
         onDefaults = Reset,
-        defaultsTooltip = "Reset every option on this page. Route choices and skipped steps are per character and are not touched.",
+        defaultsTooltip = "Reset every option on this page. Route choices are per character and are not touched.",
     })
 end
 

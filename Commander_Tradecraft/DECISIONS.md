@@ -134,16 +134,27 @@ Path choices, skipped steps and the recipe memory are in `CommanderTradecraftCha
 The options page only iterates `CommanderTradecraft_Defaults`, which has none of those keys. The
 enchanter alt keeps their Moonglade decision whatever the main presses (harness F4).
 
-## D9 — "Alternative" applies to the next segment that has one
+## D9 — Two ways are two rows, and there is no skipping
 
-The current step's segment if it has more than one path, otherwise the first one ahead that does.
-The choice for 156–185 is worth making while the vendor trip is still in the preview, standing in
-town, not on arrival at 156.
+A segment with two paths shows them as two radio rows under the step — the chosen one lit, the
+other a click away, the guide's note under each — and only while you are in that segment. The
+first build had a permanent "Alternative" button and a "Skip" button; both went on review.
+Profession leveling is a fixed linear progression, so skipping a step is not a thing a player does,
+and a toggle button is a worse way to present a two-way choice than the two ways themselves.
+Deciding a later segment ahead of time is still possible from the Route window (same radio rows)
+or `/ctc alt <range> <main|alt>`. The engine keeps its "skipped" state only so an older saved table
+still loads.
 
-## D10 — ASCII marks in the ledger
+## D10 — The Route window is a list, not text
 
-`+` done, `>` current, `-` skipped, `–` (en dash) for ranges. The client's fonts drop shape glyphs
-(the suite learned this the hard way with `‖`), so ✓ and ▸ and → never went in.
+Pooled rows in a scroll frame: bracket headers (done / you are here), one row per step with icon,
+name, range, count and status colour, the current row on a gold bar, buy rows naming the vendor,
+two-way segments as a header plus radio rows above the chosen way's indented steps. The first build
+was a colour-coded text dump in an edit box and read like one. The shopping list stays text because
+its whole point is being copied out. Buy steps are bracketed by where the trip sits on the route,
+not by the formula's skill requirement, so a bracket header appears exactly once (the Lesser
+Strength formula needs 140 but is bought at 156, on the Expert trip). Finished two-way segments
+list only their steps: the other way is history.
 
 ## D11 — The route and the shopping list are grouped by trainer bracket
 

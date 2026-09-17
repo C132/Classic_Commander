@@ -610,6 +610,17 @@ local function Buttons()
     end
     return out
 end
+-- Option rows on the guide: invisible hover buttons with an OnClick; the
+-- label text is what the row's font string says
+local function GuideOptions()
+    local out = {}
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.__parent == guide and f.__shown ~= false and f.__scripts.OnClick and not f.__template then
+            out[#out + 1] = f
+        end
+    end
+    return out
+end
 -- The mock's CreateFrame does not record parents; patch it to
 local BaseCreateFrame = CreateFrame
 CreateFrame = function(frameType, name, parent, template)
@@ -677,8 +688,9 @@ Fire("BAG_UPDATE_DELAYED")
 Settle()
 CHECK(macroWrites == writesBefore, "A13 unchanged text is not rewritten")
 CHECK(b["Open Enchanting"] ~= nil, "A11 secure open button offered")
-CHECK(b["Skip"] and b["Route"] and b["Shopping"], "A11 footer buttons")
-CHECK(b["Alternative"] ~= nil, "A11 alternative offered: 156-185 is coming and has two paths")
+CHECK(b["Route"] and b["Shopping"], "A11 footer buttons")
+CHECK(b["Skip"] == nil and b["Alternative"] == nil, "A11 no skip, no alternative button")
+CHECK(#GuideOptions() == 0, "A11 no option rows on a one-way segment")
 
 -- A12 before the craft list has ever been read, an unknown recipe asks for
 -- a look rather than claiming you do not know it
@@ -801,14 +813,14 @@ CHECK(Has("Enchant Bracer - Lesser Stamina") and not Has("Buy Formula: Enchant B
 -- C. Alternatives, skipping, the buy step
 -- ===========================================================================
 
--- C1 back on the main path via the slash entry point. The current step
--- (the golden rod) has no alternative; the next segment does, and that is
--- the one the press applies to
-b = Buttons()
-CHECK(b["Alternative"] ~= nil, "C1 alternative offered for the coming segment")
+-- C1 the golden rod step has one way; the slash form with a segment key
+-- decides the next segment ahead of time
+printLog = {}
 CommanderTradecraft_Alternative("main")
+CHECK(printLog[#printLog]:find("one way"), "C1 bare alt on a one-way step explains", printLog[#printLog])
+CommanderTradecraft_Alternative("156-185 main")
 Settle()
-CHECK(CommanderTradecraftChar.choices["156-185"] == "main", "C1 choice written")
+CHECK(CommanderTradecraftChar.choices["156-185"] == "main", "C1 choice written by key")
 me.rank = 156
 Fire("CHAT_MSG_SKILL")
 Settle()
@@ -822,15 +834,22 @@ b = Buttons()
 CHECK(b["Go"] ~= nil, "C3 waypoint button")
 b["Go"].__scripts.OnClick(b["Go"])
 CHECK(#waypoints == 1 and waypoints[1].map == 1442 and math.abs(waypoints[1].x - 0.454) < 0.001, "C3 TomTom waypoint on Stonetalon", waypoints[1] and waypoints[1].map)
-CHECK(b["Alternative"] ~= nil, "C3 alternative button on a two-path segment")
--- toggling from the button flips to alt
-b["Alternative"].__scripts.OnClick(b["Alternative"])
+-- The two ways are rows under the step: two option rows, the chosen one lit
+CHECK(Has("TWO WAYS THROUGH 156 – 185"), "C3 options header on a two-way segment")
+local opts = GuideOptions()
+CHECK(#opts == 2, "C3 two option rows", #opts)
+CHECK(Has("Enchant Bracer - Lesser Strength") and Has("Lesser Stamina, then Chest - Greater Health"), "C3 both labels painted")
+-- clicking the second takes the alt path
+opts[2].__scripts.OnClick(opts[2])
 Settle()
-CHECK(CommanderTradecraftChar.choices["156-185"] == "alt", "C3 button toggles the path")
-b = Buttons()
-b["Alternative"].__scripts.OnClick(b["Alternative"])
+CHECK(CommanderTradecraftChar.choices["156-185"] == "alt", "C3 clicking an option chooses it")
+plan = CommanderTradecraft_Plan()
+CHECK(plan.current and plan.current.spell == 13501, "C3 alt path's first step is current", plan.current and plan.current.key)
+opts = GuideOptions()
+opts[1].__scripts.OnClick(opts[1])
 Settle()
 CHECK(CommanderTradecraftChar.choices["156-185"] == "main", "C3 and back")
+b = Buttons()
 
 -- C3b a later segment can be decided ahead by key
 CommanderTradecraft_Alternative("320-340 alt")
@@ -859,17 +878,8 @@ Settle()
 plan = CommanderTradecraft_Plan()
 CHECK(plan.current and plan.current.spell == 13536, "C4 learned -> craft step", plan.current and plan.current.key)
 
--- C5 skip and un-skip
-CommanderTradecraft_Skip()
-Settle()
-plan = CommanderTradecraft_Plan()
-CHECK(plan.current and plan.current.spell == 13661, "C5 skipped to Bracer - Strength", plan.current and plan.current.key)
-CHECK(CommanderTradecraftChar.skipped["156-185:main:2"] == true, "C5 skip recorded")
-CommanderTradecraft_Unskip()
-Settle()
-plan = CommanderTradecraft_Plan()
-CHECK(plan.current and plan.current.spell == 13536, "C5 un-skipped", plan.current and plan.current.key)
-CHECK(next(CommanderTradecraftChar.skipped) == nil, "C5 skip cleared")
+-- C5 there is no skipping: a fixed linear progression
+CHECK(CommanderTradecraft_Skip == nil and CommanderTradecraft_Unskip == nil, "C5 no skip entry points")
 
 -- C6 reset progress forgets choices and skips, never skill
 CommanderTradecraftChar.choices["110-135"] = "alt"
@@ -913,7 +923,7 @@ Settle()
 CHECK(guide.__shown == true, "D4 but shown when asked")
 CHECK(Has("Learn Enchanting"), "D4 learn banner")
 b = Buttons()
-CHECK(b["Craft"] == nil and b["Skip"] == nil, "D4 no step buttons without a profession")
+CHECK(b["Craft"] == nil and b["Route"] == nil, "D4 no step buttons without a profession")
 me.rank, me.maxRank = 285, 300
 
 -- ===========================================================================
@@ -924,13 +934,43 @@ CommanderTradecraft_Route()
 Settle()
 local ledger = _G.CommanderTradecraftLedger
 CHECK(ledger and ledger.__shown, "E1 ledger opens")
-CHECK(ledger.text:find(">|r", 1, true) and ledger.text:find("+|r", 1, true), "E1 route has current and done marks")
-CHECK(ledger.text:find("taking:"), "E1 alternatives listed")
-CHECK(ledger.text:find("Lorelae Wintersong"), "E1 vendor in route")
-CHECK(ledger.text:find("JOURNEYMAN 75 – 150", 1, true) and ledger.text:find("done"), "E1 bracket headings with done tags")
+CHECK(ledger.routeScroll.__shown and ledger.shopScroll.__shown == false, "E1 route list shown, text hidden")
+-- Rows: bracket headers, option rows, steps
+local rows = {}
+for _, r in ipairs(ledger.rows) do if r.__shown ~= false then rows[#rows + 1] = r end end
+local names = {}
+for _, r in ipairs(rows) do names[#names + 1] = r.name.__text or "" end
+local all = table.concat(names, "\n")
+CHECK(all:find("JOURNEYMAN 75 – 150", 1, true) and all:find("APPRENTICE 1 – 75", 1, true), "E1 bracket headers")
+-- At 285 the 156-185 choice is history (its steps listed, its options not);
+-- 301-320 is ahead and shows both ways
+CHECK(not all:find("TWO WAYS THROUGH 156 – 185", 1, true), "E1 finished two-way segment shows no options")
+CHECK(all:find("TWO WAYS THROUGH 301 – 320", 1, true), "E1 upcoming two-way segment headed")
+CHECK(all:find("Bracer - Assault, Brawn, then Major Armor", 1, true), "E1 the other way listed")
+-- bracket headers appear once each, in order
+local headerCount = 0
+for _, n in ipairs(names) do if n:find("^%u+ %d+ – %d+$") then headerCount = headerCount + 1 end end
+CHECK(headerCount == 5, "E1 five bracket headers, none repeated", headerCount)
+CHECK(all:find("Lorelae Wintersong", 1, true), "E1 vendor on a buy row")
+local currentRows, doneTag = 0, false
+for _, r in ipairs(rows) do
+    if r.bar.__shown then currentRows = currentRows + 1 end
+    if r.count.__text and r.count.__text:find("done") then doneTag = true end
+end
+CHECK(currentRows == 1, "E1 exactly one row highlighted as current", currentRows)
+CHECK(doneTag, "E1 finished bracket tagged done")
+-- clicking an option row in the route changes the choice
+local optionRow
+for _, r in ipairs(rows) do if r.name.__text == "Bracer - Assault, Brawn, then Major Armor" then optionRow = r end end
+CHECK(optionRow ~= nil and optionRow.__scripts.OnClick ~= nil, "E1 option row clickable")
+optionRow.__scripts.OnClick(optionRow)
+Settle()
+CHECK(CommanderTradecraftChar.choices["301-320"] == "alt", "E1 route click chooses the way")
+CommanderTradecraftChar.choices["301-320"] = nil
 CommanderTradecraft_Shopping()
 Settle()
 CHECK(ledger.title.__text:find("Shopping"), "E2 shopping mode")
+CHECK(ledger.shopScroll.__shown and ledger.routeScroll.__shown == false, "E2 text shown, list hidden")
 CHECK(ledger.text:find("Illusion Dust"), "E2 illusion dust to buy")
 CHECK(ledger.text:find("Formulas") and ledger.text:find("in all"), "E2 formula total")
 CHECK(ledger.text:find("Made by Blacksmiths"), "E2 rod note")

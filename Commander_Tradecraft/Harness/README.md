@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 775 checks
-/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 126 checks
+/opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 776 checks
+/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 135 checks
 /opt/homebrew/bin/luajit globals_lint.lua              # 4 files, 0 undeclared globals
 ```
 
@@ -65,7 +65,11 @@ Checks worth naming:
   there), and `SetAttribute` throws in combat, so neither an insecure craft path nor an in-combat
   attribute write can come back.
 - **D4** — a character without the profession is not shown the guide unless they ask for it.
-- **C1** — "Alternative" applies to the *coming* segment when the current one has no choice.
+- **C1/C3** — a one-way step has no option rows; a two-way segment shows two radio rows under the
+  step, clicking one chooses it; `/ctc alt <range>` decides a later segment.
+- **C5** — there is no skip entry point.
+- **E1** — the Route window is rows: five bracket headers each once, the finished two-way segment
+  without its options, the upcoming one with both and clickable, exactly one row highlighted.
 - **F2** — in combat the Open button is neither offered nor touched; after combat it is back.
 - **F4** — Restore Defaults leaves the character's choices alone.
 - **The mock rejects unknown events.** `RegisterEvent` throws for any name not in this client's

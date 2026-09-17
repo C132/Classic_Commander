@@ -315,7 +315,10 @@ function E.Build(guide, world, state, opts)
                     end
                 end
                 step.status = BuyDone(formula, segment, world, usedUntil) and "done" or "pending"
-                step.bracket = BracketAt(formula.at or segment.from)
+                -- Bracketed by where the trip sits on the route, not by the
+                -- formula's skill requirement: the Lesser Strength formula
+                -- needs 140 but is bought at 156, on the Expert trip
+                step.bracket = BracketAt(segment.from)
             end
             if step.bracket then
                 step.bracket.steps[#step.bracket.steps + 1] = step

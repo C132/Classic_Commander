@@ -446,13 +446,17 @@ do
     local sum = 0
     for _, b in ipairs(plan.brackets) do sum = sum + (b.need[10940] or 0) end
     CHECK(sum >= whole and sum <= whole + 5, "C15 bracket needs add up to the route", sum .. " vs " .. whole)
-    -- A buy step lands in the bracket of its skill requirement
+    -- A buy step lands in the bracket its segment starts in: Minor Agility
+    -- (segment 110-135) in Journeyman, Lesser Strength (156-185, though the
+    -- formula only needs 140) in Expert
     for _, step in ipairs(plan.steps) do
         if step.kind == "buy" and step.item == 11039 then
-            CHECK(step.bracket == plan.brackets[2], "C15 formula at 110 in 75-150")
+            CHECK(step.bracket == plan.brackets[2], "C15 formula for 110-135 in 75-150")
+        elseif step.kind == "buy" and step.item == 11101 then
+            CHECK(step.bracket == plan.brackets[3], "C15 formula for 156-185 in 150-225")
         end
     end
-    CHECK(plan.brackets[2].formulaCost == 800 + 2500, "C15 bracket formula cost", plan.brackets[2].formulaCost)
+    CHECK(plan.brackets[2].formulaCost == 800, "C15 bracket formula cost", plan.brackets[2].formulaCost)
     -- Done brackets
     plan = E.Build(GUIDE, World(200, 225, {}))
     CHECK(plan.brackets[1].done and plan.brackets[2].done and not plan.brackets[3].done, "C15 done flags")

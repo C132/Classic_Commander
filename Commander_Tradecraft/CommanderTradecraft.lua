@@ -372,6 +372,7 @@ local function NewIcon()
         pools.icon[used.icon] = tex
     end
     tex:ClearAllPoints()
+    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     tex:SetAlpha(1)
     tex:Show()
     return tex
@@ -415,8 +416,16 @@ local function NewHover()
         pools.hover[used.hover] = h
     end
     h:ClearAllPoints()
+    h:SetScript("OnClick", nil)
     h:Show()
     return h
+end
+
+-- A radio marker: the client's own two-state radio art
+local RADIO = "Interface\\Buttons\\UI-RadioButton"
+local function Radio(tex, checked)
+    tex:SetTexture(RADIO)
+    if checked then tex:SetTexCoord(0.25, 0.5, 0, 1) else tex:SetTexCoord(0, 0.25, 0, 1) end
 end
 
 -- Secure buttons. DoCraft is a protected function on this client (it threw
@@ -523,6 +532,29 @@ local function IconLine(icon, text, opts)
     -- Never let the row be shorter than its icon
     if startY - y < size + 2 then y = startY - size - 2 end
     return fs, tex
+end
+
+-- One of a segment's two ways, as a clickable row: radio, label, and the
+-- guide's note under it in grey
+local function OptionRow(path, chosen, onClick)
+    local rowY = y
+    local mark = NewIcon()
+    mark:SetSize(14, 14)
+    Radio(mark, chosen)
+    mark:SetPoint("TOPLEFT", guide, "TOPLEFT", 8, y - 1)
+    Line((chosen and HEX.white or "") .. path.label .. (chosen and "|r" or ""), { indent = 26, color = chosen and C.text or C.dim, gap = 0 })
+    if path.note then
+        Line(HEX.dim .. path.note .. "|r", { indent = 26, gap = 3 })
+    end
+    local hover = NewHover()
+    hover:SetPoint("TOPLEFT", guide, "TOPLEFT", 4, rowY)
+    hover:SetPoint("RIGHT", guide, "RIGHT", 0, 0)
+    hover:SetHeight(rowY - y)
+    hover:SetScript("OnClick", onClick)
+    AttachTooltip(hover, function(tip)
+        tip:AddLine(path.label)
+        tip:AddLine(chosen and "The way you are taking." or "Click to take this way instead.", 1, 1, 1, true)
+    end)
 end
 
 -- Reagent row: icon, name, have / need on the right, tooltip on hover
@@ -985,37 +1017,28 @@ local function PaintBuyStep(step, p)
     Gap(2)
 end
 
--- The segment an "Alternative" press applies to: the current step's if it
--- has more than one path, otherwise the next one along that does — so the
--- choice can be made while the vendor trip is still in the preview, before
--- the step arrives.
-local function AltSegment(p)
-    if not (p and p.current) then return nil end
-    for i = p.current.index, #p.steps do
-        local step = p.steps[i]
-        if step.alternatives then return step.segment, step.path end
+-- The segment's two ways, when the step you are on has them: shown as two
+-- rows with radio marks, the chosen one lit, the other a click away. There
+-- is no button for it; a segment with one path shows nothing.
+local function ChoosePath(seg, path)
+    char.choices[seg.key] = path.key
+    Announce(("%d – %d: now taking %s%s|r"):format(seg.from, seg.to, HEX.white, path.label))
+    Rebuild()
+end
+
+local function PaintOptions(p)
+    local step = p.current
+    if not (step and step.alternatives) then return end
+    local seg = step.segment
+    Gap(2)
+    Line(("%sTWO WAYS THROUGH %d – %d|r"):format(HEX.dim, seg.from, seg.to), { font = GameFontDisableSmall, gap = 3 })
+    for _, path in ipairs(seg.paths) do
+        OptionRow(path, path == step.path, function() ChoosePath(seg, path) end)
     end
-    return nil
 end
 
 local function PaintFooter(p)
     local buttons = {}
-    buttons[#buttons + 1] = { text = "Skip", width = 56, onClick = function() CommanderTradecraft_Skip() end,
-        tooltip = function(tip) tip:AddLine("Skip this step"); tip:AddLine("Mark it done without doing it. /ctc back undoes the last skip.", 1, 1, 1, true) end }
-    local altSeg, altPath = AltSegment(p)
-    if altSeg then
-        local here = altSeg == p.current.segment
-        buttons[#buttons + 1] = { text = "Alternative", width = 84, onClick = function() CommanderTradecraft_Alternative() end,
-            tooltip = function(tip)
-                tip:AddLine(("%s %d – %d"):format(here and "This step:" or "Coming up:", altSeg.from, altSeg.to))
-                for _, path in ipairs(altSeg.paths) do
-                    local mark = (path == altPath) and HEX.good .. "> " or "   "
-                    tip:AddLine(mark .. path.label .. "|r", 1, 1, 1, true)
-                    if path.note then tip:AddLine("     " .. path.note, 0.7, 0.7, 0.7, true) end
-                end
-                tip:AddLine("Click to take the other path.", 0.6, 0.6, 0.6, true)
-            end }
-    end
     buttons[#buttons + 1] = { text = "Route", width = 56, onClick = function() CommanderTradecraft_Route() end,
         tooltip = function(tip) tip:AddLine("The whole route"); tip:AddLine("Every step, every alternative, and where you are.", 1, 1, 1, true) end }
     buttons[#buttons + 1] = { text = "Shopping", width = 76, onClick = function() CommanderTradecraft_Shopping() end,
@@ -1080,10 +1103,12 @@ Repaint = function()
             PaintBuyStep(p.current, p)
         end
 
-        -- The guide's note for this path
-        if db.ShowTips and p.current.path.note then
+        -- The guide's note for this path (the option rows carry it when
+        -- there are two ways, so it is not printed twice)
+        if db.ShowTips and p.current.path.note and not p.current.alternatives then
             Line(HEX.dim .. p.current.path.note .. "|r", { indent = 4, gap = 4 })
         end
+        PaintOptions(p)
 
         -- Upcoming
         local up = E.Upcoming(p, db.PreviewSteps or 0)
@@ -1132,63 +1157,37 @@ end
 local ledger
 local ledgerMode = "route"
 
-local function BuildRouteText(p)
+-- The route as rows. Each entry paints one line of the list:
+--   { kind = "bracket", bracket = b }
+--   { kind = "step", step = step, indent = n }
+--   { kind = "ways", segment = seg }            "two ways through 156 – 185"
+--   { kind = "option", segment = seg, path = path, chosen = bool }
+-- A segment with two ways lists both under a header, the chosen one lit,
+-- and then the chosen way's steps indented beneath.
+local function RouteEntries(p)
     local out = {}
-    out[#out + 1] = ("%s%s|r  %s"):format(HEX.title, Guide().title, RankText(p))
-    out[#out + 1] = HEX.dim .. Guide().credit .. "|r"
-    out[#out + 1] = ""
-    local lastSeg, lastBracket
+    local lastBracket, lastSeg
     for _, step in ipairs(p.steps) do
         if step.bracket and step.bracket ~= lastBracket then
             lastBracket = step.bracket
-            local b = step.bracket
-            local tag = b.done and (HEX.green .. "  done") or b.current and (HEX.title .. "  you are here") or ""
-            out[#out + 1] = ""
-            out[#out + 1] = ("%s%s %d – %d|r%s|r"):format(HEX.title, b.name:upper(), b.from, b.to, tag)
+            out[#out + 1] = { kind = "bracket", bracket = step.bracket }
         end
-        if step.segment ~= lastSeg then
-            lastSeg = step.segment
-            local seg = step.segment
-            local head = ("%s%d – %d|r"):format(HEX.white, seg.from, seg.to)
-            if #seg.paths > 1 then
-                head = head .. ("   %s%s|r"):format(HEX.dim, "taking: " .. step.path.label)
+        local seg = step.segment
+        local indent = 0
+        -- A finished segment's other way is history; only its steps are listed
+        if #seg.paths > 1 and p.rank < seg.to then
+            if seg ~= lastSeg then
+                out[#out + 1] = { kind = "ways", segment = seg }
                 for _, path in ipairs(seg.paths) do
-                    if path ~= step.path then
-                        head = head .. ("\n      %sor: %s|r"):format(HEX.dim, path.label)
-                    end
+                    out[#out + 1] = { kind = "option", segment = seg, path = path, chosen = path == step.path }
                 end
             end
-            out[#out + 1] = head
+            indent = 1
         end
-        local mark, colour
-        -- ASCII marks on purpose: the client's fonts drop shape glyphs
-        if step.status == "done" then mark, colour = "+", HEX.green
-        elseif step.status == "skipped" then mark, colour = "-", HEX.dim
-        elseif step.status == "current" then mark, colour = ">", HEX.title
-        else mark, colour = " ", HEX.white end
-        local body
-        if step.kind == "craft" then
-            body = ("%s  %s%d – %d|r"):format(SpellName(step.spell), HEX.dim, step.from, step.to)
-            if step.status ~= "done" and step.remaining then
-                body = body .. (" · ~%s"):format(step.remaining == math.huge and "?" or tostring(step.remaining))
-                if step.guideCount then body = body .. (" (guide ×%d)"):format(step.guideCount) end
-            elseif step.count then
-                body = body .. HEX.dim .. (" · ×%d"):format(step.count) .. "|r"
-            end
-        else
-            local v = step.vendors[1]
-            body = ("Buy %s  %s%s%s|r"):format(ItemName(step.item), HEX.dim,
-                v and (v.name .. ", " .. v.zone .. (" (%.1f, %.1f)"):format(v.x, v.y)) or "",
-                step.rep and ("  — " .. step.rep.label) or "")
-        end
-        out[#out + 1] = ("  %s%s|r %s%s|r"):format(colour, mark, colour, body)
+        lastSeg = seg
+        out[#out + 1] = { kind = "step", step = step, indent = indent }
     end
-    out[#out + 1] = ""
-    for _, tip in ipairs(Guide().tips or {}) do
-        out[#out + 1] = HEX.dim .. "- " .. tip .. "|r"
-    end
-    out[#out + 1] = HEX.dim .. "- Decide a later segment now with /ctc alt <range> <main|alt>, e.g. /ctc alt 320-340 alt." .. "|r"
-    return table.concat(out, "\n")
+    return out
 end
 
 -- One bracket's shopping rows as lines: to buy, covered, formulas, and a
@@ -1309,6 +1308,26 @@ local function EnsureLedger()
     scroll:SetPoint("TOPLEFT", ledger, "TOPLEFT", 12, -34)
     scroll:SetPoint("BOTTOMRIGHT", ledger, "BOTTOMRIGHT", -30, 40)
     Commander.UI.SlimScrollBar("CommanderTradecraftLedgerScroll", 2, 2)
+    ledger.shopScroll = scroll
+
+    -- The route: a second scroll frame of pooled rows, shown in route mode
+    local rscroll = CreateFrame("ScrollFrame", "CommanderTradecraftRouteScroll", ledger, "UIPanelScrollFrameTemplate")
+    rscroll:SetPoint("TOPLEFT", ledger, "TOPLEFT", 12, -34)
+    rscroll:SetPoint("BOTTOMRIGHT", ledger, "BOTTOMRIGHT", -30, 40)
+    Commander.UI.SlimScrollBar("CommanderTradecraftRouteScroll", 2, 2)
+    local rcontent = CreateFrame("Frame", nil, rscroll)
+    rcontent:SetSize(1, 1)
+    rscroll:SetScrollChild(rcontent)
+    rscroll:SetScript("OnSizeChanged", function(_, width) rcontent:SetWidth(width) end)
+    rscroll:EnableMouseWheel(true)
+    rscroll:SetScript("OnMouseWheel", function(self, delta)
+        local target = self:GetVerticalScroll() - delta * 36
+        local limit = self:GetVerticalScrollRange()
+        if target < 0 then target = 0 elseif target > limit then target = limit end
+        self:SetVerticalScroll(target)
+    end)
+    ledger.routeScroll, ledger.routeContent = rscroll, rcontent
+    ledger.rows = {}
     -- A multi-line EditBox as the scroll child sizes its own height to its
     -- text (Quartermaster's shopping list and Debug's report do the same)
     local edit = CreateFrame("EditBox", nil, scroll)
@@ -1345,6 +1364,7 @@ local function EnsureLedger()
         edit:SetFocus()
         edit:HighlightText()
     end)
+    ledger.selectAll = selectAll
 
     local route = CreateFrame("Button", nil, ledger, "UIPanelButtonTemplate")
     route:SetSize(70, 22)
@@ -1376,18 +1396,188 @@ local function EnsureLedger()
     return ledger
 end
 
+local ROW_H, HEAD_H = 20, 26
+
+local function RouteRow(i)
+    local row = ledger.rows[i]
+    if row then return row end
+    local content = ledger.routeContent
+    row = CreateFrame("Button", nil, content)
+    row:SetHeight(ROW_H)
+    row:SetPoint("LEFT", content, "LEFT", 0, 0)
+    row:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    row.bar = row:CreateTexture(nil, "BACKGROUND")
+    row.bar:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.bar:SetAllPoints()
+    row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+    row.hl:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.hl:SetVertexColor(1, 1, 1, 0.06)
+    row.hl:SetAllPoints()
+    row.mark = row:CreateTexture(nil, "ARTWORK")
+    row.mark:SetSize(14, 14)
+    row.mark:SetPoint("LEFT", row, "LEFT", 4, 0)
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(16, 16)
+    row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    row.name = row:CreateFontString(nil, "OVERLAY")
+    row.name:SetFontObject(GameFontHighlightSmall)
+    row.name:SetJustifyH("LEFT")
+    if row.name.SetWordWrap then row.name:SetWordWrap(false) end
+    row.range = row:CreateFontString(nil, "OVERLAY")
+    row.range:SetFontObject(GameFontHighlightSmall)
+    row.range:SetJustifyH("RIGHT")
+    row.range:SetPoint("RIGHT", row, "RIGHT", -110, 0)
+    row.range:SetWidth(90)
+    row.count = row:CreateFontString(nil, "OVERLAY")
+    row.count:SetFontObject(GameFontHighlightSmall)
+    row.count:SetJustifyH("RIGHT")
+    row.count:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row.count:SetWidth(100)
+    row.line = row:CreateTexture(nil, "ARTWORK")
+    row.line:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.line:SetVertexColor(1, 1, 1, 0.15)
+    row.line:SetHeight(1)
+    row.line:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 4, 2)
+    row.line:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -4, 2)
+    ledger.rows[i] = row
+    return row
+end
+
+local function StepRowText(step)
+    -- name, range, count, colour
+    local st = step.status
+    local colour = (st == "done" and C.green) or (st == "current" and C.title) or (st == "skipped" and C.grey) or C.text
+    if step.kind == "craft" then
+        local range = ("%d – %d"):format(step.from, step.to)
+        local count
+        if st == "done" then
+            count = step.count and ("×%d"):format(step.count) or ""
+        elseif step.remaining then
+            count = (step.remaining == math.huge) and "?" or ("~%d more"):format(step.remaining)
+            if step.guideCount then count = count .. (" (guide ×%d)"):format(step.guideCount) end
+        else
+            count = ""
+        end
+        return SpellName(step.spell), range, count, colour, SpellIcon(step.spell)
+    else
+        local v = step.vendors[1]
+        local name = "Buy " .. ItemName(step.item) .. (v and (HEX.dim .. "  — " .. v.name .. ", " .. v.zone .. "|r") or "")
+        return name, ("needs %d"):format(step.at or 0), E.FormatMoney(step.cost or 0), colour, ItemIcon(step.item)
+    end
+end
+
+local function PaintRoute(p)
+    local entries = RouteEntries(p)
+    local content = ledger.routeContent
+    local y = 0
+    local n = 0
+    for _, e in ipairs(entries) do
+        n = n + 1
+        local row = RouteRow(n)
+        row:ClearAllPoints()
+        row:SetPoint("LEFT", content, "LEFT", 0, 0)
+        row:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+        row.mark:Hide(); row.icon:Hide(); row.line:Hide(); row.bar:Hide()
+        row.range:SetText(""); row.count:SetText("")
+        row:SetScript("OnClick", nil)
+        row:SetScript("OnEnter", nil); row:SetScript("OnLeave", nil)
+        row.name:ClearAllPoints()
+        row.name:SetPoint("RIGHT", row.range, "LEFT", -8, 0)
+        if e.kind == "bracket" then
+            local b = e.bracket
+            row:SetHeight(HEAD_H)
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+            row.name:SetPoint("LEFT", row, "LEFT", 6, -3)
+            row.name:SetFontObject(GameFontNormal)
+            row.name:SetText(("%s %d – %d"):format(b.name:upper(), b.from, b.to))
+            row.name:SetTextColor(unpack(C.title))
+            row.count:SetText(b.done and (HEX.green .. "done|r") or b.current and (HEX.title .. "you are here|r") or "")
+            row.line:Show()
+        elseif e.kind == "ways" then
+            row:SetHeight(ROW_H)
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+            row.name:SetPoint("LEFT", row, "LEFT", 24, 0)
+            row.name:SetFontObject(GameFontDisableSmall)
+            row.name:SetText(("TWO WAYS THROUGH %d – %d"):format(e.segment.from, e.segment.to))
+            row.name:SetTextColor(unpack(C.dim))
+        elseif e.kind == "option" then
+            row:SetHeight(ROW_H)
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+            row.mark:ClearAllPoints()
+            row.mark:SetPoint("LEFT", row, "LEFT", 28, 0)
+            Radio(row.mark, e.chosen)
+            row.mark:Show()
+            row.name:SetPoint("LEFT", row, "LEFT", 46, 0)
+            row.name:SetFontObject(GameFontHighlightSmall)
+            row.name:SetText(e.path.label)
+            row.name:SetTextColor(unpack(e.chosen and C.text or C.dim))
+            local seg, path = e.segment, e.path
+            row:SetScript("OnClick", function() ChoosePath(seg, path) end)
+            AttachTooltip(row, function(tip)
+                tip:AddLine(path.label)
+                if path.note then tip:AddLine(path.note, 1, 1, 1, true) end
+                tip:AddLine(e.chosen and "The way you are taking." or "Click to take this way instead.", 0.6, 0.6, 0.6, true)
+            end)
+        else
+            local step = e.step
+            local name, range, count, colour, icon = StepRowText(step)
+            row:SetHeight(ROW_H)
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+            local x = 24 + e.indent * 22
+            row.icon:ClearAllPoints()
+            row.icon:SetPoint("LEFT", row, "LEFT", x, 0)
+            row.icon:SetTexture(icon)
+            row.icon:SetAlpha(step.status == "done" and 0.5 or 1)
+            row.icon:Show()
+            row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+            row.name:SetFontObject(GameFontHighlightSmall)
+            row.name:SetText(name)
+            row.name:SetTextColor(unpack(colour))
+            row.range:SetText(range)
+            row.range:SetTextColor(unpack(step.status == "done" and C.dim or C.text))
+            row.count:SetText(count)
+            row.count:SetTextColor(unpack(step.status == "done" and C.dim or C.text))
+            if step.status == "current" then
+                row.bar:SetVertexColor(1, 0.82, 0.15, 0.12)
+                row.bar:Show()
+            end
+            AttachTooltip(row, function(tip)
+                if step.kind == "craft" then
+                    if not pcall(tip.SetHyperlink, tip, "enchant:" .. step.spell) then tip:AddLine(name) end
+                    tip:AddLine(("yellow %d, green %d, grey %d"):format(step.recipe.yellow, step.recipe.green, step.recipe.grey), 0.7, 0.7, 0.7)
+                else
+                    if not pcall(tip.SetHyperlink, tip, "item:" .. step.item) then tip:AddLine(name) end
+                    for _, v in ipairs(step.vendors) do
+                        tip:AddLine(("%s — %s, %s (%.1f, %.1f)"):format(v.name, v.where or "", v.zone, v.x, v.y), 1, 1, 1, true)
+                    end
+                    if step.rep then tip:AddLine(step.rep.label, 1, 0.6, 0.2) end
+                end
+            end)
+        end
+        row:Show()
+        y = y - row:GetHeight()
+    end
+    for i = n + 1, #ledger.rows do ledger.rows[i]:Hide() end
+    content:SetHeight(-y + 4)
+end
+
 PaintLedger = function()
     if not (ledger and ledger:IsShown() and plan) then return end
-    local text
     if ledgerMode == "shop" then
-        ledger.title:SetText("Tradecraft — Shopping List")
-        text = BuildShoppingText(plan)
+        ledger.title:SetText(("Tradecraft — Shopping List  %s"):format(RankText(plan)))
+        local text = BuildShoppingText(plan)
+        ledger.text = text
+        ledger.edit:SetText(text)
+        ledger.shopScroll:Show()
+        ledger.routeScroll:Hide()
+        ledger.selectAll:Show()
     else
-        ledger.title:SetText("Tradecraft — Route")
-        text = BuildRouteText(plan)
+        ledger.title:SetText(("Tradecraft — %s  %s"):format(Guide().title, RankText(plan)))
+        ledger.shopScroll:Hide()
+        ledger.routeScroll:Show()
+        ledger.selectAll:Hide()
+        PaintRoute(plan)
     end
-    ledger.text = text
-    ledger.edit:SetText(text)
     ledger.routeButton:SetEnabled(ledgerMode ~= "route")
     ledger.shopButton:SetEnabled(ledgerMode ~= "shop")
     local haveAuc = ledgerMode == "shop" and Auctionator and Auctionator.API and Auctionator.API.v1
@@ -1440,38 +1630,6 @@ function CommanderTradecraft_Shopping()
     PaintLedger()
 end
 
-function CommanderTradecraft_Skip()
-    if not (loaded and plan and plan.current) then
-        Announce("nothing to skip")
-        return
-    end
-    local step = plan.current
-    char.skipped[step.key] = true
-    char.lastSkipped = step.key
-    Announce("skipped " .. StepTitle(step))
-    Rebuild()
-end
-
-function CommanderTradecraft_Unskip()
-    if not loaded then return end
-    local key = char.lastSkipped
-    if not key or not char.skipped[key] then
-        -- Fall back to the most recent skipped step in route order
-        for i = #(plan and plan.steps or {}), 1, -1 do
-            local step = plan.steps[i]
-            if step.status == "skipped" then key = step.key break end
-        end
-    end
-    if key and char.skipped[key] then
-        char.skipped[key] = nil
-        char.lastSkipped = nil
-        Announce("un-skipped a step")
-        Rebuild()
-    else
-        Announce("nothing to un-skip")
-    end
-end
-
 -- Toggle (or set, with "main" / "alt") the path through the next segment
 -- that has one. A segment key first ("/ctc alt 320-340 alt") picks any
 -- segment on the route instead, for deciding ahead.
@@ -1499,11 +1657,12 @@ function CommanderTradecraft_Alternative(arg)
             Announce("no current step")
             return
         end
-        seg, currentPath = AltSegment(plan)
-        if not seg then
-            Announce("nothing ahead of you has an alternative")
+        seg = plan.current.segment
+        if #seg.paths < 2 then
+            Announce("this step has one way through it — name a segment to decide a later one, e.g. /ctc alt 320-340 alt")
             return
         end
+        currentPath = plan.current.path
     end
     local target
     if which and which ~= "" then
