@@ -72,7 +72,7 @@ local function CreateOptionsPanel()
         key = "Tradecraft",
         title = "Tradecraft",
         addonName = "Commander_Tradecraft",
-        description = "Guided profession leveling, the way the leveling guides do it: one step on screen at a time. The guide window shows the recipe to craft now, how many more it will take, what you hold against what it needs, and a Craft button that casts it on your own gear. Formula steps name the vendor, the zone and the coordinates; a banner tells you when a trainer has a new rank for you. The shopping list is the whole rest of the route, less what is already in your bags and bank. Enchanting 1 to 375 for now.",
+        description = "Guided profession leveling, the way the leveling guides do it: one step on screen at a time. The guide window shows the recipe to craft now, how many more it will take, what you hold against what it needs, and a Craft button — or a Tradecraft macro it keeps up to date for binding — that casts the recipe and lands the enchant on your own gear in one click. Formula steps name the vendor, the zone and the coordinates; a banner tells you when a trainer has a new rank for you. The shopping list is the rest of the route by trainer bracket, each one a shopping trip, less what is already in your bags and bank. Enchanting 1 to 375 for now.",
         event = COMMANDER_TRADECRAFT_EVENTS.UPDATE,
         slash = { "/ctc", "/ctradecraft" },
         slashHandlers = {
