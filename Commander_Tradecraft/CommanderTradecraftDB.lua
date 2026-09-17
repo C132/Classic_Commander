@@ -32,6 +32,7 @@ local DefaultSettings = {
     -- Crafting
     AutoTargetGear = true,
     AutoConfirmReplace = true,
+    KeepMacro = true,
 
     -- Chatter
     AnnounceSteps = true,
@@ -161,6 +162,14 @@ local function CreateOptionsPanel()
         tooltip = "Enchanting a piece that is already enchanted asks you to confirm. Leveling means enchanting the same bracers a hundred times, so with this on the guide answers yes for you — but only for casts it started itself.",
         get = function() return CommanderTradecraftDB.AutoConfirmReplace end,
         set = function(value) CommanderTradecraftDB.AutoConfirmReplace = value end,
+        isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
+    })
+
+    panel:AddCheckbox({
+        label = "Keep A Tradecraft Macro",
+        tooltip = "Maintain a character macro called Tradecraft with the same text the Craft button runs, updated as the route moves on. Drag it from the macro window (/macro) to an action bar once and bind it; it follows the guide from then on. Uses one of your 18 character macro slots.",
+        get = function() return CommanderTradecraftDB.KeepMacro end,
+        set = function(value) CommanderTradecraftDB.KeepMacro = value end,
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
     })
 

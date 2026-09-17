@@ -104,8 +104,19 @@ would fire whatever that button last meant.
 
 Both secure buttons (Open, Craft) live inside plain holder frames that the layout shows, hides and
 anchors; hiding an ordinary parent takes a protected child with it and is allowed at any time.
-Mouse-only buttons register `AnyUp` alone, so a click is one `/cast`, never two. Harness A11, B2–B4
-and F2 cover the macro, the popup rule and the combat rule.
+
+**Both click edges are registered.** `SecureActionButton_OnClick` (this client's
+`SecureTemplates.lua`) acts on exactly one edge — the one `ActionButtonUseKeyDown` names, *down*
+by default — and discards the other. The first build registered `AnyUp` alone, reasoning that a
+mouse click always has an up and one edge would avoid a doubled cast; in game the button did
+nothing, because the up-click it delivered was the edge the handler throws away. Registering both
+is what the suite's other secure buttons do, and it is one `/cast` per click, not two.
+
+**A real macro mirrors the button.** `Tradecraft`, per character, created once and `EditMacro`'d
+whenever the text changes (out of combat only), with the recipe's icon — the way RXPGuides keeps
+its `RXPTargeting` macro. Drag it to a bar, bind it, and it follows the route. An option, on by
+default; it costs one of the eighteen character slots and says so if they are full. Harness A11,
+A13, B2–B4, F2 and F2b cover the edges, the macro, the popup rule and the combat rule.
 
 ## D8 — Progress is per character; settings are per account; Restore Defaults cannot reach progress
 

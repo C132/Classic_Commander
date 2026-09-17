@@ -436,9 +436,12 @@ local function EnsureSecure(key, width, text, tooltipFn)
     local button = CreateFrame("Button", "CommanderTradecraft" .. key, holder,
         "SecureActionButtonTemplate, UIPanelButtonTemplate")
     button:SetAllPoints(holder)
-    -- Mouse only, so one edge is enough: "AnyUp" fires once per click and
-    -- never doubles a /cast the way registering both edges would
-    button:RegisterForClicks("AnyUp")
+    -- BOTH edges. SecureActionButton_OnClick acts on exactly one of them,
+    -- the one the ActionButtonUseKeyDown CVar names (down, by default), and
+    -- discards the other — so registering only "AnyUp" delivered a click
+    -- the handler threw away, and the button did nothing. (In-game
+    -- 2026-09-17; the suite's other secure buttons already knew.)
+    button:RegisterForClicks("AnyDown", "AnyUp")
     button:SetText(text)
     AttachTooltip(button, tooltipFn)
     holder:Hide()
@@ -694,6 +697,45 @@ local function AnswerReplace()
     end
 end
 
+-- A real macro, kept up to date with the button's text, for anyone who
+-- would rather press a key: drag "Tradecraft" from the macro window to a
+-- bar once and it follows the route from then on (the way RXP keeps its
+-- targeting macro). Per character, written out of combat only, and only
+-- when the text changes.
+local MACRO_NAME = "Tradecraft"
+local macroWarned = false
+local lastMacroBody
+
+local function UpdateMacro(step)
+    if not (db.KeepMacro and CreateMacro and EditMacro and GetMacroInfo) then return end
+    if InCombat() then return end
+    local body = CraftMacro(step)
+    if body == "" then
+        body = "/run print('Commander Tradecraft: nothing to craft right now')"
+    end
+    local icon = step and step.kind == "craft" and SpellIcon(step.spell) or nil
+    if not GetMacroInfo(MACRO_NAME) then
+        local _, perChar = GetNumMacros()
+        if (perChar or 0) >= (MAX_CHARACTER_MACROS or 18) then
+            if not macroWarned then
+                macroWarned = true
+                Announce("your character macro slots are full, so the Tradecraft macro could not be made — the Craft button still works")
+            end
+            return
+        end
+        local ok = pcall(CreateMacro, MACRO_NAME, icon or "INV_Misc_QuestionMark", body, true)
+        if ok then
+            lastMacroBody = body
+            Announce(("a macro called %s%s|r is kept up to date with the Craft button — drag it from the macro window (/macro) to a bar and bind it"):format(HEX.white, MACRO_NAME))
+        end
+        return
+    end
+    if body ~= lastMacroBody then
+        local ok = pcall(EditMacro, MACRO_NAME, MACRO_NAME, icon, body)
+        if ok then lastMacroBody = body end
+    end
+end
+
 -- /ctc craft: there is no insecure way to cast, so this can only say how
 local function CraftCurrent()
     if not (plan and plan.current and plan.current.kind == "craft") then
@@ -827,6 +869,7 @@ local function PaintCraftStep(step, p)
     for _, line in ipairs(step.reagents or {}) do
         if line.have < line.per then shortReagent = true end
     end
+    if not inCombat then UpdateMacro(canCraft and step or nil) end
     if canCraft and EnsureCraftButton() and SetCraftMacro(step) then
         craftTooltip = function(tip)
             tip:AddLine("Craft " .. title)
@@ -844,6 +887,9 @@ local function PaintCraftStep(step, p)
             end
             if shortReagent then tip:AddLine("You are short of a reagent.", 1, 0.35, 0.3, true) end
             tip:AddLine(("Macro: %s"):format((CraftMacro(step):gsub("\n", "  "))), 0.6, 0.6, 0.6, true)
+            if db.KeepMacro then
+                tip:AddLine("The same text is kept in a macro called " .. MACRO_NAME .. " for binding.", 0.6, 0.6, 0.6, true)
+            end
         end
         buttons[#buttons + 1] = { secure = "Craft", width = CRAFT_WIDTH }
     else

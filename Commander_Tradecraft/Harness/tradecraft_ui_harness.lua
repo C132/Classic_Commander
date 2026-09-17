@@ -442,6 +442,21 @@ function GetCraftInfo(i)
     if not row then return nil end
     return row.name, nil, row.header and "header" or "optimal", row.available or 5
 end
+-- Macros
+local macros = {}
+local macroWrites = 0
+function GetMacroInfo(name) local m = macros[name]; if m then return name, m.icon, m.body end end
+function GetNumMacros() local n = 0 for _ in pairs(macros) do n = n + 1 end return 0, n end
+function CreateMacro(name, icon, body, perChar)
+    if me.combat then error("CreateMacro in combat") end
+    macros[name] = { icon = icon, body = body, perChar = perChar }; macroWrites = macroWrites + 1
+end
+function EditMacro(name, newName, icon, body)
+    if me.combat then error("EditMacro in combat") end
+    macros[name].body = body; if icon then macros[name].icon = icon end; macroWrites = macroWrites + 1
+end
+MAX_CHARACTER_MACROS = 18
+
 -- DoCraft is protected on this client; the mock makes calling it a hard
 -- error so no insecure path back to it can creep in
 function DoCraft() error("ADDON_ACTION_FORBIDDEN: DoCraft()") end
@@ -494,6 +509,11 @@ WidgetMT.__index = function(self, key)
     end
     if key == "IsEnabled" then
         local fn = function(s) return s.__enabled ~= false end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "RegisterForClicks" then
+        local fn = function(s, ...) s.__clicks = { ... } end
         rawset(self, key, fn)
         return fn
     end
@@ -632,6 +652,14 @@ local b = Buttons()
 CHECK(b["Craft"] ~= nil and b["Craft"].__attr and b["Craft"].__attr.type == "macro", "A11 craft is a secure macro button, window or no window")
 CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 9", "A11 macro casts and targets the worn bracers", b["Craft"].__attr.macrotext)
 CHECK(_G.CommanderTradecraftCraft == b["Craft"], "A11 the button has its global name")
+CHECK(b["Craft"].__clicks and b["Craft"].__clicks[1] == "AnyDown" and b["Craft"].__clicks[2] == "AnyUp", "A11 both click edges registered (the secure handler keeps one)", b["Craft"].__clicks and table.concat(b["Craft"].__clicks, ","))
+-- A13 a per-character macro is made and mirrors the button
+CHECK(macros.Tradecraft and macros.Tradecraft.perChar == true, "A13 Tradecraft macro created per character")
+CHECK(macros.Tradecraft.body == b["Craft"].__attr.macrotext, "A13 macro mirrors the button", macros.Tradecraft and macros.Tradecraft.body)
+local writesBefore = macroWrites
+Fire("BAG_UPDATE_DELAYED")
+Settle()
+CHECK(macroWrites == writesBefore, "A13 unchanged text is not rewritten")
 CHECK(b["Open Enchanting"] ~= nil, "A11 secure open button offered")
 CHECK(b["Skip"] and b["Route"] and b["Shopping"], "A11 footer buttons")
 CHECK(b["Alternative"] ~= nil, "A11 alternative offered: 156-185 is coming and has two paths")
@@ -712,6 +740,7 @@ Fire("UNIT_INVENTORY_CHANGED", "player")
 Settle()
 b = Buttons()
 CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 0 3", "B3 bag bracers targeted", b["Craft"].__attr.macrotext)
+CHECK(macros.Tradecraft.body == b["Craft"].__attr.macrotext, "B3 macro follows the button")
 bagSlots[0] = nil
 Fire("UNIT_INVENTORY_CHANGED", "player")
 Settle()
@@ -943,6 +972,17 @@ b = Buttons()
 CHECK(b["Open Enchanting"] == nil, "F2 no secure button in combat")
 CHECK(b["Craft"] and b["Craft"].__attr == nil and b["Craft"].__enabled == false, "F2 craft is a disabled plain button in combat (no attribute writes)")
 CHECK(#harnessFailedErrors == 0, "F2 no attribute written in combat", harnessFailedErrors[1])
+-- F2b the macro option off leaves the macro alone
+me.combat = false
+Fire("PLAYER_REGEN_ENABLED")
+Settle()
+CommanderTradecraftDB.KeepMacro = false
+macros.Tradecraft.body = "untouched"
+Fire("BAG_UPDATE_DELAYED")
+Settle()
+CHECK(macros.Tradecraft.body == "untouched", "F2b option off -> macro not written")
+CommanderTradecraftDB.KeepMacro = true
+me.combat = true
 me.combat = false
 Fire("PLAYER_REGEN_ENABLED")
 Settle()

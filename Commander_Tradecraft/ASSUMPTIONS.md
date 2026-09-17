@@ -58,12 +58,21 @@ Symptom if wrong: the confirm dialog appears every cast. Test: Craft twice on th
 
 ## A6 — A `SecureActionButton` with `type=spell, spell=<profession name>` opens the craft window
 
-The Open button. Mouse-only, so it registers `AnyUp` alone — one fire per click, whichever way
-`ActionButtonUseKeyDown` points (that CVar decides which edge a *binding* delivers; a mouse click
-always has an up). The button is inside an ordinary holder frame so nothing protected is ever
-shown, hidden or moved by the layout.
+The Open button. Both click edges are registered: `SecureActionButton_OnClick` acts on the one
+`ActionButtonUseKeyDown` names and discards the other (in game 2026-09-17: `AnyUp` alone did
+nothing). The button is inside an ordinary holder frame so nothing protected is ever shown, hidden
+or moved by the layout.
 
 Symptom if wrong: the button does nothing. `/cast Enchanting` still works. Test: click it.
+
+## A6b — `CreateMacro(name, icon, body, true)` / `EditMacro(name, name, icon, body)` maintain the Tradecraft macro
+
+The RXPGuides pattern (`Targeting.lua`), with the per-character flag added. The icon passed is
+whatever `GetSpellTexture` returns for the recipe (a file id on this client); both calls are
+`pcall`ed, so a rejected icon costs the icon, not the macro.
+
+Symptom if wrong: no `Tradecraft` macro appears in `/macro`, or it keeps a question-mark icon. The
+Craft button is unaffected. Test: open `/macro` after the guide has painted a craft step.
 
 ## A7 — `GetItemCount(id, true)` includes the bank once the bank has been opened this session
 
