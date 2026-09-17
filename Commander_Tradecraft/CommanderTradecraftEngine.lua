@@ -80,6 +80,21 @@ function E.PlannedCrafts(recipe, from, to, margin)
     return planned
 end
 
+-- What to plan for what is left of a step: the model with its margin, but
+-- never fewer than the guide's own count for that stretch (pro rata by
+-- skill points). The guide's figures are the ones people have levelled on;
+-- the model is only allowed to raise them (a mid-route start, a bigger
+-- margin), never to shave them.
+function E.PlannedFor(recipe, lo, hi, margin, def)
+    local planned = E.PlannedCrafts(recipe, lo, hi, margin)
+    if def and def.count and planned ~= math.huge and hi > lo then
+        local span = def.to - def.from
+        local floor_ = (span > 0) and math.ceil(def.count * (hi - lo) / span - 1e-9) or def.count
+        if floor_ > planned then planned = floor_ end
+    end
+    return planned
+end
+
 -- ---------------------------------------------------------------------------
 -- Choices
 -- ---------------------------------------------------------------------------
@@ -233,7 +248,7 @@ function E.Build(guide, world, state, opts)
                     step.expected = E.ExpectedCrafts(recipe, from, def.to)
                     step.remaining = (step.expected == math.huge) and math.huge
                         or math.ceil(step.expected - 1e-9)
-                    step.planned = E.PlannedCrafts(recipe, from, def.to, margin)
+                    step.planned = E.PlannedFor(recipe, from, def.to, margin, def)
                     -- The guide's own figure, scaled to what is left
                     if def.count then
                         local span = def.to - def.from
@@ -248,15 +263,27 @@ function E.Build(guide, world, state, opts)
                         end
                     end
                     -- The same reagents, split at every bracket boundary
-                    -- the remaining range crosses
-                    for _, b in ipairs(brackets) do
-                        local lo, hi = math.max(from, b.from), math.min(def.to, b.to)
-                        if lo < hi then
-                            local part = E.PlannedCrafts(recipe, lo, hi, margin)
-                            if part ~= math.huge then
-                                for _, pair in ipairs(recipe.reagents) do
-                                    b.need[pair[1]] = (b.need[pair[1]] or 0) + pair[2] * part
-                                end
+                    -- the remaining range crosses. The step's planned total
+                    -- is shared out by each part's share of the model — the
+                    -- yellow tail of a step costs more per point than its
+                    -- orange start, and a straight pro-rata split would
+                    -- hand the first bracket dust the second one needs.
+                    if step.planned ~= math.huge then
+                        local parts, modelSum = {}, 0
+                        for _, b in ipairs(brackets) do
+                            local lo, hi = math.max(from, b.from), math.min(def.to, b.to)
+                            if lo < hi then
+                                local m = E.ExpectedCrafts(recipe, lo, hi)
+                                parts[#parts + 1] = { b = b, model = m }
+                                modelSum = modelSum + m
+                            end
+                        end
+                        for _, part in ipairs(parts) do
+                            local crafts = (modelSum > 0)
+                                and math.ceil(step.planned * part.model / modelSum - 1e-9)
+                                or step.planned
+                            for _, pair in ipairs(recipe.reagents) do
+                                part.b.need[pair[1]] = (part.b.need[pair[1]] or 0) + pair[2] * crafts
                             end
                         end
                     end

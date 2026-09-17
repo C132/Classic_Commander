@@ -172,6 +172,16 @@ for _, segment in ipairs(GUIDE.segments) do
     end
 end
 
+-- B3a the guide's count is a floor on the plan, pro rata for what is left
+do
+    local rec, def = D.RECIPES[20015], { count = 14, from = 285, to = 299 }
+    CHECK(E.PlannedFor(rec, 285, 299, 0, def) == 14, "B3a whole step floors at the guide")
+    CHECK(E.PlannedFor(rec, 292, 299, 0, def) == 7, "B3a half left floors at half")
+    local big = D.RECIPES[13536]
+    -- Lesser Strength models above its guide count (36.2 vs 35): the model wins
+    CHECK(E.PlannedFor(big, 156, 185, 0, { count = 35, from = 156, to = 185 }) == 37, "B3a model above guide keeps the model", E.PlannedFor(big, 156, 185, 0, { count = 35, from = 156, to = 185 }))
+end
+
 -- B3b a single orange craft plans exactly one whatever the margin
 CHECK(E.PlannedCrafts(D.RECIPES[7421], 1, 2, 0.5) == 1, "B3b one rod is one rod")
 CHECK(E.PlannedCrafts(D.RECIPES[7457], 90, 100, 0.3) == 10, "B3b orange run gets no margin")
@@ -418,16 +428,16 @@ do
         for _, step in ipairs(b.steps) do if step.spell == 7418 then listed = listed + 1 end end
     end
     CHECK(listed == 1 and plan.steps[2].bracket == plan.brackets[1], "C15 straddling step listed once, where it starts")
-    -- but its dust is split: bracket 1 wants 1 (rod) + 68 orange (2..69) +
-    -- the yellow 70..74 with the margin (5.27 -> 6) = 75; bracket 2 wants
-    -- the yellow tail 75..90 plus Minor Stamina and the silver rod
+    -- but its dust is split by model share of the step's planned 100 (the
+    -- guide's floor): bracket 1 gets 1 (rod) + ceil(100 * 73.3/95.2) = 77,
+    -- bracket 2 the yellow tail's share plus Minor Stamina and the silver rod
     local b1, b2 = plan.brackets[1].need[10940], plan.brackets[2].need[10940]
-    CHECK(b1 == 75, "C15 bracket 1 strange dust", b1)
+    CHECK(b1 == 78, "C15 bracket 1 strange dust", b1)
     CHECK(b2 and b2 > 30 + 6 and b2 < 74, "C15 bracket 2 strange dust", b2)
     -- The 50 held go to bracket 1 first; bracket 2 buys everything
     local function row(b, id) for _, r in ipairs(b.shopping) do if r.id == id then return r end end end
     local r1, r2 = row(plan.brackets[1], 10940), row(plan.brackets[2], 10940)
-    CHECK(r1 and r1.covered == 50 and r1.buy == 25, "C15 held stock covers bracket 1 first", r1 and r1.buy)
+    CHECK(r1 and r1.covered == 50 and r1.buy == 28, "C15 held stock covers bracket 1 first", r1 and r1.buy)
     CHECK(r2 and r2.covered == 0 and r2.buy == r2.need, "C15 nothing left for bracket 2")
     -- Bracket sums equal the whole-route need (the split is exact for orange
     -- runs, and never under)

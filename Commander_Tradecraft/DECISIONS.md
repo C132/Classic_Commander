@@ -36,6 +36,15 @@ The model is what lets the guide work for someone starting at 146 rather than 1 
 are for whole segments. The two agree within twenty percent everywhere, and where they disagree the
 guide is the generous one with itself (harness B3 names the two places).
 
+**The guide's count is a floor.** For any step the guide gives a count for, the plan is
+`max(model + margin, guide count pro rata for what is left)`. Verified against the guide's own
+materials list (its .mhtml export, 2026-09-17): the model alone ran under it on four items by a few
+percent — Illusion Dust 314 against 322 — and someone shopping from this list should never come up
+short of what the published guide says. With the floor the list equals the guide everywhere and
+exceeds it where the model is stricter (Arcane Dust 333 against 309; harness B3a, C13). The
+bracket split shares a step's planned total by each part's model share, because the yellow tail of
+a step costs more per point than its orange start.
+
 **Margin goes on the uncertain part only.** The shopping list plans `certain + ceil(uncertain × (1 +
 margin))`. A whole-count margin made a one-rod step plan two rods and warned you about a Runed Copper
 Rod you were holding (harness B3b, C1, C9 — all three failed before this was split).
