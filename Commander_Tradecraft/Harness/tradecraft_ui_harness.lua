@@ -598,7 +598,7 @@ end
 -- ===========================================================================
 
 -- A previous session left a choice and a bit of memory behind
-CommanderTradecraftChar = { choices = { ["156-185"] = "alt" }, knownRecipes = { [13501] = true } }
+CommanderTradecraftChar = { choices = { ["156-185"] = "alt" }, knownRecipes = {} }
 CommanderTradecraftDB = { Margin = 0.2 }
 
 -- The frames were created at load with the mock's original CreateFrame; the
@@ -635,6 +635,17 @@ CHECK(_G.CommanderTradecraftCraft == b["Craft"], "A11 the button has its global 
 CHECK(b["Open Enchanting"] ~= nil, "A11 secure open button offered")
 CHECK(b["Skip"] and b["Route"] and b["Shopping"], "A11 footer buttons")
 CHECK(b["Alternative"] ~= nil, "A11 alternative offered: 156-185 is coming and has two paths")
+
+-- A12 before the craft list has ever been read, an unknown recipe asks for
+-- a look rather than claiming you do not know it
+me.known[13501] = nil
+Fire("SPELLS_CHANGED")
+Settle()
+CHECK(Has("Open your Enchanting window once"), "A12 asks for a look before the first scan")
+CHECK(not Has("You do not know this recipe"), "A12 no false claim")
+me.known[13501] = true
+Fire("SPELLS_CHANGED")
+Settle()
 
 -- ===========================================================================
 -- B. Skill-ups and the craft window

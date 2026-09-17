@@ -798,7 +798,12 @@ local function PaintCraftStep(step, p)
     if step.capped then
         Line(HEX.bad .. "At your skill cap — see the trainer first." .. "|r", { indent = 8 })
     end
-    if step.needsFormula then
+    -- "Not known" is only certain once the craft list has been read this
+    -- character; before that, IsSpellKnown may simply not answer for
+    -- recipes (ASSUMPTIONS A2), and the honest line is to ask for a look
+    if (step.needsFormula or step.needsTrainer) and next(char.knownRecipes) == nil and not craftOpen then
+        Line(("%sOpen your %s window once|r so the guide can read which recipes you know."):format(HEX.warn, p.profession.name), { indent = 8 })
+    elseif step.needsFormula then
         Line(("%sYou do not know this recipe yet.|r Learn it from %s."):format(HEX.warn, ItemName(step.needsFormula)), { indent = 8 })
     elseif step.needsTrainer then
         Line(("%sYou do not know this recipe yet.|r Your %s trainer teaches it at %d."):format(HEX.warn, p.profession.name, step.needsTrainer), { indent = 8 })
