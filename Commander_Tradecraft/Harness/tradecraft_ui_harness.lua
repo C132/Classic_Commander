@@ -468,9 +468,32 @@ Auctionator = { API = { v1 = {
 } } }
 
 function hooksecurefunc(tbl, name, fn) end
+-- Events this client actually has, from Blizzard_APIDocumentationGenerated
+-- (classic_anniversary, 2026-09-17). The real client throws on an unknown
+-- name and the throw took every later registration down with it once; the
+-- mock throws the same way so the list can never drift again.
+local KNOWN_EVENTS = {}
+for name in ([[
+ADDON_LOADED PLAYER_LOGIN PLAYER_LOGOUT PLAYER_ENTERING_WORLD
+SKILL_LINES_CHANGED CHAT_MSG_SKILL BAG_UPDATE_DELAYED PLAYERBANKSLOTS_CHANGED BANKFRAME_OPENED
+CRAFT_SHOW CRAFT_UPDATE CRAFT_CLOSE SPELLS_CHANGED NEW_RECIPE_LEARNED UPDATE_FACTION
+UNIT_INVENTORY_CHANGED PLAYER_REGEN_ENABLED PLAYER_REGEN_DISABLED REPLACE_ENCHANT
+GET_ITEM_INFO_RECEIVED
+]]):gmatch("%S+") do KNOWN_EVENTS[name] = true end
 -- Buttons remember whether they are enabled
 local baseIndex = WidgetMT.__index
 WidgetMT.__index = function(self, key)
+    if key == "RegisterEvent" then
+        local fn = function(s, event)
+            if not KNOWN_EVENTS[event] then
+                error('Frame:RegisterEvent(): Attempt to register unknown event "' .. tostring(event) .. '"')
+            end
+            eventRegistry[event] = eventRegistry[event] or {}
+            table.insert(eventRegistry[event], s)
+        end
+        rawset(self, key, fn)
+        return fn
+    end
     if key == "SetEnabled" then
         local fn = function(s, v) s.__enabled = v and true or false end
         rawset(self, key, fn)

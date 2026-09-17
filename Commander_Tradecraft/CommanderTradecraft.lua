@@ -1418,14 +1418,18 @@ end
 
 local events = CreateFrame("Frame")
 
+-- Every name here is in this client's Blizzard_APIDocumentationGenerated
+-- (checked 2026-09-17). LEARNED_SPELL_IN_TAB is not, and registering it
+-- threw at login and took every event after it down with it; SPELLS_CHANGED
+-- and NEW_RECIPE_LEARNED cover a formula being learned.
 local WATCHED = {
     "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
     "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "BANKFRAME_OPENED",
     "CRAFT_SHOW", "CRAFT_UPDATE", "CRAFT_CLOSE",
-    "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB",
+    "SPELLS_CHANGED", "NEW_RECIPE_LEARNED",
     "UPDATE_FACTION", "PLAYER_ENTERING_WORLD",
     "UNIT_INVENTORY_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
-    "REPLACE_ENCHANT",
+    "REPLACE_ENCHANT", "GET_ITEM_INFO_RECEIVED",
 }
 
 events:SetScript("OnEvent", function(_, event, arg1)
@@ -1451,8 +1455,13 @@ function CommanderTradecraft_OnLogin()
     db = CommanderTradecraftDB
     char = CommanderTradecraftChar
     loaded = true
+    -- Each registration on its own: an event this client does not know
+    -- must cost that one event, never the rest of the list
     for _, e in ipairs(WATCHED) do
-        events:RegisterEvent(e)
+        local ok = pcall(events.RegisterEvent, events, e)
+        if not ok then
+            print("Commander Tradecraft: this client has no event " .. e .. " — skipped")
+        end
     end
     Commander.AddListener(Events.UPDATE, function()
         if not db.EnableTradecraft then
@@ -1461,9 +1470,5 @@ function CommanderTradecraft_OnLogin()
         end
         ScheduleRebuild()
     end)
-    -- Item names arrive from the server on first sight; repaint when they do
-    if events.RegisterEvent then
-        events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-    end
     Rebuild()
 end

@@ -57,6 +57,9 @@ Checks worth naming:
 - **C1** — "Alternative" applies to the *coming* segment when the current one has no choice.
 - **F2** — in combat the Open button is neither offered nor touched; after combat it is back.
 - **F4** — Restore Defaults leaves the character's choices alone.
+- **The mock rejects unknown events.** `RegisterEvent` throws for any name not in this client's
+  `Blizzard_APIDocumentationGenerated`, the way the real client does — `LEARNED_SPELL_IN_TAB` got
+  through the first time and took every event registered after it down with it at login.
 - **Z** — the skill headers were expanded exactly once, for the no-profession case, never while the
   line was there.
 
