@@ -48,11 +48,13 @@ spell at the item when one is up.
 Symptom if wrong: the cursor glows and nothing happens; the enchant is still yours to place by hand.
 "Cast On My Own Gear" turns the line off. Test: Craft on Minor Health with bracers equipped.
 
-## A5 — The replace question is `StaticPopup "REPLACE_ENCHANT"`, raised by the event of that name, and `ReplaceEnchant()` answers it
+## A5 — The replace question is up as `StaticPopup1` by the time the macro's `/click StaticPopup1Button1` runs
 
-Answered only within eight seconds of a press of our button (a `PreClick` hook notes the time) and
-hidden afterwards. `ReplaceEnchant` is listed as an ordinary function in the client's
-ItemDocumentation. If the popup has another name the question simply stays up for the player.
+**Verified in game 2026-09-17** with a hand-written macro of the same three lines. `ReplaceEnchant()`
+is protected on this client (it raised `ADDON_ACTION_FORBIDDEN`) despite being listed as an ordinary
+function in ItemDocumentation, so the answer comes from inside the secure macro. Only the
+`StaticPopup1` slot is pressed; if another dialog already occupies it the replace question lands in
+`StaticPopup2` and stays up for the player.
 
 Symptom if wrong: the confirm dialog appears every cast. Test: Craft twice on the same bracers.
 

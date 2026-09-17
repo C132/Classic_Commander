@@ -96,11 +96,13 @@ wearing; in combat the button is replaced by a disabled plain one and nothing pr
 "Cast On My Own Gear" drops the `/use` line. The tooltip shows the macro, so anyone who would rather
 bind it can copy it.
 
-The replace-enchant question is answered from the `REPLACE_ENCHANT` event with `ReplaceEnchant()`
-(an ordinary function per the client's docs), but only within eight seconds of a press of *our*
-button (a `PreClick` hook notes the time) — a replace question from anywhere else is left for the
-player. `/click StaticPopup1Button1` in the macro was considered and rejected: with no popup up it
-would fire whatever that button last meant.
+The replace-enchant question is the macro's third line, `/click StaticPopup1Button1`. The first
+build answered it from the `REPLACE_ENCHANT` event with `ReplaceEnchant()` — the client's docs list
+it as an ordinary function, and in game it raised `ADDON_ACTION_FORBIDDEN` all the same (2026-09-17).
+The client raises the question synchronously inside the `/use`, so the next macro line lands on it;
+and `StaticPopup_OnClick` returns at once when its dialog is not shown, so the line is a no-op on a
+fresh piece. The residual risk, and the reason it is an option: whatever dialog happens to be
+`StaticPopup1` at that instant is the one accepted.
 
 Both secure buttons (Open, Craft) live inside plain holder frames that the layout shows, hides and
 anchors; hiding an ordinary parent takes a protected child with it and is allowed at any time.

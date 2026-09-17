@@ -462,7 +462,6 @@ local function EnsureOpenButton()
     return s and s.holder
 end
 
-local craftingSince = 0
 local craftTooltip -- set per paint
 
 local function EnsureCraftButton()
@@ -473,10 +472,6 @@ local function EnsureCraftButton()
         s.ready = true
         s.button:SetAttribute("type", "macro")
         s.button:SetAttribute("macrotext", "")
-        -- Insecure hooks are allowed on a secure button; this one just
-        -- notes when we cast, so the replace question can be told apart
-        -- from anyone else's
-        s.button:SetScript("PreClick", function() craftingSince = GetTime() end)
     end
     return s and s.holder
 end
@@ -654,7 +649,12 @@ end
 
 -- The macro the Craft button runs for a step. "/cast" by the recipe's
 -- localised name; for an enchant, "/use <slot>" (worn) or "/use <bag> <slot>"
--- (bags) hands the glowing cursor its target on the same click.
+-- (bags) hands the glowing cursor its target on the same click, and
+-- "/click StaticPopup1Button1" answers the replace-enchant question the
+-- client raises synchronously inside that /use. ReplaceEnchant() is
+-- protected on this client (in game 2026-09-17), so the answer has to come
+-- from inside the secure macro; StaticPopup_OnClick returns at once when
+-- the dialog is not shown, so the line is a no-op on a fresh piece.
 local function CraftMacro(step)
     if not (step and step.kind == "craft") then return "" end
     local lines = { "/cast " .. SpellName(step.spell) }
@@ -665,6 +665,9 @@ local function CraftMacro(step)
             lines[#lines + 1] = "/use " .. a
         elseif where == "bags" then
             lines[#lines + 1] = "/use " .. a .. " " .. b
+        end
+        if where and db.AutoConfirmReplace then
+            lines[#lines + 1] = "/click StaticPopup1Button1"
         end
     end
     return table.concat(lines, "\n")
@@ -681,20 +684,6 @@ local function SetCraftMacro(step)
         s.button:SetAttribute("macrotext", text)
     end
     return true
-end
-
--- The replace-enchant question, answered only for casts we started in the
--- last few seconds. The client raises REPLACE_ENCHANT when the glowing
--- cursor lands on a piece that already carries one and UIParent shows the
--- popup from it; our handler runs after UIParent's.
-local function AnswerReplace()
-    if not (db.AutoConfirmReplace and StaticPopup_Visible and ReplaceEnchant) then return end
-    if GetTime() - craftingSince > 8 then return end
-    local which = StaticPopup_Visible("REPLACE_ENCHANT")
-    if which then
-        ReplaceEnchant()
-        if StaticPopup_Hide then StaticPopup_Hide("REPLACE_ENCHANT") end
-    end
 end
 
 -- A real macro, kept up to date with the button's text, for anyone who
@@ -876,7 +865,7 @@ local function PaintCraftStep(step, p)
             if step.recipe.target then
                 local where = TargetFor(step.recipe)
                 if where == "equipped" then
-                    tip:AddLine("Casts it on the " .. (D.TARGET_WORDS[step.recipe.target] or "gear") .. " you are wearing.", 1, 1, 1, true)
+                    tip:AddLine("Casts it on the " .. (D.TARGET_WORDS[step.recipe.target] or "gear") .. " you are wearing" .. (db.AutoConfirmReplace and " and answers the replace question." or "."), 1, 1, 1, true)
                 elseif where == "bags" then
                     tip:AddLine("Casts it on the " .. (D.TARGET_WORDS[step.recipe.target] or "gear") .. " in your bags.", 1, 1, 1, true)
                 else
@@ -1575,7 +1564,7 @@ local WATCHED = {
     "SPELLS_CHANGED", "NEW_RECIPE_LEARNED",
     "UPDATE_FACTION", "PLAYER_ENTERING_WORLD",
     "UNIT_INVENTORY_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
-    "REPLACE_ENCHANT", "GET_ITEM_INFO_RECEIVED",
+    "GET_ITEM_INFO_RECEIVED",
 }
 
 events:SetScript("OnEvent", function(_, event, arg1)
@@ -1588,9 +1577,6 @@ events:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "CRAFT_CLOSE" then
         craftOpen = false
         craftIndexBySpell = {}
-    elseif event == "REPLACE_ENCHANT" then
-        AnswerReplace()
-        return
     elseif event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then
         return
     end

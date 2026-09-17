@@ -464,7 +464,7 @@ local popup = nil
 local replaced = 0
 function StaticPopup_Visible(which) return popup == which and 1 or nil end
 function StaticPopup_Hide(which) if popup == which then popup = nil end end
-function ReplaceEnchant() replaced = replaced + 1 end
+function ReplaceEnchant() replaced = replaced + 1; error("ADDON_ACTION_FORBIDDEN: ReplaceEnchant()") end
 
 -- Neighbours
 local waypoints = {}
@@ -650,7 +650,7 @@ CHECK(Has("Expert"), "A9 expert trainer banner (rank 146 >= 125)")
 CHECK(Has("Runed Golden Rod"), "A10 preview shows the next step")
 local b = Buttons()
 CHECK(b["Craft"] ~= nil and b["Craft"].__attr and b["Craft"].__attr.type == "macro", "A11 craft is a secure macro button, window or no window")
-CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 9", "A11 macro casts and targets the worn bracers", b["Craft"].__attr.macrotext)
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 9\n/click StaticPopup1Button1", "A11 macro casts, targets the worn bracers, answers the replace question", b["Craft"].__attr.macrotext)
 CHECK(_G.CommanderTradecraftCraft == b["Craft"], "A11 the button has its global name")
 CHECK(b["Craft"].__clicks and b["Craft"].__clicks[1] == "AnyDown" and b["Craft"].__clicks[2] == "AnyUp", "A11 both click edges registered (the secure handler keeps one)", b["Craft"].__clicks and table.concat(b["Craft"].__clicks, ","))
 -- A13 a per-character macro is made and mirrors the button
@@ -709,26 +709,17 @@ b = Buttons()
 CHECK(b["Craft"] and b["Craft"].__attr, "B1 craft still the secure button with the window open")
 CHECK(b["Open Enchanting"] == nil, "B1 open button gone while open")
 
--- B2 a click notes the time (PreClick), and the replace question raised
--- by the client afterwards is answered; one raised long after is not
-me.lastPickup = nil
-b["Craft"].__scripts.PreClick(b["Craft"])
-popup = "REPLACE_ENCHANT"
-Fire("REPLACE_ENCHANT")
-CHECK(replaced == 1 and popup == nil, "B2 replace-enchant answered from the event", replaced)
-popup = "REPLACE_ENCHANT"
-Advance(20)
-Fire("REPLACE_ENCHANT")
-CHECK(replaced == 1 and popup == "REPLACE_ENCHANT", "B2 a late popup is left alone")
-popup = nil
--- with the option off, never
+-- B2 the replace answer is the macro's third line, and only with the option
 CommanderTradecraftDB.AutoConfirmReplace = false
-b["Craft"].__scripts.PreClick(b["Craft"])
-popup = "REPLACE_ENCHANT"
-Fire("REPLACE_ENCHANT")
-CHECK(replaced == 1 and popup == "REPLACE_ENCHANT", "B2 option off -> not answered")
-popup = nil
+Fire("UNIT_INVENTORY_CHANGED", "player")
+Settle()
+b = Buttons()
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 9", "B2 option off -> no /click line", b["Craft"].__attr.macrotext)
 CommanderTradecraftDB.AutoConfirmReplace = true
+Fire("UNIT_INVENTORY_CHANGED", "player")
+Settle()
+-- ReplaceEnchant is protected on this client: nothing may call it
+CHECK(replaced == 0, "B2 ReplaceEnchant never called")
 
 -- B3 no bracers worn: the macro targets the ones in the bags; none at all:
 -- the macro just casts and the step warns
@@ -739,13 +730,13 @@ bagSlots[0] = { [3] = 2140 }
 Fire("UNIT_INVENTORY_CHANGED", "player")
 Settle()
 b = Buttons()
-CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 0 3", "B3 bag bracers targeted", b["Craft"].__attr.macrotext)
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina\n/use 0 3\n/click StaticPopup1Button1", "B3 bag bracers targeted", b["Craft"].__attr.macrotext)
 CHECK(macros.Tradecraft.body == b["Craft"].__attr.macrotext, "B3 macro follows the button")
 bagSlots[0] = nil
 Fire("UNIT_INVENTORY_CHANGED", "player")
 Settle()
 b = Buttons()
-CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina", "B3 no target -> cast only", b["Craft"].__attr.macrotext)
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Bracer - Lesser Stamina", "B3 no target -> cast only, no /click either", b["Craft"].__attr.macrotext)
 CHECK(Has("You need bracers"), "B3 warning painted on the step")
 -- /ctc craft can only explain
 printLog = {}
@@ -994,7 +985,7 @@ me.equipped[17] = 2143
 Fire("UNIT_INVENTORY_CHANGED", "player")
 Settle()
 b = Buttons()
-CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Shield - Greater Stamina\n/use 17", "F2 shield step targets the worn shield", b["Craft"].__attr.macrotext)
+CHECK(b["Craft"].__attr.macrotext == "/cast Enchant Shield - Greater Stamina\n/use 17\n/click StaticPopup1Button1", "F2 shield step targets the worn shield", b["Craft"].__attr.macrotext)
 
 -- F3 finished: hidden by default, and Show explains why
 me.rank, me.maxRank = 375, 375

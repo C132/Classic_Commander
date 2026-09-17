@@ -159,7 +159,7 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
     }, {
         label = "Confirm Replacing An Enchant",
-        tooltip = "Enchanting a piece that is already enchanted asks you to confirm. Leveling means enchanting the same bracers a hundred times, so with this on the guide answers yes for you — but only for casts it started itself.",
+        tooltip = "Enchanting a piece that is already enchanted asks you to confirm. Leveling means enchanting the same bracers a hundred times, so with this on the Craft macro ends with /click StaticPopup1Button1, which presses that dialog's Accept. The line does nothing when no dialog is up; if some other dialog happened to be up at that instant it would be the one accepted, so turn this off if that worries you.",
         get = function() return CommanderTradecraftDB.AutoConfirmReplace end,
         set = function(value) CommanderTradecraftDB.AutoConfirmReplace = value end,
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,

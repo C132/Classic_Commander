@@ -4,7 +4,7 @@ Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 775 checks
-/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 122 checks
+/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 121 checks
 /opt/homebrew/bin/luajit globals_lint.lua              # 4 files, 0 undeclared globals
 ```
 
@@ -58,11 +58,11 @@ Checks worth naming:
 - **A11/A13/F2b** — both click edges registered on the secure buttons; the `Tradecraft` macro is
   created per character, mirrors the button, is not rewritten when unchanged, and is left alone with
   the option off.
-- **B2** — the replace question answered from its event after a press of our button, left alone
-  twenty seconds later or with the option off.
-- **The mock's `DoCraft` throws** the way the client does (it is protected there), and
-  `SetAttribute` throws in combat, so neither an insecure craft path nor an in-combat attribute
-  write can come back.
+- **B2** — the replace answer is the macro's `/click StaticPopup1Button1` line, present only with
+  the option on; `ReplaceEnchant` is never called.
+- **The mock's `DoCraft` and `ReplaceEnchant` throw** the way the client does (both are protected
+  there), and `SetAttribute` throws in combat, so neither an insecure craft path nor an in-combat
+  attribute write can come back.
 - **D4** — a character without the profession is not shown the guide unless they ask for it.
 - **C1** — "Alternative" applies to the *coming* segment when the current one has no choice.
 - **F2** — in combat the Open button is neither offered nor touched; after combat it is back.

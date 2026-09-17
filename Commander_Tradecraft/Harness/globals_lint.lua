@@ -63,7 +63,6 @@ allow [[
 GetNumSkillLines GetSkillLineInfo ExpandSkillHeader
 CraftFrame GetCraftDisplaySkillLine GetNumCrafts GetCraftInfo
 IsSpellKnown IsPlayerSpell GetSpellInfo GetSpellTexture GetInventoryItemID
-StaticPopup_Visible StaticPopup_Hide ReplaceEnchant
 CreateMacro EditMacro GetMacroInfo GetNumMacros MAX_CHARACTER_MACROS
 ]]
 
