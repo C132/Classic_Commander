@@ -67,15 +67,16 @@ or moved by the layout.
 
 Symptom if wrong: the button does nothing. `/cast Enchanting` still works. Test: click it.
 
-## A6b — `CreateMacro(name, icon, body, true)` / `EditMacro(name, name, icon, body)` maintain the Tradecraft macro, after `UPDATE_MACROS`
+## A6b — `CreateMacro(name, icon, body)` / `EditMacro(name, name, icon, body)` maintain the Tradecraft macro (General tab), after `UPDATE_MACROS`
 
-The RXPGuides pattern (`Targeting.lua`), with the per-character flag added. In game (2026-09-17)
+The RXPGuides pattern (`Targeting.lua`). `GetMacroIndexByName` past `MAX_ACCOUNT_MACROS` (120)
+means a character-specific one, which is deleted and remade on the General tab. In game (2026-09-17)
 writing it at `PLAYER_LOGIN` produced no macro and no error; it now waits for `UPDATE_MACROS` or
 `PLAYER_ENTERING_WORLD`, and a failed call prints its error once. The icon passed is whatever
 `GetSpellTexture` returns for the recipe (a file id on this client).
 
-Symptom if wrong: a "could not create the Tradecraft macro" line in chat, or still no macro on the
-character-specific tab of `/macro`. Test: open `/macro` after the guide has painted a craft step.
+Symptom if wrong: a "could not create the Tradecraft macro" line in chat, or no macro on the
+General tab of `/macro`. Test: open `/macro` after the guide has painted a craft step.
 
 ## A6c — A `CLICK` binding on an always-shown, off-screen secure button fires from a key
 

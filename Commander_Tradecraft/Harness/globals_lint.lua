@@ -65,7 +65,7 @@ allow [[
 GetNumSkillLines GetSkillLineInfo ExpandSkillHeader
 CraftFrame GetCraftDisplaySkillLine GetNumCrafts GetCraftInfo
 IsSpellKnown IsPlayerSpell GetSpellInfo GetSpellTexture GetInventoryItemID
-CreateMacro EditMacro GetMacroInfo GetNumMacros MAX_CHARACTER_MACROS
+CreateMacro EditMacro DeleteMacro GetMacroInfo GetMacroIndexByName GetNumMacros MAX_ACCOUNT_MACROS
 ]]
 
 -- Items and bags

@@ -739,19 +739,30 @@ local function UpdateMacro(step)
         body = "/run print('Commander Tradecraft: nothing to craft right now')"
     end
     local icon = step and step.kind == "craft" and SpellIcon(step.spell) or nil
-    if not GetMacroInfo(MACRO_NAME) then
-        local _, perChar = GetNumMacros()
-        if (perChar or 0) >= (MAX_CHARACTER_MACROS or 18) then
+    -- General tab, not character-specific: one macro, one bar slot, every
+    -- character. (The first build made it per character; the character
+    -- tab is where nobody looks.) A per-character one left over from that
+    -- build is removed first — indices past the account block are the
+    -- character block.
+    local index = GetMacroIndexByName and GetMacroIndexByName(MACRO_NAME) or 0
+    local accountSlots = MAX_ACCOUNT_MACROS or 120
+    if index > accountSlots and DeleteMacro then
+        pcall(DeleteMacro, index)
+        index = GetMacroIndexByName(MACRO_NAME) or 0
+    end
+    if index == 0 or not GetMacroInfo(MACRO_NAME) then
+        local account = GetNumMacros()
+        if (account or 0) >= accountSlots then
             if not macroWarned then
                 macroWarned = true
-                Announce("your character macro slots are full, so the Tradecraft macro could not be made — the Craft button still works")
+                Announce("your general macro slots are full, so the Tradecraft macro could not be made — the Craft button still works")
             end
             return
         end
-        local ok, err = pcall(CreateMacro, MACRO_NAME, icon or "INV_Misc_QuestionMark", body, true)
+        local ok, err = pcall(CreateMacro, MACRO_NAME, icon or "INV_Misc_QuestionMark", body)
         if ok then
             lastMacroBody = body
-            Announce(("a macro called %s%s|r is kept up to date with the Craft button — it is on the character-specific tab of the macro window (/macro); drag it to a bar and bind it, or bind 'Craft the current step' under Key Bindings"):format(HEX.white, MACRO_NAME))
+            Announce(("a macro called %s%s|r is kept up to date with the Craft button — it is on the General tab of the macro window (/macro); drag it to a bar and bind it, or bind 'Craft the current step' under Key Bindings"):format(HEX.white, MACRO_NAME))
         elseif not macroWarned then
             macroWarned = true
             Announce("could not create the Tradecraft macro: " .. tostring(err))

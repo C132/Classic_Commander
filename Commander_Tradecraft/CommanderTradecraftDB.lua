@@ -167,7 +167,7 @@ local function CreateOptionsPanel()
 
     panel:AddCheckbox({
         label = "Keep A Tradecraft Macro",
-        tooltip = "Maintain a character macro called Tradecraft with the same text the Craft button runs, updated as the route moves on. Drag it from the macro window (/macro) to an action bar once and bind it; it follows the guide from then on. Uses one of your 18 character macro slots.",
+        tooltip = "Maintain a macro called Tradecraft, on the General tab, with the same text the Craft button runs, updated as the route moves on. Drag it from the macro window (/macro) to an action bar once and bind it; it follows the guide from then on. Uses one of your 120 general macro slots.",
         get = function() return CommanderTradecraftDB.KeepMacro end,
         set = function(value) CommanderTradecraftDB.KeepMacro = value end,
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,

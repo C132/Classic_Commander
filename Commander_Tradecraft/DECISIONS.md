@@ -118,12 +118,14 @@ is what the suite's other secure buttons do, and it is one `/cast` per click, no
 binding (Bindings.xml) on a second secure button, `CommanderTradecraftCraftKey`, parked off-screen
 and always shown and carrying the same macro — the guide window's own button is hidden whenever
 the window is, and a binding needs a live target (Commander_Armory parks its weapon-swap button the
-same way). The macro `Tradecraft`, per character, is created once and `EditMacro`'d whenever the
+same way). The macro `Tradecraft`, on the General tab, is created once and `EditMacro`'d whenever the
 text changes, with the recipe's icon — the way RXPGuides keeps its `RXPTargeting` macro — for
 anyone who would rather drag it to a bar. It is written only after `UPDATE_MACROS` (the list is not
 there at `PLAYER_LOGIN`; the first build wrote at login and nothing appeared) and a failure is
-printed once rather than swallowed. An option, on by default; it costs one of the eighteen
-character slots and says so if they are full. Harness A11, A13, A14, B2–B4, F2 and F2b cover the
+printed once rather than swallowed. General rather than character-specific because the
+character tab is where nobody looks (the first build put it there and it was reported missing); a
+per-character one left over from that build is deleted and remade. An option, on by default; it
+costs one of the 120 general slots and says so if they are full. Harness A11, A13, A14, B2–B4, F2 and F2b cover the
 edges, the key button, the macro, the popup rule and the combat rule.
 
 ## D8 — Progress is per character; settings are per account; Restore Defaults cannot reach progress

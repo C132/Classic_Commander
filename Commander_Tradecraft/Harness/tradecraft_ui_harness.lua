@@ -443,19 +443,24 @@ function GetCraftInfo(i)
     return row.name, nil, row.header and "header" or "optimal", row.available or 5
 end
 -- Macros
+-- Account macros index 1..120, character macros 121+, as the client does
 local macros = {}
 local macroWrites = 0
+MAX_ACCOUNT_MACROS = 120
 function GetMacroInfo(name) local m = macros[name]; if m then return name, m.icon, m.body end end
-function GetNumMacros() local n = 0 for _ in pairs(macros) do n = n + 1 end return 0, n end
+function GetMacroIndexByName(name) local m = macros[name]; if not m then return 0 end return m.perChar and 121 or 1 end
+function GetNumMacros() local a, c = 0, 0 for _, m in pairs(macros) do if m.perChar then c = c + 1 else a = a + 1 end end return a, c end
 function CreateMacro(name, icon, body, perChar)
     if me.combat then error("CreateMacro in combat") end
-    macros[name] = { icon = icon, body = body, perChar = perChar }; macroWrites = macroWrites + 1
+    macros[name] = { icon = icon, body = body, perChar = perChar and true or false }; macroWrites = macroWrites + 1
 end
 function EditMacro(name, newName, icon, body)
     if me.combat then error("EditMacro in combat") end
     macros[name].body = body; if icon then macros[name].icon = icon end; macroWrites = macroWrites + 1
 end
-MAX_CHARACTER_MACROS = 18
+function DeleteMacro(index)
+    for name, m in pairs(macros) do if (m.perChar and 121 or 1) == index then macros[name] = nil end end
+end
 
 -- DoCraft is protected on this client; the mock makes calling it a hard
 -- error so no insecure path back to it can creep in
@@ -656,9 +661,11 @@ CHECK(b["Craft"].__clicks and b["Craft"].__clicks[1] == "AnyDown" and b["Craft"]
 -- A13 a per-character macro is made once the macro list is ready (not at
 -- login, where writing it failed silently in game) and mirrors the button
 CHECK(macros.Tradecraft == nil, "A13 no macro written before UPDATE_MACROS")
+-- A per-character one left by the first build is replaced by a general one
+macros.Tradecraft = { icon = 1, body = "old", perChar = true }
 Fire("UPDATE_MACROS")
 Settle()
-CHECK(macros.Tradecraft and macros.Tradecraft.perChar == true, "A13 Tradecraft macro created per character")
+CHECK(macros.Tradecraft and macros.Tradecraft.perChar == false, "A13 Tradecraft macro is on the General tab (the old per-character one removed)")
 -- A14 the binding's button exists from login, off screen, with the same macro
 local key = _G.CommanderTradecraftCraftKey
 CHECK(key ~= nil and key.__attr and key.__attr.type == "macro", "A14 key button exists")
