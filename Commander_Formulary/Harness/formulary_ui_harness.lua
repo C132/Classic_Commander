@@ -890,6 +890,7 @@ Settle()
 nav = TextUnder(frame.navPane)
 CHECK(nav:find("Moonglade", 1, true) and nav:find("Lorelae Wintersong", 1, true), "C8 Moonglade trip listed with its vendor", nav)
 CHECK(nav:find("Stonetalon Mountains", 1, true) and not nav:find("Ashenvale", 1, true), "C8 Horde sees Sun Rock Retreat, not Astranaar")
+CHECK(TextUnder(frame.toolbar):find("across", 1, true) and TextUnder(frame.toolbar):find("at your skill", 1, true), "C8 header sums the trips", TextUnder(frame.toolbar))
 local zoneRow
 for _, f in ipairs(frames) do
     if f.__kind == "Button" and f.__shown ~= false and f.name and f.name.__text and f.name.__text:find("Moonglade", 1, true) and Under(frame.navPane, f) then zoneRow = f end
