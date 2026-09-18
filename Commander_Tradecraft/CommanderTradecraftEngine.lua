@@ -310,7 +310,9 @@ function E.Build(guide, world, state, opts)
                 end
                 if formula.rep and world.standing then
                     local have = world.standing(formula.rep.faction)
-                    if have and have < formula.rep.standing then
+                    -- The data's standing counts from Hated = 0 (Honored 5);
+                    -- the client's index counts from Hated = 1 (Honored 6)
+                    if have and have < formula.rep.standing + 1 then
                         step.repShort = true
                     end
                 end
