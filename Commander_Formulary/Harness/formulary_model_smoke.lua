@@ -210,5 +210,24 @@ do
     CHECK(saw and not saw.usable, "B4 vendor line names the gate and is marked short", saw and saw.text)
 end
 
+-- B5 the CRAFTABLE filter, the vendor shopping figure, and formula verdicts
+do
+    local w = World(146, 150, { [13501] = true, [7418] = true }, { [11083] = 20 }, {}, "Alliance", {})
+    local v = M.Build(D, w)
+    local rows, n = M.Rows(v, { filter = "CRAFTABLE" }, w)
+    CHECK(n == 1 and rows[2].entry.spell == 13501, "B5 craftable = known with reagents", n)
+    local count, cost = M.VendorShopping(D, v, w)
+    CHECK(count >= 1 and cost >= 800, "B5 vendor shopping counts Minor Agility (8s) at least", count .. " " .. cost)
+    local verdict = M.FormulaVerdict(D, 11039, w)
+    CHECK(verdict and not verdict.known and verdict.atSkill and verdict.skill == 110, "B5 verdict: learnable now")
+    verdict = M.FormulaVerdict(D, 22559, w)
+    CHECK(verdict and not verdict.atSkill and verdict.skill == 375, "B5 verdict: needs skill")
+    verdict = M.FormulaVerdict(D, 6217, w)
+    CHECK(verdict == nil, "B5 a copper rod is not a formula")
+    w = World(146, 150, { [13419] = true }, {}, {}, "Alliance", {})
+    verdict = M.FormulaVerdict(D, 11039, w)
+    CHECK(verdict and verdict.known, "B5 verdict: already known")
+end
+
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

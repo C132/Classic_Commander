@@ -793,6 +793,37 @@ detail = TextUnder(frame.detailPane)
 CHECK(detail:find("Felannia", 1, true) and detail:find("Hellfire Peninsula (52.3, 36.0)", 1, true), "C4 trainer briefing with coordinates", detail)
 CHECK(detail:find("WOULD TEACH YOU NOW", 1, true) and detail:find("Enchant Shield - Minor Stamina", 1, true), "C4 what the trainer would teach now", detail)
 
+-- C5 the Craftable filter and the header's percent
+frame.filters.CRAFTABLE.__scripts.OnClick(frame.filters.CRAFTABLE)
+Settle()
+CHECK(NavRecipeCount() == 1, "C5 one craftable recipe (Lesser Stamina from the soul dust)", NavRecipeCount())
+frame.filters.ALL.__scripts.OnClick(frame.filters.ALL)
+Settle()
+CHECK(TextUnder(frame.toolbar):find("known (3%)", 1, true), "C5 header shows the percent", TextUnder(frame.toolbar))
+
+-- C6 a formula's tooltip gets a verdict line
+GameTooltip.GetItem = function(s) return "x", s.__itemLink end
+GameTooltip.__lines = {}
+GameTooltip.__itemLink = "|Hitem:11039:0|h[Formula]|h"
+Fire("PLAYER_LOGIN") -- no-op for the hooks; they were installed at login
+for _, f in ipairs(frames) do end
+local hooked = GameTooltip.__scripts.OnTooltipSetItem
+CHECK(hooked ~= nil, "C6 tooltip hook installed")
+if hooked then
+    hooked(GameTooltip)
+    CHECK(GameTooltip.__lines[#GameTooltip.__lines] and GameTooltip.__lines[#GameTooltip.__lines]:find("can learn this now"), "C6 verdict: learnable", GameTooltip.__lines[#GameTooltip.__lines])
+    GameTooltip.__lines = {}
+    GameTooltip._cfmItem = nil
+    GameTooltip.__itemLink = "|Hitem:22559:0|h[Formula]|h"
+    hooked(GameTooltip)
+    CHECK(GameTooltip.__lines[#GameTooltip.__lines]:find("at 375 skill"), "C6 verdict: needs skill", GameTooltip.__lines[#GameTooltip.__lines])
+    GameTooltip.__lines = {}
+    GameTooltip._cfmItem = nil
+    GameTooltip.__itemLink = "|Hitem:6217:0|h[Rod]|h"
+    hooked(GameTooltip)
+    CHECK(#GameTooltip.__lines == 0, "C6 not a formula: nothing added")
+end
+
 -- ===========================================================================
 -- D. The stock craft window is read and put away
 -- ===========================================================================

@@ -669,7 +669,7 @@ local function PaintNav()
             end
             local spell = e.spell
             row:SetScript("OnClick", function(_, button)
-                if button == "RightButton" then
+                if button == "RightButton" or (IsShiftKeyDown and IsShiftKeyDown()) then
                     if ChatEdit_InsertLink and pcall(ChatEdit_InsertLink, GetSpellLink and GetSpellLink(spell) or e.name) then return end
                 end
                 SelectRecipe(spell)
@@ -1099,8 +1099,16 @@ local function PaintHeader()
     if nextRank and trainable then
         rankNote = ("  %s%s trainable|r"):format(Hex(GOOD[1], GOOD[2], GOOD[3]), nextRank.name)
     end
-    frame.countFS:SetText(("%s%d|r %s/ %d known|r%s%s"):format(Hex(pr, pg, pb), view.known, Hex(fr, fg, fb), view.total,
-        view.learnable > 0 and ("  %s+%d learnable now|r"):format(Hex(GOOD[1], GOOD[2], GOOD[3]), view.learnable) or "", rankNote))
+    local pct = view.total > 0 and math.floor(view.known * 100 / view.total + 0.5) or 0
+    local learnNote = ""
+    if view.learnable > 0 then
+        learnNote = ("  %s+%d learnable now|r"):format(Hex(GOOD[1], GOOD[2], GOOD[3]), view.learnable)
+        local n, cost = M.VendorShopping(data, view, world)
+        if n > 0 and (db.Filter == "LEARNABLE") then
+            learnNote = learnNote .. ("  %s(%d to buy, %s)|r"):format(Hex(fr, fg, fb), n, M.FormatMoney(cost))
+        end
+    end
+    frame.countFS:SetText(("%s%d|r %s/ %d known (%d%%)|r%s%s"):format(Hex(pr, pg, pb), view.known, Hex(fr, fg, fb), view.total, pct, learnNote, rankNote))
 end
 
 local function PaintActions()
@@ -1168,6 +1176,7 @@ end
 local FILTERS = {
     { key = "ALL", label = "All", tooltip = "Every recipe the profession has." },
     { key = "KNOWN", label = "Known", tooltip = "The ones you can cast, coloured by difficulty." },
+    { key = "CRAFTABLE", label = "Craftable", tooltip = "The ones you know and hold the reagents for right now." },
     { key = "UNKNOWN", label = "Unknown", tooltip = "The ones you cannot yet, with where they come from." },
     { key = "LEARNABLE", label = "Learnable", tooltip = "The ones you could learn right now: a trainer at your skill, a formula in your bags or bank, or a vendor you can use." },
 }
@@ -1470,6 +1479,47 @@ function CommanderFormulary_View()
 end
 
 -- ---------------------------------------------------------------------------
+-- Formula items in tooltips: known / learnable / needs skill
+-- ---------------------------------------------------------------------------
+
+local function AppendFormulaVerdict(tooltip)
+    if not (loaded and db.EnableFormulary and db.TooltipVerdict) then return end
+    if not tooltip.GetItem then return end
+    local ok, _, link = pcall(tooltip.GetItem, tooltip)
+    if not ok or not link then return end
+    local item = tonumber(link:match("item:(%d+)"))
+    if not item then return end
+    if tooltip._cfmItem == item then return end
+    tooltip._cfmItem = item
+    local data = Data()
+    if not data.formulas[item] then return end
+    local w = world or BuildWorld()
+    local v = M.FormulaVerdict(data, item, w)
+    if not v then return end
+    if not v.hasProfession then
+        tooltip:AddLine(("Formulary: you do not have %s."):format(data.name), 0.7, 0.7, 0.7)
+    elseif v.known then
+        tooltip:AddLine("Formulary: you already know this recipe.", 0.5, 0.5, 0.5)
+    elseif v.atSkill then
+        tooltip:AddLine("Formulary: you can learn this now.", GOOD[1], GOOD[2], GOOD[3])
+    else
+        tooltip:AddLine(("Formulary: you could learn this at %d skill (you are %d)."):format(v.skill, w.rank or 0), WARN[1], WARN[2], WARN[3])
+    end
+    tooltip:Show()
+end
+
+local function ClearTooltipStamp(tooltip) tooltip._cfmItem = nil end
+
+local function InstallTooltipHooks()
+    for _, tip in ipairs({ GameTooltip, ItemRefTooltip }) do
+        if tip and tip.HookScript then
+            pcall(tip.HookScript, tip, "OnTooltipSetItem", AppendFormulaVerdict)
+            pcall(tip.HookScript, tip, "OnTooltipCleared", ClearTooltipStamp)
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Events
 -- ---------------------------------------------------------------------------
 
@@ -1532,4 +1582,5 @@ function CommanderFormulary_OnLogin()
             Rebuild()
         end
     end)
+    InstallTooltipHooks()
 end

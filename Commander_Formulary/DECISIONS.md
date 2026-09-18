@@ -68,3 +68,14 @@ The briefing shows a `GameTooltipTemplate` frame parented into the page with
 requirements exactly as the craft window would, in every locale, and nothing here has to carry
 spell descriptions. The reagent list underneath is this module's, because it carries what you
 hold. The tooltip is moved to the window's own strata so it is part of the page and clips with it.
+
+## D8 — Richness that earns its place
+
+Added on review, each for a reason a completionist would give: a **Craftable** filter (known and
+the reagents on hand — the "what can I make right now" question); the header's percentage and, on
+the Learnable filter, how many formulas a usable vendor sells at your skill and what they cost
+together (one shopping trip); shift-click or right-click a row to link the recipe in chat; the
+**trainers** at the foot of the navigator with what each would teach you now; a line on recipes
+that sit on the Commander_Tradecraft leveling route; and a **verdict on every formula's tooltip** —
+already known / can learn now / needs N skill — which is the question you are actually asking at a
+vendor or the auction house.

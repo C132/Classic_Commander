@@ -3,8 +3,8 @@
 Three luajit checks plus the data generator. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit formulary_model_smoke.lua   # data + model — 2608 checks
-/opt/homebrew/bin/luajit formulary_ui_harness.lua    # UI + host    — 56 checks
+/opt/homebrew/bin/luajit formulary_model_smoke.lua   # data + model — 2614 checks
+/opt/homebrew/bin/luajit formulary_ui_harness.lua    # UI + host    — 62 checks
 /opt/homebrew/bin/luajit globals_lint.lua            # 4 files, 0 undeclared globals
 ```
 
@@ -21,9 +21,13 @@ UiMap, UiMapAssignment, AreaTable, Map) and `tbcdb.pkl`, the CMaNGOS TBC dump re
 It writes `../CommanderFormularyData_Enchanting.lua` and prints: how many recipes were found and
 how many are obtainable; the SkillLineAbility rows that are not recipes (the five rank spells and
 Disenchant); every recipe it could not source (the two never added); the category counts; and a
-cross-check against Recipe Master's source list — formula by formula, what RM has that we do not.
-The remaining differences are presentation caps (twelve droppers per formula, bosses first), not
-data holes.
+cross-check against Recipe Master's source list when that addon is installed beside us — formula
+by formula, what RM has that we do not. It was, until 2026-09-18, when the check was last run:
+every real formula item in RM's list is in ours (its nineteen "extras" are its own encoding of
+trainer-taught crafts keyed by spell, plus two mis-mappings), ours carries four it lacks (2H -
+Lesser Spirit, Chest - Major Resilience, Void Shatter, Ring - Stats), and the ten source
+differences were presentation caps (twelve droppers per formula, bosses first), not data holes.
+RM was then uninstalled; the check silently skips when it is absent.
 
 ## `formulary_model_smoke.lua` — the data and the model
 

@@ -23,6 +23,7 @@ local DefaultSettings = {
     Filter = "ALL",
     Sort = "SKILL",
     ShowSourceColumn = true,
+    TooltipVerdict = true,
 
     -- Counting
     CountBank = true,
@@ -126,6 +127,14 @@ local function CreateOptionsPanel()
         tooltip = "Treat reagents in your bank as reachable when counting how many times a recipe can be cast. Bank counts exist once you have opened the bank this session.",
         get = function() return CommanderFormularyDB.CountBank end,
         set = function(value) CommanderFormularyDB.CountBank = value end,
+        isEnabled = function() return CommanderFormularyDB.EnableFormulary end,
+    })
+
+    panel:AddCheckbox({
+        label = "Formula Verdicts On Tooltips",
+        tooltip = "On any formula's tooltip — at a vendor, in the auction house, in your bags — a line saying whether you already know the recipe, can learn it now, or need more skill first.",
+        get = function() return CommanderFormularyDB.TooltipVerdict end,
+        set = function(value) CommanderFormularyDB.TooltipVerdict = value end,
         isEnabled = function() return CommanderFormularyDB.EnableFormulary end,
     })
 

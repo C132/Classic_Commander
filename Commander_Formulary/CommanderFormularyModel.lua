@@ -19,7 +19,7 @@
 CommanderFormulary_Model = {}
 local M = CommanderFormulary_Model
 
-M.FILTERS = { "ALL", "KNOWN", "UNKNOWN", "LEARNABLE" }
+M.FILTERS = { "ALL", "KNOWN", "CRAFTABLE", "UNKNOWN", "LEARNABLE" }
 M.SORTS = { "SKILL", "NAME" }
 
 -- ---------------------------------------------------------------------------
@@ -222,6 +222,51 @@ function M.Build(data, world, opts)
     return view
 end
 
+-- The formulas a usable vendor sells at your skill for recipes you do not
+-- know: how many, and what they cost together (the "go shopping" figure)
+function M.VendorShopping(data, view, world)
+    local count, cost = 0, 0
+    for _, entry in pairs(view.entries) do
+        if entry.learnable == "vendor" then
+            local best
+            for _, item in ipairs(entry.rec.formulas or {}) do
+                local f = data.formulas[item]
+                if f and f.skill <= view.rank then
+                    for _, v in ipairs(f.vendors or {}) do
+                        if M.VendorUsable(data, f, v.npc, world, v) and (not best or v.cost < best) then best = v.cost end
+                    end
+                end
+            end
+            if best then
+                count = count + 1
+                cost = cost + best
+            end
+        end
+    end
+    return count, cost
+end
+
+-- What a formula item means to this character, for its tooltip: nil when
+-- the item is not a formula of this profession; else { known, learnable,
+-- skill, recipeName, colour }
+function M.FormulaVerdict(data, item, world)
+    local f = data.formulas[item]
+    if not f then return nil end
+    local rec
+    for _, r in ipairs(data.recipes) do
+        if r.spell == f.learns then rec = r break end
+    end
+    if not rec then return nil end
+    local known = world.known(rec.spell)
+    return {
+        known = known,
+        skill = f.skill,
+        recipe = rec,
+        atSkill = (world.rank or 0) >= f.skill,
+        hasProfession = (world.maxRank or 0) > 0,
+    }
+end
+
 -- The rank ladder: the next rank up, and whether it is trainable now
 function M.NextRank(data, view)
     for _, r in ipairs(data.ranks) do
@@ -263,6 +308,7 @@ end
 
 local function Passes(entry, filter)
     if filter == "KNOWN" then return entry.known end
+    if filter == "CRAFTABLE" then return entry.known and entry.craftable > 0 end
     if filter == "UNKNOWN" then return not entry.known end
     if filter == "LEARNABLE" then return entry.learnable ~= nil end
     return true
