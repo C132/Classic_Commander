@@ -775,6 +775,12 @@ CHECK(NavRecipeCount() < before, "C3 fewer rows when collapsed", NavRecipeCount(
 wristHeader.__scripts.OnClick(wristHeader)
 Settle()
 CHECK(CommanderFormularyChar.collapsed.WRIST == nil and NavRecipeCount() == before, "C3 expanded again")
+wristHeader.__scripts.OnClick(wristHeader, "RightButton")
+Settle()
+CHECK(NavRecipeCount() == 0 and CommanderFormularyChar.collapsed.WEAPON == true, "C3 right-click folds every slot", NavRecipeCount())
+wristHeader.__scripts.OnClick(wristHeader, "RightButton")
+Settle()
+CHECK(NavRecipeCount() == before, "C3 right-click again unfolds every slot", NavRecipeCount())
 
 -- C4 the trainers at the foot of the navigator, and a trainer's briefing
 local trainerRow

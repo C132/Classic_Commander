@@ -551,6 +551,19 @@ local function ToggleCategory(key)
     Repaint()
 end
 
+-- Right-click on a header: fold or unfold every slot at once
+local function ToggleAll()
+    local anyOpen = false
+    for _, cat in ipairs(Data().categories) do
+        if not char.collapsed[cat.key] then anyOpen = true end
+    end
+    for _, cat in ipairs(Data().categories) do
+        char.collapsed[cat.key] = anyOpen and true or nil
+    end
+    char.collapsed.TRAINERS = anyOpen and true or nil
+    Repaint()
+end
+
 local SOURCE_TINT = { Trainer = { 0.6, 0.85, 1 }, Vendor = { 0.8, 0.8, 0.8 }, Reputation = { 0.85, 0.7, 1 },
     Drop = { 1, 0.75, 0.5 }, ["World drop"] = { 1, 0.75, 0.5 }, Quest = { 1, 0.9, 0.5 }, Chest = { 0.8, 0.8, 0.8 }, Container = { 0.8, 0.8, 0.8 } }
 
@@ -582,7 +595,9 @@ local function PaintNav()
             row.name:SetText("Trainers")
             row.name:SetTextColor(tr, tg, tb)
             row.right:SetText(("%s%d|r"):format(Hex(fr, fg, fb), r.count))
-            row:SetScript("OnClick", function() ToggleCategory("TRAINERS") end)
+            row:SetScript("OnClick", function(_, button)
+                if button == "RightButton" then ToggleAll() else ToggleCategory("TRAINERS") end
+            end)
             AttachTooltip(row, "Trainers", "Every Enchanting trainer your faction can use, with where they stand. Master rank is taught only in Outland.", "ANCHOR_RIGHT")
         elseif r.kind == "trainer" then
             local t = r.trainer
@@ -628,8 +643,10 @@ local function PaintNav()
             row.progress:SetVertexColor(ar, ag, ab, 0.8)
             row.progress:Show()
             local key = cat.key
-            row:SetScript("OnClick", function() ToggleCategory(key) end)
-            AttachTooltip(row, cat.label, ("%d of %d known.%s Click to %s."):format(cat.known, cat.total,
+            row:SetScript("OnClick", function(_, button)
+                if button == "RightButton" then ToggleAll() else ToggleCategory(key) end
+            end)
+            AttachTooltip(row, cat.label, ("%d of %d known.%s Click to %s; right-click to fold or unfold every slot."):format(cat.known, cat.total,
                 cat.learnable > 0 and (" %d could be learned now."):format(cat.learnable) or "",
                 r.collapsed and "expand" or "collapse"), "ANCHOR_RIGHT")
         else
