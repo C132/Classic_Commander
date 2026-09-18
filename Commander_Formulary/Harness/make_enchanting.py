@@ -119,6 +119,20 @@ gspawns = collections.defaultdict(list)
 for r in db["gameobject"]:
     gspawns[r["id"]].append((r["map"], r["position_x"], r["position_y"]))
 quests = {r["entry"]: r for r in db["quest_template"]}
+conditions = {r["condition_entry"]: r for r in db.get("conditions", [])}
+
+def rep_condition(cid, depth=0):
+    """A (faction, minRank) pair if the vendor row's condition is a reputation
+    gate (type 5, or an AND (-1) containing one); ranks are 0-based like
+    ItemSparse. Nothing else is a gate this window needs."""
+    c = conditions.get(cid)
+    if not c or depth > 4:
+        return None
+    if c["type"] == 5:
+        return (c["value1"], c["value2"])
+    if c["type"] == -1:
+        return rep_condition(c["value1"], depth + 1) or rep_condition(c["value2"], depth + 1)
+    return None
 
 # ---------------------------------------------------------------------------
 # Recipes
@@ -315,7 +329,8 @@ for item, f in formulas.items():
     for r in vendorRows.get(item, []):
         if add_npc(r["entry"], "vendor"):
             price = itemTemplate.get(item, {}).get("BuyPrice", 0)
-            f["vendors"].append({"npc": r["entry"], "cost": price, "limited": r["maxcount"] > 0})
+            gate = rep_condition(r.get("condition_id") or 0)
+            f["vendors"].append({"npc": r["entry"], "cost": price, "limited": r["maxcount"] > 0, "rep": gate})
     for npc, cost in MANUAL_VENDORS.get(item, []):
         if add_npc(npc, "vendor") and not any(v["npc"] == npc for v in f["vendors"]):
             f["vendors"].append({"npc": npc, "cost": cost, "limited": False})
@@ -582,7 +597,10 @@ for item in sorted(formulas):
         wd = f["worldDrop"]
         fields.append("worldDrop = { minLevel = %d, maxLevel = %d, mobs = %d }" % (wd["minLevel"], wd["maxLevel"], wd["mobs"]))
     if f["vendors"]:
-        fields.append("vendors = { %s }" % ", ".join("{ npc = %d, cost = %d%s }" % (v["npc"], v["cost"], ", limited = true" if v["limited"] else "") for v in f["vendors"]))
+        fields.append("vendors = { %s }" % ", ".join("{ npc = %d, cost = %d%s%s }" % (
+            v["npc"], v["cost"], ", limited = true" if v["limited"] else "",
+            (", rep = { faction = %d, standing = %d, name = %s }" % (v["rep"][0], v["rep"][1], lstr(factionName.get(v["rep"][0], "?")))) if v.get("rep") else "")
+            for v in f["vendors"]))
     if f.get("zones"):
         fields.append("zones = { %s }" % ", ".join("{ zone = %s, mobs = %d%s }" % (lstr(z["zone"]), z["mobs"], (", chance = %s" % z["chance"]) if z["chance"] else "") for z in f["zones"]))
     if f["drops"]:

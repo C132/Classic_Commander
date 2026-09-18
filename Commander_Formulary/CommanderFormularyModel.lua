@@ -60,12 +60,16 @@ function M.Sources(data, rec)
             if f.vendors and #f.vendors > 0 then
                 kinds.VENDOR = true
                 if f.rep then kinds.REP = true end
+                for _, v in ipairs(f.vendors) do
+                    if v.rep then kinds.REP = true end
+                end
             end
             if (f.drops and #f.drops > 0) or (f.zones and #f.zones > 0) then kinds.DROP = true end
             if f.worldDrop then kinds.WORLD = true end
             if f.quests and #f.quests > 0 then kinds.QUEST = true end
             if f.objects and #f.objects > 0 then kinds.OBJECT = true end
             if f.containers and #f.containers > 0 then kinds.CONTAINER = true end
+            if f.note then kinds.NOTE = true end
         end
     end
     return kinds
@@ -73,8 +77,8 @@ end
 
 -- One word for the list column
 local SOURCE_WORD = { TRAINER = "Trainer", VENDOR = "Vendor", REP = "Reputation", DROP = "Drop", WORLD = "World drop",
-    QUEST = "Quest", OBJECT = "Chest", CONTAINER = "Container" }
-local SOURCE_ORDER = { "TRAINER", "REP", "VENDOR", "QUEST", "DROP", "WORLD", "OBJECT", "CONTAINER" }
+    QUEST = "Quest", OBJECT = "Chest", CONTAINER = "Container", NOTE = "Special" }
+local SOURCE_ORDER = { "TRAINER", "REP", "VENDOR", "QUEST", "DROP", "WORLD", "OBJECT", "CONTAINER", "NOTE" }
 
 function M.SourceWord(kinds)
     for _, k in ipairs(SOURCE_ORDER) do
@@ -83,17 +87,25 @@ function M.SourceWord(kinds)
     return "Unknown", nil
 end
 
+-- The reputation gate on buying a formula from a vendor: the vendor row's
+-- own (Lokhtos in Blackrock Depths gates per item), else the item's
+function M.VendorGate(formula, vendor)
+    if vendor and vendor.rep then return vendor.rep end
+    return formula.rep
+end
+
 -- Whether a vendor can be used by this character (faction and standing)
-function M.VendorUsable(data, formula, npc, world)
+function M.VendorUsable(data, formula, npc, world, vendor)
     local info = data.npcs[npc]
     if info and info.faction and world.faction and info.faction ~= world.faction then
         return false, "other faction"
     end
-    if formula.rep and world.standing then
-        local have = world.standing(formula.rep.faction)
+    local gate = M.VendorGate(formula, vendor)
+    if gate and world.standing then
+        local have = world.standing(gate.faction)
         -- ItemSparse counts standings from Hated = 0 (Honored 5); the client's
         -- index counts from Hated = 1 (Honored 6). Off by one, always.
-        if have and have < formula.rep.standing + 1 then
+        if have and have < gate.standing + 1 then
             return false, "reputation"
         end
     end
@@ -125,7 +137,7 @@ function M.LearnableNow(data, rec, world)
             if all > 0 then return "bank" end
             if f.skill <= rank then
                 for _, v in ipairs(f.vendors or {}) do
-                    if M.VendorUsable(data, f, v.npc, world) then return "vendor" end
+                    if M.VendorUsable(data, f, v.npc, world, v) then return "vendor" end
                 end
             end
         end
@@ -339,10 +351,12 @@ function M.HowToLearn(data, entry, world)
             for _, v in ipairs(f.vendors or {}) do
                 local npc = data.npcs[v.npc]
                 if npc then
-                    local usable, why = M.VendorUsable(data, f, v.npc, world)
+                    local usable, why = M.VendorUsable(data, f, v.npc, world, v)
+                    local gate = v.rep
                     out[#out + 1] = { kind = "vendor", npc = v.npc, cost = v.cost, usable = usable, why = why, limited = v.limited, place = npc,
-                        text = ("%s — %s%s%s"):format(npc.name, M.Place(npc), v.cost > 0 and (", " .. M.FormatMoney(v.cost)) or "",
-                            v.limited and " (limited stock)" or "") }
+                        text = ("%s — %s%s%s%s"):format(npc.name, M.Place(npc), v.cost > 0 and (", " .. M.FormatMoney(v.cost)) or "",
+                            v.limited and " (limited stock)" or "",
+                            gate and (" — %s with %s"):format(M.StandingName(gate.standing), gate.name or "?") or "") }
                 end
             end
             if f.worldDrop then

@@ -193,5 +193,22 @@ do
     CHECK(nextRank.name == "Master" and trainable, "B3 master trainable at 280")
 end
 
+-- B4 a per-vendor reputation gate (Lokhtos, Thorium Brotherhood) is read
+-- from the vendor row and compared with the client's off-by-one index
+do
+    local f = D.formulas[19448]
+    CHECK(f and f.vendors[1].rep and f.vendors[1].rep.faction == 59 and f.vendors[1].rep.standing == 5, "B4 Mighty Spirit gated Honored on the vendor row", f and f.vendors[1].rep and f.vendors[1].rep.standing)
+    local friendly = World(300, 300, {}, {}, {}, "Alliance", { [59] = 5 })
+    local honored = World(300, 300, {}, {}, {}, "Alliance", { [59] = 6 })
+    CHECK(not M.VendorUsable(D, f, 12944, friendly, f.vendors[1]), "B4 Friendly cannot buy")
+    CHECK(M.VendorUsable(D, f, 12944, honored, f.vendors[1]), "B4 Honored can")
+    local v = M.Build(D, honored)
+    CHECK(v.entries[23803].learnable == "vendor" and v.entries[23803].sourceKind == "REP", "B4 learnable at Honored, word Reputation", v.entries[23803].learnable)
+    local lines = M.HowToLearn(D, v.entries[23803], friendly)
+    local saw = false
+    for _, l in ipairs(lines) do if l.kind == "vendor" and l.text:find("Honored with Thorium Brotherhood") then saw = l end end
+    CHECK(saw and not saw.usable, "B4 vendor line names the gate and is marked short", saw and saw.text)
+end
+
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)
