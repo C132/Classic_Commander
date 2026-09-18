@@ -257,6 +257,15 @@ local function HavePrices()
     return api and api.GetAuctionPriceByItemID and true or false
 end
 
+-- How old, in days, the scan behind an item's price is; nil when unknown
+local function PriceAge(item)
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    if not (api and api.GetAuctionAgeByItemID) then return nil end
+    local ok, days = pcall(api.GetAuctionAgeByItemID, "Commander_Formulary", item)
+    if ok and type(days) == "number" then return days end
+    return nil
+end
+
 local function BuildWorld()
     local rank, maxRank = ReadSkill()
     return {
@@ -984,6 +993,19 @@ local function PaintEconomics(entry)
         end
     end
     if #lines == 0 then return end
+    -- The oldest scan behind these figures
+    local oldest
+    for _, pair in ipairs(rec.reagents or {}) do
+        local age = PriceAge(pair[1])
+        if age and (not oldest or age > oldest) then oldest = age end
+    end
+    if rec.creates then
+        local age = PriceAge(rec.creates)
+        if age and (not oldest or age > oldest) then oldest = age end
+    end
+    if oldest and oldest >= 2 then
+        lines[#lines + 1] = ("%sPrices from a scan %d days old.|r"):format(Hex(WARN[1], WARN[2], WARN[3]), oldest)
+    end
     Heading("Gold")
     for _, l in ipairs(lines) do
         Line(l, { indent = 2, ink = "secondary" })
@@ -1216,6 +1238,18 @@ local function PaintHeader()
         if n > 0 and (db.Filter == "LEARNABLE") then
             learnNote = learnNote .. ("  %s(%d to buy, %s)|r"):format(Hex(fr, fg, fb), n, M.FormatMoney(cost))
         end
+    end
+    if db.Filter == "TRIPS" then
+        local zones, formulas, cost, ready = 0, 0, 0, 0
+        for _, z in ipairs(M.Trips(view, world) or {}) do
+            zones = zones + 1
+            formulas = formulas + z.count
+            cost = cost + z.cost
+            ready = ready + z.atSkill
+        end
+        frame.countFS:SetText(("%s%d|r %sformula%s across %d zone%s, %s — %d at your skill|r"):format(
+            Hex(pr, pg, pb), formulas, Hex(fr, fg, fb), formulas == 1 and "" or "s", zones, zones == 1 and "" or "s", M.FormatMoney(cost), ready))
+        return
     end
     frame.countFS:SetText(("%s%d|r %s/ %d known (%d%%)|r%s%s"):format(Hex(pr, pg, pb), view.known, Hex(fr, fg, fb), view.total, pct, learnNote, rankNote))
 end

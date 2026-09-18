@@ -233,6 +233,27 @@ local function HavePrices()
     return api and api.GetAuctionPriceByItemID and true or false
 end
 
+-- How old, in days, the newest scan behind a price is; nil when unknown
+local function PriceAge(item)
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    if not (api and api.GetAuctionAgeByItemID) then return nil end
+    local ok, days = pcall(api.GetAuctionAgeByItemID, "Commander_Tradecraft", item)
+    if ok and type(days) == "number" then return days end
+    return nil
+end
+
+-- The oldest price behind a list of shopping rows, in days
+local function OldestPrice(rows)
+    local oldest
+    for _, row in ipairs(rows) do
+        if row.price then
+            local age = PriceAge(row.id)
+            if age and (not oldest or age > oldest) then oldest = age end
+        end
+    end
+    return oldest
+end
+
 -- What your other characters hold, from Commander_Quartermaster's ledger
 local function AltCount(item)
     if not CommanderQuartermaster_CountsFor then return 0 end
@@ -1374,6 +1395,12 @@ local function BuildShoppingText(p)
     if not HavePrices() then
         out[#out + 1] = ""
         out[#out + 1] = HEX.dim .. "Install Auctionator and scan the auction house to see what all this costs." .. "|r"
+    else
+        local age = OldestPrice(p.shopping)
+        if age and age >= 2 then
+            out[#out + 1] = ""
+            out[#out + 1] = HEX.warn .. ("Some of these prices are from a scan %d days old — scan the auction house again for fresh figures."):format(age) .. "|r"
+        end
     end
     return table.concat(out, "\n")
 end
