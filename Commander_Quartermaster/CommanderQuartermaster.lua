@@ -3,6 +3,11 @@
 -- married to an account-wide inventory ledger: each character files its bags
 -- as it plays, bank and mail as they are opened, and the browser reads it
 -- all back with live counts on every row.
+--
+-- Two marks a player can put on a row, and they are not the same thing: the
+-- watchlist is a per-character restock TARGET ("keep 20 of this on me"), and
+-- the star is an account-wide FAVORITE ("this is one of mine"). A row can
+-- wear both.
 
 local Data = CommanderQuartermasterData
 local Events = COMMANDER_QUARTERMASTER_EVENTS
@@ -61,12 +66,16 @@ local function IsTracked(itemID)
     end
     local cached = trackedCache[itemID]
     if cached ~= nil then return cached end
-    local classID
+    local classID, subclassID
     if C_Item and C_Item.GetItemInfoInstant then
-        local ok, _, _, _, _, _, cid = pcall(C_Item.GetItemInfoInstant, itemID)
-        if ok then classID = cid end
+        local ok, _, _, _, _, _, cid, sub = pcall(C_Item.GetItemInfoInstant, itemID)
+        if ok then classID, subclassID = cid, sub end
     end
-    local tracked = (classID == 0 or classID == 6) and true or false
+    -- Consumables, projectiles, and — for Commander_Tradecraft's shopping
+    -- list and Commander_Formulary's craftable counts — enchanting materials
+    -- (trade goods, subclass 12): the dusts, essences and shards an
+    -- enchanter has spread across three alts and a bank
+    local tracked = (classID == 0 or classID == 6 or (classID == 7 and subclassID == 12)) and true or false
     trackedCache[itemID] = tracked
     return tracked
 end
@@ -401,6 +410,106 @@ function CommanderQuartermaster_SetWatchTarget(itemID, target)
 end
 
 -- ---------------------------------------------------------------------------
+-- Favorites (the star)
+-- ---------------------------------------------------------------------------
+
+-- A star is a bookmark, not a target. The watchlist says "keep 20 of this ON
+-- THIS CHARACTER" and belongs to the character that has to carry them; a star
+-- says "this is one of mine" and belongs to the ACCOUNT, because the ledger is
+-- account-wide and the character who wants the flask is rarely the one
+-- standing at the auction house.
+--
+-- Keyed by item id wherever there is an item — so starring a mana oil on the
+-- Gear page stars the same row on the Consumables page — and by enchant+spell
+-- for the enchanter-cast enhancements that have no item to hold (the enchant
+-- id alone is not unique: the same +4 Stats arrives as a scroll AND as a
+-- craft). Stored OUTSIDE DefaultSettings, the Watchlist precedent, so Restore
+-- Defaults never throws away a mark you made by hand.
+
+-- The one star art every client of this era has: the raid target marker, which
+-- players already read as a star in chat.
+local STAR_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
+local STAR_ICON = "|T" .. STAR_TEXTURE .. ":12:12:0:0|t"
+
+local function Favorites(create)
+    if not db then return nil end
+    local map = db.Favorites
+    if not map and create then
+        map = {}
+        db.Favorites = map
+    end
+    return map
+end
+
+-- The key an enhancement row stars under
+local function EnhanceFavKey(entry)
+    if not entry then return nil end
+    if entry.item then return entry.item end
+    if not entry.ench then return nil end
+    return ("e:%d:%d"):format(entry.ench, entry.spell or 0)
+end
+
+function CommanderQuartermaster_IsFavorite(key)
+    local map = Favorites()
+    return (key and map and map[key]) and true or false
+end
+
+function CommanderQuartermaster_SetFavorite(key, on)
+    if not (loaded and key) then return false end
+    if on then
+        Favorites(true)[key] = true
+    else
+        local map = Favorites()
+        if map then map[key] = nil end
+    end
+    Commander.Notify(Events.LEDGER)
+    if RefreshBrowserSoon then RefreshBrowserSoon() end
+    return on and true or false
+end
+
+function CommanderQuartermaster_ToggleFavorite(key)
+    if not key then return false end
+    return CommanderQuartermaster_SetFavorite(key, not CommanderQuartermaster_IsFavorite(key))
+end
+
+-- Every star at once. Deliberately not wired to Restore Defaults: the stars
+-- sit outside DefaultSettings so a settings reset cannot take them, which
+-- leaves this the one door out — and it asks first.
+function CommanderQuartermaster_ClearFavorites()
+    if not loaded then return end
+    local map = Favorites()
+    local n = 0
+    if map then
+        for key in pairs(map) do
+            map[key] = nil
+            n = n + 1
+        end
+    end
+    Commander.Notify(Events.LEDGER)
+    if RefreshBrowserSoon then RefreshBrowserSoon() end
+    print(("Commander Quartermaster: cleared %d favorite%s"):format(n, n == 1 and "" or "s"))
+end
+
+-- How many stars there are, and how many of them you hold none of anywhere —
+-- the second number is what the sidebar badge and the shopping list care
+-- about. Enchanter-cast keys are not items and can never be "held", so they
+-- count toward the total only.
+local function FavoriteTally()
+    local map = Favorites()
+    local total, out = 0, 0
+    if map then
+        for key in pairs(map) do
+            total = total + 1
+            if type(key) == "number" then
+                local _, _, _, _, held = CountsFor(key)
+                if held == 0 then out = out + 1 end
+            end
+        end
+    end
+    return total, out
+end
+
+-- ---------------------------------------------------------------------------
 -- Tooltip integration
 -- ---------------------------------------------------------------------------
 
@@ -454,6 +563,13 @@ local function AppendHoldings(tooltip)
 
     AppendEnhancement(tooltip, itemID)
     AppendGearVerdict(tooltip, link)
+
+    -- Ahead of the counts gate on purpose: a star is a mark you made by hand,
+    -- and it should still show on the tooltip when you have turned the
+    -- ledger's chatter off.
+    if CommanderQuartermaster_IsFavorite(itemID) then
+        tooltip:AddLine(("%s |cffffd200Favorite|r"):format(STAR_ICON))
+    end
 
     if not (db.TooltipCounts and IsTracked(itemID)) then
         tooltip:Show()
@@ -544,7 +660,14 @@ local FRAME_W, FRAME_H = 850, 560
 local SIDEBAR_W = 190
 local ROW_H, VISIBLE_ROWS = 30, 15
 local SIDEBAR_ROW_H = 22
-local MAX_SIDEBAR_ROWS = 20
+-- The sidebar SCROLLS, so this is a pool size rather than a ceiling on what
+-- may be listed. It used to be a hard twenty with a silent `return` past the
+-- end, and the Gear view needs twenty-four rows: My Gear, Favorites, thirteen
+-- equipment slots, eight gem colours and Other. The four that fell off the end
+-- were Purple, Green, Prismatic and Other -- which reads, from the outside,
+-- exactly like "the database is missing every green gem". It was not: all 242
+-- gems were there, and three shelves had nowhere to be drawn.
+local MAX_SIDEBAR_ROWS = 32
 
 -- Count column left edges within a row (right-aligned, 40 wide each).
 -- LEVEL sits left of the counts: it is a property, not a holding.
@@ -797,6 +920,17 @@ local function RegisterPopups()
         end,
         timeout = 0, whileDead = true, hideOnEscape = true,
     }
+    StaticPopupDialogs["COMMANDER_QM_CLEARFAVS"] = {
+        text = "Clear every favorite?\nStars are account-wide, and nothing else removes them.",
+        button1 = YES or "Yes",
+        button2 = NO or "No",
+        OnAccept = function()
+            if CommanderQuartermaster_ClearFavorites then
+                CommanderQuartermaster_ClearFavorites()
+            end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true,
+    }
     StaticPopupDialogs["COMMANDER_QM_FORGET"] = {
         text = "Forget %s?\nRemoves this character's ledger records. Logging the character in refiles it.",
         button1 = YES or "Yes",
@@ -865,6 +999,9 @@ local function ItemMatches(entry, cat)
     if db.SourceFilter and db.SourceFilter ~= "ALL" and entry.src ~= db.SourceFilter then
         return false
     end
+    if db.FavoritesOnly and not CommanderQuartermaster_IsFavorite(entry.id) then
+        return false
+    end
     if db.OwnedOnly then
         local _, _, _, _, total = CountsFor(entry.id)
         if total == 0 then return false end
@@ -901,6 +1038,10 @@ end
 -- ------------------------------------------------------------------
 -- Browse / Watchlist lists
 -- ------------------------------------------------------------------
+
+-- Forward: the favorites shelf lists enhancements as well as consumables, so
+-- it is written down with the enhancement pushers rather than up here.
+local BuildFavoritesList
 
 local function BuildWatchList()
     local list = MyWatchlist()
@@ -952,6 +1093,10 @@ end
 
 local function BuildBrowseList()
     local searching = #searchTokens > 0
+    if not searching and db.BrowserCategory == "FAVORITES" then
+        BuildFavoritesList()
+        return
+    end
     if not searching and db.BrowserCategory == "WATCHLIST" then
         BuildWatchList()
         return
@@ -1049,6 +1194,35 @@ local function ReadinessFor(spec)
                 state = state, entry = entry, count = count,
             }
         end
+    end
+    return out
+end
+
+-- Starred items you hold NOWHERE — not in bags, not in the bank, not on an
+-- alt. A star with a zero behind it is the plainest shopping signal there is.
+-- Name-sorted, and enchanter-cast enhancements are skipped: there is nothing
+-- to buy, only an enchanter to find.
+local function FavoriteGaps()
+    local map = Favorites()
+    local out = {}
+    if map then
+        for key in pairs(map) do
+            if type(key) == "number" then
+                local _, _, _, _, total = CountsFor(key)
+                if total == 0 then
+                    local hit = byID[key]
+                    -- The `Enhance` upvalue is declared further down the file;
+                    -- reach the module by name so an enhancement's own name is
+                    -- what lands on the list.
+                    local E = CommanderQuartermasterEnhance
+                    local enh = E and E.EntryForItem(key)
+                    local name = (hit and hit.entry.name) or (enh and enh.name)
+                        or ItemName(key, "item:" .. tostring(key))
+                    out[#out + 1] = { id = key, name = name }
+                end
+            end
+        end
+        table.sort(out, function(a, b) return a.name < b.name end)
     end
     return out
 end
@@ -1237,6 +1411,9 @@ end
 
 local function EnhanceMatches(entry)
     if db.EraFilter ~= "ALL" and entry.era ~= db.EraFilter then return false end
+    if db.FavoritesOnly and not CommanderQuartermaster_IsFavorite(EnhanceFavKey(entry)) then
+        return false
+    end
     if db.OwnedOnly then
         if not entry.item then return false end
         local _, _, _, _, total = CountsFor(entry.item)
@@ -1256,6 +1433,84 @@ local function PushEnhance(entry, bestFor)
     }
 end
 
+-- Every enhancement entry wearing a star, in database order. Enchanter-cast
+-- entries have no item, so the map is walked over the entries rather than the
+-- other way round — there is no id to look one up by.
+local function FavoriteEnhancements()
+    local map = Favorites()
+    local out = {}
+    local EData = CommanderQuartermasterEnhanceData
+    if not (map and EData) then return out end
+    for _, entry in ipairs(EData.Entries) do
+        if map[EnhanceFavKey(entry)] and EnhanceMatches(entry) then
+            out[#out + 1] = entry
+        end
+    end
+    return out
+end
+
+-- The star shelf: everything you have marked, wherever it lives. Consumables
+-- keep their category headers so the shelf reads like the database it is drawn
+-- from; enhancements follow under their own, because a gem and a flask are not
+-- alternatives to each other.
+BuildFavoritesList = function()
+    local map = Favorites()
+    local wrote = false
+    local starred = {}
+    if map then
+        for _, cat in ipairs(Data.Categories) do
+            local rows = {}
+            for _, entry in ipairs(cat.items) do
+                if map[entry.id] and ItemMatches(entry, cat) then
+                    rows[#rows + 1] = { entry = entry, cat = cat }
+                    starred[entry.id] = true
+                end
+            end
+            if #rows > 0 then
+                if sortKey then SortEntryRows(rows) end
+                PushHeader(("|cffffd200%s|r"):format(cat.name))
+                for _, row in ipairs(rows) do
+                    PushItem(row.entry, row.cat)
+                end
+                wrote = true
+            end
+        end
+    end
+    local enh = FavoriteEnhancements()
+    if #enh > 0 then
+        PushHeader("|cffffd200Enhancements|r")
+        for _, entry in ipairs(enh) do
+            if entry.item then starred[entry.item] = true end
+            PushEnhance(entry)
+        end
+        wrote = true
+    end
+    -- A star on an item neither database claims — the loadout files and the
+    -- enhancement database both move under a saved variable that does not —
+    -- still has to be reachable, or it could never be un-starred.
+    local orphans = {}
+    if map then
+        for key in pairs(map) do
+            if type(key) == "number" and not starred[key] then
+                local hit = byID[key]
+                orphans[#orphans + 1] = (hit and hit.entry)
+                    or { id = key, name = ItemName(key, "item:" .. tostring(key)) }
+            end
+        end
+    end
+    if #orphans > 0 then
+        table.sort(orphans, function(a, b) return (a.name or "") < (b.name or "") end)
+        PushHeader("|cffffd200Other|r")
+        for _, entry in ipairs(orphans) do
+            PushItem(entry, byID[entry.id] and byID[entry.id].cat)
+        end
+        wrote = true
+    end
+    if not wrote then
+        PushHeader("|cffaaaaaaNothing starred yet — click the star at the left of any row.|r")
+    end
+end
+
 -- The role the shelf is sorted for: the played spec's, never the class you
 -- happen to be sightseeing in the Loadout view.
 function MyRole()
@@ -1271,6 +1526,18 @@ local function BuildGearList()
     local EData = CommanderQuartermasterEnhanceData
     local slot = GearSlotKey()
     local role = MyRole()
+    if slot == "FAVORITES" and #searchTokens == 0 then
+        local enh = FavoriteEnhancements()
+        if #enh == 0 then
+            PushHeader("|cffaaaaaaNo enhancement starred yet — click the star at the left of any row.|r")
+            return
+        end
+        PushHeader(("|cffffd200Starred enhancements|r  |cff888888%d|r"):format(#enh))
+        for _, entry in ipairs(enh) do
+            PushEnhance(entry)
+        end
+        return
+    end
     if slot == "MYGEAR" and #searchTokens == 0 then
         local report = Enhance.ScanGear("player")
         local head = ("|cffffd200Equipped|r  |cff888888%d enhanceable slot%s, %d bare, %d socket%s empty|r"):format(
@@ -1316,8 +1583,30 @@ local function BuildGearList()
                 elseif half == "TEMP" then
                     PushHeader("|cffffd200Temporary|r |cff888888— reapplied, and stacks with the enchant above|r")
                 end
+                -- A gem shelf is a CATALOGUE, not a pick-one list. Ranking
+                -- forty red gems by what suits your spec is the right answer
+                -- for an enchant, where you choose one and never think about
+                -- it again, and the wrong one for gems, where you are looking
+                -- something up. So gems read by rarity and then by name, the
+                -- way a vendor and the auction house present them. The role's
+                -- best is still marked; it just no longer decides the order.
+                local best = gemGroup and ranked[1] and ranked[1].score
+                    and ranked[1].entry or nil
+                if gemGroup then
+                    table.sort(ranked, function(a, b)
+                        local qa, qb = a.entry.quality or 0, b.entry.quality or 0
+                        if qa ~= qb then return qa > qb end
+                        return (a.entry.name or "") < (b.entry.name or "")
+                    end)
+                end
                 for i, row in ipairs(ranked) do
-                    PushEnhance(row.entry, i == 1 and row.score and role or nil)
+                    local mark
+                    if gemGroup then
+                        mark = (row.entry == best) and role or nil
+                    elseif i == 1 and row.score then
+                        mark = role
+                    end
+                    PushEnhance(row.entry, mark)
                 end
             end
         end
@@ -1344,6 +1633,46 @@ end
 -- Row binding
 -- ------------------------------------------------------------------
 
+-- The gutter star's three states: lit for a favorite, a faint ghost on an
+-- unmarked row so the affordance is there without shouting about itself, and
+-- a brighter ghost while the pointer is on the row.
+local function StyleStar(row, hot)
+    local tex = row.starTex
+    if not tex then return end
+    local on = row.favKey and CommanderQuartermaster_IsFavorite(row.favKey)
+    if tex.SetDesaturated then tex:SetDesaturated(not on) end
+    if on then
+        tex:SetVertexColor(1, 1, 1, 1)
+    else
+        tex:SetVertexColor(1, 1, 1, hot and 0.5 or 0.14)
+    end
+end
+
+-- The line at the foot of a row's tooltip, so nothing about the row is a
+-- secret: what the star does here, and what the other two clicks do.
+local function FavHint(row)
+    local parts = {}
+    if row.favKey then
+        parts[#parts + 1] = CommanderQuartermaster_IsFavorite(row.favKey)
+            and "Click the star: unfavorite" or "Click the star: favorite"
+    end
+    local kind = row.item and row.item.kind
+    if kind == "item" or (kind == "enh" and row.item.entry and row.item.entry.item) then
+        parts[#parts + 1] = "Right-click: restock target"
+    end
+    parts[#parts + 1] = "Shift-click: link"
+    return table.concat(parts, " · ")
+end
+
+-- Which key this row stars under, or nil for the rows that cannot be starred:
+-- a character is not a thing you own, and a gear slot is the item you are
+-- already wearing.
+local function RowFavKey(item)
+    if item.kind == "item" then return item.id end
+    if item.kind == "enh" then return EnhanceFavKey(item.entry) end
+    return nil
+end
+
 local function BindRow(row, item)
     if not item then
         row:Hide()
@@ -1351,16 +1680,20 @@ local function BindRow(row, item)
     end
     row:Show()
     row.item = item
+    row.favKey = RowFavKey(item)
     if item.kind == "header" then
         row.headerFS:SetText(item.text)
         row.headerFS:Show()
         row.icon:Hide(); row.nameFS:Hide(); row.noteFS:Hide(); row.tagFS:Hide()
         row.c0:Hide(); row.c1:Hide(); row.c2:Hide(); row.c3:Hide(); row.c4:Hide()
+        row.star:Hide()
         return
     end
     row.headerFS:Hide()
     row.icon:Show(); row.nameFS:Show(); row.noteFS:Show(); row.tagFS:Show()
     row.c0:Show(); row.c1:Show(); row.c2:Show(); row.c3:Show(); row.c4:Show()
+    row.star:SetShown(row.favKey ~= nil)
+    StyleStar(row, false)
 
     if item.kind == "char" then
         local rec = item.rec
@@ -1536,6 +1869,29 @@ local function BindSidebarButton(btn, opts)
     btn.onClick = opts.onClick
 end
 
+-- Defined with the other widget builders, far below; declared here because
+-- SidebarButton below is its first caller and a local declared after its use
+-- compiles to a nil global.
+local CreateSidebarButton
+
+-- The sidebar pool grows on demand.
+--
+-- Every one of these lists used to end in "if used > MAX_SIDEBAR_ROWS then
+-- return end" -- drop the overflow, say nothing. That is how three whole gem
+-- shelves went missing from the Gear view while all 242 gems sat in the
+-- database, and Browse was sitting at exactly the old cap with no headroom, so
+-- the eighteenth category would have vanished the same way. Raising the
+-- constant only moves where it bites; a pool that grows removes the class.
+local function SidebarButton(index)
+    local btn = sidebarButtons[index]
+    if not btn then
+        if not (browser and browser.sidebarChild) then return nil end
+        btn = CreateSidebarButton(browser.sidebarChild, index)
+        sidebarButtons[index] = btn
+    end
+    return btn
+end
+
 local function RefreshSidebar()
     if not browser then return end
     local used = 0
@@ -1545,8 +1901,9 @@ local function RefreshSidebar()
         if rec then
             for _, spec in ipairs(rec.specs) do
                 used = used + 1
-                if used > MAX_SIDEBAR_ROWS then break end
-                BindSidebarButton(sidebarButtons[used], {
+                local btn = SidebarButton(used)
+                if not btn then break end
+                BindSidebarButton(btn, {
                     key = spec.key,
                     text = spec.name,
                     badge = ROLE_TAGS[spec.role] or "",
@@ -1565,8 +1922,9 @@ local function RefreshSidebar()
         local EData = CommanderQuartermasterEnhanceData
         local function slotButton(key, text, badge)
             used = used + 1
-            if used > MAX_SIDEBAR_ROWS then return end
-            BindSidebarButton(sidebarButtons[used], {
+            local btn = SidebarButton(used)
+            if not btn then return end
+            BindSidebarButton(btn, {
                 key = key,
                 text = text,
                 badge = badge,
@@ -1587,6 +1945,9 @@ local function RefreshSidebar()
             badge = trouble > 0 and ("|cffff4040%d|r"):format(trouble) or "|cff33ff99ok|r"
         end
         slotButton("MYGEAR", "|cffffd200My Gear|r", badge)
+        local starred = #FavoriteEnhancements()
+        slotButton("FAVORITES", STAR_ICON .. " |cffffd200Favorites|r",
+            starred > 0 and ("|cff33ff99%d|r"):format(starred) or "")
         if EData then
             local function tally(list, group)
                 local owned, total = 0, 0
@@ -1628,8 +1989,9 @@ local function RefreshSidebar()
     elseif db.BrowserView == "CHARS" then
         local function realmButton(realmName, text, badge)
             used = used + 1
-            if used > MAX_SIDEBAR_ROWS then return end
-            BindSidebarButton(sidebarButtons[used], {
+            local btn = SidebarButton(used)
+            if not btn then return end
+            BindSidebarButton(btn, {
                 key = realmName or "ALLREALMS",
                 text = text,
                 badge = badge,
@@ -1655,8 +2017,9 @@ local function RefreshSidebar()
     else
         local function categoryButton(key, text, badge)
             used = used + 1
-            if used > MAX_SIDEBAR_ROWS then return end
-            BindSidebarButton(sidebarButtons[used], {
+            local btn = SidebarButton(used)
+            if not btn then return end
+            BindSidebarButton(btn, {
                 key = key,
                 text = text,
                 badge = badge,
@@ -1689,6 +2052,14 @@ local function RefreshSidebar()
         elseif watched > 0 then
             watchBadge = ("|cff33ff99%d|r"):format(watched)
         end
+        local favTotal, favOut = FavoriteTally()
+        local favBadge = ""
+        if favOut > 0 then
+            favBadge = ("|cffffd200%d|r|cff666666/%d|r"):format(favTotal - favOut, favTotal)
+        elseif favTotal > 0 then
+            favBadge = ("|cff33ff99%d|r"):format(favTotal)
+        end
+        categoryButton("FAVORITES", STAR_ICON .. " |cffffd200Favorites|r", favBadge)
         categoryButton("WATCHLIST", "|cffffd200* Watchlist|r", watchBadge)
         categoryButton("ALL", "All Items")
         for _, cat in ipairs(Data.Categories) do
@@ -1704,6 +2075,11 @@ local function RefreshSidebar()
     end
     for i = used + 1, #sidebarButtons do
         sidebarButtons[i]:Hide()
+    end
+    -- The scroll range comes from the child's height, so it has to follow the
+    -- row count or the tail of a long list is unreachable again.
+    if browser.sidebarChild then
+        browser.sidebarChild:SetHeight(math.max(used, 1) * SIDEBAR_ROW_H)
     end
 end
 
@@ -1739,6 +2115,7 @@ local function FullRefresh()
         browser.filterBtn:SetShown(browse)
         local active = (db.EraFilter and db.EraFilter ~= "ALL")
             or (db.SourceFilter and db.SourceFilter ~= "ALL")
+            or db.FavoritesOnly
         browser.filterBtn:SetText(active and "|cffffd200Filter *|r" or "Filter")
     end
     if browser.ownedCheck then
@@ -1791,12 +2168,14 @@ local function ApplyFraming()
     if not browser then return end
     local style = db.BrowserStyle or "WINDOW"
     local windowArt = style == "WINDOW"
-    if browser.NineSlice then browser.NineSlice:SetShown(windowArt) end
-    if browser.Bg then browser.Bg:SetShown(windowArt) end
-    if browser.TitleBg then browser.TitleBg:SetShown(windowArt) end
-    if browser.TitleText then browser.TitleText:SetShown(windowArt) end
+    -- The whole template dressing, from the shared verified list: this was
+    -- five names, and it was missing the nine border pieces, the title
+    -- streaks and the inset border -- so turning the window art off left
+    -- the template's steel frame and two bars either side of the title
+    -- behind. CloseButton is not in the shared list (most windows want to
+    -- keep it), so this window keeps saying what it wants for that one.
+    Commander.UI.SetTemplateDressing(browser, windowArt)
     if browser.CloseButton then browser.CloseButton:SetShown(windowArt) end
-    if browser.Inset then browser.Inset:SetShown(windowArt) end
     Commander.UI.ApplyStyleBackdrop(browser, windowArt and "NONE" or style)
 end
 
@@ -1842,9 +2221,19 @@ local function CreateRow(parent, index)
     row.stripe:SetTexture("Interface\\Buttons\\WHITE8X8")
     row.stripe:SetVertexColor(1, 1, 1, index % 2 == 0 and 0.03 or 0)
 
+    -- The star owns a gutter of its own at the far left. It deliberately does
+    -- NOT ride in the name the way the watchlist asterisk does: one is a mark
+    -- you set, the other is a verdict on a count, and a row can wear both.
+    row.star = CreateFrame("Button", nil, row)
+    row.star:SetSize(14, 14)
+    row.star:SetPoint("LEFT", row, "LEFT", 1, 0)
+    row.starTex = row.star:CreateTexture(nil, "ARTWORK")
+    row.starTex:SetAllPoints()
+    row.starTex:SetTexture(STAR_TEXTURE)
+
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(22, 22)
-    row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
+    row.icon:SetPoint("LEFT", row, "LEFT", 18, 0)
     row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     -- The suite's shared icon recess (Commander_Events' art). Rows are pooled
     -- and built once, so ApplySettings carries a changed style back to them.
@@ -1852,8 +2241,8 @@ local function CreateRow(parent, index)
     ApplyIconRecess(row.icon)
 
     row.nameFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    row.nameFS:SetPoint("LEFT", row, "LEFT", 30, 0)
-    row.nameFS:SetWidth(170)
+    row.nameFS:SetPoint("LEFT", row, "LEFT", 46, 0)
+    row.nameFS:SetWidth(154)
     row.nameFS:SetJustifyH("LEFT")
     row.nameFS:SetWordWrap(false)
 
@@ -1905,7 +2294,7 @@ local function CreateRow(parent, index)
         end
     end
 
-    row:SetScript("OnEnter", function(self)
+    local function ShowRowTooltip(self)
         local item = self.item
         if not item then return end
         if item.kind == "char" then
@@ -1958,6 +2347,7 @@ local function CreateRow(parent, index)
                         1, 1, 1, true)
                 end
             end
+            GameTooltip:AddLine(FavHint(self), 0.5, 0.5, 0.5)
             GameTooltip:Show()
             return
         end
@@ -1967,9 +2357,40 @@ local function CreateRow(parent, index)
         if not ok then
             GameTooltip:SetText(item.entry.name or "?")
         end
+        GameTooltip:AddLine(FavHint(self), 0.5, 0.5, 0.5)
         GameTooltip:Show()
+    end
+
+    row:SetScript("OnEnter", function(self)
+        StyleStar(self, true)
+        ShowRowTooltip(self)
     end)
-    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row:SetScript("OnLeave", function(self)
+        StyleStar(self, false)
+        GameTooltip:Hide()
+    end)
+
+    -- Hovering the star fires the row's OnLeave (the child takes the mouse),
+    -- so the star re-asserts the hover state itself rather than letting the
+    -- gutter blink out from under the pointer that is aiming at it.
+    row.star:SetScript("OnEnter", function(self)
+        local parent = self:GetParent()
+        StyleStar(parent, true)
+        ShowRowTooltip(parent)
+    end)
+    row.star:SetScript("OnLeave", function(self)
+        StyleStar(self:GetParent(), false)
+        GameTooltip:Hide()
+    end)
+    row.star:SetScript("OnClick", function(self)
+        local parent = self:GetParent()
+        if not parent.favKey then return end
+        CommanderQuartermaster_ToggleFavorite(parent.favKey)
+        -- The star shelf loses a row when it is un-starred, and every shelf's
+        -- badge moves, so this is the full pass rather than a re-bind.
+        FullRefresh()
+        StyleStar(parent, true)
+    end)
     row:SetScript("OnMouseUp", function(self, button)
         local item = self.item
         if not item then return end
@@ -2030,7 +2451,7 @@ local function CreateRow(parent, index)
     return row
 end
 
-local function CreateSidebarButton(parent, index)
+function CreateSidebarButton(parent, index)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetHeight(SIDEBAR_ROW_H)
     btn:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -((index - 1) * SIDEBAR_ROW_H))
@@ -2200,6 +2621,19 @@ local function EnsureBrowser()
         local menu = CreateFrame("Frame", "CommanderQuartermasterFilterMenu", toolbar, "UIDropDownMenuTemplate")
         UIDropDownMenu_Initialize(menu, function()
             local info = UIDropDownMenu_CreateInfo()
+            info.text = "Show"; info.isTitle = true; info.notCheckable = true
+            UIDropDownMenu_AddButton(info)
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Favorites only"
+            info.checked = db.FavoritesOnly and true or false
+            info.keepShownOnClick = true
+            info.func = function()
+                db.FavoritesOnly = not db.FavoritesOnly
+                offset = 0
+                FullRefresh()
+            end
+            UIDropDownMenu_AddButton(info)
+            info = UIDropDownMenu_CreateInfo()
             info.text = "Era"; info.isTitle = true; info.notCheckable = true
             UIDropDownMenu_AddButton(info)
             for _, era in ipairs(ERA_FILTERS) do
@@ -2226,7 +2660,10 @@ local function EnsureBrowser()
             end
             info = UIDropDownMenu_CreateInfo()
             info.text = "Clear Filters"; info.notCheckable = true
-            info.func = function() SetFilters("ALL", "ALL") end
+            info.func = function()
+                db.FavoritesOnly = false
+                SetFilters("ALL", "ALL")
+            end
             UIDropDownMenu_AddButton(info)
         end, "MENU")
         browser.filterBtn:SetScript("OnClick", function(self)
@@ -2287,18 +2724,37 @@ local function EnsureBrowser()
         end)
     end
 
-    -- Sidebar
-    local sidebar = CreateFrame("Frame", nil, browser)
-    sidebar:SetPoint("TOPLEFT", browser, "TOPLEFT", 10, -64)
-    sidebar:SetSize(SIDEBAR_W, MAX_SIDEBAR_ROWS * SIDEBAR_ROW_H)
+    -- Sidebar. The scroll frame is the fix for the silent truncation: what
+    -- does not fit is now reachable instead of absent.
+    local sidebarScroll = CreateFrame("ScrollFrame", "CommanderQuartermasterSidebarScroll",
+        browser, "UIPanelScrollFrameTemplate")
+    sidebarScroll:SetPoint("TOPLEFT", browser, "TOPLEFT", 10, -64)
+    sidebarScroll:SetPoint("BOTTOMLEFT", browser, "BOTTOMLEFT", 10, 10)
+    -- Narrower than the column so the slimmed bar sits in the gap before the
+    -- divider rather than on top of it.
+    sidebarScroll:SetWidth(SIDEBAR_W - 16)
+    sidebarScroll:EnableMouseWheel(true)
+    sidebarScroll:SetScript("OnMouseWheel", function(self, delta)
+        local target = self:GetVerticalScroll() - delta * SIDEBAR_ROW_H * 2
+        local limit = self:GetVerticalScrollRange()
+        if target < 0 then target = 0 elseif target > limit then target = limit end
+        self:SetVerticalScroll(target)
+    end)
+
+    local sidebar = CreateFrame("Frame", nil, sidebarScroll)
+    sidebar:SetSize(SIDEBAR_W - 16, MAX_SIDEBAR_ROWS * SIDEBAR_ROW_H)
+    sidebarScroll:SetScrollChild(sidebar)
+    browser.sidebarChild = sidebar
+
     local sidebarLine = browser:CreateTexture(nil, "ARTWORK")
     sidebarLine:SetColorTexture(1, 1, 1, 0.08)
     sidebarLine:SetWidth(1)
-    sidebarLine:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 3, 0)
+    sidebarLine:SetPoint("TOPLEFT", browser, "TOPLEFT", SIDEBAR_W + 13, -64)
     sidebarLine:SetPoint("BOTTOMLEFT", browser, "BOTTOMLEFT", SIDEBAR_W + 13, 10)
     for i = 1, MAX_SIDEBAR_ROWS do
         sidebarButtons[i] = CreateSidebarButton(sidebar, i)
     end
+    Commander.UI.SlimScrollBar("CommanderQuartermasterSidebarScroll", 2, 2)
 
     -- Column headers
     local listArea = CreateFrame("Frame", nil, browser)
@@ -2463,6 +2919,17 @@ local function BuildShoppingText()
             if wrote then lines[#lines + 1] = "" end
             lines[#lines + 1] = "GEAR ENHANCEMENTS"
             for _, line in ipairs(gear) do lines[#lines + 1] = line end
+            wrote = true
+        end
+    end
+    if db.ShopFavorites then
+        local gaps = FavoriteGaps()
+        if #gaps > 0 then
+            if wrote then lines[#lines + 1] = "" end
+            lines[#lines + 1] = "FAVORITES — none held anywhere"
+            for _, fav in ipairs(gaps) do
+                lines[#lines + 1] = ("- %s"):format(fav.name)
+            end
             wrote = true
         end
     end
@@ -2649,6 +3116,51 @@ function CommanderQuartermaster_Report()
     end
 end
 
+-- The star shelf to chat, for a macro or a quick look without the window.
+function CommanderQuartermaster_Favorites()
+    if not loaded then return end
+    local map = Favorites()
+    local rows = {}
+    if map then
+        for key in pairs(map) do
+            if type(key) == "number" then
+                local hit = byID[key]
+                local entry = Enhance and Enhance.EntryForItem(key)
+                local _, _, _, _, total = CountsFor(key)
+                rows[#rows + 1] = {
+                    name = (hit and hit.entry.name) or (entry and entry.name)
+                        or ItemName(key, "item:" .. tostring(key)),
+                    total = total,
+                }
+            else
+                local EData = CommanderQuartermasterEnhanceData
+                for _, entry in ipairs((EData and EData.Entries) or {}) do
+                    if EnhanceFavKey(entry) == key then
+                        rows[#rows + 1] = { name = entry.name or key, cast = true }
+                        break
+                    end
+                end
+            end
+        end
+    end
+    if #rows == 0 then
+        print("|cff33ff99Commander Quartermaster|r — nothing starred. Click the star at the left of any browser row.")
+        return
+    end
+    table.sort(rows, function(a, b) return a.name < b.name end)
+    print(("|cff33ff99Commander Quartermaster|r — %d favorite%s:"):format(
+        #rows, #rows == 1 and "" or "s"))
+    for _, row in ipairs(rows) do
+        if row.cast then
+            print(("  %s |cff888888(cast by an enchanter)|r"):format(row.name))
+        elseif row.total > 0 then
+            print(("  %s |cff33ff99%d|r"):format(row.name, row.total))
+        else
+            print(("  %s |cffff4040none|r"):format(row.name))
+        end
+    end
+end
+
 -- Readiness verdict to chat: per-slot grades for YOUR class/spec, then
 -- watchlist deficits. Same engine the raid supply check runs.
 function CommanderQuartermaster_Ready()
@@ -2679,6 +3191,19 @@ function CommanderQuartermaster_Ready()
     print(("  Overall: %d/%d carried, %d reachable, %d missing%s"):format(
         ready.carried, #ready.slots, ready.banked + ready.elsewhere, ready.missing,
         #shorts > 0 and (", %d watchlist short"):format(#shorts) or ""))
+end
+
+-- The readiness table itself, for other modules rather than for chat.
+-- Commander_Vault's report asks which loadout consumables are reachable but
+-- not carried, so it can say "this is in your bank, not on you" while you are
+-- standing at the banker. Returns nil (silently, printing nothing) when this
+-- class has no loadout data — a caller that is only decorating its own UI must
+-- not make noise in the chat frame.
+function CommanderQuartermaster_LoadoutState()
+    if not loaded then return nil end
+    local spec = MyLoadoutSpec()
+    if not spec then return nil end
+    return ReadinessFor(spec), spec
 end
 
 -- Gear audit to chat: what every equipped slot is enchanted and gemmed with,
@@ -2753,6 +3278,22 @@ function CommanderQuartermaster_ShoppingList()
     EnsureShopFrame()
     shopFrame.edit:SetText(BuildShoppingText())
     shopFrame:Show()
+end
+
+-- Holdings of one item for other modules: bags, bank, mail, alts, total.
+-- Commander_Tradecraft's shopping list asks so it can say "40 are on your
+-- bank alt" before you buy them twice. Zeroes for an item the ledger does
+-- not track.
+function CommanderQuartermaster_CountsFor(itemID)
+    if not (loaded and itemID) then return 0, 0, 0, 0, 0 end
+    return CountsFor(itemID)
+end
+
+-- The same, per character, biggest holder first: { name, realm, class,
+-- bags, bank, mail, transit, total }
+function CommanderQuartermaster_BreakdownFor(itemID)
+    if not (loaded and itemID) then return {} end
+    return BreakdownFor(itemID)
 end
 
 -- Roster support: hide/unhide a character from all counts. Writes both the
