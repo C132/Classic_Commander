@@ -1,0 +1,13 @@
+<Bindings>
+    <!-- Auto-loaded from the addon folder. Deliberately NOT listed in the TOC:
+         doing so loads it twice and the second pass silently wins. A double
+         hyphen inside this comment would make the parser reject the whole
+         file, silently, so there is none. -->
+    <Binding name="COMMANDERFORMULARY_TOGGLE" header="COMMANDERFORMULARY" runOnUp="false">
+        CommanderFormulary_Toggle()
+    </Binding>
+
+    <Binding name="COMMANDERFORMULARY_SEARCH" runOnUp="false">
+        CommanderFormulary_Search("")
+    </Binding>
+</Bindings>

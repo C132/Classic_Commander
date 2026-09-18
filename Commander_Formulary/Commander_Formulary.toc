@@ -1,0 +1,16 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Formulary
+## Author: Devin
+## Version: 1.0.0
+## Notes: The whole of a profession in one double-wide window: every recipe there is, grouped by the slot it enchants or the thing it makes, the ones you know coloured by difficulty and the ones you do not with exactly where they come from — trainer, vendor, drop, quest, reputation — searchable across names, reagents, sellers and droppers. The right half is the recipe: its tooltip, its reagents against your bags, how to learn it with coordinates and waypoints, and a Craft button. Replaces the stock Enchanting window. Enchanting for now.
+## IconTexture: Interface\Icons\INV_Misc_Book_11
+## SavedVariables: CommanderFormularyDB
+## SavedVariablesPerCharacter: CommanderFormularyChar
+## RequiredDeps: Commander_Events
+## OptionalDeps: TomTom
+
+CommanderFormularyData_Enchanting.lua
+CommanderFormularyModel.lua
+CommanderFormularyDB.lua
+CommanderFormularyUI.lua
