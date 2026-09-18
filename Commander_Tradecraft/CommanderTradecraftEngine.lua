@@ -17,6 +17,11 @@
 --   faction           "Alliance" | "Horde" | nil
 --   standing(faction) reputation standing index with a faction id, or nil
 --                     when unknown
+--   price(item)       optional: the auction price of an item in copper, or
+--                     nil when there is no price on record (Auctionator's
+--                     scan data in game; anything at all in the harness)
+--   alts(item)        optional: how many of an item the character's other
+--                     characters hold (Commander_Quartermaster's ledger)
 --
 -- The skill-up model is the one every leveling guide is built on: below the
 -- yellow threshold a craft always skills up; between yellow and grey the
@@ -96,19 +101,96 @@ function E.PlannedFor(recipe, lo, hi, margin, def)
 end
 
 -- ---------------------------------------------------------------------------
+-- Prices
+-- ---------------------------------------------------------------------------
+
+-- What one of an item costs to acquire: a vendor item is its vendor price,
+-- anything else the auction price on record, or nil when there is none.
+-- A rod you make along the way costs nothing here; its blank costs.
+function E.PriceOf(item, world)
+    local info = D.ITEMS[item]
+    if info and info.made then return 0 end
+    if info and info.buy then return info.buy end
+    if world.price then return world.price(item) end
+    return nil
+end
+
+-- The reagent cost of one cast, and whether every reagent had a price
+function E.CastCost(recipe, world)
+    local total, priced = 0, true
+    for _, pair in ipairs(recipe.reagents) do
+        local p = E.PriceOf(pair[1], world)
+        if p == nil then
+            priced = false
+        else
+            total = total + p * pair[2]
+        end
+    end
+    return total, priced
+end
+
+-- The cost of a path through a segment from `rank` on: every craft step's
+-- planned casts at today's prices, as a total and per skill point. `priced`
+-- is false when any reagent on the path has no price, in which case the
+-- total is a floor, not an estimate.
+function E.PathCost(segment, path, rank, world, margin)
+    local total, priced, points = 0, true, 0
+    for _, def in ipairs(path.steps) do
+        if def.kind == "craft" and rank < def.to then
+            local recipe = D.RECIPES[def.spell]
+            local from = math.max(def.from, rank)
+            local planned = E.PlannedFor(recipe, from, def.to, margin, def)
+            if planned == math.huge then
+                priced = false
+            else
+                local per, ok = E.CastCost(recipe, world)
+                if not ok then priced = false end
+                total = total + per * planned
+                points = points + (def.to - from)
+            end
+        end
+    end
+    return { cost = total, priced = priced, points = points, perPoint = points > 0 and total / points or 0 }
+end
+
+-- ---------------------------------------------------------------------------
 -- Choices
 -- ---------------------------------------------------------------------------
 
 -- The path a character is taking through a segment: their choice if it
--- names a path the segment has, the first (recommended) path otherwise.
-function E.PathFor(segment, choices)
-    local want = choices and choices[segment.key]
+-- names a path the segment has; else the cheapest at today's prices when
+-- `auto` names one for the segment; else the first (recommended) path.
+function E.PathFor(segment, choices, auto)
+    local want = (choices and choices[segment.key]) or (auto and auto[segment.key])
     if want then
         for _, path in ipairs(segment.paths) do
             if path.key == want then return path end
         end
     end
     return segment.paths[1]
+end
+
+-- For every segment with more than one path and still ahead: the cost of
+-- each path from here, and which is cheapest — only when every path is
+-- fully priced, because a half-priced path is not a comparison.
+function E.PricePaths(guide, world, rank, margin)
+    local out = {}
+    for _, segment in ipairs(guide.segments) do
+        if #segment.paths > 1 and rank < segment.to then
+            local entry = { costs = {}, cheapest = nil }
+            local allPriced, best = true, nil
+            for _, path in ipairs(segment.paths) do
+                local c = E.PathCost(segment, path, rank, world, margin)
+                entry.costs[path.key] = c
+                if not c.priced then allPriced = false end
+                if c.priced and (not best or c.cost < entry.costs[best].cost) then best = path.key end
+            end
+            entry.allPriced = allPriced
+            if allPriced then entry.cheapest = best end
+            out[segment.key] = entry
+        end
+    end
+    return out
 end
 
 -- ---------------------------------------------------------------------------
@@ -150,7 +232,9 @@ local function BuyDone(formula, segment, world, usedUntil)
     return false
 end
 
--- opts: margin (fraction, default 10%), bank (count the bank as reachable)
+-- opts: margin (fraction, default 10%), bank (count the bank as reachable),
+--       autoPath (let today's prices pick a segment's path when the player
+--       has not), alts (count what alts hold as reachable on the list)
 function E.Build(guide, world, state, opts)
     opts = opts or {}
     state = state or {}
@@ -204,11 +288,22 @@ function E.Build(guide, world, state, opts)
     plan.bracket = BracketAt(rank)
     if plan.bracket then plan.bracket.current = true end
 
+    -- Prices: what each path through a two-way segment costs from here, and
+    -- the cheapest, so the window can say so and — with the option — take it
+    plan.pathPrices = E.PricePaths(guide, world, rank, margin)
+    local auto = {}
+    if opts.autoPath then
+        for key, entry in pairs(plan.pathPrices) do
+            if entry.cheapest then auto[key] = entry.cheapest end
+        end
+    end
+    plan.autoPaths = auto
+
     -- The chosen path through every segment, and how far each recipe is
     -- used along it (for deciding when a formula stops mattering)
     local paths, usedUntil = {}, {}
     for segIndex, segment in ipairs(guide.segments) do
-        local path = E.PathFor(segment, choices)
+        local path = E.PathFor(segment, choices, auto)
         paths[segIndex] = path
         for _, def in ipairs(path.steps) do
             if def.kind == "craft" and def.to > (usedUntil[def.spell] or 0) then
@@ -262,6 +357,11 @@ function E.Build(guide, world, state, opts)
                             need[line.id] = (need[line.id] or 0) + line.need
                         end
                     end
+                    -- What the step costs at today's prices
+                    local per, priced = E.CastCost(recipe, world)
+                    step.costPerCast, step.priced = per, priced
+                    step.cost = (step.planned ~= math.huge) and per * step.planned or nil
+                    step.autoPath = auto[segment.key] ~= nil and choices[segment.key] == nil
                     -- The same reagents, split at every bracket boundary
                     -- the remaining range crosses. The step's planned total
                     -- is shared out by each part's share of the model — the
@@ -382,22 +482,32 @@ function E.Build(guide, world, state, opts)
 
     -- Shopping: everything still needed, less what is in reach. Rods you
     -- make along the way are never bought, and a missing one is a warning
-    -- rather than a purchase.
+    -- rather than a purchase. Each row carries today's price and what the
+    -- purchase would cost; alts' stock is shown, and counted when asked.
     local list = {}
+    local totalCost, allPriced = 0, true
     for id, total in pairs(need) do
         local info = D.ITEMS[id]
         if not (info and info.made) then
             local bags = world.count(id, false) or 0
             local all = world.count(id, true) or bags
             if all < bags then all = bags end
-            local reachable = useBank and all or bags
-            list[#list + 1] = {
-                id = id, need = total, have = bags, bank = all - bags,
-                buy = math.max(0, total - reachable),
+            local alts = (world.alts and world.alts(id)) or 0
+            local reachable = (useBank and all or bags) + (opts.alts and alts or 0)
+            local price = E.PriceOf(id, world)
+            local buy = math.max(0, total - reachable)
+            local row = {
+                id = id, need = total, have = bags, bank = all - bags, alts = alts,
+                buy = buy,
                 note = info and info.note, vendor = info and info.vendor,
+                price = price, cost = price and price * buy or nil,
             }
+            if price == nil and buy > 0 then allPriced = false end
+            if row.cost then totalCost = totalCost + row.cost end
+            list[#list + 1] = row
         end
     end
+    plan.cost, plan.priced = totalCost, allPriced
     -- Biggest purchases first, then by id so an unchanged list never
     -- reorders itself between two refreshes
     table.sort(list, function(a, b)
@@ -438,12 +548,36 @@ function E.Build(guide, world, state, opts)
             return x.id < y.id
         end)
         b.shopping = rows
+        b.cost, b.priced = 0, true
+        for _, row in ipairs(rows) do
+            row.price = E.PriceOf(row.id, world)
+            row.cost = row.price and row.price * row.buy or nil
+            if row.cost then b.cost = b.cost + row.cost elseif row.buy > 0 then b.priced = false end
+        end
         for _, step in ipairs(b.steps) do
             if step.kind == "buy" and step.status ~= "done" and step.status ~= "skipped" then
                 b.formulaCost = b.formulaCost + (step.cost or 0)
             end
         end
     end
+
+    -- What the route makes that is worth something: wands and oils (the
+    -- rods are consumed by the next rod). Sold, they pay for part of the
+    -- leveling, so the shopping window can show a net figure.
+    plan.made = {}
+    local madeValue, madePriced = 0, true
+    for _, step in ipairs(plan.steps) do
+        if step.kind == "craft" and step.status ~= "done" and step.status ~= "skipped"
+            and step.recipe.creates and not (D.ITEMS[step.recipe.creates] and D.ITEMS[step.recipe.creates].made)
+            and step.planned and step.planned ~= math.huge then
+            local price = world.price and world.price(step.recipe.creates) or nil
+            local row = { id = step.recipe.creates, count = step.planned, price = price,
+                value = price and price * step.planned or nil }
+            if row.value then madeValue = madeValue + row.value else madePriced = false end
+            plan.made[#plan.made + 1] = row
+        end
+    end
+    plan.madeValue, plan.madePriced = madeValue, madePriced
 
     -- Warnings: a runed rod that a later step needs and that you do not hold
     if cur and cur.kind == "craft" and cur.reagents then

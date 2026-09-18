@@ -168,3 +168,28 @@ What you already hold pays for the earliest bracket that wants it and only the r
 so the first trip is the one your bank covers. The whole-route totals close the list for anyone who
 shops once, and the Auctionator hand-off defaults to the current bracket ("All to Auctionator" for
 the lot). Harness C15 is the split and the allocation.
+
+## D12 — Prices decide what prices decide, and nothing else
+
+Every alternative the guide offers is a price question ("if eight Arcane Dust is a quarter cheaper
+than two Greater Planar Essence…"), so with Auctionator's scan data the engine costs each way
+through a two-way segment from where you stand — planned casts × reagent prices, and per skill
+point — and, with "Let Prices Pick The Path" (on by default), takes the cheaper one unless you chose
+by hand. A hand choice always wins and the header says when the other way is cheaper today.
+
+Three rules keep this honest. A vendor reagent is priced at the vendor (`buy` in the data), because
+nobody buys a Copper Rod off the auction house. A path is only compared when *every* reagent on
+*both* paths has a price; a half-priced path is a floor, not an estimate, and the option row says
+"some reagents unpriced" instead. And without Auctionator, or without a scan, nothing is priced and
+the guide's own recommendation stands exactly as before — the route never depends on prices.
+
+The shopping list carries the same prices: each row's cost, each bracket's total (reagents and
+formulas), and a "made along the way" section for the wands and oils the route produces, with a
+net figure if they all sell — the rods are left out because the next rod consumes them.
+
+## D13 — Alts are shown, and counted only when asked
+
+Commander_Quartermaster's ledger knows what your other characters hold (it now tracks enchanting
+materials for exactly this). A shopping row says "25 on your other characters" so you do not buy
+them twice; "Count My Other Characters" (off by default) treats them as reachable, because a stack
+on a bank alt is not in your hand until you have logged over and mailed it.

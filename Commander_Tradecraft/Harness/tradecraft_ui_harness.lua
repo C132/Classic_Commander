@@ -475,10 +475,16 @@ function ReplaceEnchant() replaced = replaced + 1; error("ADDON_ACTION_FORBIDDEN
 local waypoints = {}
 TomTom = { AddWaypoint = function(self, map, x, y, opts) waypoints[#waypoints + 1] = { map = map, x = x, y = y, title = opts.title } end }
 local aucLists = {}
+local PRICES = { [11083] = 300, [11137] = 400, [22445] = 2000, [22446] = 15000, [16204] = 5000, [11176] = 800,
+    [22522] = 8000, [20747] = 1200, [11288] = 4000, [10939] = 1500, [11128] = 2000, [5500] = 3000, [11082] = 9000 }
 Auctionator = { API = { v1 = {
     ConvertToSearchString = function(caller, term) return '"' .. term.searchString .. '"' end,
     CreateShoppingList = function(caller, name, items) aucLists[#aucLists + 1] = { name = name, items = items } end,
+    GetAuctionPriceByItemID = function(caller, item) return PRICES[item] end,
 } } }
+-- Commander_Quartermaster's ledger: a bank alt holding soul dust
+local altStock = { [11083] = 25 }
+function CommanderQuartermaster_CountsFor(item) return 0, 0, 0, altStock[item] or 0, altStock[item] or 0 end
 
 function hooksecurefunc(tbl, name, fn) end
 -- Events this client actually has, from Blizzard_APIDocumentationGenerated
@@ -927,12 +933,65 @@ CHECK(b["Craft"] == nil and b["Route"] == nil, "D4 no step buttons without a pro
 me.rank, me.maxRank = 285, 300
 
 -- ===========================================================================
+-- D2. Prices and alts
+-- ===========================================================================
+
+-- At 320 with both Outland recipes known: the price picks Major Armor
+me.rank, me.maxRank = 320, 375
+me.known[27961] = true
+me.known[33990] = true
+Fire("SKILL_LINES_CHANGED")
+Settle()
+plan = CommanderTradecraft_Plan()
+CHECK(plan.current and plan.current.spell == 27961 and plan.current.autoPath, "D2-1 today's prices pick Major Armor (8 dust at 20s < 2 GPE at 1g50)", plan.current and plan.current.key)
+CHECK(Has("chosen by today's prices"), "D2-2 the option header says so")
+CHECK(Has("cheapest") and Has("/point"), "D2-3 option rows carry the per-point price")
+CHECK(Has("in reagents at today's prices"), "D2-4 the step says what it costs")
+-- Choosing the dearer way by hand overrides the price, and says so
+opts = GuideOptions()
+opts[1].__scripts.OnClick(opts[1])
+Settle()
+plan = CommanderTradecraft_Plan()
+CHECK(plan.current.spell == 33990 and not plan.current.autoPath, "D2-5 a hand choice beats the price")
+CHECK(Has("the other way is cheaper today"), "D2-6 and the header warns")
+CommanderTradecraftChar.choices["320-340"] = nil
+-- Option off: the guide's recommendation
+CommanderTradecraftDB.PricePaths = false
+Fire("BAG_UPDATE_DELAYED")
+Settle()
+CHECK(CommanderTradecraft_Plan().current.spell == 33990, "D2-7 prices off -> recommendation")
+CommanderTradecraftDB.PricePaths = true
+-- Shopping: priced rows, totals, alts, made-along-the-way
+CommanderTradecraft_Shopping()
+Settle()
+local ledger = _G.CommanderTradecraftLedger
+CHECK(ledger.text:find("To buy, reagents and formulas:", 1, true), "D2-8 bracket total")
+CHECK(ledger.text:find("MADE ALONG THE WAY", 1, true) and ledger.text:find("Superior Wizard Oil", 1, true), "D2-9 oils made are listed with value")
+CHECK(ledger.text:find("Net cost of the rest of the route", 1, true), "D2-10 net figure")
+CHECK(ledger.text:find("no auction price on record", 1, true), "D2-11 unpriced reagents are said to be")
+-- Alts: at 135 the soul dust on the bank alt is shown, and counted with the option
+me.rank, me.maxRank = 135, 150
+Fire("SKILL_LINES_CHANGED")
+Settle()
+CommanderTradecraft_Shopping()
+Settle()
+CHECK(ledger.text:find("25 on your other characters", 1, true), "D2-12 alt stock shown", ledger.text:match("[^\n]*other characters[^\n]*"))
+CommanderTradecraftDB.CountAlts = true
+Fire("BAG_UPDATE_DELAYED")
+Settle()
+CHECK(ledger.text:find("(counted)", 1, true), "D2-13 alt stock counted with the option")
+CommanderTradecraftDB.CountAlts = false
+me.rank, me.maxRank = 285, 300
+Fire("SKILL_LINES_CHANGED")
+Settle()
+
+-- ===========================================================================
 -- E. The ledger
 -- ===========================================================================
 
 CommanderTradecraft_Route()
 Settle()
-local ledger = _G.CommanderTradecraftLedger
+ledger = _G.CommanderTradecraftLedger
 CHECK(ledger and ledger.__shown, "E1 ledger opens")
 CHECK(ledger.routeScroll.__shown and ledger.shopScroll.__shown == false, "E1 route list shown, text hidden")
 -- Rows: bracket headers, option rows, steps

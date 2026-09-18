@@ -218,6 +218,29 @@ local function Standing(factionId)
     return nil
 end
 
+-- Prices come from Auctionator's scan data when it is installed and has
+-- one; nil otherwise, and the engine says "unpriced" rather than guessing
+local function AuctionPrice(item)
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    if not (api and api.GetAuctionPriceByItemID) then return nil end
+    local ok, price = pcall(api.GetAuctionPriceByItemID, "Commander_Tradecraft", item)
+    if ok and type(price) == "number" and price > 0 then return price end
+    return nil
+end
+
+local function HavePrices()
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    return api and api.GetAuctionPriceByItemID and true or false
+end
+
+-- What your other characters hold, from Commander_Quartermaster's ledger
+local function AltCount(item)
+    if not CommanderQuartermaster_CountsFor then return 0 end
+    local ok, _, _, mail, alts = pcall(CommanderQuartermaster_CountsFor, item)
+    if ok then return (alts or 0) + (mail or 0) end
+    return 0
+end
+
 local function BuildWorld()
     local prof = Profession()
     local rank, maxRank = ReadSkill(prof)
@@ -227,6 +250,8 @@ local function BuildWorld()
         count = Count,
         faction = Faction(),
         standing = Standing,
+        price = HavePrices() and AuctionPrice or nil,
+        alts = CommanderQuartermaster_CountsFor and AltCount or nil,
     }
 end
 
@@ -255,6 +280,8 @@ local function Rebuild()
     plan = E.Build(Guide(), world, char, {
         margin = db.Margin,
         bank = db.CountBank,
+        autoPath = db.PricePaths,
+        alts = db.CountAlts,
     })
 
     -- A step finished since the last look: say so
@@ -536,13 +563,13 @@ end
 
 -- One of a segment's two ways, as a clickable row: radio, label, and the
 -- guide's note under it in grey
-local function OptionRow(path, chosen, onClick)
+local function OptionRow(path, chosen, onClick, priceTag)
     local rowY = y
     local mark = NewIcon()
     mark:SetSize(14, 14)
     Radio(mark, chosen)
     mark:SetPoint("TOPLEFT", guide, "TOPLEFT", 8, y - 1)
-    Line((chosen and HEX.white or "") .. path.label .. (chosen and "|r" or ""), { indent = 26, color = chosen and C.text or C.dim, gap = 0 })
+    Line((chosen and HEX.white or "") .. path.label .. (chosen and "|r" or "") .. (priceTag or ""), { indent = 26, color = chosen and C.text or C.dim, gap = 0 })
     if path.note then
         Line(HEX.dim .. path.note .. "|r", { indent = 26, gap = 3 })
     end
@@ -902,6 +929,11 @@ local function PaintCraftStep(step, p)
     local range = ("%s%d – %d|r"):format(HEX.dim, step.effectiveFrom or step.from, step.to)
     local ref = step.guideCount and (HEX.dim .. ("  · guide says ×%d"):format(step.guideCount) .. "|r") or ""
     Line(("%s   %s%s"):format(range, count, ref), { indent = 23, color = C.dim })
+    if step.cost and step.priced and step.cost > 0 then
+        Line(("%sabout %s in reagents at today's prices (%s a cast)|r"):format(HEX.dim, E.FormatMoney(step.cost), E.FormatMoney(step.costPerCast)), { indent = 23 })
+    elseif step.cost and not step.priced and step.cost > 0 then
+        Line(("%sat least %s in reagents — some have no auction price on record|r"):format(HEX.dim, E.FormatMoney(step.cost)), { indent = 23 })
+    end
     Gap(3)
 
     -- Reagents, sized for the planned count
@@ -1030,10 +1062,25 @@ local function PaintOptions(p)
     local step = p.current
     if not (step and step.alternatives) then return end
     local seg = step.segment
+    local prices = p.pathPrices and p.pathPrices[seg.key]
     Gap(2)
-    Line(("%sTWO WAYS THROUGH %d – %d|r"):format(HEX.dim, seg.from, seg.to), { font = GameFontDisableSmall, gap = 3 })
+    local head = ("%sTWO WAYS THROUGH %d – %d|r"):format(HEX.dim, seg.from, seg.to)
+    if step.autoPath then
+        head = head .. HEX.good .. "  · chosen by today's prices|r"
+    elseif prices and prices.cheapest and prices.cheapest ~= step.path.key then
+        head = head .. HEX.warn .. "  · the other way is cheaper today|r"
+    end
+    Line(head, { font = GameFontDisableSmall, gap = 3 })
     for _, path in ipairs(seg.paths) do
-        OptionRow(path, path == step.path, function() ChoosePath(seg, path) end)
+        local tag
+        local c = prices and prices.costs[path.key]
+        if c and c.priced then
+            tag = ("  %s%s (%s/point)%s|r"):format(HEX.dim, E.FormatMoney(c.cost), E.FormatMoney(c.perPoint),
+                prices.cheapest == path.key and (" " .. HEX.good .. "cheapest") or "")
+        elseif c then
+            tag = HEX.dim .. "  (some reagents unpriced)|r"
+        end
+        OptionRow(path, path == step.path, function() ChoosePath(seg, path) end, tag)
     end
 end
 
@@ -1192,7 +1239,7 @@ end
 
 -- One bracket's shopping rows as lines: to buy, covered, formulas, and a
 -- plain paste list
-local function ShoppingRows(out, rows, formulas, formulaCost, pasteLabel)
+local function ShoppingRows(out, rows, formulas, formulaCost, pasteLabel, cost, priced)
     local toBuy, held = {}, {}
     for _, row in ipairs(rows) do
         if row.buy > 0 then toBuy[#toBuy + 1] = row else held[#held + 1] = row end
@@ -1201,10 +1248,22 @@ local function ShoppingRows(out, rows, formulas, formulaCost, pasteLabel)
         out[#out + 1] = HEX.dim .. "  Nothing needed." .. "|r"
         return
     end
+    if cost and cost > 0 then
+        out[#out + 1] = ("  %sTo buy, reagents and formulas: %s%s|r%s"):format(HEX.white, HEX.title, E.FormatMoney(cost + (formulaCost or 0)),
+            priced and "" or (HEX.dim .. "  at least — some reagents have no auction price|r"))
+    end
     if #toBuy > 0 then
         out[#out + 1] = HEX.white .. "  To buy" .. "|r"
         for _, row in ipairs(toBuy) do
             local line = ("    %s%d|r × %s"):format(HEX.bad, row.buy, ItemName(row.id))
+            if row.cost then
+                line = line .. ("  %s%s|r %s(%s each)|r"):format(HEX.white, E.FormatMoney(row.cost), HEX.dim, E.FormatMoney(row.price))
+            elseif row.buy > 0 and HavePrices() then
+                line = line .. HEX.dim .. "  no auction price on record|r"
+            end
+            if row.alts and row.alts > 0 then
+                line = line .. ("  %s%d on your other characters%s|r"):format(HEX.warn, row.alts, db.CountAlts and " (counted)" or "")
+            end
             if row.covered and row.covered > 0 then
                 line = line .. HEX.dim .. ("   (need %d, %d already yours)"):format(row.need, row.covered) .. "|r"
             elseif row.have and row.have + (row.bank or 0) > 0 and not row.covered then
@@ -1267,12 +1326,31 @@ local function BuildShoppingText(p)
             out[#out + 1] = ("%s%s %d – %d|r%s"):format(HEX.title, b.name:upper(), b.from, b.to,
                 b.current and (HEX.title .. "  you are here|r") or "")
             ShoppingRows(out, b.shopping, PendingFormulas(b.steps), b.formulaCost,
-                b.current and "Plain names for an auction search:" or nil)
+                b.current and "Plain names for an auction search:" or nil, b.cost, b.priced)
         end
     end
     out[#out + 1] = ""
     out[#out + 1] = HEX.title .. "EVERYTHING LEFT, ALL BRACKETS" .. "|r"
-    ShoppingRows(out, p.shopping, PendingFormulas(p.steps), E.FormulaCosts(p), nil)
+    ShoppingRows(out, p.shopping, PendingFormulas(p.steps), E.FormulaCosts(p), nil, p.cost, p.priced)
+    -- What the route makes that sells: the net figure
+    if p.made and #p.made > 0 then
+        out[#out + 1] = ""
+        out[#out + 1] = HEX.title .. "MADE ALONG THE WAY" .. "|r" .. HEX.dim .. "  — the wands and oils the route produces sell; the rods are used up by the next rod" .. "|r"
+        for _, m in ipairs(p.made) do
+            out[#out + 1] = ("    %s%d|r × %s%s"):format(HEX.white, m.count, ItemName(m.id),
+                m.value and ("  %s%s|r %s(%s each)|r"):format(HEX.green, E.FormatMoney(m.value), HEX.dim, E.FormatMoney(m.price)) or (HEX.dim .. "  no auction price on record|r"))
+        end
+        if p.madeValue > 0 and p.cost and p.cost > 0 then
+            local net = p.cost + E.FormulaCosts(p) - p.madeValue
+            out[#out + 1] = ("  %sNet cost of the rest of the route if it all sells: %s%s|r%s"):format(HEX.white, HEX.title,
+                net >= 0 and E.FormatMoney(net) or ("a profit of " .. E.FormatMoney(-net)),
+                (p.priced and p.madePriced) and "" or (HEX.dim .. "  (rough — something is unpriced)|r"))
+        end
+    end
+    if not HavePrices() then
+        out[#out + 1] = ""
+        out[#out + 1] = HEX.dim .. "Install Auctionator and scan the auction house to see what all this costs." .. "|r"
+    end
     return table.concat(out, "\n")
 end
 
@@ -1452,7 +1530,11 @@ local function StepRowText(step)
             count = step.count and ("×%d"):format(step.count) or ""
         elseif step.remaining then
             count = (step.remaining == math.huge) and "?" or ("~%d more"):format(step.remaining)
-            if step.guideCount then count = count .. (" (guide ×%d)"):format(step.guideCount) end
+            if step.cost and step.priced and step.cost > 0 then
+                count = count .. ("  %s~%s|r"):format(HEX.dim, E.FormatMoney(step.cost))
+            elseif step.guideCount then
+                count = count .. (" (guide ×%d)"):format(step.guideCount)
+            end
         else
             count = ""
         end

@@ -75,10 +75,12 @@ D.PROFESSIONS = {
 -- Names are fallbacks for before the client has the item cached; the window
 -- prefers GetItemInfo. `note` is shown on the shopping list for anything that
 -- cannot simply be bought off the auction house. `vendor` marks items sold
--- by ordinary trade-supply vendors.
+-- by ordinary trade-supply vendors, and `buy` is that vendor price in
+-- copper (ItemSparse BuyPrice, this build) — the price the engine uses for
+-- them, since nobody buys a Copper Rod off the auction house.
 D.ITEMS = {
     -- Rods (the blank ones are Blacksmithing products)
-    [6217] = { name = "Copper Rod", vendor = true, note = "Trade-supply vendors" },
+    [6217] = { name = "Copper Rod", vendor = true, buy = 124, note = "Trade-supply vendors" },
     [6338] = { name = "Silver Rod", note = "Made by Blacksmiths — buy one from the Auction House" },
     [11128] = { name = "Golden Rod", note = "Made by Blacksmiths — buy one from the Auction House" },
     [11144] = { name = "Truesilver Rod", note = "Made by Blacksmiths — buy one from the Auction House" },
@@ -111,14 +113,14 @@ D.ITEMS = {
     [22446] = { name = "Greater Planar Essence" },
     [22449] = { name = "Large Prismatic Shard" },
     -- Everything else
-    [4470] = { name = "Simple Wood", vendor = true, note = "Trade-supply vendors" },
+    [4470] = { name = "Simple Wood", vendor = true, buy = 38, note = "Trade-supply vendors" },
     [5500] = { name = "Iridescent Pearl", note = "Drops from clams — Auction House" },
     [7971] = { name = "Black Pearl", note = "Drops from clams — Auction House" },
     [13926] = { name = "Golden Pearl", note = "Drops from clams — Auction House" },
     [8831] = { name = "Purple Lotus", note = "Herb — Auction House" },
-    [8925] = { name = "Crystal Vial", vendor = true, note = "Trade-supply and alchemy vendors" },
+    [8925] = { name = "Crystal Vial", vendor = true, buy = 2500, note = "Trade-supply and alchemy vendors" },
     [22792] = { name = "Nightmare Vine", note = "Outland herb — Auction House" },
-    [18256] = { name = "Imbued Vial", vendor = true, note = "Trade-supply vendors" },
+    [18256] = { name = "Imbued Vial", vendor = true, buy = 20000, note = "Trade-supply vendors" },
     [23571] = { name = "Primal Might", note = "Alchemy transmute — Auction House" },
     -- Formulas
     [11039] = { name = "Formula: Enchant Cloak - Minor Agility", formula = true },

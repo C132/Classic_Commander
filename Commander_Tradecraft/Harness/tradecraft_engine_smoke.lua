@@ -466,6 +466,72 @@ do
     CHECK(plan.bracket == plan.brackets[5], "C15 375 sits in the last bracket")
 end
 
+-- C16 prices: cast cost, path pricing, auto paths, priced shopping, made
+-- values, alts
+do
+    local PRICES = { [22445] = 2000, [22446] = 15000, [16204] = 5000, [10940] = 100, [11083] = 300,
+        [22522] = 8000, [11288] = 4000, [10939] = 1500 }
+    local function PricedWorld(rank, maxRank, known, bags, bank, alts)
+        local w = World(rank, maxRank, known, bags, bank, "Alliance")
+        w.price = function(item) return PRICES[item] end
+        w.alts = function(item) return (alts or {})[item] or 0 end
+        return w
+    end
+    -- Cast cost: Major Armor = 8 Arcane Dust = 160s; Major Spirit = 2 GPE = 3g
+    local w = PricedWorld(320, 375, { [27961] = true, [33990] = true })
+    local cost, priced = E.CastCost(D.RECIPES[27961], w)
+    CHECK(cost == 16000 and priced, "C16 Major Armor costs 1g 60s a cast", cost)
+    cost, priced = E.CastCost(D.RECIPES[33990], w)
+    CHECK(cost == 30000 and priced, "C16 Major Spirit costs 3g a cast", cost)
+    -- A vendor reagent is priced at the vendor even with no AH price
+    cost, priced = E.CastCost(D.RECIPES[14807], w)
+    CHECK(cost == 38 + 1500 and priced, "C16 vendor item priced at the vendor", cost)
+    -- A reagent with no price makes the cast unpriced
+    cost, priced = E.CastCost(D.RECIPES[13501], w)
+    CHECK(cost == 600 and priced, "C16 soul dust priced")
+    cost, priced = E.CastCost(D.RECIPES[13661], w)
+    CHECK(not priced, "C16 vision dust unpriced -> not priced")
+    -- 320-340: main = 25-ish Major Spirit casts at 3g = ~75g; alt = Major Armor 320-335 + Major Spirit 335-340
+    local pp = E.PricePaths(GUIDE, w, 320, 0.10)
+    local seg = pp["320-340"]
+    CHECK(seg and seg.allPriced and seg.costs.main and seg.costs.alt, "C16 both paths priced")
+    CHECK(seg.costs.main.cost > seg.costs.alt.cost and seg.cheapest == "alt", "C16 at 8 dust = 1g60 vs 2 GPE = 3g the Major Armor path is cheaper", seg.costs.main.cost .. " vs " .. seg.costs.alt.cost)
+    CHECK(seg.costs.main.perPoint > 0 and seg.costs.main.points == 20, "C16 per-point figure", seg.costs.main.points)
+    -- A finished segment is not priced; an unpriced path is not compared
+    CHECK(pp["110-135"] == nil, "C16 finished segments skipped")
+    -- Auto path takes the cheapest unless the player chose
+    local plan = E.Build(GUIDE, w, nil, { autoPath = true })
+    CHECK(plan.current and plan.current.spell == 27961 and plan.current.autoPath, "C16 auto path takes Major Armor", plan.current and plan.current.key)
+    plan = E.Build(GUIDE, w, { choices = { ["320-340"] = "main" } }, { autoPath = true })
+    CHECK(plan.current and plan.current.spell == 33990 and not plan.current.autoPath, "C16 a player's choice beats the price")
+    plan = E.Build(GUIDE, w, nil, { autoPath = false })
+    CHECK(plan.current and plan.current.spell == 33990, "C16 auto off -> the guide's recommendation")
+    -- Step cost and shopping totals
+    plan = E.Build(GUIDE, w, nil, { autoPath = true })
+    CHECK(plan.current.costPerCast == 16000 and plan.current.cost == 16000 * plan.current.planned and plan.current.priced, "C16 step cost", plan.current.cost)
+    local dust
+    for _, row in ipairs(plan.shopping) do if row.id == 22445 then dust = row end end
+    CHECK(dust and dust.price == 2000 and dust.cost == 2000 * dust.buy, "C16 shopping row priced", dust and dust.cost)
+    CHECK(not plan.priced, "C16 whole list unpriced while a reagent has no price")
+    CHECK(plan.cost > 0, "C16 but the priced part totals", plan.cost)
+    -- Made along the way: Superior Wizard Oil at 80s each
+    local oil
+    for _, m in ipairs(plan.made) do if m.id == 22522 then oil = m end end
+    CHECK(oil and oil.price == 8000 and oil.value == 8000 * oil.count and oil.count >= 14, "C16 oils made are valued", oil and oil.count)
+    CHECK(plan.madeValue >= oil.value, "C16 made value totals")
+    -- Alts: counted on the row, and reachable only with the option
+    w = PricedWorld(320, 375, { [27961] = true }, {}, {}, { [22445] = 100 })
+    plan = E.Build(GUIDE, w, nil, { autoPath = true })
+    for _, row in ipairs(plan.shopping) do if row.id == 22445 then dust = row end end
+    CHECK(dust.alts == 100 and dust.buy == dust.need, "C16 alts shown, not counted by default", dust.buy)
+    plan = E.Build(GUIDE, w, nil, { autoPath = true, alts = true })
+    for _, row in ipairs(plan.shopping) do if row.id == 22445 then dust = row end end
+    CHECK(dust.buy == math.max(0, dust.need - 100), "C16 alts counted with the option", dust.buy)
+    -- No price function at all: everything still builds, nothing priced
+    plan = E.Build(GUIDE, World(320, 375, { [27961] = true }), nil, { autoPath = true })
+    CHECK(plan.current.spell == 33990 and not plan.priced and next(plan.autoPaths) == nil, "C16 without prices the recommendation stands")
+end
+
 -- C14 helpers
 CHECK(E.FormatMoney(0) == "0c" and E.FormatMoney(800) == "8s" and E.FormatMoney(100000) == "10g"
     and E.FormatMoney(12000) == "1g 20s" and E.FormatMoney(124) == "1s 24c", "C14 money", E.FormatMoney(12000))

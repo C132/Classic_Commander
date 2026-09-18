@@ -81,7 +81,7 @@ UnitFactionGroup GetFactionInfoByID
 
 -- Optional neighbours, read only when present
 allow [[
-TomTom Auctionator
+TomTom Auctionator CommanderQuartermaster_CountsFor
 ]]
 
 local problems, scanned = 0, 0

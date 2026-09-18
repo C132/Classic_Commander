@@ -27,7 +27,9 @@ local DefaultSettings = {
 
     -- Counting
     CountBank = true,
+    CountAlts = false,
     Margin = 0.10,
+    PricePaths = true,
 
     -- Crafting
     AutoTargetGear = true,
@@ -135,6 +137,19 @@ local function CreateOptionsPanel()
         tooltip = "Treat reagents in your bank as reachable: the shopping list will not tell you to buy Vision Dust you already own, and a step's reagent line shows the bank's share in brackets. Bank counts are as of your last visit to a banker.",
         get = function() return CommanderTradecraftDB.CountBank end,
         set = function(value) CommanderTradecraftDB.CountBank = value end,
+        isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
+    })
+    panel:AddCheckboxPair({
+        label = "Let Prices Pick The Path",
+        tooltip = "Where the guide offers two ways through a stretch, take the one that is cheaper at today's auction prices (Auctionator's scan data) unless you have chosen one yourself. The option rows show what each way costs, and per skill point. Without prices on record, the guide's own recommendation stands.",
+        get = function() return CommanderTradecraftDB.PricePaths end,
+        set = function(value) CommanderTradecraftDB.PricePaths = value end,
+        isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
+    }, {
+        label = "Count My Other Characters",
+        tooltip = "Treat reagents your alts hold (and mail in transit), as Commander Quartermaster's ledger knows them, as reachable on the shopping list. Off, the list still says how many are on your other characters so you do not buy them twice.",
+        get = function() return CommanderTradecraftDB.CountAlts end,
+        set = function(value) CommanderTradecraftDB.CountAlts = value end,
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
     })
     panel:AddSlider({
