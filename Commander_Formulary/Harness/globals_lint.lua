@@ -80,7 +80,7 @@ UnitClass UnitFactionGroup GetFactionInfoByID RAID_CLASS_COLORS
 
 -- Optional neighbours, read only when present
 allow [[
-TomTom
+TomTom CommanderTradecraft_Plan
 ]]
 
 local problems, scanned = 0, 0

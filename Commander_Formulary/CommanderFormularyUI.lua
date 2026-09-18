@@ -508,7 +508,7 @@ local function NavRow(i)
     row.right = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.right:SetJustifyH("RIGHT")
     row.right:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-    row.right:SetWidth(84)
+    row.right:SetWidth(98)
     row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
     row.name:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
     row.progress = Quad(row, "ARTWORK")
@@ -526,6 +526,24 @@ local function SelectRecipe(spell)
     selectedSpell = spell
     char.selected = spell
     Repaint()
+end
+
+-- The trainers are listed under their own header at the foot of the
+-- navigator; selecting one puts their place and a waypoint in the briefing
+local function TrainerRows()
+    local out = {}
+    local data = Data()
+    local faction = world and world.faction
+    local mine = {}
+    for _, t in ipairs(data.trainers) do
+        if not t.faction or not faction or t.faction == faction then mine[#mine + 1] = t end
+    end
+    if #mine == 0 then return out end
+    out[#out + 1] = { kind = "trainers", count = #mine, collapsed = char.collapsed.TRAINERS and true or false }
+    if not char.collapsed.TRAINERS then
+        for _, t in ipairs(mine) do out[#out + 1] = { kind = "trainer", trainer = t } end
+    end
+    return out
 end
 
 local function ToggleCategory(key)
@@ -555,7 +573,37 @@ local function PaintNav()
         row.name:ClearAllPoints()
         row.right:SetText("")
         row:SetScript("OnEnter", nil); row:SetScript("OnLeave", nil)
-        if r.kind == "category" then
+        if r.kind == "trainers" then
+            row:SetHeight(HEAD_H)
+            SetChevron(row, not r.collapsed, tr, tg, tb)
+            row.name:SetPoint("LEFT", row, "LEFT", 20, 2)
+            row.name:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
+            row.name:SetFontObject(GameFontNormalSmall)
+            row.name:SetText("Trainers")
+            row.name:SetTextColor(tr, tg, tb)
+            row.right:SetText(("%s%d|r"):format(Hex(fr, fg, fb), r.count))
+            row:SetScript("OnClick", function() ToggleCategory("TRAINERS") end)
+            AttachTooltip(row, "Trainers", "Every Enchanting trainer your faction can use, with where they stand. Master rank is taught only in Outland.", "ANCHOR_RIGHT")
+        elseif r.kind == "trainer" then
+            local t = r.trainer
+            row:SetHeight(ROW_H)
+            row.icon:SetTexture(Data().icon)
+            row.icon:SetAlpha(t.outland and 1 or 0.7)
+            row.icon:Show()
+            row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+            row.name:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
+            row.name:SetFontObject(GameFontHighlightSmall)
+            row.name:SetText(t.name)
+            row.name:SetTextColor(pr, pg, pb)
+            row.right:SetText(("%s%s|r"):format(Hex(fr, fg, fb), t.outland and "Master" or "to Artisan"))
+            if selectedSpell == "trainer:" .. t.npc then
+                row.bar:SetVertexColor(ar, ag, ab, OnPaper() and 0.25 or 0.18)
+                row.bar:Show()
+            end
+            local key = "trainer:" .. t.npc
+            row:SetScript("OnClick", function() SelectRecipe(key) end)
+            AttachTooltip(row, t.name, ("%s (%.1f, %.1f)"):format(t.zone, t.x, t.y), "ANCHOR_RIGHT")
+        elseif r.kind == "category" then
             local cat = r.cat
             row:SetHeight(HEAD_H)
             SetChevron(row, not r.collapsed, tr, tg, tb)
@@ -775,7 +823,17 @@ local function PaintRecipeTip(spell)
     end
     tip:Show()
     local h = tip:GetHeight()
-    if not h or h < 20 then h = 20 end
+    if not h or h < 20 then
+        -- Not laid out yet on the frame it was shown: paint again next frame
+        h = 20
+        if not frame._tipRepaint then
+            frame._tipRepaint = true
+            C_Timer.After(0, function()
+                frame._tipRepaint = nil
+                if frame:IsShown() then Repaint() end
+            end)
+        end
+    end
     dy = dy - h - 4
     return true
 end
@@ -899,6 +957,51 @@ local function PaintDetail()
     if craftHolder then craftHolder:Hide() end
     if openHolder then openHolder:Hide() end
     dy = -4
+    -- A trainer selected from the foot of the navigator
+    if type(selectedSpell) == "string" then
+        local npc = tonumber(selectedSpell:match("^trainer:(%d+)$"))
+        for _, t in ipairs(Data().trainers) do
+            if t.npc == npc then
+                local icon = DIcon()
+                icon:SetSize(36, 36)
+                icon:SetTexture(Data().icon)
+                icon:SetPoint("TOPLEFT", detailChild, "TOPLEFT", 2, dy)
+                Line(t.name, { indent = 46, font = GameFontNormalLarge, ink = "title", gap = 1 })
+                Line(("%s trainer%s"):format(Data().name, t.outland and " — teaches Master" or " — up to Artisan"), { indent = 46, ink = "secondary" })
+                if dy > -44 then dy = -44 end
+                Gap(6)
+                local rowY = dy
+                Line(("%s (%.1f, %.1f)"):format(t.zone, t.x, t.y), { indent = 2, rightPad = 46 })
+                GoButton(t, t.name, rowY)
+                -- What this trainer would teach you right now
+                local teachable = {}
+                for _, e in pairs(view.entries) do
+                    if e.learnable == "trainer" and (not e.rec.trainer.outland or t.outland) then teachable[#teachable + 1] = e end
+                end
+                table.sort(teachable, function(a, b) return a.learnSkill < b.learnSkill end)
+                if #teachable > 0 then
+                    Heading("Would teach you now")
+                    for _, e in ipairs(teachable) do
+                        local ey = dy
+                        local ic = DIcon()
+                        ic:SetSize(16, 16)
+                        ic:SetTexture(SpellIcon(e.spell))
+                        ic:SetPoint("TOPLEFT", detailChild, "TOPLEFT", 2, dy)
+                        Line(("%s  %s%d skill%s|r"):format(e.name, Hex(Ink("faint")), e.learnSkill,
+                            e.rec.trainer.cost > 0 and (", " .. M.FormatMoney(e.rec.trainer.cost)) or ""), { indent = 24 })
+                        local hover = DHover()
+                        hover:SetPoint("TOPLEFT", detailChild, "TOPLEFT", 0, ey)
+                        hover:SetPoint("TOPRIGHT", detailChild, "TOPRIGHT", 0, ey)
+                        hover:SetHeight(ey - dy)
+                        local spell = e.spell
+                        hover:SetScript("OnClick", function() SelectRecipe(spell) end)
+                    end
+                end
+                detailChild:SetHeight(-dy + 8)
+                return
+            end
+        end
+    end
     local entry = view and selectedSpell and view.entries[selectedSpell]
     if not entry then
         Line(view and view.hasProfession and "Pick a recipe on the left." or "Learn Enchanting from a trainer in any capital city, then come back here.", { ink = "secondary" })
@@ -923,6 +1026,19 @@ local function PaintDetail()
     end
     Line(sub, { indent = 46, ink = "secondary" })
     if dy > -44 then dy = -44 end
+    -- On the leveling route? Commander_Tradecraft says so when it is loaded
+    if CommanderTradecraft_Plan then
+        local plan = CommanderTradecraft_Plan()
+        if plan and plan.steps then
+            for _, step in ipairs(plan.steps) do
+                if step.kind == "craft" and step.spell == rec.spell then
+                    local state = step.status == "current" and "the step you are on" or step.status == "done" and "a step behind you" or "a step ahead"
+                    Line(("%sOn the Tradecraft leveling route:|r %d – %d, %s."):format(Hex(Ink("strong")), step.from, step.to, state), { indent = 46, ink = "secondary" })
+                    break
+                end
+            end
+        end
+    end
     if entry.learnable then
         local why = ({ trainer = "Your trainer will teach this now.", held = "The formula is in your bags — right-click it.",
             ["held-soon"] = "The formula is in your bags; it needs more skill.", vendor = "A vendor you can use sells the formula.",
@@ -1026,6 +1142,9 @@ Repaint = function()
     if not (frame and frame:IsShown() and view) then return end
     ApplyFraming()
     rows = M.Rows(view, { filter = db.Filter, search = searchText, sort = db.Sort, collapsed = char.collapsed }, world)
+    if searchText == "" and (db.Filter or "ALL") == "ALL" then
+        for _, r in ipairs(TrainerRows()) do rows[#rows + 1] = r end
+    end
     -- The filter bar
     for key, button in pairs(frame.filters) do
         local on = (db.Filter or "ALL") == key

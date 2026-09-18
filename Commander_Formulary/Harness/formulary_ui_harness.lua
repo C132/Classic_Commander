@@ -776,6 +776,23 @@ wristHeader.__scripts.OnClick(wristHeader)
 Settle()
 CHECK(CommanderFormularyChar.collapsed.WRIST == nil and NavRecipeCount() == before, "C3 expanded again")
 
+-- C4 the trainers at the foot of the navigator, and a trainer's briefing
+local trainerRow
+for _, f in ipairs(frames) do
+    if f.__kind == "Button" and f.__shown ~= false and f.name and f.name.__text == "Felannia" and Under(frame.navPane, f) then trainerRow = f end
+end
+CHECK(trainerRow ~= nil, "C4 Horde trainer row listed")
+local johan
+for _, f in ipairs(frames) do
+    if f.__kind == "Button" and f.__shown ~= false and f.name and f.name.__text == "Johan Barnes" and Under(frame.navPane, f) then johan = f end
+end
+CHECK(johan == nil, "C4 the other faction's trainer not listed")
+trainerRow.__scripts.OnClick(trainerRow)
+Settle()
+detail = TextUnder(frame.detailPane)
+CHECK(detail:find("Felannia", 1, true) and detail:find("Hellfire Peninsula (52.3, 36.0)", 1, true), "C4 trainer briefing with coordinates", detail)
+CHECK(detail:find("WOULD TEACH YOU NOW", 1, true) and detail:find("Enchant Shield - Minor Stamina", 1, true), "C4 what the trainer would teach now", detail)
+
 -- ===========================================================================
 -- D. The stock craft window is read and put away
 -- ===========================================================================
