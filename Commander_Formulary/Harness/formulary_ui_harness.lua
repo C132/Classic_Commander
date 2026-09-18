@@ -845,6 +845,21 @@ if hooked then
     hooked(GameTooltip)
     CHECK(GameTooltip.__lines[1] and GameTooltip.__lines[1]:find("Disenchants into") and GameTooltip.__lines[1]:find("Illusion Dust"), "C6 DE materials line", GameTooltip.__lines[1])
     CHECK(GameTooltip.__lines[2] and GameTooltip.__lines[2]:find("disenchant it") and GameTooltip.__lines[2]:find("vendor 30s") and GameTooltip.__lines[2]:find("AH 60s"), "C6 DE verdict line", GameTooltip.__lines[2])
+    CHECK(not GameTooltip.__lines[2]:find("→", 1, true), "C6 no arrow glyph")
+    -- a soulbound copy: the auction house is off the table, and the line says so
+    ITEM_SOULBOUND = "Soulbound"
+    GameTooltip.GetName = function() return "GameTooltip" end
+    GameTooltip.NumLines = function() return 2 end
+    _G.GameTooltipTextLeft1 = { GetText = function() return "Bracers" end }
+    _G.GameTooltipTextLeft2 = { GetText = function() return "Soulbound" end }
+    GameTooltip.__lines = {}
+    GameTooltip._cfmItem = nil
+    -- a cheap green whose AH price would otherwise win: DE ~7g vs AH 60s is still DE; use the blue where AH 2g < DE 3g... make AH the winner
+    PRICES[2140] = 900000
+    hooked(GameTooltip)
+    CHECK(GameTooltip.__lines[2]:find("soulbound, no AH") and not GameTooltip.__lines[2]:find("auction house"), "C6 soulbound: no auction option", GameTooltip.__lines[2])
+    PRICES[2140] = 6000
+    GameTooltip.NumLines = function() return 0 end
     -- a blue at 115: Large Prismatic Shard, 3g vs AH 2g -> disenchant
     GameTooltip.__lines = {}
     GameTooltip._cfmItem = nil

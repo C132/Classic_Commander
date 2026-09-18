@@ -1690,15 +1690,28 @@ local function AppendDisenchantAdvice(tooltip, item, link)
     end
     tooltip:AddLine("Disenchants into " .. table.concat(parts, ", "), 0.6, 0.85, 1, true)
     local value, priced = M.DisenchantValue(results, w)
-    local auction = w.price and w.price(item) or nil
+    -- A soulbound item cannot go to the auction house: the tooltip's own
+    -- lines say so (an exact ITEM_SOULBOUND line), and that is the only
+    -- place the bound state of THIS copy is known
+    local bound = false
+    local tipName = tooltip.GetName and tooltip:GetName()
+    if tipName and tooltip.NumLines then
+        for i = 1, (tooltip:NumLines() or 0) do
+            local fs = _G[tipName .. "TextLeft" .. i]
+            local text = fs and fs.GetText and fs:GetText()
+            if text and ITEM_SOULBOUND and text == ITEM_SOULBOUND then bound = true break end
+        end
+    end
+    local auction = (not bound) and w.price and w.price(item) or nil
     if value or auction or (sellPrice and sellPrice > 0) then
         local best = M.DisposalVerdict(value, sellPrice and sellPrice > 0 and sellPrice or nil, auction)
         local bits = {}
         if value then bits[#bits + 1] = ("DE ~%s%s"):format(M.FormatMoney(value), priced and "" or "+") end
         if sellPrice and sellPrice > 0 then bits[#bits + 1] = "vendor " .. M.FormatMoney(sellPrice) end
-        if auction then bits[#bits + 1] = "AH " .. M.FormatMoney(auction) end
+        if auction then bits[#bits + 1] = "AH " .. M.FormatMoney(auction) elseif bound and w.price then bits[#bits + 1] = "soulbound, no AH" end
         local word = ({ disenchant = "disenchant it", vendor = "vendor it", auction = "sell it on the auction house" })[best]
-        tooltip:AddLine(("%s → %s"):format(table.concat(bits, " · "), word or "?"), 0.6, 0.85, 1, true)
+        -- A dash, not an arrow: the client's fonts draw arrow glyphs as boxes
+        tooltip:AddLine(("%s — %s"):format(table.concat(bits, " · "), word or "?"), 0.6, 0.85, 1, true)
     end
 end
 

@@ -101,7 +101,11 @@ class, so the generator derives the rule (`disenchant["quality:class"]`, bracket
 gaps filled) and the tooltip hook applies it to any green, blue or purple weapon or armour: what it
 breaks into with chances (weapons favour essences, armour dust — the tables say so), the expected
 value at today's prices, against the vendor price and the auction price, and the verdict. This is
-where an enchanter's gold comes from and the game gives no hint of it.
+where an enchanter's gold comes from and the game gives no hint of it. A **soulbound** copy has no
+auction option — the first in-game screenshot (2026-09-18) showed "sell it on the auction house"
+under a Soulbound shield; the tooltip's own `ITEM_SOULBOUND` line is the one place the bound state of
+*this* copy is known, so it is read before the verdict. The verdict line uses a dash, not an arrow:
+the client's fonts draw arrow glyphs as boxes (the same screenshot).
 
 ## D11 — Trips
 
