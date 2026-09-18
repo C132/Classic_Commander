@@ -28,7 +28,10 @@ Three encodings that cost time, kept here so nobody pays twice: a formula's taug
 `ItemEffect` row with `TriggerType 6` (slot 0 is the generic "Learning" spell 483); weapon and
 shield enchants name their targets by item *subclass* mask, not inventory type; and most TBC
 vendor stock is on `npc_vendor_template`, not `npc_vendor`. Bosses are kept even when never
-spawned (Ouro and Nightbane are summoned); everything else unspawned is a GM stock room.
+spawned (Ouro and Nightbane are summoned); everything else unspawned is a GM stock room. Two rows
+are corrected by hand in the generator's `MANUAL_*` tables: Ring - Stats (a TBC Classic addition the
+world DB predates) and Ring - Striking, which the world DB puts on a Violet Eye vendor in Karazhan
+while the item itself is gated on Consortium standing.
 
 ## D3 — Recipe Master's known-recipe bug, and why this module matches by name
 
@@ -102,7 +105,8 @@ where an enchanter's gold comes from and the game gives no hint of it.
 
 ## D11 — Trips
 
-The **Trips** filter regroups the unknown formulas a vendor you can use sells (right faction, enough
-standing) by zone: one row per zone with its vendor, how many formulas, how many at your skill and
+The **Trips** filter regroups the unknown formulas a vendor of your faction sells by zone — a
+reputation you have not earned yet is listed and marked "needs Honored", because that is a trip you
+can plan for; the other faction's vendors are no trip at all — one row per zone with its vendor, how many formulas, how many at your skill and
 the gold for the lot; right-click for a waypoint to the vendor. One Moonglade trip, one Silithus
 trip, one Shattrath sweep — the completionist's errand list.

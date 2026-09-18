@@ -37,6 +37,12 @@ NEVER_ADDED = {27958, 28021}
 # rather than a loot row). Vendor prices in copper.
 MANUAL_VENDORS = {
     186683: [(19932, 170000)],          # Formula: Enchant Ring - Stats — Andormu, Caverns of Time (Keepers of Time)
+    22535: [(20242, 100000)],           # Formula: Enchant Ring - Striking — Karaaz, the Stormspire (Consortium Revered)
+}
+# Vendor rows the world DB has wrong: Ring - Striking sits on Ythyar (a Violet
+# Eye vendor in Karazhan) while the item is gated on Consortium standing
+MANUAL_REMOVE_VENDORS = {
+    22535: {17518},
 }
 MANUAL_NOTES = {
     35498: "Dropped by the prisoners released from Ethereum Prisons in Netherstorm (Ethereum Prison Key).",
@@ -329,6 +335,8 @@ def add_npc(entry, kind):
 
 for item, f in formulas.items():
     for r in vendorRows.get(item, []):
+        if r["entry"] in MANUAL_REMOVE_VENDORS.get(item, set()):
+            continue
         if add_npc(r["entry"], "vendor"):
             price = itemTemplate.get(item, {}).get("BuyPrice", 0)
             gate = rep_condition(r.get("condition_id") or 0)

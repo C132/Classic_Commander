@@ -3,7 +3,7 @@
 Three luajit checks plus the data generator. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit formulary_model_smoke.lua   # data + model — 2638 checks
+/opt/homebrew/bin/luajit formulary_model_smoke.lua   # data + model — 2640 checks
 /opt/homebrew/bin/luajit formulary_ui_harness.lua    # UI + host    — 78 checks
 /opt/homebrew/bin/luajit globals_lint.lua            # 4 files, 0 undeclared globals
 ```

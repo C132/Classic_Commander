@@ -474,7 +474,12 @@ function M.Trips(view, world)
                     local seen = {}
                     for _, v in ipairs(f.vendors or {}) do
                         local npc = data.npcs[v.npc]
-                        if npc and npc.zone and M.VendorUsable(data, f, v.npc, world, v) and not seen[npc.zone] then
+                        -- The other faction's vendors are no trip at all; a
+                        -- reputation you have not earned yet is a trip you
+                        -- can plan for, so it is listed and marked short
+                        local usable, why = M.VendorUsable(data, f, v.npc, world, v)
+                        local listed = usable or why == "reputation"
+                        if npc and npc.zone and listed and not seen[npc.zone] then
                             seen[npc.zone] = true
                             local z = zones[npc.zone]
                             if not z then
@@ -487,7 +492,8 @@ function M.Trips(view, world)
                                 z.byNpc[v.npc] = stop
                                 z.stops[#z.stops + 1] = stop
                             end
-                            stop.formulas[#stop.formulas + 1] = { entry = entry, item = item, cost = v.cost, skill = f.skill, rep = M.VendorGate(f, v) }
+                            stop.formulas[#stop.formulas + 1] = { entry = entry, item = item, cost = v.cost, skill = f.skill,
+                                rep = M.VendorGate(f, v), repShort = not usable }
                             z.count = z.count + 1
                             z.cost = z.cost + (v.cost or 0)
                             if f.skill <= view.rank then z.atSkill = z.atSkill + 1 end

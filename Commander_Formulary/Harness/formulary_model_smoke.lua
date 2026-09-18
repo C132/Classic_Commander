@@ -292,6 +292,20 @@ do
     CHECK(moonglade and moonglade.count >= 2 and moonglade.stops[1].name == "Lorelae Wintersong", "B8 Moonglade is one stop with both formulas", moonglade and moonglade.count)
     CHECK(moonglade.cost >= 22000 + 20000, "B8 zone cost totals", moonglade.cost)
     CHECK(ashenvale == nil, "B8 Horde does not see Dalria's Ashenvale")
+    -- Keepers of Time at Honored (6): the Tanaris trip is ready; Consortium at Friendly: Netherstorm listed but short
+    local tanaris, nether
+    for _, z in ipairs(trips) do
+        if z.zone == "Tanaris" then tanaris = z end
+        if z.zone == "Netherstorm" then nether = z end
+    end
+    local function anyShort(z, want)
+        for _, stop in ipairs(z.stops) do
+            for _, f in ipairs(stop.formulas) do if (f.repShort and true or false) == want then return true end end
+        end
+        return false
+    end
+    CHECK(tanaris and anyShort(tanaris, false), "B8 something at Alurmi is ready at Honored")
+    CHECK(nether and anyShort(nether, true), "B8 Netherstorm listed with something short of Consortium standing")
     CHECK(trips[1].count >= trips[#trips].count, "B8 sorted most formulas first")
     -- a known formula is no longer part of the trip
     local before = moonglade.count

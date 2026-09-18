@@ -601,7 +601,15 @@ local function PaintNav()
         row.name:ClearAllPoints()
         row.right:SetText("")
         row:SetScript("OnEnter", nil); row:SetScript("OnLeave", nil)
-        if r.kind == "zone" then
+        if r.kind == "empty" then
+            row:SetHeight(ROW_H * 2)
+            row.name:SetPoint("TOPLEFT", row, "TOPLEFT", 10, -4)
+            row.name:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            row.name:SetFontObject(GameFontHighlightSmall)
+            if row.name.SetWordWrap then row.name:SetWordWrap(true) end
+            row.name:SetText(r.text)
+            row.name:SetTextColor(sr, sg, sb)
+        elseif r.kind == "zone" then
             local z = r.zone
             row:SetHeight(HEAD_H)
             SetChevron(row, not r.collapsed, tr, tg, tb)
@@ -687,6 +695,7 @@ local function PaintNav()
         else
             local e = r.entry
             row:SetHeight(ROW_H)
+            if row.name.SetWordWrap then row.name:SetWordWrap(false) end
             row.icon:SetTexture(SpellIcon(e.spell))
             row.icon:SetAlpha(e.known and 1 or 0.45)
             row.icon:Show()
@@ -703,9 +712,15 @@ local function PaintNav()
                     row.right:SetText("")
                 end
             elseif r.stop then
-                -- A trip row: the vendor's price and the skill it needs
-                row.name:SetTextColor(e.learnSkill <= view.rank and pr or sr, e.learnSkill <= view.rank and pg or sg, e.learnSkill <= view.rank and pb or sb)
-                row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), r.cost > 0 and M.FormatMoney(r.cost) or "", Hex(fr, fg, fb), r.skill))
+                -- A trip row: the vendor's price and the skill it needs, or
+                -- the standing you are short of
+                local ready = e.learnSkill <= view.rank and not r.repShort
+                row.name:SetTextColor(ready and pr or sr, ready and pg or sg, ready and pb or sb)
+                if r.repShort and r.rep then
+                    row.right:SetText(("%sneeds %s|r"):format(Hex(WARN[1] * 0.9, WARN[2] * 0.9, WARN[3] * 0.9), M.StandingName(r.rep.standing)))
+                else
+                    row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), r.cost > 0 and M.FormatMoney(r.cost) or "", Hex(fr, fg, fb), r.skill))
+                end
             else
                 row.name:SetTextColor(sr, sg, sb)
                 local tint = SOURCE_TINT[e.sourceWord] or { 0.8, 0.8, 0.8 }
@@ -1249,7 +1264,7 @@ Repaint = function()
             for _, stop in ipairs(z.stops) do
                 for _, f in ipairs(stop.formulas) do
                     if needle == "" or f.entry.name:lower():find(needle, 1, true) or z.zone:lower():find(needle, 1, true) or stop.name:lower():find(needle, 1, true) then
-                        matched[#matched + 1] = { kind = "recipe", entry = f.entry, stop = stop, cost = f.cost, skill = f.skill, rep = f.rep }
+                        matched[#matched + 1] = { kind = "recipe", entry = f.entry, stop = stop, cost = f.cost, skill = f.skill, rep = f.rep, repShort = f.repShort }
                     end
                 end
             end
@@ -1260,10 +1275,29 @@ Repaint = function()
                 end
             end
         end
+        if #rows == 0 then
+            rows[#rows + 1] = { kind = "empty", text = searchText ~= "" and "No trip matches that."
+                or "Nothing to buy anywhere: every vendor formula you can use is learned." }
+        end
     else
         rows = M.Rows(view, { filter = db.Filter, search = searchText, sort = db.Sort, collapsed = char.collapsed }, world)
         if searchText == "" and (db.Filter or "ALL") == "ALL" then
             for _, r in ipairs(TrainerRows()) do rows[#rows + 1] = r end
+        end
+        local any = false
+        for _, r in ipairs(rows) do if r.kind == "recipe" then any = true break end end
+        if not any then
+            local why
+            if db.Filter == "PROFITABLE" then
+                why = HavePrices() and "Nothing you know makes money at today's prices." or "Profit needs Auctionator's auction prices — install it and scan."
+            elseif db.Filter == "CRAFTABLE" then
+                why = "Nothing you know has its reagents on hand."
+            elseif db.Filter == "LEARNABLE" then
+                why = "Nothing to learn right now — no trainer recipe at your skill, no formula in your bags, no vendor you can use."
+            elseif searchText ~= "" then
+                why = "No recipe matches that."
+            end
+            if why then rows = { { kind = "empty", text = why } } end
         end
     end
     -- The filter bar
