@@ -735,7 +735,10 @@ local function PaintNav()
             else
                 row.name:SetTextColor(sr, sg, sb)
                 local tint = SOURCE_TINT[e.sourceWord] or { 0.8, 0.8, 0.8 }
-                if db.ShowSourceColumn then
+                if db.Filter == "LEARNABLE" and e.learnable == "vendor" and e.formulaPrice then
+                    -- What the formula costs at the vendor you would use
+                    row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), M.FormatMoney(e.formulaPrice), Hex(fr, fg, fb), e.learnSkill))
+                elseif db.ShowSourceColumn then
                     row.right:SetText(("%s%s|r %s%d|r"):format(Hex(tint[1] * 0.85, tint[2] * 0.85, tint[3] * 0.85), e.sourceWord, Hex(fr, fg, fb), e.learnSkill))
                 else
                     row.right:SetText(("%s%d|r"):format(Hex(fr, fg, fb), e.learnSkill))
