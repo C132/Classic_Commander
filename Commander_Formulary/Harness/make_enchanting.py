@@ -662,11 +662,13 @@ for key in sorted(byQC):
             runs[-1][1] = lvl
         else:
             runs.append([lvl, lvl, did])
-    # gaps between runs belong to the earlier run; the last runs open-ended
+    # gaps between runs belong to the LATER run (the 66-78 green gap is
+    # Outland's, and Outland greens disenchant to Arcane Dust); the first
+    # run starts where it starts and the last is open-ended
     for i, run in enumerate(runs):
-        if i + 1 < len(runs):
-            run[1] = runs[i + 1][0] - 1
-        else:
+        if i > 0:
+            run[0] = runs[i - 1][1] + 1
+        if i + 1 == len(runs):
             run[1] = 200
     disenchant[key] = [(a, b, did, de_results(did)) for a, b, did in runs]
     for a, b, did, res in disenchant[key]:

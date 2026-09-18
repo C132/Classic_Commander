@@ -266,6 +266,11 @@ do
     CHECK(res[1][1] == 22449, "B7 blue armour 115 is a Large Prismatic Shard", res[1][1])
     res = M.Disenchant(D, 4, 4, 120)
     CHECK(res[1][1] == 22450, "B7 epic 120 is a Void Crystal", res[1][1])
+    -- The empty 66-78 stretch belongs to Outland: Arcane Dust, not Illusion
+    res = M.Disenchant(D, 2, 4, 70)
+    CHECK(res and res[1][1] == 22445, "B7 green armour 70 -> Arcane Dust", res and res[1][1])
+    res = M.Disenchant(D, 2, 4, 65)
+    CHECK(res and res[1][1] == 16204, "B7 green armour 65 -> Illusion Dust", res and res[1][1])
     CHECK(M.Disenchant(D, 1, 4, 60) == nil, "B7 a white item is not disenchantable")
     CHECK(M.Disenchant(D, 2, 7, 60) == nil, "B7 a trade good is not")
     local w = World(300, 375, {}, {}, {}, "Alliance", {})
