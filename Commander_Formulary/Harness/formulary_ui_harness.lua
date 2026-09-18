@@ -893,6 +893,13 @@ CommanderFormulary_Select(13419)
 Settle()
 detail = TextUnder(frame.detailPane)
 CHECK(detail:find("To learn and try it: the formula 8s", 1, true), "C7 cost to learn on an unknown recipe", detail)
+-- the cast cost sits beside the name with coin icons, rounded to the silver
+local wandRow
+for _, f in ipairs(frames) do
+    if f.__kind == "Button" and f.__shown ~= false and f.name and f.name.__text and f.name.__text:find("Greater Magic Wand", 1, true) and Under(frame.navPane, f) then wandRow = f end
+end
+CHECK(wandRow and wandRow.name.__text:find("15|TInterface\\MoneyFrame\\UI-SilverIcon", 1, true), "C7 cost beside the name as coins (15s 38c -> 15 silver)", wandRow and wandRow.name.__text)
+CHECK(wandRow and not wandRow.name.__text:find("38", 1, true), "C7 copper rounded away")
 frame.filters.PROFITABLE.__scripts.OnClick(frame.filters.PROFITABLE)
 Settle()
 CHECK(NavRecipeCount() == 0 and TextUnder(frame.navPane):find("Greater Magic Wand", 1, true), "C7 profit filter shows the wand", TextUnder(frame.navPane))

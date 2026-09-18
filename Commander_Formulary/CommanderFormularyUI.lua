@@ -133,6 +133,27 @@ local function Announce(text)
     print("|cff33ff99Commander Formulary|r: " .. text)
 end
 
+-- Money with the game's own coin icons, rounded to the silver: "3g 61s"
+-- as 3 [gold] 61 [silver]. Copper is shown only when there is nothing
+-- else to show. The list rows use this; prose keeps FormatMoney.
+local COIN = {
+    gold = "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:1:0|t",
+    silver = "|TInterface\\MoneyFrame\\UI-SilverIcon:12:12:1:0|t",
+    copper = "|TInterface\\MoneyFrame\\UI-CopperIcon:12:12:1:0|t",
+}
+local function Coins(copper)
+    copper = math.floor((copper or 0) + 0.5)
+    if copper < 100 then
+        return copper .. COIN.copper
+    end
+    local silverTotal = math.floor(copper / 100 + 0.5)
+    local g = math.floor(silverTotal / 100)
+    local sv = silverTotal % 100
+    if g > 0 and sv > 0 then return ("%d%s %d%s"):format(g, COIN.gold, sv, COIN.silver) end
+    if g > 0 then return ("%d%s"):format(g, COIN.gold) end
+    return ("%d%s"):format(sv, COIN.silver)
+end
+
 -- ---------------------------------------------------------------------------
 -- Client shims and the world
 -- ---------------------------------------------------------------------------
@@ -627,7 +648,7 @@ local function PaintNav()
             row.name:SetFontObject(GameFontNormalSmall)
             row.name:SetText(("%s  %s%s|r"):format(z.zone, Hex(fr, fg, fb), z.stops[1] and z.stops[1].name or ""))
             row.name:SetTextColor(tr, tg, tb)
-            row.right:SetText(("%s%d|r %s%s|r"):format(Hex(pr, pg, pb), z.count, Hex(fr, fg, fb), z.cost > 0 and M.FormatMoney(z.cost) or ""))
+            row.right:SetText(("%s%d|r %s%s|r"):format(Hex(pr, pg, pb), z.count, Hex(fr, fg, fb), z.cost > 0 and Coins(z.cost) or ""))
             local key = "zone:" .. z.zone
             row:SetScript("OnClick", function(_, button)
                 if button == "RightButton" and z.stops[1] then
@@ -711,12 +732,17 @@ local function PaintNav()
             row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
             row.name:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
             row.name:SetFontObject(GameFontHighlightSmall)
-            row.name:SetText(e.name)
+            -- The reagent cost of a cast beside the name, when priced
+            if e.castPriced and e.castCost and e.castCost > 0 then
+                row.name:SetText(("%s  %s%s|r"):format(e.name, Hex(fr, fg, fb), Coins(e.castCost)))
+            else
+                row.name:SetText(e.name)
+            end
             if e.known then
                 local c = DIFF[e.colour] or DIFF.grey
                 row.name:SetTextColor(Paper(c[1], c[2], c[3]))
                 if db.Filter == "PROFITABLE" and e.profit then
-                    row.right:SetText(("%s+%s|r"):format(Hex(GOOD[1], GOOD[2], GOOD[3]), M.FormatMoney(e.profit)))
+                    row.right:SetText(("%s+%s|r"):format(Hex(GOOD[1], GOOD[2], GOOD[3]), Coins(e.profit)))
                 elseif e.craftable > 0 then
                     row.right:SetText(("%s×%d|r"):format(Hex(pr, pg, pb), e.craftable))
                 else
@@ -730,14 +756,14 @@ local function PaintNav()
                 if r.repShort and r.rep then
                     row.right:SetText(("%sneeds %s|r"):format(Hex(WARN[1] * 0.9, WARN[2] * 0.9, WARN[3] * 0.9), M.StandingName(r.rep.standing)))
                 else
-                    row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), r.cost > 0 and M.FormatMoney(r.cost) or "", Hex(fr, fg, fb), r.skill))
+                    row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), r.cost > 0 and Coins(r.cost) or "", Hex(fr, fg, fb), r.skill))
                 end
             else
                 row.name:SetTextColor(sr, sg, sb)
                 local tint = SOURCE_TINT[e.sourceWord] or { 0.8, 0.8, 0.8 }
                 if db.Filter == "LEARNABLE" and e.learnable == "vendor" and e.formulaPrice then
                     -- What the formula costs at the vendor you would use
-                    row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), M.FormatMoney(e.formulaPrice), Hex(fr, fg, fb), e.learnSkill))
+                    row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), Coins(e.formulaPrice), Hex(fr, fg, fb), e.learnSkill))
                 elseif db.ShowSourceColumn then
                     row.right:SetText(("%s%s|r %s%d|r"):format(Hex(tint[1] * 0.85, tint[2] * 0.85, tint[3] * 0.85), e.sourceWord, Hex(fr, fg, fb), e.learnSkill))
                 else
