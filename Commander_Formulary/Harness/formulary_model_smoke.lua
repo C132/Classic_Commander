@@ -229,5 +229,79 @@ do
     CHECK(verdict and verdict.known, "B5 verdict: already known")
 end
 
+-- B6 economics: cast cost, profit, formula price, the PROFITABLE filter
+do
+    local PRICES = { [22445] = 2000, [22446] = 15000, [22450] = 40000, [22449] = 30000, [22792] = 500, [22522] = 9000,
+        [10939] = 1500, [11288] = 4000, [11039] = 5000 }
+    local w = World(360, 375, { [28019] = true, [45765] = true, [14807] = true }, {}, {}, "Alliance", {})
+    w.price = function(item) return PRICES[item] end
+    local v = M.Build(D, w)
+    -- Superior Wizard Oil: 3 dust (60s) + vine (5s) + imbued vial (vendor 2g) = 2g 65s; sells 90s -> a loss
+    local oil = v.entries[28019]
+    CHECK(oil.castCost == 6000 + 500 + 20000 and oil.castPriced, "B6 oil cast cost uses the vendor vial", oil.castCost)
+    CHECK(oil.profit == 9000 - 26500, "B6 oil profit (a loss)", oil.profit)
+    -- Void Shatter: one Void Crystal (4g) -> TWO Large Prismatic Shards (3g each) = +2g
+    local vs = v.entries[45765]
+    CHECK(vs.profit == 60000 - 40000 and vs.productValue == 60000, "B6 Void Shatter makes two", vs.profit)
+    -- Greater Magic Wand: Simple Wood (vendor 38c) + GME 15s -> 40s wand = +24s 62c
+    local wand = v.entries[14807]
+    CHECK(wand.profit == 4000 - 38 - 1500, "B6 wand profit", wand.profit)
+    local rows, n = M.Rows(v, { filter = "PROFITABLE" }, w)
+    CHECK(n == 2, "B6 profitable filter: shatter and wand", n)
+    -- Formula price: the cheapest usable vendor, else the AH for BoE
+    CHECK(v.entries[13419].formulaPrice == 800, "B6 vendor formula priced at the vendor", v.entries[13419].formulaPrice)
+    -- unpriced reagent -> no profit figure
+    CHECK(v.entries[20015].castPriced == false and v.entries[20015].profit == nil, "B6 unpriced stays nil")
+end
+
+-- B7 disenchanting: brackets and value
+do
+    local res, bracket = M.Disenchant(D, 2, 4, 60)
+    CHECK(res ~= nil and bracket.min <= 60 and bracket.max >= 60, "B7 green armour ilvl 60 has a bracket")
+    local top = res[1]
+    CHECK(top[1] == 16204 and top[2] >= 70, "B7 green armour 56-60 is mostly Illusion Dust", top[1] .. " " .. top[2])
+    res = M.Disenchant(D, 2, 2, 60)
+    CHECK(res[1][1] == 16203, "B7 green WEAPON 56-60 is mostly Greater Eternal Essence", res[1][1])
+    res = M.Disenchant(D, 3, 4, 115)
+    CHECK(res[1][1] == 22449, "B7 blue armour 115 is a Large Prismatic Shard", res[1][1])
+    res = M.Disenchant(D, 4, 4, 120)
+    CHECK(res[1][1] == 22450, "B7 epic 120 is a Void Crystal", res[1][1])
+    CHECK(M.Disenchant(D, 1, 4, 60) == nil, "B7 a white item is not disenchantable")
+    CHECK(M.Disenchant(D, 2, 7, 60) == nil, "B7 a trade good is not")
+    local w = World(300, 375, {}, {}, {}, "Alliance", {})
+    w.price = function(item) return ({ [16204] = 5000, [16203] = 12000, [14344] = 36000 })[item] end
+    local value, priced = M.DisenchantValue(M.Disenchant(D, 2, 4, 60), w)
+    CHECK(priced and value > 5000 and value < 15000, "B7 expected value in a sane range", value)
+    local best = M.DisposalVerdict(value, 3000, 6000)
+    CHECK(best == "disenchant", "B7 verdict: disenchant beats vendor and auction", best)
+    CHECK(M.DisposalVerdict(nil, 3000, 6000) == "auction", "B7 no DE price -> auction")
+    CHECK(M.DisposalVerdict(nil, 3000, nil) == "vendor", "B7 only vendor known")
+end
+
+-- B8 trips: unknown vendor formulas by zone
+do
+    local w = World(300, 375, {}, {}, {}, "Horde", { [989] = 6, [933] = 5 })
+    local v = M.Build(D, w)
+    local trips = M.Trips(v, w)
+    CHECK(#trips >= 5, "B8 several zones", #trips)
+    local moonglade, ashenvale
+    for _, z in ipairs(trips) do
+        if z.zone == "Moonglade" then moonglade = z end
+        if z.zone == "Ashenvale" then ashenvale = z end
+    end
+    CHECK(moonglade and moonglade.count >= 2 and moonglade.stops[1].name == "Lorelae Wintersong", "B8 Moonglade is one stop with both formulas", moonglade and moonglade.count)
+    CHECK(moonglade.cost >= 22000 + 20000, "B8 zone cost totals", moonglade.cost)
+    CHECK(ashenvale == nil, "B8 Horde does not see Dalria's Ashenvale")
+    CHECK(trips[1].count >= trips[#trips].count, "B8 sorted most formulas first")
+    -- a known formula is no longer part of the trip
+    local before = moonglade.count
+    w = World(300, 375, { [20015] = true, [20051] = true }, {}, {}, "Horde", {})
+    v = M.Build(D, w)
+    trips = M.Trips(v, w)
+    local after = 0
+    for _, z in ipairs(trips) do if z.zone == "Moonglade" then after = z.count end end
+    CHECK(after == before - 2, "B8 known formulas drop out of the trip", before .. " -> " .. after)
+end
+
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

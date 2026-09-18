@@ -35,12 +35,12 @@ local Events = COMMANDER_FORMULARY_EVENTS
 
 local QUAD = "Interface\\Buttons\\WHITE8X8"
 local PAD = 10
-local NAV_W = 330
+local NAV_W = 340
 local TOOLBAR_H = 24
 local ACTIONS_H = 28
 local ROW_H = 22
 local HEAD_H = 24
-local FRAME_W, FRAME_H = 840, 560
+local FRAME_W, FRAME_H = 920, 580
 
 local db, char
 local loaded = false
@@ -243,6 +243,20 @@ local function Standing(factionId)
     return nil
 end
 
+-- Prices from Auctionator's scan data when it is installed; nil otherwise
+local function AuctionPrice(item)
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    if not (api and api.GetAuctionPriceByItemID) then return nil end
+    local ok, price = pcall(api.GetAuctionPriceByItemID, "Commander_Formulary", item)
+    if ok and type(price) == "number" and price > 0 then return price end
+    return nil
+end
+
+local function HavePrices()
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    return api and api.GetAuctionPriceByItemID and true or false
+end
+
 local function BuildWorld()
     local rank, maxRank = ReadSkill()
     return {
@@ -250,6 +264,7 @@ local function BuildWorld()
         known = Known, count = Count, faction = Faction(), standing = Standing,
         name = function(id) return GetItemInfo_ and GetItemInfo_(id) or nil end,
         spellName = SpellName,
+        price = HavePrices() and AuctionPrice or nil,
     }
 end
 
@@ -586,7 +601,27 @@ local function PaintNav()
         row.name:ClearAllPoints()
         row.right:SetText("")
         row:SetScript("OnEnter", nil); row:SetScript("OnLeave", nil)
-        if r.kind == "trainers" then
+        if r.kind == "zone" then
+            local z = r.zone
+            row:SetHeight(HEAD_H)
+            SetChevron(row, not r.collapsed, tr, tg, tb)
+            row.name:SetPoint("LEFT", row, "LEFT", 20, 2)
+            row.name:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
+            row.name:SetFontObject(GameFontNormalSmall)
+            row.name:SetText(("%s  %s%s|r"):format(z.zone, Hex(fr, fg, fb), z.stops[1] and z.stops[1].name or ""))
+            row.name:SetTextColor(tr, tg, tb)
+            row.right:SetText(("%s%d|r %s%s|r"):format(Hex(pr, pg, pb), z.count, Hex(fr, fg, fb), z.cost > 0 and M.FormatMoney(z.cost) or ""))
+            local key = "zone:" .. z.zone
+            row:SetScript("OnClick", function(_, button)
+                if button == "RightButton" and z.stops[1] then
+                    SetWaypoint(z.stops[1], z.stops[1].name)
+                else
+                    ToggleCategory(key)
+                end
+            end)
+            AttachTooltip(row, z.zone, ("%d formula%s you do not know, %s in all, %d at your skill. Click to fold; right-click for a waypoint to %s."):format(
+                z.count, z.count == 1 and "" or "s", M.FormatMoney(z.cost), z.atSkill, z.stops[1] and z.stops[1].name or "the vendor"), "ANCHOR_RIGHT")
+        elseif r.kind == "trainers" then
             row:SetHeight(HEAD_H)
             SetChevron(row, not r.collapsed, tr, tg, tb)
             row.name:SetPoint("LEFT", row, "LEFT", 20, 2)
@@ -667,6 +702,10 @@ local function PaintNav()
                 else
                     row.right:SetText("")
                 end
+            elseif r.stop then
+                -- A trip row: the vendor's price and the skill it needs
+                row.name:SetTextColor(e.learnSkill <= view.rank and pr or sr, e.learnSkill <= view.rank and pg or sg, e.learnSkill <= view.rank and pb or sb)
+                row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), r.cost > 0 and M.FormatMoney(r.cost) or "", Hex(fr, fg, fb), r.skill))
             else
                 row.name:SetTextColor(sr, sg, sb)
                 local tint = SOURCE_TINT[e.sourceWord] or { 0.8, 0.8, 0.8 }
@@ -899,6 +938,41 @@ local function GoButton(place, title, rowY)
     b:SetPoint("TOPRIGHT", detailChild, "TOPRIGHT", -2, rowY + 1)
 end
 
+-- Gold: what a cast costs, what it makes, what learning would cost
+local function PaintEconomics(entry)
+    if not HavePrices() then return end
+    local rec = entry.rec
+    local fr, fg, fb = Ink("faint")
+    local lines = {}
+    if entry.castPriced and entry.castCost and entry.castCost > 0 then
+        lines[#lines + 1] = ("A cast costs %s%s|r in reagents at today's prices."):format(Hex(Ink("strong")), M.FormatMoney(entry.castCost))
+    elseif entry.castCost and entry.castCost > 0 then
+        lines[#lines + 1] = ("A cast costs at least %s in reagents — some have no auction price on record."):format(M.FormatMoney(entry.castCost))
+    end
+    if rec.creates and entry.productValue then
+        local made = rec.makes or 1
+        lines[#lines + 1] = ("What it makes sells for %s%s|r%s."):format(Hex(Ink("strong")), M.FormatMoney(entry.productValue), made > 1 and (" (%d a cast)"):format(made) or "")
+        if entry.profit then
+            local good = entry.profit > 0
+            lines[#lines + 1] = (good and (Hex(GOOD[1], GOOD[2], GOOD[3]) .. "Profit of %s a cast.|r") or (Hex(BAD[1], BAD[2], BAD[3]) .. "A loss of %s a cast.|r")):format(M.FormatMoney(math.abs(entry.profit)))
+        end
+    end
+    if not entry.known then
+        local parts = {}
+        if entry.formulaPrice then parts[#parts + 1] = ("the formula %s"):format(M.FormatMoney(entry.formulaPrice)) end
+        if entry.castPriced and entry.castCost and entry.castCost > 0 then parts[#parts + 1] = ("a first cast %s"):format(M.FormatMoney(entry.castCost)) end
+        if #parts > 0 then
+            local total = (entry.formulaPrice or 0) + ((entry.castPriced and entry.castCost) or 0)
+            lines[#lines + 1] = ("To learn and try it: %s — %s%s|r."):format(table.concat(parts, ", "), Hex(Ink("strong")), M.FormatMoney(total))
+        end
+    end
+    if #lines == 0 then return end
+    Heading("Gold")
+    for _, l in ipairs(lines) do
+        Line(l, { indent = 2, ink = "secondary" })
+    end
+end
+
 local function PaintHowToLearn(entry)
     Heading(entry.known and "Where it came from" or "How to learn it")
     local lines = M.HowToLearn(Data(), entry, world)
@@ -1068,6 +1142,7 @@ local function PaintDetail()
     PaintRecipeTip(rec.spell)
 
     PaintReagents(entry)
+    PaintEconomics(entry)
     PaintHowToLearn(entry)
 
     if rec.creates then
@@ -1166,9 +1241,30 @@ end
 Repaint = function()
     if not (frame and frame:IsShown() and view) then return end
     ApplyFraming()
-    rows = M.Rows(view, { filter = db.Filter, search = searchText, sort = db.Sort, collapsed = char.collapsed }, world)
-    if searchText == "" and (db.Filter or "ALL") == "ALL" then
-        for _, r in ipairs(TrainerRows()) do rows[#rows + 1] = r end
+    if (db.Filter or "ALL") == "TRIPS" then
+        rows = {}
+        local needle = searchText:lower()
+        for _, z in ipairs(M.Trips(view, world)) do
+            local matched = {}
+            for _, stop in ipairs(z.stops) do
+                for _, f in ipairs(stop.formulas) do
+                    if needle == "" or f.entry.name:lower():find(needle, 1, true) or z.zone:lower():find(needle, 1, true) or stop.name:lower():find(needle, 1, true) then
+                        matched[#matched + 1] = { kind = "recipe", entry = f.entry, stop = stop, cost = f.cost, skill = f.skill, rep = f.rep }
+                    end
+                end
+            end
+            if #matched > 0 then
+                rows[#rows + 1] = { kind = "zone", zone = z, matched = #matched, collapsed = char.collapsed["zone:" .. z.zone] and true or false }
+                if not char.collapsed["zone:" .. z.zone] then
+                    for _, r in ipairs(matched) do rows[#rows + 1] = r end
+                end
+            end
+        end
+    else
+        rows = M.Rows(view, { filter = db.Filter, search = searchText, sort = db.Sort, collapsed = char.collapsed }, world)
+        if searchText == "" and (db.Filter or "ALL") == "ALL" then
+            for _, r in ipairs(TrainerRows()) do rows[#rows + 1] = r end
+        end
     end
     -- The filter bar
     for key, button in pairs(frame.filters) do
@@ -1191,11 +1287,13 @@ end
 -- ---------------------------------------------------------------------------
 
 local FILTERS = {
-    { key = "ALL", label = "All", tooltip = "Every recipe the profession has." },
-    { key = "KNOWN", label = "Known", tooltip = "The ones you can cast, coloured by difficulty." },
-    { key = "CRAFTABLE", label = "Craftable", tooltip = "The ones you know and hold the reagents for right now." },
-    { key = "UNKNOWN", label = "Unknown", tooltip = "The ones you cannot yet, with where they come from." },
-    { key = "LEARNABLE", label = "Learnable", tooltip = "The ones you could learn right now: a trainer at your skill, a formula in your bags or bank, or a vendor you can use." },
+    { key = "ALL", label = "All", width = 40, tooltip = "Every recipe the profession has." },
+    { key = "KNOWN", label = "Known", width = 52, tooltip = "The ones you can cast, coloured by difficulty." },
+    { key = "CRAFTABLE", label = "Craftable", width = 66, tooltip = "The ones you know and hold the reagents for right now." },
+    { key = "PROFITABLE", label = "Profit", width = 48, tooltip = "The ones you know that make money at today's auction prices: what a cast makes is worth more than its reagents. Needs Auctionator's scan data." },
+    { key = "UNKNOWN", label = "Unknown", width = 62, tooltip = "The ones you cannot yet, with where they come from." },
+    { key = "LEARNABLE", label = "Learnable", width = 68, tooltip = "The ones you could learn right now: a trainer at your skill, a formula in your bags or bank, or a vendor you can use." },
+    { key = "TRIPS", label = "Trips", width = 44, tooltip = "The formulas you do not know that a vendor you can use sells, grouped by zone: one trip each, with the vendor, the coordinates and the gold. Click a zone for a waypoint to its vendor." },
 }
 
 local function SavePosition()
@@ -1249,7 +1347,7 @@ local function EnsureFrame()
     local previous
     for _, spec in ipairs(FILTERS) do
         local button = CreateFrame("Button", nil, toolbar)
-        button:SetSize(64, TOOLBAR_H)
+        button:SetSize(spec.width or 60, TOOLBAR_H)
         button:SetNormalFontObject(GameFontDisableSmall)
         button:SetHighlightFontObject(GameFontHighlightSmall)
         button:SetText(spec.label)
@@ -1269,8 +1367,8 @@ local function EnsureFrame()
     end
 
     frame.searchBox = CreateFrame("EditBox", "CommanderFormularySearchBox", toolbar, "InputBoxTemplate")
-    frame.searchBox:SetSize(150, 20)
-    frame.searchBox:SetPoint("LEFT", previous, "RIGHT", 14, 0)
+    frame.searchBox:SetSize(130, 20)
+    frame.searchBox:SetPoint("LEFT", previous, "RIGHT", 10, 0)
     frame.searchBox:SetAutoFocus(false)
     frame.searchBox:SetMaxLetters(60)
     frame.searchBox:SetScript("OnTextChanged", function(self, userInput)
@@ -1310,7 +1408,7 @@ local function EnsureFrame()
                 UIDropDownMenu_AddButton(info)
             end
         end)
-        UIDropDownMenu_SetWidth(frame.sortDrop, 90)
+        UIDropDownMenu_SetWidth(frame.sortDrop, 80)
         for _, option in ipairs(SORTS) do
             if option.value == (db.Sort or "SKILL") then UIDropDownMenu_SetText(frame.sortDrop, option.text) end
         end
@@ -1499,8 +1597,39 @@ end
 -- Formula items in tooltips: known / learnable / needs skill
 -- ---------------------------------------------------------------------------
 
+-- Disenchant advice: what an item breaks into and whether that beats the
+-- vendor and the auction house
+local function AppendDisenchantAdvice(tooltip, item, link)
+    if not db.DisenchantAdvice then return end
+    if not GetItemInfo_ then return end
+    local name, _, quality, ilvl, _, _, _, _, _, _, sellPrice, classID = GetItemInfo_(link or item)
+    if not (name and quality and ilvl and classID) then return end
+    local data = Data()
+    local results = M.Disenchant(data, quality, classID, ilvl)
+    if not results then return end
+    local w = world or BuildWorld()
+    local parts = {}
+    for i, r in ipairs(results) do
+        if i > 3 then break end
+        local countText = r[3] == r[4] and tostring(r[3]) or (r[3] .. "–" .. r[4])
+        parts[#parts + 1] = ("%s × %s (%d%%)"):format(countText, ItemName(r[1]), math.floor(r[2] + 0.5))
+    end
+    tooltip:AddLine("Disenchants into " .. table.concat(parts, ", "), 0.6, 0.85, 1, true)
+    local value, priced = M.DisenchantValue(results, w)
+    local auction = w.price and w.price(item) or nil
+    if value or auction or (sellPrice and sellPrice > 0) then
+        local best = M.DisposalVerdict(value, sellPrice and sellPrice > 0 and sellPrice or nil, auction)
+        local bits = {}
+        if value then bits[#bits + 1] = ("DE ~%s%s"):format(M.FormatMoney(value), priced and "" or "+") end
+        if sellPrice and sellPrice > 0 then bits[#bits + 1] = "vendor " .. M.FormatMoney(sellPrice) end
+        if auction then bits[#bits + 1] = "AH " .. M.FormatMoney(auction) end
+        local word = ({ disenchant = "disenchant it", vendor = "vendor it", auction = "sell it on the auction house" })[best]
+        tooltip:AddLine(("%s → %s"):format(table.concat(bits, " · "), word or "?"), 0.6, 0.85, 1, true)
+    end
+end
+
 local function AppendFormulaVerdict(tooltip)
-    if not (loaded and db.EnableFormulary and db.TooltipVerdict) then return end
+    if not (loaded and db.EnableFormulary and (db.TooltipVerdict or db.DisenchantAdvice)) then return end
     if not tooltip.GetItem then return end
     local ok, _, link = pcall(tooltip.GetItem, tooltip)
     if not ok or not link then return end
@@ -1509,7 +1638,12 @@ local function AppendFormulaVerdict(tooltip)
     if tooltip._cfmItem == item then return end
     tooltip._cfmItem = item
     local data = Data()
-    if not data.formulas[item] then return end
+    if not data.formulas[item] then
+        AppendDisenchantAdvice(tooltip, item, link)
+        tooltip:Show()
+        return
+    end
+    if not db.TooltipVerdict then return end
     local w = world or BuildWorld()
     local v = M.FormulaVerdict(data, item, w)
     if not v then return end

@@ -24,6 +24,7 @@ local DefaultSettings = {
     Sort = "SKILL",
     ShowSourceColumn = true,
     TooltipVerdict = true,
+    DisenchantAdvice = true,
 
     -- Counting
     CountBank = true,
@@ -130,11 +131,17 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderFormularyDB.EnableFormulary end,
     })
 
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Formula Verdicts On Tooltips",
         tooltip = "On any formula's tooltip — at a vendor, in the auction house, in your bags — a line saying whether you already know the recipe, can learn it now, or need more skill first.",
         get = function() return CommanderFormularyDB.TooltipVerdict end,
         set = function(value) CommanderFormularyDB.TooltipVerdict = value end,
+        isEnabled = function() return CommanderFormularyDB.EnableFormulary end,
+    }, {
+        label = "Disenchant Advice On Tooltips",
+        tooltip = "On any green, blue or purple weapon or armour: what it disenchants into (from the game's own tables, by item level), what that is worth at today's auction prices, against the vendor and the auction house — and which to do. This is where an enchanter's gold comes from.",
+        get = function() return CommanderFormularyDB.DisenchantAdvice end,
+        set = function(value) CommanderFormularyDB.DisenchantAdvice = value end,
         isEnabled = function() return CommanderFormularyDB.EnableFormulary end,
     })
 

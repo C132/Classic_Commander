@@ -79,3 +79,30 @@ together (one shopping trip); shift-click or right-click a row to link the recip
 that sit on the Commander_Tradecraft leveling route; and a **verdict on every formula's tooltip** —
 already known / can learn now / needs N skill — which is the question you are actually asking at a
 vendor or the auction house.
+
+## D9 — Gold, where it is a fact and never where it is a guess
+
+With Auctionator's scan data the briefing gains a Gold section: what a cast costs in reagents
+(vendor-sold reagents at the vendor — `vendorBuy` in the data, which only lists items three or more
+spawned vendors carry unlimited, so one GM stock room cannot make Strange Dust "vendor-sold"), what
+an item-making recipe's product sells for (times what a cast makes — Void Shatter makes two), the
+profit or loss per cast, and for an unknown recipe the cost to learn and try it (the cheapest usable
+vendor's formula price, else the auction price for a BoE formula, plus a first cast). A **Profit**
+filter lists the known recipes that make money today. Anything without a price stays unpriced and
+says so; nothing is estimated.
+
+## D10 — Disenchant advice from the game's own tables
+
+Every item's disenchant loot id in the world DB falls into an item-level bracket per quality and
+class, so the generator derives the rule (`disenchant["quality:class"]`, brackets by majority with
+gaps filled) and the tooltip hook applies it to any green, blue or purple weapon or armour: what it
+breaks into with chances (weapons favour essences, armour dust — the tables say so), the expected
+value at today's prices, against the vendor price and the auction price, and the verdict. This is
+where an enchanter's gold comes from and the game gives no hint of it.
+
+## D11 — Trips
+
+The **Trips** filter regroups the unknown formulas a vendor you can use sells (right faction, enough
+standing) by zone: one row per zone with its vendor, how many formulas, how many at your skill and
+the gold for the lot; right-click for a waypoint to the vendor. One Moonglade trip, one Silithus
+trip, one Shattrath sweep — the completionist's errand list.

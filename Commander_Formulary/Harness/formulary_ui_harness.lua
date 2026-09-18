@@ -411,10 +411,16 @@ function ExpandSkillHeader() expandedHeaders = expandedHeaders + 1 end
 
 -- Items
 local EQUIPLOC = { [2140] = "INVTYPE_WRIST", [2141] = "INVTYPE_CLOAK", [2142] = "INVTYPE_ROBE", [2143] = "INVTYPE_SHIELD" }
+-- A few gear items with quality, item level, sell price and class, for the
+-- disenchant advice
+local GEAR = { [2140] = { 2, 60, 3000, 4 }, [2141] = { 3, 115, 5000, 4 }, [2144] = { 1, 30, 50, 4 }, [2145] = { 2, 60, 2500, 2 } }
 function GetItemInfo(id)
+    if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) or id end
     local D = CommanderFormulary_Data and CommanderFormulary_Data.ENCHANTING
     local name = D and D.items[id] or ("Item" .. id)
-    return name, "|Hitem:" .. id .. "|h[" .. name .. "]|h", 1, 1, 1, "Armor", "Misc", 20, EQUIPLOC[id], "Interface\\Icons\\Item" .. id
+    local g = GEAR[id]
+    return name, "|Hitem:" .. id .. "|h[" .. name .. "]|h", g and g[1] or 1, g and g[2] or 1, 1, "Armor", "Misc", 20, EQUIPLOC[id],
+        "Interface\\Icons\\Item" .. id, g and g[3] or 0, g and g[4] or 7, 12
 end
 function GetItemCount(id, includeBank)
     return (me.bags[id] or 0) + (includeBank and (me.bank[id] or 0) or 0)
@@ -583,6 +589,10 @@ WidgetMT.__index = function(self, key)
     return baseIndex2(self, key)
 end
 me.standing = { [989] = 5 }
+-- Auctionator's prices
+local PRICES = { [11083] = 300, [16204] = 5000, [16203] = 12000, [14344] = 36000, [22449] = 30000, [22450] = 40000,
+    [4470] = 38, [10939] = 1500, [11288] = 4000, [2140] = 6000, [2141] = 20000 }
+Auctionator = { API = { v1 = { GetAuctionPriceByItemID = function(caller, item) return PRICES[item] end } } }
 
 -- ===========================================================================
 -- Load
@@ -827,8 +837,73 @@ if hooked then
     GameTooltip._cfmItem = nil
     GameTooltip.__itemLink = "|Hitem:6217:0|h[Rod]|h"
     hooked(GameTooltip)
-    CHECK(#GameTooltip.__lines == 0, "C6 not a formula: nothing added")
+    CHECK(#GameTooltip.__lines == 0, "C6 not a formula, not gear: nothing added")
+    -- Disenchant advice on gear: a green ilvl 60 chest (DE ~ 7g+) vs vendor 30s vs AH 60s
+    GameTooltip.__lines = {}
+    GameTooltip._cfmItem = nil
+    GameTooltip.__itemLink = "|Hitem:2140:0|h[Bracers]|h"
+    hooked(GameTooltip)
+    CHECK(GameTooltip.__lines[1] and GameTooltip.__lines[1]:find("Disenchants into") and GameTooltip.__lines[1]:find("Illusion Dust"), "C6 DE materials line", GameTooltip.__lines[1])
+    CHECK(GameTooltip.__lines[2] and GameTooltip.__lines[2]:find("disenchant it") and GameTooltip.__lines[2]:find("vendor 30s") and GameTooltip.__lines[2]:find("AH 60s"), "C6 DE verdict line", GameTooltip.__lines[2])
+    -- a blue at 115: Large Prismatic Shard, 3g vs AH 2g -> disenchant
+    GameTooltip.__lines = {}
+    GameTooltip._cfmItem = nil
+    GameTooltip.__itemLink = "|Hitem:2141:0|h[Cloak]|h"
+    hooked(GameTooltip)
+    CHECK(GameTooltip.__lines[1]:find("Large Prismatic Shard") and GameTooltip.__lines[2]:find("disenchant it"), "C6 blue -> shard", GameTooltip.__lines[2])
+    -- a white item: nothing
+    GameTooltip.__lines = {}
+    GameTooltip._cfmItem = nil
+    GameTooltip.__itemLink = "|Hitem:2144:0|h[Shirt]|h"
+    hooked(GameTooltip)
+    CHECK(#GameTooltip.__lines == 0, "C6 white item: nothing")
+    -- option off
+    CommanderFormularyDB.DisenchantAdvice = false
+    GameTooltip.__lines = {}
+    GameTooltip._cfmItem = nil
+    GameTooltip.__itemLink = "|Hitem:2140:0|h[Bracers]|h"
+    hooked(GameTooltip)
+    CHECK(#GameTooltip.__lines == 0, "C6 advice off: nothing")
+    CommanderFormularyDB.DisenchantAdvice = true
 end
+
+-- C7 gold in the briefing, and the Profit filter
+me.known[14807] = true
+CommanderFormulary_Select(14807)
+Settle()
+detail = TextUnder(frame.detailPane)
+CHECK(detail:find("GOLD", 1, true) and detail:find("A cast costs 15s 38c", 1, true), "C7 wand cast cost (vendor wood + essence)", detail)
+CHECK(detail:find("sells for 40s", 1, true) and detail:find("Profit of 24s 62c a cast", 1, true), "C7 wand profit", detail)
+CommanderFormulary_Select(13419)
+Settle()
+detail = TextUnder(frame.detailPane)
+CHECK(detail:find("To learn and try it: the formula 8s", 1, true), "C7 cost to learn on an unknown recipe", detail)
+frame.filters.PROFITABLE.__scripts.OnClick(frame.filters.PROFITABLE)
+Settle()
+CHECK(NavRecipeCount() == 0 and TextUnder(frame.navPane):find("Greater Magic Wand", 1, true), "C7 profit filter shows the wand", TextUnder(frame.navPane))
+frame.filters.ALL.__scripts.OnClick(frame.filters.ALL)
+Settle()
+
+-- C8 the Trips view: zones with vendors, right-click for a waypoint
+frame.filters.TRIPS.__scripts.OnClick(frame.filters.TRIPS)
+Settle()
+nav = TextUnder(frame.navPane)
+CHECK(nav:find("Moonglade", 1, true) and nav:find("Lorelae Wintersong", 1, true), "C8 Moonglade trip listed with its vendor", nav)
+CHECK(nav:find("Stonetalon Mountains", 1, true) and not nav:find("Ashenvale", 1, true), "C8 Horde sees Sun Rock Retreat, not Astranaar")
+local zoneRow
+for _, f in ipairs(frames) do
+    if f.__kind == "Button" and f.__shown ~= false and f.name and f.name.__text and f.name.__text:find("Moonglade", 1, true) and Under(frame.navPane, f) then zoneRow = f end
+end
+CHECK(zoneRow ~= nil, "C8 zone header row")
+zoneRow.__scripts.OnClick(zoneRow, "RightButton")
+CHECK(waypoints[#waypoints] and waypoints[#waypoints].map == 1450, "C8 right-click sets a Moonglade waypoint", waypoints[#waypoints] and waypoints[#waypoints].map)
+zoneRow.__scripts.OnClick(zoneRow, "LeftButton")
+Settle()
+CHECK(CommanderFormularyChar.collapsed["zone:Moonglade"] == true, "C8 left-click folds the zone")
+zoneRow.__scripts.OnClick(zoneRow, "LeftButton")
+Settle()
+frame.filters.ALL.__scripts.OnClick(frame.filters.ALL)
+Settle()
 
 -- ===========================================================================
 -- D. The stock craft window is read and put away

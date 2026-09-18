@@ -197,6 +197,8 @@ for r in sla:
     for e in effs:
         if e["Effect"] == "24":
             rec["creates"] = int(e["EffectItemType"])
+            # How many a cast makes: base points + 1 (Void Shatter makes two)
+            rec["makes"] = int(e["EffectBasePoints"]) + max(1, int(e["EffectDieSides"]))
         elif e["Effect"] == "53":
             rec["enchant"] = int(e["EffectMiscValue_0"])
     if spell in equipped:
@@ -571,6 +573,8 @@ for spell in sorted(recipes):
               "yellow = %d" % rec["yellow"], "grey = %d" % rec["grey"]]
     if rec["creates"]:
         fields.append("creates = %d" % rec["creates"])
+        if rec.get("makes", 1) > 1:
+            fields.append("makes = %d" % rec["makes"])
     if rec["enchant"]:
         fields.append("enchant = %d" % rec["enchant"])
     if rec["targets"]:
@@ -615,6 +619,52 @@ for item in sorted(formulas):
         fields.append("quests = { %s }" % ", ".join("{ quest = %d, name = %s, level = %d%s }" % (q["quest"], lstr(q["name"] or "?"), q["level"], (", zone = " + lstr(q["zone"])) if q["zone"] else "") for q in f["quests"]))
     w("        [%d] = { %s }," % (item, ", ".join(fields)))
 w("    },")
+# Disenchanting: the world DB gives each item a disenchant loot id; the ids
+# fall into item-level brackets per quality and class (armour / weapon),
+# which is the rule an addon can apply to any item it is shown. Results are
+# the loot rows with group shares resolved.
+deLoot = collections.defaultdict(list)
+for r in db.get("disenchant_loot_template", []):
+    deLoot[r["entry"]].append(r)
+def de_results(entry):
+    rows = deLoot.get(entry, [])
+    groups = collections.defaultdict(list)
+    for r in rows:
+        groups[r["groupid"]].append(r)
+    out = []
+    for gid, members in groups.items():
+        explicit = sum(m["ChanceOrQuestChance"] for m in members if m["ChanceOrQuestChance"] > 0)
+        zeros = [m for m in members if m["ChanceOrQuestChance"] == 0]
+        share = (max(0.0, 100.0 - explicit) / len(zeros)) if zeros else 0.0
+        for m in members:
+            c = m["ChanceOrQuestChance"] if m["ChanceOrQuestChance"] > 0 else share
+            out.append((m["item"], round(c, 2), max(1, m["mincountOrRef"]), max(1, m["maxcount"])))
+    out.sort(key=lambda t: -t[1])
+    return out
+byQC = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
+for r in db["item_template"]:
+    if r.get("DisenchantID") and r["Quality"] in (2, 3, 4) and r["class"] in (2, 4):
+        byQC[(r["Quality"], r["class"])][r["ItemLevel"]][r["DisenchantID"]] += 1
+disenchant = {}
+for key in sorted(byQC):
+    runs = []
+    for lvl in sorted(byQC[key]):
+        did = byQC[key][lvl].most_common(1)[0][0]
+        if runs and runs[-1][2] == did:
+            runs[-1][1] = lvl
+        else:
+            runs.append([lvl, lvl, did])
+    # gaps between runs belong to the earlier run; the last runs open-ended
+    for i, run in enumerate(runs):
+        if i + 1 < len(runs):
+            run[1] = runs[i + 1][0] - 1
+        else:
+            run[1] = 200
+    disenchant[key] = [(a, b, did, de_results(did)) for a, b, did in runs]
+    for a, b, did, res in disenchant[key]:
+        for item, _, _, _ in res:
+            name_item(item)
+
 w("    trainers = {")
 for entry in sorted(trainers, key=lambda e: (trainers[e]["outland"], trainers[e]["zone"], trainers[e]["name"])):
     t = trainers[entry]
@@ -637,6 +687,35 @@ for entry in sorted(npcs):
     if n["faction"] and "vendor" in n["kinds"]:
         fields.append("faction = %s" % lstr(n["faction"]))
     w("        [%d] = { %s }," % (entry, ", ".join(fields)))
+w("    },")
+# Reagents any spawned vendor sells, at the vendor price: the price an
+# enchanter actually pays for a Copper Rod or a vial
+# "Sells" means at least three spawned vendors carry it unlimited: one odd
+# GM room or a single limited-stock row is not a supply line
+vendorSold = set()
+for item, rows in vendorRows.items():
+    sellers = {r["entry"] for r in rows if spawns.get(r["entry"]) and r["maxcount"] == 0}
+    if len(sellers) >= 3:
+        vendorSold.add(item)
+reagentItems = set()
+for rec in recipes.values():
+    for i, _ in rec["reagents"]:
+        reagentItems.add(i)
+w("    -- Reagents a trade-supply vendor sells, at the vendor's price in copper")
+w("    vendorBuy = {")
+for i in sorted(reagentItems & vendorSold):
+    price = itemTemplate.get(i, {}).get("BuyPrice", 0)
+    if price > 0:
+        w("        [%d] = %d, -- %s" % (i, price, itemNames.get(i, "?")))
+w("    },")
+w("    -- Disenchanting: [quality][class] = ordered item-level brackets, each with")
+w("    -- what comes out and how often. Class 2 is weapons, 4 is armour.")
+w("    disenchant = {")
+for (quality, cls), runs in sorted(disenchant.items()):
+    w("        [\"%d:%d\"] = {" % (quality, cls))
+    for a, b, did, res in runs:
+        w("            { min = %d, max = %d, results = { %s } }," % (a, b, ", ".join("{ %d, %s, %d, %d }" % r for r in res)))
+    w("        },")
 w("    },")
 w("    items = {")
 for i in sorted(itemNames):

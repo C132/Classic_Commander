@@ -246,11 +246,11 @@ D.ENCHANTING = {
         { spell = 34009, name = "Enchant Shield - Major Stamina", category = "SHIELD", yellow = 335, grey = 365, enchant = 1071, targets = { "shield" }, reagents = { { 22445, 15 } }, formulas = { 28282 } },
         { spell = 34010, name = "Enchant Weapon - Major Healing", category = "WEAPON", yellow = 360, grey = 390, enchant = 2343, targets = { "onehand", "twohand" }, reagents = { { 22449, 8 }, { 21885, 8 }, { 21886, 8 } }, formulas = { 28281 } },
         { spell = 42613, name = "Nexus Transformation", category = "MISC", yellow = 295, grey = 305, creates = 22448, reagents = { { 20725, 1 } }, trainer = { skill = 300, cost = 1000, outland = true } },
-        { spell = 42615, name = "Small Prismatic Shard", category = "MISC", yellow = 315, grey = 335, creates = 22448, reagents = { { 22449, 1 } }, trainer = { skill = 335, cost = 40000, outland = true } },
+        { spell = 42615, name = "Small Prismatic Shard", category = "MISC", yellow = 315, grey = 335, creates = 22448, makes = 3, reagents = { { 22449, 1 } }, trainer = { skill = 335, cost = 40000, outland = true } },
         { spell = 42620, name = "Enchant Weapon - Greater Agility", category = "WEAPON", yellow = 360, grey = 375, enchant = 3222, targets = { "onehand", "twohand" }, reagents = { { 22445, 8 }, { 22446, 4 }, { 22449, 6 }, { 22451, 2 } }, formulas = { 33165 } },
         { spell = 42974, name = "Enchant Weapon - Executioner", category = "WEAPON", yellow = 385, grey = 415, enchant = 3225, targets = { "onehand", "twohand" }, reagents = { { 22450, 6 }, { 22449, 10 }, { 22446, 6 }, { 22445, 30 }, { 22824, 3 } }, formulas = { 33307 } },
         { spell = 44383, name = "Enchant Shield - Resilience", category = "SHIELD", yellow = 340, grey = 370, enchant = 3229, targets = { "shield" }, reagents = { { 22449, 1 }, { 22447, 4 } }, trainer = { skill = 330, cost = 30000, outland = true } },
-        { spell = 45765, name = "Void Shatter", category = "MISC", yellow = 360, grey = 365, creates = 22449, reagents = { { 22450, 1 } }, formulas = { 34872 } },
+        { spell = 45765, name = "Void Shatter", category = "MISC", yellow = 360, grey = 365, creates = 22449, makes = 2, reagents = { { 22450, 1 } }, formulas = { 34872 } },
         { spell = 46578, name = "Enchant Weapon - Deathfrost", category = "WEAPON", yellow = 350, grey = 365, enchant = 3273, targets = { "onehand", "twohand" }, reagents = { { 22456, 2 }, { 21885, 2 } }, formulas = { 35498 } },
         { spell = 46594, name = "Enchant Chest - Defense", category = "CHEST", yellow = 370, grey = 400, enchant = 1950, targets = { "chest" }, reagents = { { 22446, 4 }, { 22445, 8 }, { 23427, 4 } }, formulas = { 35500 } },
         { spell = 47051, name = "Enchant Cloak - Steelweave", category = "CLOAK", yellow = 380, grey = 410, enchant = 2648, targets = { "cloak" }, reagents = { { 22446, 8 }, { 22452, 8 } }, formulas = { 35756 } },
@@ -696,6 +696,97 @@ D.ENCHANTING = {
         [24560] = { name = "Priestess Delrissa", zone = "Magister's Terrace", instance = true, level = { 70, 70 } },
         [24664] = { name = "Kael'thas Sunstrider", zone = "Magister's Terrace", instance = true, level = { 72, 72 } },
         [25032] = { name = "Eldara Dawnrunner", zone = "Isle of Quel'Danas", map = 1957, x = 47.2, y = 30.8 },
+    },
+    -- Reagents a trade-supply vendor sells, at the vendor's price in copper
+    vendorBuy = {
+        [3371] = 20, -- Empty Vial
+        [3372] = 200, -- Leaded Vial
+        [4470] = 38, -- Simple Wood
+        [6217] = 124, -- Copper Rod
+        [8925] = 2500, -- Crystal Vial
+        [11291] = 4500, -- Star Wood
+        [17034] = 200, -- Maple Seed
+        [17035] = 400, -- Stranglethorn Seed
+        [18256] = 20000, -- Imbued Vial
+    },
+    -- Disenchanting: [quality][class] = ordered item-level brackets, each with
+    -- what comes out and how often. Class 2 is weapons, 4 is armour.
+    disenchant = {
+        ["2:2"] = {
+            { min = 10, max = 15, results = { { 10938, 80, 1, 2 }, { 10940, 20, 1, 2 } } },
+            { min = 16, max = 20, results = { { 10939, 75, 1, 2 }, { 10940, 20, 2, 3 }, { 10978, 5, 1, 1 } } },
+            { min = 21, max = 25, results = { { 10998, 75, 1, 2 }, { 10940, 15, 4, 6 }, { 10978, 10, 1, 1 } } },
+            { min = 26, max = 30, results = { { 11082, 75, 1, 2 }, { 11083, 20, 1, 2 }, { 11084, 5, 1, 1 } } },
+            { min = 31, max = 35, results = { { 11134, 75, 1, 2 }, { 11083, 20, 2, 5 }, { 11138, 5, 1, 1 } } },
+            { min = 36, max = 40, results = { { 11135, 75, 1, 2 }, { 11137, 20, 1, 2 }, { 11139, 5, 1, 1 } } },
+            { min = 41, max = 45, results = { { 11174, 75, 1, 2 }, { 11137, 20, 2, 5 }, { 11177, 5, 1, 1 } } },
+            { min = 46, max = 50, results = { { 11175, 75, 1, 2 }, { 11176, 20, 1, 2 }, { 11178, 5, 1, 1 } } },
+            { min = 51, max = 55, results = { { 16202, 75, 1, 2 }, { 11176, 22, 2, 5 }, { 14343, 3, 1, 1 } } },
+            { min = 56, max = 60, results = { { 16203, 75, 1, 2 }, { 16204, 22, 1, 2 }, { 14344, 3, 1, 1 } } },
+            { min = 61, max = 79, results = { { 16203, 75, 2, 2 }, { 16204, 22, 2, 5 }, { 14344, 3, 1, 1 } } },
+            { min = 80, max = 101, results = { { 22447, 75, 2, 3 }, { 22445, 22, 2, 3 }, { 22448, 3, 1, 1 } } },
+            { min = 102, max = 200, results = { { 22446, 75, 1, 2 }, { 22445, 22, 2, 5 }, { 22449, 3, 1, 1 } } },
+        },
+        ["2:4"] = {
+            { min = 5, max = 15, results = { { 10940, 80, 1, 2 }, { 10938, 20, 1, 2 } } },
+            { min = 16, max = 20, results = { { 10940, 75, 2, 3 }, { 10939, 20, 1, 2 }, { 10978, 5, 1, 1 } } },
+            { min = 21, max = 25, results = { { 10940, 75, 4, 6 }, { 10998, 15, 1, 2 }, { 10978, 10, 1, 1 } } },
+            { min = 26, max = 30, results = { { 11083, 75, 1, 2 }, { 11082, 20, 1, 2 }, { 11084, 5, 1, 1 } } },
+            { min = 31, max = 35, results = { { 11083, 75, 2, 5 }, { 11134, 20, 1, 2 }, { 11138, 5, 1, 1 } } },
+            { min = 36, max = 40, results = { { 11137, 75, 1, 2 }, { 11135, 20, 1, 2 }, { 11139, 5, 1, 1 } } },
+            { min = 41, max = 45, results = { { 11137, 75, 2, 5 }, { 11174, 20, 1, 2 }, { 11177, 5, 1, 1 } } },
+            { min = 46, max = 50, results = { { 11176, 75, 1, 2 }, { 11175, 20, 1, 2 }, { 11178, 5, 1, 1 } } },
+            { min = 51, max = 55, results = { { 11176, 75, 2, 5 }, { 16202, 20, 1, 2 }, { 14343, 5, 1, 1 } } },
+            { min = 56, max = 60, results = { { 16204, 75, 1, 2 }, { 16203, 20, 1, 2 }, { 14344, 5, 1, 1 } } },
+            { min = 61, max = 78, results = { { 16204, 75, 2, 5 }, { 16203, 20, 2, 2 }, { 14344, 5, 1, 1 } } },
+            { min = 79, max = 80, results = { { 22445, 75, 1, 3 }, { 22447, 22, 1, 3 }, { 22448, 3, 1, 1 } } },
+            { min = 81, max = 101, results = { { 22445, 75, 2, 3 }, { 22447, 22, 2, 3 }, { 22448, 3, 1, 1 } } },
+            { min = 102, max = 200, results = { { 22445, 75, 2, 5 }, { 22446, 22, 1, 2 }, { 22449, 3, 1, 1 } } },
+        },
+        ["3:2"] = {
+            { min = 18, max = 25, results = { { 10978, 100, 1, 1 } } },
+            { min = 26, max = 30, results = { { 11084, 100, 1, 1 } } },
+            { min = 31, max = 35, results = { { 11138, 100, 1, 1 } } },
+            { min = 36, max = 40, results = { { 11139, 100, 1, 1 } } },
+            { min = 41, max = 45, results = { { 11177, 100, 1, 1 } } },
+            { min = 46, max = 50, results = { { 11178, 100, 1, 1 } } },
+            { min = 51, max = 55, results = { { 14343, 100, 1, 1 } } },
+            { min = 56, max = 65, results = { { 14344, 100, 1, 1 } } },
+            { min = 66, max = 70, results = { { 14344, 99.5, 1, 1 }, { 20725, 0.5, 1, 1 } } },
+            { min = 71, max = 99, results = { { 22448, 99.5, 1, 1 }, { 20725, 0.5, 1, 1 } } },
+            { min = 100, max = 200, results = { { 22449, 99.5, 1, 1 }, { 22450, 0.5, 1, 1 } } },
+        },
+        ["3:4"] = {
+            { min = 18, max = 25, results = { { 10978, 100, 1, 1 } } },
+            { min = 26, max = 30, results = { { 11084, 100, 1, 1 } } },
+            { min = 31, max = 35, results = { { 11138, 100, 1, 1 } } },
+            { min = 36, max = 40, results = { { 11139, 100, 1, 1 } } },
+            { min = 41, max = 45, results = { { 11177, 100, 1, 1 } } },
+            { min = 46, max = 50, results = { { 11178, 100, 1, 1 } } },
+            { min = 51, max = 55, results = { { 14343, 100, 1, 1 } } },
+            { min = 56, max = 65, results = { { 14344, 100, 1, 1 } } },
+            { min = 66, max = 70, results = { { 14344, 99.5, 1, 1 }, { 20725, 0.5, 1, 1 } } },
+            { min = 71, max = 99, results = { { 22448, 99.5, 1, 1 }, { 20725, 0.5, 1, 1 } } },
+            { min = 100, max = 200, results = { { 22449, 99.5, 1, 1 }, { 22450, 0.5, 1, 1 } } },
+        },
+        ["4:2"] = {
+            { min = 40, max = 46, results = { { 11177, 100, 2, 4 } } },
+            { min = 47, max = 51, results = { { 11178, 100, 2, 4 } } },
+            { min = 52, max = 55, results = { { 14343, 100, 2, 4 } } },
+            { min = 56, max = 60, results = { { 20725, 100, 1, 1 } } },
+            { min = 61, max = 99, results = { { 20725, 100, 1, 2 } } },
+            { min = 100, max = 104, results = { { 22450, 100, 1, 2 } } },
+            { min = 105, max = 200, results = { { 22450, 100, 1, 2 } } },
+        },
+        ["4:4"] = {
+            { min = 41, max = 45, results = { { 11177, 100, 2, 4 } } },
+            { min = 46, max = 50, results = { { 11178, 100, 2, 4 } } },
+            { min = 51, max = 55, results = { { 14343, 100, 2, 4 } } },
+            { min = 56, max = 60, results = { { 20725, 100, 1, 1 } } },
+            { min = 61, max = 94, results = { { 20725, 100, 1, 2 } } },
+            { min = 95, max = 104, results = { { 22450, 100, 1, 2 } } },
+            { min = 105, max = 200, results = { { 22450, 100, 1, 2 } } },
+        },
     },
     items = {
         [2772] = "Iron Ore",

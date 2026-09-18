@@ -15,11 +15,13 @@
 --   standing(factionId)    reputation standing index, or nil
 --   name(item)             localised item name, or nil
 --   spellName(spell)       localised spell name, or nil
+--   price(item)            optional: auction price in copper, or nil
+--   vendorSell(item)       optional: what a vendor pays for one, or nil
 
 CommanderFormulary_Model = {}
 local M = CommanderFormulary_Model
 
-M.FILTERS = { "ALL", "KNOWN", "CRAFTABLE", "UNKNOWN", "LEARNABLE" }
+M.FILTERS = { "ALL", "KNOWN", "CRAFTABLE", "PROFITABLE", "UNKNOWN", "LEARNABLE", "TRIPS" }
 M.SORTS = { "SKILL", "NAME" }
 
 -- ---------------------------------------------------------------------------
@@ -168,6 +170,95 @@ function M.Craftable(rec, world, useBank)
 end
 
 -- ---------------------------------------------------------------------------
+-- Economics
+-- ---------------------------------------------------------------------------
+
+-- What one cast costs in reagents at today's prices, and whether every
+-- reagent had a price. Vendor-sold reagents are priced at the vendor when
+-- the data says what that is.
+function M.CastCost(data, rec, world)
+    if not world.price then return nil, false end
+    local total, priced = 0, true
+    for _, pair in ipairs(rec.reagents or {}) do
+        local p = data.vendorBuy and data.vendorBuy[pair[1]] or world.price(pair[1])
+        if p == nil then priced = false else total = total + p * pair[2] end
+    end
+    return total, priced
+end
+
+-- What a cast of an item-making recipe is worth, and the profit against the
+-- cast cost; nil when either side has no price. `makes` casts make more
+-- than one (Void Shatter).
+function M.CastProfit(data, rec, world)
+    if not (rec.creates and world.price) then return nil end
+    local value = world.price(rec.creates)
+    local cost, priced = M.CastCost(data, rec, world)
+    if not value or not priced then return nil end
+    local made = rec.makes or 1
+    return value * made - cost, value * made, cost
+end
+
+-- The cheapest way to get the formula into your hands: a usable vendor's
+-- price, else the auction price (BoE formulas), else nil
+function M.FormulaPrice(data, rec, world)
+    local best
+    for _, item in ipairs(rec.formulas or {}) do
+        local f = data.formulas[item]
+        if f then
+            for _, v in ipairs(f.vendors or {}) do
+                if M.VendorUsable(data, f, v.npc, world, v) and v.cost > 0 and (not best or v.cost < best) then best = v.cost end
+            end
+            if not best and not f.bop and world.price then
+                local p = world.price(item)
+                if p and (not best or p < best) then best = p end
+            end
+        end
+    end
+    return best
+end
+
+-- ---------------------------------------------------------------------------
+-- Disenchanting
+-- ---------------------------------------------------------------------------
+
+-- What disenchanting an item gives: the bracket for its quality, class and
+-- item level, as { {item, chance, min, max}, ... }, or nil when the item is
+-- not disenchantable (only uncommon+ weapons and armour are).
+function M.Disenchant(data, quality, classID, itemLevel)
+    if not (data.disenchant and quality and classID and itemLevel) then return nil end
+    local table_ = data.disenchant[quality .. ":" .. classID]
+    if not table_ then return nil end
+    for _, bracket in ipairs(table_) do
+        if itemLevel >= bracket.min and itemLevel <= bracket.max then
+            return bracket.results, bracket
+        end
+    end
+    return nil
+end
+
+-- The expected value of those results at today's prices: sum of chance ×
+-- average count × price. `priced` is false when any result has no price.
+function M.DisenchantValue(results, world)
+    if not (results and world.price) then return nil, false end
+    local total, priced = 0, true
+    for _, r in ipairs(results) do
+        local p = world.price(r[1])
+        if p == nil then priced = false else total = total + (r[2] / 100) * ((r[3] + r[4]) / 2) * p end
+    end
+    return total, priced
+end
+
+-- The verdict on an item: disenchant, vendor, or sell, with the three
+-- figures. Any figure may be nil.
+function M.DisposalVerdict(deValue, vendorPrice, auctionPrice)
+    local best, bestValue = nil, -1
+    for _, pair in ipairs({ { "disenchant", deValue }, { "auction", auctionPrice }, { "vendor", vendorPrice } }) do
+        if pair[2] and pair[2] > bestValue then best, bestValue = pair[1], pair[2] end
+    end
+    return best, bestValue
+end
+
+-- ---------------------------------------------------------------------------
 -- The view
 -- ---------------------------------------------------------------------------
 
@@ -206,6 +297,9 @@ function M.Build(data, world, opts)
             }
             entry.sourceWord, entry.sourceKind = M.SourceWord(entry.sources)
             entry.craftable, entry.reagentLines = M.Craftable(rec, world, opts.bank ~= false)
+            entry.castCost, entry.castPriced = M.CastCost(data, rec, world)
+            entry.profit, entry.productValue = M.CastProfit(data, rec, world)
+            if not known then entry.formulaPrice = M.FormulaPrice(data, rec, world) end
             cat.recipes[#cat.recipes + 1] = entry
             view.entries[rec.spell] = entry
             cat.total = cat.total + 1
@@ -309,6 +403,7 @@ end
 local function Passes(entry, filter)
     if filter == "KNOWN" then return entry.known end
     if filter == "CRAFTABLE" then return entry.known and entry.craftable > 0 end
+    if filter == "PROFITABLE" then return entry.known and entry.profit ~= nil and entry.profit > 0 end
     if filter == "UNKNOWN" then return not entry.known end
     if filter == "LEARNABLE" then return entry.learnable ~= nil end
     return true
@@ -359,6 +454,65 @@ function M.Rows(view, opts, world)
         end
     end
     return rows, shownTotal
+end
+
+-- ---------------------------------------------------------------------------
+-- Trips: the unknown formulas a usable vendor sells, by zone
+-- ---------------------------------------------------------------------------
+
+-- Returns zones, each { zone, map, stops = { {npc, name, x, y, formulas = {entries}} },
+-- count, cost, atSkill }, most formulas first. A formula sold in several
+-- zones is listed in each; the cheapest usable vendor in a zone is the stop.
+function M.Trips(view, world)
+    local data = view.data
+    local zones = {}
+    for _, entry in pairs(view.entries) do
+        if not entry.known then
+            for _, item in ipairs(entry.rec.formulas or {}) do
+                local f = data.formulas[item]
+                if f then
+                    local seen = {}
+                    for _, v in ipairs(f.vendors or {}) do
+                        local npc = data.npcs[v.npc]
+                        if npc and npc.zone and M.VendorUsable(data, f, v.npc, world, v) and not seen[npc.zone] then
+                            seen[npc.zone] = true
+                            local z = zones[npc.zone]
+                            if not z then
+                                z = { zone = npc.zone, map = npc.map, stops = {}, byNpc = {}, count = 0, cost = 0, atSkill = 0 }
+                                zones[npc.zone] = z
+                            end
+                            local stop = z.byNpc[v.npc]
+                            if not stop then
+                                stop = { npc = v.npc, name = npc.name, x = npc.x, y = npc.y, zone = npc.zone, map = npc.map, formulas = {} }
+                                z.byNpc[v.npc] = stop
+                                z.stops[#z.stops + 1] = stop
+                            end
+                            stop.formulas[#stop.formulas + 1] = { entry = entry, item = item, cost = v.cost, skill = f.skill, rep = M.VendorGate(f, v) }
+                            z.count = z.count + 1
+                            z.cost = z.cost + (v.cost or 0)
+                            if f.skill <= view.rank then z.atSkill = z.atSkill + 1 end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local out = {}
+    for _, z in pairs(zones) do
+        for _, stop in ipairs(z.stops) do
+            table.sort(stop.formulas, function(a, b)
+                if a.skill ~= b.skill then return a.skill < b.skill end
+                return a.entry.name < b.entry.name
+            end)
+        end
+        table.sort(z.stops, function(a, b) return #a.formulas > #b.formulas end)
+        out[#out + 1] = z
+    end
+    table.sort(out, function(a, b)
+        if a.count ~= b.count then return a.count > b.count end
+        return a.zone < b.zone
+    end)
+    return out
 end
 
 -- ---------------------------------------------------------------------------

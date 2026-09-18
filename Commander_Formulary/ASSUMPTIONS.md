@@ -47,3 +47,16 @@ Symptom if wrong: an unlabelled checkbox under the briefing. Cosmetic.
 ## A6 — `SetRotation` on a solid quad draws a diagonal (the chevrons)
 
 The Quest Log's chevrons rely on the same thing and ship. Unverified per the suite's theming note.
+
+## A7 — `GetItemInfo` returns sell price, class id and subclass id in positions 11–13
+
+Used by the disenchant advice (quality 3, item level 4, sell price 11, class 12). Standard on this
+client; `GetItemInfoInstant` would do for class and subclass if not.
+
+Symptom if wrong: no disenchant lines on any tooltip. Test: hover a green.
+
+## A8 — Auctionator's `GetAuctionPriceByItemID` answers in copper for items its scans have seen
+
+Commander_Tradecraft relies on the same call. Without Auctionator, or before a scan, every gold
+figure is simply absent — the Gold section, the Profit filter and the disenchant value lines do not
+appear.
