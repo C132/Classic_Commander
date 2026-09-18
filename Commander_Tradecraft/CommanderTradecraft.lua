@@ -1645,6 +1645,15 @@ local function PaintRoute(p)
             row.name:SetFontObject(GameFontHighlightSmall)
             row.name:SetText(e.path.label)
             row.name:SetTextColor(unpack(e.chosen and C.text or C.dim))
+            -- Today's price for this way, and whether it is the cheaper
+            local prices = p.pathPrices and p.pathPrices[e.segment.key]
+            local c = prices and prices.costs[e.path.key]
+            if c and c.priced then
+                row.count:SetText(("%s%s|r %s(%s/pt)|r"):format(
+                    prices.cheapest == e.path.key and HEX.good or HEX.dim, E.FormatMoney(c.cost), HEX.dim, E.FormatMoney(c.perPoint)))
+            elseif c then
+                row.count:SetText(HEX.dim .. "unpriced|r")
+            end
             local seg, path = e.segment, e.path
             row:SetScript("OnClick", function() ChoosePath(seg, path) end)
             AttachTooltip(row, function(tip)
@@ -1707,7 +1716,13 @@ PaintLedger = function()
         ledger.routeScroll:Hide()
         ledger.selectAll:Show()
     else
-        ledger.title:SetText(("Tradecraft — %s  %s"):format(Guide().title, RankText(plan)))
+        local costNote = ""
+        if plan.cost and plan.cost > 0 and HavePrices() then
+            local total = plan.cost + E.FormulaCosts(plan)
+            costNote = ("  %s· the rest costs about %s%s%s|r"):format(HEX.dim, E.FormatMoney(total), plan.priced and "" or "+",
+                (plan.madeValue and plan.madeValue > 0) and (", about %s net of what you make"):format(E.FormatMoney(math.max(0, total - plan.madeValue))) or "")
+        end
+        ledger.title:SetText(("Tradecraft — %s  %s%s"):format(Guide().title, RankText(plan), costNote))
         ledger.shopScroll:Hide()
         ledger.routeScroll:Show()
         ledger.selectAll:Hide()

@@ -991,6 +991,17 @@ CHECK(ledger.text:find("To buy, reagents and formulas:", 1, true), "D2-8 bracket
 CHECK(ledger.text:find("MADE ALONG THE WAY", 1, true) and ledger.text:find("Superior Wizard Oil", 1, true), "D2-9 oils made are listed with value")
 CHECK(ledger.text:find("Net cost of the rest of the route", 1, true), "D2-10 net figure")
 CHECK(ledger.text:find("no auction price on record", 1, true), "D2-11 unpriced reagents are said to be")
+-- The Route window prices every two-way segment's options and the title
+-- carries the route's cost
+CommanderTradecraft_Route()
+Settle()
+local pricedOption = false
+for _, r in ipairs(ledger.rows) do
+    if r.__shown ~= false and r.count and r.count.__text and r.count.__text:find("/pt", 1, true) then pricedOption = true end
+end
+CHECK(pricedOption, "D2-11b route option rows carry the price per point")
+CHECK(ledger.title.__text:find("the rest costs about", 1, true), "D2-11c route title carries the cost", ledger.title.__text)
+
 -- Alts: at 135 the soul dust on the bank alt is shown, and counted with the option
 me.rank, me.maxRank = 135, 150
 Fire("SKILL_LINES_CHANGED")
