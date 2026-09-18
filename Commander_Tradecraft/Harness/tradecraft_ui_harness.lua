@@ -891,7 +891,12 @@ CHECK(CommanderTradecraft_Skip == nil and CommanderTradecraft_Unskip == nil, "C5
 CommanderTradecraftChar.choices["110-135"] = "alt"
 CommanderTradecraft_ResetProgress()
 Settle()
-CHECK(next(CommanderTradecraftChar.choices) == nil and next(CommanderTradecraftChar.skipped) == nil, "C6 reset")
+-- The hand choice is gone; the only choice left is the one the prices
+-- lock in for the segment you are standing in (156-185, priced by the mock)
+CHECK(CommanderTradecraftChar.choices["110-135"] == nil and next(CommanderTradecraftChar.skipped) == nil, "C6 reset")
+for key in pairs(CommanderTradecraftChar.choices) do
+    CHECK(CommanderTradecraftChar.autoLocked[key] == true, "C6 any surviving choice is price-locked", key)
+end
 CHECK(CommanderTradecraft_Plan().rank == 156, "C6 skill untouched")
 
 -- ===========================================================================
@@ -943,8 +948,19 @@ me.known[33990] = true
 Fire("SKILL_LINES_CHANGED")
 Settle()
 plan = CommanderTradecraft_Plan()
-CHECK(plan.current and plan.current.spell == 27961 and plan.current.autoPath, "D2-1 today's prices pick Major Armor (8 dust at 20s < 2 GPE at 1g50)", plan.current and plan.current.key)
-CHECK(Has("chosen by today's prices"), "D2-2 the option header says so")
+CHECK(plan.current and plan.current.spell == 27961, "D2-1 today's prices pick Major Armor (8 dust at 20s < 2 GPE at 1g50)", plan.current and plan.current.key)
+-- inside the segment the pick is locked in as a choice, marked price-made
+CHECK(CommanderTradecraftChar.choices["320-340"] == "alt" and CommanderTradecraftChar.autoLocked["320-340"], "D2-1b locked in once inside the segment")
+CHECK(Has("chosen by the prices when you got here"), "D2-2 the option header says so")
+-- prices move: Arcane Dust triples; the lock holds and the header notes it
+PRICES[22445] = 6000
+Fire("BAG_UPDATE_DELAYED")
+Settle()
+CHECK(CommanderTradecraft_Plan().current.spell == 27961, "D2-2b a price move does not flip a started segment")
+CHECK(Has("the other way is cheaper now"), "D2-2c but the header says the other way is cheaper now")
+PRICES[22445] = 2000
+Fire("BAG_UPDATE_DELAYED")
+Settle()
 CHECK(Has("cheapest") and Has("/point"), "D2-3 option rows carry the per-point price")
 CHECK(Has("in reagents at today's prices"), "D2-4 the step says what it costs")
 -- Choosing the dearer way by hand overrides the price, and says so
@@ -955,12 +971,18 @@ plan = CommanderTradecraft_Plan()
 CHECK(plan.current.spell == 33990 and not plan.current.autoPath, "D2-5 a hand choice beats the price")
 CHECK(Has("the other way is cheaper today"), "D2-6 and the header warns")
 CommanderTradecraftChar.choices["320-340"] = nil
+CommanderTradecraftChar.autoLocked["320-340"] = nil
 -- Option off: the guide's recommendation
 CommanderTradecraftDB.PricePaths = false
 Fire("BAG_UPDATE_DELAYED")
 Settle()
 CHECK(CommanderTradecraft_Plan().current.spell == 33990, "D2-7 prices off -> recommendation")
 CommanderTradecraftDB.PricePaths = true
+Fire("BAG_UPDATE_DELAYED")
+Settle()
+CommanderTradecraftChar.choices["320-340"] = nil
+CommanderTradecraftChar.autoLocked["320-340"] = nil
+CHECK(Has("to buy"), "D2-7b the bracket's shopping figure is on the guide")
 -- Shopping: priced rows, totals, alts, made-along-the-way
 CommanderTradecraft_Shopping()
 Settle()

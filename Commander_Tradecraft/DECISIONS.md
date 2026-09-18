@@ -177,6 +177,12 @@ through a two-way segment from where you stand — planned casts × reagent pric
 point — and, with "Let Prices Pick The Path" (on by default), takes the cheaper one unless you chose
 by hand. A hand choice always wins and the header says when the other way is cheaper today.
 
+**A price-picked path is locked in once you are inside the segment.** The dust is bought; a price
+moving at 330 must not flip you onto the other way and leave the dust unused. The pick is written
+as a choice (so it sticks) and remembered as price-made, so the window says "chosen by the prices
+when you got here" and, if it comes to that, "the other way is cheaper now" — information, not a
+change. A hand choice clears the mark.
+
 Three rules keep this honest. A vendor reagent is priced at the vendor (`buy` in the data), because
 nobody buys a Copper Rod off the auction house. A path is only compared when *every* reagent on
 *both* paths has a price; a half-priced path is a floor, not an estimate, and the option row says

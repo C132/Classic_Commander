@@ -283,6 +283,19 @@ local function Rebuild()
         autoPath = db.PricePaths,
         alts = db.CountAlts,
     })
+    -- A path the prices picked is locked in once you are inside the
+    -- segment: the dust is bought, and a price moving at 330 must not flip
+    -- you onto the other way. It is written as a choice (so it sticks) and
+    -- remembered as price-made (so the window can say so).
+    local cur = plan.current
+    if cur and cur.autoPath and plan.rank >= cur.segment.from then
+        char.choices[cur.segment.key] = cur.path.key
+        char.autoLocked = char.autoLocked or {}
+        char.autoLocked[cur.segment.key] = true
+        plan = E.Build(Guide(), world, char, {
+            margin = db.Margin, bank = db.CountBank, autoPath = db.PricePaths, alts = db.CountAlts,
+        })
+    end
 
     -- A step finished since the last look: say so
     local key = plan.current and plan.current.key or "done"
@@ -1054,6 +1067,7 @@ end
 -- is no button for it; a segment with one path shows nothing.
 local function ChoosePath(seg, path)
     char.choices[seg.key] = path.key
+    if char.autoLocked then char.autoLocked[seg.key] = nil end
     Announce(("%d – %d: now taking %s%s|r"):format(seg.from, seg.to, HEX.white, path.label))
     Rebuild()
 end
@@ -1067,6 +1081,11 @@ local function PaintOptions(p)
     local head = ("%sTWO WAYS THROUGH %d – %d|r"):format(HEX.dim, seg.from, seg.to)
     if step.autoPath then
         head = head .. HEX.good .. "  · chosen by today's prices|r"
+    elseif char.autoLocked and char.autoLocked[seg.key] and char.choices[seg.key] == step.path.key then
+        head = head .. HEX.good .. "  · chosen by the prices when you got here|r"
+        if prices and prices.cheapest and prices.cheapest ~= step.path.key then
+            head = head .. HEX.dim .. " (the other way is cheaper now)|r"
+        end
     elseif prices and prices.cheapest and prices.cheapest ~= step.path.key then
         head = head .. HEX.warn .. "  · the other way is cheaper today|r"
     end
@@ -1128,11 +1147,16 @@ Repaint = function()
     y = -(18 + 4 + 6 + PAD)
     heightMissing = false
 
-    -- Step counter, and the bracket you are levelling through
+    -- Step counter, the bracket you are levelling through, and what the
+    -- rest of it costs to shop for
     if p.current then
         local b = p.bracket
-        Line(("%sSTEP %d OF %d%s|r"):format(HEX.dim, p.current.index, p.totalSteps,
-            b and ("  ·  " .. b.name:upper() .. " " .. b.from .. " – " .. b.to) or ""),
+        local shop = ""
+        if b and b.cost and b.cost > 0 then
+            shop = ("  ·  %s%s to buy%s"):format(HEX.dim, E.FormatMoney(b.cost + (b.formulaCost or 0)), b.priced and "" or "+")
+        end
+        Line(("%sSTEP %d OF %d%s%s|r"):format(HEX.dim, p.current.index, p.totalSteps,
+            b and ("  ·  " .. b.name:upper() .. " " .. b.from .. " – " .. b.to) or "", shop),
             { font = GameFontDisableSmall, gap = 3 })
     end
 
@@ -1780,6 +1804,7 @@ function CommanderTradecraft_ResetProgress()
     if not loaded then return end
     char.choices = {}
     char.skipped = {}
+    char.autoLocked = {}
     char.lastSkipped = nil
     Announce("route choices and skipped steps forgotten for this character")
     Rebuild()
