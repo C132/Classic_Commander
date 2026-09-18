@@ -1858,7 +1858,9 @@ function CommanderTradecraft_AuctionatorList(scope)
         if row.buy > 0 then
             local name = ItemName(row.id)
             if api.ConvertToSearchString then
-                local ok, term = pcall(api.ConvertToSearchString, "Commander_Tradecraft", { searchString = name, isExact = true })
+                -- Exact name, and how many: Auctionator shows the quantity
+                -- beside the search so the trip is one pass
+                local ok, term = pcall(api.ConvertToSearchString, "Commander_Tradecraft", { searchString = name, isExact = true, quantity = row.buy })
                 terms[#terms + 1] = ok and term or name
             else
                 terms[#terms + 1] = name

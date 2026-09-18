@@ -706,7 +706,9 @@ local function PaintNav()
             if e.known then
                 local c = DIFF[e.colour] or DIFF.grey
                 row.name:SetTextColor(Paper(c[1], c[2], c[3]))
-                if e.craftable > 0 then
+                if db.Filter == "PROFITABLE" and e.profit then
+                    row.right:SetText(("%s+%s|r"):format(Hex(GOOD[1], GOOD[2], GOOD[3]), M.FormatMoney(e.profit)))
+                elseif e.craftable > 0 then
                     row.right:SetText(("%s×%d|r"):format(Hex(pr, pg, pb), e.craftable))
                 else
                     row.right:SetText("")
@@ -1642,6 +1644,7 @@ local function AppendDisenchantAdvice(tooltip, item, link)
     local results = M.Disenchant(data, quality, classID, ilvl)
     if not results then return end
     local w = world or BuildWorld()
+    world = w
     local parts = {}
     for i, r in ipairs(results) do
         if i > 3 then break end
@@ -1679,6 +1682,7 @@ local function AppendFormulaVerdict(tooltip)
     end
     if not db.TooltipVerdict then return end
     local w = world or BuildWorld()
+    world = w
     local v = M.FormulaVerdict(data, item, w)
     if not v then return end
     if not v.hasProfession then
@@ -1750,6 +1754,9 @@ events:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then
         return
     end
+    -- The tooltip hooks read a cached world; anything that could change it
+    -- drops the cache so the next hover rebuilds it
+    if not (frame and frame:IsShown()) then world = nil end
     ScheduleRefresh()
 end)
 
