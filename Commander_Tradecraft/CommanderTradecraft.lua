@@ -1405,6 +1405,95 @@ local function BuildShoppingText(p)
     return table.concat(out, "\n")
 end
 
+-- ---------------------------------------------------------------------------
+-- Refreshing prices at the auction house
+-- ---------------------------------------------------------------------------
+-- Every price here is read from Auctionator's database. While the auction
+-- house is open, Refresh Prices hands Auctionator the exact names of every
+-- reagent on every path of the route and everything it makes; Auctionator
+-- searches them in its Shopping tab and the route is re-priced when it ends.
+
+local function AuctionHouseOpen()
+    if AuctionFrame and AuctionFrame.IsShown and AuctionFrame:IsShown() then return true end
+    if AuctionHouseFrame and AuctionHouseFrame.IsShown and AuctionHouseFrame:IsShown() then return true end
+    return false
+end
+
+local function CanRefreshPrices()
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    return api and api.MultiSearchExact and AuctionHouseOpen() and true or false
+end
+
+-- Every item whose price moves a number in the route: reagents of every
+-- recipe on every path (the alternatives are priced too), the formulas the
+-- route buys, and what the crafts make (sold, they pay for part of it)
+local function RoutePricedNames()
+    local seen, names = {}, {}
+    local function add(id)
+        if id and not seen[id] then
+            seen[id] = true
+            names[#names + 1] = ItemName(id)
+        end
+    end
+    for _, seg in ipairs(Guide().segments) do
+        for _, path in ipairs(seg.paths) do
+            for _, step in ipairs(path.steps) do
+                if step.kind == "craft" then
+                    local rec = D.RECIPES[step.spell]
+                    for _, pair in ipairs(rec and rec.reagents or {}) do add(pair[1]) end
+                    if rec and rec.creates then add(rec.creates) end
+                elseif step.kind == "buy" then
+                    add(step.item)
+                end
+            end
+        end
+    end
+    return names
+end
+
+local refreshPending = false
+function CommanderTradecraft_RefreshPrices()
+    if not loaded then return false end
+    if not CanRefreshPrices() then
+        Announce("open the auction house with Auctionator loaded to refresh prices")
+        return false
+    end
+    local names = RoutePricedNames()
+    if #names == 0 then return false end
+    local ok, err = pcall(Auctionator.API.v1.MultiSearchExact, "Commander_Tradecraft", names)
+    if not ok then
+        Announce("Auctionator would not search: " .. tostring(err))
+        return false
+    end
+    refreshPending = true
+    Announce(("searching %d items at the auction house — the route re-prices when Auctionator finishes"):format(#names))
+    return true
+end
+
+-- Rebuild when Auctionator's search or full scan finishes; its event bus
+-- calls ReceiveEvent on anything registered with it
+local busListener
+local function WatchAuctionator()
+    if busListener or not (Auctionator and Auctionator.EventBus and Auctionator.EventBus.Register) then return end
+    local names = {}
+    local shop = Auctionator.Shopping and Auctionator.Shopping.Tab and Auctionator.Shopping.Tab.Events
+    if shop and shop.SearchEnd then names[#names + 1] = shop.SearchEnd end
+    local scan = Auctionator.FullScan and Auctionator.FullScan.Events
+    if scan and scan.ScanComplete then names[#names + 1] = scan.ScanComplete end
+    if #names == 0 then return end
+    busListener = {
+        ReceiveEvent = function()
+            if refreshPending then
+                refreshPending = false
+                Announce("prices refreshed")
+            end
+            ScheduleRebuild()
+        end,
+    }
+    local ok = pcall(Auctionator.EventBus.Register, Auctionator.EventBus, busListener, names)
+    if not ok then busListener = nil end
+end
+
 local function EnsureLedger()
     if ledger then return ledger end
     ledger = CreateFrame("Frame", "CommanderTradecraftLedger", UIParent, "BackdropTemplate")
@@ -1522,6 +1611,23 @@ local function EnsureLedger()
     aucAll:SetText("All to Auctionator")
     aucAll:SetScript("OnClick", function() CommanderTradecraft_AuctionatorList("all") end)
     ledger.aucAllButton = aucAll
+
+    -- Only while the auction house is open with Auctionator loaded
+    local refresh = CreateFrame("Button", nil, ledger, "UIPanelButtonTemplate")
+    refresh:SetSize(104, 22)
+    refresh:SetPoint("RIGHT", ledger, "RIGHT", -10, 0)
+    refresh:SetPoint("BOTTOM", ledger, "BOTTOM", 0, 10)
+    refresh:SetText("Refresh Prices")
+    refresh:SetScript("OnClick", function() CommanderTradecraft_RefreshPrices() end)
+    refresh:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Refresh prices")
+        GameTooltip:AddLine("Have Auctionator search every reagent on every path of this route and everything the route makes, then re-price the route when the search ends. Takes a minute or so. Auctionator's own Full Scan does the whole realm at once, but only every fifteen minutes.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    refresh:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    refresh:Hide()
+    ledger.refreshButton = refresh
     return ledger
 end
 
@@ -1734,6 +1840,9 @@ PaintLedger = function()
         and Auctionator.API.v1.CreateShoppingList and true or false
     ledger.aucButton:SetShown(haveAuc)
     ledger.aucAllButton:SetShown(haveAuc)
+    local canRefresh = CanRefreshPrices()
+    if canRefresh then WatchAuctionator() end
+    ledger.refreshButton:SetShown(canRefresh)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1944,6 +2053,7 @@ local WATCHED = {
     "UPDATE_FACTION", "PLAYER_ENTERING_WORLD",
     "UNIT_INVENTORY_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
     "GET_ITEM_INFO_RECEIVED", "UPDATE_MACROS",
+    "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
 }
 
 events:SetScript("OnEvent", function(_, event, arg1)

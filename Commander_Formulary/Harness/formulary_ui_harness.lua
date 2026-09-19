@@ -496,7 +496,7 @@ ADDON_LOADED PLAYER_LOGIN PLAYER_LOGOUT PLAYER_ENTERING_WORLD
 SKILL_LINES_CHANGED CHAT_MSG_SKILL BAG_UPDATE_DELAYED PLAYERBANKSLOTS_CHANGED BANKFRAME_OPENED
 CRAFT_SHOW CRAFT_UPDATE CRAFT_CLOSE SPELLS_CHANGED NEW_RECIPE_LEARNED UPDATE_FACTION
 UNIT_INVENTORY_CHANGED PLAYER_REGEN_ENABLED PLAYER_REGEN_DISABLED REPLACE_ENCHANT
-GET_ITEM_INFO_RECEIVED UPDATE_MACROS
+GET_ITEM_INFO_RECEIVED UPDATE_MACROS AUCTION_HOUSE_SHOW AUCTION_HOUSE_CLOSED
 ]]):gmatch("%S+") do KNOWN_EVENTS[name] = true end
 -- Buttons remember whether they are enabled
 local baseIndex = WidgetMT.__index
@@ -685,7 +685,7 @@ local view = CommanderFormulary_View()
 CHECK(view and view.rank == 146 and view.total == #D.recipes and view.known == 6, "A5 view built from the world", view and view.known)
 local nav = TextUnder(frame.navPane)
 CHECK(nav:find("Bracer", 1, true) and nav:find("Weapon", 1, true) and nav:find("Rods", 1, true), "A6 category headers painted")
-CHECK(nav:find("Enchant Bracer - Minor Health", 1, true), "A6 recipe rows painted")
+CHECK(nav:find("Minor Health", 1, true) and not nav:find("Enchant Bracer - Minor Health", 1, true), "A6 recipe rows painted, slot prefix dropped under the slot header")
 CHECK(nav:find("3 / ", 1, true), "A6 bracer count 3 known")
 CHECK(nav:find("Vendor", 1, true) and nav:find("Trainer", 1, true), "A6 source words on unknown rows")
 local header = TextUnder(frame.toolbar)
@@ -752,15 +752,14 @@ CHECK(detail:find("Felannia", 1, true) and not detail:find("Johan Barnes", 1, tr
 local function NavRecipeCount()
     local n = 0
     for _, f in ipairs(frames) do
-        if f.__kind == "Button" and f.__shown ~= false and f.name and f.name.__text and Under(frame.navPane, f)
-            and f.name.__text:find("Enchant ", 1, true) then n = n + 1 end
+        if f.__kind == "Button" and f.__shown ~= false and f.spell and Under(frame.navPane, f) then n = n + 1 end
     end
     return n
 end
 frame.filters.KNOWN.__scripts.OnClick(frame.filters.KNOWN)
 Settle()
 CHECK(CommanderFormularyDB.Filter == "KNOWN", "C1 filter set")
-CHECK(NavRecipeCount() == 3, "C1 known filter shows the three known enchants", NavRecipeCount())
+CHECK(NavRecipeCount() == 6, "C1 known filter shows the six known recipes", NavRecipeCount())
 frame.filters.LEARNABLE.__scripts.OnClick(frame.filters.LEARNABLE)
 Settle()
 CHECK(NavRecipeCount() >= 2 and NavRecipeCount() < 40, "C1 learnable filter narrows", NavRecipeCount())
@@ -898,11 +897,12 @@ local wandRow
 for _, f in ipairs(frames) do
     if f.__kind == "Button" and f.__shown ~= false and f.name and f.name.__text and f.name.__text:find("Greater Magic Wand", 1, true) and Under(frame.navPane, f) then wandRow = f end
 end
-CHECK(wandRow and wandRow.name.__text:find("15|TInterface\\MoneyFrame\\UI-SilverIcon", 1, true), "C7 cost beside the name as coins (15s 38c -> 15 silver)", wandRow and wandRow.name.__text)
-CHECK(wandRow and not wandRow.name.__text:find("38", 1, true), "C7 copper rounded away")
+CHECK(wandRow and wandRow.cost.__text:find("15|TInterface\\MoneyFrame\\UI-SilverIcon", 1, true), "C7 cost column as coins (15s 38c -> 15 silver)", wandRow and wandRow.cost.__text)
+CHECK(wandRow and not wandRow.cost.__text:find("38", 1, true), "C7 copper rounded away")
+CHECK(wandRow and wandRow.name.__text == "Greater Magic Wand", "C7 the name column is only the name", wandRow and wandRow.name.__text)
 frame.filters.PROFITABLE.__scripts.OnClick(frame.filters.PROFITABLE)
 Settle()
-CHECK(NavRecipeCount() == 0 and TextUnder(frame.navPane):find("Greater Magic Wand", 1, true), "C7 profit filter shows the wand", TextUnder(frame.navPane))
+CHECK(NavRecipeCount() == 1 and TextUnder(frame.navPane):find("Greater Magic Wand", 1, true), "C7 profit filter shows only the wand", TextUnder(frame.navPane))
 frame.filters.ALL.__scripts.OnClick(frame.filters.ALL)
 Settle()
 
@@ -986,6 +986,49 @@ me.combat = false
 Fire("PLAYER_REGEN_ENABLED")
 Settle()
 CHECK(craftBtn.__parent.__shown == true, "E3 craft back after combat")
+
+-- F the Refresh Prices button: only at the auction house with Auctionator
+-- able to search, every priced item on a click, one recipe's on shift-click,
+-- and a rebuild when Auctionator's search ends
+CHECK(frame.refreshButton.__shown == false, "F1 no refresh button away from the auction house")
+local searched, busListeners = nil, {}
+Auctionator.API.v1.MultiSearchExact = function(caller, names) searched = names end
+Auctionator.EventBus = { Register = function(self, listener, names) busListeners[#busListeners + 1] = { listener = listener, names = names } end }
+Auctionator.Shopping = { Tab = { Events = { SearchEnd = "shopping tab search end" } } }
+Auctionator.FullScan = { Events = { ScanComplete = "get_all_scan_complete" } }
+AuctionFrame = { IsShown = function() return true end }
+Fire("AUCTION_HOUSE_SHOW")
+Settle()
+CHECK(frame.refreshButton.__shown == true, "F1 refresh button at the auction house")
+CHECK(#busListeners == 1 and #busListeners[1].names == 2, "F1 listening for the search end and the full scan", #busListeners)
+printLog = {}
+frame.refreshButton.__scripts.OnClick(frame.refreshButton)
+CHECK(searched and #searched == 211, "F2 every priced item searched (110 reagents, 30 disenchant results, 82 formulas, 28 goods)", searched and #searched)
+local seen = {}
+for _, n in ipairs(searched or {}) do seen[n] = true end
+CHECK(seen["Soul Dust"] and seen["Greater Magic Wand"] and seen["Formula: Enchant Chest - Minor Mana"] and seen["Arcane Dust"], "F2 reagents, goods, formulas and disenchant results by exact name")
+CHECK(printLog[1] and printLog[1]:find("searching 211 items", 1, true), "F2 announced", printLog[1])
+searched = nil
+IsShiftKeyDown = function() return true end
+frame.refreshButton.__scripts.OnClick(frame.refreshButton)
+IsShiftKeyDown = function() return false end
+table.sort(searched or {})
+CHECK(searched and table.concat(searched, ", ") == "Soul Dust", "F3 shift-click searches the selected recipe's items only", searched and table.concat(searched, ", "))
+searched = nil
+CommanderFormulary_RefreshPrices("Greater Magic Wand")
+table.sort(searched or {})
+CHECK(searched and table.concat(searched, ", ") == "Greater Magic Essence, Greater Magic Wand, Simple Wood", "F3 /cfm refresh <recipe>", searched and table.concat(searched, ", "))
+printLog = {}
+busListeners[1].listener:ReceiveEvent("shopping tab search end", {})
+Settle()
+CHECK(printLog[1] and printLog[1]:find("prices refreshed", 1, true), "F4 rebuilt and announced when the search ends", printLog[1])
+AuctionFrame = { IsShown = function() return false end }
+Fire("AUCTION_HOUSE_CLOSED")
+Settle()
+CHECK(frame.refreshButton.__shown == false, "F5 button gone when the auction house closes")
+printLog = {}
+CommanderFormulary_RefreshPrices()
+CHECK(printLog[1] and printLog[1]:find("open the auction house", 1, true), "F5 refresh away from the auction house says why", printLog[1])
 
 -- Restore defaults leaves the character's memory alone
 CommanderFormularyChar.known[13501] = true

@@ -199,3 +199,13 @@ Commander_Quartermaster's ledger knows what your other characters hold (it now t
 materials for exactly this). A shopping row says "25 on your other characters" so you do not buy
 them twice; "Count My Other Characters" (off by default) treats them as reachable, because a stack
 on a bank alt is not in your hand until you have logged over and mailed it.
+
+## D14 — Refresh Prices
+
+The ledger's **Refresh Prices** button appears only while the auction house is open with
+Auctionator loaded. It hands `MultiSearchExact` the exact names of every reagent on every path of
+the route (alternatives are priced too), the formulas the route buys and what the crafts make, and
+the route is re-priced when Auctionator's search ends (its event bus, in a pcall; a Full Scan's
+completion re-prices too). The crafted goods that are sold — wand, oils — now have names in
+`D.ITEMS` so the search can ask for them before the client has ever seen one. `/ctc refresh` does
+the same.

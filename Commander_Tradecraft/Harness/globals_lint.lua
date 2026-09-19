@@ -48,7 +48,7 @@ CommanderTradecraft_Data CommanderTradecraft_Engine CommanderTradecraft_Defaults
 CommanderTradecraft_Show CommanderTradecraft_Hide CommanderTradecraft_Toggle
 CommanderTradecraft_Route CommanderTradecraft_Shopping
 CommanderTradecraft_Alternative CommanderTradecraft_Craft
-CommanderTradecraft_ResetProgress CommanderTradecraft_Status CommanderTradecraft_AuctionatorList
+CommanderTradecraft_ResetProgress CommanderTradecraft_Status CommanderTradecraft_AuctionatorList CommanderTradecraft_RefreshPrices
 CommanderTradecraft_Plan CommanderTradecraft_OnLogin
 BINDING_HEADER_COMMANDERTRADECRAFT BINDING_NAME_COMMANDERTRADECRAFT_TOGGLE
 BINDING_NAME_COMMANDERTRADECRAFT_SHOP
@@ -81,7 +81,7 @@ UnitFactionGroup GetFactionInfoByID
 
 -- Optional neighbours, read only when present
 allow [[
-TomTom Auctionator CommanderQuartermaster_CountsFor
+TomTom Auctionator AuctionFrame AuctionHouseFrame CommanderQuartermaster_CountsFor
 ]]
 
 local problems, scanned = 0, 0

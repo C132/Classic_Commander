@@ -497,7 +497,7 @@ ADDON_LOADED PLAYER_LOGIN PLAYER_LOGOUT PLAYER_ENTERING_WORLD
 SKILL_LINES_CHANGED CHAT_MSG_SKILL BAG_UPDATE_DELAYED PLAYERBANKSLOTS_CHANGED BANKFRAME_OPENED
 CRAFT_SHOW CRAFT_UPDATE CRAFT_CLOSE SPELLS_CHANGED NEW_RECIPE_LEARNED UPDATE_FACTION
 UNIT_INVENTORY_CHANGED PLAYER_REGEN_ENABLED PLAYER_REGEN_DISABLED REPLACE_ENCHANT
-GET_ITEM_INFO_RECEIVED UPDATE_MACROS
+GET_ITEM_INFO_RECEIVED UPDATE_MACROS AUCTION_HOUSE_SHOW AUCTION_HOUSE_CLOSED
 ]]):gmatch("%S+") do KNOWN_EVENTS[name] = true end
 -- Buttons remember whether they are enabled
 local baseIndex = WidgetMT.__index
@@ -1081,6 +1081,36 @@ CHECK(#aucLists == 2 and #aucLists[2].items > #aucLists[1].items, "E3 whole rout
 -- typing into the ledger is thrown away
 ledger.edit.__scripts.OnTextChanged(ledger.edit, true)
 CHECK(ledger.edit.__text == ledger.text, "E4 ledger is read-only in effect")
+
+-- E5 Refresh Prices: only at the auction house with Auctionator able to
+-- search; every reagent on every path, what the route makes, and the
+-- formulas it buys; a rebuild when Auctionator's search ends
+CHECK(ledger.refreshButton.__shown == false, "E5 no refresh button away from the auction house")
+local searched, busListeners = nil, {}
+Auctionator.API.v1.MultiSearchExact = function(caller, names) searched = names end
+Auctionator.EventBus = { Register = function(self, listener, names) busListeners[#busListeners + 1] = { listener = listener, names = names } end }
+Auctionator.Shopping = { Tab = { Events = { SearchEnd = "shopping tab search end" } } }
+Auctionator.FullScan = { Events = { ScanComplete = "get_all_scan_complete" } }
+AuctionFrame = { IsShown = function() return true end }
+Fire("AUCTION_HOUSE_SHOW")
+Settle()
+CHECK(ledger.refreshButton.__shown == true, "E5 refresh button at the auction house")
+CHECK(#busListeners == 1 and #busListeners[1].names == 2, "E5 listening for the search end and the full scan", #busListeners)
+printLog = {}
+ledger.refreshButton.__scripts.OnClick(ledger.refreshButton)
+local seen = {}
+for _, n in ipairs(searched or {}) do seen[n] = true end
+CHECK(searched and #searched > 30 and #searched < 80, "E5 the route's items searched", searched and #searched)
+CHECK(seen["Strange Dust"] and seen["Greater Magic Wand"] and seen["Arcane Dust"] and seen["Large Brilliant Shard"], "E5 reagents from both ends of the route and what it makes", table.concat(searched or {}, ", "))
+CHECK(printLog[1] and printLog[1]:find("searching %d+ items"), "E5 announced", printLog[1])
+printLog = {}
+busListeners[1].listener:ReceiveEvent("shopping tab search end", {})
+Settle()
+CHECK(printLog[1] and printLog[1]:find("prices refreshed", 1, true), "E5 re-priced and announced when the search ends", printLog[1])
+AuctionFrame = { IsShown = function() return false end }
+Fire("AUCTION_HOUSE_CLOSED")
+Settle()
+CHECK(ledger.refreshButton.__shown == false, "E5 button gone when the auction house closes")
 
 -- ===========================================================================
 -- F. Settings and the combat rule

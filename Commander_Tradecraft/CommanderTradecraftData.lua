@@ -95,6 +95,11 @@ D.ITEMS = {
     [16207] = { name = "Runed Arcanite Rod", made = true },
     [22461] = { name = "Runed Fel Iron Rod", made = true },
     [22462] = { name = "Runed Adamantite Rod", made = true },
+    -- What the route makes to sell (named so a price search can ask for them
+    -- before the client has ever seen one)
+    [11288] = { name = "Greater Magic Wand" },
+    [20747] = { name = "Lesser Mana Oil" },
+    [22522] = { name = "Superior Wizard Oil" },
     -- Dusts, essences, shards
     [10940] = { name = "Strange Dust" },
     [10938] = { name = "Lesser Magic Essence" },

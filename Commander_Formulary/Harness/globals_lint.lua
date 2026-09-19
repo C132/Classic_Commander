@@ -45,7 +45,7 @@ allow [[
 Commander CommanderConsoleDB CommanderConsole_Colors
 CommanderFormularyDB CommanderFormularyChar COMMANDER_FORMULARY_EVENTS
 CommanderFormulary_Data CommanderFormulary_Model CommanderFormulary_Defaults CommanderFormulary
-CommanderFormulary_Show CommanderFormulary_Hide CommanderFormulary_Toggle CommanderFormulary_Search
+CommanderFormulary_Show CommanderFormulary_Hide CommanderFormulary_Toggle CommanderFormulary_Search CommanderFormulary_RefreshPrices
 CommanderFormulary_Select CommanderFormulary_ResetChar CommanderFormulary_Status CommanderFormulary_View
 CommanderFormulary_OnLogin
 BINDING_HEADER_COMMANDERFORMULARY BINDING_NAME_COMMANDERFORMULARY_TOGGLE BINDING_NAME_COMMANDERFORMULARY_SEARCH
@@ -80,7 +80,7 @@ UnitClass UnitFactionGroup GetFactionInfoByID RAID_CLASS_COLORS
 
 -- Optional neighbours, read only when present
 allow [[
-TomTom CommanderTradecraft_Plan Auctionator
+TomTom CommanderTradecraft_Plan Auctionator AuctionFrame AuctionHouseFrame
 ]]
 
 local problems, scanned = 0, 0

@@ -84,6 +84,7 @@ local function CreateOptionsPanel()
             route = function() Call("CommanderTradecraft_Route") end,
             shop = function() Call("CommanderTradecraft_Shopping") end,
             ah = function(arg) Call("CommanderTradecraft_AuctionatorList", arg) end,
+            refresh = function() Call("CommanderTradecraft_RefreshPrices") end,
             alt = function(arg) Call("CommanderTradecraft_Alternative", arg) end,
             craft = function() Call("CommanderTradecraft_Craft") end,
             reset = function() Call("CommanderTradecraft_ResetProgress") end,

@@ -35,12 +35,14 @@ local Events = COMMANDER_FORMULARY_EVENTS
 
 local QUAD = "Interface\\Buttons\\WHITE8X8"
 local PAD = 10
-local NAV_W = 340
+local NAV_W = 372
+local COST_W = 62 -- the cost column at the right edge of a navigator row
+local RIGHT_W = 88 -- the source-and-skill column beside it
 local TOOLBAR_H = 24
 local ACTIONS_H = 28
 local ROW_H = 22
 local HEAD_H = 24
-local FRAME_W, FRAME_H = 920, 580
+local FRAME_W, FRAME_H = 950, 580
 
 local db, char
 local loaded = false
@@ -141,6 +143,11 @@ local COIN = {
     silver = "|TInterface\\MoneyFrame\\UI-SilverIcon:12:12:1:0|t",
     copper = "|TInterface\\MoneyFrame\\UI-CopperIcon:12:12:1:0|t",
 }
+-- "Enchant Ring - Striking" under the Ring header is "Striking"
+local function ShortName(name)
+    return (name:gsub("^Enchant [^%-]+ %- ", ""))
+end
+
 local function Coins(copper)
     copper = math.floor((copper or 0) + 0.5)
     if copper < 100 then
@@ -287,6 +294,108 @@ local function PriceAge(item)
     return nil
 end
 
+local Repaint, ScheduleRefresh -- forward
+local world
+
+-- ---------------------------------------------------------------------------
+-- Refreshing prices at the auction house
+-- ---------------------------------------------------------------------------
+-- Every figure here is read from Auctionator's database, so "up to date"
+-- means "Auctionator has searched these items lately". While the auction
+-- house is open, Refresh Prices hands Auctionator the exact names of every
+-- item that moves a number in this window and it searches them in its
+-- Shopping tab; when the search ends the window is rebuilt. A full scan
+-- does the same for the whole realm, once every fifteen minutes.
+
+local function AuctionHouseOpen()
+    if AuctionFrame and AuctionFrame.IsShown and AuctionFrame:IsShown() then return true end
+    if AuctionHouseFrame and AuctionHouseFrame.IsShown and AuctionHouseFrame:IsShown() then return true end
+    return false
+end
+
+local function CanRefreshPrices()
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    return api and api.MultiSearchExact and AuctionHouseOpen() and true or false
+end
+
+-- The names to search: one recipe's reagents, product and tradable
+-- formulas, or with no recipe every item the profession prices — reagents,
+-- crafted goods, disenchant results and formulas that trade hands
+local function PricedItemNames(data, entry)
+    local seen, names = {}, {}
+    local function add(id)
+        if id and not seen[id] and data.items[id] then
+            seen[id] = true
+            names[#names + 1] = data.items[id]
+        end
+    end
+    local function recipe(rec, known)
+        for _, pair in ipairs(rec.reagents or {}) do add(pair[1]) end
+        add(rec.creates)
+        if not known then
+            for _, item in ipairs(rec.formulas or {}) do
+                local f = data.formulas[item]
+                if f and not f.bop then add(item) end
+            end
+        end
+    end
+    if entry then
+        recipe(entry.rec, entry.known)
+    else
+        for _, rec in ipairs(data.recipes) do recipe(rec, false) end
+        for _, brackets in pairs(data.disenchant or {}) do
+            for _, b in ipairs(brackets) do
+                for _, o in ipairs(b.results or {}) do add(o[1]) end
+            end
+        end
+    end
+    return names
+end
+
+local refreshPending = false
+local function RefreshPrices(entry)
+    if not CanRefreshPrices() then
+        Announce("open the auction house with Auctionator loaded to refresh prices")
+        return false
+    end
+    local names = PricedItemNames(Data(), entry)
+    if #names == 0 then return false end
+    local ok, err = pcall(Auctionator.API.v1.MultiSearchExact, "Commander_Formulary", names)
+    if not ok then
+        Announce("Auctionator would not search: " .. tostring(err))
+        return false
+    end
+    refreshPending = true
+    Announce(("searching %d item%s at the auction house — the window updates when Auctionator finishes"):format(#names, #names == 1 and "" or "s"))
+    return true
+end
+
+-- Rebuild when Auctionator's search or full scan finishes; its event bus
+-- calls ReceiveEvent on anything registered with it
+local busListener
+local function WatchAuctionator()
+    if busListener or not (Auctionator and Auctionator.EventBus and Auctionator.EventBus.Register) then return end
+    local names = {}
+    local shop = Auctionator.Shopping and Auctionator.Shopping.Tab and Auctionator.Shopping.Tab.Events
+    if shop and shop.SearchEnd then names[#names + 1] = shop.SearchEnd end
+    local scan = Auctionator.FullScan and Auctionator.FullScan.Events
+    if scan and scan.ScanComplete then names[#names + 1] = scan.ScanComplete end
+    if #names == 0 then return end
+    busListener = {
+        ReceiveEvent = function()
+            if refreshPending then
+                refreshPending = false
+                Announce("prices refreshed")
+            end
+            -- The tooltip hooks' cached world goes stale; the window rebuilds
+            if not (frame and frame:IsShown()) then world = nil end
+            ScheduleRefresh()
+        end,
+    }
+    local ok = pcall(Auctionator.EventBus.Register, Auctionator.EventBus, busListener, names)
+    if not ok then busListener = nil end
+end
+
 local function BuildWorld()
     local rank, maxRank = ReadSkill()
     return {
@@ -302,9 +411,6 @@ end
 -- The view
 -- ---------------------------------------------------------------------------
 
-local Repaint -- forward
-local world
-
 local function Rebuild()
     if not loaded then return end
     if craftOpen then ScanCraftWindow() end
@@ -313,7 +419,7 @@ local function Rebuild()
     Repaint()
 end
 
-local function ScheduleRefresh()
+function ScheduleRefresh()
     if pendingRefresh or not loaded then return end
     pendingRefresh = true
     C_Timer.After(0, function()
@@ -550,10 +656,16 @@ local function NavRow(i)
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.name:SetJustifyH("LEFT")
     if row.name.SetWordWrap then row.name:SetWordWrap(false) end
+    -- Three columns after the name: source and skill, then the reagent
+    -- cost of one cast in its own column so it never fights the name
+    row.cost = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.cost:SetJustifyH("RIGHT")
+    row.cost:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row.cost:SetWidth(COST_W)
     row.right = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.right:SetJustifyH("RIGHT")
-    row.right:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-    row.right:SetWidth(98)
+    row.right:SetPoint("RIGHT", row.cost, "LEFT", -4, 0)
+    row.right:SetWidth(RIGHT_W)
     row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
     row.name:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
     row.progress = Quad(row, "ARTWORK")
@@ -630,6 +742,8 @@ local function PaintNav()
         if row.chevron then for _, bar in ipairs(row.chevron) do bar:Hide() end end
         row.name:ClearAllPoints()
         row.right:SetText("")
+        row.cost:SetText("")
+        row.spell = nil
         row:SetScript("OnEnter", nil); row:SetScript("OnLeave", nil)
         if r.kind == "empty" then
             row:SetHeight(ROW_H * 2)
@@ -724,6 +838,7 @@ local function PaintNav()
                 r.collapsed and "expand" or "collapse"), "ANCHOR_RIGHT")
         else
             local e = r.entry
+            row.spell = e.spell
             row:SetHeight(ROW_H)
             if row.name.SetWordWrap then row.name:SetWordWrap(false) end
             row.icon:SetTexture(SpellIcon(e.spell))
@@ -732,11 +847,12 @@ local function PaintNav()
             row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
             row.name:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
             row.name:SetFontObject(GameFontHighlightSmall)
-            -- The reagent cost of a cast beside the name, when priced
+            -- Under a slot header "Enchant Ring - " says nothing the header
+            -- has not; a trip row sits under a zone, so it keeps the whole name
+            row.name:SetText(r.stop and e.name or ShortName(e.name))
+            -- The reagent cost of one cast, when every reagent is priced
             if e.castPriced and e.castCost and e.castCost > 0 then
-                row.name:SetText(("%s  %s%s|r"):format(e.name, Hex(fr, fg, fb), Coins(e.castCost)))
-            else
-                row.name:SetText(e.name)
+                row.cost:SetText(("%s%s|r"):format(Hex(fr, fg, fb), Coins(e.castCost)))
             end
             if e.known then
                 local c = DIFF[e.colour] or DIFF.grey
@@ -756,15 +872,22 @@ local function PaintNav()
                 if r.repShort and r.rep then
                     row.right:SetText(("%sneeds %s|r"):format(Hex(WARN[1] * 0.9, WARN[2] * 0.9, WARN[3] * 0.9), M.StandingName(r.rep.standing)))
                 else
-                    row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), r.cost > 0 and Coins(r.cost) or "", Hex(fr, fg, fb), r.skill))
+                    row.right:SetText(("%s%d|r"):format(Hex(fr, fg, fb), r.skill))
+                end
+                -- The formula's price takes the cost column on a trip row
+                if r.cost > 0 then
+                    row.cost:SetText(("%s%s|r"):format(Hex(pr, pg, pb), Coins(r.cost)))
+                else
+                    row.cost:SetText("")
                 end
             else
                 row.name:SetTextColor(sr, sg, sb)
                 local tint = SOURCE_TINT[e.sourceWord] or { 0.8, 0.8, 0.8 }
                 if db.Filter == "LEARNABLE" and e.learnable == "vendor" and e.formulaPrice then
                     -- What the formula costs at the vendor you would use
-                    row.right:SetText(("%s%s|r %s%d|r"):format(Hex(pr, pg, pb), Coins(e.formulaPrice), Hex(fr, fg, fb), e.learnSkill))
-                elseif db.ShowSourceColumn then
+                    row.cost:SetText(("%s%s|r"):format(Hex(pr, pg, pb), Coins(e.formulaPrice)))
+                end
+                if db.ShowSourceColumn then
                     row.right:SetText(("%s%s|r %s%d|r"):format(Hex(tint[1] * 0.85, tint[2] * 0.85, tint[3] * 0.85), e.sourceWord, Hex(fr, fg, fb), e.learnSkill))
                 else
                     row.right:SetText(("%s%d|r"):format(Hex(fr, fg, fb), e.learnSkill))
@@ -1034,6 +1157,7 @@ local function PaintEconomics(entry)
     end
     if oldest and oldest >= 2 then
         lines[#lines + 1] = ("%sPrices from a scan %d days old.|r"):format(Hex(WARN[1], WARN[2], WARN[3]), oldest)
+            .. (CanRefreshPrices() and " Refresh Prices below searches them now." or "")
     end
     Heading("Gold")
     for _, l in ipairs(lines) do
@@ -1308,11 +1432,21 @@ local function PaintActions()
     else
         frame.craftNote:SetText("")
     end
+    local rx = 0
+    if CanRefreshPrices() then
+        WatchAuctionator()
+        frame.refreshButton:ClearAllPoints()
+        frame.refreshButton:SetPoint("RIGHT", actions, "RIGHT", 0, 0)
+        frame.refreshButton:Show()
+        rx = -114
+    else
+        frame.refreshButton:Hide()
+    end
     if not InCombat() and not craftOpen and not char.scanned then
         local oh = EnsureOpenButton(actions)
         if oh then
             oh:ClearAllPoints()
-            oh:SetPoint("RIGHT", actions, "RIGHT", 0, 0)
+            oh:SetPoint("RIGHT", actions, "RIGHT", rx, 0)
             oh:Show()
         end
     end
@@ -1608,6 +1742,18 @@ local function EnsureFrame()
     frame.craftNote:SetPoint("LEFT", actions, "LEFT", 190, 0)
     frame.craftNote:SetJustifyH("LEFT")
 
+    -- Only while the auction house is open with Auctionator loaded
+    frame.refreshButton = CreateFrame("Button", "CommanderFormularyRefresh", actions, "UIPanelButtonTemplate")
+    frame.refreshButton:SetSize(110, 22)
+    frame.refreshButton:SetText("Refresh Prices")
+    frame.refreshButton:SetScript("OnClick", function()
+        local entry = view and selectedSpell and view.entries[selectedSpell]
+        RefreshPrices((IsShiftKeyDown and IsShiftKeyDown()) and entry or nil)
+    end)
+    AttachTooltip(frame.refreshButton, "Refresh prices",
+        "Have Auctionator search every item that moves a number in this window — reagents, crafted goods, disenchant results and formulas that trade hands — and rebuild it when the search ends. Takes a minute or two. Shift-click to search only the selected recipe's reagents, product and formula. Auctionator's own Full Scan does the whole realm at once, but only every fifteen minutes.", "ANCHOR_TOP")
+    frame.refreshButton:Hide()
+
     ApplyFraming(true)
     ApplyPosition()
     frame:SetScript("OnShow", function() Rebuild() end)
@@ -1642,6 +1788,24 @@ function CommanderFormulary_Show()
     EnsureFrame()
     selectedSpell = selectedSpell or char.selected
     if frame:IsShown() then Rebuild() else frame:Show() end
+end
+
+-- Refresh prices at the auction house (also: /cfm refresh). With a recipe
+-- name, only that recipe's items.
+function CommanderFormulary_RefreshPrices(arg)
+    if not loaded then return end
+    local entry
+    if view and arg and arg ~= "" then
+        local wanted = arg:lower()
+        for _, e in pairs(view.entries) do
+            if e.name:lower() == wanted or ShortName(e.name):lower() == wanted then entry = e break end
+        end
+        if not entry then
+            Announce("no recipe called " .. arg)
+            return
+        end
+    end
+    RefreshPrices(entry)
 end
 
 function CommanderFormulary_Hide()
@@ -1798,6 +1962,7 @@ local WATCHED = {
     "UPDATE_FACTION", "UNIT_INVENTORY_CHANGED",
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
     "GET_ITEM_INFO_RECEIVED",
+    "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
 }
 
 events:SetScript("OnEvent", function(_, event, arg1)

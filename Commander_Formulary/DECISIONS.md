@@ -114,3 +114,22 @@ reputation you have not earned yet is listed and marked "needs Honored", because
 can plan for; the other faction's vendors are no trip at all — one row per zone with its vendor, how many formulas, how many at your skill and
 the gold for the lot; right-click for a waypoint to the vendor. One Moonglade trip, one Silithus
 trip, one Shattrath sweep — the completionist's errand list.
+
+## D12 — The navigator's columns, and Refresh Prices
+
+A recipe row is four columns: icon and name, source and skill, cost. Under a slot header the name
+drops its "Enchant Ring - " — the header already says it, and with the cost beside it the full
+name was being cut off (screenshot, 2026-09-18). A trip row keeps the whole name because it sits
+under a zone, not a slot. The cost column is the reagent cost of one cast in coin icons rounded to
+the silver; on a trip row or a vendor formula under Learnable it is the formula's price instead,
+in the primary ink, because that is the gold that trip needs.
+
+Every price in the window is Auctionator's, so "up to date" means Auctionator has searched the item
+lately. **Refresh Prices** appears in the actions row only while the auction house is open with
+Auctionator loaded: it hands `MultiSearchExact` the exact names of every item that moves a number
+here — 110 reagents, 30 disenchant results, 82 formulas that trade hands, 28 crafted goods — and
+Auctionator searches them in its Shopping tab; the window rebuilds on its `SearchEnd` (and on a
+Full Scan's `ScanComplete`), reached through its event bus in a pcall. Shift-click, or
+`/cfm refresh <recipe>`, searches one recipe's items. Auctionator's Full Scan remains the way to
+refresh the whole realm — it is the only thing that prices the random green in your bag for the
+disenchant verdict — but it is limited to once every fifteen minutes; this is the touch-up between.

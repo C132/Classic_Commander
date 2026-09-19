@@ -75,6 +75,7 @@ local function CreateOptionsPanel()
             show = function() Call("CommanderFormulary_Show") end,
             search = function(arg) Call("CommanderFormulary_Search", arg) end,
             status = function() Call("CommanderFormulary_Status") end,
+            refresh = function(arg) Call("CommanderFormulary_RefreshPrices", arg) end,
             reset = function() Call("CommanderFormulary_ResetChar") end,
         },
     })
