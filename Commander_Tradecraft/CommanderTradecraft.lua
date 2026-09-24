@@ -566,10 +566,14 @@ end
 -- Secure buttons. DoCraft is a protected function on this client (it threw
 -- ADDON_ACTION_FORBIDDEN the first time it was pressed), and so is casting
 -- by name, so both the Open button and the Craft button are
--- SecureActionButtons. Each is a protected frame that nothing may show,
--- hide or move in combat, so each sits inside a plain holder frame that is
--- the thing the layout shows, hides and anchors: hiding an ordinary parent
--- takes a protected child with it and is allowed at any time. Attributes
+-- SecureActionButtons, each inside a holder frame the layout shows, hides
+-- and anchors. The holder is NOT an ordinary frame, though: the parent of a
+-- protected frame is protected too (hiding it would hide the secure child),
+-- and the client blocked holder:Hide() in combat 29 times in one session
+-- (2026-09-23). So holders are only ever shown, hidden or moved OUT of
+-- combat: they are put away as combat starts (PLAYER_REGEN_DISABLED runs
+-- before the lockdown does), a combat paint never touches them, and the
+-- paint that follows PLAYER_REGEN_ENABLED lays them out again. Attributes
 -- are only ever written out of combat.
 --
 -- The Craft button runs the macro enchanters have typed by hand since
@@ -1255,8 +1259,11 @@ end
 Repaint = function()
     if not loaded then return end
     ReleaseAll()
-    -- Holders are plain frames: hiding them is fine in combat too
-    for _, entry in pairs(secure) do entry.holder:Hide() end
+    -- Holders are protected (see the secure buttons above): out of combat
+    -- only. In combat they are already away, put there at combat's start.
+    if not InCombat() then
+        for _, entry in pairs(secure) do entry.holder:Hide() end
+    end
     local p = plan
     if not p then guide:Hide() return end
 
@@ -2183,6 +2190,11 @@ end
 
 events:SetScript("OnEvent", function(_, event, arg1)
     if not loaded then return end
+    if event == "PLAYER_REGEN_DISABLED" and not InCombat() then
+        -- Now, not a frame from now: this event is dispatched before the
+        -- lockdown lands, and the holders are protected once it has
+        for _, entry in pairs(secure) do entry.holder:Hide() end
+    end
     if event == "CRAFT_SHOW" then
         OnStockWindowShown("CRAFT")
     elseif event == "TRADE_SKILL_SHOW" then

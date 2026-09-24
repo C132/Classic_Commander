@@ -55,6 +55,20 @@ end
 local eventRegistry = {}
 local NewWidget
 
+-- Combat lockdown, the way the client applies it: a frame built from a
+-- secure template is protected, and so is its PARENT (hiding the parent
+-- would hide the secure child -- the field report was exactly that parent's
+-- Hide). In combat, showing, hiding, moving or sizing one is refused and
+-- reported as ADDON_ACTION_BLOCKED; here it is recorded and dropped.
+inCombatNow = false
+function InCombatLockdown() return inCombatNow end
+blockedCalls = {}
+function Blocked(s, what)
+    if not (inCombatNow and rawget(s, "__protected")) then return false end
+    blockedCalls[#blockedCalls + 1] = (rawget(s, "__name") or "?") .. ":" .. what
+    return true
+end
+
 local WidgetMT = {}
 WidgetMT.__index = function(self, key)
     if type(key) ~= "string" then return nil end
@@ -66,7 +80,7 @@ WidgetMT.__index = function(self, key)
     -- Width is tracked for real: the drain bar's fill is sized off its
     -- parent's width, so a mock that always answered 0 would assert nothing
     if key == "SetWidth" then
-        local fn = function(s, w) s.__w = w end
+        local fn = function(s, w) if Blocked(s, "SetWidth") then return end s.__w = w end
         rawset(self, key, fn); return fn
     end
     if key == "GetWidth" then
@@ -74,18 +88,19 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn); return fn
     end
     if key == "SetSize" then
-        local fn = function(s, w, h) s.__w, s.__h = w, h end
+        local fn = function(s, w, h) if Blocked(s, "SetSize") then return end s.__w, s.__h = w, h end
         rawset(self, key, fn); return fn
     end
     if key == "SetPoint" then
         local fn = function(s, point, rel, relPoint, x, y)
+            if Blocked(s, "SetPoint") then return end
             s.__points = s.__points or {}
             s.__points[#s.__points + 1] = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
         end
         rawset(self, key, fn); return fn
     end
     if key == "ClearAllPoints" then
-        local fn = function(s) s.__points = {} end
+        local fn = function(s) if Blocked(s, "ClearAllPoints") then return end s.__points = {} end
         rawset(self, key, fn); return fn
     end
     if key == "SetText" then
@@ -109,15 +124,15 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn); return fn
     end
     if key == "Show" then
-        local fn = function(s) s.__shown = true end
+        local fn = function(s) if Blocked(s, "Show") then return end s.__shown = true end
         rawset(self, key, fn); return fn
     end
     if key == "Hide" then
-        local fn = function(s) s.__shown = false end
+        local fn = function(s) if Blocked(s, "Hide") then return end s.__shown = false end
         rawset(self, key, fn); return fn
     end
     if key == "SetShown" then
-        local fn = function(s, shown) s.__shown = not not shown end
+        local fn = function(s, shown) if Blocked(s, "SetShown") then return end s.__shown = not not shown end
         rawset(self, key, fn); return fn
     end
     if key == "IsShown" or key == "IsVisible" then
@@ -191,6 +206,10 @@ function CreateFrame(frameType, name, parent, template)
     local f = NewWidget(frameType, name)
     f.__template = template
     f.__parent = parent
+    if template and template:find("Secure") then
+        f.__protected = true
+        if parent then parent.__protected = true end
+    end
     if frameType == "CheckButton" or (template and template:find("CheckButton")) then
         f.Text = NewWidget("FontString")
     end
@@ -608,6 +627,55 @@ db.QueueTimerLocked = true
 Commander.Notify(COMMANDER_ADJUTANT_EVENTS.UPDATE)
 Advance(0.2)
 CHECK(not FloatBar():IsShown(), "M: locking it again puts it away")
+
+-- ---------------------------------------------------------------------------
+-- N: combat. The floating timer parents the secure Enter button, so it is a
+-- protected frame: nothing may show, hide, move or size it in combat (the
+-- field report: CommanderAdjutantQueueTimer:Hide() blocked 14 times in one
+-- battleground). The countdown must keep running anyway.
+-- ---------------------------------------------------------------------------
+CHECK(FloatBar().__protected == true, "N: the timer is protected, as on the client (it parents a secure button)")
+banner.__fontStrings[1].__text = nil
+queues[1] = { status = "confirm", mapName = "Warsong Gulch", expiration = 60 }
+PVPReadyDialog.activeIndex = 1
+PVPReadyDialog:Show()
+Fire("UPDATE_BATTLEFIELD_STATUS", 1)
+Advance(0.1)
+CHECK(AttachBar():IsShown() and not FloatBar():IsShown(), "N: out of combat, the bar rides the dialog")
+inCombatNow = true
+blockedCalls = {}
+-- The dialog is dismissed mid-fight: the timer must come up, but the
+-- protected frame cannot be shown -- the plain bar stands in on its spot
+PVPReadyDialog:Hide()
+Advance(0.3)
+CHECK(#blockedCalls == 0, "N: nothing blocked while the dialog goes away in combat", blockedCalls[1])
+CHECK(AttachBar():IsShown() and (BarText(AttachBar()) or ""):find("^Warsong Gulch") ~= nil,
+    "N: the plain bar stands in for the timer", BarText(AttachBar()))
+local sp = AttachBar().__points and AttachBar().__points[1]
+CHECK(sp and sp.rel == FloatBar() and sp.point == "CENTER", "N: ...on the timer's own spot")
+-- The invite resolves mid-fight: everything must go, still without a block
+queues[1] = nil
+Fire("UPDATE_BATTLEFIELD_STATUS", 1)
+Advance(0.3)
+CHECK(#blockedCalls == 0, "N: nothing blocked when the invite clears in combat", blockedCalls[1])
+CHECK(not AttachBar():IsShown(), "N: the stand-in goes")
+-- A timer that WAS up when combat began is hidden by alpha, not Hide()
+inCombatNow = false
+queues[1] = { status = "confirm", mapName = "Eye of the Storm", expiration = 50 }
+Fire("UPDATE_BATTLEFIELD_STATUS", 1)
+Advance(0.2)
+CHECK(FloatBar():IsShown(), "N: out of combat the real timer is up")
+inCombatNow = true
+queues[1] = nil
+Fire("UPDATE_BATTLEFIELD_STATUS", 1)
+Advance(0.3)
+CHECK(#blockedCalls == 0, "N: no blocked Hide on the protected timer", blockedCalls[1])
+CHECK(FloatBar():GetAlpha() == 0, "N: it is hidden by alpha instead")
+-- Combat ends: the real state is put right
+inCombatNow = false
+Fire("PLAYER_REGEN_ENABLED")
+Advance(0.2)
+CHECK(not FloatBar():IsShown() and FloatBar():GetAlpha() == 1, "N: after combat the timer is really hidden, alpha restored")
 
 CHECK(#harnessFailedErrors == 0, "no errors across the run", harnessFailedErrors[1])
 

@@ -76,6 +76,15 @@ end
 
 local NewWidget
 
+-- Combat lockdown on protected frames: refused and recorded, as the client
+-- reports ADDON_ACTION_BLOCKED. InCombatLockdown is the character's own.
+blockedCalls = {}
+function Blocked(s, what)
+    if not (InCombatLockdown and InCombatLockdown() and rawget(s, "__protected")) then return false end
+    blockedCalls[#blockedCalls + 1] = (rawget(s, "__name") or rawget(s, "__kind") or "?") .. ":" .. what
+    return true
+end
+
 local WidgetMT = {}
 WidgetMT.__index = function(self, key)
     if type(key) ~= "string" then return nil end
@@ -132,6 +141,7 @@ WidgetMT.__index = function(self, key)
     end
     if key == "Show" then
         local fn = function(s)
+            if Blocked(s, "Show") then return end
             s.__shown = true
             if s.__scripts.OnShow then s.__scripts.OnShow(s) end
         end
@@ -139,7 +149,7 @@ WidgetMT.__index = function(self, key)
         return fn
     end
     if key == "Hide" then
-        local fn = function(s) s.__shown = false end
+        local fn = function(s) if Blocked(s, "Hide") then return end s.__shown = false end
         rawset(self, key, fn)
         return fn
     end
@@ -240,6 +250,12 @@ end
 function CreateFrame(frameType, name, parent, template)
     local f = NewWidget(frameType, name)
     f.__template = template
+    -- A secure frame and its PARENT are protected (the field report was the
+    -- parent -- the holder -- being refused a Hide in combat)
+    if template and template:find("Secure") then
+        f.__protected = true
+        if parent then parent.__protected = true end
+    end
     if frameType == "CheckButton" or (template and template:find("CheckButton")) then
         f.Text = NewWidget("FontString")
     end
@@ -1148,9 +1164,19 @@ me.known[20017] = true
 Fire("SKILL_LINES_CHANGED")
 Settle()
 CHECK(CommanderTradecraft_Plan().current.spell == 20017, "F2 on a craft step")
-me.combat = true
+-- The client's order: PLAYER_REGEN_DISABLED is dispatched BEFORE the
+-- lockdown lands, then everything after it is in combat
 Fire("PLAYER_REGEN_DISABLED")
+me.combat = true
+blockedCalls = {}
 Settle()
+-- Mid-fight the bags and the inventory keep changing, and every one of
+-- them repaints the guide (29 blocked holder Hides in one session)
+Fire("BAG_UPDATE_DELAYED")
+Settle()
+Fire("UNIT_INVENTORY_CHANGED", "player")
+Settle()
+CHECK(#blockedCalls == 0, "F2 a combat repaint touches no protected frame", blockedCalls[1])
 b = Buttons()
 CHECK(b["Open Enchanting"] == nil, "F2 no secure button in combat")
 CHECK(b["Craft"] and b["Craft"].__attr == nil and b["Craft"].__enabled == false, "F2 craft is a disabled plain button in combat (no attribute writes)")

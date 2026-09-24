@@ -429,8 +429,40 @@ local function EnsureBars()
     WireEnterButton()
 end
 
-local function ApplyFloatChrome()
+-- The floating timer PARENTS a secure button (the click that enters the
+-- battle), which makes it a protected frame: in combat the client refuses
+-- to show, hide, move or resize it (ADDON_ACTION_BLOCKED, fourteen of them
+-- in one battleground, 2026-09-23). The countdown keeps running through a
+-- fight, so in combat the timer is never shown or hidden: a hide is carried
+-- by its alpha (allowed on a protected frame), a show by the plain attach bar
+-- standing in on the same spot, and the real state is put right the moment
+-- combat ends (PLAYER_REGEN_ENABLED re-runs the countdown).
+local function FloatLocked()
+    return floatBar ~= nil and InCombatLockdown ~= nil and InCombatLockdown() and true or false
+end
+
+local function SetFloatShown(shown)
     if not floatBar then return end
+    if FloatLocked() then
+        if floatBar:IsShown() then floatBar:SetAlpha(shown and 1 or 0) end
+        return
+    end
+    floatBar:SetAlpha(1)
+    floatBar:SetShown(shown)
+end
+
+-- In combat, with the timer wanted and the protected frame down: the attach
+-- bar, which is an ordinary frame, draws it where the timer would be
+local function StandIn(label, left, span)
+    attachBar:ClearAllPoints()
+    attachBar:SetPoint("CENTER", floatBar, "CENTER", 0, 0)
+    attachBar:SetWidth(floatBar:GetWidth() or FLOAT_WIDTH)
+    PaintBar(attachBar, label, left, span)
+    attachBar:Show()
+end
+
+local function ApplyFloatChrome()
+    if not floatBar or FloatLocked() then return end
     Commander.UI.ApplyHudChrome(floatBar, CommanderAdjutantDB, "QueueTimer", {
         title = "Deployment",
         defaultPoint = { point = "TOP", x = 0, y = -190 },
@@ -457,7 +489,7 @@ end
 local function UpdateCountdown()
     if not (CommanderAdjutantDB.EnableAdjutant and CommanderAdjutantDB.ShowQueueTimer) then
         if attachBar then attachBar:Hide() end
-        if floatBar then floatBar:Hide() end
+        SetFloatShown(false)
         return false
     end
     EnsureBars()
@@ -479,9 +511,9 @@ local function UpdateCountdown()
         if unlocked then
             ApplyFloatChrome()
             PaintBar(floatBar, "Deployment", 0, 0)
-            floatBar:Show()
+            SetFloatShown(true)
         else
-            floatBar:Hide()
+            SetFloatShown(false)
         end
         return false
     end
@@ -496,7 +528,7 @@ local function UpdateCountdown()
 
     local dialog = InviteDialog(state.index)
     if dialog then
-        floatBar:Hide()
+        SetFloatShown(false)
         floatBar.portIndex = nil
         attachBar:ClearAllPoints()
         attachBar:SetPoint("TOP", dialog, "BOTTOM", 0, -4)
@@ -509,10 +541,14 @@ local function UpdateCountdown()
             ApplyFloatChrome()
             floatBar.portIndex = state.index
             PaintBar(floatBar, state.mapName or "Deployment", state.left, state.span)
-            floatBar:Show()
+            if FloatLocked() and not floatBar:IsShown() then
+                StandIn(state.mapName or "Deployment", state.left, state.span)
+            else
+                SetFloatShown(true)
+            end
         else
             floatBar.portIndex = nil
-            floatBar:Hide()
+            SetFloatShown(false)
         end
     end
     return true
@@ -549,6 +585,8 @@ end
 local queueEvents = CreateFrame("Frame")
 queueEvents:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
 queueEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+-- Whatever combat kept the protected timer from doing, it does now
+queueEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
 queueEvents:SetScript("OnEvent", function()
     if not loaded or not CommanderAdjutantDB.EnableAdjutant then return end
     -- Scan first: the pop banner does not wait on the countdown's own switch
