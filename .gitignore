@@ -115,3 +115,4 @@
 # The generator's OUTPUT ships; the quarry it was cut from does not.
 /Commander_Quartermaster/Harness/.cache/
 __pycache__/
+/ArenaArmory
