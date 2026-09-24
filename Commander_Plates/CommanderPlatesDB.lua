@@ -1719,7 +1719,7 @@ end
 
 local function AddRadialRingsSection(panel)
     Section(panel, "Radial: The Rings",
-        "From the middle out: power, health, the cast. Health fills clockwise from twelve o'clock, so the Execute and value markers above sit where they would on a clock face -- 20% at a little past two. A hit leaves a pale trail that catches up a moment later, so you see what the last blow took.")
+        "From the middle out: power, health, the cast. Health runs round to twelve o'clock and drains clockwise as it drops, the empty part growing like a clock hand turning; the Execute and value markers above sit where that edge will be -- 20% at a little before ten. A hit leaves a pale trail that catches up a moment later, so you see what the last blow took.")
     panel:AddSliderPair({
         label = "Disc Size",
         tooltip = "Diameter of the disc, to the outside of the health ring. The cast ring and the orbit are drawn outside this.",

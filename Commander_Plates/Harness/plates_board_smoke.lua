@@ -1263,11 +1263,12 @@ function GetCreatureDifficultyColor() return { r = 1, g = 1, b = 0 } end
 local interruptedFired = false
 
 local function Radial(plate) local o = Overlay(plate); return o and o.radial end
--- A frozen arc's fraction, read back off the cooldown it was set as
+-- A frozen arc's fraction, read back off the cooldown it was set as: an
+-- unreversed cooldown paints what REMAINS, so the fraction is the remainder
 local function ArcFraction(arc)
     if arc.full.__shown then return 1 end
     if not arc.cd.__shown or not arc.cd.__cdDur then return 0 end
-    return (now - arc.cd.__cdStart) / arc.cd.__cdDur
+    return 1 - (now - arc.cd.__cdStart) / arc.cd.__cdDur
 end
 local function Near(a, b, eps) return math.abs((a or -99) - b) < (eps or 0.01) end
 
@@ -1289,7 +1290,7 @@ CHECK(rm.UnitFrame.AurasFrame.__shown == false, "Blizzard's aura icons stay down
 CHECK(rov.icons[1] == nil or rov.icons[1].__shown == false, "no bar-mode aura rows on a disc")
 CHECK(w.core.__texture == CommanderPlates_Data.CLASS_ICON, "the face is the class emblem", w.core.__texture)
 CHECK(Near(ArcFraction(w.healthArc), 0.6), "health ring at 60%", ArcFraction(w.healthArc))
-CHECK(w.healthArc.cd.__reverse == true, "health ring fills clockwise from twelve")
+CHECK(w.healthArc.cd.__reverse == false, "health ring ends at twelve and drains clockwise (an unreversed sweep)")
 CHECK(Near(ArcFraction(w.powerArc), 0.5), "mana ring at 50%", ArcFraction(w.powerArc))
 CHECK(w.nameText.__text == "Gankmage" and w.nameText.__shown, "the name under the disc")
 CHECK(w.centerText.__text == "60", "SMART centre text: the percent once hurt", w.centerText.__text)
@@ -1322,6 +1323,8 @@ CHECK(w.centerText.__text == "30", "centre text follows health")
 CommanderPlatesDB.HealthMarkerPercent = 25
 Fire("UNIT_MAXHEALTH", "nameplate4")
 CHECK(w.ticks.pct.__shown == true, "the Execute marker is a tick on the ring")
+local tp = w.ticks.pct.__points and w.ticks.pct.__points[1]
+CHECK(tp and tp.x < -1 and math.abs(tp.y) < 0.01, "...at nine o'clock for 25%: where the clockwise-draining edge will be", tp and (tp.x .. "," .. tp.y))
 CommanderPlatesDB.HealthMarkerPercent = 0
 Fire("UNIT_MAXHEALTH", "nameplate4")
 CHECK(w.ticks.pct.__shown == false, "...and goes with the setting")

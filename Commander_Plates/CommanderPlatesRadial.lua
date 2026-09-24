@@ -425,7 +425,12 @@ local function ArcHide(arc)
     arc.f = nil
 end
 
--- A frozen arc at `fraction`, clockwise from twelve
+-- A frozen arc at `fraction`. The arc ENDS at twelve o'clock and starts
+-- (1 - fraction) of the way round, so as the value drops its leading edge
+-- walks CLOCKWISE toward twelve -- the empty part grows the way a clock hand
+-- turns. Everything layered on the same ring (the damage trail, incoming
+-- heals) shares that end, so what shows of each is the stretch just before
+-- the health arc's edge.
 local function ArcSet(arc, fraction, r, g, b, a, now)
     a = a or 1
     if not fraction or fraction <= 0.002 then ArcHide(arc) return end
@@ -444,9 +449,11 @@ local function ArcSet(arc, fraction, r, g, b, a, now)
     end
     local span = Clamp(now, 60, STATIC)
     arc.f, arc.colour, arc.setAt, arc.span = fraction, colour, now, span
-    if arc.cd.SetReverse then arc.cd:SetReverse(true) end
+    -- Not reversed: a cooldown paints what REMAINS, which runs from the
+    -- sweep's edge clockwise round to twelve
+    if arc.cd.SetReverse then arc.cd:SetReverse(false) end
     if arc.cd.SetSwipeColor then arc.cd:SetSwipeColor(r, g, b, a) end
-    arc.cd:SetCooldown(now - fraction * span, span)
+    arc.cd:SetCooldown(now - (1 - fraction) * span, span)
     arc.cd:Show()
 end
 
@@ -667,12 +674,14 @@ function R.SetAlert(w, shown, r, g, b, a)
     w.alert:Show()
 end
 
--- A line across the health band at a fraction of the way round
+-- A line across the health band where the arc's edge will be when the unit
+-- is down to `fraction` (the arc ends at twelve, so that is 1 - fraction of
+-- the way round)
 function R.SetMarker(w, key, fraction, r, g, b)
     local t = w.ticks[key]
     if not t then return end
     if not fraction or fraction <= 0 or fraction >= 1 then t:Hide() return end
-    local x, y, theta = E.ArcPoint(w.healthArc.radius or 0, fraction)
+    local x, y, theta = E.ArcPoint(w.healthArc.radius or 0, 1 - fraction)
     t:ClearAllPoints()
     t:SetPoint("CENTER", w, "CENTER", x, y)
     if t.SetRotation then t:SetRotation(-theta) end

@@ -413,8 +413,9 @@ end
 -- middle, the health bar is an arc around it, power an arc inside that, the
 -- cast an arc outside, and the auras orbit the whole thing. Angles here run
 -- the way the client's own Cooldown sweep runs -- CLOCKWISE FROM TWELVE
--- O'CLOCK, in degrees -- so an arc that fills to fraction f ends at f * 360
--- and a marker at "20% health" sits at 72 degrees.
+-- O'CLOCK, in degrees. A health or power arc ENDS at twelve and begins
+-- (1 - f) of the way round, so as health drops its edge walks clockwise and
+-- a marker at "20% health" sits at 288 degrees, a little before ten.
 -- ===========================================================================
 
 -- Where an aura orbit is centred, as a clock position

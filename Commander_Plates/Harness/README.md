@@ -71,7 +71,7 @@ of its own options.
 `CommanderPlatesRadial.lua` is the second plate style's brushes, shared with
 the settings preview the way `CommanderPlatesDraw.lua` is. Engine section K
 pins its geometry and rules: who becomes a disc (never a totem), that angles
-run clockwise from twelve like the client's Cooldown sweep, the nearest ring
+run clockwise from twelve like the client's Cooldown sweep (health ENDS at twelve and drains clockwise), the nearest ring
 weight, the radii with a pixel of air between bands, an orbit that spills
 into a second ring rather than overlapping (40 icons, no two closer than an
 icon), the centre text in every mode, threat for a damage dealer and a tank,
