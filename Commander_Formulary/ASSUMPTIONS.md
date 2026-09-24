@@ -60,3 +60,17 @@ Symptom if wrong: no disenchant lines on any tooltip. Test: hover a green.
 Commander_Tradecraft relies on the same call. Without Auctionator, or before a scan, every gold
 figure is simply absent — the Gold section, the Profit filter and the disenchant value lines do not
 appear.
+
+## A9 — The trade skill window behaves like the craft window (First Aid)
+
+`TRADE_SKILL_SHOW` arrives after UIParent has loaded `Blizzard_TradeSkillUI` and shown
+`TradeSkillFrame`; `GetTradeSkillLine()` answers the localised profession name (the one
+`GetSpellInfo(3273)` gives) with the rank and max rank; `GetNumTradeSkills` / `GetTradeSkillInfo(i)`
+list the recipes with `"header"` rows; `HideUIPanel(TradeSkillFrame)` from inside the handler puts
+it away (its `OnHide` calls `CloseTradeSkill()`, which nothing here needs). All four are this
+client's own `Blizzard_TradeSkillUI/TBC` code paths, read 2026-09-19; the harness mocks them the
+same way it mocks the craft window. Cooking, Fishing and the rest use the same frame and are
+ignored by name, the way Beast Training is on the craft frame.
+
+Symptom if wrong: opening First Aid shows both windows, or the Formulary opens on Enchanting, or
+`/cfm status` on First Aid says "seen in the profession window: 0". Test: open First Aid.

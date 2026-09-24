@@ -18,6 +18,9 @@ local defaultSettings = {
 local XP_DISPLAY_MODES = {
     {text = "XP Percentage", value = "PERCENTAGE"},
     {text = "Kills to Level", value = "KILLS_TO_LEVEL"},
+    {text = "XP Remaining", value = "REMAINING"},
+    {text = "Rested %", value = "RESTED"},
+    {text = "Time to Level", value = "TIME_TO_LEVEL"},
 }
 
 local frame = CreateFrame("FRAME");
@@ -89,7 +92,7 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderMinimapDB.TidyAddonButtons end,
     })
 
-    panel:AddSection("Information Button", "Left-click opens game windows, right-click shows character stats, middle-click lists professions.")
+    panel:AddSection("Information Button", "Hover for the full experience readout. Left-click opens game windows, right-click shows character stats, middle-click lists professions; shift-click pastes your XP into chat, ctrl-click resets the session.")
     panel:AddCheckbox({
         label = "Show Information Button",
         tooltip = "Show the button beside the minimap: left-click opens game windows, right-click shows character stats, middle-click lists professions.",
@@ -98,7 +101,7 @@ local function CreateOptionsPanel()
     })
     panel:AddDropdown({
         label = "Button Text",
-        tooltip = "What the information button displays: your XP progress as a percentage, or an estimate of how many kills you need to level based on your last kill.",
+        tooltip = "What the information button displays: XP progress as a percentage, kills to level (averaged over your last 10 kills, rested included), XP still needed, rested XP as a share of the level, or time to level at this session's pace. Hover the button for all of it at once.",
         options = XP_DISPLAY_MODES,
         width = 150,
         get = function() return CommanderMinimapDB.XPDisplayMode end,
@@ -120,7 +123,6 @@ end
 local function OnAwake()
     -- Booleans are handled by ApplyDefaults (nil checks), so a saved "false" is not clobbered
     CommanderMinimapDB.lastXPGain = CommanderMinimapDB.lastXPGain or 0
-    CommanderMinimapDB.killsToLevel = CommanderMinimapDB.killsToLevel or 0
     CommanderMinimapDB.lastXPSource = CommanderMinimapDB.lastXPSource or ""
 
     CreateOptionsPanel()

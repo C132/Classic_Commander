@@ -34,3 +34,18 @@ already drawn, both release paths, the live toggle, and the guard that skips a
 tiled overlay when the layer's tile size disagrees with the table.
 
 Must exit 0 before any defog change ships.
+
+## The XP tracker (information button)
+
+    /opt/homebrew/bin/luajit xp_tracker_harness.lua     # 57 checks
+
+Loads the real XP model (`CommanderMinimapXP.lua`) and the real button file
+under a WoW mock and drives login, kill lines (plain, rested, rested + group),
+quest turn-ins, exploration XP and a level-up across the boundary. Covers the
+chat parsing (built from the client's own `COMBATLOG_XPGAIN_*` format strings),
+the session split by source, XP/hour and time to level, kills to level with
+rested doubling applied to the base-XP average, the rested marker spilling into
+the next level, time to the 150% rested cap, every button display mode, the
+right-click menu, shift-click paste, ctrl-click reset, and the max-level state.
+
+Must exit 0 before any XP tracker change ships.

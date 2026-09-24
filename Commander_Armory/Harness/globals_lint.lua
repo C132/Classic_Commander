@@ -64,7 +64,7 @@ CommanderArmoryData CommanderArmoryEngine CommanderArmory CommanderArmoryUI
 CommanderArmory_CharKey CommanderArmory_CharStore
 CommanderArmory_Toggle CommanderArmory_ListSets CommanderArmory_Probe
 CommanderArmory_EquipSetByName CommanderArmory_SaveSetByName
-CommanderArmory_WipeSets
+CommanderArmory_WipeSets CommanderArmory_SetItemIDs
 CommanderConsole_Colors
 ]]
 

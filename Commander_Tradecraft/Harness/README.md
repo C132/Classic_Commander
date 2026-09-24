@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 797 checks
-/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 164 checks
+/opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 1039 checks
+/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 191 checks
 /opt/homebrew/bin/luajit globals_lint.lua              # 4 files, 0 undeclared globals
 ```
 
@@ -19,11 +19,13 @@ failure it finds.
 No mock at all. The data and engine files are pure Lua, so this loads both and pushes fixed
 characters through `Build`. A failure here is a real logic or data bug, never a mock artefact.
 
-- **A1–A4** are data integrity: every step's recipe, reagent, formula and vendor exists; craft steps
-  are contiguous and reach the segment end; no step runs into grey; every formula has a vendor each
-  faction can use; the trainer ladder rises and Master is at 275.
+- **A1–A5** are data integrity, on both guides: every step's recipe, reagent, formula and vendor
+  exists; craft steps are contiguous and reach the segment end; no step runs into grey; every
+  formula has a vendor each faction can use; the trainer ladder rises and Master is at 275; **A5**
+  First Aid's ladder — the Expert book, Triage, the Master book at 300 — placed for both factions.
 - **B1–B4** are the skill-up model against the guide's own counts: exact on all-orange steps, within
   twenty percent everywhere, and the margin lands on the uncertain part only (B3b: one rod is one rod).
+  **B3c** is First Aid's generous published counts standing as the floor.
 - **C1–C14** are characters. A fresh enchanter; the trainer banner at 50, at the cap, with no
   profession, at 275; a Horde enchanter at 146 with the cloak formula never bought (behind them, so
   done); the buy step at 110 through holding and learning the formula; the alternatives; skipping;
@@ -31,13 +33,16 @@ characters through `Build`. A failure here is a real logic or data bug, never a 
   Defense formula still wanted at 300 for the 301–317 step; the bank option; finished; the shopping
   list against the guide's own list within fifteen percent; **C15** the trainer brackets — a step
   listed once where it starts, its reagents split at the boundary, held stock allocated to the
-  earliest bracket first, bracket sums adding up to the route.
+  earliest bracket first, bracket sums adding up to the route. **C17** is First Aid characters: the
+  book banner at 125 and urgent at 150, the manuals previewing with their skill and becoming current
+  at it, Triage at 225, the Master book at 300 and not before, the Hellfire manual from your
+  faction's vendor, a cloth-only shopping list never under the published one, twelve bandages made.
 
 ## `tradecraft_ui_harness.lua` — the UI and the host
 
 Loads the **real** shared framework (`CommanderSettingsUI.lua`, `CommanderEvents.lua`) plus all four
 addon files under the suite's permissive widget mock, extended with a skill list (header first, the
-way the client shows it), a craft window with a list to scan and a `DoCraft` that raises the
+way the client shows it), a craft window and a trade skill window each with a list to scan and a `DoCraft` that raises the
 targeting cursor for enchants, equipped slots and bags, the replace-enchant popup, TomTom and
 Auctionator stubs, and a combat flag.
 
@@ -75,6 +80,11 @@ Checks worth naming:
 - **The mock rejects unknown events.** `RegisterEvent` throws for any name not in this client's
   `Blizzard_APIDocumentationGenerated`, the way the real client does — `LEARNED_SPELL_IN_TAB` got
   through the first time and took every event registered after it down with it at login.
+- **G** — First Aid: `/ctc firstaid`, the header, a bandage's bare `/cast` on all three secure
+  targets, the Expert book banner with the Horde vendor and its Go button (and "You have it"),
+  urgent at the cap, Triage from the Horde doctor, the Master book from Aresella, the Netherweave
+  manual trip, the trade skill window switching the guide and reading its list, the craft window
+  switching back, Cooking ignored, the ledger following the guide.
 - **Z** — the skill headers were expanded exactly once, for the no-profession case, never while the
   line was there.
 

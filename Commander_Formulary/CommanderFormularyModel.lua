@@ -361,7 +361,7 @@ function M.FormulaVerdict(data, item, world)
     }
 end
 
--- The rank ladder: the next rank up, and whether it is trainable now
+-- The rank ladder: the next rank up, and whether it is within reach now
 function M.NextRank(data, view)
     for _, r in ipairs(data.ranks) do
         if r.cap > view.maxRank then
@@ -369,6 +369,49 @@ function M.NextRank(data, view)
         end
     end
     return nil
+end
+
+-- Whether the profession's top rank comes from a trainer at all. First
+-- Aid's Master is a book, so no First Aid trainer "teaches Master".
+function M.MasterFromTrainer(data)
+    local last = data.ranks[#data.ranks]
+    return last and not last.book and not last.quests
+end
+
+-- How a rank is obtained, as lines: a trainer (the ordinary case), a book
+-- with the vendors that sell it, or a quest with who gives it -- First Aid
+-- has one of each. Vendors and givers are filtered to the character's
+-- faction when the world knows it. The first line is the one-sentence
+-- answer; the rest are the places.
+function M.RankRoute(data, r, world)
+    local out = {}
+    local faction = world and world.faction
+    if r.book then
+        local name = (world and world.name and world.name(r.book.item)) or data.items[r.book.item] or ("item " .. r.book.item)
+        out[#out + 1] = { kind = "book", item = r.book.item, skill = r.book.skill, cost = r.book.cost,
+            text = ("%s %s comes from a book: %s (needs %d%s)."):format(r.name, data.name, name, r.book.skill,
+                r.book.cost > 0 and (", " .. M.FormatMoney(r.book.cost)) or "") }
+        for _, npc in ipairs(r.book.vendors or {}) do
+            local n = data.npcs[npc]
+            if n and (not n.faction or not faction or n.faction == faction) then
+                out[#out + 1] = { kind = "vendor", npc = npc, place = n, text = ("%s — %s"):format(n.name, M.Place(n)) }
+            end
+        end
+    elseif r.quests then
+        for _, q in ipairs(r.quests) do
+            if not q.faction or not faction or q.faction == faction then
+                local n = data.npcs[q.npc]
+                out[#out + 1] = { kind = "quest", quest = q.quest, npc = q.npc, place = n,
+                    text = ("%s %s is the reward of the quest %s (needs %d)%s."):format(r.name, data.name, q.name, r.at,
+                        n and (", from %s — %s"):format(n.name, M.Place(n)) or "") }
+            end
+        end
+    else
+        out[#out + 1] = { kind = "trainer", outland = r.outland,
+            text = ("%s %s is taught by %s trainers (needs %d)."):format(r.name, data.name,
+                r.outland and "Outland" or ("any " .. data.name), r.at) }
+    end
+    return out
 end
 
 -- ---------------------------------------------------------------------------
@@ -533,11 +576,11 @@ function M.HowToLearn(data, entry, world)
     local out = {}
     if rec.trainer then
         if rec.trainer.withRank then
-            out[#out + 1] = { kind = "trainer", text = "Learned with Apprentice Enchanting itself." }
+            out[#out + 1] = { kind = "trainer", text = ("Learned with Apprentice %s itself."):format(data.name) }
         else
             out[#out + 1] = { kind = "trainer", skill = rec.trainer.skill, cost = rec.trainer.cost, outland = rec.trainer.outland,
                 text = ("Taught by %s trainers at %d skill%s."):format(
-                    rec.trainer.outland and "Outland" or "Enchanting", rec.trainer.skill,
+                    rec.trainer.outland and "Outland" or data.name, rec.trainer.skill,
                     rec.trainer.cost > 0 and (" for " .. M.FormatMoney(rec.trainer.cost)) or "") }
         end
     end

@@ -25,7 +25,7 @@ end
 -- Frame names for the 2.5.5 (Anniversary) client; looked up by name so a missing
 -- frame is skipped instead of truncating the list.
 -- NOTE: everything here must be a plain (insecure) frame whose Hide() is the raw
--- widget method. StanceBar must NOT go in this list -- see SuppressStanceBar below.
+-- widget method. EditMode bars must NOT go in this list -- see hiddenHolder below.
 local elementsToHide = {
     "MainMenuBarLeftEndCap", "MainMenuBarRightEndCap",
     "MainMenuBarTexture0", "MainMenuBarTexture1", "MainMenuBarTexture2", "MainMenuBarTexture3",
@@ -39,17 +39,20 @@ local microButtons = {
     "GuildMicroButton", "WorldMapMicroButton", "SocialsMicroButton", "MainMenuMicroButton", "HelpMicroButton",
 }
 
--- StanceBar can't be hidden with Hide(): it inherits EditModeActionBarTemplate, so
--- Hide() is really EditModeActionBarMixin:HideOverride, which writes
--- StanceBar.isShownExternal and re-runs UpdateVisibility -> SetShownBase
+-- The EditMode action bars can't be hidden with Hide(): they inherit
+-- EditModeActionBarTemplate, so Hide() is really EditModeActionBarMixin:HideOverride,
+-- which writes bar.isShownExternal and re-runs UpdateVisibility -> SetShownBase
 -- (Blizzard_ActionBar/Shared/ActionBar.lua). Calling that from addon code taints
--- isShownExternal; StanceBar's own PLAYER_REGEN_ENABLED/DISABLED handler then reads
--- it inside UpdateVisibility during combat and trips ADDON_ACTION_BLOCKED
--- ("StanceBar:SetShownBase()") even when our call happened out of combat. Instead,
--- park the bar under a permanently hidden holder: SetParent is not overridden by the
--- Edit Mode mixin and writes no Lua state on the bar, so Blizzard's visibility code
--- stays untainted and the bar (with its secure stance buttons) renders and clicks
--- nothing. The Show Stance Bar feature reverses the parking the same taint-free way.
+-- isShownExternal; the bar's own PLAYER_REGEN_ENABLED/DISABLED handler then reads
+-- it inside UpdateVisibility during combat and trips ADDON_ACTION_BLOCKED even
+-- when our call happened out of combat. Instead, park the bar under a permanently
+-- hidden holder: SetParent is not overridden by the Edit Mode mixin and writes no
+-- Lua state on the bar, so Blizzard's visibility code stays untainted and the bar
+-- (with its secure buttons) renders and clicks nothing.
+--
+-- The stance bar is deliberately NOT managed here any more. Parking it was fine;
+-- moving it onto the card never held against UIParent_ManageFramePositions, so the
+-- Show Stance Bar feature was retired and the bar is left entirely to Blizzard.
 local hiddenHolder = CreateFrame("Frame", nil, UIParent)
 hiddenHolder:Hide()
 
@@ -58,8 +61,7 @@ hiddenHolder:Hide()
 --
 -- Everything below re-runs four times a second off the poll. That is fine for
 -- reading state and wrong for writing it: on Blizzard's frames these setters
--- are not the raw widget methods. On the EditMode systems (StanceBar,
--- PetActionBar) SetPoint/ClearAllPoints/Hide are the EditModeSystemMixin
+-- are not the raw widget methods. On the EditMode systems (PetActionBar) SetPoint/ClearAllPoints/Hide are the EditModeSystemMixin
 -- overrides, which dirty EditModeManagerFrame; on anything living in a layout
 -- container (the micro menu, the bag bar) Hide/SetShown marks the container
 -- dirty. Either way Blizzard relayouts on the next frame and puts the frame
@@ -103,9 +105,9 @@ end
 -- EditModeUtil:IsBottomAnchoredActionBar counts StanceBar and PetActionBar, but
 -- EditModeManagerFrameMixin:GetBottomActionBars returns only { MainActionBar },
 -- with the comment: "Classic's other bottom action bars are handled by
--- UIParent_ManageFramePositions." That manager re-parks the stance bar on its
--- own schedule, which is both why the bar sat somewhere other than the card and
--- why it flickered -- it showed at our anchor only for the instants between a
+-- UIParent_ManageFramePositions." That manager re-parks the pet bar on its
+-- own schedule, which is both why a bar sits somewhere other than the card and
+-- why it flickers -- it showed at our anchor only for the instants between a
 -- manager pass and our next poll.
 --
 -- Its opt-out is the long-standing FrameXML flag `ignoreFramePositionManager`.
@@ -126,53 +128,6 @@ local function ReleaseFromPositionManager(frame)
     if frame.GetManagedFrameContainer and frame.BreakFromFrameManager
         and frame:GetManagedFrameContainer() and not InCombatLockdown() then
         frame:BreakFromFrameManager()
-    end
-end
-
-local STANCE_X, STANCE_Y = 0, 30
-local STANCE_SCALE = 0.8
-
--- If the anchor still will not stick, stop fighting for it. A bar parked at
--- Blizzard's position is worse than one on the card, but a bar ALTERNATING
--- between the two at the poll rate is worse than both -- and silently thrashing
--- forever is how this went unexplained for so long. Disengage, say so once, and
--- point at the tool that can name the culprit.
-local stanceMisses, stanceDisengaged = 0, false
-local STANCE_MISS_LIMIT = 8   -- ~2 seconds at the 0.25s poll
-
-local function ResetStanceWatch()
-    stanceMisses, stanceDisengaged = 0, false
-end
-
-local function ApplyStanceBar()
-    if not StanceBar then return end
-    if DB().showStanceBar then
-        ReleaseFromPositionManager(StanceBar)
-        if StanceBar:GetParent() == hiddenHolder then
-            StanceBar:SetParent(UIParent)
-        end
-        if not backdrop or stanceDisengaged then return end
-        -- Scale BEFORE anchoring. EditModeSystemMixin:SetScaleOverride
-        -- re-SetPoints every existing point by oldScale/newScale to hold the
-        -- bar still, so a SetScale *after* ours multiplies the offsets we
-        -- just wrote (the same trap MovePetBar documents).
-        SetScaleIfNeeded(StanceBar, STANCE_SCALE)
-        if AnchoredAt(StanceBar, "BOTTOMLEFT", backdrop, "TOPLEFT", STANCE_X, STANCE_Y) then
-            stanceMisses = 0
-            return
-        end
-        stanceMisses = stanceMisses + 1
-        if stanceMisses > STANCE_MISS_LIMIT then
-            stanceDisengaged = true
-            print("|cffffcc00Commander:|r something keeps moving the stance bar off the card, "
-                .. "so it has been left where Blizzard puts it rather than flickering between the two. "
-                .. "Run /cabdiag to find out what.")
-            return
-        end
-        StanceBar:ClearAllPoints()
-        StanceBar:SetPoint("BOTTOMLEFT", backdrop, "TOPLEFT", STANCE_X, STANCE_Y)
-    elseif StanceBar:GetParent() ~= hiddenHolder then
-        StanceBar:SetParent(hiddenHolder)
     end
 end
 
@@ -259,7 +214,7 @@ end
 -- always, plus the bottom-left bar (unless Include Bottom-Left is on) and the
 -- two side bars (unless Include Right Bars is on). Leave them at their default
 -- UI position, or hide them. Hiding uses the same taint-free SetParent parking
--- as the stance bar -- Hide() on these EditMode bars taints.
+-- as described at hiddenHolder -- Hide() on these EditMode bars taints.
 -- ---------------------------------------------------------------------------
 local EXTRA_BARS = { "MultiBarBottomRight", "MultiBarBottomLeft", "MultiBarRight", "MultiBarLeft" }
 local function BarIsGridOwned(name)
@@ -292,13 +247,12 @@ local function ApplyExtraBars()
 end
 
 local function HideDefaults()
-    -- StanceBar reparenting and the bag slots are blocked in combat; defer
-    -- the whole pass to PLAYER_REGEN_ENABLED while in lockdown
+    -- Reparenting bars and the bag slots are blocked in combat; defer the
+    -- whole pass to PLAYER_REGEN_ENABLED while in lockdown
     if InCombatLockdown() then
         pendingUpdate = true
         return
     end
-    ApplyStanceBar()
     for _, name in ipairs(elementsToHide) do
         local element = _G[name]
         -- Only when it is actually showing: several of these are members of
@@ -375,12 +329,26 @@ local function ApplyCardStyle()
     end
 end
 
+-- Is the cursor carrying something a slot could take? Placing an icon is a
+-- left-press-and-drag across the plate, which is the same gesture that moves
+-- an unlocked card -- and the same gesture the empty-slot fade hides the
+-- targets for. Both back off while this is true.
+local function CursorHoldsAction()
+    return GetCursorInfo and GetCursorInfo() ~= nil
+end
+
 local function SetLockState()
     if not DB().locked then
         backdrop:SetMovable(true)
         backdrop:EnableMouse(true)
         backdrop:RegisterForDrag("LeftButton")
-        backdrop:SetScript("OnDragStart", backdrop.StartMoving)
+        -- Not backdrop.StartMoving directly: with an icon on the cursor the
+        -- drag is a drop in progress, and grabbing the card yanks the whole
+        -- grid out from under it mid-gesture.
+        backdrop:SetScript("OnDragStart", function(self)
+            if CursorHoldsAction() then return end
+            self:StartMoving()
+        end)
         backdrop:SetScript("OnDragStop", function(self)
             self:StopMovingOrSizing()
             local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
@@ -538,6 +506,18 @@ local function ButtonFloor()
     return floorStrata, floorLevel
 end
 
+-- One notch under a (strata, level): a level down in the same strata when
+-- there is room, otherwise the top of the strata below. Falls back to the
+-- floor of the UI when there is nowhere lower left to go.
+local function OneUnder(strata, level)
+    if level > 0 then
+        return strata, level - 1
+    elseif strata > 1 then
+        return strata - 1, STRATA_TOP_LEVEL
+    end
+    return strata, 0
+end
+
 local function ApplyLayering()
     if not backdrop then return end
     -- The card is our own insecure frame, but MoveActionButtons anchors Blizzard's
@@ -551,18 +531,12 @@ local function ApplyLayering()
         return
     end
 
-    local strata, level = ButtonFloor()
-    if not strata then
+    local floorStrata, floorLevel = ButtonFloor()
+    if not floorStrata then
         -- Called before the first CollectButtons: assume the default-UI bar
-        strata, level = STRATA_INDEX.MEDIUM, 1
+        floorStrata, floorLevel = STRATA_INDEX.MEDIUM, 1
     end
-    if level > 0 then
-        level = level - 1               -- same strata, one level under the buttons
-    elseif strata > 1 then
-        strata, level = strata - 1, STRATA_TOP_LEVEL
-    else
-        level = 0                       -- already at the floor of the UI
-    end
+    local strata, level = OneUnder(floorStrata, floorLevel)
 
     -- Never sink to or below the console. Guarded by name so a client running
     -- without Commander_Console just keeps the button-derived layer.
@@ -575,6 +549,20 @@ local function ApplyLayering()
         elseif strata == cs and level < cl then
             level = cl
         end
+    end
+
+    -- The button floor is a ceiling, not a preference: whatever the console
+    -- clearance just asked for, the card ends up STRICTLY under the lowest
+    -- button. Landing on them draws the plate over the icons and -- while the
+    -- card is unlocked, which is when it is mouse-enabled -- makes it swallow
+    -- every click and every drag-drop aimed at a slot, so the bar reads as
+    -- switched off and refuses new icons. A tie is not good enough either:
+    -- equal (strata, level) resolves by frame creation order, and that coin
+    -- flip is what made this intermittent and "fixed" by a reload or two.
+    -- Losing the card behind console art would only be cosmetic; losing the
+    -- buttons is not, so the buttons win.
+    if strata > floorStrata or (strata == floorStrata and level >= floorLevel) then
+        strata, level = OneUnder(floorStrata, floorLevel)
     end
 
     local stratumName = STRATA_ORDER[strata] or "BACKGROUND"
@@ -662,7 +650,7 @@ local function MovePetBar()
     local mode = DB().petBarPosition or "ABOVE"
     if mode == "HIDDEN" then
         -- Hide() here is EditModeSystemMixin:HideOverride, not the raw widget
-        -- method -- same trap as StanceBar above. Only call it when it has work
+        -- method -- same trap as the note at hiddenHolder. Only call it when it has work
         -- to do instead of re-running Blizzard's hide path four times a second.
         if PetActionBar:IsShown() then PetActionBar:Hide() end
         return
@@ -750,6 +738,12 @@ end
 local function ApplyButtonCosmetics()
     local db = DB()
     local now = GetTime()
+    -- 15% alpha over the card art is invisible, and an invisible slot is one
+    -- you cannot aim at. Blizzard reveals the empty grid the moment an action
+    -- lands on the cursor; this poll used to fade it straight back out within
+    -- 250ms, so the bar appeared to switch off exactly when a drop was aimed
+    -- at it. Hold every slot at full alpha for as long as the cursor is armed.
+    local placing = CursorHoldsAction()
     for _, button in ipairs(managedButtons) do
         if button then
             local name = button:GetName()
@@ -779,7 +773,7 @@ local function ApplyButtonCosmetics()
             -- Empty slot fading
             local hasAction = slot and HasAction and HasAction(slot)
             if db.hideEmptySlots and slot and HasAction then
-                button:SetAlpha(hasAction and 1 or 0.15)
+                button:SetAlpha((hasAction or placing) and 1 or 0.15)
             end
 
             -- Range / mana tinting, restored to white when off or fine
@@ -868,9 +862,13 @@ local function ApplyFade()
         end
     end
     backdrop:SetAlpha(alpha)
+    -- Runs after ApplyButtonCosmetics on the same tick and writes the same
+    -- alpha, so the drop exception has to be repeated here or this undoes it
+    local placing = CursorHoldsAction()
     for _, button in ipairs(managedButtons) do
         if button then
-            button:SetAlpha((db.hideEmptySlots and button.action and HasAction and not HasAction(button.action))
+            button:SetAlpha((db.hideEmptySlots and not placing
+                and button.action and HasAction and not HasAction(button.action))
                 and math.min(alpha, 0.15) or alpha)
         end
     end
@@ -915,9 +913,6 @@ end
 
 local function OnSettingsUpdate()
     SetLockState()
-    -- A settings change is the user asking for the layout again: give a
-    -- disengaged stance bar another go rather than staying quit for the session
-    ResetStanceWatch()
     -- Re-anchoring the backdrop also moves the protected buttons anchored to it,
     -- so defer during combat lockdown
     if InCombatLockdown() then
@@ -987,7 +982,11 @@ frame:SetScript("OnEvent", OnEvent)
 -- ---------------------------------------------------------------------------
 do
     local WATCH = {
-        "StanceBar", "StanceButton1", "PetActionBar",
+        -- The card first: when it stacks at or above the buttons it frames, it
+        -- covers them and (unlocked, so mouse-enabled) eats their clicks. Read
+        -- its strata/level against ActionButton1's below.
+        "RTSActionBarBackdrop",
+        "PetActionBar",
         "MainActionBar", "MultiBarBottomLeft",
         "ActionButton1", "MultiBarBottomLeftButton1",
     }
@@ -1041,10 +1040,13 @@ do
 
     local function Signature(f)
         local parent = f:GetParent()
-        local out = string.format("%s/%s a=%.2f s=%.2f parent=%s %s",
+        local out = string.format("%s/%s a=%.2f s=%.2f %s:%d parent=%s %s",
             f:IsShown() and "shown" or "HIDDEN",
             f:IsVisible() and "visible" or "INVISIBLE",
             f:GetAlpha() or 1, f:GetScale() or 1,
+            -- Draw/hit order, the pair that decides whether the card frames the
+            -- buttons or buries them
+            tostring(f:GetFrameStrata()), f:GetFrameLevel() or 0,
             parent and (parent:GetName() or "unnamed") or "none",
             Managed(f))
         for i = 1, f:GetNumPoints() do

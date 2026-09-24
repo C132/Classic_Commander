@@ -66,6 +66,30 @@ Test: visit the bank once with a known set piece in it, walk away, then select t
 bank bags are containers 5..11 on this client and the shared `Enum.BagIndex` is the mainline one
 where those numbers are wrong.
 
+## A4a — `BANKFRAME_CLOSED` is not evidence that a bank was ever open
+
+The corollary to A4, and the one that actually bit. `CloseAllWindows` calls `CloseBankFrame`
+unconditionally, so pressing Escape anywhere in the world dispatches `BANKFRAME_CLOSED` to a
+character who has not seen a banker all session. The event says "no bank is open now". It has never
+said "a bank was open a moment ago".
+
+Treating it as the latter is how an unguarded writer destroys the cache it exists to keep: the scan
+reads containers that are not there, gets nothing, writes that nothing over a good snapshot, and
+stamps `at` on the way out. The wreckage is indistinguishable from a genuinely gear-free bank, and
+the fresh timestamp makes it look *confirmed* — `/cgear probe` reports "0 equippable items, last
+seen 1 minute ago" for a bank full of gear, and every set with a banked piece reports MISSING.
+
+This is not hypothetical. Three of the four characters in the author's own `Commander_Armory.lua`
+were in exactly that state — non-zero `at`, empty `items` — while `Commander_Vault`, which guards
+its scan on its own `bankOpen` flag, had correctly written nothing for the same characters.
+
+`CacheBank` therefore refuses to run unless `bankOpen` is true **and** the containers actually
+answer. `Commander_Vault`'s `ScanBank` and `Commander_Quartermaster`'s `dirtyBank` flag are the same
+guard reached independently; Armory was the only one of the three writing unguarded.
+
+Test: with a populated bank cache, stand anywhere that is not a bank and press Escape a few times.
+`/cgear probe` must still report the same item count and the same "last seen" age.
+
 ## A5 — Equipping calls are not protected, only combat-restricted
 
 **Load bearing.** No evidence of taint protection on `C_Item.EquipItemByName`,

@@ -32,22 +32,219 @@ local NUM_CONTAINER_FRAMES = 13 -- Maximum number of container frames
 local FadeBags -- defined below; forward-declared for the UPDATE listener
 
 -- Buttons memoize the itemID they were last colored for; bumping the
--- generation invalidates every memo at once (borders force-reset, or
--- coloring toggled) without touching each button
+-- generation invalidates every memo at once (borders force-reset, settings
+-- changed, or coloring toggled) without touching each button
 local colorGen = 0
 
+-- Whether a bind-on-equip item has bound is the one thing a settled slot can
+-- still change, and the only thing here that costs a tooltip. Re-checking it
+-- once per refresh burst catches it; re-checking it on all ten passes of the
+-- burst just pays for the same answer ten times.
+local bindGen = 0
+
+-- Bind states. BOE covers bind-on-use as well: both mean "still tradeable,
+-- still sellable, not yours yet".
+local BIND_NONE, BIND_SOULBOUND, BIND_BOE = 0, 1, 2
+
+local QUAD = "Interface\\Buttons\\WHITE8X8"
+
+-- The quality ring is DRAWN, not borrowed. Blizzard's own IconBorder is a
+-- soft WhiteIconFrame that ContainerFrame_Update repaints (and hides below
+-- rare) on every bag event, so anything written into it lasted only until the
+-- next Blizzard pass -- which is why the rarity color kept fading out. These
+-- textures belong to this addon; nothing else in the UI touches them.
+local function EnsureBorder(button)
+    local ring = button.cbRing
+    if ring then return ring end
+    ring = {}
+    for i = 1, 8 do
+        -- Sublevel 5: over the icon and Blizzard's slot art, under the stack
+        -- count and the cooldown frame
+        local tex = button:CreateTexture(nil, "OVERLAY", nil, 5)
+        tex:SetTexture(QUAD)
+        tex:Hide()
+        ring[i] = tex
+    end
+    button.cbRing = ring
+    return ring
+end
+
+-- Four quads inset by `inset` from the icon's rect, `w` thick. Corners are
+-- covered by the horizontals, so the verticals stop short of them.
+local function LayoutRing(ring, first, anchor, inset, w)
+    local top, bottom, left, right = ring[first], ring[first + 1], ring[first + 2], ring[first + 3]
+
+    top:ClearAllPoints()
+    top:SetPoint("TOPLEFT", anchor, "TOPLEFT", inset, -inset)
+    top:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -inset, -inset)
+    top:SetHeight(w)
+
+    bottom:ClearAllPoints()
+    bottom:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", inset, inset)
+    bottom:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -inset, inset)
+    bottom:SetHeight(w)
+
+    left:ClearAllPoints()
+    left:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, 0)
+    left:SetPoint("BOTTOMLEFT", bottom, "TOPLEFT", 0, 0)
+    left:SetWidth(w)
+
+    right:ClearAllPoints()
+    right:SetPoint("TOPRIGHT", top, "BOTTOMRIGHT", 0, 0)
+    right:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT", 0, 0)
+    right:SetWidth(w)
+end
+
+local function LayoutBorder(button, thickness)
+    if button.cbThickness == thickness then return end
+    button.cbThickness = thickness
+    local ring = EnsureBorder(button)
+    local anchor = button.icon or button
+    LayoutRing(ring, 1, anchor, 0, thickness)          -- the ring itself
+    LayoutRing(ring, 5, anchor, thickness, 1)          -- the halo just inside it
+end
+
+local function ShowBorder(button, r, g, b, thickness, halo)
+    local ring = EnsureBorder(button)
+    LayoutBorder(button, thickness)
+    for i = 1, 4 do
+        ring[i]:SetVertexColor(r, g, b, 1)
+        ring[i]:Show()
+    end
+    for i = 5, 8 do
+        if halo then
+            ring[i]:SetVertexColor(r, g, b, 0.4)
+            ring[i]:Show()
+        else
+            ring[i]:Hide()
+        end
+    end
+end
+
+local function HideBorder(button)
+    local ring = button.cbRing
+    if not ring then return end
+    for i = 1, 8 do ring[i]:Hide() end
+end
+
+-- The bind badge: a padlock built from tinted quads rather than a texture
+-- file, the same way the rest of the suite draws its chrome. Closed and dim
+-- means soulbound; open and gold means the item is still bind-on-equip and
+-- can still be traded, sold or disenchanted for someone else.
+local BADGE = 13
+
+local function EnsureBadge(button)
+    local badge = button.cbBadge
+    if badge then return badge end
+
+    local function Quad(sublevel)
+        local tex = button:CreateTexture(nil, "OVERLAY", nil, sublevel)
+        tex:SetTexture(QUAD)
+        return tex
+    end
+
+    badge = { plate = Quad(6), body = Quad(7), postL = Quad(7), postR = Quad(7), bar = Quad(7) }
+
+    badge.plate:SetSize(BADGE, BADGE)
+    -- Same rect the ring is drawn on, so the padlock sits inside the border
+    -- rather than half under it
+    badge.plate:SetPoint("BOTTOMLEFT", button.icon or button, "BOTTOMLEFT", 1, 1)
+
+    -- Lock body sits on the plate's floor; the shackle's posts overlap its top
+    -- edge by a pixel so the silhouette reads as one piece
+    badge.body:SetSize(9, 5)
+    badge.body:SetPoint("BOTTOM", badge.plate, "BOTTOM", 0, 2)
+    badge.postL:SetSize(2, 4)
+    badge.postR:SetSize(2, 4)
+    badge.bar:SetHeight(2)
+
+    button.cbBadge = badge
+    return badge
+end
+
+local function HideBadge(button)
+    local badge = button.cbBadge
+    if not badge then return end
+    for _, tex in pairs(badge) do tex:Hide() end
+end
+
+local function ShowBadge(button, bound)
+    local badge = EnsureBadge(button)
+    local r, g, b = 1, 0.84, 0.3
+    local plateAlpha = 0.7
+    if bound then
+        r, g, b = 0.74, 0.78, 0.88
+        plateAlpha = 0.55
+    end
+
+    badge.plate:SetVertexColor(0, 0, 0, plateAlpha)
+    badge.body:SetVertexColor(r, g, b, 1)
+    badge.postL:SetVertexColor(r, g, b, 1)
+    badge.postR:SetVertexColor(r, g, b, 1)
+    badge.bar:SetVertexColor(r, g, b, 1)
+
+    badge.postL:ClearAllPoints()
+    badge.postR:ClearAllPoints()
+    badge.bar:ClearAllPoints()
+    if bound then
+        -- Closed: both posts under a bar that spans them
+        badge.postL:SetPoint("BOTTOM", badge.plate, "BOTTOM", -2.5, 6)
+        badge.postR:SetPoint("BOTTOM", badge.plate, "BOTTOM", 2.5, 6)
+        badge.bar:SetWidth(7)
+        badge.bar:SetPoint("BOTTOM", badge.plate, "BOTTOM", 0, 9)
+        badge.postR:Show()
+    else
+        -- Open: the shackle is hinged on the left and swung clear, so the
+        -- right-hand post is simply gone
+        badge.postL:SetPoint("BOTTOM", badge.plate, "BOTTOM", -2.5, 6)
+        badge.bar:SetWidth(6)
+        badge.bar:SetPoint("BOTTOM", badge.plate, "BOTTOM", 1.5, 9)
+        badge.postR:Hide()
+    end
+
+    badge.plate:Show()
+    badge.body:Show()
+    badge.postL:Show()
+    badge.bar:Show()
+end
+
+-- Restore Blizzard's own quality border for a slot. Turning this module's
+-- coloring off used to leave every bag button with a hidden IconBorder until
+-- the next full container update; handing the slot back to SetItemButtonQuality
+-- puts the default UI back immediately.
+local function RestoreBlizzardBorder(button, bagID, slot)
+    if not button.IconBorder then return end
+    local info = bagID and slot and C_Container.GetContainerItemInfo
+        and C_Container.GetContainerItemInfo(bagID, slot)
+    if SetItemButtonQuality and info then
+        SetItemButtonQuality(button, info.quality, info.hyperlink)
+    else
+        button.IconBorder:Hide()
+    end
+end
+
+-- Hidden container frames are swept too -- a frame keeps whatever was drawn on
+-- it when it closed -- but only a shown one has a bag id worth trusting, so
+-- only there is Blizzard's border rebuilt from the slot.
 local function ResetItemColors()
     colorGen = colorGen + 1
     for i = 1, NUM_CONTAINER_FRAMES do
         local containerFrame = _G["ContainerFrame"..i]
         if containerFrame then
+            local shown = containerFrame:IsShown()
+            local bagID = containerFrame:GetID()
             for j = 1, containerFrame.size or 0 do
                 local button = _G[containerFrame:GetName().."Item"..j]
                 if button then
                     if button.icon then
                         button.icon:SetVertexColor(1, 1, 1, 1)
                     end
-                    if button.IconBorder then
+                    HideBorder(button)
+                    HideBadge(button)
+                    button.cbItemID, button.cbBind, button.cbBindUnstable = nil, nil, nil
+                    if shown then
+                        RestoreBlizzardBorder(button, bagID, button:GetID())
+                    elseif button.IconBorder then
                         button.IconBorder:Hide()
                     end
                 end
@@ -57,7 +254,7 @@ local function ResetItemColors()
 end
 
 -- Consumable-ness and quest-ness are properties of the ITEM, not the
--- slot — cached per itemID, they cost ONE tooltip build ever. The old
+-- slot -- cached per itemID, they cost ONE tooltip build ever. The old
 -- code paid two SetBagItem rebuilds (one of the most expensive UI calls
 -- in the client) per occupied slot per pass, ~1200-2000 per refresh
 -- burst: the module's entire CPU story.
@@ -101,7 +298,7 @@ local function GetItemFlags(itemID, bagID, slot, resolved)
     end
 
     local flags = { consumable = consumable, quest = quest }
-    -- Only cache once the item's data is confirmed loaded — early passes
+    -- Only cache once the item's data is confirmed loaded -- early passes
     -- can see incomplete tooltips, and the refresh window retries those
     if resolved then
         itemFlags[itemID] = flags
@@ -109,12 +306,126 @@ local function GetItemFlags(itemID, bagID, slot, resolved)
     return flags
 end
 
-local function UpdateItemColors()
-    if not CommanderBagsDB.ColorCodeItems then 
-        ResetItemColors()
-        return 
+-- Whether a bind-on-equip item has actually bound is a property of the SLOT,
+-- not the itemID: two stacks of the same shoulders can sit side by side, one
+-- looted and worn, one still tradeable. Only the tooltip knows, so only
+-- bindType 2/3 items ever pay for this scan.
+local function ScanIsSoulbound(bagID, slot)
+    scanningTooltip:ClearLines()
+    scanningTooltip:SetBagItem(bagID, slot)
+    local numLines = math.min(scanningTooltip:NumLines(), 8)
+    for i = 2, numLines do
+        local textLeft = _G["CommanderBagsScanningTooltipTextLeft" .. i]
+        local text = textLeft and textLeft:GetText()
+        if text then
+            if ITEM_SOULBOUND and text == ITEM_SOULBOUND then return true end
+            if (ITEM_BIND_ON_EQUIP and text == ITEM_BIND_ON_EQUIP)
+                or (ITEM_BIND_ON_USE and text == ITEM_BIND_ON_USE) then
+                return false
+            end
+        end
     end
-    
+    return false
+end
+
+-- The container struct answers this outright on clients that carry the field;
+-- the tooltip is the fallback, not the first resort.
+local function IsSlotBound(bagID, slot)
+    local info = C_Container.GetContainerItemInfo
+        and C_Container.GetContainerItemInfo(bagID, slot)
+    if info and info.isBound ~= nil then
+        return info.isBound and true or false
+    end
+    return ScanIsSoulbound(bagID, slot)
+end
+
+-- bindType comes free with the item's cached info: 1 bind-on-pickup (in your
+-- bags that means already yours), 2 bind-on-equip, 3 bind-on-use, 4 quest.
+-- Everything else never binds and gets no badge at all. The second return is
+-- whether the answer can still change while the item sits there.
+local function GetBindState(bagID, slot, bindType)
+    if bindType == 1 then
+        return BIND_SOULBOUND, false
+    elseif bindType == 2 or bindType == 3 then
+        return IsSlotBound(bagID, slot) and BIND_SOULBOUND or BIND_BOE, true
+    end
+    return BIND_NONE, false
+end
+
+local function ApplyBadge(button, bind, badgeMode)
+    if badgeMode == "OFF" or bind == BIND_NONE then
+        HideBadge(button)
+    elseif bind == BIND_BOE then
+        ShowBadge(button, false)
+    elseif badgeMode == "BOTH" then
+        ShowBadge(button, true)
+    else
+        HideBadge(button)
+    end
+end
+
+local function PaintSlot(button, bagID, slot, itemID, thickness, halo, badgeMode)
+    local _, _, rarity, _, _, _, _, _, _, _, _, _, _, bindType = C_Item.GetItemInfo(itemID)
+    local resolved = rarity ~= nil
+    local flags = GetItemFlags(itemID, bagID, slot, resolved)
+
+    button.icon:SetVertexColor(1, 1, 1, 1)
+    if button.IconBorder then
+        -- One source of truth for the ring: Blizzard's soft border underneath
+        -- ours would only wash the color back out
+        button.IconBorder:Hide()
+    end
+
+    if flags.quest then
+        ShowBorder(button, 1, 0.82, 0, thickness, halo)
+    elseif rarity == 0 then -- Poor (Gray): vendor fodder
+        ShowBorder(button, 1, 0.1, 0.1, thickness, halo)
+    elseif flags.consumable then
+        ShowBorder(button, 0, 0.8, 1, thickness, halo)
+    elseif rarity == 1 then -- Common (White): left plain on purpose
+        HideBorder(button)
+    elseif rarity then
+        local r, g, b = C_Item.GetItemQualityColor(rarity)
+        ShowBorder(button, r, g, b, thickness, halo)
+    else
+        HideBorder(button) -- Item info not cached yet; refresh cycle will retry
+    end
+
+    local bind, unstable = BIND_NONE, false
+    if resolved then
+        bind, unstable = GetBindState(bagID, slot, bindType)
+    end
+    ApplyBadge(button, bind, badgeMode)
+
+    button.cbBind = bind
+    button.cbBindUnstable = unstable
+    button.cbBindGen = bindGen
+    if resolved then
+        button.cbItemID, button.cbBag, button.cbGen = itemID, bagID, colorGen
+    else
+        -- Data not loaded -- leave unmemoized so the refresh window retries
+        button.cbItemID = nil
+    end
+end
+
+-- The reset is a transition, not a state: without this the ten passes of a
+-- refresh burst would each hand every slot back to SetItemButtonQuality again
+local colorsReset = false
+
+local function UpdateItemColors()
+    if not CommanderBagsDB.ColorCodeItems then
+        if not colorsReset then
+            ResetItemColors()
+            colorsReset = true
+        end
+        return
+    end
+    colorsReset = false
+
+    local thickness = CommanderBagsDB.BorderThickness or 2
+    local halo = CommanderBagsDB.RarityHalo
+    local badgeMode = CommanderBagsDB.BindBadges or "BOTH"
+
     -- For each container frame
     for i = 1, NUM_CONTAINER_FRAMES do
         local containerFrame = _G["ContainerFrame"..i]
@@ -122,9 +433,11 @@ local function UpdateItemColors()
             local bagID = containerFrame:GetID()
             local baseName = containerFrame:GetName() .. "Item"
 
-            -- Update each item button in the container. A button memoizes
-            -- the itemID it was last colored for: unchanged slots skip the
-            -- item lookup and tooltip work entirely.
+            -- Update each item button in the container. A button memoizes the
+            -- itemID and bag it was last painted for: unchanged slots skip the
+            -- item lookup and tooltip work entirely. The bag is part of the
+            -- memo because ContainerFrame2 is whichever bag opened second, not
+            -- a fixed one.
             for j = 1, containerFrame.size or 0 do
                 local button = _G[baseName .. j]
                 if button then
@@ -133,43 +446,26 @@ local function UpdateItemColors()
                         and C_Container.GetContainerItemID(bagID, slot)
 
                     if itemID then
-                        if button.cbItemID ~= itemID or button.cbGen ~= colorGen then
-                            local _, _, rarity = C_Item.GetItemInfo(itemID)
-                            local flags = GetItemFlags(itemID, bagID, slot, rarity ~= nil)
-
-                            button.icon:SetVertexColor(1, 1, 1, 1)
-                            if button.IconBorder then
-                                button.IconBorder:Show()
-                                if flags.quest then
-                                    button.IconBorder:SetVertexColor(1, 0.8, 0, 1) -- Bright yellow
-                                    button.IconBorder:SetAlpha(1)
-                                elseif rarity == 0 then -- Poor (Gray)
-                                    button.IconBorder:SetVertexColor(1, 0.1, 0.1, 1) -- Even brighter, more saturated red
-                                    button.IconBorder:SetAlpha(1)
-                                elseif flags.consumable then -- Consumable items
-                                    button.IconBorder:SetVertexColor(0, 0.8, 1, 1) -- Bright cyan
-                                    button.IconBorder:SetAlpha(1)
-                                elseif rarity == 1 then -- Common (White)
-                                    button.IconBorder:Hide() -- Hide border for common items
-                                elseif rarity then
-                                    local r, g, b = C_Item.GetItemQualityColor(rarity)
-                                    button.IconBorder:SetVertexColor(r, g, b, 1)
-                                    button.IconBorder:SetAlpha(1)
-                                else
-                                    button.IconBorder:Hide() -- Item info not cached yet; refresh cycle will retry
-                                end
-                            end
-                            if rarity then
-                                button.cbItemID, button.cbGen = itemID, colorGen
-                            else
-                                -- Data not loaded — leave unmemoized so the
-                                -- refresh window retries this slot
-                                button.cbItemID = nil
+                        if button.cbItemID ~= itemID or button.cbBag ~= bagID
+                            or button.cbGen ~= colorGen then
+                            PaintSlot(button, bagID, slot, itemID, thickness, halo, badgeMode)
+                        elseif button.cbBindUnstable and button.cbBindGen ~= bindGen then
+                            -- The one thing a settled slot can still change:
+                            -- a bind-on-equip item binding where it sits
+                            button.cbBindGen = bindGen
+                            local bind = IsSlotBound(bagID, slot) and BIND_SOULBOUND or BIND_BOE
+                            if bind ~= button.cbBind then
+                                button.cbBind = bind
+                                ApplyBadge(button, bind, badgeMode)
                             end
                         end
                     else
-                        if button.cbItemID ~= false or button.cbGen ~= colorGen then
-                            button.cbItemID, button.cbGen = false, colorGen
+                        if button.cbItemID ~= false or button.cbBag ~= bagID
+                            or button.cbGen ~= colorGen then
+                            button.cbItemID, button.cbBag, button.cbGen = false, bagID, colorGen
+                            button.cbBind, button.cbBindUnstable, button.cbBindGen = nil, nil, nil
+                            HideBorder(button)
+                            HideBadge(button)
                             if button.IconBorder then
                                 button.IconBorder:Hide()
                             end
@@ -180,6 +476,19 @@ local function UpdateItemColors()
             end
         end
     end
+end
+
+-- Blizzard repaints IconBorder from its own container updates, mouseovers and
+-- cursor changes. Nothing it does can reach the drawn ring, but the soft
+-- border coming back underneath would still cloud it -- so put it away again
+-- the moment Blizzard shows it on a slot this module owns.
+if SetItemButtonQuality then
+    hooksecurefunc("SetItemButtonQuality", function(button)
+        if button and button.cbRing and CommanderBagsDB and CommanderBagsDB.ColorCodeItems
+            and button.IconBorder then
+            button.IconBorder:Hide()
+        end
+    end)
 end
 
 -- Timer callbacks are file-level named functions: these debounces fire on
@@ -201,6 +510,7 @@ local function StartRefreshWindow()
         refreshTimer:Cancel()
     end
 
+    bindGen = bindGen + 1
     refreshCount = 0
     RefreshCycle()
 end
@@ -221,6 +531,9 @@ end
 -- dropped; restart a single short timer instead of running a full refresh burst
 local function RunCursorRefresh()
     cursorRefreshTimer = nil
+    -- Equipping a bind-on-equip item out of the bags lands here, so this pass
+    -- has to be allowed to look at bind state again
+    bindGen = bindGen + 1
     UpdateItemColors()
 end
 
@@ -237,6 +550,12 @@ local function OnUpdate()
     if not CommanderBagsDB.FadeBagsWhileMoving then
         FadeBags(false)
     end
+    -- This only fires when a setting changed (or at login), and border
+    -- thickness, the halo and the badge mode all live inside the per-button
+    -- memo -- so invalidate it wholesale rather than trying to spot which
+    -- knob moved
+    colorGen = colorGen + 1
+    bindGen = bindGen + 1
     UpdateItemColors()
 end
 

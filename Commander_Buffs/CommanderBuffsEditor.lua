@@ -829,12 +829,14 @@ local function ApplyFraming()
     local db = DB()
     local style = db and db.EditorStyle or "WINDOW"
     local windowArt = style == "WINDOW"
-    if editor.NineSlice then editor.NineSlice:SetShown(windowArt) end
-    if editor.Bg then editor.Bg:SetShown(windowArt) end
-    if editor.TitleBg then editor.TitleBg:SetShown(windowArt) end
-    if editor.TitleText then editor.TitleText:SetShown(windowArt) end
+    -- The whole template dressing, from the shared verified list: this was
+    -- five names, and it was missing the nine border pieces, the title
+    -- streaks and the inset border -- so turning the window art off left
+    -- the template's steel frame and two bars either side of the title
+    -- behind. CloseButton is not in the shared list (most windows want to
+    -- keep it), so this window keeps saying what it wants for that one.
+    Commander.UI.SetTemplateDressing(editor, windowArt)
     if editor.CloseButton then editor.CloseButton:SetShown(windowArt) end
-    if editor.Inset then editor.Inset:SetShown(windowArt) end
     if Commander and Commander.UI and Commander.UI.ApplyStyleBackdrop then
         Commander.UI.ApplyStyleBackdrop(editor, windowArt and "NONE" or style)
     end

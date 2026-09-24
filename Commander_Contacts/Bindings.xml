@@ -1,0 +1,13 @@
+<Bindings>
+    <!-- Auto-loaded from the addon folder. Deliberately NOT listed in the TOC:
+         doing so loads it twice and the second pass silently wins. A double
+         hyphen inside this comment would make the parser reject the whole
+         file, so there is none. -->
+    <Binding name="COMMANDERCONTACTS_TOGGLE" header="COMMANDERCONTACTS" runOnUp="false">
+        CommanderContacts_Toggle()
+    </Binding>
+
+    <Binding name="COMMANDERCONTACTS_ACTIVITY" runOnUp="false">
+        CommanderContacts_ShowTab("activity")
+    </Binding>
+</Bindings>

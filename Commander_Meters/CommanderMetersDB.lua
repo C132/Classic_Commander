@@ -67,6 +67,10 @@ local DefaultSettings = {
     ViewSegment = "current", -- "current" | "overall" ("last"/fight ids are session-scoped)
     SplitOpen = false,       -- second pane open (the header's split toggle)
     SplitMode = "HEAL",      -- the second pane's mode
+    SplitSegment = "follow", -- the second pane's segment: "follow" (the
+                             -- window's, the default) | "current" |
+                             -- "overall". "last" and fight ids stay
+                             -- session-scoped exactly like ViewSegment.
     LastInstanceKey = false, -- auto-reset baseline: persists so a /reload
                              -- inside an instance never counts as entering it
 }
@@ -95,49 +99,6 @@ local function Enabled()
     return CommanderMetersDB.EnableMeters
 end
 
--- This page outgrew the Settings canvas with the appearance block, so its
--- rows flow into a scroll frame. AddRow is overridden on the panel INSTANCE
--- only — the shared framework and every other module's page are untouched
--- (the Reticle/Quartermaster pattern). Returns the closure to call after
--- Finalize has added the footer.
-local function MakeScrollable(panel, frameName)
-    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local target = self:GetVerticalScroll() - delta * 28
-        local maxScroll = self:GetVerticalScrollRange()
-        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
-        self:SetVerticalScroll(target)
-    end)
-
-    local scrollChild = CreateFrame("Frame", nil, scroll)
-    scrollChild:SetSize(1, 1)
-    scroll:SetScrollChild(scrollChild)
-    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
-
-    local seed = CreateFrame("Frame", nil, scrollChild)
-    seed:SetHeight(1)
-    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
-    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-    panel._anchor = seed
-    panel._contentHeight = 0
-    panel.AddRow = function(self, height, spacing)
-        local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetHeight(height)
-        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
-        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-        self._anchor = row
-        self._contentHeight = self._contentHeight + height + (spacing or 8)
-        return row
-    end
-
-    return function()
-        scrollChild:SetHeight(panel._contentHeight + 24)
-    end
-end
-
 local RELOAD_NOTE = "Takes effect after /reload (baked into the window at login)."
 
 local function NoteReload()
@@ -149,7 +110,7 @@ local function CreateCorePanel()
         key = "Meters",
         title = "Meters",
         addonName = "Commander_Meters",
-        description = "The battle report — live damage, healing, damage-taken, utility, and death meters with per-fight segments. Bars read at a glance mid-pull; split the window for two stats at once, click a bar for its full breakdown and pie chart, open the graph for throughput over the fight, and check the death log for the last ten hits before anyone dropped. Pets and totems always count under their owner.",
+        description = "The battle report — live damage, healing, damage-taken, utility, and death meters with per-fight segments. Bars read at a glance mid-pull; split the window for two stats at once — or for one stat on two segments, Current beside Overall, since each pane's caption sets both its mode and its segment — click a bar for its full breakdown and pie chart, open the graph for throughput over the fight, and check the death log for the last ten hits before anyone dropped. Pets and totems always count under their owner.",
         event = COMMANDER_METERS_EVENTS.UPDATE,
         slash = { "/cmeters", "/cm" },
         slashHandlers = {
@@ -163,7 +124,6 @@ local function CreateCorePanel()
             health = function() if CommanderMeters_Health then CommanderMeters_Health() end end,
         },
     })
-    local finishScroll = MakeScrollable(panel, "CommanderMetersCoreScroll")
 
     panel:AddSection("Meter")
 
@@ -362,7 +322,6 @@ local function CreateCorePanel()
         onDefaults = Reset,
         defaultsTooltip = "Reset every option on this page to its default value. Meter DATA is untouched — that is what the window's RESET button (or /cmeters wipe) is for.",
     })
-    finishScroll()
 end
 
 frame:SetScript("OnEvent", function(_, event, arg1)

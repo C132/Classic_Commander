@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Production
 ## Author: Devin
-## Version: 2.3.1
-## Notes: Spell cooldowns as an RTS production queue: bars that drain toward ready, with an optional completion callout.
+## Version: 2.5.0
+## Notes: Spell cooldowns as an RTS production queue: bars that drain toward ready, with an optional completion callout. Commander Party Frames can carry the same queue on its banner in place of the class cooldowns (Party Frames → Header → Production in Header), as a second view alongside this frame.
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
 ## SavedVariables: CommanderProductionDB
 ## RequiredDeps: Commander_Events

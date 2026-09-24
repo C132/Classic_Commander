@@ -108,7 +108,7 @@ local DefaultSettings = {
     -- Persisted view state (written by the window chrome, no panel widget)
     SeenIntro  = false,
     ViewMode   = "FEED",     -- FEED | HAUL | ROLLS | BAGS | PARTY
-    ViewScope  = "SESSION",  -- SESSION | RUN | HOUR
+    ViewScope  = "SESSION",  -- SESSION | RUN | HOUR | ALL | FARM
     FeedFilter = "ALL",      -- ALL | MINE | NOTABLE
     HaulSort   = "VALUE",    -- VALUE | QTY | NAME
 
@@ -147,6 +147,7 @@ local DefaultSettings = {
     -- Ledger
     ValueMode    = "VENDOR",    -- VENDOR | MARKET (never blended, D13)
     TrackHistory = true,
+    RollDebug   = false,   -- /cspoils rolldebug — a transcript, not a feature
     HistoryDays  = 60,
     JunkWarnSlots = 6,
 }
@@ -458,48 +459,6 @@ local function Reset()
     print("Commander Spoils: settings restored to defaults — Blizzard's loot interface is back, and your history is untouched (/cspoils wipe clears that).")
 end
 
--- The page carries a safety block, five feature blocks and four chrome
--- blocks, so its rows flow into a scroll frame. AddRow is overridden on the
--- panel INSTANCE only — the shared framework is untouched (the
--- Meters/Reticle/Quartermaster pattern).
-local function MakeScrollable(panel, frameName)
-    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local target = self:GetVerticalScroll() - delta * 28
-        local maxScroll = self:GetVerticalScrollRange()
-        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
-        self:SetVerticalScroll(target)
-    end)
-
-    local scrollChild = CreateFrame("Frame", nil, scroll)
-    scrollChild:SetSize(1, 1)
-    scroll:SetScrollChild(scrollChild)
-    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
-
-    local seed = CreateFrame("Frame", nil, scrollChild)
-    seed:SetHeight(1)
-    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
-    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-    panel._anchor = seed
-    panel._contentHeight = 0
-    panel.AddRow = function(self, height, spacing)
-        local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetHeight(height)
-        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
-        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-        self._anchor = row
-        self._contentHeight = self._contentHeight + height + (spacing or 8)
-        return row
-    end
-
-    return function()
-        scrollChild:SetHeight(panel._contentHeight + 24)
-    end
-end
-
 -- Every suppression tooltip names three things: what is hidden, what replaces
 -- it, and what happens when the switch is OFF. That third clause is what kills
 -- the support question.
@@ -586,9 +545,14 @@ local function CreateOptionsPanel()
             size = function()
                 if CommanderSpoils_PrintSize then CommanderSpoils_PrintSize() end
             end,
+            rolldebug = function()
+                CommanderSpoilsDB.RollDebug = not CommanderSpoilsDB.RollDebug
+                print(CommanderSpoilsDB.RollDebug
+                    and "|cff66ccffCommander Spoils|r: roll tracing ON — run a group dungeon, then paste the |cffffffffSpoils roll:|r lines back. /cspoils rolldebug again turns it off."
+                    or "|cff66ccffCommander Spoils|r: roll tracing off")
+            end,
         },
     })
-    local FinishScroll = MakeScrollable(panel, "CommanderSpoilsSettingsScroll")
 
     -- ---- Blizzard takeover comes FIRST. Honesty in sentence one. ----------
     panel:AddSection("Blizzard Takeover",
@@ -985,7 +949,6 @@ local function CreateOptionsPanel()
     })
 
     panel:Finalize({ onDefaults = Reset })
-    FinishScroll()
 end
 
 -- ===========================================================================

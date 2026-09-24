@@ -20,6 +20,10 @@
 --     plus absorbs credited to the shield's caster via SPELL_ABSORBED.
 --   * Events with no fight open are dropped (damage OPENS a fight, heals
 --     never do), so Overall is exactly the sum of its segments.
+--   * APM = successful casts per minute of fight time, SC2-style: who is
+--     actually spending their globals. Counted from SPELL_CAST_SUCCESS of
+--     group PLAYERS only (a pet's autocast is not a keypress), minus
+--     auto-attacks; casts never open a fight and never hold one open.
 
 CommanderMetersEngine = {}
 local E = CommanderMetersEngine
@@ -42,6 +46,13 @@ local RING_SIZE = 10           -- death log: events kept per player
 local OWNER_MAP_LIMIT = 400    -- prune threshold for the pet->owner map
 local OWNER_MAP_TTL = 600      -- owner entries idle this long are prunable
 local CAPTURE_LIMIT = 2000     -- raw-event debug dump cap
+
+-- Casts the client reports as SPELL_CAST_SUCCESS that are auto-attacks,
+-- not decisions: they must not inflate APM. Keyed by spell ID.
+local AUTO_CASTS = {
+    [75] = true,     -- Auto Shot
+    [5019] = true,   -- Shoot (wand)
+}
 
 -- Combat-log flag masks (native constants when the client provides them)
 local AFFIL_GROUP = (COMBATLOG_OBJECT_AFFILIATION_MINE or 0x1)
@@ -116,8 +127,10 @@ local function NewActor(guid, name, class, isPlayer)
         heal = 0, overheal = 0, absorb = 0,
         deaths = 0,
         ints = 0, dispels = 0, ccb = 0, -- utility counters
+        casts = 0,              -- successful casts (APM numerator)
         activeDmg = 0, lastDmgTs = nil,
         activeHeal = 0, lastHealTs = nil,
+        activeCast = 0, lastCastTs = nil,
         spells = {},            -- key -> ability record (damage done)
         targets = {},           -- name -> damage done to it (NAME_CAP bound)
         targetsN = 0,
@@ -128,7 +141,8 @@ local function NewActor(guid, name, class, isPlayer)
         intSpells = {},         -- interrupted spell name -> count record
         dispelSpells = {},      -- dispelled aura name -> count record
         ccSpells = {},          -- broken CC aura name -> count record
-        sDmg = nil, sHeal = nil, sTaken = nil, -- 1s buckets, created on demand
+        castSpells = {},        -- cast spell name -> count record
+        sDmg = nil, sHeal = nil, sTaken = nil, sCasts = nil, -- 1s buckets, created on demand
         ring = nil, ringN = 0, ringI = 0, -- death-log ring (players only)
     }
 end
@@ -307,6 +321,7 @@ local function CloseFight()
             actor.sDmg = nil
             actor.sHeal = nil
             actor.sTaken = nil
+            actor.sCasts = nil
         end
     end
     fights[MAX_FIGHTS + 1] = nil
@@ -585,6 +600,7 @@ local DISPATCH = {
     SPELL_STOLEN            = { kind = 8 },
     SPELL_AURA_BROKEN       = { kind = 9 },
     SPELL_AURA_BROKEN_SPELL = { kind = 9 },
+    SPELL_CAST_SUCCESS      = { kind = 10 },
 }
 
 -- Utility family bookkeeping: which actor fields each kind feeds
@@ -693,6 +709,55 @@ function E.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
             end
             rec.total = rec.total + 1
             rec.count = rec.count + 1
+        end
+        return
+    end
+
+    if kind == 10 then
+        -- SPELL_CAST_SUCCESS: one action for APM. Players only — a minion's
+        -- autocast is not a keypress, so nothing folds to an owner here.
+        -- Counts only inside an open fight and never opens or holds one:
+        -- the DPS/HPS denominators stay exactly what they were, and a
+        -- post-kill rebuff cannot pad a fight.
+        if not current then return end
+        if band(sf, AFFIL_GROUP) == 0 or band(sf, TYPE_PLAYER) == 0 then return end
+        if AUTO_CASTS[a12] then return end
+        if type(a13) ~= "string" then
+            Anomaly("cast event with non-string ability name")
+            return
+        end
+        local castId = type(a12) == "number" and a12 or nil
+        segPair[1] = current
+        for i = 1, 2 do
+            local seg = segPair[i]
+            local a = GetActor(seg, sg, sn, classOf[sg], true)
+            a.casts = a.casts + 1
+            local rec = a.castSpells[a13]
+            if not rec then
+                rec = NewAbility(a13, nil, castId)
+                a.castSpells[a13] = rec
+            end
+            rec.total = rec.total + 1
+            rec.count = rec.count + 1
+            -- Active time: gaps up to ACTIVE_GAP between casts merge, so
+            -- the detail header can say how much of the fight was spent
+            -- pressing buttons at all
+            local last = a.lastCastTs
+            if last then
+                local gap = ts - last
+                if gap > 0 and gap <= ACTIVE_GAP then
+                    a.activeCast = a.activeCast + gap
+                end
+            end
+            a.lastCastTs = ts
+            if seg.series then
+                local b = Bucket(seg, ts)
+                if b then
+                    local s = a.sCasts
+                    if not s then s = {}; a.sCasts = s end
+                    s[b] = (s[b] or 0) + 1
+                end
+            end
         end
         return
     end
@@ -1014,11 +1079,15 @@ end
 -- Modes are data. Adding one = adding a table entry: how to read an
 -- actor's value, what the rate is called, and which breakdown lists the
 -- detail view shows (field = actor table of ability records or name->number).
+-- rateScale (default 1) multiplies the per-second rate for modes whose
+-- rate is quoted per minute; valueLabel (default label) names the raw
+-- value where the label alone would be ambiguous.
 local function ValDmg(a) return a.dmg end
 local function ValTaken(a) return a.dtaken end
 local function ValHeal(a) return a.heal + a.absorb end
 local function ValDeaths(a) return a.deaths end
 local function ValInts(a) return a.ints end
+local function ValCasts(a) return a.casts end
 local function ValDispels(a) return a.dispels end
 local function ValCC(a) return a.ccb end
 
@@ -1027,7 +1096,7 @@ E.MODES = {
         primary = "total", series = "sDmg", active = "activeDmg",
         lists = { { title = "ABILITIES", field = "spells", records = true },
                   { title = "TARGETS", field = "targets" } } },
-    { key = "DPS", label = "DPS", value = ValDmg, rateLabel = "DPS",
+    { key = "DPS", label = "DPS", valueLabel = "DAMAGE", value = ValDmg, rateLabel = "DPS",
         primary = "rate", series = "sDmg", active = "activeDmg",
         lists = { { title = "ABILITIES", field = "spells", records = true },
                   { title = "TARGETS", field = "targets" } } },
@@ -1038,6 +1107,14 @@ E.MODES = {
     { key = "HEAL", label = "HEALING", value = ValHeal, rateLabel = "HPS",
         primary = "total", series = "sHeal", active = "activeHeal",
         lists = { { title = "SPELLS", field = "heals", records = true } } },
+    -- APM: the rate IS the headline (casts per MINUTE — rateScale turns the
+    -- per-second rate every other mode uses into one), the cast count is
+    -- the small column. valueLabel names the count where the tooltip would
+    -- otherwise call both lines "APM".
+    { key = "APM", label = "APM", valueLabel = "CASTS", value = ValCasts,
+        rateLabel = "APM", rateScale = 60,
+        primary = "rate", series = "sCasts", active = "activeCast",
+        lists = { { title = "CASTS", field = "castSpells", records = true } } },
     -- Deaths graph the damage-taken series: the spikes around a death are
     -- exactly what the graph is for in this mode
     { key = "DEATHS", label = "DEATHS", value = ValDeaths, rateLabel = nil,
@@ -1078,6 +1155,7 @@ function E.CollectRows(seg, mode, now)
     local n = 0
     local total = 0
     local dur = E.SegmentDuration(seg, now)
+    local scale = mode.rateScale or 1
     for _, a in pairs(seg.actors) do
         local v = mode.value(a)
         if v > 0 then
@@ -1089,7 +1167,7 @@ function E.CollectRows(seg, mode, now)
             end
             row.actor = a
             row.value = v
-            row.rate = v / dur
+            row.rate = v * scale / dur
             total = total + v
         end
     end
@@ -1169,7 +1247,10 @@ end
 -- resumed within the same 10-minute window the suite's RestoreSession uses.
 -- The export returns live references, not copies: logout is the end of the
 -- session, so nothing mutates them afterwards.
-local SESSION_V = 1
+-- v2: actors gained the APM fields (casts/castSpells/sCasts); a v1
+-- snapshot would paint nil counters, so it is refused like any other
+-- malformed one
+local SESSION_V = 2
 local SESSION_WINDOW = 600
 
 function E.ExportSession(now)

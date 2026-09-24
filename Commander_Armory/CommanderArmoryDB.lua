@@ -38,8 +38,38 @@ COMMANDER_ARMORY_EVENTS = {
 -- every migration on the next login.
 -- ---------------------------------------------------------------------------
 
-local DB_VERSION = 1
+local DB_VERSION = 2
 local MIGRATIONS = {}
+
+-- 1 -> 2: un-confirm the bank caches an unguarded writer emptied.
+--
+-- Before DECISIONS D9a, CacheBank ran on every BANKFRAME_CLOSED -- including
+-- the ones CloseAllWindows fires when no bank was ever open (ASSUMPTIONS A4a).
+-- Those scans read nothing, wrote the nothing over a good snapshot, and stamped
+-- `at` on the way out. The stamp is what makes the wreckage worth migrating:
+-- an empty cache with a recent timestamp does not read as broken, it reads as
+-- CONFIRMED EMPTY, so /cgear probe answers "0 equippable items, last seen 3
+-- minutes ago" about a bank full of gear -- and a player checking whether the
+-- fix worked would be told, convincingly, that it had not.
+--
+-- Nothing in the saved data can separate a clobbered cache from a bank that
+-- genuinely holds no gear; both are `items = {}`. So we do not guess at the
+-- contents, we only withdraw the false confidence: clear `at`, which the whole
+-- module already reads as "never seen". That is the one honest reading of an
+-- empty cache of unknown provenance, and it invites the bank visit that repairs
+-- it for real. A character whose bank really is gear-free loses nothing but a
+-- timestamp, and gets it back the next time they stand at a banker.
+MIGRATIONS[1] = function()
+    local chars = CommanderArmorySets and CommanderArmorySets.Chars
+    if type(chars) ~= "table" then return end
+    for _, store in pairs(chars) do
+        local bank = type(store) == "table" and store.bank
+        if type(bank) == "table" and (tonumber(bank.at) or 0) > 0
+            and type(bank.items) == "table" and next(bank.items) == nil then
+            bank.at = 0
+        end
+    end
+end
 
 local function Migrate(db)
     local v = tonumber(db.DBVersion) or DB_VERSION
@@ -255,49 +285,6 @@ setmetatable(slashHandlers, {
     end,
 })
 
--- The chrome block and five feature sections push this page well past the
--- Settings canvas, so its rows flow into a scroll frame -- AddRow overridden on
--- the panel INSTANCE only (the Reticle/Quartermaster/Meters/Dossier pattern),
--- never on the shared framework. Returns the closure to call once Finalize has
--- added the footer row.
-local function MakeScrollable(panel, frameName)
-    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local target = self:GetVerticalScroll() - delta * 28
-        local maxScroll = self:GetVerticalScrollRange()
-        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
-        self:SetVerticalScroll(target)
-    end)
-
-    local scrollChild = CreateFrame("Frame", nil, scroll)
-    scrollChild:SetSize(1, 1)
-    scroll:SetScrollChild(scrollChild)
-    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
-
-    local seed = CreateFrame("Frame", nil, scrollChild)
-    seed:SetHeight(1)
-    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
-    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-    panel._anchor = seed
-    panel._contentHeight = 0
-    panel.AddRow = function(self, height, spacing)
-        local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetHeight(height)
-        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
-        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-        self._anchor = row
-        self._contentHeight = self._contentHeight + height + (spacing or 8)
-        return row
-    end
-
-    return function()
-        scrollChild:SetHeight(panel._contentHeight + 24)
-    end
-end
-
 local RELOAD_NOTE = "Takes effect after /reload (baked into the frames at login)."
 
 local function CreatePanel()
@@ -310,7 +297,6 @@ local function CreatePanel()
         slash = { "/cgear", "/carmory" },
         slashHandlers = slashHandlers,
     })
-    local finishScroll = MakeScrollable(panel, "CommanderArmoryPanelScroll")
 
     panel:AddSection("Armory",
         "Your gear sets live in their own saved file, keyed to this character on this realm, separate from every option on this page. Restore Defaults at the bottom never touches them — only Wipe All Sets does.")
@@ -557,7 +543,6 @@ local function CreatePanel()
         onDefaults = Reset,
         defaultsTooltip = "Reset every option on this page to its default value. Your saved gear sets are NOT touched — they live in a separate file, and only Wipe All Sets (or /cgear wipe) can remove them.",
     })
-    finishScroll()
 end
 
 frame:SetScript("OnEvent", function(_, event, arg1)

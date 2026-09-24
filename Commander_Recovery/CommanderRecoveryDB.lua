@@ -9,6 +9,9 @@ local DefaultSettings = {
     DeathReport = true,
     CorpseOrder = true,
     RecoverySound = true,
+    AutoRelease = true,
+    AutoReleaseArena = false,
+    AutoReleaseDelay = 1,
 }
 
 local frame = CreateFrame("FRAME");
@@ -26,7 +29,7 @@ local function CreateOptionsPanel()
         key = "Recovery",
         title = "Recovery",
         addonName = "Commander_Recovery",
-        description = "Casualty response, RTS style. When your unit falls, Recovery logs where and when, keeps a session casualty count, and — with Commander Orders installed — issues an automatic move order pointing your ghost back at its corpse.",
+        description = "Casualty response, RTS style. When your unit falls, Recovery logs where and when, keeps a session casualty count, and — with Commander Orders installed — issues an automatic move order pointing your ghost back at its corpse. In a battleground, where no one walks back to a corpse, it releases your spirit for you instead.",
         event = COMMANDER_RECOVERY_EVENTS.UPDATE,
         slash = { "/crec" },
         slashHandlers = {
@@ -69,6 +72,39 @@ local function CreateOptionsPanel()
         set = function(value) CommanderRecoveryDB.RecoverySound = value end,
         isEnabled = function() return CommanderRecoveryDB.EnableRecovery end,
     })
+    panel:AddSection("Battleground Auto-Release",
+        "Presses the release button for you when you fall in a battleground — and nowhere else.")
+    panel:AddCheckbox({
+        label = "Auto-Release in Battlegrounds",
+        tooltip = "Release your spirit automatically when you die in a battleground, instead of waiting on the popup — the graveyard's resurrection cycle only starts counting once you are out. Held back whenever a soulstone, reincarnation or incoming resurrection is on offer, and once the match has been decided.",
+        get = function() return CommanderRecoveryDB.AutoRelease end,
+        set = function(value) CommanderRecoveryDB.AutoRelease = value end,
+        isEnabled = function() return CommanderRecoveryDB.EnableRecovery end,
+    })
+    panel:AddCheckbox({
+        label = "Also in Arenas",
+        tooltip = "Extend auto-release to arena matches. Off by default: a dead arena player is usually watching the rest of the match, not going anywhere.",
+        get = function() return CommanderRecoveryDB.AutoReleaseArena end,
+        set = function(value) CommanderRecoveryDB.AutoReleaseArena = value end,
+        isEnabled = function()
+            return CommanderRecoveryDB.EnableRecovery and CommanderRecoveryDB.AutoRelease
+        end,
+    })
+    panel:AddSlider({
+        label = "Release Delay",
+        tooltip = "How long to wait after falling before releasing. A short delay leaves room for a healer's resurrection to land — once it is offered, auto-release stands down on its own.",
+        min = 0, max = 5, step = 0.5,
+        format = function(value)
+            if value <= 0 then return "Instant" end
+            return string.format("%.1fs", value)
+        end,
+        get = function() return CommanderRecoveryDB.AutoReleaseDelay end,
+        set = function(value) CommanderRecoveryDB.AutoReleaseDelay = value end,
+        isEnabled = function()
+            return CommanderRecoveryDB.EnableRecovery and CommanderRecoveryDB.AutoRelease
+        end,
+    })
+
     panel:AddButtonRow({
         {
             label = "Casualty Report",
@@ -81,7 +117,7 @@ local function CreateOptionsPanel()
         {
             label = "Test Casualty",
             width = 130,
-            tooltip = "Preview the casualty flow: the death report line for your current position and the recovery sound. No session numbers change, no order is issued (also: /crec test).",
+            tooltip = "Preview the casualty flow: the death report line for your current position, whether auto-release would fire where you are standing, and the recovery sound. No session numbers change, no order is issued (also: /crec test).",
             onClick = function()
                 if CommanderRecovery_Test then CommanderRecovery_Test() end
             end,

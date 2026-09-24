@@ -7,7 +7,25 @@
 -- inferred channel kick
 -- — the one the combat log never reports — with its false-positive guards
 -- (natural end, missed kick, dead caster, a real SPELL_INTERRUPT already
--- covering it). Mock modeled on Commander_Chat/Harness.
+-- covering it), plus the 2.4.0 battleground rule: quiet in a BG, and
+-- routed to the party you queued with when asked for (every automatic
+-- callout, cleanse included), plus the 2.6.0 failed-cast callouts: range
+-- and line of sight whispered to the ally after a run of four (the
+-- heal-only gate, the run rules, the per-ally cooldown, cross-realm
+-- addressing, separate runs per reason, and the no-cast-event fallback
+-- that reads the aim off the unit tokens -- guessing for range, where the
+-- client can confirm it, and never for sight), and out-of-mana and
+-- crowd-controlled told to the group (the shared /oom latch and its
+-- re-arm, the mana-users-only rule, the named CC state, and the
+-- battleground rule the whispers are exempt from), and the 2.7.0 support
+-- calls: a cooldown spent on one ally whispered to that ally with what to
+-- DO about it, gated on your own spellbook, one per spell per ally, and the
+-- only whisper that ships switched on, and the 2.8.0 mana burn callout:
+-- a drain on any group member's mana told to the group with what is left
+-- (the mana-only and group-only gates, the share-of-the-bar threshold that
+-- adds small ticks up, the per-victim window that turns a chain of burns
+-- into one line, the deferred read of the bar, and the battleground rule).
+-- Mock modeled on Commander_Chat/Harness.
 
 local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
@@ -134,29 +152,66 @@ local HOSTILE = 0x00000040
 
 -- Group state the tests drive
 local inGroup, inRaid = true, false
--- The instance-category form is a separate question: this mock is a party,
--- not a battleground
-function IsInGroup(category) if category then return false end return inGroup end
-function IsInRaid() return inRaid end
+-- Battleground state: the instance group is the BG raid, and inGroup is
+-- the home party you queued with (it survives into the BG, or doesn't)
+local inInstanceGroup, instanceType = false, "none"
+LE_PARTY_CATEGORY_HOME = 1
+LE_PARTY_CATEGORY_INSTANCE = 2
+function IsInGroup(category)
+    if category == LE_PARTY_CATEGORY_INSTANCE then return inInstanceGroup end
+    return inGroup
+end
+function IsInRaid() return inRaid or inInstanceGroup end
+function IsInInstance() return instanceType ~= "none", instanceType end
 function GetNumSubgroupMembers() return inGroup and 2 or 0 end
 function GetNumGroupMembers() return inGroup and 2 or 0 end
-LE_PARTY_CATEGORY_INSTANCE = 2
 
-local GUIDS = { player = "Player-1", target = "Creature-9", pet = nil }
+local GUIDS = { player = "Player-1", target = "Creature-9", pet = nil,
+    party1 = "Player-7", party2 = "Player-8",
+    -- The same two allies under the tokens a battleground raid uses
+    raid1 = "Player-7", raid2 = "Player-8" }
 function UnitGUID(unit) return GUIDS[unit] end
 -- Class only resolves through a unit token pointing at the same GUID
 local CLASSES = { focus = "Mage" }
 function UnitClass(unit) return CLASSES[unit] end
-function UnitName(unit) return unit == "player" and "Kicker" or "Pillager" end
+local NAMES = { player = "Kicker", party1 = "Straggler", party2 = "Anchor",
+    raid1 = "Straggler", raid2 = "Anchor" }
+local REALMS = {}
+function UnitName(unit) return NAMES[unit] or "Pillager", REALMS[unit] end
 function UnitExists(unit) return GUIDS[unit] ~= nil end
+function UnitIsUnit(a, b)
+    local ga, gb = GUIDS[a], GUIDS[b]
+    return ga ~= nil and ga == gb
+end
+function UnitIsPlayer(unit)
+    local guid = GUIDS[unit]
+    return guid ~= nil and guid:sub(1, 6) == "Player"
+end
+function UnitIsFriend(_, unit) return UnitIsPlayer(unit) end
+-- Range state the tests drive. The second return is the load-bearing one:
+-- UnitInRange only answers for group members, so "it answered no" is what
+-- proves the unit is both an ally and too far away.
+local rangeState = {}
+function UnitInRange(unit)
+    local state = rangeState[unit]
+    if state == nil then return false, false end
+    return state, true
+end
 function UnitHealth() return 100 end
 function UnitHealthMax() return 100 end
-function UnitPower() return 100 end
-function UnitPowerMax() return 100 end
-function UnitPowerType() return 0 end
+-- Mana per unit token the tests drive; unset units sit on a full 100
+local manaNow, manaMax = {}, {}
+function UnitPower(unit) return manaNow[unit] or 100 end
+function UnitPowerMax(unit) return manaMax[unit] or 100 end
+local powerType = 0
+function UnitPowerType() return powerType end
 function UnitAffectingCombat() return true end
-function UnitIsDeadOrGhost() return false end
-function DoEmote() end
+local dead = {}
+function UnitIsDeadOrGhost(unit) return dead[unit] == true end
+local emotes = {}
+function DoEmote(token) emotes[#emotes + 1] = token end
+local function LastEmote() return emotes[#emotes] end
+local function ClearEmotes() emotes = {} end
 
 -- Channel state: what each unit token is channeling right now
 local channelState = {}
@@ -172,6 +227,11 @@ local SPELL_NAMES = {
     [116] = "Frostbolt", [15407] = "Mind Flay", [689] = "Drain Life",
     [1152] = "Purify", [1714] = "Curse of Tongues", [4987] = "Cleanse",
     [118] = "Polymorph", [845] = "Cleave", [2139] = "Counterspell",
+    [2061] = "Flash Heal", [2060] = "Greater Heal", [17] = "Power Word: Shield",
+    [331] = "Healing Wave",
+    [10060] = "Power Infusion", [29166] = "Innervate", [3411] = "Intervene",
+    [1022] = "Blessing of Protection", [6346] = "Fear Ward",
+    [25380] = "Mana Burn", [27018] = "Viper Sting",
 }
 
 -- School lockouts are readable only as a cooldown on the locked spell
@@ -205,9 +265,32 @@ C_Spell.GetSpellLink = function(id)
     return string.format("|cff71d5ff|Hspell:%d|h[%s]|h|r", id, name)
 end
 
+-- The spellbook, which is what decides whether a heal in the canon is one
+-- the player actually knows
+local spellBook = { "Flash Heal", "Greater Heal", "Power Word: Shield", "Frostbolt",
+    -- Support cooldowns this character has. Innervate and Blessing of
+    -- Protection are deliberately absent: they belong to other classes.
+    "Power Infusion", "Intervene", "Fear Ward" }
+function GetNumSpellTabs() return 1 end
+function GetSpellTabInfo() return "General", "tex", 0, #spellBook end
+function GetSpellBookItemName(index) return spellBook[index], "" end
+function GetSpellInfo(id) return SPELL_NAMES[id] end
+
+-- The client's own failure strings, which the addon reads rather than
+-- hardcoding. Each is distinct so a test can tell which one was matched.
+SPELL_FAILED_OUT_OF_RANGE = "Out of range."
+SPELL_FAILED_LINE_OF_SIGHT = "Target not in line of sight."
+SPELL_FAILED_NO_POWER = "Not enough mana."
+SPELL_FAILED_STUNNED = "Can't do that while stunned."
+SPELL_FAILED_FLEEING = "Can't do that while fleeing."
+SPELL_FAILED_CONFUSED = "Can't do that while confused."
+SPELL_FAILED_CHARMED = "Can't do that while charmed."
+-- Deliberately NOT watched: the kicked-on-me callout owns this one
+SPELL_FAILED_SILENCED = "Can't do that while silenced."
+
 local sent = {}
-function SendChatMessage(msg, channel)
-    sent[#sent + 1] = { msg = msg, channel = channel }
+function SendChatMessage(msg, channel, _, to)
+    sent[#sent + 1] = { msg = msg, channel = channel, to = to }
 end
 local function LastMessage()
     return sent[#sent] and sent[#sent].msg
@@ -245,6 +328,11 @@ local function CLEU(subevent, o)
         o.extraID, o.extraName, o.extraSchool or 0,
         o.auraType,
     }
+    -- The drain suffix (amount, powerType, extraAmount) sits where the
+    -- extra spell triplet does on every other event
+    if o.amount then
+        cleuArgs[15], cleuArgs[16], cleuArgs[17] = o.amount, o.powerType or 0, o.extraAmount or 0
+    end
     -- Holes in the middle would truncate unpack; give it an explicit length
     cleuArgs.n = 18
     Fire("COMBAT_LOG_EVENT_UNFILTERED")
@@ -259,6 +347,9 @@ _G.CommanderCommsDB = {
     DispelCallouts = true,
     CCBreakCallouts = true, CCBreakAll = false, UseEmotes = true,
     IncludeTarget = true, CommsSound = false,
+    BattlegroundCallouts = false, BattlegroundToParty = false,
+    SupportWhisper = true,
+    ManaBurnCallouts = true, ManaBurnMinPercent = 0.05, ManaBurnCooldown = 8,
 }
 COMMANDER_COMMS_EVENTS = { UPDATE = "COMMANDER_COMMS_UPDATE" }
 
@@ -478,6 +569,70 @@ msg = LastMessage()
 CHECK(msg and msg:find("broke my Polymorph on", 1, true) and not msg:find("Hspell", 1, true),
     "cc break: no id degrades to the plain name", msg)
 
+-- A teammate's Blind is the group's problem too: announced by default,
+-- with the rogue named as its owner
+Scenario()
+CLEU("SPELL_AURA_APPLIED", { sourceGUID = GUIDS.party1, sourceName = "Straggler",
+    spellID = 2094, spellName = "Blind", auraType = "DEBUFF" })
+Advance(2)
+CLEU("SPELL_AURA_BROKEN_SPELL", { sourceGUID = "Player-2", sourceName = "Levira",
+    spellID = 2094, spellName = "Blind",
+    extraID = 845, extraName = "Cleave", auraType = "DEBUFF" })
+msg = LastMessage()
+CHECK(msg and msg:find("Levira broke Straggler's |cff71d5ff|Hspell:2094|h[Blind]|h|r on Pillager", 1, true),
+    "cc break: a group member's Blind is announced with its owner named", msg)
+CHECK(msg and msg:find("|Hspell:845|h[Cleave]|h", 1, true),
+    "cc break: ...and the spell that broke it", msg)
+
+-- The rogue breaking their own Blind
+Scenario()
+CLEU("SPELL_AURA_APPLIED", { sourceGUID = GUIDS.party1, sourceName = "Straggler",
+    spellID = 2094, spellName = "Blind", auraType = "DEBUFF" })
+Advance(2)
+CLEU("SPELL_AURA_BROKEN_SPELL", { sourceGUID = GUIDS.party1, sourceName = "Straggler",
+    spellID = 2094, spellName = "Blind",
+    extraID = 1752, extraName = "Sinister Strike", auraType = "DEBUFF" })
+msg = LastMessage()
+CHECK(msg and msg:find("Straggler broke their own", 1, true),
+    "cc break: a teammate breaking their own CC says so", msg)
+
+-- A teammate's pet owns its CC the way mine does
+Scenario()
+GUIDS.partypet2 = "Pet-8"
+CLEU("SPELL_AURA_APPLIED", { sourceGUID = "Pet-8", sourceName = "Zharvia",
+    sourceFlags = COMBATLOG_OBJECT_TYPE_PET,
+    spellID = 6358, spellName = "Seduction", auraType = "DEBUFF" })
+Advance(2)
+CLEU("SPELL_AURA_BROKEN", { sourceGUID = "Player-2", sourceName = "Levira",
+    spellID = 6358, spellName = "Seduction", auraType = "DEBUFF" })
+msg = LastMessage()
+CHECK(msg and msg:find("Levira broke Zharvia's", 1, true) and msg:find("(melee)", 1, true),
+    "cc break: a group member's pet's CC is the group's", msg)
+GUIDS.partypet2 = nil
+
+-- A stranger's sheep is nobody's business until asked for
+Scenario()
+CLEU("SPELL_AURA_APPLIED", { sourceGUID = "Player-5", sourceName = "Passerby",
+    spellID = 118, spellName = "Polymorph", auraType = "DEBUFF" })
+Advance(2)
+CLEU("SPELL_AURA_BROKEN_SPELL", { sourceGUID = "Player-2", sourceName = "Levira",
+    spellID = 118, spellName = "Polymorph",
+    extraID = 845, extraName = "Cleave", auraType = "DEBUFF" })
+CHECK(LastMessage() == nil, "cc break: a stranger's CC stays quiet by default", LastMessage())
+
+Scenario()
+CommanderCommsDB.CCBreakAll = true
+CLEU("SPELL_AURA_APPLIED", { sourceGUID = "Player-5", sourceName = "Passerby",
+    spellID = 118, spellName = "Polymorph", auraType = "DEBUFF" })
+Advance(2)
+CLEU("SPELL_AURA_BROKEN_SPELL", { sourceGUID = "Player-2", sourceName = "Levira",
+    spellID = 118, spellName = "Polymorph",
+    extraID = 845, extraName = "Cleave", auraType = "DEBUFF" })
+msg = LastMessage()
+CHECK(msg and msg:find("Levira broke Passerby's", 1, true),
+    "cc break: All CC Breaks widens it to anyone in range", msg)
+CommanderCommsDB.CCBreakAll = false
+
 -- ===========================================================================
 -- Kicked on me: the callout going the other way
 -- ===========================================================================
@@ -619,6 +774,769 @@ CLEU("SPELL_INTERRUPT", { spellID = 6552, spellName = "Pummel",
 CHECK(sent[1] and sent[1].channel == "RAID", "interrupt: raid routing intact",
     sent[1] and sent[1].channel)
 inRaid = false
+
+-- ===========================================================================
+-- Battlegrounds: quiet by default, optionally routed to the party you
+-- queued with
+-- ===========================================================================
+
+local function EnterBattleground(withParty)
+    instanceType = "pvp"
+    inInstanceGroup = true
+    inGroup = withParty and true or false   -- the home party, if any
+end
+local function LeaveBattleground()
+    instanceType, inInstanceGroup, inGroup, inRaid = "none", false, true, false
+end
+
+local function Dispel()
+    CLEU("SPELL_DISPEL", { spellID = 4987, spellName = "Cleanse",
+        destGUID = "Player-3", destName = "Healbot",
+        extraID = 1714, extraName = "Curse of Tongues", auraType = "DEBUFF" })
+end
+
+local function CCBreak()
+    CLEU("SPELL_AURA_APPLIED", { spellID = 118, spellName = "Polymorph" })
+    CLEU("SPELL_AURA_BROKEN_SPELL", { sourceGUID = "Player-2", sourceName = "Levira",
+        spellID = 118, spellName = "Polymorph", extraID = 845, extraName = "Cleave" })
+end
+
+-- Off by default: nothing goes out in a battleground
+Scenario()
+EnterBattleground(true)
+CLEU("SPELL_INTERRUPT", { spellID = 6552, spellName = "Pummel",
+    extraID = 116, extraName = "Frostbolt" })
+CHECK(LastMessage() == nil, "bg: the interrupt callout is silent", LastMessage())
+
+Scenario()
+CCBreak()
+CHECK(LastMessage() == nil, "bg: the CC-break callout is silent", LastMessage())
+
+Scenario()
+Dispel()
+CHECK(LastMessage() == nil, "bg: the cleanse callout is silent", LastMessage())
+
+Scenario()
+lockouts = {}
+Incoming("SPELL_INTERRUPT", { spellID = 2139, spellName = "Counterspell",
+    extraID = 116, extraName = "Frostbolt", extraSchool = 0x10 })
+Advance(0.2)
+CHECK(LastMessage() == nil, "bg: the kicked-on-me callout is silent", LastMessage())
+
+-- Turned back on: the battleground's own instance chat
+Scenario()
+CommanderCommsDB.BattlegroundCallouts = true
+CLEU("SPELL_INTERRUPT", { spellID = 6552, spellName = "Pummel",
+    extraID = 116, extraName = "Frostbolt" })
+CHECK(sent[1] and sent[1].channel == "INSTANCE_CHAT",
+    "bg: switched on, callouts speak to the battleground", sent[1] and sent[1].channel)
+
+-- ...or to the party you queued with instead
+Scenario()
+CommanderCommsDB.BattlegroundToParty = true
+CLEU("SPELL_INTERRUPT", { spellID = 6552, spellName = "Pummel",
+    extraID = 116, extraName = "Frostbolt" })
+CHECK(sent[1] and sent[1].channel == "PARTY",
+    "bg: routed to the party, not the battleground raid", sent[1] and sent[1].channel)
+
+Scenario()
+CCBreak()
+CHECK(sent[1] and sent[1].channel == "PARTY",
+    "bg: the CC-break callout follows the same routing", sent[1] and sent[1].channel)
+
+Scenario()
+Dispel()
+CHECK(sent[1] and sent[1].channel == "PARTY",
+    "bg: the cleanse callout follows the same routing", sent[1] and sent[1].channel)
+
+Scenario()
+lockouts = {}
+Incoming("SPELL_INTERRUPT", { spellID = 2139, spellName = "Counterspell",
+    extraID = 116, extraName = "Frostbolt", extraSchool = 0x10 })
+Advance(0.2)
+CHECK(sent[1] and sent[1].channel == "PARTY",
+    "bg: the kicked-on-me callout follows the same routing", sent[1] and sent[1].channel)
+
+-- Solo-queued with party routing on: no small audience, so nothing is said
+Scenario()
+EnterBattleground(false)
+CLEU("SPELL_INTERRUPT", { spellID = 6552, spellName = "Pummel",
+    extraID = 116, extraName = "Frostbolt" })
+CHECK(LastMessage() == nil,
+    "bg: no party to route to falls back to silence, not the raid", LastMessage())
+
+-- Everywhere else the settings change nothing
+Scenario()
+LeaveBattleground()
+CommanderCommsDB.BattlegroundCallouts = false
+CommanderCommsDB.BattlegroundToParty = false
+CLEU("SPELL_INTERRUPT", { spellID = 6552, spellName = "Pummel",
+    extraID = 116, extraName = "Frostbolt" })
+CHECK(sent[1] and sent[1].channel == "PARTY",
+    "bg: the world party is untouched by the battleground rule",
+    sent[1] and sent[1].channel)
+
+-- An arena is not a battleground: kick calls are the whole point there
+Scenario()
+instanceType = "arena"
+inInstanceGroup = true
+CLEU("SPELL_INTERRUPT", { spellID = 6552, spellName = "Pummel",
+    extraID = 116, extraName = "Frostbolt" })
+CHECK(sent[1] and sent[1].channel == "INSTANCE_CHAT",
+    "arena: callouts still go out with the battleground rule on",
+    sent[1] and sent[1].channel)
+LeaveBattleground()
+
+-- ===========================================================================
+-- Range nag: the callout that whispers one person instead of telling the
+-- group. Four failed heals in a row on the same ally, no heal landing in
+-- between, and they hear about it privately.
+-- ===========================================================================
+
+-- Past the streak window AND the whisper cooldown, with both allies back on
+-- a known footing: party1 too far, party2 close enough
+local function RangeScenario()
+    Advance(200)
+    ClearMessages()
+    rangeState = { party1 = false, party2 = true, raid1 = false, raid2 = true }
+end
+
+-- One press of a heal that fails for range: the client sends the cast, the
+-- cast fails, and a UI error says why. The addon has to pair the three.
+local castSeq = 0
+local function HealPress(targetName, spellID, errorText)
+    castSeq = castSeq + 1
+    local castGUID = "Cast-" .. castSeq
+    spellID = spellID or 2061
+    Fire("UNIT_SPELLCAST_SENT", "player", targetName, castGUID, spellID)
+    Fire("UNIT_SPELLCAST_FAILED_QUIET", "player", castGUID, spellID)
+    Fire("UI_ERROR_MESSAGE", 1, errorText or "Out of range.")
+    Advance(0.5)   -- past the pairing window: the next one is another press
+end
+
+RangeScenario()
+for _ = 1, 6 do HealPress("Straggler") end
+CHECK(LastMessage() == nil, "range: off by default, nothing is whispered", LastMessage())
+
+CommanderCommsDB.RangeWhisper = true
+CommanderCommsDB.RangeWhisperStreak = 4
+CommanderCommsDB.RangeWhisperCooldown = 45
+
+RangeScenario()
+HealPress("Straggler"); HealPress("Straggler"); HealPress("Straggler")
+CHECK(LastMessage() == nil, "range: three in a row is a bad angle, not a nag",
+    LastMessage())
+HealPress("Straggler")
+local rangeMsg = LastMessage()
+CHECK(rangeMsg ~= nil, "range: the fourth failure in a row speaks up", rangeMsg)
+CHECK(sent[1] and sent[1].channel == "WHISPER",
+    "range: it is a whisper, never a group callout", sent[1] and sent[1].channel)
+CHECK(sent[1] and sent[1].to == "Straggler",
+    "range: addressed to the ally standing too far away", sent[1] and sent[1].to)
+CHECK(rangeMsg and rangeMsg:find("|Hspell:2061|h[Flash Heal]|h", 1, true),
+    "range: the heal that didn't reach goes out as a link", rangeMsg)
+CHECK(rangeMsg and rangeMsg:find("4 casts", 1, true),
+    "range: says how many presses were lost", rangeMsg)
+
+-- A heal that landed answers the nag: whatever the run was, it is over
+RangeScenario()
+HealPress("Straggler"); HealPress("Straggler"); HealPress("Straggler")
+CLEU("SPELL_HEAL", { destGUID = "Player-7", destName = "Straggler",
+    spellID = 2061, spellName = "Flash Heal" })
+HealPress("Straggler")
+CHECK(LastMessage() == nil, "range: a heal that landed resets the run", LastMessage())
+HealPress("Straggler"); HealPress("Straggler"); HealPress("Straggler")
+CHECK(sent[1] and sent[1].to == "Straggler",
+    "range: the run restarts from zero and still gets there", sent[1] and sent[1].to)
+
+-- The streak is a RUN, not a lifetime tally
+RangeScenario()
+for _ = 1, 3 do HealPress("Straggler"); Advance(25) end
+HealPress("Straggler")
+CHECK(LastMessage() == nil,
+    "range: failures spread past the window are not a run", LastMessage())
+
+-- Only heals count, and only the ones you actually know
+RangeScenario()
+for _ = 1, 6 do HealPress("Straggler", 116) end
+CHECK(LastMessage() == nil,
+    "range: a Frostbolt out of range is not a lost heal", LastMessage())
+
+RangeScenario()
+for _ = 1, 6 do HealPress("Straggler", 331) end
+CHECK(LastMessage() == nil,
+    "range: a heal missing from your spellbook never counts", LastMessage())
+
+-- One whisper per stretch of being too far
+RangeScenario()
+for _ = 1, 4 do HealPress("Straggler") end
+CHECK(#sent == 1, "range: one whisper per run", #sent)
+for _ = 1, 4 do HealPress("Straggler") end
+CHECK(#sent == 1, "range: a second run inside the cooldown stays quiet", #sent)
+Advance(60)
+for _ = 1, 4 do HealPress("Straggler") end
+CHECK(#sent == 2, "range: past the cooldown it may speak again", #sent)
+
+-- A cross-realm ally has to be whispered with their realm attached, and the
+-- name the cast event hands over carries it too
+RangeScenario()
+REALMS.party1 = "Stormrage"
+for _ = 1, 4 do HealPress("Straggler-Stormrage") end
+CHECK(sent[1] and sent[1].to == "Straggler-Stormrage",
+    "range: a cross-realm ally is whispered with their realm", sent[1] and sent[1].to)
+REALMS.party1 = nil
+
+-- The fallback: a client that reports no cast events at all still has to
+-- land the nag, read off whichever unit token was actually out of range
+RangeScenario()
+GUIDS.target, NAMES.target = "Player-7", "Straggler"
+rangeState.target = false
+for _ = 1, 4 do
+    Fire("UI_ERROR_MESSAGE", 1, "Out of range.")
+    Advance(0.5)
+end
+CHECK(sent[1] and sent[1].to == "Straggler",
+    "range: with no cast event, the aim is read off the unit tokens",
+    sent[1] and sent[1].to)
+
+-- ...and that fallback leans entirely on the range check, so with everybody
+-- close enough there is nobody the error could be about
+RangeScenario()
+rangeState = { party1 = true, party2 = true, target = true }
+for _ = 1, 6 do
+    Fire("UI_ERROR_MESSAGE", 1, "Out of range.")
+    Advance(0.5)
+end
+CHECK(LastMessage() == nil,
+    "range: an ally the client reports as in range is never blamed", LastMessage())
+
+-- A @party1-style macro pressed while pointing at nothing: no unit token
+-- holds the target, but exactly one person in the group is too far away, so
+-- there is no one else the error could have been about
+RangeScenario()
+rangeState = { party1 = false, party2 = true }
+for _ = 1, 4 do
+    Fire("UI_ERROR_MESSAGE", 1, "Out of range.")
+    Advance(0.5)
+end
+CHECK(sent[1] and sent[1].to == "Straggler",
+    "range: one ally out of range and no aim is still unambiguous",
+    sent[1] and sent[1].to)
+
+-- Two of them and the answer is a guess, so nobody is named
+RangeScenario()
+rangeState = { party1 = false, party2 = false }
+for _ = 1, 6 do
+    Fire("UI_ERROR_MESSAGE", 1, "Out of range.")
+    Advance(0.5)
+end
+CHECK(LastMessage() == nil,
+    "range: two allies out of range names neither", LastMessage())
+
+-- A cast the client DID name, aimed at somebody outside the group: taken as
+-- final and dropped, never pinned on whoever else happens to be far away
+RangeScenario()
+rangeState = { party1 = false, party2 = true }
+for _ = 1, 6 do HealPress("Wanderer") end
+CHECK(LastMessage() == nil,
+    "range: a named target outside the group is dropped, not reassigned",
+    LastMessage())
+
+-- Nobody whispers themselves
+RangeScenario()
+GUIDS.target, NAMES.target = "Creature-9", nil
+for _ = 1, 6 do HealPress("Kicker") end
+CHECK(LastMessage() == nil, "range: your own name resolves to nobody", LastMessage())
+
+-- A battleground silences the group callouts; it does not silence a line
+-- addressed to one person
+RangeScenario()
+EnterBattleground(true)
+for _ = 1, 4 do HealPress("Straggler") end
+CHECK(sent[1] and sent[1].channel == "WHISPER" and sent[1].to == "Straggler",
+    "range: a battleground does not silence the whisper",
+    sent[1] and (sent[1].channel .. "/" .. tostring(sent[1].to)))
+LeaveBattleground()
+
+-- ===========================================================================
+-- The other failures worth saying out loud. Line of sight is the ally's
+-- problem like range is, so it whispers; out of mana and being crowd
+-- controlled are yours, so they go to the group.
+-- ===========================================================================
+
+CommanderCommsDB.SightWhisper = true
+
+-- The pillar half of the same run
+RangeScenario()
+rangeState = { party1 = true, party2 = true }   -- in range, just not visible
+for _ = 1, 3 do HealPress("Straggler", nil, "Target not in line of sight.") end
+CHECK(LastMessage() == nil, "los: three blocked casts stay quiet", LastMessage())
+HealPress("Straggler", nil, "Target not in line of sight.")
+local losMsg = LastMessage()
+CHECK(losMsg and losMsg:find("No line of sight", 1, true),
+    "los: the fourth blocked cast whispers", losMsg)
+CHECK(sent[1] and sent[1].channel == "WHISPER" and sent[1].to == "Straggler",
+    "los: whispered to the ally behind the pillar",
+    sent[1] and (sent[1].channel .. "/" .. tostring(sent[1].to)))
+CHECK(losMsg and losMsg:find("|Hspell:2061|h[Flash Heal]|h", 1, true),
+    "los: names the heal that was blocked", losMsg)
+
+-- Unlike range, line of sight must not require the ally to be far away --
+-- the pillar case is someone standing right next to you. With no cast event
+-- to name them, an ally under the cursor who is comfortably IN range still
+-- has to be the one blamed for a sight error.
+RangeScenario()
+GUIDS.target, NAMES.target = "Player-7", "Straggler"
+rangeState = { party1 = true, party2 = true, target = true }
+for _ = 1, 4 do
+    Fire("UI_ERROR_MESSAGE", 1, "Target not in line of sight.")
+    Advance(0.5)
+end
+CHECK(sent[1] and sent[1].to == "Straggler",
+    "los: an ally in range is still the one behind the pillar",
+    sent[1] and sent[1].to)
+GUIDS.target, NAMES.target = "Creature-9", nil
+
+-- The two reasons keep separate runs: three of each is not four of either
+RangeScenario()
+rangeState = { party1 = false, party2 = true }
+for _ = 1, 3 do HealPress("Straggler") end
+for _ = 1, 3 do HealPress("Straggler", nil, "Target not in line of sight.") end
+CHECK(LastMessage() == nil,
+    "los: range and sight are separate runs, not one pooled tally", LastMessage())
+
+-- The no-cast-event fallback can guess for range, because the client can
+-- confirm who is too far away. It must never guess for sight.
+RangeScenario()
+rangeState = { party1 = false, party2 = true }
+for _ = 1, 6 do
+    Fire("UI_ERROR_MESSAGE", 1, "Target not in line of sight.")
+    Advance(0.5)
+end
+CHECK(LastMessage() == nil,
+    "los: with no aim and no way to confirm one, nobody is named", LastMessage())
+
+CommanderCommsDB.SightWhisper = false
+
+-- ===========================================================================
+-- Out of mana: your own state, so it goes to the group -- through the /oom
+-- call Comms already owns, sharing its cooldown and its re-arm
+-- ===========================================================================
+
+local function Recover()
+    -- Mana back up: the latch the one-shot call sets has to be released
+    Fire("UNIT_POWER_UPDATE", "player")
+end
+
+RangeScenario(); ClearEmotes()
+Fire("UI_ERROR_MESSAGE", 1, "Not enough mana.")
+CHECK(LastEmote() == nil and LastMessage() == nil,
+    "oom: off by default, nothing is said", LastEmote() or LastMessage())
+
+CommanderCommsDB.PowerCallouts = true
+
+RangeScenario(); ClearEmotes(); Recover()
+Fire("UI_ERROR_MESSAGE", 1, "Not enough mana.")
+CHECK(LastEmote() == "OOM", "oom: a cast refused for mana makes the /oom call",
+    LastEmote())
+
+-- One empty bar is one announcement, however it was noticed
+ClearEmotes()
+Fire("UI_ERROR_MESSAGE", 1, "Not enough mana.")
+CHECK(LastEmote() == nil, "oom: it does not repeat until the bar recovers",
+    LastEmote())
+Recover()
+Advance(60)
+ClearEmotes()
+Fire("UI_ERROR_MESSAGE", 1, "Not enough mana.")
+CHECK(LastEmote() == "OOM", "oom: drinking re-arms it", LastEmote())
+
+-- ...and the re-arm has to work with Auto-Emote OFF, which is where the
+-- latch used to stick for good
+CHECK(CommanderCommsDB.AutoEmote ~= true,
+    "oom: (the percentage trigger is off for this run)", CommanderCommsDB.AutoEmote)
+
+-- Voice off means the call still gets made, in chat
+RangeScenario(); ClearEmotes(); Recover()
+CommanderCommsDB.UseEmotes = false
+Fire("UI_ERROR_MESSAGE", 1, "Not enough mana.")
+CHECK(LastEmote() == nil and LastMessage() == "I'm out of mana.",
+    "oom: with voice emotes off the call goes to chat instead",
+    LastEmote() or LastMessage())
+CommanderCommsDB.UseEmotes = true
+
+-- A rogue is out of energy every few seconds; that is not news
+RangeScenario(); ClearEmotes(); Recover()
+powerType = 3
+Fire("UI_ERROR_MESSAGE", 1, "Not enough mana.")
+CHECK(LastEmote() == nil and LastMessage() == nil,
+    "oom: only mana users call it", LastEmote() or LastMessage())
+powerType = 0
+
+CommanderCommsDB.PowerCallouts = false
+
+-- ===========================================================================
+-- Crowd controlled: the group callout that names the state, because "peel
+-- me" and "dispel me" are different requests
+-- ===========================================================================
+
+RangeScenario()
+Fire("UI_ERROR_MESSAGE", 1, "Can't do that while stunned.")
+CHECK(LastMessage() == nil, "cc: off by default, nothing is said", LastMessage())
+
+CommanderCommsDB.ControlCallouts = true
+
+RangeScenario()
+Fire("UI_ERROR_MESSAGE", 1, "Can't do that while stunned.")
+local ccMsg = LastMessage()
+CHECK(ccMsg and ccMsg:find("stunned", 1, true), "cc: names the state it is in", ccMsg)
+CHECK(sent[1] and sent[1].channel == "PARTY",
+    "cc: told to the group, not whispered", sent[1] and sent[1].channel)
+
+RangeScenario()
+Fire("UI_ERROR_MESSAGE", 1, "Can't do that while fleeing.")
+CHECK(LastMessage() and LastMessage():find("feared", 1, true),
+    "cc: a fear is called a fear, not a generic crowd control", LastMessage())
+
+-- Mashing the button through a six-second fear is one callout
+RangeScenario()
+for _ = 1, 6 do
+    Fire("UI_ERROR_MESSAGE", 1, "Can't do that while feared.")
+    Fire("UI_ERROR_MESSAGE", 1, "Can't do that while fleeing.")
+    Advance(1)
+end
+CHECK(#sent == 1, "cc: the whole fear is one callout, not one per press", #sent)
+
+-- Silence is the kicked-on-me callout's job, and it says more
+RangeScenario()
+for _ = 1, 4 do Fire("UI_ERROR_MESSAGE", 1, "Can't do that while silenced."); Advance(1) end
+CHECK(LastMessage() == nil,
+    "cc: silence is left to the callout that reports the school and the lockout",
+    LastMessage())
+
+-- These ARE group callouts, so unlike the whispers they follow the
+-- battleground rule
+RangeScenario()
+EnterBattleground(true)
+Fire("UI_ERROR_MESSAGE", 1, "Can't do that while stunned.")
+CHECK(LastMessage() == nil,
+    "cc: silent in a battleground like every other group callout", LastMessage())
+CommanderCommsDB.BattlegroundCallouts = true
+Advance(30)
+Fire("UI_ERROR_MESSAGE", 1, "Can't do that while stunned.")
+CHECK(sent[1] and sent[1].channel == "INSTANCE_CHAT",
+    "cc: switched on, it speaks to the battleground",
+    sent[1] and sent[1].channel)
+CommanderCommsDB.BattlegroundCallouts = false
+LeaveBattleground()
+
+-- Solo there is no group to tell
+RangeScenario()
+inGroup = false
+Advance(30)
+Fire("UI_ERROR_MESSAGE", 1, "Can't do that while stunned.")
+CHECK(LastMessage() == nil, "cc: never fires solo", LastMessage())
+inGroup = true
+
+CommanderCommsDB.ControlCallouts = false
+
+-- ===========================================================================
+-- Support calls: a cooldown spent on one ally, whispered to the ally who
+-- has to act on it. The only whisper that ships switched on.
+-- ===========================================================================
+
+local function SupportCast(spellID, destGUID, destName)
+    CLEU("SPELL_CAST_SUCCESS", { spellID = spellID, spellName = SPELL_NAMES[spellID],
+        destGUID = destGUID or "Player-7", destName = destName or "Straggler",
+        destFlags = 0 })
+end
+
+-- The shipped defaults live in CommanderCommsDB.lua, which this harness does
+-- not load (that would need the whole settings framework); the claim "this
+-- one is on and the others are not" is pinned against that file directly.
+local dbFile = assert(io.open(ADDONS .. "/Commander_Comms/CommanderCommsDB.lua"))
+local dbSource = dbFile:read("*a")
+dbFile:close()
+CHECK(dbSource:find("SupportWhisper = true", 1, true) ~= nil,
+    "support: it ships switched on")
+CHECK(dbSource:find("RangeWhisper = false", 1, true) ~= nil
+    and dbSource:find("SightWhisper = false", 1, true) ~= nil,
+    "support: and it is the only whisper that does")
+
+RangeScenario()
+
+SupportCast(10060)
+local supMsg = LastMessage()
+CHECK(sent[1] and sent[1].channel == "WHISPER" and sent[1].to == "Straggler",
+    "support: whispered to the ally it was spent on",
+    sent[1] and (sent[1].channel .. "/" .. tostring(sent[1].to)))
+CHECK(supMsg and supMsg:find("|Hspell:10060|h[Power Infusion]|h", 1, true),
+    "support: the spell goes out as a link they can hover", supMsg)
+CHECK(supMsg and supMsg:find("burn it now", 1, true),
+    "support: it says what to DO, not just what was cast", supMsg)
+
+-- Intervene puts no aura on the ally at all, which is why this reads the
+-- CAST rather than the aura events
+RangeScenario()
+SupportCast(3411)
+CHECK(LastMessage() and LastMessage():find("taking the next hit", 1, true),
+    "support: a spell that applies no aura still lands its whisper", LastMessage())
+
+-- Each spell carries its own instruction
+RangeScenario()
+SupportCast(6346)
+CHECK(LastMessage() and LastMessage():find("next fear is blocked", 1, true),
+    "support: every spell says its own thing", LastMessage())
+
+-- Only what YOUR spellbook holds: a priest never carries the druid line
+RangeScenario()
+SupportCast(29166)
+CHECK(LastMessage() == nil,
+    "support: a spell you do not know is never announced", LastMessage())
+RangeScenario()
+SupportCast(1022)
+CHECK(LastMessage() == nil,
+    "support: nor another class's blessing", LastMessage())
+
+-- A double-cast is one whisper
+RangeScenario()
+SupportCast(10060)
+SupportCast(10060)
+CHECK(#sent == 1, "support: the same spell on the same ally repeats once, not twice", #sent)
+
+-- ...but the same spell on somebody ELSE is a different message to a
+-- different person
+RangeScenario()
+SupportCast(10060, "Player-7", "Straggler")
+SupportCast(10060, "Player-8", "Anchor")
+CHECK(#sent == 2 and sent[2].to == "Anchor",
+    "support: a second ally gets their own whisper",
+    #sent .. "/" .. tostring(sent[2] and sent[2].to))
+
+-- Nobody whispers themselves a Fear Ward. The case that matters is a RAID,
+-- where you hold a raidN token of your own and so appear in the very walk
+-- that resolves an ally's GUID to a unit.
+RangeScenario()
+inRaid = true
+local realRaid1 = GUIDS.raid1
+GUIDS.raid1, NAMES.raid1 = GUIDS.player, "Kicker"
+SupportCast(6346, GUIDS.player, "Kicker")
+CHECK(LastMessage() == nil, "support: never whispered to yourself", LastMessage())
+GUIDS.raid1, NAMES.raid1 = realRaid1, "Straggler"
+inRaid = false
+
+-- A stranger out in the world is not in the group to be told
+RangeScenario()
+SupportCast(10060, "Player-99", "Wanderer")
+CHECK(LastMessage() == nil,
+    "support: only group members are whispered", LastMessage())
+
+-- Somebody else's Power Infusion is not yours to announce
+RangeScenario()
+CLEU("SPELL_CAST_SUCCESS", { sourceGUID = "Player-2", sourceName = "Levira",
+    spellID = 10060, spellName = "Power Infusion",
+    destGUID = "Player-7", destName = "Straggler", destFlags = 0 })
+CHECK(LastMessage() == nil,
+    "support: only the cooldowns YOU spend are announced", LastMessage())
+
+-- One person, so a battleground changes nothing
+RangeScenario()
+EnterBattleground(true)
+SupportCast(10060)
+CHECK(sent[1] and sent[1].channel == "WHISPER",
+    "support: a battleground does not silence it", sent[1] and sent[1].channel)
+LeaveBattleground()
+
+-- ...and it can be switched off
+RangeScenario()
+CommanderCommsDB.SupportWhisper = false
+SupportCast(10060)
+CHECK(LastMessage() == nil, "support: off means off", LastMessage())
+CommanderCommsDB.SupportWhisper = true
+
+-- ===========================================================================
+-- Mana burn: a drain on any group member's mana, told to the group with
+-- how much is left
+-- ===========================================================================
+
+-- Fresh victims each time: full bars, nobody dead, and past every window
+local function BurnScenario()
+    Advance(200)
+    ClearMessages()
+    manaNow, manaMax, dead = {}, {}, {}
+    -- Straggler (party1) runs an 8,000 bar; the others keep the 100 default
+    manaMax.party1, manaNow.party1 = 8000, 8000
+end
+
+local function Burn(amount, o)
+    o = o or {}
+    CLEU(o.subevent or "SPELL_DRAIN", {
+        sourceGUID = o.sourceGUID or "Player-2", sourceName = o.sourceName or "Levira",
+        sourceFlags = o.sourceFlags or 0,
+        destGUID = o.destGUID or "Player-7", destName = o.destName or "Straggler", destFlags = 0,
+        spellID = o.spellID or 25380, spellName = o.spellName or SPELL_NAMES[o.spellID or 25380],
+        amount = amount, powerType = o.powerType or 0,
+    })
+end
+
+-- A real Mana Burn is a line on the first cast, once the bar has caught up
+BurnScenario()
+manaNow.party1 = 3440
+Burn(1050)
+CHECK(LastMessage() == nil, "burn: nothing until the victim's bar has updated", LastMessage())
+Advance(0.3)
+local burnMsg = LastMessage()
+CHECK(#sent == 1 and sent[1].channel == "PARTY",
+    "burn: one line to the group", #sent .. "/" .. tostring(sent[1] and sent[1].channel))
+CHECK(burnMsg == "Straggler mana burned for 1050 by Levira with |cff71d5ff|Hspell:25380|h[Mana Burn]|h|r — 43% mana left.",
+    "burn: who, how much, by whom, with what, and what is left", burnMsg)
+
+-- The kicker's class rides along when a unit token can supply it
+BurnScenario()
+GUIDS.focus = "Player-2"
+Burn(1050, { sourceFlags = COMBATLOG_OBJECT_TYPE_PLAYER })
+Advance(0.3)
+CHECK(LastMessage() and LastMessage():find("by Levira (Mage)", 1, true),
+    "burn: the drainer's class is named when readable", LastMessage())
+GUIDS.focus = nil
+
+-- The victim being YOU reads in the first person
+BurnScenario()
+manaNow.player = 40
+Burn(30, { destGUID = GUIDS.player, destName = "Kicker" })
+Advance(0.3)
+CHECK(LastMessage() and LastMessage():find("^I got mana burned for 30 by Levira"),
+    "burn: on you it speaks in the first person", LastMessage())
+CHECK(LastMessage() and LastMessage():find("40% mana left", 1, true),
+    "burn: ...and still says what is left", LastMessage())
+
+-- Small ticks are added up, not announced one by one: four Viper Sting
+-- ticks of 120 on an 8,000 bar are 1.5% each, three are still under the
+-- 5% line, and four clear it together
+BurnScenario()
+for i = 1, 3 do
+    Burn(120, { subevent = "SPELL_PERIODIC_DRAIN", spellID = 27018 })
+    Advance(2)
+end
+CHECK(#sent == 0, "burn: ticks under the threshold say nothing on their own", #sent)
+Burn(120, { subevent = "SPELL_PERIODIC_DRAIN", spellID = 27018 })
+Advance(0.3)
+CHECK(#sent == 1 and LastMessage():find("for 480 (4 hits in 6s)", 1, true),
+    "burn: once they add up they are one line with the total", LastMessage())
+CHECK(LastMessage() and LastMessage():find("[Viper Sting]", 1, true),
+    "burn: ...naming the spell that did it", LastMessage())
+
+-- A quiet stretch breaks the sum: a tick long after the last starts over
+BurnScenario()
+Burn(150)
+Advance(20)
+Burn(150)
+Advance(0.3)
+CHECK(#sent == 0, "burn: ticks too far apart do not add up", #sent)
+
+-- A chain of burns is one line per window carrying everything since
+BurnScenario()
+Burn(1050)
+Advance(0.3)
+CHECK(#sent == 1, "burn: the first of a chain is immediate", #sent)
+Advance(3)
+Burn(1050)
+Advance(3)
+Burn(1050)
+Advance(0.3)
+CHECK(#sent == 1, "burn: the next burns inside the window wait", #sent)
+manaNow.party1 = 1600
+Advance(2)
+CHECK(#sent == 2 and LastMessage():find("for 2100 (2 hits in ", 1, true),
+    "burn: ...and go out together when the window ends", LastMessage())
+CHECK(LastMessage() and LastMessage():find("20% mana left", 1, true),
+    "burn: the bar is read when the line goes out, not when the burn landed", LastMessage())
+
+-- The window is a setting
+BurnScenario()
+CommanderCommsDB.ManaBurnCooldown = 4
+Burn(1050); Advance(0.3)
+Advance(3)
+Burn(1050); Advance(1.3)
+CHECK(#sent == 2, "burn: the per-victim window follows the slider", #sent)
+CommanderCommsDB.ManaBurnCooldown = 8
+
+-- ...and so is the threshold
+BurnScenario()
+CommanderCommsDB.ManaBurnMinPercent = 0.20
+Burn(1050); Advance(0.3)
+CHECK(#sent == 0, "burn: a burn under the threshold share is held back", #sent)
+CommanderCommsDB.ManaBurnMinPercent = 0.05
+
+-- Different victims are different tallies
+BurnScenario()
+Burn(1050)
+Burn(30, { destGUID = "Player-8", destName = "Anchor" })
+Advance(0.3)
+CHECK(#sent == 2, "burn: each victim gets their own line", #sent)
+
+-- Only mana. A rogue drained of energy is not news, whatever the log calls it
+BurnScenario()
+Burn(1050, { powerType = 3 })
+Advance(0.3)
+CHECK(#sent == 0, "burn: a drain of any other power is ignored", #sent)
+
+-- Only the group. An enemy burned by your own priest is their problem
+BurnScenario()
+Burn(1050, { destGUID = "Player-99", destName = "Wanderer" })
+Advance(0.3)
+CHECK(#sent == 0, "burn: a victim outside the group is not announced", #sent)
+
+-- ...and no group, no audience
+BurnScenario()
+inGroup = false
+Burn(30, { destGUID = GUIDS.player, destName = "Kicker" })
+Advance(0.3)
+CHECK(#sent == 0, "burn: never fires solo", #sent)
+inGroup = true
+
+-- A victim who died before the line went out is past caring
+BurnScenario()
+Burn(1050)
+dead.party1 = true
+Advance(0.3)
+CHECK(#sent == 0, "burn: a dead victim's line is dropped", #sent)
+
+-- Death clears the tally too, so a resurrected healer starts clean
+BurnScenario()
+Burn(150)
+CLEU("UNIT_DIED", { destGUID = "Player-7", destName = "Straggler" })
+Advance(1)
+Burn(150); Burn(150)
+Advance(0.3)
+CHECK(#sent == 0, "burn: a death forgets what was burned before it", #sent)
+
+-- Group callout, so the battleground rule applies
+BurnScenario()
+EnterBattleground(true)
+Burn(1050); Advance(0.3)
+CHECK(#sent == 0, "burn: quiet in a battleground by default", #sent)
+CommanderCommsDB.BattlegroundCallouts = true
+CommanderCommsDB.BattlegroundToParty = true
+BurnScenario()
+Burn(1050); Advance(0.3)
+CHECK(#sent == 1 and sent[1].channel == "PARTY",
+    "burn: routed to the home party when asked for", sent[1] and sent[1].channel)
+CommanderCommsDB.BattlegroundCallouts = false
+CommanderCommsDB.BattlegroundToParty = false
+LeaveBattleground()
+
+-- And it can be switched off
+BurnScenario()
+CommanderCommsDB.ManaBurnCallouts = false
+Burn(1050); Advance(0.3)
+CHECK(#sent == 0, "burn: off means off", #sent)
+CommanderCommsDB.ManaBurnCallouts = true
+
+-- It ships on: the arena case it exists for is exactly the one where the
+-- user has not been through the settings yet
+CHECK(dbSource:find("ManaBurnCallouts = true", 1, true) ~= nil,
+    "burn: it ships switched on")
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

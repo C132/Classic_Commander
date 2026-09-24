@@ -133,3 +133,40 @@ Full Scan's `ScanComplete`), reached through its event bus in a pcall. Shift-cli
 `/cfm refresh <recipe>`, searches one recipe's items. Auctionator's Full Scan remains the way to
 refresh the whole realm — it is the only thing that prices the random green in your bag for the
 disenchant verdict — but it is limited to once every fifteen minutes; this is the touch-up between.
+
+## D13 — A second profession is a second data file, not a second window
+
+First Aid (2026-09-19) is `CommanderFormularyData_FirstAid.lua`, written by the same generator
+(`make_formulary.py`, which took over from `make_enchanting.py` and is parameterised by a
+`PROFESSIONS` entry: skill line, rank ladder, category rule, the handful of manual rows). Every
+Enchanting figure came out byte-identical, except where the zone rule improved — see below. The
+window is unchanged in shape: one profession is on screen at a time, the rank readout in the toolbar
+is the switch (click to cycle, hover for every profession's rank and how its next rank is obtained),
+`/cfm firstaid` and `/cfm enchanting` do the same, and whichever stock window opens brings its
+profession on screen. The character remembers which profession they were looking at and the
+selected recipe per profession.
+
+Three things First Aid does differently, all carried in the data rather than the code. It is a
+**trade-skill** profession (`frame = "TRADESKILL"`): the window is `TradeSkillFrame`, the events are
+`TRADE_SKILL_SHOW / CLOSE`, the list is `GetNumTradeSkills / GetTradeSkillInfo` and the skill line
+is `GetTradeSkillLine`; the UI keeps one channel table per frame kind with the same four operations.
+Its **ranks are not all trainer-taught**: Expert is a book from two vendors, Artisan is the Triage
+quest (the item "Artisan First Aid - Heal Thyself" exists in the item table and is sold by nobody),
+Master is a book from Burko or Aresella that needs 300 — so a rank row carries `book` or `quests`,
+the header note says "from a book" or "from a quest" instead of "trainable", and `M.RankRoute`
+turns the row into lines with the vendor or the doctor for the character's faction. And its
+categories are the cloth (Bandages, Outland Bandages, Anti-Venom), because there is no slot.
+
+The **zone rule** had to change. Smallest-containing-box put Deneb Walker in Hillsbrad at 90.8,
+91.2 (he is at Stromgarde, Arathi 27.0, 58.8) and Balai Lok'Wein in Mulgore at 96.1, 82.4
+(Brackenwall, Dustwallow 36.5, 30.4): zone boxes overlap at their edges and the smaller neighbour
+was winning. The rule is now: a box that wholly contains another candidate loses to it (Lower City
+is Shattrath, not Terokkar); among boxes the point is at least ten percent from every edge of, the
+smallest; failing that, the deepest. It also moved eleven Enchanting placements to where the
+published locations are (Dalria to Astranaar, Vance Undergloom to Brill, Zixil to Hillsbrad). Two
+creatures that genuinely live on a zone's rim are pinned by `PLACE_IN` (Mire Lord, Meilosh).
+
+Disenchant advice stays Enchanting's and appears only for a character who has Enchanting, whatever
+profession the window is showing. A formula or manual tooltip is judged against the profession it
+belongs to — a Netherweave manual says "at 330 (you are 200)" against First Aid's 200 even while
+Enchanting at 146 is on screen.

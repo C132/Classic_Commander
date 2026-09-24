@@ -6,11 +6,20 @@ COMMANDER_BAGS_EVENTS = {
 
 local DefaultSettings = {
     ColorCodeItems = true,
+    BorderThickness = 2,
+    RarityHalo = true,
+    BindBadges = "BOTH",
     BagPositions = {},
     FadeBagsWhileMoving = true,
     FadeOpacity = 0.5,
     SortOrder = "QUALITY",
     PortraitSortClick = true,
+}
+
+local BIND_BADGES = {
+    { text = "Soulbound & BoE", value = "BOTH" },
+    { text = "BoE only", value = "BOE" },
+    { text = "Off", value = "OFF" },
 }
 
 local SORT_ORDERS = {
@@ -72,7 +81,7 @@ local function CreateOptionsPanel()
         key = "Bags",
         title = "Bags",
         addonName = "Commander_Bags",
-        description = "Your quartermaster: bag items get color-coded borders so loot reads at a glance, bag windows drag freely and remember where you put them, and everything fades out of your way while you travel.",
+        description = "Your quartermaster: bag items get color-coded borders and bind-status padlocks so loot reads at a glance, bag windows drag freely and remember where you put them, and everything fades out of your way while you travel.",
         event = COMMANDER_BAGS_EVENTS.UPDATE,
         slash = { "/cbags", "/cb" },
         slashHandlers = {
@@ -96,6 +105,33 @@ local function CreateOptionsPanel()
         tooltip = "Draw a colored border around bag items: quality colors for gear, yellow for quest items, cyan for consumables, and red for gray junk.",
         get = function() return CommanderBagsDB.ColorCodeItems end,
         set = function(value) CommanderBagsDB.ColorCodeItems = value end,
+    })
+    panel:AddSlider({
+        label = "Border Thickness",
+        tooltip = "How heavy the quality border is drawn, in pixels. Two is enough to read across a full bag; three or four is for small UI scales.",
+        min = 1, max = 4, step = 1,
+        format = function(value) return string.format("%d px", value) end,
+        get = function() return CommanderBagsDB.BorderThickness end,
+        set = function(value) CommanderBagsDB.BorderThickness = value end,
+        isEnabled = function() return CommanderBagsDB.ColorCodeItems end,
+    })
+    panel:AddCheckbox({
+        label = "Rarity Halo",
+        tooltip = "Add a faint second ring inside the border in the same color, so an epic reads as a glow rather than a hairline.",
+        get = function() return CommanderBagsDB.RarityHalo end,
+        set = function(value) CommanderBagsDB.RarityHalo = value end,
+        isEnabled = function() return CommanderBagsDB.ColorCodeItems end,
+    })
+
+    panel:AddSection("Bind Status", "A padlock in the corner of each item: closed and steel means soulbound, open and gold means it is still bind-on-equip and can still be traded, sold or disenchanted.")
+    panel:AddDropdown({
+        label = "Bind Badges",
+        tooltip = "Soulbound & BoE badges both states so nothing is ambiguous. BoE only marks just the items you have not bound yet. Off hides them.",
+        options = BIND_BADGES,
+        width = 140,
+        get = function() return CommanderBagsDB.BindBadges end,
+        set = function(value) CommanderBagsDB.BindBadges = value end,
+        isEnabled = function() return CommanderBagsDB.ColorCodeItems end,
     })
 
     panel:AddSection("Movement Fade", "Open bags turn translucent while you move and snap back to full opacity when you stop.")

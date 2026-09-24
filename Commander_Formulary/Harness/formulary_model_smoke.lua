@@ -14,6 +14,7 @@ local ROOT = HERE:match("^(.*)/Harness$") or
     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Formulary"
 
 dofile(ROOT .. "/CommanderFormularyData_Enchanting.lua")
+dofile(ROOT .. "/CommanderFormularyData_FirstAid.lua")
 dofile(ROOT .. "/CommanderFormularyModel.lua")
 
 local D = CommanderFormulary_Data.ENCHANTING
@@ -28,14 +29,14 @@ local function CHECK(cond, label, detail)
     end
 end
 
-local function World(rank, maxRank, known, bags, bank, faction, standings)
-    bags, bank, known, standings = bags or {}, bank or {}, known or {}, standings or {}
+local function World(rank, maxRank, known, bags, bank, faction, standings, data)
+    bags, bank, known, standings, data = bags or {}, bank or {}, known or {}, standings or {}, data or D
     return {
         rank = rank, maxRank = maxRank, faction = faction,
         known = function(spell) return known[spell] == true end,
         count = function(item, includeBank) return (bags[item] or 0) + (includeBank and (bank[item] or 0) or 0) end,
         standing = function(f) return standings[f] end,
-        name = function(item) return D.items[item] end,
+        name = function(item) return data.items[item] end,
         spellName = function(spell) return nil end,
     }
 end
@@ -320,6 +321,98 @@ do
     local after = 0
     for _, z in ipairs(trips) do if z.zone == "Moonglade" then after = z.count end end
     CHECK(after == before - 2, "B8 known formulas drop out of the trip", before .. " -> " .. after)
+end
+
+-- ===========================================================================
+-- C. First Aid: the same shape, generated the same way
+-- ===========================================================================
+
+local FA = CommanderFormulary_Data.FIRSTAID
+do
+    CHECK(FA and FA.key == "FIRSTAID" and FA.frame == "TRADESKILL" and FA.skillLine == 129, "C1 First Aid is a trade-skill profession")
+    local keys = {}
+    for _, c in ipairs(FA.categories) do keys[c.key] = true end
+    local faSpell = {}
+    CHECK(#FA.recipes == 15, "C1 fifteen obtainable recipes (Crystal Infused Bandage was never added)", #FA.recipes)
+    for _, rec in ipairs(FA.recipes) do
+        faSpell[rec.spell] = rec
+        CHECK(keys[rec.category], "C1 category known", rec.name)
+        CHECK(rec.yellow < rec.grey and rec.creates, "C1 thresholds and a product", rec.name)
+        CHECK(rec.trainer or (rec.formulas and #rec.formulas > 0), "C1 has a teacher", rec.name)
+        for _, pair in ipairs(rec.reagents) do CHECK(FA.items[pair[1]] ~= nil, "C1 reagent named", rec.name) end
+        for _, item in ipairs(rec.formulas or {}) do
+            CHECK(FA.formulas[item] and FA.formulas[item].learns == rec.spell and FA.items[item], "C1 manual resolves back", rec.name)
+        end
+    end
+    for item, f in pairs(FA.formulas) do
+        CHECK(faSpell[f.learns] ~= nil, "C2 manual teaches a listed recipe", item)
+        local sourced = (f.vendors and #f.vendors > 0) or f.worldDrop or (f.drops and #f.drops > 0)
+        CHECK(sourced, "C2 manual has a source", FA.items[item])
+        for _, v in ipairs(f.vendors or {}) do
+            CHECK(FA.npcs[v.npc] and FA.npcs[v.npc].zone, "C2 vendor placed", item .. " " .. v.npc)
+        end
+    end
+    -- The facts the route is built on, from the client's own tables
+    CHECK(faSpell[3275].trainer and faSpell[3275].trainer.withRank, "C3 Linen Bandage comes with the rank")
+    CHECK(faSpell[3276].yellow == 50 and faSpell[3276].grey == 100 and faSpell[3276].trainer.skill == 40, "C3 Heavy Linen thresholds and trainer skill")
+    CHECK(faSpell[7929].formulas[1] == 16112 and FA.formulas[16112].skill == 180, "C3 Heavy Silk Bandage is a manual at 180")
+    CHECK(faSpell[10841].trainer and faSpell[10841].trainer.skill == 240, "C3 Heavy Mageweave is trainer-taught at 240")
+    CHECK(faSpell[18630].trainer and faSpell[18630].trainer.skill == 290, "C3 Heavy Runecloth is trainer-taught at 290")
+    CHECK(faSpell[27032].formulas[1] == 21992 and faSpell[27033].formulas[1] == 21993, "C3 the Netherweave manuals")
+    CHECK(faSpell[7934].makes == 3 and faSpell[7934].category == "ANTIVENOM", "C3 Anti-Venom makes three")
+    CHECK(FA.formulas[6454].worldDrop and FA.formulas[6454].worldDrop.mobs > 300, "C3 Strong Anti-Venom's manual is a world drop")
+    CHECK(FA.formulas[19442].rep and FA.formulas[19442].rep.faction == 529 and FA.formulas[19442].rep.standing == 5 and FA.formulas[19442].bop,
+        "C3 Powerful Anti-Venom needs Argent Dawn Honored and binds")
+    -- The two vendors of the classic manuals and the Expert book, placed
+    -- where the published guide puts them (Stromgarde; Brackenwall)
+    local deneb, balai = FA.npcs[2805], FA.npcs[13476]
+    CHECK(deneb and deneb.zone == "Arathi Highlands" and math.abs(deneb.x - 27.0) < 1 and math.abs(deneb.y - 58.8) < 1, "C4 Deneb Walker at Stromgarde", deneb and (deneb.zone .. " " .. deneb.x .. "," .. deneb.y))
+    CHECK(balai and balai.zone == "Dustwallow Marsh" and math.abs(balai.x - 36.5) < 1 and math.abs(balai.y - 30.4) < 1, "C4 Balai Lok'Wein at Brackenwall", balai and (balai.zone .. " " .. balai.x .. "," .. balai.y))
+    CHECK(deneb.faction == "Alliance" and balai.faction == "Horde", "C4 one per faction")
+    -- The rank ladder: two trainer ranks, a book, a quest, a book
+    local r = FA.ranks
+    CHECK(#r == 5 and not r[1].book and not r[2].book, "C5 Apprentice and Journeyman from a trainer")
+    CHECK(r[3].book and r[3].book.item == 16084 and r[3].book.skill == 125 and #r[3].book.vendors == 2, "C5 Expert is a book from two vendors")
+    CHECK(r[4].quests and #r[4].quests == 2 and r[4].quests[1].name == "Triage" and r[4].at == 225, "C5 Artisan is the Triage quest at 225")
+    CHECK(r[5].book and r[5].book.item == 22012 and r[5].book.skill == 300 and r[5].outland, "C5 Master is a book at 300, in Outland")
+    for _, q in ipairs(r[4].quests) do
+        CHECK(FA.npcs[q.npc] and FA.npcs[q.npc].x, "C5 quest giver placed", q.npc)
+    end
+    CHECK(not M.MasterFromTrainer(FA) and M.MasterFromTrainer(D), "C5 no First Aid trainer teaches Master; an Enchanting one does")
+
+    -- C6 the view for a First Aider at 200 with Expert, Alliance
+    local known = { [3275] = true, [3276] = true, [3277] = true, [3278] = true, [7928] = true, [7929] = true }
+    local w = World(200, 225, known, { [4306] = 30, [16113] = 1 }, {}, "Alliance", {}, FA)
+    local v = M.Build(FA, w)
+    CHECK(v.total == 15 and v.known == 6, "C6 totals", v.known .. "/" .. v.total)
+    CHECK(v.entries[7929].known and v.entries[7929].colour == "yellow", "C6 Heavy Silk yellow at 200", v.entries[7929].colour)
+    CHECK(v.entries[7929].craftable == 15, "C6 fifteen heavy silk from thirty silk", v.entries[7929].craftable)
+    CHECK(v.entries[10840].learnable == "held-soon", "C6 the Mageweave manual in the bags, ten skill early", v.entries[10840].learnable)
+    CHECK(v.entries[10841].learnable == nil and v.entries[10841].sourceWord == "Trainer", "C6 Heavy Mageweave waits for 240", v.entries[10841].sourceWord)
+    -- A world drop with a few notable droppers reads as Drop, the same as
+    -- an Enchanting formula in that position (the notable ones are named)
+    CHECK(v.entries[7935].sourceKind == "DROP" and M.Sources(FA, v.entries[7935].rec).WORLD, "C6 Strong Anti-Venom drops, and is a world drop", v.entries[7935].sourceKind)
+    local nextRank, within = M.NextRank(FA, v)
+    CHECK(nextRank and nextRank.name == "Artisan" and not within, "C6 next rank Artisan, not yet at 225")
+    local route = M.RankRoute(FA, nextRank, w)
+    CHECK(#route == 1 and route[1].kind == "quest" and route[1].text:find("Triage") and route[1].text:find("VanHowzen") and not route[1].text:find("Victor"),
+        "C6 the Alliance doctor only", route[1] and route[1].text)
+    local expert = M.RankRoute(FA, FA.ranks[3], w)
+    CHECK(#expert == 2 and expert[1].kind == "book" and expert[2].kind == "vendor" and expert[2].text:find("Deneb"), "C6 Expert: the book and the Alliance vendor", expert[2] and expert[2].text)
+    local master = M.RankRoute(FA, FA.ranks[5], w)
+    CHECK(#master == 2 and master[2].text:find("Burko"), "C6 Master: Burko for the Alliance", master[2] and master[2].text)
+    local ench = M.RankRoute(D, D.ranks[5], w)
+    CHECK(#ench == 1 and ench[1].kind == "trainer" and ench[1].outland, "C6 Master Enchanting is an Outland trainer")
+    -- how to learn, in the profession's own words
+    local lines = M.HowToLearn(FA, v.entries[3275], w)
+    CHECK(lines[1].text:find("Apprentice First Aid itself"), "C6 Linen Bandage comes with Apprentice First Aid", lines[1].text)
+    lines = M.HowToLearn(FA, v.entries[10841], w)
+    CHECK(lines[1].text:find("First Aid trainers at 240"), "C6 trainer line names the profession", lines[1].text)
+    -- the trips filter finds the Burko trip
+    local trips = M.Trips(v, w)
+    local hellfire
+    for _, z in ipairs(trips) do if z.zone == "Hellfire Peninsula" then hellfire = z end end
+    CHECK(hellfire and hellfire.count == 2, "C6 one Hellfire trip for both Netherweave manuals", hellfire and hellfire.count)
 end
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))

@@ -312,7 +312,10 @@ local function CreateOptionsPanel()
     })
 
     -- Live preview of the selected glow texture, anchored beside the dropdown
-    local previewFrame = CreateFrame("Frame", nil, panel)
+    -- — and parented to the dropdown's own row, not to the page. The page
+    -- scrolls; anything hung on the canvas instead would hold still while the
+    -- control it belongs to slid away underneath it.
+    local previewFrame = CreateFrame("Frame", nil, dropdown:GetParent())
     previewFrame:SetSize(64, 64)
     previewFrame:SetPoint("LEFT", dropdown, "RIGHT", 24, 8)
 
@@ -357,50 +360,6 @@ end
 -- ---------------------------------------------------------------------------
 -- Casting Rings page
 -- ---------------------------------------------------------------------------
-
--- This page carries two full ring configurations and is far taller than the
--- Settings canvas, so its rows flow into a scroll frame. NewPanel's header
--- stays fixed above; AddRow is overridden on THIS panel instance only, so the
--- shared framework (and every other module's page) is untouched. Same pattern
--- as Commander_PartyFrames and Commander_Reticle. Returns the function to call
--- once Finalize has added the footer.
-local function MakeScrollable(panel, frameName)
-    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local target = self:GetVerticalScroll() - delta * 28
-        local maxScroll = self:GetVerticalScrollRange()
-        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
-        self:SetVerticalScroll(target)
-    end)
-
-    local scrollChild = CreateFrame("Frame", nil, scroll)
-    scrollChild:SetSize(1, 1)
-    scroll:SetScrollChild(scrollChild)
-    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
-
-    local seed = CreateFrame("Frame", nil, scrollChild)
-    seed:SetHeight(1)
-    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
-    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-    panel._anchor = seed
-    panel._contentHeight = 0
-    panel.AddRow = function(self, height, spacing)
-        local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetHeight(height)
-        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
-        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-        self._anchor = row
-        self._contentHeight = self._contentHeight + height + (spacing or 8)
-        return row
-    end
-
-    return function()
-        scrollChild:SetHeight(panel._contentHeight + 24)
-    end
-end
 
 local function RingsOn()
     return CommanderCastingDB.EnablePortraitRings
@@ -646,7 +605,6 @@ local function CreateRingsPanel()
             end,
         },
     })
-    local finishScroll = MakeScrollable(panel, "CommanderCastingRingsScroll")
 
     panel:AddCheckbox({
         label = "Enable Portrait Rings",
@@ -871,7 +829,6 @@ local function CreateRingsPanel()
     })
 
     panel:Finalize({ onDefaults = Reset })
-    finishScroll()
 end
 
 local function OnAwake()

@@ -1,0 +1,14 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Forecast
+## Author: Devin
+## Version: 1.1.0
+## Notes: Estimated output printed on every spell icon — what one cast would do to the target you are holding. Modeled from your gear, then corrected by what your spells actually land for.
+## IconTexture: Interface\Icons\Spell_Fire_FlameBolt
+## SavedVariables: CommanderForecastDB
+## SavedVariablesPerCharacter: CommanderForecastLog
+## RequiredDeps: Commander_Events
+
+CommanderForecastDB.lua
+CommanderForecastModel.lua
+CommanderForecast.lua

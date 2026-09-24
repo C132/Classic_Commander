@@ -4,7 +4,7 @@ Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit armory_harness.lua      # engine fixture — 459 checks
-/opt/homebrew/bin/luajit armory_ui_harness.lua   # UI + host      — 356 checks
+/opt/homebrew/bin/luajit armory_ui_harness.lua   # UI + host      — 362 checks
 /opt/homebrew/bin/luajit globals_lint.lua        # 5 files, 0 undeclared globals
 ```
 
@@ -72,6 +72,13 @@ Sections, in order:
 - **F** the bank: nothing invented before the first visit, a live withdrawal
   badge at the bank, and away from it the item **still listed**, badged and
   dimmed, with a click that says "open a banker" instead of failing silently.
+  Then the cache's two failure modes, which are the ones that actually shipped:
+  a **stray `BANKFRAME_CLOSED`** (every Escape keypress fires one) must not wipe
+  the cache *or* re-stamp its clock, while a bank that really is readable and
+  really is gear-free **must** clear it. This section only tests anything
+  because the container mock now **goes dark outside the bank**, the way the
+  client does — while it answered all session long, a cache that was written and
+  a cache that had just been clobbered looked identical to every check here.
 - **G** slot 18's three faces: `RELIC` offering only this class's librams,
   `RANGED` offering only bows, and the ammo readout following.
 - **H** the cursor and locks as primitives, before anything depends on them.

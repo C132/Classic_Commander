@@ -536,3 +536,127 @@ suite's "nothing is ever sent automatically" line is load-bearing.
 UI harness 126 → 134 checks, sabotage-verified (glyph-show line removed,
 death branch forced false — three checks fail, including the fallback
 proving the ranking path survives).
+
+## D25. Each pane owns its own segment (2026-09-05, redone 2026-09-06)
+
+Devin wanted the split able to show one metric on two segments — DPS now
+beside DPS overall, "am I ramping or falling off?" — not just two metrics
+on one segment.
+
+**The first attempt was wrong and is recorded here as the mistake it
+was.** It shipped a `SplitAxis` setting: the split differed in EITHER
+mode OR segment, flipped by right-clicking the split glyph, with pane 2
+borrowing pane 1's mode while comparing. It passed 155 harness checks and
+Devin could not find the feature at all. Two failures, both mine. The
+control was a right-click on a glyph with no affordance saying so — a
+gesture nobody discovers. And the axis was a mode where the user had
+asked for a *control*: "set overall/current/last on a per panel basis"
+describes each pane having a segment, not the window having a comparison
+setting. An option that has to be armed before the obvious click does the
+obvious thing is not an option, it is a maze.
+
+What shipped instead: **the caption IS the pane, so the caption's menu is
+the whole pane.** Two titled sections, still one level deep (the
+Quartermaster Era/Source pattern):
+
+    RIGHT PANE SHOWS      OVER
+      DAMAGE                FOLLOW LEFT PANE
+      HEALING …             OVERALL / CURRENT / LAST / F#n …
+
+No axis, no mode, no gesture. Click the pane you want to change and both
+halves of what it shows are right there. Mode and segment are fully
+independent now — a pane may differ in both, which the old axis forbade.
+D17's shared-segment argument was never about forbidding divergence; it
+was about forbidding *silent* divergence, and the caption states the pane
+in full either way.
+
+The right pane FOLLOWS the window's segment until pinned (`view.segSel2`
+nil = follow; persisted as `SplitSegment` = "follow" | "current" |
+"overall", with "last" and fight ids session-scoped exactly as
+`ViewSegment` has always been). FOLLOW LEFT PANE is the default and the
+way back, and it is what carries the checkmark while unpinned — an
+unpinned pane checks no segment of its own, because it has none. A pinned
+caption wears the ACCENT on its segment half; a following one leaves it
+dimmed. That is the whole anti-ambiguity mechanism: a divergence you did
+not ask for can never look like agreement.
+
+Plumbing: `PaneSelector`/`PaneSegment` resolve per pane, and every
+consumer that used to call the window-wide `ViewSegment()` now asks by
+pane — bar rows, the bar tooltip, and the detail popup, which follows
+`view.detailPane` for its mode already and now for its segment and
+subtitle too (a detail opened from the Overall pane must never be
+captioned CURRENT). `ViewSegment()` survives as `PaneSegment(1)` for the
+graph, the header, and the chat report, all pane-1 surfaces by
+definition. `ModeMenu` split back out of `PaneMenu` so the header's mode
+button (unsplit only) stays a plain mode list — offering a segment
+section there would duplicate the segment button sitting next to it.
+
+A pinned pane never auto-follows combat: Follow Combat moves `view.segSel`
+only, since the pin is the fixed reference the live pane is read against
+and being yanked to Last at every kill would collapse the comparison.
+Only a pruned fight id moves a pin, and then to Overall, which can never
+be pruned. External panes (D22) get no segment section at all — they own
+their data and know nothing about segments, so offering one would be a
+lie.
+
+Rejected: a third pane (D17's footprint rule is absolute — the window
+never widens); a settings-page control for any of this (the pane is the
+control; a panel row for it would be a second place to look); and keeping
+the axis as a "preset" beside the per-pane menus (two ways to say the
+same thing, one of them modal).
+
+UI harness 134 → 152 checks, sabotage-verified five ways: the pin
+ignored, the segment section removed, the FOLLOW entry removed, the
+pinned accent removed, and the header segment dragging the pin along —
+each fails exactly the checks written to catch it.
+
+## D26. APM — who is spending their globals (2026-09-13)
+Devin asked for an SC2-style actions-per-minute board: the meter that
+separates the raider who is pressing buttons from the one who is not,
+independent of class, gear, or assignment. Decisions:
+
+- **Signal = `SPELL_CAST_SUCCESS`, group players only.** It is the one
+  combat-log event that fires once per completed decision for everyone
+  in range — instants, hard casts, channels, consumables, stance dances,
+  trinkets. Movement and cancelled casts are invisible to the log, so
+  this is *casts* per minute wearing the SC2 name; the mode's own
+  breakdown (CASTS list, keyed by spell with counts and icons) makes the
+  number self-auditing — anything inflating it is one click away.
+  *Rejected*: `SPELL_CAST_START` (double-counts every hard cast) and
+  damage/heal event counts (one keypress can be twenty ticks).
+- **Minions never fold in.** D3's owner fold is skipped for this one
+  metric: a felguard's autocast Cleave is not the warlock's keypress, and
+  the pet commands that *are* keypresses do not reach the log. The
+  fixture pins a pet cast and a totem cast landing on nobody.
+- **Auto-attacks are excluded by spell ID** (`AUTO_CASTS`: Auto Shot 75,
+  wand Shoot 5019) — the client reports both as casts, neither is a
+  decision. The list is data; anything else found spamming can join it.
+- **Casts never open a fight and never hold one open.** Unlike utility
+  events they do not stamp `lastEventTs`/`lastActivityTs`, so every
+  DPS/HPS denominator is byte-identical to before, a pre-pull buff opens
+  nothing, and a post-kill rebuff cannot pad a fight. Casts inside an
+  open fight simply count.
+- **Per-minute is a mode property, not a special case.** `rateScale`
+  (default 1) multiplies the per-second rate every other mode uses;
+  `CollectRows` applies it and the UI's one `ModeRate` helper mirrors it
+  in the tooltip and detail sub-line; the graph keeps plotting the 1 s
+  `sCasts` buckets and multiplies only its scale label. `valueLabel`
+  joined at the same time so the tooltip reads CASTS / APM instead of
+  APM / APM — and fixed the DPS mode's identical DAMAGE / DPS quirk in
+  passing.
+- **Presentation** follows DPS: the rate is the headline, the count the
+  small column, `activeCast` (2 s-gap-merged, the ACTIVE_GAP rule) in the
+  detail header so "42 APM, active 1:10 of 3:00" reads as the dead-time
+  it is. Its stat color is a violet of its own (`statApm`) — activity is
+  neither damage nor utility. Fourth per-actor series: worst-case memory
+  in D8 rises by a third, realistically by far less (a cast bucket is a
+  small integer, never a 5-digit sum).
+- **Session snapshot version 1 → 2**: a pre-APM snapshot has actors
+  without the new fields and is refused, per D18's "malformed is refused,
+  never guessed" rule — the cost is one lost resume on the upgrade
+  /reload.
+
+Engine harness 736 → 842 checks, UI harness 152 → 164; the fixture pins
+the counts, the record/series sum invariants, the auto-attack and
+pet/totem/enemy exclusions, the unmoved fight-end stamp, the per-minute
+rate, and the v1 snapshot rejection.

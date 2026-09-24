@@ -808,13 +808,37 @@ eq(roll.won, true, "roll: win detected")
 eq(roll.myRoll, 94, "roll: own roll number captured")
 eq(roll.decided, 2, "roll: decided count is players who ANSWERED")
 
--- A withdrawn roll is not a missed roll. Mislabelling it would destroy the
--- credibility of the missed counter.
+-- CANCEL_LOOT_ROLL closes the row but does NOT decide it: the server sends it
+-- the moment a contest ends, ahead of the chat line that says who won. Deciding
+-- on the cancel dropped nearly every real contest out of the log.
 rollDB[103] = { itemID = 21877, canNeed = true, canGreed = true, timeLeft = 5000 }
 Fire("START_LOOT_ROLL", 103, 60000)
 Fire("CANCEL_LOOT_ROLL", 103)
-eq(E.rollByID[103].cancelled, true, "roll: cancel marks withdrawn")
-CHECK(not E.rollByID[103].missed, "roll: a withdrawn roll is NOT marked missed")
+eq(E.rollByID[103].closing, true, "roll: cancel closes the row")
+CHECK(not E.rollByID[103].resolved, "roll: cancel does NOT decide the contest")
+CHECK(not E.rollByID[103].cancelled, "roll: withdrawn is not claimed before the grace")
+
+-- The verdict lands inside the grace: that is what the row is held open for.
+E.OnRollChat("|HlootHistory:9|h[Loot]|h: Grimbold won: " .. Link(21877))
+eq(E.rollByID[103].resolved, true, "roll: a late verdict still resolves the row")
+eq(E.rollByID[103].winner, "Grimbold", "roll: the winner from chat lands on the row")
+CHECK(not E.rollByID[103].cancelled, "roll: a decided contest is never withdrawn")
+local wonRow = E.Data.rolls[#E.Data.rolls]
+eq(wonRow.w, "Grimbold", "roll log: the contest reached the log with its winner")
+
+-- Nothing arrives: only then is it withdrawn, and still not missed.
+rollDB[105] = { itemID = 21877, canNeed = true, canGreed = true, timeLeft = 5000 }
+Fire("START_LOOT_ROLL", 105, 60000)
+Fire("CANCEL_LOOT_ROLL", 105)
+RunFrames(0.2, 30)      -- past ROLL_CLOSE_GRACE, driving PruneRolls
+CHECK(not E.rollByID[105] or E.rollByID[105].cancelled,
+    "roll: the grace expires into a withdrawal")
+local withdrawn
+for i = #E.Data.rolls, 1, -1 do
+    if E.Data.rolls[i].o == "c" then withdrawn = E.Data.rolls[i]; break end
+end
+CHECK(withdrawn ~= nil, "roll log: a withdrawn contest is logged, not lost")
+CHECK(withdrawn and withdrawn.my ~= -1, "roll log: a withdrawal is NOT stamped missed")
 
 -- An unanswered roll that someone else wins IS missed.
 rollDB[104] = { itemID = 22526, canNeed = true, canGreed = true, timeLeft = 1000 }
@@ -832,6 +856,50 @@ end
 CHECK(packedRoll and type(packedRoll.p[1]) == "string",
     "roll log: player detail stored as packed strings")
 CHECK(packedRoll and packedRoll.p[1]:find(":"), "roll log: packed field separator present")
+
+-- The full sequence a real contest arrives in: the cancel closes the row, chat
+-- names the winner, and only THEN does loot history complete with everyone's
+-- choices and the numbers they rolled. That last update used to be skipped
+-- because the row was already resolved, so every logged contest had names and
+-- choices but no numbers — the one thing the pane exists to show.
+rollDB[106] = { itemID = 28429, canNeed = true, canGreed = true, timeLeft = 30000 }
+Fire("START_LOOT_ROLL", 106, 60000)
+historyItems = { { rollID = 106, link = Link(28429), done = false, winnerIdx = nil,
+    players = {
+        { name = "Grimbold", class = "WARRIOR", rollType = 1 },
+        { name = "Selune",   class = "PRIEST",  rollType = 2 },
+    } } }
+Fire("LOOT_HISTORY_FULL_UPDATE")
+Fire("CANCEL_LOOT_ROLL", 106)
+E.OnRollChat("|HlootHistory:1|h[Loot]|h: Grimbold won: " .. Link(28429))
+local contest = E.Data.rolls[#E.Data.rolls]
+eq(contest.w, "Grimbold", "roll log: the contest is logged the moment chat decides it")
+historyItems[1].done, historyItems[1].winnerIdx = true, 1
+historyItems[1].players[1].roll, historyItems[1].players[1].winner = 94, true
+historyItems[1].players[2].roll = 71
+Fire("LOOT_HISTORY_ROLL_COMPLETE")
+local detail = table.concat(contest.p or {}, " ")
+CHECK(detail:find("Grimbold:WARRIOR:1:94", 1, true),
+    "roll log: the completion update backfills the winner's roll number", detail)
+CHECK(detail:find("Selune:PRIEST:2:71", 1, true),
+    "roll log: and every loser's choice and number too", detail)
+eq(contest.wc, "WARRIOR", "roll log: history supplies the class chat never carries")
+eq(contest.wr, 94, "roll log: and the winning roll")
+eq(#E.Data.rolls, #E.Data.rolls, "roll log: the revision updates the row, it does not add one")
+historyItems = {}
+
+-- A verdict for a contest we never saw start (zoned in mid-pull, or a reload)
+-- still belongs in the log.
+local before = #E.Data.rolls
+E.OnRollChat("|HlootHistory:2|h[Loot]|h: Selune won: " .. Link(21024))
+eq(#E.Data.rolls, before + 1, "roll log: a verdict with no row of its own is still logged")
+eq(E.Data.rolls[#E.Data.rolls].w, "Selune", "roll log: the loose row names the winner")
+
+-- ...but a contest that DID write its own row must not get a second one from
+-- the same chat line.
+before = #E.Data.rolls
+E.OnRollChat("|HlootHistory:1|h[Loot]|h: Grimbold won: " .. Link(28429))
+eq(#E.Data.rolls, before, "roll log: one contest never becomes two rows")
 
 -- Reload recovery: a live roll must survive a UI reload.
 E.rolls, E.rollByID = {}, {}
@@ -1154,6 +1222,41 @@ CHECK(blob:find("Selune", 1, true), "field: ROLLS lists the losers too")
 CHECK(blob:find("NEED", 1, true) and blob:find("GREED", 1, true) and blob:find("PASS", 1, true),
     "field: ROLLS says what each of them chose", blob)
 CHECK(blob:find("94", 1, true), "field: ROLLS shows the numbers they rolled")
+
+-- A logged contest from a PREVIOUS session was written to the 60-day roll log
+-- and then unreachable: every scope starts at login or later, and BuildRollList
+-- drops logged rows older than the scope's start. The pane read empty after
+-- every relog while the log filled up behind it.
+local sessionStart = E.SegmentFor("SESSION").startEpoch
+-- Front of the list: the log is append-ordered by resolution, so the oldest
+-- contest is index 1 and that is where a previous session's rows sit.
+table.insert(E.Data.rolls, 1, {
+    t = sessionStart - 7200, id = 22526, q = 3, n = 1,
+    w = "Oldwinner", wc = "MAGE", wt = 1, wr = 88, my = 2, myRoll = 12,
+})
+local function RollPaneBlob()
+    local parts = {}
+    for i = 1, DB.MaxRows do
+        local row = _G["CommanderSpoilsRow" .. i]
+        if row and row.__shown then
+            parts[#parts + 1] = (row.name:GetText() or "") .. "/" .. (row.right:GetText() or "")
+        end
+    end
+    return table.concat(parts, "|")
+end
+DB.ViewScope = "SESSION"
+Commander.Notify(COMMANDER_SPOILS_EVENTS.UPDATE)
+CHECK(not RollPaneBlob():find("Oldwinner", 1, true),
+    "roll log: SESSION still stops at the session boundary", RollPaneBlob())
+DB.ViewScope = "ALL"
+Commander.Notify(COMMANDER_SPOILS_EVENTS.UPDATE)
+CHECK(RollPaneBlob():find("Oldwinner", 1, true),
+    "roll log: ALL reaches contests from earlier sessions", RollPaneBlob())
+eq(E.SegmentFor("ALL").fromIdx, 1, "scope: ALL folds the ledger from the first row")
+CHECK(E.SegmentFor("ALL").startEpoch <= sessionStart - 7200,
+    "scope: ALL starts no later than the oldest retained roll")
+table.remove(E.Data.rolls, 1)
+DB.ViewScope = "SESSION"
 
 -- (c) The feed merges consecutive identical pickups instead of listing twenty.
 E.Wipe(true)

@@ -116,47 +116,6 @@ local function Enabled()
     return CommanderThreatDB.EnableThreat
 end
 
--- The chrome block pushes this page past the Settings canvas, so its rows
--- flow into a scroll frame — AddRow overridden on the panel INSTANCE only
--- (the Reticle/Quartermaster/Meters pattern).
-local function MakeScrollable(panel, frameName)
-    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local target = self:GetVerticalScroll() - delta * 28
-        local maxScroll = self:GetVerticalScrollRange()
-        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
-        self:SetVerticalScroll(target)
-    end)
-
-    local scrollChild = CreateFrame("Frame", nil, scroll)
-    scrollChild:SetSize(1, 1)
-    scroll:SetScrollChild(scrollChild)
-    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
-
-    local seed = CreateFrame("Frame", nil, scrollChild)
-    seed:SetHeight(1)
-    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
-    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-    panel._anchor = seed
-    panel._contentHeight = 0
-    panel.AddRow = function(self, height, spacing)
-        local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetHeight(height)
-        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
-        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-        self._anchor = row
-        self._contentHeight = self._contentHeight + height + (spacing or 8)
-        return row
-    end
-
-    return function()
-        scrollChild:SetHeight(panel._contentHeight + 24)
-    end
-end
-
 local RELOAD_NOTE = "Takes effect after /reload (baked into the board at login)."
 
 local function CreateCorePanel()
@@ -174,7 +133,6 @@ local function CreateCorePanel()
             healer = function() CommanderThreat_SetRole("HEALER") end,
         },
     })
-    local finishScroll = MakeScrollable(panel, "CommanderThreatCoreScroll")
 
     panel:AddSection("Threat")
 
@@ -372,7 +330,6 @@ local function CreateCorePanel()
         onDefaults = Reset,
         defaultsTooltip = "Reset every option on this page to its default value. Character roles are kept — only the role dropdown itself can change them.",
     })
-    finishScroll()
 end
 
 frame:SetScript("OnEvent", function(_, event, arg1)

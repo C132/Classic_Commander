@@ -700,6 +700,7 @@ db = CommanderQuartermasterDB
 CHECK(#harnessFailedErrors == 0, "A: login clean", harnessFailedErrors[1])
 CHECK(db.EnableQuartermaster == true, "A: defaults applied")
 CHECK(type(db.Watchlist) == "table", "A: watchlist map initialized")
+CHECK(type(db.Favorites) == "table", "A: favorites map initialized")
 CHECK(db.TrackTransit == true and db.RaidCheck == true, "A: new defaults present")
 
 local meRec = CommanderQuartermasterLedger.Aleria.Devinq
@@ -836,8 +837,9 @@ CHECK(browser and browser:IsShown(), "E: browser opens")
 CHECK(browser.TitleText.__text == "Quartermaster", "E: window title set")
 local rows, sidebar, list = browser._rows, browser._sidebar, browser._list
 
-CHECK(sidebar[1].key == "WATCHLIST", "E: watchlist pinned atop the sidebar")
-CHECK(sidebar[2].key == "ALL", "E: All Items follows")
+CHECK(sidebar[1].key == "FAVORITES", "E: favorites pinned atop the sidebar")
+CHECK(sidebar[2].key == "WATCHLIST", "E: watchlist next")
+CHECK(sidebar[3].key == "ALL", "E: All Items follows")
 
 local function RowTexts()
     local out = {}
@@ -1131,6 +1133,10 @@ CHECK(type(dispatch) == "function", "J: slash registered")
 dispatch("reset")
 CHECK(db.EraFilter == "ALL", "J: reset restores defaulted settings")
 CHECK(db.Watchlist["Aleria\001Devinq"][22851] == 15, "J: reset keeps watch targets")
+CommanderQuartermaster_SetFavorite(22851, true)
+dispatch("reset")
+CHECK(db.Favorites[22851] == true, "J: reset keeps favorites")
+CommanderQuartermaster_SetFavorite(22851, false)
 mark = #printLog
 dispatch("ready")
 CHECK(FindPrint("readiness", mark), "J: /cqm ready dispatches")
@@ -1412,6 +1418,47 @@ end
 CHECK(slotKeys.HEAD and slotKeys.WEAPON, "O: slots listed in the sidebar")
 CHECK(slotKeys["GEM:META"] and slotKeys["GEM:ORANGE"] and not slotKeys.GEM,
     "O: gems list by colour rather than as one wall of 242")
+
+-- EVERY colour, not just the ones that happened to fit.
+--
+-- The sidebar was a fixed pool of twenty buttons that silently dropped the
+-- overflow, and the Gear view needs twenty-four rows. Purple, Green and
+-- Prismatic fell off the end -- so all 242 gems were in the database and three
+-- whole shelves were absent from the window, which from the outside is
+-- indistinguishable from the data being wrong. Checking two colours is what
+-- let that ship; this checks all of them.
+for _, group in ipairs(CommanderQuartermasterEnhance.GemGroups) do
+    CHECK(slotKeys["GEM:" .. group.key] == true,
+        "O: the " .. group.name .. " gem shelf is reachable in the sidebar")
+end
+CHECK(slotKeys.OTHER == true, "O: and the row after the gems survives too")
+
+-- A gem shelf is a catalogue: rarity first, then name. Ranking a colour by
+-- what suits your spec is right for an enchant and useless for looking a gem
+-- up, which is what the shelf is for.
+sidebarByKey("GEM:RED").onClick()
+local gemRows = {}
+for _, item in ipairs(list) do
+    if item.kind == "enh" then gemRows[#gemRows + 1] = item.entry end
+end
+CHECK(#gemRows > 20, "O: the red shelf lists its gems", #gemRows)
+local ordered, prevQ, prevName = true, math.huge, nil
+for _, entry in ipairs(gemRows) do
+    local q = entry.quality or 0
+    if q > prevQ then
+        ordered = false
+    elseif q == prevQ and prevName and (entry.name or "") < prevName then
+        ordered = false
+    end
+    prevQ, prevName = q, entry.name or ""
+end
+CHECK(ordered, "O: sorted by rarity, then alphabetically inside each rarity")
+CHECK((gemRows[1].quality or 0) >= (gemRows[#gemRows].quality or 0),
+    "O: the best rarity leads the shelf")
+
+-- Back to My Gear: the checks below read the equipped-slot audit, and the
+-- shelf we just opened replaced it.
+sidebarByKey("MYGEAR").onClick()
 
 -- The audit page: one row per equipped slot, verdict in the note
 local gearRows = {}
@@ -1964,6 +2011,178 @@ CHECK(#insertedLinks == before, "T: a plain click links nothing")
 world.equipped = {}
 Sync()
 db.BrowserView, db.BrowserSlot = "BROWSE", "MYGEAR"
+browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
+
+-- ===========================================================================
+-- U: favorites — the star, its shelves, its filter, and where it speaks
+-- ===========================================================================
+
+db.BrowserView, db.BrowserCategory = "BROWSE", "FLASKS"
+browser:Show()
+browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
+-- Hold one flask and none of the other, so the badge and the shopping list
+-- each have both cases to answer for
+world.bags[1] = { { id = 22851, count = 4 } }
+Sync()
+
+local function RowFor(pred)
+    for _, row in ipairs(rows) do
+        if row.__shown and row.item and pred(row.item) then return row end
+    end
+end
+
+local starRow = RowFor(function(item) return item.kind == "item" and item.id == 22851 end)
+CHECK(starRow ~= nil, "U: a flask row is on screen")
+CHECK(starRow.favKey == 22851, "U: an item row stars under its item id", tostring(starRow.favKey))
+CHECK(starRow.star.__shown, "U: and wears the star gutter")
+
+starRow.star.__scripts.OnClick(starRow.star)
+FlushTimers()
+CHECK(db.Favorites[22851] == true, "U: clicking the star writes the favorite")
+CHECK(CommanderQuartermaster_IsFavorite(22851), "U: and the reader agrees")
+
+-- The shelf: category headers kept, so it reads like the database it came from
+local favBtn = sidebarByKey("FAVORITES")
+CHECK(favBtn.badgeFS.__text == "|cff33ff991|r", "U: sidebar badge counts the star", favBtn.badgeFS.__text)
+favBtn.onClick()
+CHECK(list[1] and list[1].kind == "header" and list[1].text:find("Flask", 1, true),
+    "U: the shelf keeps the category header", list[1] and list[1].text)
+CHECK(ListHas(22851), "U: and lists the starred flask")
+CHECK(not ListHas(22854), "U: and nothing else")
+
+-- A star on something you hold nowhere is what the badge is really for
+CommanderQuartermaster_SetFavorite(32898, true)
+FlushTimers()
+favBtn = sidebarByKey("FAVORITES")
+CHECK(favBtn.badgeFS.__text:find("|cffffd200", 1, true), "U: badge flags the ones held nowhere", favBtn.badgeFS.__text)
+
+-- The tooltip says so too, and it says so with counts turned off
+text = TipFor(22851)
+CHECK(text:find("Favorite", 1, true), "U: tooltip carries the star", text)
+db.TooltipCounts = false
+Sync()
+CHECK(TipFor(22851):find("Favorite", 1, true), "U: even with tooltip counts off")
+db.TooltipCounts = true
+Sync()
+
+-- Un-starring from the shelf drops the row; the empty shelf explains itself
+favBtn.onClick()
+starRow = RowFor(function(item) return item.kind == "item" and item.id == 22851 end)
+starRow.star.__scripts.OnClick(starRow.star)
+FlushTimers()
+CHECK(not CommanderQuartermaster_IsFavorite(22851), "U: a second click un-stars")
+CHECK(not ListHas(22851), "U: and the shelf loses the row")
+CommanderQuartermaster_SetFavorite(32898, false)
+FlushTimers()
+sidebarByKey("FAVORITES").onClick()
+CHECK(list[1] and list[1].kind == "header" and list[1].text:find("Nothing starred", 1, true),
+    "U: an empty shelf tells you how to fill it", list[1] and list[1].text)
+
+-- The filter: same star, applied to whatever page you are on
+CommanderQuartermaster_SetFavorite(22851, true)
+FlushTimers()
+db.FavoritesOnly = true
+-- through the settings event, the way the panel's own checkbox reaches it
+Commander.Notify(COMMANDER_QUARTERMASTER_EVENTS.UPDATE)
+sidebarByKey("FLASKS").onClick()
+CHECK(ListHas(22851) and not ListHas(22854), "U: favorites-only filters the category")
+CHECK(browser.filterBtn.__text:find("*", 1, true), "U: and the Filter button says a filter is on",
+    browser.filterBtn.__text)
+db.FavoritesOnly = false
+Commander.Notify(COMMANDER_QUARTERMASTER_EVENTS.UPDATE)
+sidebarByKey("FLASKS").onClick()
+CHECK(ListHas(22854), "U: clearing it brings the rest back")
+CHECK(browser.filterBtn.__text == "Filter", "U: and the button stops flagging one",
+    browser.filterBtn.__text)
+
+-- Neither a header nor a character can be starred
+db.BrowserView = "CHARS"
+browser.viewChars.__scripts.OnClick(browser.viewChars)
+local charRow = RowFor(function(item) return item.kind == "char" end)
+CHECK(charRow and charRow.favKey == nil, "U: a character row has no star")
+CHECK(charRow and not charRow.star.__shown, "U: and hides the gutter")
+
+-- Enhancements star too: by carrier item where there is one, by enchant where
+-- an enchanter casts it
+db.BrowserView, db.BrowserSlot = "GEAR", "HEAD"
+browser.viewGear.__scripts.OnClick(browser.viewGear)
+local enhRow = RowFor(function(item) return item.kind == "enh" and item.entry.item end)
+CHECK(enhRow and enhRow.favKey == enhRow.item.entry.item,
+    "U: an enhancement with a carrier stars under the item id", tostring(enhRow and enhRow.favKey))
+enhRow.star.__scripts.OnClick(enhRow.star)
+FlushTimers()
+local enhID = enhRow.item and enhRow.item.entry.item
+CHECK(db.Favorites[enhID] == true, "U: starring an enhancement writes the same map")
+
+db.BrowserSlot = "CHEST"
+sidebarByKey("CHEST").onClick()
+local castRow = RowFor(function(item) return item.kind == "enh" and not item.entry.item end)
+CHECK(castRow and tostring(castRow.favKey):find("^e:%d+:%d+$"),
+    "U: an enchanter-cast enchant stars under enchant+spell", tostring(castRow and castRow.favKey))
+castRow.star.__scripts.OnClick(castRow.star)
+FlushTimers()
+CHECK(CommanderQuartermaster_IsFavorite(castRow.favKey), "U: and that key reads back")
+
+-- The Gear page gets its own shelf, holding both of them
+local gearFav = sidebarByKey("FAVORITES")
+CHECK(gearFav ~= nil, "U: the Gear page has a favorites shelf")
+CHECK(gearFav.badgeFS.__text == "|cff33ff992|r", "U: badged with both enhancements", gearFav.badgeFS.__text)
+gearFav.onClick()
+local shelfItems, shelfCast = false, false
+for _, item in ipairs(list) do
+    if item.kind == "enh" then
+        if item.entry.item == enhID then shelfItems = true end
+        if not item.entry.item then shelfCast = true end
+    end
+end
+CHECK(shelfItems and shelfCast, "U: and lists the carrier and the cast enchant together")
+
+-- The consumables shelf collects everything, enhancements under their own head
+db.BrowserView = "BROWSE"
+browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
+sidebarByKey("FAVORITES").onClick()
+local sawEnhHead = false
+for _, item in ipairs(list) do
+    if item.kind == "header" and item.text:find("Enhancements", 1, true) then sawEnhHead = true end
+end
+CHECK(sawEnhHead, "U: the consumables shelf files enhancements under their own header")
+CHECK(ListHas(22851), "U: alongside the starred flask")
+
+-- The shopping list: a star you hold none of is the plainest signal there is.
+-- 22851 is starred AND in the bags; 32898 is starred and held by nobody.
+CommanderQuartermaster_SetFavorite(32898, true)
+FlushTimers()
+CommanderQuartermaster_ShoppingList()
+local shopFavText = CommanderQuartermasterShopFrame.edit.__text or ""
+local favBlock = shopFavText:match("FAVORITES[^\n]*\n(.-)\n\n")
+    or shopFavText:match("FAVORITES[^\n]*\n(.*)$") or ""
+CHECK(favBlock:find("Shattrath Flask of Fortification", 1, true),
+    "U: the shopping list carries favorites held nowhere", shopFavText)
+CHECK(not favBlock:find("- Flask of Fortification", 1, true),
+    "U: and leaves out the ones you already hold", favBlock)
+db.ShopFavorites = false
+CommanderQuartermaster_ShoppingList()
+CHECK(not (CommanderQuartermasterShopFrame.edit.__text or ""):find("FAVORITES", 1, true),
+    "U: the setting takes them off again")
+db.ShopFavorites = true
+
+-- Chat surface
+mark = #printLog
+dispatch("fav")
+CHECK(FindPrint("favorite", mark), "U: /cqm fav prints the shelf")
+CHECK(FindPrint("none", mark), "U: naming what you hold none of")
+
+-- One door out, and it asks first
+mark = #popupLog
+StaticPopup_Show("COMMANDER_QM_CLEARFAVS")
+CHECK(popupLog[#popupLog].which == "COMMANDER_QM_CLEARFAVS", "U: Clear Favorites confirms")
+StaticPopupDialogs["COMMANDER_QM_CLEARFAVS"].OnAccept()
+FlushTimers()
+CHECK(next(db.Favorites) == nil, "U: and the accept clears every star")
+
+db.BrowserView, db.BrowserCategory, db.BrowserSlot = "BROWSE", "FLASKS", "MYGEAR"
+world.bags[1] = nil
+Sync()
 browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
 
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])

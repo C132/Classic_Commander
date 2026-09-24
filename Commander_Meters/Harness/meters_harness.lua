@@ -80,7 +80,7 @@ function Fixture:bucket(fight, guid, field, amount)
     local a = f[guid]
     if not a then
         a = { dmg = 0, heal = 0, absorb = 0, taken = 0, deaths = 0, misses = 0,
-            ints = 0, dispels = 0, ccb = 0 }
+            ints = 0, dispels = 0, ccb = 0, casts = 0 }
         f[guid] = a
     end
     a[field] = a[field] + amount
@@ -176,6 +176,14 @@ function Fixture:dispel(ts, sg, sn, sf, dg, dn, df, what, stolen, owner)
     self:bucket(self.fightNo, owner or sg, "dispels", 1)
 end
 
+-- counted: whether the harness expects the engine to count it (players
+-- only, inside a fight, auto-attacks excluded)
+function Fixture:cast(ts, sg, sn, sf, dg, dn, df, spellId, spell, counted)
+    self.E.OnCleu(ts, "SPELL_CAST_SUCCESS", nil, sg, sn, sf, 0, dg, dn, df, 0,
+        spellId, spell, 1)
+    if counted then self:bucket(self.fightNo, sg, "casts", 1) end
+end
+
 -- counted: whether the harness expects the engine to count it (CC filter)
 function Fixture:ccbreak(ts, sg, sn, sf, dg, dn, df, aura, counted, viaSpell)
     if viaSpell then
@@ -224,9 +232,30 @@ local function RunFight1(fx)
     -- Summons land before any fight opens: they must not open one
     CHECK(not E.InFight(), "A: summons do not open a fight")
 
+    -- A pre-pull cast is not combat: it neither opens a fight nor counts
+    fx:cast(T0 - 2, A, "Vanguard", FP_MINE, A, "Vanguard", FP_MINE, 2457, "Battle Stance", false)
+    CHECK(not E.InFight(), "A: casts do not open a fight")
+
     -- t=0: warrior swings open the fight
     fx:swing(T0 + 0, A, "Vanguard", FP_MINE, M1, "Gnarl", FENEMY, 400, 0, false)
     CHECK(E.InFight(), "A: damage opens the fight")
+
+    -- APM: the warlock casts every bolt, the warrior spends globals every
+    -- other second; the pet's cast, the totem's, and the hunter-style
+    -- auto-attack casts are not keypresses
+    for i = 0, 7 do
+        fx:cast(T0 + 0.9 + i * 2, B, "Diabolist", FP_PARTY, M1, "Gnarl", FENEMY, 686, "Shadow Bolt", true)
+    end
+    for i = 0, 4 do
+        fx:cast(T0 + 1 + i * 2, A, "Vanguard", FP_MINE, M1, "Gnarl", FENEMY,
+            i % 2 == 0 and 11567 or 7373, i % 2 == 0 and "Heroic Strike" or "Hamstring", true)
+    end
+    fx:cast(T0 + 2.1, PET, "Grimtongue", FPET, M2, "Gnarl Guard", FENEMY, 30213, "Cleave", false)
+    fx:cast(T0 + 3.1, TOTEM, "Searing Totem", FTOTEM, M1, "Gnarl", FENEMY, 3606, "Attack", false)
+    fx:cast(T0 + 4.1, A, "Vanguard", FP_MINE, M1, "Gnarl", FENEMY, 75, "Auto Shot", false)
+    fx:cast(T0 + 4.2, A, "Vanguard", FP_MINE, M1, "Gnarl", FENEMY, 5019, "Shoot", false)
+    -- An enemy's cast is somebody else's APM
+    fx:cast(T0 + 4.3, M1, "Gnarl", FENEMY, A, "Vanguard", FP_MINE, 12345, "Gnarl Bolt", false)
 
     for i = 1, 9 do
         fx:swing(T0 + i, A, "Vanguard", FP_MINE, M1, "Gnarl", FENEMY, 400 + i, 0, i % 3 == 0)
@@ -259,7 +288,9 @@ local function RunFight1(fx)
     fx:absorbSwing(T0 + 14, M2, "Gnarl Guard", FENEMY, C, "Confessor", FP_MINE, C, "Confessor", FP_MINE, 620)
     fx:absorbSpell(T0 + 15, M1, "Gnarl", FENEMY, C, "Confessor", FP_MINE, C, "Confessor", FP_MINE, 480)
     -- Heals: crit with overheal, then a periodic tick
+    fx:cast(T0 + 16, C, "Confessor", FP_MINE, A, "Vanguard", FP_MINE, 2060, "Greater Heal", true)
     fx:heal(T0 + 16, C, "Confessor", FP_MINE, A, "Vanguard", FP_MINE, 2060, "Greater Heal", 2400, 700, true)
+    fx:cast(T0 + 17, C, "Confessor", FP_MINE, A, "Vanguard", FP_MINE, 139, "Renew", true)
     fx:heal(T0 + 17, C, "Confessor", FP_MINE, A, "Vanguard", FP_MINE, 139, "Renew", 300, 0, false)
     -- Falling damage on the warrior
     fx:environmental(T0 + 18, A, "Vanguard", FP_MINE, "Falling", 260)
@@ -329,6 +360,8 @@ local function CheckSegment(E, seg, expected, expTotals, label, wantSeries)
                 eq(a.ints, exp.ints, label .. ": interrupts " .. guid)
                 eq(a.dispels, exp.dispels, label .. ": dispels " .. guid)
                 eq(a.ccb, exp.ccb, label .. ": cc breaks " .. guid)
+                eq(a.casts, exp.casts, label .. ": casts " .. guid)
+                eq(SumRecords(a.castSpells), a.casts, label .. ": cast records sum " .. guid)
                 eq(SumRecords(a.intSpells), a.ints, label .. ": int records sum " .. guid)
                 eq(SumRecords(a.dispelSpells), a.dispels, label .. ": dispel records sum " .. guid)
                 eq(SumRecords(a.ccSpells), a.ccb, label .. ": cc records sum " .. guid)
@@ -343,6 +376,7 @@ local function CheckSegment(E, seg, expected, expTotals, label, wantSeries)
                     eq(SumSeries(a.sDmg), a.dmg, label .. ": sDmg sum " .. guid)
                     eq(SumSeries(a.sHeal), a.heal + a.absorb, label .. ": sHeal sum " .. guid)
                     eq(SumSeries(a.sTaken), a.dtaken, label .. ": sTaken sum " .. guid)
+                    eq(SumSeries(a.sCasts), a.casts, label .. ": sCasts sum " .. guid)
                 else
                     CHECK(a.sDmg == nil and a.sHeal == nil and a.sTaken == nil,
                         label .. ": no series " .. guid)
@@ -412,7 +446,7 @@ do
             local o = expOverall[guid]
             if not o then
                 o = { dmg = 0, heal = 0, absorb = 0, taken = 0, deaths = 0, misses = 0,
-                    ints = 0, dispels = 0, ccb = 0 }
+                    ints = 0, dispels = 0, ccb = 0, casts = 0 }
                 expOverall[guid] = o
             end
             for k, v in pairs(exp) do o[k] = o[k] + v end
@@ -500,6 +534,30 @@ eq(f1.actors[D].dispels, 1, "A: spellsteal counts as a dispel")
 eq(f1.actors[A].ccb, 1, "A: polymorph break counted")
 eq(f1.actors[B].ccb, 1, "A: sap break via spell counted")
 CHECK(f1.actors[A].ccSpells["Ice Armor"] == nil, "A: non-CC aura break filtered")
+
+-- APM: players only, auto-attacks excluded, casts hold nothing open
+eq(f1.actors[B].casts, 8, "A: warlock casts counted")
+eq(f1.actors[A].casts, 5, "A: warrior casts exclude Auto Shot and Shoot")
+eq(f1.actors[C].casts, 2, "A: priest heal casts counted")
+eq(f1.actors[D].casts, 0, "A: totem cast never folds into the shaman")
+CHECK(f1.actors[B].castSpells["Shadow Bolt"] ~= nil
+    and f1.actors[B].castSpells["Shadow Bolt"].count == 8
+    and f1.actors[B].castSpells["Shadow Bolt"].id == 686,
+    "A: cast records keyed by spell with id")
+CHECK(f1.actors[B].castSpells["Grimtongue: Cleave"] == nil, "A: pet cast not credited to the owner")
+eq(f1.actors[A].activeCast, 8, "A: cast active time merges 2 s gaps")
+do
+    local apm
+    for _, m in ipairs(E.MODES) do if m.key == "APM" then apm = m end end
+    CHECK(apm ~= nil and apm.rateScale == 60 and apm.primary == "rate", "A: APM mode is a per-minute rate mode")
+    local rows, n, total, dur = E.CollectRows(f1, apm, T0 + 100)
+    eq(n, 3, "A: APM rows list only actors who cast")
+    eq(rows[1].actor.guid, B, "A: APM ranks the warlock first")
+    eq(total, 15, "A: APM total is the cast count")
+    CHECK(math.abs(rows[1].rate - 8 * 60 / dur) < 1e-9, "A: APM rate is casts per minute", rows[1].rate)
+    -- A cast after the last damage event must not have padded the fight
+    eq(f1.tsEnd, T0 + 24, "A: fight end stamp unmoved by casts")
+end
 
 -- Kill/wipe tagging: mid-fight, post-close within the window, and never
 -- rewriting older history
@@ -711,8 +769,10 @@ do
     CHECK(E8.ImportSession(nil, T0 + 500) == false, "A: nil snapshot refused")
     CHECK(E8.ImportSession({ v = 99, savedAt = T0 + 500 }, T0 + 500) == false,
         "A: wrong-version snapshot refused")
-    CHECK(E8.ImportSession({ v = 1, savedAt = T0 + 500, overall = "garbage" }, T0 + 500) == false,
+    CHECK(E8.ImportSession({ v = 2, savedAt = T0 + 500, overall = "garbage" }, T0 + 500) == false,
         "A: corrupt snapshot refused")
+    CHECK(E8.ImportSession({ v = 1, savedAt = T0 + 500, overall = snap.overall }, T0 + 500) == false,
+        "A: pre-APM (v1) snapshot refused")
     CHECK(E8.GetOverall().totals.dmg == 0, "A: refused imports leave a clean state")
     E8.OnCleu(T0 + 500, "SWING_DAMAGE", nil, A, "Vanguard", FP_MINE, 0, M1, "Gnarl", FENEMY, 0,
         100, 0, 1, 0, 0, 0, false, false, false, false)

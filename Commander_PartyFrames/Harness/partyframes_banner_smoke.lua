@@ -5,6 +5,13 @@
 --     luajit partyframes_banner_smoke.lua PRIEST
 --     luajit partyframes_banner_smoke.lua DRUID
 --     luajit partyframes_banner_smoke.lua PALADIN
+--
+-- A second mode runs the CLICK-CAST board, which the sorted run cannot reach:
+-- whether the rows are secure is decided once at login and never again, so it
+-- needs its own process rather than a section:
+--     luajit partyframes_banner_smoke.lua MAGE clickcast
+-- It reuses this whole mock and exits after the secure-board section, so the
+-- sorted run above is untouched by it.
 -- Verification for the 4.2.0
 -- banner utilities: the split drink/eat consume button, inventory counters,
 -- the mana gem control, the portals/teleports popout, and the all-class
@@ -113,6 +120,28 @@ WidgetMT.__index = function(self, key)
         local fn = function(s) return rawget(s, field) or fallback end
         rawset(self, key, fn); return fn
     end
+    -- Scale, on the same terms as size. The header's right-hand controls are
+    -- SCALED rather than resized -- their glyphs are drawn from a dozen quads
+    -- each, so the cheap way to make them bigger is one call on the button --
+    -- and a flat 1 here would make the whole Control Size setting invisible
+    -- to this harness. It also matters that a getter reports what was set:
+    -- the engine skips its own SetScale when the frame already carries the
+    -- value it wants.
+    if key == "SetScale" then
+        local fn = function(s, v) s.__scale = v end
+        rawset(self, key, fn); return fn
+    end
+    if key == "GetScale" or key == "GetEffectiveScale" then
+        local fn = function(s) return rawget(s, "__scale") or 1 end
+        rawset(self, key, fn); return fn
+    end
+    -- Face, size and outline, recorded for the same reason the colours are:
+    -- "what is this written in" is a question the Header section now answers,
+    -- and a no-op would let every answer pass.
+    if key == "SetFont" then
+        local fn = function(s, path, size, flags) s.__font = { path, size, flags } end
+        rawset(self, key, fn); return fn
+    end
     if NUMERIC_GETTERS[key] ~= nil then
         local v = NUMERIC_GETTERS[key]
         local fn = function() return v end
@@ -203,6 +232,14 @@ WidgetMT.__index = function(self, key)
     -- of this board's chrome is drawn rather than loaded, so without this the
     -- colour of every glyph was simply invisible to the harness.
     if key == "SetColorTexture" then
+        local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
+        rawset(self, key, fn); return fn
+    end
+    -- ...and the same field again for text. Urgency on this board is carried
+    -- as much by what colour a number is as by what the number says — a red
+    -- countdown and a green one are different instructions — and until this
+    -- was recorded every one of those was invisible to the harness.
+    if key == "SetTextColor" then
         local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
         rawset(self, key, fn); return fn
     end
@@ -361,8 +398,12 @@ end
 
 SOUNDKIT = { IG_MAINMENU_OPTION_CHECKBOX_ON = 1, IG_MAINMENU_OPTION_CHECKBOX_OFF = 2,
     IG_CHARACTER_INFO_TAB = 841, READY_CHECK = 8960, RAID_WARNING = 8959 }
-function PlaySound() end
-function PlaySoundFile() end
+-- Sounds are recorded rather than swallowed: the Mending alert's whole
+-- contract is WHEN it makes a noise, so the noise has to be observable.
+_G.__sounds = {}
+function PlaySound(id) _G.__sounds[#_G.__sounds + 1] = id end
+function PlaySoundFile(f) _G.__sounds[#_G.__sounds + 1] = f end
+function _G.__clearSounds() for i = #_G.__sounds, 1, -1 do _G.__sounds[i] = nil end end
 BACKDROP_SLIDER_8_8 = {}
 
 local categories = {}
@@ -390,12 +431,37 @@ C_Timer = {
     end,
 }
 
-function UIDropDownMenu_Initialize() end
+-- These were all no-ops, and a no-op dropdown mock cannot see the one thing
+-- that actually goes wrong with a dropdown: an options table built with the
+-- wrong key. Every other control in the settings file captions itself with
+-- `label`, the dropdown framework reads `text`, and a table using the former
+-- builds a control whose face and whose every entry are BLANK -- with no
+-- error, at build time, on a page nothing was asserting about. It shipped.
+--
+-- So: run the initializer, record what the entries and the face are given,
+-- and let CheckDropdowns below fail on an empty one.
+function UIDropDownMenu_Initialize(frame, fn)
+    if not (frame and fn) then return end
+    frame.__ddEntries = {}
+    _G.__ddCurrent = frame
+    local ok, err = pcall(fn, frame)
+    if not ok then caughtErrors[#caughtErrors + 1] = "dropdown init: " .. tostring(err) end
+    _G.__ddCurrent = nil
+end
 function UIDropDownMenu_CreateInfo() return {} end
-function UIDropDownMenu_AddButton() end
+function UIDropDownMenu_AddButton(info)
+    local f = _G.__ddCurrent
+    if f and f.__ddEntries and info then
+        f.__ddEntries[#f.__ddEntries + 1] = info
+    end
+end
 function UIDropDownMenu_SetWidth() end
-function UIDropDownMenu_SetSelectedValue() end
-function UIDropDownMenu_SetText() end
+function UIDropDownMenu_SetSelectedValue(frame, value)
+    if frame then frame.__ddValue = value end
+end
+function UIDropDownMenu_SetText(frame, text)
+    if frame then frame.__ddText = text end
+end
 function UIDropDownMenu_EnableDropDown() end
 function UIDropDownMenu_DisableDropDown() end
 function UIDropDownMenu_Refresh() end
@@ -404,6 +470,7 @@ SlashCmdList = {}
 
 -- --- Units -----------------------------------------------------------------
 local CLASS = (arg and arg[1]) or "MAGE"
+local SECURE = (arg and arg[2]) == "clickcast"
 local playerClass = CLASS
 local targetUnit = nil          -- nil = no target
 local targetFriendly = true
@@ -440,6 +507,11 @@ inCombat = false
 function InCombatLockdown() return inCombat end
 function IsInRaid() return false end
 function IsInGroup() return false end
+-- Where we are. The battleground marks reserve their row slots from this
+-- rather than from the setting alone, so the section that exercises them has
+-- to be able to zone.
+instanceKind = "none"
+function IsInInstance() return instanceKind ~= "none", instanceKind end
 function GetNumGroupMembers() return 0 end
 function GetNumSubgroupMembers() return 0 end
 function GetRaidTargetIndex() return nil end
@@ -464,6 +536,7 @@ function HasPetUI() return false end
 -- Only what the banner needs: the mage's conjures/teleports/gems, plus the
 -- names the engine resolves at login.
 local SPELLS = {
+    [57724] = "Sated", [57723] = "Exhaustion",
     [17] = "Power Word: Shield", [6788] = "Weakened Soul", [139] = "Renew",
     [1459] = "Arcane Intellect", [23028] = "Arcane Brilliance",
     [5504] = "Conjure Water", [587] = "Conjure Food",
@@ -550,6 +623,11 @@ local SPELLS = {
     [2139] = "Counterspell", [12472] = "Icy Veins", [12043] = "Presence of Mind",
     [12042] = "Arcane Power", [11129] = "Combustion", [66] = "Invisibility",
     [122] = "Frost Nova",
+    -- Battleground marks: never learned by anybody, read straight out of the
+    -- client's spell data (see util.ResolveBGBook)
+    [23333] = "Warsong Flag", [23335] = "Silverwing Flag",
+    [34976] = "Netherstorm Flag",
+    [23505] = "Berserking", [23493] = "Restoration", [23451] = "Speed",
 }
 local knownIds = {}
 local function Learn(...) for _, id in ipairs({ ... }) do knownIds[id] = true end end
@@ -622,8 +700,14 @@ function _G.__setClog(t) clogEvent = t end
 
 -- --- Auras -----------------------------------------------------------------
 local playerBuffs, unitDebuffs = {}, {}   -- unitDebuffs[unit] = { {name=,expirationTime=} }
+local unitBuffs = {}                      -- unit -> { {name=,icon=,expirationTime=,duration=} }
+function _G.__setUnitBuffs(unit, list) unitBuffs[unit] = list end
 C_UnitAuras = {
-    GetBuffDataByIndex = function(unit, i) return unit == "player" and playerBuffs[i] or nil end,
+    GetBuffDataByIndex = function(unit, i)
+        local list = unitBuffs[unit]
+        if list then return list[i] end
+        return unit == "player" and playerBuffs[i] or nil
+    end,
     GetDebuffDataByIndex = function(unit, i)
         local list = unitDebuffs[unit]
         return list and list[i] or nil
@@ -664,6 +748,18 @@ Load(ADDONS .. "/Commander_PartyFrames/CommanderPartyFramesDB.lua")
 Fire("ADDON_LOADED", "Commander_PartyFrames")
 Load(ADDONS .. "/Commander_PartyFrames/CommanderPartyFrames.lua")
 
+-- The engine's shield-capacity read is live from the first UNIT_AURA, and
+-- this mock's widgets auto-generate every Set*/Get*/Is* method — so
+-- scanTip:SetUnitBuff exists, satisfies the engine's guard, and then NumLines
+-- (which matches no prefix) does not, and the whole aura pass dies on the
+-- first real PW:S. Give it a baseline of NO tooltip lines, which is exactly
+-- what an ally the client cannot address looks like: capacity falls back to
+-- the rank table, the way it does in the client. The forecast section far
+-- below replaces this with lines of its own.
+if _G.CommanderPartyFramesScanTip then
+    _G.CommanderPartyFramesScanTip.NumLines = function() return 0 end
+end
+
 -- Stock the bags before login so the first bind pass sees them
 bags[30703] = 20      -- Conjured Mana Biscuit? (best water rank in the book)
 bags[8079] = 12       -- a lower water rank too
@@ -682,11 +778,222 @@ _G.PartyFrame = NewWidget("Frame", "PartyFrame")
 -- it on screen — showing it conjures raid frames for someone who never asked.
 _G.CompactPartyFrame = NewWidget("Frame", "CompactPartyFrame")
 _G.CompactPartyFrame.__shown = false
+-- Blizzard's raid frames: CompactRaidFrameContainer sits on UIParent on its
+-- own (NOT under PartyFrame), and Blizzard decides its visibility from the
+-- group state and the manager tab's Show/Hide toggle through
+-- CompactRaidFrameManager_UpdateContainerVisibility(). The mock starts it
+-- shown (as if in a raid) and lets the test move the "should show" answer.
+_G.CompactRaidFrameContainer = NewWidget("Frame", "CompactRaidFrameContainer")
+_G.CompactRaidFrameManager = NewWidget("Frame", "CompactRaidFrameManager")
+_G.CompactRaidFrameManager.container = _G.CompactRaidFrameContainer
+raidFramesWanted = true
+function CompactRaidFrameManager_UpdateContainerVisibility()
+    if raidFramesWanted then
+        _G.CompactRaidFrameContainer:Show()
+    else
+        _G.CompactRaidFrameContainer:Hide()
+    end
+end
+
+-- Set BEFORE login and after defaults: whether the rows are secure is read
+-- once, in the login handler, and nothing re-reads it (the settings page says
+-- as much — the option asks for a /reload). So the clickcast run has to
+-- arrive at login already asking for it.
+if SECURE then CommanderPartyFramesDB.ClickCast = true end
 
 Fire("PLAYER_LOGIN")
 Fire("BAG_UPDATE_DELAYED")
 
 CHECK(#caughtErrors == 0, "login runs clean", caughtErrors[1])
+
+-- ===========================================================================
+-- The CLICK-CAST board (second mode: `clickcast`)
+-- ===========================================================================
+-- Whether a row is a secure unit button is decided once, at login, from the
+-- setting — so this whole board is unreachable from the sorted run and had no
+-- coverage at all until now. Which matters more than a gap usually does: it
+-- is the mode anyone playing off @mouseover macros is in, and the promise it
+-- makes is that the row's `unit` attribute is set and stays set. A tooltip
+-- script cannot touch an attribute, but "cannot" is what a test is for.
+if SECURE then
+    -- Two allies, so the roster produces real tokens rather than just ours
+    local rE, rG = UnitExists, UnitGUID
+    UnitExists = function(u) return u == "party1" or u == "party2" or rE(u) end
+    UnitGUID = function(u)
+        if u == "party1" or u == "party2" then return u .. "-guid" end
+        return rG(u)
+    end
+    IsInGroup = function() return true end
+    GetNumGroupMembers = function() return 3 end
+    Fire("GROUP_ROSTER_UPDATE")
+
+    local row = _G.CommanderPartyFramesRow1
+    CHECK(row ~= nil, "the click-cast board builds named secure rows")
+    if row then
+        CHECK(row.__kind == "Button", "each row is a Button, not a Frame", row.__kind)
+        CHECK(row.__secureTemplate == true and row.__protected == true,
+            "built from a secure template, so the client will honour its clicks")
+        CHECK(row.__clicks ~= nil, "and registered for clicks")
+    end
+
+    -- The row carrying us: the one whose token a @mouseover macro resolves.
+    local selfRow
+    for i = 1, 8 do
+        local r = _G["CommanderPartyFramesRow" .. i]
+        if r and r.unitToken == "player" then selfRow = r end
+    end
+    CHECK(selfRow ~= nil, "one row carries the player's own raw token")
+    if not selfRow then
+        io.write(string.format("[%s clickcast] %d checks, %d failures\n", CLASS, checks, fails))
+        os.exit(fails == 0 and 0 or 1)
+    end
+    CHECK(selfRow:GetAttribute("unit") == "player",
+        "the unit ATTRIBUTE is the raw token — this is what makes @mouseover work",
+        tostring(selfRow:GetAttribute("unit")))
+
+    -- --- The row tooltip ---------------------------------------------------
+    -- Instrumented here rather than in the mock proper: only this board has a
+    -- row tooltip, so only this run has any reason to record one.
+    local tipLines, tipUnit, tipShown = {}, nil, false
+    local tip = _G.GameTooltip
+    tip.SetOwner = function() end
+    tip.ClearLines = function() tipLines, tipUnit = {}, nil end
+    tip.SetUnit = function(_, u) tipUnit = u; tipLines[#tipLines + 1] = "UNIT:" .. tostring(u) end
+    tip.AddLine = function(_, text) tipLines[#tipLines + 1] = tostring(text) end
+    tip.AddDoubleLine = function(_, l, r2) tipLines[#tipLines + 1] = tostring(l) .. "|" .. tostring(r2) end
+    tip.NumLines = function() return #tipLines end
+    tip.Show = function() tipShown = true end
+    tip.Hide = function() tipShown = false end
+
+    local function Hover()
+        tipLines, tipUnit, tipShown = {}, nil, false
+        local fn = selfRow.__scripts.OnEnter
+        if fn then fn(selfRow) end
+    end
+
+    local db = CommanderPartyFramesDB
+    db.Forecast, db.ForecastTooltip = "BAR", true
+    db.ForecastWindow, db.ForecastMinPct = 0, 0
+    db.ForecastDots, db.ForecastHots, db.ForecastCasts = true, true, true
+
+    -- Something for the board to actually have notes ABOUT
+    local function Clog(sub, spell, amount)
+        __setClog({ now, sub, false, "player-guid", "Tester", 0, 0,
+                    "player-guid", "Tester", 0, 0, 99101, spell, 32, amount,
+                    0, 32, 0, 0, 0, false })
+        Fire("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+    Clog("SPELL_PERIODIC_DAMAGE", "Smoke Dot", 40)
+    unitDebuffs.player = { { name = "Smoke Dot", expirationTime = now + 12, duration = 12 } }
+    Fire("UNIT_AURA", "player")
+
+    db.RowTooltip = "FULL"
+    Hover()
+    CHECK(tipShown == true and tipUnit == "player",
+        "Unit + Board Notes shows the game's own unit tooltip", tostring(tipUnit))
+    CHECK(#tipLines > 1, "with the board's notes under it", #tipLines)
+    CHECK(tipLines[2] == " ",
+        "separated from the unit block by a spacer", tostring(tipLines[2]))
+
+    db.RowTooltip = "EXTRAS"
+    Hover()
+    CHECK(tipShown == true and tipUnit == nil,
+        "Board Notes Only drops the unit half", tostring(tipUnit))
+    CHECK(tipLines[1] == "Pending",
+        "...and opens straight on the notes, with no leading blank line",
+        tostring(tipLines[1]))
+
+    -- A row with nothing to add must show nothing, not an empty grey box
+    unitDebuffs.player = {}
+    Fire("UNIT_AURA", "player")
+    Hover()
+    CHECK(tipShown == false and #tipLines == 0,
+        "a quiet row shows no tooltip at all in notes-only mode", #tipLines)
+
+    db.RowTooltip = "OFF"
+    unitDebuffs.player = { { name = "Smoke Dot", expirationTime = now + 12, duration = 12 } }
+    Fire("UNIT_AURA", "player")
+    Hover()
+    CHECK(tipShown == false and #tipLines == 0,
+        "Off shows nothing even with notes to show", #tipLines)
+
+    -- The promise. Every mode above must leave the attribute exactly alone,
+    -- because that is the whole of what a mouseover macro reads.
+    CHECK(selfRow:GetAttribute("unit") == "player",
+        "and no tooltip setting has touched the unit attribute",
+        tostring(selfRow:GetAttribute("unit")))
+    db.RowTooltip = "EXTRAS"
+    Hover()
+    CHECK(selfRow:GetAttribute("unit") == "player",
+        "...still, after hovering in every mode",
+        tostring(selfRow:GetAttribute("unit")))
+
+    -- --- Nearby Raid on secure rows ---------------------------------------
+    -- The hard case for the whole feature. Secure attributes may not be
+    -- rewritten in combat, so a re-pick landed mid-fight cannot take effect —
+    -- and the thing that must NOT happen is that it half-takes effect, or
+    -- silently vanishes. It is made, parked, and applied when the fight ends.
+    local raidUp, raidYards = {}, {}
+    for i = 1, 6 do raidUp["raid" .. i] = true; raidYards["raid" .. i] = i * 10 end
+    local nE, nG = UnitExists, UnitGUID
+    UnitExists = function(u)
+        if u and u:find("^raid") then return raidUp[u] == true end
+        return nE(u)
+    end
+    UnitGUID = function(u)
+        if u and u:find("^raid") then return u .. "-guid" end
+        return nG(u)
+    end
+    IsInRaid = function() return true end
+    UnitPosition = function(u)
+        if u == "player" then return 0, 0, 0, 1 end
+        local d = raidYards[u]
+        if not d then return nil end
+        return 0, d, 0, 1
+    end
+
+    inCombat = false
+    db.NearMode = true
+    db.NearCount = 4
+    Fire("GROUP_ROSTER_UPDATE")
+    local function TokenOf(i)
+        local r = _G["CommanderPartyFramesRow" .. i]
+        return r and r:GetAttribute("unit") or nil
+    end
+    CHECK(TokenOf(1) == "player" and TokenOf(2) == "raid1"
+        and TokenOf(3) == "raid2" and TokenOf(4) == "raid3",
+        "the nearby pick binds RAW tokens, closest first, so @mouseover still works",
+        table.concat({ tostring(TokenOf(1)), tostring(TokenOf(2)),
+                       tostring(TokenOf(3)), tostring(TokenOf(4)) }, " "))
+
+    -- A re-pick mid-fight: made, but not applied, and nothing protected touched
+    inCombat = true
+    blockedCalls = {}
+    raidYards.raid6 = 1
+    local moved = CommanderPartyFrames_NearRefresh(false)
+    CHECK(moved == true, "a re-pick in combat still happens")
+    CHECK(#blockedCalls == 0,
+        "without a single protected call", blockedCalls[1])
+    CHECK(TokenOf(2) == "raid1",
+        "and without rewriting a bound token mid-fight", tostring(TokenOf(2)))
+
+    -- ...and lands the moment the fight ends, off the same deferral every
+    -- other secure change on this board already uses
+    inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(TokenOf(2) == "raid6",
+        "the parked pick lands when combat drops", tostring(TokenOf(2)))
+
+    db.NearMode = false
+    IsInRaid = function() return false end
+    UnitPosition = nil
+    UnitExists, UnitGUID = nE, nG
+    Fire("GROUP_ROSTER_UPDATE")
+
+    CHECK(#caughtErrors == 0, "no errors on the click-cast board", caughtErrors[1])
+    io.write(string.format("[%s clickcast] %d checks, %d failures\n", CLASS, checks, fails))
+    os.exit(fails == 0 and 0 or 1)
+end
 
 -- ===========================================================================
 -- Buttons and bindings
@@ -820,6 +1127,38 @@ end
 -- Default party frames: the header toggle. Class-independent, so both the
 -- mage run and the early-exiting non-mage run call it.
 -- ===========================================================================
+-- ===========================================================================
+-- Every dropdown on this page actually says something
+-- ===========================================================================
+-- Chassis, not a layer, and a shared check BOTH exit paths run — the way
+-- CheckBlizzToggle is — because the non-mage classes leave before the tail.
+--
+-- A dropdown is the one control that can be wired completely wrongly and
+-- still LOOK built. The frame appears, the arrow works, the menu opens — and
+-- the face and every line in it are blank, with no error at any point. That
+-- is exactly what an options table keyed `label` instead of `text` produces,
+-- and `label` is what every OTHER control in the settings file calls its own
+-- caption, so it is the natural thing to write. It shipped that way, because
+-- every dropdown function in this mock was a no-op and nothing was looking.
+function CheckDropdowns()
+    local seen, blankFace, blankEntry = 0, nil, nil
+    for i = 1, 400 do
+        local dd = _G["CommanderUIDropDown" .. i]
+        if dd then
+            seen = seen + 1
+            if not dd.__ddText or dd.__ddText == "" then blankFace = blankFace or i end
+            for _, info in ipairs(dd.__ddEntries or {}) do
+                if not info.text or info.text == "" then blankEntry = blankEntry or i end
+            end
+        end
+    end
+    CHECK(seen > 0, "the page built dropdowns to check", tostring(seen))
+    CHECK(blankFace == nil, "every dropdown shows its current value",
+        blankFace and ("CommanderUIDropDown" .. blankFace) or "")
+    CHECK(blankEntry == nil, "...and every entry in every menu is captioned",
+        blankEntry and ("CommanderUIDropDown" .. blankEntry) or "")
+end
+
 function CheckBlizzToggle()
     local pf = _G.PartyFrame
     local toggleBtn
@@ -834,10 +1173,14 @@ function CheckBlizzToggle()
     CHECK(CommanderPartyFramesDB.HideBlizzardParty == false, "the hide setting defaults off")
     CHECK(type(pf.__scripts.OnShow) == "function", "an OnShow guard is installed on PartyFrame")
     CHECK(toggleBtn.slash.__shown == false, "the glyph is unstruck while they are shown")
+    local rf = _G.CompactRaidFrameContainer
+    CHECK(rf.__shown == true, "default raid frames start shown")
+    CHECK(type(rf.__scripts.OnShow) == "function", "an OnShow guard is installed on the raid container too")
 
     toggleBtn.__scripts.OnClick()
     CHECK(CommanderPartyFramesDB.HideBlizzardParty == true, "clicking sets the hide flag")
     CHECK(pf.__shown == false, "clicking hides the default party frames")
+    CHECK(rf.__shown == false, "...and the default raid frames with them")
     CHECK(toggleBtn.slash.__shown == true, "the glyph is struck through while they are hidden")
 
     -- Blizzard re-shows the container on its own (roster changes, leaving
@@ -845,10 +1188,37 @@ function CheckBlizzToggle()
     pf:Show()
     pf.__scripts.OnShow(pf)
     CHECK(pf.__shown == false, "a Blizzard-side Show() is undone by the guard")
+    -- The raid container comes back through Blizzard's own updater on every
+    -- roster change; same answer
+    CompactRaidFrameManager_UpdateContainerVisibility()
+    rf.__scripts.OnShow(rf)
+    CHECK(rf.__shown == false, "a Blizzard-side raid-frame Show() is undone by the guard")
+
+    -- Raised mid-fight, the guard must not touch it: it stays up, and the
+    -- deferred re-apply takes it down when combat drops
+    inCombat = true
+    rf:Show()
+    rf.__scripts.OnShow(rf)
+    CHECK(rf.__shown == true, "a container Blizzard raises in combat is left alone")
+    inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(rf.__shown == false, "...and dropped again once combat ends")
 
     toggleBtn.__scripts.OnClick()
     CHECK(CommanderPartyFramesDB.HideBlizzardParty == false, "clicking again clears the flag")
     CHECK(pf.__shown == true, "the default party frames come back")
+    CHECK(rf.__shown == true, "the default raid frames come back")
+
+    -- Restoring the raid container asks Blizzard whether it should be up,
+    -- rather than showing blindly: hidden in a raid, given back after the
+    -- raid was left, it must stay down
+    toggleBtn.__scripts.OnClick()
+    CHECK(rf.__shown == false, "raid frames hidden again for the restore check")
+    raidFramesWanted = false
+    toggleBtn.__scripts.OnClick()
+    CHECK(rf.__shown == false, "restore defers to Blizzard when the raid frames are no longer wanted")
+    CHECK(pf.__shown == true, "...while the party frames are shown as before")
+    raidFramesWanted = true
 
     -- ...and the guard must not fight a legitimate show once the flag is off
     pf.__scripts.OnShow(pf)
@@ -925,7 +1295,7 @@ if CLASS == "DRUID" then
 
     local function HotRow()
         for _, f in ipairs(allFrames) do
-            if f.strip and f.stripe then return f end
+            if f.strip and f.stripe and not f.scratch then return f end
         end
     end
     -- The shared DrawOnce lives further down (it is part of the mage run), so
@@ -989,10 +1359,22 @@ if CLASS == "DRUID" then
     CHECK(row.strip[1].cd.__cdDur == 12, "each sweep runs its own hot's duration", row.strip[1].cd.__cdDur)
     CHECK(row.strip[2].cd.__cdDur == 21, "...Regrowth's 21s, not a shared constant", row.strip[2].cd.__cdDur)
     CHECK(row.strip[3].cd.__cdDur == 7, "...and Lifebloom's 7s", row.strip[3].cd.__cdDur)
-    CHECK(row.strip[3].count.__shown == true and row.strip[3].count.__text == 3,
-        "Lifebloom carries its stack count", tostring(row.strip[3].count.__text))
+    -- Lifebloom is a ROLL now: the sweep gives way to a clock, and the stack
+    -- digit to three pips. The sweep is still STAMPED with the right duration
+    -- (turning the Lifebloom instruments off has to put it straight back),
+    -- it is simply not what the slot shows.
+    CHECK(row.strip[3].cd.__shown == false,
+        "the roll's radial sweep gives way to its clock")
+    CHECK(row.strip[3].clock.__shown == true,
+        "Lifebloom carries a readable countdown instead")
+    CHECK(row.strip[3].count.__shown == false,
+        "and its stack digit gives way to the pips")
+    CHECK(row.strip[3].pips[1].__shown and row.strip[3].pips[3].__shown,
+        "all three stack pips are drawn")
     CHECK(row.strip[1].count.__shown == false,
         "a hot that does not stack carries no digit")
+    CHECK(row.strip[1].clock.__shown == false and row.strip[1].pips[1].__shown == false,
+        "and a hot that is not the roll gets neither clock nor pips")
     -- Lifebloom (7s) is the soonest of the three, so it owns the number.
     -- Refresh advances the clock a tick, hence 5 rather than the 6 it was set to.
     CHECK(row.left.__text == "5s", "the row's number is the hot that falls off FIRST", row.left.__text)
@@ -1032,6 +1414,156 @@ if CLASS == "DRUID" then
     SetHots(30, 30, 3)      -- Lifebloom about to bloom
     CHECK(Stripe() == "0.35,0.85,1.00", "a hot inside the refresh window turns the row cyan", Stripe())
 
+    -- --- The roll ----------------------------------------------------------
+    -- Everything Lifebloom got that the other two hots did not. The failure
+    -- this exists to catch is the one that prompted it: a seven-second buff
+    -- wearing the same amber as a twenty-one-second one, for most of its
+    -- life, until the amber stopped meaning anything and it fell off.
+    local db = CommanderPartyFramesDB
+    db.LBDisplay, db.LBStackPips = "BOTH", true
+    db.LBRefreshAt, db.LBLateAt = 3, 1.5
+    db.LBPriority, db.LBAlert, db.LBAlertSound = false, false, false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
+    local lb = 3            -- the Lifebloom slot; Rejuv and Regrowth are 1 and 2
+    -- Deliberately does NOT advance the clock, unlike Refresh: these assert
+    -- on exact remaining times, and on a row flash that lasts nine tenths of
+    -- a second and would have burned down inside a one-second tick.
+    local function Roll(left, stacks)
+        playerBuffs[4].expirationTime = now + left
+        playerBuffs[4].applications = stacks or 3
+        playerBuffs[2].expirationTime = now + 30
+        playerBuffs[3].expirationTime = now + 30
+        Fire("UNIT_AURA", "player")
+    end
+    local function ClockColor()
+        local c = row.strip[lb].clock.__color or {}
+        return string.format("%.2f,%.2f,%.2f", c[1] or -1, c[2] or -1, c[3] or -1)
+    end
+
+    -- Whole seconds while there is time, TENTHS once there is not: the last
+    -- three seconds are where a tenth decides between a refresh and a bloom,
+    -- and they are exactly the part of a radial sweep nobody can read.
+    Roll(6, 3)
+    CHECK(row.strip[lb].clock.__text == "6",
+        "the roll's clock counts whole seconds while there is time",
+        tostring(row.strip[lb].clock.__text))
+    CHECK(ClockColor() == "0.35,0.85,0.45",
+        "and reads green outside its window", ClockColor())
+    Roll(2.4, 3)
+    CHECK(row.strip[lb].clock.__text == "2.4",
+        "and switches to tenths inside the last three seconds",
+        tostring(row.strip[lb].clock.__text))
+
+    -- Its OWN window. Four seconds left is inside the shared hot window and
+    -- outside Lifebloom's, which is the whole point of separating them.
+    Roll(5, 3)
+    CHECK(ClockColor() == "0.35,0.85,0.45",
+        "four seconds of a seven-second buff is not urgent", ClockColor())
+    Roll(2.5, 3)
+    CHECK(ClockColor() == "0.75,0.55,1.00",
+        "at three stacks the window is a bloom decision, not a reminder", ClockColor())
+    Roll(2.5, 1)
+    CHECK(ClockColor() == "1.00,0.72,0.20",
+        "below three stacks the same window is a plain refresh", ClockColor())
+    Roll(1.2, 3)
+    CHECK(ClockColor() == "1.00,0.25,0.22",
+        "and under Late At everything turns red", ClockColor())
+
+    -- The pips ARE the stack count, and they light from the left
+    Roll(6, 2)
+    CHECK(row.strip[lb].pips[2].__shown and row.strip[lb].pips[3].__shown,
+        "all three pips are drawn whatever the stack count")
+    local litPip = row.strip[lb].pips[2].__color or {}
+    local darkPip = row.strip[lb].pips[3].__color or {}
+    CHECK((litPip[2] or 0) > (darkPip[2] or 1),
+        "two stacks lights two pips and leaves the third dark")
+
+    -- The roll bar: the drain strip the druid board has never had a use for
+    CHECK(row.wsBar.__shown == true, "the roll takes the row's empty drain strip")
+    local barW = row._barW or 100
+    CHECK(math.abs((row.wsBar.__w or 0) - barW * (6 / 7)) < 0.51,
+        "and empties over the roll's own seven seconds",
+        tostring(row.wsBar.__w) .. " of " .. tostring(barW))
+    local wc = row.wsBar.__color or {}
+    CHECK((wc[2] or 0) > (wc[1] or 1), "green while there is time")
+    Roll(1.2, 3)
+    wc = row.wsBar.__color or {}
+    CHECK((wc[1] or 0) > (wc[2] or 1), "red once you are late")
+
+    -- The row state follows the SLOTS' own windows, not one shared number.
+    -- Three and a half seconds is inside the hot strip's four and outside the
+    -- roll's three, and a row that turned cyan while the Lifebloom slot was
+    -- still green would be the board contradicting itself in two places a
+    -- druid reads at the same time.
+    db.HotRefreshAt = 4
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Roll(3.5, 3)
+    CHECK(ClockColor() == "0.35,0.85,0.45" and Stripe() ~= "0.35,0.85,1.00",
+        "the roll's own window governs the row, not the hot strip's",
+        ClockColor() .. " / " .. Stripe())
+    Roll(2.5, 3)
+    CHECK(Stripe() == "0.35,0.85,1.00",
+        "...and inside it the row turns cyan with the slot", Stripe())
+
+    -- Bar Only and Clock Only each drop the other half
+    db.LBDisplay = "BAR"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Roll(6, 3)
+    CHECK(row.wsBar.__shown == true and row.strip[lb].clock.__shown == false,
+        "Bar Only keeps the drain and drops the clock")
+    CHECK(row.strip[lb].count.__shown == true and row.strip[lb].count.__text == 3,
+        "...and the stack count falls back to the plain digit",
+        tostring(row.strip[lb].count.__text))
+    db.LBDisplay = "CLOCK"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Roll(6, 3)
+    CHECK(row.strip[lb].clock.__shown == true and row.wsBar.__shown == false,
+        "Clock Only keeps the clock and drops the drain")
+
+    -- Off puts Lifebloom back on the shared strip exactly as it was
+    db.LBDisplay = "OFF"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Roll(6, 3)
+    CHECK(row.strip[lb].clock.__shown == false and row.wsBar.__shown == false
+        and row.strip[lb].pips[1].__shown == false,
+        "Off takes every roll instrument away")
+    CHECK(row.strip[lb].cd.__shown == true and row.strip[lb].cd.__cdDur == 7,
+        "...and gives the radial sweep back", tostring(row.strip[lb].cd.__cdDur))
+    CHECK(row.strip[lb].count.__shown == true and row.strip[lb].count.__text == 3,
+        "...along with the stack digit", tostring(row.strip[lb].count.__text))
+    -- ...and the shared window with them. Off has to mean OFF: a board still
+    -- running Lifebloom's private three-second window while the page says
+    -- "plain hot slot" is worse than not having the feature at all.
+    db.HotRefreshAt = 4
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Roll(3.5, 3)        -- inside the shared 4s window, outside the roll's 3s
+    CHECK(Stripe() == "0.35,0.85,1.00",
+        "...and the shared refresh window governs it again", Stripe())
+
+    -- The late warning fires ONCE per cycle, on the edge. A roll enters its
+    -- refresh window every five seconds by design; an alarm on that would be
+    -- a metronome, so this is tied to Late At and re-arms on a refresh.
+    db.LBDisplay, db.LBAlert = "BOTH", true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Roll(6, 3)
+    CHECK(row.flash.__shown == false, "a healthy roll raises no alarm")
+    Roll(1.2, 3)
+    CHECK(row.flash.__shown == true, "going late flashes the row")
+    now = now + 2       -- past the flash; the roll is still late, with no new edge
+    Roll(1.2, 3)
+    CHECK(row.flash.__shown == false, "holding it late does not strobe")
+    Roll(6, 3)          -- refreshed: the edge re-arms
+    Roll(1.2, 3)
+    CHECK(row.flash.__shown == true, "and a refresh re-arms it for the next cycle")
+
+    -- Sort First only weights the roll; it must not fire without the setting
+    db.LBAlert = false
+    db.LBDisplay = "BOTH"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    playerBuffs[4].applications = 3
+    SetHots(30, 30, 30)
+
     -- Rolling again -> green
     SetHots(30, 30, 30)
     CHECK(Stripe() == "0.35,0.85,0.40", "rolling hots read as the quiet healthy state", Stripe())
@@ -1062,6 +1594,30 @@ if CLASS == "DRUID" then
     CHECK(row.left.__text == "POISON", "and names the other school", row.left.__text)
     unitDebuffs.player = {}
     Refresh()
+
+    -- The strip with Show All on: Sated and Exhaustion never take a slot,
+    -- whatever else is on the row. Ten minutes on every row after a lust
+    -- would otherwise crowd out the one debuff that matters.
+    do
+        local wasShow, wasAll = CommanderPartyFramesDB.ShowDispels, CommanderPartyFramesDB.DispelShowAll
+        CommanderPartyFramesDB.ShowDispels = true
+        CommanderPartyFramesDB.DispelShowAll = true
+        unitDebuffs.player = {
+            { name = "Sated", expirationTime = now + 600, duration = 600, icon = "Interface\\Icons\\Sated" },
+            { name = "Exhaustion", expirationTime = now + 600, duration = 600, icon = "Interface\\Icons\\Exhaustion" },
+            { name = "Smoke Dot", expirationTime = now + 12, duration = 12, icon = "Interface\\Icons\\Smoke" },
+        }
+        Refresh()
+        local shown = {}
+        for n = 1, #row.dispels do
+            if row.dispels[n].icon.__shown then shown[#shown + 1] = row.dispels[n].icon.__texture end
+        end
+        CHECK(#shown == 1, "Sated and Exhaustion take no slot on the strip", table.concat(shown, ","))
+        CHECK(shown[1] == "Interface\\Icons\\Smoke", "the real debuff is the one shown", shown[1])
+        unitDebuffs.player = {}
+        Refresh()
+        CommanderPartyFramesDB.ShowDispels, CommanderPartyFramesDB.DispelShowAll = wasShow, wasAll
+    end
 
     -- --- The two upkeep slots ----------------------------------------------
     -- Mark of the Wild and Thorns are PERMANENT slots, read the way the hots
@@ -1272,7 +1828,7 @@ if CLASS == "PALADIN" then
 
     local function HandRow()
         for _, f in ipairs(allFrames) do
-            if f.strip and f.stripe then return f end
+            if f.strip and f.stripe and not f.scratch then return f end
         end
     end
     local function Refresh()
@@ -1724,7 +2280,7 @@ if CLASS == "PRIEST" then
     end
     local function Row()
         for _, f in ipairs(allFrames) do
-            if f.strip and f.stripe then return f end
+            if f.strip and f.stripe and not f.scratch then return f end
         end
     end
 
@@ -1769,8 +2325,39 @@ if CLASS == "PRIEST" then
         icon = "Interface\\Icons\\Spell_33076", sourceUnit = "player" }
     Tick()
     CHECK(row.strip[2].icon.__desat == false, "Prayer of Mending fills the second slot")
+    -- The charge count is a row of five lights now, not a digit: it only ever
+    -- goes down, so what you want off it is how much is LEFT, and four-of-five
+    -- is a shape rather than a number to read.
+    -- Pips AND the number: the lights answer "how much is left" as a shape at
+    -- a glance, the digit answers "how much exactly" when you look. Two
+    -- readings of one fact, and on a five-charge object both earn their pixels.
     CHECK(row.strip[2].count.__shown == true and row.strip[2].count.__text == 4,
-        "...and carries its charge count", tostring(row.strip[2].count.__text))
+        "...carrying the charge number alongside the pips",
+        tostring(row.strip[2].count.__text))
+    local litPips = 0
+    for k = 1, 5 do
+        local pip = row.strip[2].pips[k]
+        if pip and pip.__shown then
+            litPips = litPips + 1
+            local c = pip.__color or {}
+            -- The unspent ones are the dark placeholder; the lit ones carry
+            -- the charge tint, which is warm and bright
+            if k <= 4 then
+                CHECK(c[1] and c[1] > 0.9, "charge pip " .. k .. " is lit", tostring(c[1]))
+            else
+                CHECK(c[1] and c[1] < 0.4, "the spent fifth pip is dark", tostring(c[1]))
+            end
+        end
+    end
+    CHECK(litPips == 5, "all five charge slots are laid out", tostring(litPips))
+    CommanderPartyFramesDB.PoMPips = false
+    Tick()
+    CHECK(row.strip[2].count.__shown == true and row.strip[2].count.__text == 4,
+        "...and with pips off the plain digit comes back",
+        tostring(row.strip[2].count.__text))
+    CHECK(row.strip[2].pips[1].__shown ~= true, "...with the lights stood down")
+    CommanderPartyFramesDB.PoMPips = true
+    Tick()
 
     -- Someone else's Renew is not yours to maintain
     playerBuffs[1].sourceUnit = "party1"
@@ -1818,6 +2405,536 @@ if CLASS == "PRIEST" then
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Tick()
     CHECK(#caughtErrors == 0, "no errors across the priest strip", caughtErrors[1])
+
+    -- =====================================================================
+    -- The health bar's colour reads HEALTH, not the bar's fill ratio.
+    --
+    -- On this board the fill is compressed to leave room for the shield
+    -- segments chained off it, so a full-health ally carrying a shield has a
+    -- ratio well under one. Colouring from that ratio meant shielding a
+    -- healthy teammate visibly darkened their bar toward amber — the board
+    -- reporting them as hurt because you had just protected them.
+    -- =====================================================================
+    playerBuffs = {}
+    playerHealth = 100
+    Tick()
+    local bare = row.bar.__color or {}
+    CHECK(bare[2] and bare[2] > 0.7 and bare[1] and bare[1] < 0.3,
+        "a full-health ally is green",
+        string.format("%.2f %.2f", bare[1] or -1, bare[2] or -1))
+
+    playerBuffs = { { name = "Power Word: Shield", spellId = 17,
+        expirationTime = now + 25, duration = 30, applications = 0,
+        icon = "Interface\\Icons\\Spell_Holy_PowerWordShield", sourceUnit = "player" } }
+    Tick()
+    local shielded = row.bar.__color or {}
+    CHECK((row.bar.__w or 0) < (row._barW or 0) - 0.5,
+        "the shield compresses the fill to make room for its segment",
+        string.format("%.1f of %.1f", row.bar.__w or -1, row._barW or -1))
+    CHECK(math.abs((shielded[1] or 0) - (bare[1] or 0)) < 0.01
+        and math.abs((shielded[2] or 0) - (bare[2] or 0)) < 0.01,
+        "...and shielding a full-health ally does not darken them",
+        string.format("%.2f %.2f vs %.2f %.2f", shielded[1] or -1, shielded[2] or -1,
+            bare[1] or -1, bare[2] or -1))
+    playerBuffs = {}
+
+    -- ...and the ramp itself reaches red sooner than it used to. Two-thirds
+    -- health in an arena is one connect from dead, and the old linear ramp
+    -- still painted it a calm yellow-green (r 0.69, g 0.64).
+    playerHealth = 65
+    Tick()
+    local amber = row.bar.__color or {}
+    CHECK(amber[1] and amber[1] > 0.95, "two-thirds health is full amber, not yellow-green",
+        string.format("%.2f %.2f", amber[1] or -1, amber[2] or -1))
+    playerHealth = 25
+    Tick()
+    local red = row.bar.__color or {}
+    CHECK(red[1] and red[1] > 0.95 and red[2] and red[2] < 0.3,
+        "and a quarter health is properly red",
+        string.format("%.2f %.2f", red[1] or -1, red[2] or -1))
+    CHECK(red[2] < amber[2] and amber[2] < bare[2],
+        "the ramp is monotone from green through amber to red")
+    playerHealth = 100
+    Tick()
+
+    -- =====================================================================
+    -- A shieldless ally: the state still does its work, the WORD is gone.
+    -- =====================================================================
+    playerBuffs, unitDebuffs = {}, {}
+    playerHealth = 100
+    Tick()
+    CHECK(row.left.__text ~= "READY", "a shieldable ally is not labelled READY",
+        tostring(row.left.__text))
+    -- The slot is not left blank: the board already falls back to WHOSE bar
+    -- this is when a row has nothing to say there, so dropping the word hands
+    -- that span to the ally's name rather than to nothing.
+    CHECK(row.left.__text == "Tester", "...the span goes back to their name",
+        tostring(row.left.__text))
+    CHECK(row.stripe.__alpha ~= nil and row.stripe.__alpha < 1,
+        "...and the state still pulses the stripe", tostring(row.stripe.__alpha))
+
+    -- The other state words are untouched: EXPOSED still says EXPOSED,
+    -- because a Weakened Soul you cannot shield through is worth a word.
+    unitDebuffs["player"] = { { name = "Weakened Soul", expirationTime = now + 12,
+        duration = 15, icon = "Interface\\Icons\\Spell_Shadow_ShadowWordPain" } }
+    Tick()
+    CHECK(row.left.__text == "EXPOSED", "a Weakened Soul ally still reads EXPOSED",
+        tostring(row.left.__text))
+    unitDebuffs["player"] = {}
+    Tick()
+
+    -- =====================================================================
+    -- The low-health ring: they want a Renew and have none of ours.
+    -- =====================================================================
+    local function NeedRing(f)
+        local n, a = 0, 0
+        for i = 1, 4 do
+            if f.needGlow[i].__shown then
+                n = n + 1
+                local c = f.needGlow[i].__color or {}
+                a = c[4] or 0
+            end
+        end
+        return n, a
+    end
+    CommanderPartyFramesDB.RenewNeedRing = true
+    CommanderPartyFramesDB.RenewNeedAt = 85
+    playerHealth = 100
+    Tick()
+    CHECK(NeedRing(row) == 0, "a healthy ally wears no low-health ring")
+
+    playerHealth = 70
+    Tick()
+    local segs, faint = NeedRing(row)
+    CHECK(segs == 4, "a low ally with nothing rolling on them rings", tostring(segs))
+    CHECK(faint > 0 and faint < 0.5, "...faintly", tostring(faint))
+
+    playerHealth = 30
+    Tick()
+    local _, deep = NeedRing(row)
+    CHECK(deep > faint, "...and it deepens as they fall",
+        string.format("%.2f -> %.2f", faint, deep))
+
+    -- A Renew of ours answers it, whether or not Renew has a slot on the
+    -- strip: hiding the icon is a display choice, not a healing decision.
+    CommanderPartyFramesDB.BuffTrack["PWS:RENEW"] = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    playerBuffs = { { name = "Renew", expirationTime = now + 14, duration = 15,
+        icon = "Interface\\Icons\\Spell_Holy_Renew", sourceUnit = "player" } }
+    Tick()
+    CHECK(NeedRing(row) == 0, "our Renew answers it, even with the slot untracked")
+
+    -- ...and another priest's does not. The question is what YOU have on them.
+    playerBuffs[1].sourceUnit = "party1"
+    Tick()
+    CHECK(NeedRing(row) == 4, "another priest's Renew is not yours and does not")
+    playerBuffs = {}
+    CommanderPartyFramesDB.BuffTrack["PWS:RENEW"] = nil
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
+    CommanderPartyFramesDB.RenewNeedAt = 25
+    Tick()
+    CHECK(NeedRing(row) == 0, "and the threshold is the threshold")
+    CommanderPartyFramesDB.RenewNeedAt = 85
+    Tick()
+    CommanderPartyFramesDB.RenewNeedRing = false
+    Tick()
+    CHECK(NeedRing(row) == 0, "...and Off draws no low-health ring")
+    CommanderPartyFramesDB.RenewNeedRing = true
+    playerHealth = 100
+    Tick()
+
+    -- =====================================================================
+    -- The border rings: a second timer on an icon that already has one,
+    -- drawn around its own edge so it costs the row no width at all.
+    -- =====================================================================
+    -- Perimeter actually drawn, in pixels. Segments 2 and 4 are the vertical
+    -- sides, so their length is their height; the other three are horizontal.
+    local function RingLen(o)
+        local total = 0
+        for i = 1, 5 do
+            local t = o[i]
+            if t.__shown then
+                total = total + ((i == 2 or i == 4) and (t.__h or 0) or (t.__w or 0))
+            end
+        end
+        return total
+    end
+    local function RingSegs(o)
+        local n = 0
+        for i = 1, 5 do if o[i].__shown then n = n + 1 end end
+        return n
+    end
+
+    playerBuffs, unitDebuffs = {}, {}
+    playerHealth = 100
+    Tick()
+    CHECK(RingSegs(row.lockRing) == 0, "a shieldable ally wears no reshield ring",
+        tostring(RingSegs(row.lockRing)))
+
+    -- A fresh Weakened Soul is the whole border; it drains from there.
+    local ringSize = row._ringSize or 18
+    -- Stamped a second long, because Tick() scans at `now` and then advances
+    -- the clock before the row paints: the paint has to land on a full
+    -- fifteen, not on the fourteen a bare `now + 15` would leave it.
+    unitDebuffs["player"] = { { name = "Weakened Soul", expirationTime = now + 16,
+        duration = 15, icon = "Interface\\Icons\\Spell_Shadow_ShadowWordPain" } }
+    Tick()
+    local full = RingLen(row.lockRing)
+    CHECK(RingSegs(row.lockRing) == 5, "a fresh Weakened Soul closes the whole ring",
+        tostring(RingSegs(row.lockRing)))
+    CHECK(math.abs(full - ringSize * 4) < 1.0,
+        "...and the whole ring is the icon's whole perimeter",
+        string.format("%.1f vs %.1f", full, ringSize * 4))
+
+    unitDebuffs["player"][1].expirationTime = now + 8.5
+    Tick()
+    local half = RingLen(row.lockRing)
+    CHECK(math.abs(half - ringSize * 2) < 1.5,
+        "half a lockout is half a ring — it DRAINS, like every other lockout here",
+        string.format("%.1f vs %.1f", half, ringSize * 2))
+
+    CommanderPartyFramesDB.ShieldLockRing = false
+    Tick()
+    CHECK(RingSegs(row.lockRing) == 0, "...and the setting stands it down")
+    CommanderPartyFramesDB.ShieldLockRing = true
+    unitDebuffs["player"] = {}
+    Tick()
+    CHECK(RingSegs(row.lockRing) == 0, "a lockout that expired takes its ring with it")
+
+    -- Mending's ring is the SPELL's cooldown, and it is drawn on every row's
+    -- slot: one travelling object, one answer to "can I cast it here".
+    CommanderPartyFramesDB.BuffTrack["PWS:POM"] = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    local baseCd = GetSpellCooldown
+    Tick()
+    CHECK(RingSegs(row.strip[2].ring) == 0, "an off-cooldown Mending wears no ring")
+
+    -- Name-aware, because that is the shape of the truth: Mending has a real
+    -- ten-second cooldown and Power Word: Shield has none at all. A mock that
+    -- hands both spells the same window is describing a global, and the ring
+    -- is right to ignore it.
+    local function CdBook(book)
+        GetSpellCooldown = function(name)
+            local e = book[name]
+            if not e then return 0, 0, 1 end
+            return e[1], e[2], 1
+        end
+    end
+    CdBook({ ["Prayer of Mending"] = { now, 10 } })
+    Tick()
+    CHECK(RingSegs(row.strip[2].ring) > 0, "a Mending on cooldown closes its ring",
+        tostring(RingSegs(row.strip[2].ring)))
+    -- The slot is DARK here — nobody in this mock is carrying it — which is
+    -- exactly the case the ring exists for: a dark slot with a ring is on
+    -- cooldown, a dark slot without one is castable this instant.
+    CHECK(row.strip[2].icon.__desat == true, "...even on a row not carrying it")
+
+    -- The global cooldown is not a cooldown. Every cast puts 1.5s on every
+    -- spell you own, and a ring that closed after every global would be a
+    -- strobe saying "you just cast something".
+    function GetSpellCooldown() return now, 1.5, 1 end
+    Tick()
+    CHECK(RingSegs(row.strip[2].ring) == 0, "the global cooldown draws no ring")
+
+    -- ...and it is IDENTITY that rules it out, not the 1.5s bound. Two
+    -- different spells cannot coincidentally share a cooldown window, so a
+    -- window both of them report belongs to neither — which holds even when
+    -- it is longer than any global we would have thought to hard-code.
+    function GetSpellCooldown() return now, 20, 1 end
+    unitDebuffs["player"] = { { name = "Weakened Soul", expirationTime = now + 6,
+        duration = 15, icon = "Interface\\Icons\\Spell_Shadow_ShadowWordPain" } }
+    Tick()
+    CHECK(RingSegs(row.strip[2].ring) == 0,
+        "two spells sharing one window is the global, whatever its length",
+        tostring(RingSegs(row.strip[2].ring)))
+    local wsOnly = RingLen(row.lockRing)
+    CHECK(math.abs(wsOnly - ringSize * 4 * (5 / 15)) < 1.5,
+        "...and the reshield ring still reads Weakened Soul, not that window",
+        string.format("%.1f vs %.1f", wsOnly, ringSize * 4 * (5 / 15)))
+    unitDebuffs["player"] = {}
+
+    -- A genuine cooldown on one spell while the other only has the global:
+    -- the two windows differ, so the real one is real and gets its ring.
+    CdBook({ ["Prayer of Mending"] = { now, 10 },
+             ["Power Word: Shield"] = { now, 1.5 } })
+    Tick()
+    CHECK(RingSegs(row.strip[2].ring) > 0,
+        "a real cooldown running under a global is still a real cooldown",
+        tostring(RingSegs(row.strip[2].ring)))
+
+    CdBook({ ["Prayer of Mending"] = { now, 10 } })
+    CommanderPartyFramesDB.PoMCooldownRing = false
+    Tick()
+    CHECK(RingSegs(row.strip[2].ring) == 0, "...and the setting stands that one down too")
+    CommanderPartyFramesDB.PoMCooldownRing = true
+    GetSpellCooldown = baseCd
+    Tick()
+
+    -- =====================================================================
+    -- The Mending tracker.
+    --
+    -- Everything below is driven through the COMBAT LOG rather than the aura
+    -- scan, on purpose: the object moves between allies the mock does not
+    -- have, and the log is the channel that carries a hop. What is asserted
+    -- is the user-visible contract and nothing else — when a sound happens,
+    -- when a row flashes, and what colour it is — because "it does not fire
+    -- on a bounce" is a statement about what you HEAR, not about internals.
+    -- =====================================================================
+    CommanderPartyFramesDB.BuffTrack["PWS:POM"] = true
+    CommanderPartyFramesDB.PoMAlert = true
+    CommanderPartyFramesDB.PoMAlertSound = true
+    CommanderPartyFramesDB.PoMTrail = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    playerBuffs = {}
+    Tick()
+
+    -- CombatLogGetCurrentEventInfo's shape: eleven header fields, then
+    -- spellId, spellName, school, and the payload. A dispel is the odd one —
+    -- the caster is the ENEMY and the buff they took is the extra spell.
+    local function PoM(subevent, destGUID)
+        local e = { now, subevent, false, "player-guid", "Tester", 0, 0,
+                    destGUID, "Ally", 0, 0, 33076, "Prayer of Mending", 2 }
+        if subevent == "SPELL_DISPEL" or subevent == "SPELL_STOLEN" then
+            e[4], e[13] = "enemy-guid", "Dispel Magic"
+            e[15], e[16] = 33076, "Prayer of Mending"
+        end
+        __setClog(e)
+        Fire("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+    -- Advances the clock and draws WITHOUT firing UNIT_AURA, so the aura
+    -- scan (which on this mock can only ever see the player, and would report
+    -- every off-player holder as missing) stays out of the way.
+    local function Advance(dt)
+        now = now + dt
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
+    -- One full hop, log-accurate: the charge fires, the aura leaves, and the
+    -- object turns up on the next ally a fraction later.
+    local function Hop(from, to, gap)
+        PoM("SPELL_HEAL", from)
+        PoM("SPELL_AURA_REMOVED", from)
+        Advance(gap or 0.2)
+        PoM("SPELL_AURA_APPLIED", to)
+    end
+
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "ally-1")
+    Advance(2)
+    CHECK(#__sounds == 0, "casting Mending is not an alert", tostring(#__sounds))
+
+    -- The one that matters. A bounce IS a charge firing and the aura leaving
+    -- an ally — the exact shape of a loss — and it must stay silent through
+    -- the whole of it, mid-flight included.
+    PoM("SPELL_HEAL", "ally-1")
+    PoM("SPELL_AURA_REMOVED", "ally-1")
+    Advance(0.3)
+    CHECK(#__sounds == 0, "a Mending in mid-hop says nothing yet", tostring(#__sounds))
+    PoM("SPELL_AURA_APPLIED", "ally-2")
+    Advance(2)
+    CHECK(#__sounds == 0, "and a completed bounce never alerts", tostring(#__sounds))
+
+    -- Four of them, which is what a full cast actually does. An alert hung
+    -- off "the aura left this row" would have made four noises by here.
+    Hop("ally-2", "ally-3")
+    Advance(1)
+    Hop("ally-3", "ally-1")
+    Advance(1)
+    Hop("ally-1", "player-guid")
+    Advance(1)
+    CHECK(#__sounds == 0, "four hops in and still silent", tostring(#__sounds))
+
+    -- The fifth charge has nowhere to go. Identical log to a bounce right up
+    -- until the grace lapses with nothing having re-applied.
+    PoM("SPELL_HEAL", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(0.4)
+    CHECK(#__sounds == 0, "the last charge waits out the grace like any other",
+        tostring(#__sounds))
+    Advance(0.6)
+    CHECK(#__sounds == 1, "a spent Mending alerts, once", tostring(#__sounds))
+    local spentSound = __sounds[1]
+    CHECK(row.flash.__shown == true, "and flashes the ally who was holding it")
+    local ft = row.flash.__color or {}
+    CHECK(ft[2] and ft[2] > 0.8 and ft[1] and ft[1] < 0.8,
+        "...green, because a spent Mending did its job", tostring(ft[1]))
+    Advance(2)
+    CHECK(#__sounds == 1, "and it does not repeat itself", tostring(#__sounds))
+
+    -- Timed out with no removal ever arriving: the holder walked out of the
+    -- combat log with it on them, and thirty seconds is still thirty seconds.
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(5)
+    CHECK(#__sounds == 0, "a live Mending is quiet", tostring(#__sounds))
+    Advance(26)
+    CHECK(#__sounds == 1, "one that timed out of log range still alerts",
+        tostring(#__sounds))
+    local et = row.flash.__color or {}
+    CHECK(et[1] and et[1] > 0.9 and et[2] and et[2] > 0.6 and et[3] and et[3] < 0.4,
+        "...amber for expired", tostring(et[3]))
+
+    -- A recast onto the ally who already had it restarts the clock. Getting
+    -- this wrong is a LIVE Mending reported as expired a second later.
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(29)
+    PoM("SPELL_AURA_REFRESH", "player-guid")
+    Advance(3)
+    CHECK(#__sounds == 0, "a refreshed Mending is not an expired one",
+        tostring(#__sounds))
+
+    -- Moving it yourself is not losing it.
+    PoM("SPELL_AURA_APPLIED", "ally-9")
+    Advance(2)
+    CHECK(#__sounds == 0, "recasting it onto someone else is silent",
+        tostring(#__sounds))
+
+    -- Taken off you: same removal, a different instruction, a different colour
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    PoM("SPELL_DISPEL", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(1)
+    CHECK(#__sounds == 1, "a dispelled Mending alerts", tostring(#__sounds))
+    -- Mending's own voice: one instrument, two pitches. Spent and lost have
+    -- to be distinguishable without looking at the board, which is the entire
+    -- reason the alert exists — and neither may be the stock raid warning the
+    -- shield-break alert (and half the client's other addons) already uses.
+    local lostSound = __sounds[1]
+    CHECK(spentSound ~= nil and lostSound ~= nil, "both Mending ends make a sound")
+    CHECK(spentSound ~= lostSound, "...and spent does not sound like lost",
+        tostring(spentSound) .. " vs " .. tostring(lostSound))
+    CHECK(spentSound ~= 8959 and lostSound ~= 8959,
+        "...neither borrows the raid warning")
+    local dt = row.flash.__color or {}
+    CHECK(dt[3] and dt[3] > 0.9 and dt[2] and dt[2] < 0.7,
+        "...violet, so you can tell it was stolen rather than spent",
+        tostring(dt[3]))
+
+    -- The holder dying takes it with them
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    PoM("UNIT_DIED", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(1)
+    CHECK(#__sounds == 1, "a Mending that died with its holder alerts",
+        tostring(#__sounds))
+
+    -- Both halves switch off independently
+    CommanderPartyFramesDB.PoMAlertSound = false
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    PoM("SPELL_HEAL", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(1)
+    CHECK(#__sounds == 0, "End Sound off silences the alert", tostring(#__sounds))
+    CHECK(row.flash.__shown == true, "...and leaves the flash")
+
+    CommanderPartyFramesDB.PoMAlert = false
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    PoM("SPELL_HEAL", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(3)
+    CHECK(#__sounds == 0, "End Alert off silences both", tostring(#__sounds))
+    CHECK(row.flash.__shown ~= true, "...including the flash")
+    CommanderPartyFramesDB.PoMAlert = true
+    CommanderPartyFramesDB.PoMAlertSound = true
+
+    -- The hop's own cue: the row it LANDS on flares. (The row it leaves gets
+    -- the fading ghost, which this mock's single ally cannot hold both ends
+    -- of at once.)
+    playerBuffs = { { name = "Prayer of Mending", expirationTime = now + 28,
+        duration = 30, applications = 3, icon = "Interface\\Icons\\Spell_33076",
+        sourceUnit = "player" } }
+    PoM("SPELL_AURA_APPLIED", "ally-1")
+    Advance(1)
+    Hop("ally-1", "player-guid")
+    -- Deliberately NOT Tick(), which would advance a full second and land
+    -- after the flare has already decayed: the cue is half a second long
+    -- because a hop is worth exactly one glance.
+    Fire("UNIT_AURA", "player")
+    Advance(0.1)
+    CHECK(row.strip[2].flare.__shown == true, "the row a Mending lands on flares")
+    CommanderPartyFramesDB.PoMTrail = false
+    Advance(0.05)
+    CHECK(row.strip[2].flare.__shown ~= true, "...and Show the Hop off stands it down")
+    CommanderPartyFramesDB.PoMTrail = true
+    Advance(0.6)
+    CHECK(row.strip[2].flare.__shown ~= true, "...and the flare puts itself away")
+
+    -- The sound each alert plays is a setting, and the alert honours it.
+    CommanderPartyFramesDB.SoundPoMSpent = "NONE"
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    PoM("SPELL_HEAL", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(1)
+    CHECK(#__sounds == 0, "a Mending line set to Silent plays nothing",
+        tostring(#__sounds))
+    CHECK(row.flash.__shown == true, "...but still flashes — Silent is a sound, not a mute")
+    CommanderPartyFramesDB.SoundPoMSpent = "READY"
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    PoM("SPELL_HEAL", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(1)
+    CHECK(#__sounds == 1 and __sounds[1] ~= spentSound,
+        "...and a different pick makes a different noise", tostring(__sounds[1]))
+    CommanderPartyFramesDB.SoundPoMSpent = "TOLL_HI"
+
+    -- The master switch. One feature, one gate: with it off the tracker does
+    -- no work, so nothing sounds, nothing flashes and nothing flares — and,
+    -- the part worth a check of its own, an object that was in flight when it
+    -- was switched off must not resolve into an alert when it comes back on.
+    playerBuffs = {}
+    CommanderPartyFramesDB.PoMTrack = false
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    PoM("SPELL_HEAL", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(3)
+    CHECK(#__sounds == 0, "Track Mending off makes no sound", tostring(#__sounds))
+    CHECK(row.flash.__shown ~= true, "...and no flash")
+    CommanderPartyFramesDB.PoMTrack = true
+    Advance(3)
+    CHECK(#__sounds == 0, "...and switching it back on does not fire what it missed",
+        tostring(#__sounds))
+
+    -- Live at the moment it is switched off: the session is dropped, not
+    -- parked, so it cannot resolve late either.
+    __clearSounds()
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    CommanderPartyFramesDB.PoMTrack = false
+    Advance(1)
+    CommanderPartyFramesDB.PoMTrack = true
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(3)
+    CHECK(#__sounds == 0, "a session dropped by the switch never resolves",
+        tostring(#__sounds))
+
+    -- ...and it works again straight afterwards, from a clean cast
+    PoM("SPELL_AURA_APPLIED", "player-guid")
+    Advance(2)
+    PoM("SPELL_HEAL", "player-guid")
+    PoM("SPELL_AURA_REMOVED", "player-guid")
+    Advance(1)
+    CHECK(#__sounds == 1, "and the very next cast tracks normally", tostring(#__sounds))
+
+    playerBuffs = {}
+    CommanderPartyFramesDB.BuffTrack["PWS:POM"] = nil
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Tick()
+    CHECK(#caughtErrors == 0, "no errors across the Mending tracker", caughtErrors[1])
 end
 
 -- ===========================================================================
@@ -2137,6 +3254,9 @@ local function CheckSectionSizing()
         title = "Probe",
         addonName = "Commander_PartyFrames",
         description = "probe",
+        -- The plain heading's own sizing is what this probes; a folding
+        -- page measures its notes the foldout's way instead
+        foldSections = false,
     })
     CHECK(panel ~= nil, "the settings framework builds a panel to probe")
     if not panel then return end
@@ -2819,6 +3939,1807 @@ local function CheckPets()
     Fire("GROUP_ROSTER_UPDATE"); Pump()
 end
 
+-- Both sections below run on EVERY layer, which is the point: the priest
+-- board never had a power strip at all, and the forecast is chassis. They
+-- sit above the non-mage exit so both class paths reach them, and carry
+-- their own pump because DrawOnce is defined past that exit.
+local function FcPump()
+    now = now + 1
+    for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+end
+
+-- ===========================================================================
+-- The power strip: every class, not just the mana users
+-- ===========================================================================
+-- The strip under the health bar used to be a MANA strip on three of the four
+-- boards, which left a rogue's energy and a warrior's rage — the two
+-- resources an arena actually plans around — with nowhere to be shown at all,
+-- and gave the priest board no strip on anybody. It is now the unit's LIVE
+-- power, on every board, which is why these read UnitPowerType rather than
+-- the class: a druid that shifts has to change strip mid-fight.
+local function CheckPowerStrip()
+    local realType, realPower, realMax = UnitPowerType, UnitPower, UnitPowerMax
+    local ptype, ptoken, pcur, pmax = 0, "MANA", 30, 100
+    UnitPowerType = function() return ptype, ptoken end
+    UnitPower = function() return pcur end
+    UnitPowerMax = function() return pmax end
+
+    local db = CommanderPartyFramesDB
+    db.EnableShield, db.CombatOnly, db.AlwaysShow = true, false, true
+    db.IncludeSelf, db.OnlyAlerts = true, false
+    db.PowerBar, db.PowerBarColor, db.PowerBarHeight = "ALL", "TYPE", 6
+    db.Forecast = "OFF"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player"); FcPump()
+
+    -- The player's own ally row: the one row this mock's roster produces
+    local function SelfRowWidget()
+        for _, f in ipairs(allFrames) do
+            if f.fcHot and f.healthBar and f.__shown and f.bar and f.bar.__shown then
+                return f
+            end
+        end
+    end
+
+    local row = SelfRowWidget()
+    CHECK(row ~= nil, "the board draws a row to hang a power strip on")
+    if not row then
+        UnitPowerType, UnitPower, UnitPowerMax = realType, realPower, realMax
+        return
+    end
+    local barW = row._barW or 100
+
+    CHECK(row.healthBar.__shown == true, "a mana user takes the strip")
+    CHECK(math.abs((row.healthBar.__w or 0) - barW * 0.3) < 0.51,
+        "and it is as wide as the resource is full",
+        tostring(row.healthBar.__w) .. " of " .. tostring(barW))
+    local c = row.healthBar.__color or {}
+    CHECK(c[3] and c[3] > c[1], "mana is blue", table.concat({ c[1] or 0, c[2] or 0, c[3] or 0 }, ","))
+
+    -- The whole point of the change: rage and energy, which the mana strip
+    -- could never show whatever the setting said.
+    ptype, ptoken, pcur = 1, "RAGE", 45
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.healthBar.__shown == true, "a rage user takes the strip too")
+    CHECK(math.abs((row.healthBar.__w or 0) - barW * 0.45) < 0.51,
+        "at their own fill", tostring(row.healthBar.__w))
+    c = row.healthBar.__color or {}
+    CHECK(c[1] and c[1] > (c[3] or 0), "and rage is red, not the mana blue",
+        table.concat({ c[1] or 0, c[2] or 0, c[3] or 0 }, ","))
+
+    ptype, ptoken, pcur = 3, "ENERGY", 80
+    Fire("UNIT_AURA", "player"); FcPump()
+    c = row.healthBar.__color or {}
+    CHECK(c[1] and c[2] and c[1] > 0.7 and c[2] > 0.7 and (c[3] or 1) < 0.5,
+        "energy is yellow", table.concat({ c[1] or 0, c[2] or 0, c[3] or 0 }, ","))
+
+    -- Classic Blue paints every resource the one blue the strip always wore
+    db.PowerBarColor = "BLUE"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player"); FcPump()
+    c = row.healthBar.__color or {}
+    CHECK(c[3] and c[3] > (c[1] or 1), "Classic Blue paints energy blue as well")
+    db.PowerBarColor = "TYPE"
+
+    -- Mana Users Only is the old board, and it has to still BE the old board
+    db.PowerBar = "MANA"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.healthBar.__shown == false,
+        "Mana Users Only leaves an energy user with no strip")
+    ptype, ptoken, pcur = 0, "MANA", 30
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.healthBar.__shown == true, "and still gives a caster theirs")
+
+    db.PowerBar = "OFF"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.healthBar.__shown == false, "Off takes the strip off everyone")
+
+    -- Height is clamped to what is left of the row: an unclamped strip pushes
+    -- the bars up out of their own row and into the one above it.
+    db.PowerBar, db.PowerBarHeight = "ALL", 7
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player"); FcPump()
+    local tall = row.healthBar.__h
+    db.PowerBarHeight = 2
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(tall and row.healthBar.__h and tall > row.healthBar.__h,
+        "the height slider actually moves the strip",
+        tostring(tall) .. " vs " .. tostring(row.healthBar.__h))
+    CHECK((row.__h or 22) >= (row.bar.__h or 0) + (row.healthBar.__h or 0),
+        "and the row still contains its own bars")
+
+    db.PowerBarHeight = 6
+    UnitPowerType, UnitPower, UnitPowerMax = realType, realPower, realMax
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+end
+
+-- ===========================================================================
+-- Inbound-heal prediction: rank, bursts, and the caster's own spell power
+-- ===========================================================================
+-- The hot half of the forecast reads well because a tick is a tick. The CAST
+-- half had three ways to be wrong, and all three make the prediction look
+-- like a spell-power bug from the outside — the number comes out near the
+-- spell's base value:
+--   * downranking      every rank of a heal answers to ONE name, and TBC
+--                      healers downrank constantly. Averaged together, a
+--                      rank-2 filler drags the rank-7 prediction down.
+--   * multi-target     Chain Heal and Prayer of Healing land several events
+--                      per cast, each smaller than the last; blending all of
+--                      them teaches well under what the primary receives.
+--   * nothing learned  a heal nobody has watched land has no number at all,
+--                      which is the whole first fight of a session.
+local function CheckHealPredict()
+    local db = CommanderPartyFramesDB
+    db.EnableShield, db.CombatOnly, db.AlwaysShow = true, false, true
+    db.IncludeSelf, db.OnlyAlerts = true, false
+    db.Forecast, db.ForecastNet = "BAR", false
+    db.ForecastDots, db.ForecastHots, db.ForecastCasts = true, true, true
+    db.ForecastWindow, db.ForecastMinPct = 0, 0
+    db.OverhealGlow = false
+    playerHealth = 20           -- room on the bar for a big heal to draw in
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
+    local function Heal(spellId, name, amount)
+        local e = { now, "SPELL_HEAL", false, "player-guid", "Tester", 0, 0,
+                    "player-guid", "Tester", 0, 0, spellId, name, 2,
+                    amount, 0, 0, false }
+        __setClog(e)
+        Fire("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+    local function Row()
+        for _, f in ipairs(allFrames) do
+            if f.fcCast and f.bar and f.bar.__shown and f.__shown then return f end
+        end
+    end
+    local row = Row()
+    CHECK(row ~= nil, "the board draws a row for an inbound heal")
+    if not row then playerHealth = 100; return end
+    local barW, hpMax = row._barW or 100, 100
+    -- What the drawn ghost says the heal is worth, in health points. Scans
+    -- every row rather than the player's, because the client will not say who
+    -- another player is casting at and the engine resolves that the way the
+    -- game does — a healer with no friendly target heals themselves, so their
+    -- ghost lands on THEIR row. One cast is in the air at a time here.
+    local function Predicted()
+        for _, f in ipairs(allFrames) do
+            if f.fcCast and f.fcCast.__shown then
+                return (f.fcCast.__w or 0) / (f._barW or barW) * hpMax
+            end
+        end
+        return 0
+    end
+
+    local realCasting = UnitCastingInfo
+    local casting = "Smoke Mend"
+    UnitCastingInfo = function()
+        return casting, nil, "Interface\\Icons\\Smoke", now * 1000, (now + 2) * 1000,
+            false, nil, false, nil
+    end
+
+    -- --- Downranking -------------------------------------------------------
+    -- The same NAME at two ranks. Averaged, the prediction for the big one
+    -- would come out near 12; keyed by rank it is the rank that is in the air.
+    Heal(9001, "Smoke Mend", 4)         -- the downranked filler, spammed
+    now = now + 1; Heal(9001, "Smoke Mend", 4)
+    now = now + 1; Heal(9001, "Smoke Mend", 4)
+    now = now + 1; Heal(9002, "Smoke Mend", 20)  -- the real one
+    now = now + 1
+    Fire("UNIT_SPELLCAST_START", "player", nil, 9002)
+    CHECK(math.abs(Predicted() - 20) < 0.6,
+        "the rank in the air is the rank predicted, not an average of them all",
+        Predicted())
+    Fire("UNIT_SPELLCAST_START", "player", nil, 9001)
+    CHECK(math.abs(Predicted() - 4) < 0.6,
+        "...and the downranked filler predicts its own small number",
+        Predicted())
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player")
+
+    -- --- Multi-target bursts -----------------------------------------------
+    -- One cast, three events, descending. The primary target is what an
+    -- inbound-heal forecast is about, so the largest is the measurement.
+    casting = "Smoke Chain"
+    Heal(9003, "Smoke Chain", 30)
+    Heal(9003, "Smoke Chain", 20)       -- same breath: the second jump
+    Heal(9003, "Smoke Chain", 10)       -- ...and the third
+    now = now + 2                       -- the breath passes; the burst commits
+    Fire("UNIT_SPELLCAST_START", "player", nil, 9003)
+    CHECK(math.abs(Predicted() - 30) < 0.6,
+        "a multi-target cast is measured at its primary, not averaged down",
+        Predicted())
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player")
+
+    -- --- The caster's own spell power --------------------------------------
+    -- For OUR heals the tooltip is authoritative: it is the spell's real
+    -- value with our spell power, talents and any proc up right now, and it
+    -- is right on the first cast of a session rather than after the first
+    -- one lands. This is the half that was missing.
+    local scanTip = _G.CommanderPartyFramesScanTip
+    CHECK(scanTip ~= nil, "the engine built its scanning tooltip")
+    local tipBook, tipLines = {}, {}
+    if scanTip then
+        for i = 1, 8 do
+            local n = i
+            _G["CommanderPartyFramesScanTipTextLeft" .. n] = {
+                GetText = function() return tipLines[n] end,
+            }
+        end
+        scanTip.SetSpellByID = function(_, id)
+            tipLines = tipBook[id] or {}
+        end
+        scanTip.NumLines = function() return 8 end
+    end
+
+    -- A heal the log has only ever seen land small, whose tooltip says
+    -- otherwise: the tooltip wins, because it is the one that knows our gear.
+    casting = "Smoke Light"
+    Heal(9004, "Smoke Light", 5)
+    now = now + 2
+    tipBook[9004] = { "Smoke Light", "300 Mana", "2.5 sec cast",
+        "Heals a friendly target for 40 to 60." }
+    Fire("UNIT_SPELLCAST_START", "player", nil, 9004)
+    CHECK(math.abs(Predicted() - 50) < 0.6,
+        "our own heal is predicted from the tooltip, spell power and all",
+        Predicted())
+
+    -- A hot line is not a heal range: ascending pairs only, so "1060 over 12
+    -- sec" is rejected and the learned number stands.
+    tipBook[9004] = { "Smoke Light", "300 Mana", "2.5 sec cast",
+        "Heals the target for 30 over 12 sec." }
+    Fire("UNIT_SPELLCAST_START", "player", nil, 9004)
+    CHECK(math.abs(Predicted() - 5) < 0.6,
+        "a hot's tooltip line is not mistaken for a heal range",
+        Predicted())
+
+    -- Regrowth's shape: a range AND a hot on one line. The range comes first
+    -- and it is the half a cast forecast is about.
+    tipBook[9004] = { "Smoke Light", "300 Mana", "2.5 sec cast",
+        "Heals a friendly target for 40 to 60 and another 70 over 21 sec." }
+    Fire("UNIT_SPELLCAST_START", "player", nil, 9004)
+    CHECK(math.abs(Predicted() - 50) < 0.6,
+        "...and a spell carrying both takes the range, not the hot",
+        Predicted())
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player")
+
+    -- Someone else's heal has no tooltip we could read — their gear is not
+    -- ours — so the learned number is all there is, and it must still work.
+    -- A tooltip IS stocked for it, deliberately: reading someone else's spell
+    -- off our own client would be a plausible-looking answer computed from
+    -- the wrong character's gear, and it must not happen.
+    tipBook[9005] = { "Smoke Word", "300 Mana", "2.5 sec cast",
+        "Heals a friendly target for 900 to 900." }
+    casting = "Smoke Word"
+    local e = { now, "SPELL_HEAL", false, "party1-guid", "Ally", 0, 0,
+                "player-guid", "Tester", 0, 0, 9005, "Smoke Word", 2, 25, 0, 0, false }
+    __setClog(e); Fire("COMBAT_LOG_EVENT_UNFILTERED")
+    now = now + 2
+    -- Stood up locally rather than leaning on the party overrides further
+    -- down the file: this block runs at two different points depending on the
+    -- class, and only one of them is past them.
+    local rE, rG, rIn = UnitExists, UnitGUID, IsInGroup
+    -- EXACT token, not a prefix: "party1target" also starts with "party1",
+    -- and answering yes to it would hand the engine a target GUID no row
+    -- belongs to — the cast would be recorded and then drawn nowhere.
+    UnitExists = function(u) return u == "party1" or rE(u) end
+    UnitGUID = function(u) return u == "party1" and "party1-guid" or rG(u) end
+    IsInGroup = function() return true end
+    Fire("GROUP_ROSTER_UPDATE")
+    Fire("UNIT_SPELLCAST_START", "party1", nil, 9005)
+    CHECK(math.abs(Predicted() - 25) < 0.6,
+        "another caster's heal is predicted from what theirs has landed for",
+        Predicted())
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "party1")
+    UnitExists, UnitGUID, IsInGroup = rE, rG, rIn
+    Fire("GROUP_ROSTER_UPDATE")
+
+    UnitCastingInfo = realCasting
+    if scanTip then scanTip.SetSpellByID = function() tipLines = {} end end
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player")
+    db.Forecast, db.OverhealGlow = "BAR", true
+    playerHealth = 100
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+end
+
+-- ===========================================================================
+-- The overheal ring
+-- ===========================================================================
+-- The one half of the healing accounting the combat log reports outright, so
+-- unlike the forecast there is nothing to learn and nothing to guess — which
+-- makes the failures here all about the GATES: whose heals count, how much
+-- has to spill before it counts, and whether the ring ever lets go.
+local function CheckOverheal()
+    local db = CommanderPartyFramesDB
+    db.EnableShield, db.CombatOnly, db.AlwaysShow = true, false, true
+    db.IncludeSelf, db.OnlyAlerts = true, false
+    db.Forecast = "OFF"
+    db.OverhealGlow, db.OverhealMine = true, true
+    db.OverhealPct, db.OverhealHold = 50, 1
+    playerHealth = 80
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
+    -- amount is the heal's full size, overhealing the part of it that spilled
+    local function Heal(src, amount, over, periodic)
+        local e = { now, periodic and "SPELL_PERIODIC_HEAL" or "SPELL_HEAL", false,
+                    src, "Healer", 0, 0, "player-guid", "Tester", 0, 0,
+                    99002, "Smoke Mend", 2, amount, over, 0, false }
+        __setClog(e)
+        Fire("COMBAT_LOG_EVENT_UNFILTERED")
+        Fire("UNIT_AURA", "player")
+    end
+    local function Row()
+        for _, f in ipairs(allFrames) do
+            if f.ohGlow and f.strip and f.__shown and f.bar and f.bar.__shown then return f end
+        end
+    end
+    local function RingOn(row)
+        for i = 1, 4 do if not row.ohGlow[i].__shown then return false end end
+        return true
+    end
+    local function RingAlpha(row)
+        local c = row.ohGlow[1].__color or {}
+        return c[4] or 0
+    end
+
+    local row = Row()
+    CHECK(row ~= nil, "the board draws a row to ring")
+    if not row then playerHealth = 100; return end
+
+    CHECK(RingOn(row) == false, "a quiet row wears no ring")
+
+    -- A heal that landed everything it had is not overhealing
+    Heal("player-guid", 1000, 0)
+    CHECK(RingOn(row) == false, "a heal that spilled nothing raises no ring")
+
+    -- ...and one under the threshold is still not worth saying
+    Heal("player-guid", 1000, 300)
+    CHECK(RingOn(row) == false, "a spill under Overheal At stays quiet")
+
+    Heal("player-guid", 1000, 600)
+    CHECK(RingOn(row) == true, "past it, all four edges light")
+    local partial = RingAlpha(row)
+
+    -- Brightness rides the SHARE wasted: a heal that did nothing at all has
+    -- to read louder than one that did half its job.
+    Heal("player-guid", 1000, 1000)
+    CHECK(RingAlpha(row) > partial,
+        "and a heal that did nothing at all rings brighter",
+        RingAlpha(row) .. " vs " .. partial)
+
+    -- Whose waste it is. Another healer's spill means the target is capped,
+    -- which is worth knowing — but it is not YOUR global being thrown away.
+    now = now + 3
+    Fire("UNIT_AURA", "player")
+    CHECK(RingOn(row) == false, "the ring lets go once the hold runs out")
+    Heal("party1-guid", 1000, 1000)
+    CHECK(RingOn(row) == false, "another healer's waste is not yours by default")
+    db.OverhealMine = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Heal("party1-guid", 1000, 1000)
+    CHECK(RingOn(row) == true, "...and counts once you ask for everyone's")
+    db.OverhealMine = true
+
+    -- A hot ticking into a capped ally is pure waste every tick, and each
+    -- tick refreshes the hold before the last has faded: a steady ring, which
+    -- is exactly the thing worth seeing.
+    now = now + 3
+    Fire("UNIT_AURA", "player")
+    Heal("player-guid", 120, 120, true)
+    local first = RingAlpha(row)
+    now = now + 0.5
+    Heal("player-guid", 120, 120, true)
+    CHECK(RingOn(row) == true and math.abs(RingAlpha(row) - first) < 0.01,
+        "a hot spilling every tick holds the ring steady",
+        RingAlpha(row) .. " vs " .. first)
+
+    -- It fades rather than blinking off, so a one-off waste reads as a pulse
+    now = now + 0.6
+    Fire("UNIT_AURA", "player")
+    CHECK(RingOn(row) == true and RingAlpha(row) < first,
+        "and a spill nobody repeats fades out instead of blinking off",
+        RingAlpha(row) .. " vs " .. first)
+
+    -- The stripe is a channel of its own: the ring must never start on top
+    -- of it, or the row trades its state colour for its waste colour.
+    local p = row.ohGlow[1].__points and row.ohGlow[1].__points[1]
+    CHECK(p and p.x and p.x > 3,      -- the engine's STRIPE_W
+        "the ring starts clear of the state stripe", p and p.x)
+
+    db.OverhealGlow = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Heal("player-guid", 1000, 1000)
+    CHECK(RingOn(row) == false, "and Off draws no ring at all")
+
+    db.OverhealGlow = true
+    playerHealth = 100
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+end
+
+-- ===========================================================================
+-- The forecast: pending dot damage, rolling hot healing, an inbound cast
+-- ===========================================================================
+-- All three are LEARNED from the combat log, because TBC exposes none of
+-- them. These drive the log directly and then assert on what the bar does,
+-- which is the only way to catch the two failures that matter: a forecast
+-- that counts ticks that will never happen, and one that quietly counts
+-- nothing at all because the learning never fired.
+local function CheckForecast()
+    local db = CommanderPartyFramesDB
+    db.EnableShield, db.CombatOnly, db.AlwaysShow = true, false, true
+    db.IncludeSelf, db.OnlyAlerts = true, false
+    db.PowerBar = "ALL"
+    db.Forecast, db.ForecastNet = "BAR", false
+    db.ForecastDots, db.ForecastHots, db.ForecastCasts = true, true, true
+    db.ForecastWindow, db.ForecastMinPct = 0, 0
+    db.ForecastTooltip = true
+    playerHealth = 80                       -- against the mock's max of 100
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
+    local function Clog(subevent, spell, amount, crit)
+        -- CombatLogGetCurrentEventInfo's shape: eleven header fields, then
+        -- spellId, spellName, school, and the payload. Damage carries the
+        -- crit flag seventh into the payload; a heal, fourth.
+        local e = { now, subevent, false, "player-guid", "Tester", 0, 0,
+                    "player-guid", "Tester", 0, 0, 99001, spell, 32, amount }
+        if subevent == "SPELL_PERIODIC_DAMAGE" then
+            e[16], e[17], e[18], e[19], e[20], e[21] = 0, 32, 0, 0, 0, crit or false
+        else
+            e[16], e[17], e[18] = 0, 0, crit or false
+        end
+        __setClog(e)
+        Fire("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+
+    local function SelfRowWidget()
+        for _, f in ipairs(allFrames) do
+            if f.fcHot and f.healthBar and f.__shown and f.bar and f.bar.__shown then
+                return f
+            end
+        end
+    end
+
+    -- A dot nobody has watched tick is worth NOTHING, not a guess: a wrong
+    -- number here is worse than a missing one.
+    unitDebuffs.player = { { name = "Smoke Dot", expirationTime = now + 12, duration = 12 } }
+    Fire("UNIT_AURA", "player"); FcPump()
+    local row = SelfRowWidget()
+    CHECK(row ~= nil, "the forecast has a row to draw on")
+    if not row then unitDebuffs.player = {}; playerHealth = 100; return end
+    local barW = row._barW or 100
+    CHECK(row.fcDot.__shown == false,
+        "an unmeasured dot forecasts nothing rather than guessing")
+
+    -- One tick on the log and the same dot is worth four of them
+    Clog("SPELL_PERIODIC_DAMAGE", "Smoke Dot", 5)
+    unitDebuffs.player = { { name = "Smoke Dot", expirationTime = now + 12, duration = 12 } }
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.fcDot.__shown == true, "one tick on the log teaches the whole dot")
+    -- 12s left at a 3s tick = 4 ticks x 5 = 20 of a 100 max = a fifth of the bar
+    CHECK(math.abs((row.fcDot.__w or 0) - barW * 0.2) < 0.51,
+        "and it shades back exactly what is queued",
+        tostring(row.fcDot.__w) .. " of " .. tostring(barW))
+
+    -- Look Ahead is the setting that makes this usable rather than merely
+    -- true: three seconds of a twelve-second dot is one tick, not four.
+    db.ForecastWindow = 3
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(math.abs((row.fcDot.__w or 0) - barW * 0.05) < 0.51,
+        "Look Ahead counts only the ticks inside the window",
+        tostring(row.fcDot.__w))
+    db.ForecastWindow = 0
+
+    -- A hot, from the other side of the log, chaining PAST the fill
+    Clog("SPELL_PERIODIC_HEAL", "Smoke Hot", 10)
+    playerBuffs = { { name = "Smoke Hot", expirationTime = now + 6, duration = 6,
+                      icon = "Interface\\Icons\\Smoke" } }
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.fcHot.__shown == true, "a hot on the log forecasts its remaining ticks")
+    CHECK(math.abs((row.fcHot.__w or 0) - barW * 0.2) < 0.51,
+        "two ticks of ten on a hundred-point ally is a fifth of the bar",
+        tostring(row.fcHot.__w))
+
+    -- The noise floor is a SHARE of their own health, so it has to scale with
+    -- the target rather than being a flat number
+    db.ForecastMinPct = 50
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.fcHot.__shown == false and row.fcDot.__shown == false,
+        "the noise floor drops a forecast under it")
+    db.ForecastMinPct = 0
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.fcHot.__shown == true, "and lowering it brings the forecast back")
+
+    -- Net folds the two into whichever way the ally is actually heading
+    db.ForecastNet = true
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.fcDot.__shown == false and row.fcHot.__shown == false,
+        "equal healing and damage net to nothing at all")
+    db.ForecastNet = false
+
+    -- Re-applied rather than reused: every DrawOnce above moved the clock, and
+    -- the forecast is supposed to shrink with it. The mode checks below are
+    -- about SHAPE, so they get a fresh pair to measure.
+    local function Reapply()
+        unitDebuffs.player = { { name = "Smoke Dot", expirationTime = now + 12, duration = 12 } }
+        playerBuffs = { { name = "Smoke Hot", expirationTime = now + 6, duration = 6,
+                          icon = "Interface\\Icons\\Smoke" } }
+        Fire("UNIT_AURA", "player")
+    end
+
+    -- Numbers, for a board that would rather read than estimate
+    db.Forecast = "TEXT"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Reapply()
+    CHECK(row.fcText.__shown == true and (row.fcText.__text or ""):find("%+20"),
+        "Numbers spells the healing out", tostring(row.fcText.__text))
+    CHECK((row.fcText.__text or ""):find("%-20"),
+        "and the damage beside it", tostring(row.fcText.__text))
+    CHECK(row.fcDot.__shown == false, "and draws no overlay of its own")
+
+    -- Ticks: the projection as hairlines, with the bar's own colors left alone
+    db.Forecast = "TICK"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Reapply()
+    CHECK(row.fcTickH.__shown == true and row.fcTickD.__shown == true,
+        "Ticks marks both projections")
+    CHECK(row.fcHot.__shown == false and row.fcDot.__shown == false,
+        "and fills neither")
+
+    db.Forecast = "BAR"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
+    -- An inbound cast heal. The client will not say who another player is
+    -- casting AT, so the target resolves the way the game itself resolves
+    -- one — no friendly target means the caster heals themselves.
+    local realCasting = UnitCastingInfo
+    Clog("SPELL_HEAL", "Smoke Heal", 30)
+    UnitCastingInfo = function() return "Smoke Heal", nil, "Interface\\Icons\\Smoke",
+        now * 1000, (now + 2) * 1000 end
+    -- Cleared AND rescanned: the hot above already projects this ally to full,
+    -- and a ghost may never outrun its own track — so with it still counted
+    -- there is genuinely no room left to draw an inbound heal in. That is the
+    -- right answer, and it is asserted here before it is cleared away.
+    Fire("UNIT_SPELLCAST_START", "player"); FcPump()
+    CHECK(row.fcHot.__shown == true and row.fcCast.__shown == false,
+        "a bar already projected to full leaves an inbound heal nothing to fill")
+    playerBuffs = {}
+    unitDebuffs.player = {}
+    Fire("UNIT_AURA", "player")
+    Fire("UNIT_SPELLCAST_START", "player"); FcPump()
+    CHECK(row.fcCast.__shown == true, "a heal in the air forecasts its size")
+    -- At 80% health a thirty-point heal is mostly overheal, and a ghost may
+    -- never outrun its own track: it fills the empty fifth and stops.
+    CHECK(math.abs((row.fcCast.__w or 0) - barW * 0.2) < 0.51,
+        "clamped to the room the bar actually has left",
+        tostring(row.fcCast.__w) .. " of " .. tostring(barW))
+
+    playerHealth = 40
+    Fire("UNIT_SPELLCAST_START", "player"); FcPump()
+    CHECK(math.abs((row.fcCast.__w or 0) - barW * 0.3) < 0.51,
+        "and on a bar with room for it, at what that caster's heal really lands for",
+        tostring(row.fcCast.__w))
+    playerHealth = 80
+
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player"); FcPump()
+    CHECK(row.fcCast.__shown == false,
+        "and it stops being inbound the moment the cast completes")
+
+    -- A cast that is dropped without an event still has to expire on its own:
+    -- a lost UNIT_SPELLCAST_STOP must not strand a phantom heal on the board.
+    Fire("UNIT_SPELLCAST_START", "player"); FcPump()
+    now = now + 5
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.fcCast.__shown == false, "a cast nobody closed expires by its own clock")
+
+    UnitCastingInfo = realCasting
+    db.Forecast = "OFF"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "player"); FcPump()
+    CHECK(row.fcDot.__shown == false and row.fcHot.__shown == false
+        and row.fcText.__shown == false, "Off draws none of it")
+
+    unitDebuffs.player = {}
+    playerBuffs = {}
+    playerHealth = 100
+    db.Forecast = "BAR"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+end
+-- ===========================================================================
+-- Nearby Raid
+--
+-- The feature's whole claim is that a forty-person roster can be reduced to
+-- the handful of allies standing next to you. So this exercises the two halves
+-- separately: who gets picked (distance, the count, offline members, the
+-- fallback when the client will not report positions) and when the pick is
+-- allowed to move (never on its own, on the timer once auto is on, on demand
+-- from the button — every one of those SORTING, which is the bug this section
+-- grew a case for: an auto-refresh that only swapped membership left a board
+-- that looked frozen while all four allies on it were moving).
+-- ===========================================================================
+function CheckNearby()
+    local realExists, realGUID, realName = UnitExists, UnitGUID, UnitName
+    local realRaid, realConn = IsInRaid, UnitIsConnected
+    local raidUp, raidYards, offline = {}, {}, {}
+    for i = 1, 12 do raidUp["raid" .. i] = true end
+    -- Straight line east, so the distance IS the x coordinate
+    local D = { 50, 10, 30, 5, 20, 40, 15, 25, 60, 70, 80, 90 }
+    for i = 1, 12 do raidYards["raid" .. i] = D[i] end
+
+    function UnitExists(unit)
+        if unit and unit:find("^raid") then return raidUp[unit] == true end
+        return realExists(unit)
+    end
+    function UnitGUID(unit)
+        if unit and unit:find("^raid") then return unit .. "-guid" end
+        return realGUID(unit)
+    end
+    function UnitName(unit)
+        if unit and unit:find("^raid") then return unit end
+        return realName(unit)
+    end
+    function UnitIsConnected(unit) return not offline[unit] end
+    function IsInRaid() return true end
+    function UnitPosition(unit)
+        if unit == "player" then return 0, 0, 0, 1 end
+        local d = raidYards[unit]
+        if not d then return nil end
+        return 0, d, 0, 1
+    end
+
+    -- DrawOnce is declared further down the file than the non-MAGE runs get
+    -- to, so this pumps the frames itself. Same two lines, same reason: the
+    -- clock has to advance or the throttled re-scans never fire twice.
+    local function DrawOnce()
+        now = now + 1
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
+
+    local function Pick()
+        local out = CommanderPartyFrames_NearPick({})
+        return table.concat(out, " ")
+    end
+    local function ShownRows()
+        local n = 0
+        for _, f in ipairs(allFrames) do
+            if f.strip and f.dispels and f.swipe and f.__shown and not f.personal then
+                n = n + 1
+            end
+        end
+        return n
+    end
+
+    -- --- Off is off ------------------------------------------------------
+    CommanderPartyFramesDB.NearMode = false
+    Fire("GROUP_ROSTER_UPDATE"); DrawOnce()
+    CHECK(select(3, CommanderPartyFrames_NearPick({})) == false,
+        "the flag off leaves the feature inert even inside a raid")
+    CHECK(CommanderPartyFramesDB.Scope == "PARTY",
+        "and it does not reach over and rewrite Watch")
+
+    -- --- The pick ---------------------------------------------------------
+    CommanderPartyFramesDB.NearMode = true
+    CommanderPartyFramesDB.NearCount = 5
+    CommanderPartyFramesDB.IncludeSelf = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(Pick() == "raid4 raid2 raid7 raid5",
+        "five people means you plus the four closest, nearest first", Pick())
+    CHECK(select(2, CommanderPartyFrames_NearPick({})) == true,
+        "and the distances behind them are real yards, not bands")
+    CHECK(ShownRows() == 5, "the board draws exactly those five rows", ShownRows())
+    CHECK(CommanderPartyFramesDB.Scope == "PARTY",
+        "with Watch still on Party — nearby mode does not need it switched over")
+
+    -- --- Ten people, past what Max Rows would ever allow -------------------
+    CommanderPartyFramesDB.NearCount = 10
+    CommanderPartyFramesDB.MaxRows = 6
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(ShownRows() == 10,
+        "ten people fit, because the count bounds the board and Max Rows does not clip it",
+        ShownRows())
+    -- Fifteen asks for more than this 12-ally raid holds, so the whole raid
+    -- plus you is the board: nothing clips it at the old ten
+    CommanderPartyFramesDB.NearCount = 15
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(ShownRows() == 13,
+        "fifteen is allowed: every one of twelve allies plus you, past the old cap of ten",
+        ShownRows())
+    CommanderPartyFramesDB.NearCount = 5
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CommanderPartyFrames_NearRefresh(false)
+    CHECK(Pick() == "raid4 raid2 raid7 raid5", "and coming back down re-picks the four", Pick())
+
+    -- --- Nothing moves on its own -----------------------------------------
+    CommanderPartyFramesDB.NearAuto = false
+    raidYards.raid1 = 1
+    DrawOnce(); DrawOnce()
+    CHECK(Pick() == "raid4 raid2 raid7 raid5",
+        "an ally running up beside you does NOT rearrange the board by itself", Pick())
+
+    -- --- The button re-picks and sorts ------------------------------------
+    CommanderPartyFrames_NearRefresh(false)
+    CHECK(Pick() == "raid1 raid4 raid2 raid7",
+        "pressing refresh takes the new collection, sorted by distance", Pick())
+
+    -- --- Auto refresh RE-SORTS --------------------------------------------
+    -- The regression this exists for: auto used to hold everyone on the row
+    -- they already had, so the four closest allies could all move and the
+    -- board would not visibly change. Membership rarely turns over; order
+    -- does, constantly, and order is what you can see.
+    CommanderPartyFramesDB.NearAuto = true
+    CommanderPartyFramesDB.NearInterval = 3
+    raidYards.raid4 = 18      -- still in the set, now the FURTHEST of the four
+    DrawOnce()
+    CHECK(Pick() == "raid1 raid2 raid7 raid4",
+        "the same four in a new order re-sort on the timer, with nobody swapped",
+        Pick())
+    raidYards.raid7 = 60      -- out
+    raidYards.raid3 = 12      -- in
+    DrawOnce()
+    CHECK(Pick() == "raid1 raid2 raid3 raid4",
+        "and a member leaving is replaced in distance order, not in their old slot",
+        Pick())
+
+    -- --- Hysteresis, and only on membership --------------------------------
+    -- Two allies drifting either side of the cutoff must not trade the last
+    -- place every tick. A newcomer has to be meaningfully closer, not equal —
+    -- but this must never reach the ORDER, which is what the case above
+    -- already proves stays live.
+    raidYards.raid5 = 15      -- inside raid4's 18, but not by the 5y margin
+    DrawOnce()
+    CHECK(Pick():find("raid4", 1, true) ~= nil and Pick():find("raid5", 1, true) == nil,
+        "a marginally closer outsider does not evict an incumbent on the timer", Pick())
+    raidYards.raid5 = 2
+    DrawOnce()
+    CHECK(Pick():find("raid5", 1, true) ~= nil,
+        "but a decisively closer one does", Pick())
+    -- Asked by hand, there is no credit at all: pure distance
+    raidYards.raid5 = 15
+    raidYards.raid4 = 18
+    CommanderPartyFrames_NearRefresh(false)
+    CHECK(Pick():find("raid5", 1, true) ~= nil,
+        "and pressing the button gives no head start — a fresh collection is fresh",
+        Pick())
+
+    -- --- Offline allies are not candidates --------------------------------
+    CommanderPartyFrames_NearRefresh(false)
+    local was = Pick()
+    offline.raid1 = true
+    CommanderPartyFrames_NearRefresh(false)
+    CHECK(Pick():find("raid1", 1, true) == nil,
+        "a disconnected ally does not take a slot from someone you can act on",
+        was .. " -> " .. Pick())
+    offline.raid1 = nil
+
+    -- --- No positions: the one remaining rung ------------------------------
+    --
+    -- This block used to mock CheckInteractDistance and prove a three-rung
+    -- ladder. That function is PROTECTED on this client: every call from addon
+    -- code is blocked and returns nothing, so the ladder never ranked anybody
+    -- in game -- it fell straight through to UnitInRange while raising
+    -- ADDON_ACTION_BLOCKED out of the picker's refresh. Mocking it here was
+    -- proving a path the client will not run, which is why the harness stayed
+    -- green through eighteen live errors a session.
+    --
+    -- What is left is one rung: in UnitInRange, or not. So the thing worth
+    -- asserting changes shape. It is no longer "the closest rung sorts above
+    -- the rest" -- there is no closest rung -- it is that everyone reachable
+    -- ties, the unreachable are excluded, and the tie still breaks the same
+    -- way every pick so the board does not reshuffle under the cursor.
+    local realPos, realRange = UnitPosition, UnitInRange
+    UnitPosition = nil
+    function UnitInRange(unit)
+        local d = raidYards[unit]
+        if not d then return false, true end
+        return d <= 40, true
+    end
+    CommanderPartyFrames_NearRefresh(false)
+    CHECK(select(2, CommanderPartyFrames_NearPick({})) == false,
+        "with no positions to read, the pick reports itself as banded, not measured")
+    CHECK(#CommanderPartyFrames_NearPick({}) == 4,
+        "and still fills the board", #CommanderPartyFrames_NearPick({}))
+    local banded = Pick()
+    CHECK(banded:find("raid7", 1, true) == nil and banded:find("raid9", 1, true) == nil,
+        "nothing out of range takes a slot", banded)
+    CommanderPartyFrames_NearRefresh(false)
+    CHECK(Pick() == banded, "a banded pick is repeatable, not a coin toss", Pick())
+    UnitPosition, UnitInRange = realPos, realRange
+
+    -- --- The header control -----------------------------------------------
+    local btn
+    for _, f in ipairs(allFrames) do if f.glyph then btn = f end end
+    CHECK(btn ~= nil, "the refresh control exists on the header")
+    DrawOnce()
+    CHECK(btn and btn.__shown == true, "and shows while nearby mode is live")
+    -- Right-click is the auto toggle, and the tint is how the board reports it
+    local autoWas = CommanderPartyFramesDB.NearAuto
+    btn.__scripts.OnClick(btn, "RightButton")
+    CHECK(CommanderPartyFramesDB.NearAuto ~= autoWas,
+        "right-clicking it toggles auto-refresh")
+    local lit = btn.glyph[1].__color
+    btn.__scripts.OnClick(btn, "RightButton")
+    CHECK(CommanderPartyFramesDB.NearAuto == autoWas, "and toggles it back")
+    CHECK(lit and btn.glyph[1].__color and
+        (lit[1] ~= btn.glyph[1].__color[1] or lit[2] ~= btn.glyph[1].__color[2]),
+        "with the tint saying which state it is in")
+    -- Left-click is the refresh itself
+    raidYards.raid12 = 1
+    btn.__scripts.OnClick(btn, "LeftButton")
+    CHECK(Pick():find("raid12", 1, true) ~= nil,
+        "left-clicking it takes a fresh pick", Pick())
+    raidYards.raid12 = 90
+
+    -- Out of a raid it is chrome with nothing to do, so it goes away
+    function IsInRaid() return false end
+    DrawOnce()
+    CHECK(btn and btn.__shown == false, "and it goes away when there is no raid to pick from")
+    CHECK(select(3, CommanderPartyFrames_NearPick({})) == false,
+        "the feature switching itself off outside a raid, flag or no flag")
+    function IsInRaid() return true end
+
+    -- --- Row order is a choice --------------------------------------------
+    CommanderPartyFramesDB.NearSort = "URGENCY"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(#caughtErrors == 0, "the urgency order draws without erroring", caughtErrors[1])
+
+    -- --- Class, then distance ---------------------------------------------
+    -- The third order reads the pick as a class list in the suite's canon
+    -- order, each class's members closest-first. The pick is still the four
+    -- closest (raid4 5y, raid2 10y, raid7 15y, raid5 20y); the class list
+    -- then puts the warrior first, the priest next, and the mages together
+    -- with the nearer one leading. You are a mage on this run at zero yards,
+    -- so you head the mage group rather than the board.
+    local function RowNames()
+        local out = {}
+        for _, f in ipairs(allFrames) do
+            if f.strip and f.dispels and f.swipe and f.__shown and not f.personal then
+                out[#out + 1] = tostring(f.name and f.name.__text or "?")
+            end
+        end
+        return table.concat(out, " ")
+    end
+    local realClass = UnitClass
+    local displayWas = CommanderPartyFramesDB.UnitDisplay
+    CommanderPartyFramesDB.UnitDisplay = "ICON_NAME"   -- so rows are nameable
+    local raidClass = { raid4 = "MAGE", raid2 = "PRIEST", raid7 = "MAGE", raid5 = "WARRIOR" }
+    function UnitClass(unit)
+        local c = raidClass[unit]
+        if c then return c, c end
+        return realClass(unit)
+    end
+    playerClass = "MAGE"
+    -- The sections above walked people around; put the line back and take a
+    -- fresh pick so the four closest are the four this block reasons about
+    for i = 1, 12 do raidYards["raid" .. i] = D[i] end
+    CommanderPartyFramesDB.NearCount = 5
+    CommanderPartyFramesDB.NearSort = "CLASS"
+    CommanderPartyFramesDB.SelfFirst = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    CommanderPartyFrames_NearRefresh(false)
+    DrawOnce(); DrawOnce()
+    CHECK(Pick() == "raid4 raid2 raid7 raid5", "the pick under test is the four closest", Pick())
+    CHECK(RowNames() == "raid5 raid2 Tester raid4 raid7",
+        "class order groups the pick by class, each class closest-first", RowNames())
+    CHECK(#caughtErrors == 0, "and draws without erroring", caughtErrors[1])
+    -- Distance is live, not the snapshot: the far mage walking in swaps the
+    -- two mages without a re-pick
+    raidYards.raid7 = 2
+    DrawOnce()
+    CHECK(RowNames() == "raid5 raid2 Tester raid7 raid4",
+        "the sub-sort follows people as they move", RowNames())
+    raidYards.raid7 = 15
+    -- Self First still lifts your row out of its class group
+    CommanderPartyFramesDB.SelfFirst = true
+    DrawOnce()
+    CHECK(RowNames() == "Tester raid5 raid2 raid4 raid7",
+        "Self First still pins you above the class list", RowNames())
+    CommanderPartyFramesDB.SelfFirst = false
+    -- No positions to read: everyone in range ties, and the tie is the name,
+    -- so the board does not reshuffle under the cursor
+    local posWas = UnitPosition
+    UnitPosition = nil
+    DrawOnce()
+    local banded = RowNames()
+    DrawOnce()
+    CHECK(banded == RowNames() and banded:find("^raid5 raid2 Tester"),
+        "without positions the class groups hold and the tie is stable", banded)
+    UnitPosition = posWas
+    UnitClass = realClass
+    playerClass = CLASS
+    CommanderPartyFramesDB.NearSort = "DISTANCE"
+
+    -- The same order on the party board, where it is Sort Rows rather than
+    -- the pick's Row Order: a five-man with a pet, grouped by class with
+    -- the pet under its owner's class after the players, then urgency back
+    -- as the default the moment the setting is cleared
+    CommanderPartyFramesDB.NearMode = false
+    function IsInRaid() return false end
+    local partyClass = { party1 = "PRIEST", party2 = "WARRIOR", party3 = "PRIEST", party4 = "HUNTER" }
+    local partyYards = { party1 = 30, party2 = 8, party3 = 12, party4 = 25, partypet4 = 3, player = 0 }
+    function UnitExists(unit)
+        if partyClass[unit] or unit == "partypet4" then return true end
+        if unit and unit:find("^raid") then return false end
+        return realExists(unit)
+    end
+    function UnitGUID(unit)
+        if partyClass[unit] or unit == "partypet4" then return unit .. "-guid" end
+        return realGUID(unit)
+    end
+    function UnitName(unit)
+        if partyClass[unit] or unit == "partypet4" then return unit end
+        return realName(unit)
+    end
+    function UnitClass(unit)
+        local c = partyClass[unit]
+        if c then return c, c end
+        return realClass(unit)
+    end
+    function UnitPosition(unit)
+        local d = partyYards[unit]
+        if not d then return nil end
+        return 0, d, 0, 1
+    end
+    playerClass = "MAGE"
+    CommanderPartyFramesDB.IncludePets = true
+    CommanderPartyFramesDB.RowOrder = "CLASS"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); DrawOnce(); DrawOnce()
+    CHECK(RowNames() == "party2 party4 partyp party3 party1 Tester",
+        "Sort Rows groups the party by class, closest-first, the pet under its owner's class",
+        RowNames())
+    CommanderPartyFramesDB.RowOrder = "URGENCY"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(RowNames() ~= "party2 party4 partyp party3 party1 Tester",
+        "and Urgency hands the board back to its own sort", RowNames())
+    CHECK(#caughtErrors == 0, "the party board's class order draws without erroring", caughtErrors[1])
+    UnitClass = realClass
+    playerClass = CLASS
+    CommanderPartyFramesDB.UnitDisplay = displayWas
+    function IsInRaid() return true end
+
+    -- --- Put the world back -----------------------------------------------
+    CommanderPartyFramesDB.NearMode = false
+    CommanderPartyFramesDB.NearAuto = false
+    CommanderPartyFramesDB.NearCount = 5
+    CommanderPartyFramesDB.MaxRows = 6
+    UnitExists, UnitGUID, UnitName = realExists, realGUID, realName
+    IsInRaid, UnitIsConnected = realRaid, realConn
+    UnitPosition = nil
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); DrawOnce()
+end
+
+-- ===========================================================================
+-- Combat marks
+-- ===========================================================================
+-- The crossed blades at a row's right edge, and the rule they live by: they
+-- are a POSITIVE claim only. An ally the client is not tracking reports no
+-- combat at all, so a lit mark has to mean "this one is fighting" and a dark
+-- slot has to mean "nothing seen" — never "safe to sap this one".
+--
+-- The rest is what the mark is FOR. You read it to find combat you can take
+-- off someone (one heal on an ally already fighting puts you in combat too,
+-- and a Sap does not open on a target in combat), so a fighter you cannot
+-- reach is dimmed: the mark is still true, but it is not one you can act on.
+local SDATA_COMBAT_TEXTURE = "Interface\\CharacterFrame\\UI-StateIcon"
+local function CheckCombatMarks()
+    local baseExists, baseGUID, baseRange = UnitExists, UnitGUID, UnitInRange
+    local baseCombat = UnitAffectingCombat
+    local keepSelf = CommanderPartyFramesDB.IncludeSelf
+    local keepFade = CommanderPartyFramesDB.RangeFade
+    -- These are the SIDE BY SIDE layout's width rules (one seat per mark);
+    -- the stacked seat has its own section below
+    local keepLayout = CommanderPartyFramesDB.MarkLayout
+    CommanderPartyFramesDB.MarkLayout = "ROW"
+    local function Pump()
+        now = now + 1
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
+    -- One ally and no self row, so there is no guessing which pooled row the
+    -- sort handed out second
+    CommanderPartyFramesDB.IncludeSelf = false
+    partyUp = { party1 = true }
+    function UnitExists(unit)
+        if unit and unit:find("^party") then return partyUp[unit] == true end
+        return baseExists(unit)
+    end
+    function UnitGUID(unit)
+        if unit and unit:find("^party") then return unit .. "-guid" end
+        return baseGUID(unit)
+    end
+    local fighting, faraway = {}, {}
+    function UnitAffectingCombat(unit) return fighting[unit] == true end
+    function UnitInRange(unit) return not faraway[unit], true end
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); Pump()
+
+    local function AllyRow()
+        for _, f in ipairs(allFrames) do
+            if f.combatMark and f.buffs and f.bar and f.stripe and f.__shown and f.__h ~= 11 then
+                return f
+            end
+        end
+    end
+    local function Blades()
+        local row = AllyRow()
+        local q = row and row.combatMark
+        if not q then return nil end
+        return q.__shown, (q.__color or {})[4]
+    end
+
+    CHECK(AllyRow() ~= nil, "an ally row is on the board to mark")
+    if not AllyRow() then return end
+    CHECK(Blades() == false, "a quiet board wears no blades")
+    -- The art is the CLIENT'S combat icon, not one of ours: the glyph the
+    -- stock player portrait lights on every pull, so nobody has to learn it
+    CHECK(AllyRow().combatMark.__texture == SDATA_COMBAT_TEXTURE,
+        "the mark wears the client's own combat swords",
+        AllyRow().combatMark.__texture)
+
+    fighting.party1 = true
+    Pump()
+    local lit, alpha = Blades()
+    CHECK(lit == true, "an ally in combat wears them")
+    CHECK(alpha == 1, "...solid, because that is combat you can reach and take", alpha)
+
+    -- Fighting somewhere you cannot cast: still true, still drawn, but not an
+    -- answer you can act on
+    faraway.party1 = true
+    Pump()
+    local litFar, alphaFar = Blades()
+    CHECK(litFar == true, "out of range and fighting is still fighting")
+    CHECK(alphaFar == 0.4, "...but the mark dims to say you cannot reach it", alphaFar)
+
+    -- Range Fade takes the whole ROW to 0.4 on the same forty-yard answer.
+    -- Dimming again on top of that is 0.16 alpha: a mark nobody can see.
+    CommanderPartyFramesDB.RangeFade = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Pump()
+    local _, alphaFade = Blades()
+    CHECK(alphaFade == 1, "with Range Fade carrying the news, they are not dimmed twice",
+        alphaFade)
+    local function near(a, b) return a and math.abs(a - b) < 1e-6 end
+    CHECK(near(AllyRow().__alpha, 0.4), "the default strength leaves the faded row at 0.4",
+        AllyRow().__alpha)
+    local keepStrength = CommanderPartyFramesDB.RangeFadeStrength
+    CommanderPartyFramesDB.RangeFadeStrength = 0.8
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Pump()
+    CHECK(near(AllyRow().__alpha, 0.2), "Range Fade Strength 80% takes the row to 0.2",
+        AllyRow().__alpha)
+    CommanderPartyFramesDB.RangeFadeStrength = keepStrength
+    CommanderPartyFramesDB.RangeFade = keepFade
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    faraway.party1 = nil
+    Pump()
+
+    fighting.party1 = nil
+    Pump()
+    CHECK(Blades() == false, "combat drops and the blades go with it")
+
+    -- The slot is reserved from the SETTING, not from what is up: the health
+    -- bar may not grow and shrink under the player every time a pull starts.
+    fighting.party1 = true
+    Pump()
+    local withMark = AllyRow()._barW
+    CommanderPartyFramesDB.ShowCombat = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Pump()
+    CHECK(Blades() == false, "switched off, an ally in combat is unmarked")
+    CHECK(AllyRow()._barW > withMark, "...and the health bar gets the reserved width back",
+        tostring(withMark) .. " -> " .. tostring(AllyRow()._barW))
+
+    CommanderPartyFramesDB.ShowCombat = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Pump()
+    CHECK(AllyRow()._barW == withMark, "and switching it back on costs that width again")
+
+    CommanderPartyFramesDB.MarkLayout = keepLayout
+    CommanderPartyFramesDB.IncludeSelf = keepSelf
+    UnitExists, UnitGUID, UnitInRange = baseExists, baseGUID, baseRange
+    UnitAffectingCombat = baseCombat
+    partyUp = {}
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); Pump()
+end
+
+-- ===========================================================================
+-- Battleground marks: the flag and the ground powerups, beside the blades
+-- ===========================================================================
+-- Three things separate these from every other mark on the row and each of
+-- them is a way to get this wrong: the slots are reserved from the ZONE
+-- rather than from the setting, the flag outranks a powerup for the one slot
+-- that can only hold one of them, and the flag has no expiry — so the ONLY
+-- thing that takes it off a row is a scan that could actually see the unit.
+local function CheckBGMarks()
+    local baseExists, baseGUID, baseRange = UnitExists, UnitGUID, UnitInRange
+    local baseVisible = UnitIsVisible
+    local keepSelf = CommanderPartyFramesDB.IncludeSelf
+    local keepZone = instanceKind
+    local keepLayout = CommanderPartyFramesDB.MarkLayout
+    CommanderPartyFramesDB.MarkLayout = "ROW"
+    local function Pump()
+        now = now + 1
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
+    CommanderPartyFramesDB.IncludeSelf = false
+    partyUp = { party1 = true }
+    function UnitExists(unit)
+        if unit and unit:find("^party") then return partyUp[unit] == true end
+        return baseExists(unit)
+    end
+    function UnitGUID(unit)
+        if unit and unit:find("^party") then return unit .. "-guid" end
+        return baseGUID(unit)
+    end
+    local faraway, unseen = {}, {}
+    function UnitInRange(unit) return not faraway[unit], true end
+    function UnitIsVisible(unit) return not unseen[unit] end
+
+    local FLAG = { name = "Warsong Flag", icon = "flag-art" }
+    local ZERK = { name = "Berserking", icon = "zerk-art",
+                   expirationTime = 0, duration = 10 }
+    local SPEED = { name = "Speed", icon = "speed-art",
+                    expirationTime = 0, duration = 10 }
+    local function Wear(...)
+        local list = {}
+        for i = 1, select("#", ...) do
+            local a = select(i, ...)
+            -- Fresh copies each time: the durations are relative to `now`,
+            -- which every Pump moves
+            local c = { name = a.name, icon = a.icon, duration = a.duration }
+            if a.duration then c.expirationTime = now + a.duration end
+            list[#list + 1] = c
+        end
+        __setUnitBuffs("party1", list)
+    end
+    Wear()
+
+    local function AllyRow()
+        for _, f in ipairs(allFrames) do
+            if f.bgMarks and f.buffs and f.bar and f.stripe and f.__shown and f.__h ~= 11 then
+                return f
+            end
+        end
+    end
+    -- What the row is actually WEARING: the textures in order, shown only
+    local function Marks()
+        local row, out = AllyRow(), {}
+        if not row then return out end
+        for i = 1, #row.bgMarks do
+            local t = row.bgMarks[i]
+            if t.__shown then out[#out + 1] = t.__texture end
+        end
+        return out
+    end
+    local function Alpha(i)
+        local row = AllyRow()
+        local t = row and row.bgMarks[i]
+        return t and (t.__color or {})[4]
+    end
+
+    instanceKind = "pvp"
+    Fire("PLAYER_ENTERING_WORLD")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); Pump()
+
+    CHECK(AllyRow() ~= nil, "an ally row is on the battleground board")
+    if not AllyRow() then return end
+    CHECK(#Marks() == 0, "an ally carrying nothing wears no marks")
+
+    -- The flag. One mark, and the art is the client's own banner icon rather
+    -- than anything this addon drew
+    Wear(FLAG)
+    Fire("UNIT_AURA", "party1"); Pump()
+    local m = Marks()
+    CHECK(#m == 1, "the flag carrier wears exactly one mark", #m)
+    CHECK(m[1] == "flag-art", "...and it is the flag's own art", m[1])
+    CHECK(Alpha(1) == 1, "...at full strength, because they are in range", Alpha(1))
+
+    -- Flag AND a powerup: both slots, flag first. This is the whole reason
+    -- the entries carry a priority — a carrier with Berserking up is still,
+    -- first, the carrier, whatever order the aura list happened to be in.
+    __setUnitBuffs("party1", nil)
+    local list = {
+        { name = "Berserking", icon = "zerk-art", duration = 10, expirationTime = now + 10 },
+        { name = "Warsong Flag", icon = "flag-art" },
+    }
+    __setUnitBuffs("party1", list)
+    Fire("UNIT_AURA", "party1"); Pump()
+    m = Marks()
+    CHECK(#m == 2, "flag plus a powerup fills both slots", #m)
+    CHECK(m[1] == "flag-art", "...the flag first, whatever order the auras came in", m[1])
+    CHECK(m[2] == "zerk-art", "...and the powerup second", m[2])
+
+    -- Three at once is one more than there are slots, and the one that loses
+    -- is the least useful of them
+    __setUnitBuffs("party1", {
+        { name = "Speed", icon = "speed-art", duration = 10, expirationTime = now + 10 },
+        { name = "Warsong Flag", icon = "flag-art" },
+        { name = "Berserking", icon = "zerk-art", duration = 10, expirationTime = now + 10 },
+    })
+    Fire("UNIT_AURA", "party1"); Pump()
+    m = Marks()
+    CHECK(#m == 2, "a third mark does not grow the row", #m)
+    CHECK(m[1] == "flag-art" and m[2] == "zerk-art",
+        "...and Speed is the one that loses its slot to Berserking",
+        (m[1] or "-") .. "," .. (m[2] or "-"))
+
+    -- Out of casting range: still carrying, still drawn, dimmed — the same
+    -- rule the blades follow, and for the same reason
+    Wear(FLAG)
+    Fire("UNIT_AURA", "party1"); Pump()
+    faraway.party1 = true
+    Pump()
+    CHECK(#Marks() == 1, "out of range they are still carrying")
+    CHECK(Alpha(1) == 0.4, "...and the mark dims to say you cannot reach it", Alpha(1))
+    faraway.party1 = nil
+    Pump()
+
+    -- The load-bearing one. A carrier who runs out of sight reports NO auras
+    -- at all, and reading that as "they dropped it" would blank the flag
+    -- every time they crossed the map — which is exactly when it matters.
+    unseen.party1 = true
+    __setUnitBuffs("party1", {})
+    Fire("UNIT_AURA", "party1"); Pump()
+    CHECK(#Marks() == 1, "a carrier the client cannot see keeps the flag", #Marks())
+    -- ...and a scan that CAN see them is the whole truth
+    unseen.party1 = nil
+    Fire("UNIT_AURA", "party1"); Pump()
+    CHECK(#Marks() == 0, "a scan that can see them and finds nothing takes it off",
+        #Marks())
+
+    -- A powerup carries its own clock, so out of sight it still runs out.
+    -- (The flag has no expiry, which is what the check above rests on.)
+    Wear(ZERK)
+    Fire("UNIT_AURA", "party1"); Pump()
+    CHECK(#Marks() == 1, "the powerup is on")
+    unseen.party1 = true
+    __setUnitBuffs("party1", {})
+    -- Pumped rather than jumped: the clock this whole file shares is also
+    -- Nearby Raid's re-pick timer, and a twelve-second leap out of one
+    -- section lands in the next one's ranking.
+    for _ = 1, 12 do Pump() end
+    CHECK(#Marks() == 0, "and it expires on its own clock even unseen", #Marks())
+    unseen.party1 = nil
+
+    -- The slots are reserved from the ZONE. This is the one place these marks
+    -- differ from every other slot on the row, and the reason is width: an
+    -- arena row must not carry a 32-pixel hole for a mark that cannot light.
+    Wear(FLAG)
+    Fire("UNIT_AURA", "party1"); Pump()
+    local inBG = AllyRow()._barW
+    CHECK(#Marks() == 1, "carrying, in a battleground")
+    instanceKind = "arena"
+    Fire("PLAYER_ENTERING_WORLD"); Pump()
+    local inArena = AllyRow()._barW
+    CHECK(#Marks() == 0, "an arena draws none of them", #Marks())
+    CHECK(inArena > inBG, "...and the health bar gets that width back",
+        tostring(inBG) .. " -> " .. tostring(inArena))
+
+    -- ...and the setting still switches them off inside one
+    instanceKind = "pvp"
+    Fire("PLAYER_ENTERING_WORLD")
+    Wear(FLAG)
+    Fire("UNIT_AURA", "party1"); Pump()
+    CHECK(#Marks() == 1, "back in a battleground, carrying again")
+    CommanderPartyFramesDB.ShowBGBuffs = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "party1"); Pump()
+    CHECK(#Marks() == 0, "switched off, a flag carrier is unmarked", #Marks())
+    CHECK(AllyRow()._barW == inArena,
+        "...and the bar is exactly as wide as it is outside a battleground",
+        tostring(AllyRow()._barW) .. " vs " .. tostring(inArena))
+    CommanderPartyFramesDB.ShowBGBuffs = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("UNIT_AURA", "party1"); Pump()
+    CHECK(#Marks() == 1, "and switching it back on restores the mark")
+
+    -- Leaving the battleground ends the carry. Nothing else can: the flag has
+    -- no expiry, and the ally who had it is no longer scannable.
+    instanceKind = "none"
+    Fire("PLAYER_ENTERING_WORLD"); Pump()
+    instanceKind = "pvp"
+    __setUnitBuffs("party1", {})
+    Fire("PLAYER_ENTERING_WORLD"); Pump()
+    CHECK(#Marks() == 0, "zoning out drops what the last battleground was carrying",
+        #Marks())
+
+    __setUnitBuffs("party1", nil)
+    instanceKind = keepZone
+    CommanderPartyFramesDB.MarkLayout = keepLayout
+    CommanderPartyFramesDB.IncludeSelf = keepSelf
+    UnitExists, UnitGUID, UnitInRange = baseExists, baseGUID, baseRange
+    UnitIsVisible = baseVisible
+    partyUp = {}
+    Fire("PLAYER_ENTERING_WORLD")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); Pump()
+end
+
+-- ===========================================================================
+-- The stacked mark seat (Mark Layout = GRID, the default): every mark in one
+-- two-by-two block with a FIXED cell per meaning, so four at once still read
+-- ===========================================================================
+local function CheckMarkGrid()
+    local baseExists, baseGUID, baseRange = UnitExists, UnitGUID, UnitInRange
+    local baseCombat, baseVisible = UnitAffectingCombat, UnitIsVisible
+    local keepSelf, keepZone = CommanderPartyFramesDB.IncludeSelf, instanceKind
+    local keepLayout = CommanderPartyFramesDB.MarkLayout
+    local function Pump()
+        now = now + 1
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
+    CommanderPartyFramesDB.IncludeSelf = false
+    CommanderPartyFramesDB.MarkLayout = "GRID"
+    CommanderPartyFramesDB.ShowTargetMarks = true
+    CommanderPartyFramesDB.ShowCombat = true
+    CommanderPartyFramesDB.ShowBGBuffs = true
+    partyUp = { party1 = true }
+    function UnitExists(unit)
+        if unit and unit:find("^party") then return partyUp[unit] == true end
+        return baseExists(unit)
+    end
+    function UnitGUID(unit)
+        if unit and unit:find("^party") then return unit .. "-guid" end
+        return baseGUID(unit)
+    end
+    local fighting = {}
+    function UnitInRange() return true, true end
+    function UnitIsVisible() return true end
+    function UnitAffectingCombat(unit) return fighting[unit] == true end
+    local FLAG = { name = "Warsong Flag", icon = "flag-art" }
+    local ZERK = { name = "Berserking", icon = "zerk-art", duration = 10 }
+    local function Wear(...)
+        local list = {}
+        for i = 1, select("#", ...) do
+            local a = select(i, ...)
+            local c = { name = a.name, icon = a.icon, duration = a.duration }
+            if a.duration then c.expirationTime = now + a.duration end
+            list[#list + 1] = c
+        end
+        __setUnitBuffs("party1", list)
+    end
+    local function AllyRow()
+        for _, f in ipairs(allFrames) do
+            if f.bgMarks and f.buffs and f.bar and f.stripe and f.__shown and f.__h ~= 11 and not f.scratch then
+                return f
+            end
+        end
+    end
+    local function Point(tex)
+        local p = tex.__points and tex.__points[1]
+        return p and p.x, p and p.y
+    end
+
+    instanceKind = "pvp"
+    Fire("PLAYER_ENTERING_WORLD")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Wear(); Fire("UNIT_AURA", "party1"); Pump()
+    local row = AllyRow()
+    CHECK(row ~= nil, "grid: an ally row")
+    if not row then return end
+    local seatBarW = row._barW
+    -- All four cells, each in its own corner
+    local tx, ty = Point(row.raidMark)
+    local cx, cy = Point(row.combatMark)
+    local fx, fy = Point(row.bgMarks[1])
+    local px, py = Point(row.bgMarks[2])
+    CHECK(tx and cx and tx < cx and ty == cy and ty > 0, "grid: target mark top-left, combat top-right",
+        string.format("t(%s,%s) c(%s,%s)", tostring(tx), tostring(ty), tostring(cx), tostring(cy)))
+    CHECK(fx and px and fx < px and fy == py and fy < 0, "grid: flag bottom-left, powerup bottom-right",
+        string.format("f(%s,%s) p(%s,%s)", tostring(fx), tostring(fy), tostring(px), tostring(py)))
+    CHECK(tx == fx and cx == px, "grid: the columns line up")
+    CHECK(row.raidMark.__w == 10 and row.combatMark.__w == 10 and row.bgMarks[1].__w == 10, "grid: ten-pixel cells")
+
+    -- The flag goes to the flag cell even when it is not first in the list,
+    -- and the powerup to its own; wearing both lights both
+    Wear(ZERK, FLAG); Fire("UNIT_AURA", "party1"); Pump()
+    CHECK(row.bgMarks[1].__shown == true and row.bgMarks[1].__texture == "flag-art", "grid: flag in the flag cell", row.bgMarks[1].__texture)
+    CHECK(row.bgMarks[2].__shown == true and row.bgMarks[2].__texture == "zerk-art", "grid: powerup in the powerup cell", row.bgMarks[2].__texture)
+    Wear(ZERK); Fire("UNIT_AURA", "party1"); Pump()
+    CHECK(row.bgMarks[1].__shown == false and row.bgMarks[2].__shown == true, "grid: a powerup alone leaves the flag cell dark rather than sliding left")
+    fighting.party1 = true
+    Pump()
+    CHECK(row.combatMark.__shown == true, "grid: ...with the blades lit beside it -- three marks, three cells")
+    fighting.party1 = nil
+    Wear(); Fire("UNIT_AURA", "party1"); Pump()
+
+    -- The seat is one block: switching one mark off does not move the bar,
+    -- switching all three off gives the whole seat back
+    CommanderPartyFramesDB.ShowCombat = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE); Pump()
+    CHECK(AllyRow()._barW == seatBarW, "grid: one mark off -> the bar does not move (the seat is spent as a block)",
+        tostring(seatBarW) .. " -> " .. tostring(AllyRow()._barW))
+    CommanderPartyFramesDB.ShowTargetMarks = false
+    CommanderPartyFramesDB.ShowBGBuffs = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE); Pump()
+    CHECK(AllyRow()._barW == seatBarW + 24, "grid: all three off -> the 21px seat and its gap come back to the bar",
+        tostring(seatBarW) .. " -> " .. tostring(AllyRow()._barW))
+    -- Outside a battleground the seat is the same width: nothing zone-dependent
+    CommanderPartyFramesDB.ShowTargetMarks = true
+    CommanderPartyFramesDB.ShowCombat = true
+    CommanderPartyFramesDB.ShowBGBuffs = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE); Pump()
+    instanceKind = "arena"
+    Fire("PLAYER_ENTERING_WORLD"); Pump()
+    CHECK(AllyRow()._barW == seatBarW, "grid: an arena row keeps the same seat (no zone relayout)",
+        tostring(AllyRow()._barW) .. " vs " .. tostring(seatBarW))
+    -- Versus the old layout, the seat is a third of the width
+    CommanderPartyFramesDB.MarkLayout = "ROW"
+    instanceKind = "pvp"
+    Fire("PLAYER_ENTERING_WORLD")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE); Pump()
+    CHECK(AllyRow()._barW < seatBarW, "grid: the stacked seat leaves the bar wider than a row of seats in a battleground",
+        tostring(AllyRow()._barW) .. " vs " .. tostring(seatBarW))
+
+    -- The blueprint describes the seat
+    CommanderPartyFramesDB.MarkLayout = "GRID"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE); Pump()
+    local bp = CommanderPartyFrames_RowBlueprint()
+    CHECK(bp and bp.grid == true and bp.seat == 21 and bp.cell == 10, "grid: blueprint reports the seat")
+
+    __setUnitBuffs("party1", nil)
+    instanceKind = keepZone
+    CommanderPartyFramesDB.MarkLayout = keepLayout
+    CommanderPartyFramesDB.IncludeSelf = keepSelf
+    UnitExists, UnitGUID, UnitInRange = baseExists, baseGUID, baseRange
+    UnitAffectingCombat, UnitIsVisible = baseCombat, baseVisible
+    partyUp = {}
+    Fire("PLAYER_ENTERING_WORLD")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); Pump()
+end
+
+-- ===========================================================================
+-- Nearby Raid: a released ghost is infinitely far; an unreleased corpse is not
+-- ===========================================================================
+local function CheckGhosts()
+    local near = CommanderPartyFrames_NearYards
+    if not near then
+        CHECK(false, "ghosts: CommanderPartyFrames_NearYards is exported")
+        return
+    end
+    local baseGhost, basePos = UnitIsGhost, UnitPosition
+    function UnitPosition(unit)
+        if unit == "player" then return 0, 0, 0, 1 end
+        return 30, 40, 0, 1     -- 50 yards away
+    end
+    local ghosts = {}
+    function UnitIsGhost(unit) return ghosts[unit] == true end
+    local keep = CommanderPartyFramesDB.NearGhostsFar
+    CommanderPartyFramesDB.NearGhostsFar = true
+    local y = near("raid3")
+    CHECK(math.abs(y - 50) < 0.01, "ghosts: a living ally is measured", y)
+    ghosts.raid3 = true
+    y = near("raid3")
+    CHECK(y >= 400, "ghosts: a released ghost is further than anything measurable", y)
+    CommanderPartyFramesDB.NearGhostsFar = false
+    y = near("raid3")
+    CHECK(math.abs(y - 50) < 0.01, "ghosts: ...unless the option is off", y)
+    CommanderPartyFramesDB.NearGhostsFar = keep
+    UnitIsGhost, UnitPosition = baseGhost, basePos
+end
+
+-- ===========================================================================
+-- Production in Header (5.28.0)
+-- ===========================================================================
+-- Commander_Production's queue standing in for the class cooldown run. It is
+-- mocked here as the one function the embed reads — the module itself never
+-- loads in this harness — so what is under test is the banner's half of the
+-- contract: the run's slot is taken, the class cooldowns are gone, the rest
+-- of the readout is untouched, and every way the queue can be absent hands
+-- the slot back.
+local function CheckProductionEmbed()
+    local rootF = _G.CommanderPartyFramesFrame
+    local db = CommanderPartyFramesDB
+    local function Redraw()
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        now = now + 1
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
+    local function Shown()
+        local out, segs = {}, rootF.hdrSegs or {}
+        for i = 1, #segs do
+            if segs[i].icon.__shown then out[#out + 1] = segs[i] end
+        end
+        return out
+    end
+    local function Textures()
+        local out = {}
+        for _, s in ipairs(Shown()) do out[s.icon.__texture or "?"] = true end
+        return out
+    end
+    -- One cooldown each layer's mock spellbook knows, so the swap is
+    -- visible on every class this runs on
+    local CLASS_CD = {
+        MAGE = "Interface\\Icons\\Spell_45438",     -- Ice Block
+        PRIEST = "Interface\\Icons\\Spell_33206",   -- Pain Suppression
+        DRUID = "Interface\\Icons\\Spell_29166",    -- Innervate
+        PALADIN = "Interface\\Icons\\Spell_633",    -- Lay on Hands
+    }
+    local classCd = CLASS_CD[CLASS]
+    local PROD_A = "Interface\\Icons\\INV_Misc_PocketWatch_01"
+    local PROD_B = "Interface\\Icons\\INV_Misc_PocketWatch_02"
+
+    db.ShowHeader = true
+    db.HeaderProduction = false
+    for _, k in ipairs({ "MageBannerCooldowns", "PriestBannerCooldowns",
+        "HotBannerCooldowns", "BlessBannerCooldowns" }) do db[k] = true end
+    _G.CommanderProduction_Queue = nil
+    Redraw()
+    local before = Textures()
+    CHECK(classCd and before[classCd] == true,
+        "embed: the class cooldown run draws with the option off", classCd)
+    local baseline = #Shown()
+    local lead = Shown()[1] and Shown()[1].icon.__texture
+
+    -- The mock queue: one pending entry ten seconds out, one lingering
+    -- READY entry half faded, in the order Production sorts them
+    local queue = {
+        -- Redraw steps the clock by one before it draws, so this is ten
+        -- seconds out as the banner sees it
+        { name = "A", entry = { texture = PROD_A, start = now - 19, duration = 30, spellID = 1 } },
+        { name = "B", entry = { texture = PROD_B, start = now - 60, duration = 30, readyAt = now },
+          ready = true, alpha = 0.5 },
+    }
+    local enabled = true
+    function _G.CommanderProduction_Queue()
+        if not enabled then return nil end
+        return queue, #queue
+    end
+
+    -- Option on, Production present: the queue takes the run's slot
+    db.HeaderProduction = true
+    Redraw()
+    local drawn = Textures()
+    CHECK(drawn[PROD_A] == true and drawn[PROD_B] == true,
+        "embed: both queue entries get a segment")
+    CHECK(drawn[classCd] ~= true,
+        "embed: ...and the class cooldown run is gone", classCd)
+    local segA, segB
+    for _, sg in ipairs(Shown()) do
+        if sg.icon.__texture == PROD_A then segA = sg end
+        if sg.icon.__texture == PROD_B then segB = sg end
+    end
+    CHECK(segA and segA.icon.__desat == true and segA.text.__text == "10",
+        "embed: a pending entry is dimmed with its seconds left, computed live",
+        segA and tostring(segA.text.__text))
+    CHECK(segB and segB.icon.__desat == false and (segB.text.__text or "") == ""
+        and segB.icon.__alpha == 0.5,
+        "embed: a READY entry is lit, bare, and carries Production's fade",
+        segB and tostring(segB.icon.__alpha))
+    -- Same grammar as the class run for a long wait
+    queue[1].entry.start = now
+    queue[1].entry.duration = 600
+    Redraw()
+    for _, sg in ipairs(Shown()) do
+        if sg.icon.__texture == PROD_A then segA = sg end
+    end
+    CHECK(segA and segA.text.__text == "10m",
+        "embed: minutes read as the class run writes them", segA and segA.text.__text)
+    -- The segments AHEAD of the run keep their slots: whatever led the
+    -- banner before (armor / aura / Inner Fire) still leads it. A druid in
+    -- caster form spends no slot on the form, so there the run itself led
+    -- and the queue rightly takes its place.
+    local first = Shown()[1]
+    if lead and lead ~= classCd then
+        CHECK(first and first.icon.__texture == lead,
+            "embed: the layer's leading segment still leads", first and first.icon.__texture)
+    else
+        CHECK(first and first.icon.__texture == PROD_A,
+            "embed: with nothing ahead of the run, the queue leads", first and first.icon.__texture)
+    end
+    -- Gear and rows toggle are untouched by the swap
+    local gear, rows
+    for _, f in ipairs(allFrames) do
+        if f.cog and f.hub then gear = f end
+    end
+    CHECK(gear == nil or gear.__shown ~= false, "embed: the settings gear is still on the header")
+
+    -- An entry that ran out while Production's frame was closed is not drawn
+    -- on a stale `remaining`: the time left is computed here
+    queue[1].entry.start = now - 100
+    queue[1].entry.duration = 30
+    Redraw()
+    CHECK(Textures()[PROD_A] ~= true, "embed: an expired pending entry is skipped, not drawn at zero")
+    queue[1].entry.start = now
+    -- Queue emptied: nothing from Production, and the class run stays gone
+    -- (the option is on and the module is up — an empty queue is the truth)
+    local keepA, keepB = queue[1], queue[2]
+    queue[1], queue[2] = nil, nil
+    Redraw()
+    drawn = Textures()
+    CHECK(drawn[PROD_A] ~= true and drawn[classCd] ~= true,
+        "embed: an empty queue draws nothing in the slot, and no class fallback")
+    queue[1], queue[2] = keepA, keepB
+
+    -- Production disabled at its own master switch: the class run comes back
+    enabled = false
+    Redraw()
+    drawn = Textures()
+    CHECK(drawn[classCd] == true and drawn[PROD_A] ~= true,
+        "embed: Production switched off hands the slot back to the class run")
+    enabled = true
+
+    -- Option off: the class run comes back, and the queue is gone
+    db.HeaderProduction = false
+    Redraw()
+    drawn = Textures()
+    CHECK(drawn[classCd] == true and drawn[PROD_A] ~= true and drawn[PROD_B] ~= true,
+        "embed: the option off restores the class run")
+    CHECK(#Shown() == baseline, "embed: ...to exactly the segments it had",
+        string.format("%d vs %d", #Shown(), baseline))
+
+    -- Production not loaded at all: the option is inert, not an error
+    db.HeaderProduction = true
+    _G.CommanderProduction_Queue = nil
+    Redraw()
+    drawn = Textures()
+    CHECK(drawn[classCd] == true, "embed: no Production loaded, class run untouched")
+    db.HeaderProduction = false
+    Redraw()
+end
+
+-- ===========================================================================
+-- Header presentation
+-- ===========================================================================
+-- The Header section makes eleven things about the banner adjustable, and the
+-- first promise it makes is that none of them move until you move them: every
+-- default is the number the header used to hard-code. So this checks the
+-- defaults as EXACT numbers, then takes each control somewhere extreme and
+-- checks the banner actually followed it there.
+--
+-- Runs on every class layer because the banner is chassis: the four layers
+-- differ in what the readout says, never in how it is drawn.
+local function CheckHeaderStyle()
+    local rootF = _G.CommanderPartyFramesFrame
+    local db = CommanderPartyFramesDB
+    -- Its own pump rather than the file-level DrawOnce: this runs on both
+    -- sides of the non-mage early exit, and that helper is declared below it.
+    local function Redraw()
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        now = now + 1
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
+    local function Anchor(w)
+        return w.__points and w.__points[#w.__points]
+    end
+    local gear
+    for _, f in ipairs(allFrames) do
+        if f.cog and f.hub then gear = f end
+    end
+
+    db.ShowHeader = true
+    db.HeaderBackdrop = true
+    Redraw()
+    local segs = rootF.hdrSegs
+    CHECK(segs and segs[1] and segs[1].icon.__w == 12,
+        "a banner nobody has configured draws 12px segment icons",
+        segs and segs[1] and tostring(segs[1].icon.__w))
+    CHECK(rootF.headerBG and rootF.headerBG.__h == 15,
+        "...in a 15px strip", rootF.headerBG and tostring(rootF.headerBG.__h))
+    local bg = rootF.headerBG and rootF.headerBG.__color or {}
+    CHECK(bg[1] == 0 and bg[2] == 0 and bg[3] == 0 and bg[4] == 0.55,
+        "...on the black-at-55% panel it always had",
+        table.concat({ tostring(bg[1]), tostring(bg[4]) }, "/"))
+    CHECK(rootF.headerRule == nil or rootF.headerRule.__shown ~= true,
+        "...and no divider line, which is the new thing and so is off")
+
+    -- Height and icon size together: everything on the strip centres itself
+    -- in whatever height it is given, so these two are only correct RELATIVE
+    -- to each other and a test that pinned one without the other would pass
+    -- on a banner drawn hard against the top edge.
+    db.HeaderHeight, db.HeaderIconSize = 31, 21
+    db.HeaderSegmentGap, db.HeaderInset = 2, 11
+    Redraw()
+    CHECK(rootF.headerBG.__h == 31, "the strip takes the height it is given",
+        tostring(rootF.headerBG.__h))
+    CHECK(segs[1].icon.__w == 21 and segs[1].icon.__h == 21,
+        "and the icons the size they are given", tostring(segs[1].icon.__w))
+    local first = Anchor(segs[1].icon)
+    CHECK(first and first.y == -5, "a 21px icon centres in a 31px strip",
+        first and tostring(first.y))
+    local second = Anchor(segs[2].icon)
+    CHECK(second and second.rel == segs[1].text and second.x == 2,
+        "and the next segment follows at the gap it was given",
+        second and tostring(second.x))
+    CHECK((rootF._segX or 0) >= 3 + 11,
+        "the readout starts past the stripe plus the inset",
+        tostring(rootF._segX))
+
+    -- Growing a pool that is already built is the case this gets wrong if
+    -- EnsureSegs and RestyleHeader disagree about who owns the size: a
+    -- segment created AFTER the settings changed must match its siblings.
+    for i = 2, #segs do
+        CHECK(segs[i].icon.__w == 21,
+            "every segment in the pool carries the new size, not just the first",
+            i .. ":" .. tostring(segs[i].icon.__w))
+    end
+
+    -- A strip SHORTER than its contents hangs them from the top rather than
+    -- pushing them above the board, which is the one case where centring has
+    -- to give up rather than go negative.
+    db.HeaderHeight, db.HeaderIconSize = 10, 20
+    Redraw()
+    first = Anchor(segs[1].icon)
+    CHECK(first and first.y == 0,
+        "an icon taller than its strip is pinned to the top, never above it",
+        first and tostring(first.y))
+
+    -- Font
+    db.HeaderHeight, db.HeaderIconSize = 15, 12
+    db.HeaderFont, db.HeaderFontSize, db.HeaderFontOutline = "NARROW", 16, "THICK"
+    Redraw()
+    local font = segs[1].text.__font or {}
+    CHECK(font[1] == "Fonts\\ARIALN.TTF" and font[2] == 16 and font[3] == "THICKOUTLINE",
+        "face, size and outline all reach the readout",
+        table.concat({ tostring(font[1]), tostring(font[2]), tostring(font[3]) }, " "))
+
+    -- Chrome: scaled, not resized, and the anchor offsets are divided back
+    -- out of the scale -- a button at 2x asked for -6 lands twelve of root's
+    -- pixels from the edge, which is the bug this pins.
+    if gear then
+        db.HeaderChromeScale = 1
+        Redraw()
+        local plain = Anchor(gear)
+        db.HeaderChromeScale = 2
+        Redraw()
+        CHECK(gear.__scale == 2, "the control size scales the gear",
+            tostring(gear.__scale))
+        local big = Anchor(gear)
+        CHECK(plain and big and math.abs(big.x - plain.x / 2) < 0.001,
+            "and its offset is divided back out, so it stays on the edge",
+            plain and big and (tostring(plain.x) .. " -> " .. tostring(big.x)))
+        db.HeaderChromeScale = 1
+        Redraw()
+    end
+
+    -- Tint and opacity
+    db.HeaderBackdropTint, db.HeaderBackdropAlpha = "BLOOD", 0.9
+    Redraw()
+    local tint = rootF.headerBG.__color or {}
+    CHECK(tint[1] > tint[2] and tint[1] > tint[3] and tint[4] == 0.9,
+        "a red tint reaches the panel at the opacity asked for",
+        table.concat({ tostring(tint[1]), tostring(tint[4]) }, "/"))
+    db.HeaderBackdropTint = "CLASS"
+    Redraw()
+    tint = rootF.headerBG.__color or {}
+    CHECK(tint[1] <= 0.35 and tint[2] <= 0.35 and tint[3] <= 0.35,
+        "and a class colour is mixed DOWN to backdrop weight, not used raw",
+        table.concat({ tostring(tint[1]), tostring(tint[2]), tostring(tint[3]) }, "/"))
+
+    -- The divider is deliberately independent of the panel: switching the
+    -- backdrop off and the line on is the whole point of having both.
+    db.HeaderBackdropTint, db.HeaderBackdropAlpha = "BLACK", 0.55
+    db.HeaderBackdrop, db.HeaderRule = false, true
+    Redraw()
+    CHECK(rootF.headerBG.__shown == false, "the panel goes when it is switched off")
+    CHECK(rootF.headerRule and rootF.headerRule.__shown == true,
+        "and the divider line stands on its own without it")
+    local rule = Anchor(rootF.headerRule)
+    CHECK(rule and rule.y == -15, "drawn along the strip's bottom edge",
+        rule and tostring(rule.y))
+    local rc = rootF.headerRule.__color or {}
+    CHECK(rc[1] and rc[1] > 0,
+        "in a LIFTED tint -- black on black is not a line", tostring(rc[1]))
+
+    -- Header off takes the whole thing, new pieces included
+    db.ShowHeader = false
+    Redraw()
+    CHECK(rootF.headerRule.__shown == false,
+        "and Show Header still takes everything on the strip down with it")
+
+    db.ShowHeader, db.HeaderBackdrop, db.HeaderRule = true, true, false
+    db.HeaderFont, db.HeaderFontSize, db.HeaderFontOutline = "DEFAULT", 10, "NONE"
+    db.HeaderSegmentGap, db.HeaderInset = 8, 4
+    Redraw()
+end
 if CLASS ~= "MAGE" then
     CheckSectionSizing()
     CheckRowFit()
@@ -2830,7 +5751,17 @@ if CLASS ~= "MAGE" then
     CheckShadowRead()
     CheckBuffTargets()
     CheckPets()
+    CheckPowerStrip()
+    CheckForecast()
+    CheckHealPredict()
+    CheckOverheal()
+    CheckCombatMarks()
+    CheckBGMarks()
+    -- Nearby Raid is chassis, not a class layer, so it is verified on every
+    -- board rather than only the one this file happens to start on
+    CheckNearby()
     CheckBlizzToggle()
+    CheckDropdowns()
     -- The mage layer's controls must NOT appear on another class's banner
     CHECK(consume == nil, "no consume button off the mage layer")
     CHECK(conjure == nil, "no conjure button off the mage layer")
@@ -2859,6 +5790,8 @@ if CLASS ~= "MAGE" then
         CHECK(p ~= nil and p.x and p.x >= 6 + 13,
             "banner content starts clear of the bandage button", p and p.x)
     end
+    CheckHeaderStyle()
+    CheckProductionEmbed()
     CHECK(#caughtErrors == 0, "no errors on the non-mage banner", caughtErrors[1])
     io.write(string.format("[%s] %d checks, %d failures\n", CLASS, checks, fails))
     os.exit(fails == 0 and 0 or 1)
@@ -3121,6 +6054,20 @@ do
         "Ice Block, which this mage knows, gets a segment")
     CHECK(drawn["Interface\\Icons\\Spell_11129"] ~= true,
         "Combustion, which they do not, never does")
+    CHECK(drawn["Interface\\Icons\\Spell_11958"] == true,
+        "Cold Snap does too — Block's answer reads next to Block")
+    -- The banner is Block and Cold Snap and nothing else. Everything a mage
+    -- PRESSES already wears a cooldown swipe on the action bar, three times
+    -- this size, exactly where the eyes go to press it again; repeating it in
+    -- 12px up here bought nothing and spent the width the readout needs.
+    for id, what in pairs({
+        [12051] = "Evocation", [2139] = "Counterspell", [12472] = "Icy Veins",
+        [12043] = "Presence of Mind", [12042] = "Arcane Power",
+        [66] = "Invisibility", [122] = "Frost Nova",
+    }) do
+        CHECK(drawn["Interface\\Icons\\Spell_" .. id] ~= true,
+            what .. " is off the banner: the action bar already says it")
+    end
     -- Both live on their own rows below the board; repeating them here would
     -- be width spent twice
     CHECK(drawn["Interface\\Icons\\Spell_11426"] ~= true,
@@ -3224,8 +6171,20 @@ local function AnchorChain()
     end
     return chain
 end
+-- Conjure, Consume, Mana Gem and Portals are all between-games convenience,
+-- and on this banner they sit in FRONT of the readout. Off by default, as a
+-- group. Bandage is not in the group: it is the one you press mid-fight.
 local chain = AnchorChain()
-CHECK(#chain == 5, "all five buttons on the cluster by default", #chain)
+CHECK(#chain == 1 and chain[1].btn == bandage,
+    "only Bandage on the cluster by default", #chain)
+local bandAnchor = bandage.__points[#bandage.__points]
+CHECK(bandAnchor.rel == _G.CommanderPartyFramesFrame and bandAnchor.point == "TOPLEFT",
+    "...and it takes the left edge on its own", tostring(bandAnchor.point))
+
+CommanderPartyFramesDB.MageUtilityButtons = true
+Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+chain = AnchorChain()
+CHECK(#chain == 5, "all five once the utility cluster is switched on", #chain)
 
 CommanderPartyFramesDB.ShowGemButton = false
 Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
@@ -3245,6 +6204,16 @@ CommanderPartyFramesDB.ShowBandageButton = true
 Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
 CHECK(gem.__shown and bandage.__shown, "both come back")
 
+-- The group flag outranks the per-button ones: switching the cluster off
+-- takes the gem and the portals with it and leaves the bandage alone.
+CommanderPartyFramesDB.MageUtilityButtons = false
+Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+CHECK(gem.__shown == false and conjure.__shown == false and consume.__shown == false,
+    "the cluster flag takes conjure, consume and the gem with it")
+CHECK(bandage.__shown == true, "...and leaves the bandage, which is not in the group")
+CommanderPartyFramesDB.MageUtilityButtons = true
+Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
 -- A mage with no teleports trained gets no portal button
 for _, id in ipairs({ 3561, 3562, 3565, 32271, 33690, 10059, 11416, 11419, 32266, 33691 }) do
     knownIds[id] = nil
@@ -3255,7 +6224,7 @@ CHECK(portal.__shown == false, "portal button hides when nothing is trained")
 -- ===========================================================================
 -- Header alignment and the personal block (mage layer)
 -- ===========================================================================
-local STRIPE_W_TEST = 3 + 4   -- the engine's bare left inset (STRIPE_W + 4)
+local STRIPE_W_TEST = 3 + 4   -- STRIPE_W + the default Left Inset
 local chromeBtn
 for _, f in ipairs(allFrames) do
     if f.bars and f.slash then chromeBtn = f end
@@ -3724,8 +6693,59 @@ CheckBlessAssign()
 CheckShadowRead()
 CheckBuffTargets()
 CheckPets()
+CheckPowerStrip()
+CheckForecast()
+CheckHealPredict()
+CheckOverheal()
+CheckCombatMarks()
+CheckBGMarks()
+CheckMarkGrid()
+CheckGhosts()
 
+
+CheckNearby()
 CheckBlizzToggle()
+CheckDropdowns()
+CheckHeaderStyle()
+
+-- The settings-page anatomy diagram reads a blueprint laid out by the SAME
+-- LayoutRow the live rows use. If the two ever disagree, the diagram lies
+-- about where the width goes -- the one thing it exists to explain.
+local function CheckBlueprint()
+    local bp = CommanderPartyFrames_RowBlueprint and CommanderPartyFrames_RowBlueprint()
+    CHECK(bp ~= nil, "blueprint: the scratch row lays out")
+    if not bp then return end
+    local live = _G.CommanderPartyFramesRow1
+    if live and live._blueprint then
+        CHECK(math.abs((live._barW or 0) - bp.barW) < 0.01, "blueprint: bar width matches the live row",
+            string.format("%.1f vs %.1f", bp.barW, live._barW or -1))
+        CHECK(#live._blueprint.slots == #bp.slots, "blueprint: same slot count as the live row",
+            string.format("%d vs %d", #bp.slots, #live._blueprint.slots))
+    end
+    local leftEnd = bp.barX
+    local lastSlot = bp.slots[#bp.slots]
+    if lastSlot then
+        CHECK(lastSlot.x + lastSlot.w <= leftEnd + 0.01, "blueprint: every left slot ends before the bar starts",
+            string.format("%.1f > %.1f", lastSlot.x + lastSlot.w, leftEnd))
+    end
+    CHECK(bp.barX + bp.barW + bp.pad + bp.marks + bp.combat + bp.bg <= bp.width + 0.01,
+        "blueprint: bar + reserved seats fit inside the frame",
+        string.format("%.1f + %.1f + %d + %d + %d + %d vs %d", bp.barX, bp.barW, bp.pad, bp.marks, bp.combat, bp.bg, bp.width))
+    -- The seats follow their settings
+    local marksWas, combatWas = CommanderPartyFramesDB.ShowTargetMarks, CommanderPartyFramesDB.ShowCombat
+    CommanderPartyFramesDB.ShowTargetMarks = false
+    CommanderPartyFramesDB.ShowCombat = false
+    local bare = CommanderPartyFrames_RowBlueprint()
+    CHECK(bare.marks == 0 and bare.combat == 0, "blueprint: marks off -> no seats reserved")
+    CHECK(bare.barW > bp.barW or (bp.marks + bp.combat == 0), "blueprint: ...and the bar takes the width",
+        string.format("%.1f vs %.1f", bare.barW, bp.barW))
+    CommanderPartyFramesDB.ShowTargetMarks, CommanderPartyFramesDB.ShowCombat = marksWas, combatWas
+    CommanderPartyFrames_RowBlueprint()
+    -- A scratch row never joins the board
+    CHECK(_G.CommanderPartyFramesFrame ~= nil, "blueprint: the board frame still exists")
+end
+CheckBlueprint()
+CheckProductionEmbed()
 
 CHECK(#caughtErrors == 0, "no errors across the run", caughtErrors[1])
 

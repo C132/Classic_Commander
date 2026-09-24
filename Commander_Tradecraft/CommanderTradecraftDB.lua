@@ -74,7 +74,7 @@ local function CreateOptionsPanel()
         key = "Tradecraft",
         title = "Tradecraft",
         addonName = "Commander_Tradecraft",
-        description = "Guided profession leveling, the way the leveling guides do it: one step on screen at a time. The guide window shows the recipe to craft now, how many more it will take, what you hold against what it needs, and a Craft button — or a Tradecraft macro it keeps up to date for binding — that casts the recipe and lands the enchant on your own gear in one click. Formula steps name the vendor, the zone and the coordinates; a banner tells you when a trainer has a new rank for you. The shopping list is the rest of the route by trainer bracket, each one a shopping trip, less what is already in your bags and bank. Enchanting 1 to 375 for now.",
+        description = "Guided profession leveling, the way the leveling guides do it: one step on screen at a time. The guide window shows the recipe to craft now, how many more it will take, what you hold against what it needs, and a Craft button — or a Tradecraft macro it keeps up to date for binding — that casts the recipe and lands the enchant on your own gear in one click. Formula steps name the vendor, the zone and the coordinates; a banner tells you when a trainer has a new rank for you — or, for First Aid, which book to buy and which quest to do. The shopping list is the rest of the route by trainer bracket, each one a shopping trip, less what is already in your bags and bank. Enchanting 1 to 375 and First Aid 1 to 375; the title of the guide window switches between them, and whichever profession window you open comes on screen.",
         event = COMMANDER_TRADECRAFT_EVENTS.UPDATE,
         slash = { "/ctc", "/ctradecraft" },
         slashHandlers = {
@@ -89,6 +89,9 @@ local function CreateOptionsPanel()
             craft = function() Call("CommanderTradecraft_Craft") end,
             reset = function() Call("CommanderTradecraft_ResetProgress") end,
             status = function() Call("CommanderTradecraft_Status") end,
+            guide = function(arg) Call("CommanderTradecraft_Guide", arg) end,
+            enchanting = function() Call("CommanderTradecraft_Guide", "ENCHANTING") end,
+            firstaid = function() Call("CommanderTradecraft_Guide", "FIRSTAID") end,
         },
     })
 
@@ -103,8 +106,8 @@ local function CreateOptionsPanel()
     panel:AddSection("The Guide Window",
         "The step you are on, the reagents it wants, and the button that crafts it.")
     panel:AddCheckboxPair({
-        label = "Open With The Craft Window",
-        tooltip = "Show the guide whenever your Enchanting window opens, even if you had closed it. The guide is most use when the craft list is on screen beside it.",
+        label = "Open With The Profession Window",
+        tooltip = "Show the guide whenever your Enchanting or First Aid window opens, even if you had closed it, on that profession's guide. The guide is most use when the recipe list is on screen beside it.",
         get = function() return CommanderTradecraftDB.AutoOpenWithCraft end,
         set = function(value) CommanderTradecraftDB.AutoOpenWithCraft = value end,
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
@@ -255,7 +258,8 @@ local function OnEvent(self, event, addonName)
         char.choices = type(char.choices) == "table" and char.choices or {}
         char.skipped = type(char.skipped) == "table" and char.skipped or {}
         char.knownRecipes = type(char.knownRecipes) == "table" and char.knownRecipes or {}
-        char.guide = char.guide or "ENCHANTING"
+        -- `guide` is left unset for a new character: the window picks the
+        -- first guide whose profession they have at login
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         CreateOptionsPanel()

@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Adjutant
 ## Author: Devin
-## Version: 2.1.0
-## Notes: RTS-style announcer: on-screen banners and alert sounds for attacks, critical health, repairs, full bags, level-ups, and reinforcements.
+## Version: 2.2.1
+## Notes: RTS-style announcer: on-screen banners and alert sounds for attacks, critical health, repairs, full bags, level-ups, and reinforcements — plus a draining countdown on the battleground invite that survives the Hide button and can be clicked to enter.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderAdjutantDB
 ## RequiredDeps: Commander_Events

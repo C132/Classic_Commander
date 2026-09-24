@@ -12,6 +12,23 @@ python3 crosscheck_enhancements.py      # verify identity against Wowhead
 python3 crosscheck_atlasloot.py         # verify sourcing against AtlasLoot
 ```
 
+## In-addon check
+
+```bash
+/opt/homebrew/bin/luajit Harness/quartermaster_harness.lua   # 332 checks
+/opt/homebrew/bin/luajit Harness/globals_lint.lua            # 6 files, 0 undeclared globals
+```
+
+`globals_lint.lua` exists because this module is 3,400 lines of mutually
+recursive local functions, and in Lua a local declared AFTER a function body is
+not in that body's scope — the reference silently compiles to a global access
+and reads nil at runtime. It was added the day `SidebarButton` was written
+above `CreateSidebarButton` and would have called a nil global on the only path
+that matters (a list outgrowing the button pool), which nothing exercises until
+it happens to a player. luajit's bytecode listing names every global a file
+really touches, so the check is exact rather than heuristic. Add a genuinely new
+WoW API to `ALLOWED`; do not add a name just to make it quiet.
+
 `tbcdb_to_sqlite.py` stages the server-side facts the client does not carry —
 npc_vendor with extended costs, creature/object/reference loot, quests,
 trainers, prospecting, disenchanting. `build_enhancements.py` takes the
@@ -88,7 +105,11 @@ inside the coalesce window, the mail inbox-seen gate), tooltip count scoping
 transit (case-insensitive recipient match, merge, MAIL_FAILED discard,
 unknown recipients, supersede-by-own-scan, 31-day login prune), deep token
 search, era/source filters, column sorting, the watchlist (targets, badges,
-stars, popup plumbing, reset survival), loadout readiness grades + both
+markers, popup plumbing, reset survival), favorites (section U: the star
+button's own click, both key shapes — carrier item and enchant+spell for the
+enchanter-cast entries — the shelf on both pages, the favorites-only filter,
+the tooltip line with counts turned off, the shopping-list section, and reset
+survival), loadout readiness grades + both
 GetTalentTabInfo shapes + played-class verdict isolation, the shopping list,
 the raid supply check (dedupe window, sound, master toggle), the roster view
 (hide/forget, gold, column relabel), slash dispatch, and the Inventory crate

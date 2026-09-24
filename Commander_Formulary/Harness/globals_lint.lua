@@ -23,6 +23,7 @@ local ROOT = HERE:match("^(.*)/Harness$") or
 
 local FILES = {
     "CommanderFormularyData_Enchanting.lua",
+    "CommanderFormularyData_FirstAid.lua",
     "CommanderFormularyModel.lua",
     "CommanderFormularyDB.lua",
     "CommanderFormularyUI.lua",
@@ -47,6 +48,7 @@ CommanderFormularyDB CommanderFormularyChar COMMANDER_FORMULARY_EVENTS
 CommanderFormulary_Data CommanderFormulary_Model CommanderFormulary_Defaults CommanderFormulary
 CommanderFormulary_Show CommanderFormulary_Hide CommanderFormulary_Toggle CommanderFormulary_Search CommanderFormulary_RefreshPrices
 CommanderFormulary_Select CommanderFormulary_ResetChar CommanderFormulary_Status CommanderFormulary_View
+CommanderFormulary_Profession
 CommanderFormulary_OnLogin
 BINDING_HEADER_COMMANDERFORMULARY BINDING_NAME_COMMANDERFORMULARY_TOGGLE BINDING_NAME_COMMANDERFORMULARY_SEARCH
 ]]
@@ -61,10 +63,12 @@ UIDropDownMenu_SetWidth UIDropDownMenu_SetSelectedValue UIDropDownMenu_SetText
 ChatEdit_InsertLink GetSpellLink
 ]]
 
--- The skill line, the craft window, the spellbook
+-- The skill line, the two stock windows (CRAFT for Enchanting, TRADE SKILL
+-- for First Aid), the spellbook
 allow [[
 GetNumSkillLines GetSkillLineInfo ExpandSkillHeader
 CraftFrame GetCraftDisplaySkillLine GetNumCrafts GetCraftInfo
+TradeSkillFrame GetTradeSkillLine GetNumTradeSkills GetTradeSkillInfo
 IsSpellKnown IsPlayerSpell GetSpellInfo GetSpellTexture GetInventoryItemID
 ]]
 

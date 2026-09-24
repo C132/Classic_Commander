@@ -403,7 +403,7 @@ function GetNumSkillLines() return me.maxRank > 0 and 3 or 1 end
 function GetSkillLineInfo(i)
     if i == 1 then return "Professions", true end
     if i == 2 and me.maxRank > 0 then return "Enchanting", false, false, me.rank, 0, 0, me.maxRank end
-    if i == 3 then return "First Aid", false, false, 10, 0, 0, 75 end
+    if i == 3 then return "First Aid", false, false, me.faRank or 10, 0, 0, me.faMax or 75 end
     return nil
 end
 local expandedHeaders = 0
@@ -441,6 +441,18 @@ function GetCraftInfo(i)
     local row = craft.list[i]
     if not row then return nil end
     return row.name, nil, row.header and "header" or "optimal", row.available or 5
+end
+-- The trade skill window (First Aid): its own frame, its own list, and a
+-- skill line that answers name, rank, maxRank
+local trade = { shown = false, list = {}, skill = "First Aid" }
+TradeSkillFrame = NewWidget("Frame", "TradeSkillFrame")
+TradeSkillFrame.IsShown = function() return trade.shown end
+function GetTradeSkillLine() return trade.skill, me.faRank or 10, me.faMax or 75 end
+function GetNumTradeSkills() return #trade.list end
+function GetTradeSkillInfo(i)
+    local row = trade.list[i]
+    if not row then return nil end
+    return row.name, row.header and "header" or "optimal", row.available or 5, true
 end
 -- Macros
 -- Account macros index 1..120, character macros 121+, as the client does
@@ -495,7 +507,7 @@ local KNOWN_EVENTS = {}
 for name in ([[
 ADDON_LOADED PLAYER_LOGIN PLAYER_LOGOUT PLAYER_ENTERING_WORLD
 SKILL_LINES_CHANGED CHAT_MSG_SKILL BAG_UPDATE_DELAYED PLAYERBANKSLOTS_CHANGED BANKFRAME_OPENED
-CRAFT_SHOW CRAFT_UPDATE CRAFT_CLOSE SPELLS_CHANGED NEW_RECIPE_LEARNED UPDATE_FACTION
+CRAFT_SHOW CRAFT_UPDATE CRAFT_CLOSE TRADE_SKILL_SHOW TRADE_SKILL_UPDATE TRADE_SKILL_CLOSE SPELLS_CHANGED NEW_RECIPE_LEARNED UPDATE_FACTION
 UNIT_INVENTORY_CHANGED PLAYER_REGEN_ENABLED PLAYER_REGEN_DISABLED REPLACE_ENCHANT
 GET_ITEM_INFO_RECEIVED UPDATE_MACROS AUCTION_HOUSE_SHOW AUCTION_HOUSE_CLOSED
 ]]):gmatch("%S+") do KNOWN_EVENTS[name] = true end
@@ -567,6 +579,7 @@ Load(ADDONS .. "/Commander_Tradecraft/CommanderTradecraftData.lua")
 Load(ADDONS .. "/Commander_Tradecraft/CommanderTradecraftEngine.lua")
 for spell, rec in pairs(CommanderTradecraft_Data.RECIPES) do DATA_NAMES[spell] = rec.name end
 DATA_NAMES[7411] = "Enchanting"
+DATA_NAMES[3273] = "First Aid"
 Load(ADDONS .. "/Commander_Tradecraft/CommanderTradecraftDB.lua")
 Load(ADDONS .. "/Commander_Tradecraft/CommanderTradecraft.lua")
 
@@ -1193,6 +1206,120 @@ Settle()
 CommanderTradecraft_Status()
 CHECK(#printLog >= 2 and printLog[1]:find("200") and printLog[2]:find("step"), "F5 status", printLog[1])
 CHECK(printLog[#printLog]:find("by the spellbook"), "F5 status reports recipe detection", printLog[#printLog])
+
+-- ===========================================================================
+-- G. First Aid: the second guide
+-- ===========================================================================
+
+-- G1 /ctc firstaid switches the guide; the header names it; the step is a
+-- bandage with a bare /cast macro
+me.rank, me.maxRank = 200, 225
+me.faRank, me.faMax = 130, 150
+me.known[3278] = true
+me.bags[2592] = 40
+CommanderTradecraft_Guide("first aid")
+Settle()
+CHECK(CommanderTradecraftChar.guide == "FIRSTAID", "G1 guide switched", CommanderTradecraftChar.guide)
+plan = CommanderTradecraft_Plan()
+CHECK(plan.rank == 130 and plan.maxRank == 150 and plan.profession.name == "First Aid", "G1 the plan is First Aid's", plan.rank)
+CHECK(Has("First Aid 1 – 375"), "G1 header title")
+CHECK(Has("Heavy Wool Bandage"), "G1 Heavy Wool is the step at 130")
+b = Buttons()
+CHECK(b["Craft"] and b["Craft"].__attr.macrotext == "/cast Heavy Wool Bandage", "G1 a bandage macro is /cast alone", b["Craft"] and b["Craft"].__attr.macrotext)
+CHECK(_G.CommanderTradecraftCraftKey.__attr.macrotext == "/cast Heavy Wool Bandage", "G1 the key button carries it too")
+CHECK(macros.Tradecraft and macros.Tradecraft.body == "/cast Heavy Wool Bandage", "G1 and the Tradecraft macro")
+CHECK(b["Open First Aid"] and b["Open First Aid"].__attr.spell == "First Aid", "G1 the Open button casts First Aid", b["Open First Aid"] and b["Open First Aid"].__attr.spell)
+
+-- G2 the Expert banner is a book: the item, its price, the Horde vendor
+-- with a waypoint, and no "trainer"
+CHECK(Has("Expert First Aid comes from Expert First Aid - Under Wraps"), "G2 book banner", GuideText():sub(1, 300))
+CHECK(Has("1g") and Has("needs 125"), "G2 price and skill on the banner")
+CHECK(Has("Balai Lok'Wein") and not Has("Deneb Walker"), "G2 the Horde vendor only")
+CHECK(b["Go"] ~= nil, "G2 a waypoint button on the vendor row")
+CHECK(not Has("Any First Aid trainer"), "G2 no trainer line for a book rank")
+-- holding the book says so
+me.bags[16084] = 1
+Fire("BAG_UPDATE_DELAYED")
+Settle()
+CHECK(Has("You have it"), "G2 the book in the bags is noticed")
+me.bags[16084] = nil
+
+-- G3 at the cap the book banner is urgent
+me.faRank, me.faMax = 150, 150
+Fire("SKILL_LINES_CHANGED")
+Settle()
+CHECK(Has("You are at your cap (150)") and Has("comes from a book"), "G3 urgent book banner at the cap")
+
+-- G4 Artisan is the quest: the Horde doctor, with a waypoint
+me.faRank, me.faMax = 225, 225
+me.known[10840] = true
+Fire("SKILL_LINES_CHANGED")
+Settle()
+CHECK(Has("reward of the quest Triage") and Has("Doctor Gregory Victor") and not Has("VanHowzen"), "G4 Triage from the Horde doctor", GuideText():sub(1, 400))
+CHECK(Has("At your skill cap"), "G4 the Mageweave step is capped")
+
+-- G5 Master is the Hellfire book from Aresella, urgent at 300
+me.faRank, me.faMax = 300, 300
+me.known[18630] = true
+Fire("SKILL_LINES_CHANGED")
+Settle()
+CHECK(Has("Master First Aid comes from a book: Master First Aid - Doctor in the House") and Has("Aresella — Falcon Watch") and not Has("Burko — Temple"), "G5 the Master book from Aresella (the step's note names both)", GuideText():sub(1, 400))
+
+-- G6 the Netherweave manual is a buy step at 330 with the same vendor
+me.faRank, me.faMax = 330, 375
+Fire("SKILL_LINES_CHANGED")
+Settle()
+CHECK(Has("Buy Manual: Netherweave Bandage") and Has("Aresella"), "G6 the manual trip", GuideText():sub(1, 300))
+
+-- G7 the trade skill window opening brings First Aid on screen and is read;
+-- the craft window brings Enchanting back; Cooking is nobody's
+CommanderTradecraft_Guide("enchanting")
+Settle()
+CHECK(CommanderTradecraftChar.guide == "ENCHANTING", "G7 back to Enchanting")
+CommanderTradecraftDB.ShowGuide = false
+guide:Hide()
+trade.shown = true
+trade.list = { { name = "Bandages", header = true }, { name = "Netherweave Bandage", spell = 27032 } }
+Fire("TRADE_SKILL_SHOW")
+Settle()
+CHECK(CommanderTradecraftChar.guide == "FIRSTAID", "G7 the trade skill window switches the guide")
+CHECK(CommanderTradecraftDB.ShowGuide == true and guide.__shown == true, "G7 and opens it")
+CHECK(CommanderTradecraftChar.knownRecipes[27032] == true, "G7 its list was read")
+CHECK(Has("Netherweave Bandage") and not Has("Buy Manual: Netherweave"), "G7 the manual step resolved by the window", GuideText():sub(1, 200))
+Fire("TRADE_SKILL_CLOSE")
+trade.shown = false
+Settle()
+craft.shown = true
+craft.list = { { name = "Bracer", header = true } }
+Fire("CRAFT_SHOW")
+Settle()
+CHECK(CommanderTradecraftChar.guide == "ENCHANTING", "G7 the craft window switches back")
+Fire("CRAFT_CLOSE")
+craft.shown = false
+Settle()
+trade.skill = "Cooking"
+trade.shown = true
+Fire("TRADE_SKILL_SHOW")
+Settle()
+CHECK(CommanderTradecraftChar.guide == "ENCHANTING", "G7 Cooking changes nothing")
+Fire("TRADE_SKILL_CLOSE")
+trade.shown = false
+trade.skill = "First Aid"
+
+-- G8 the route and shopping windows follow the guide
+CommanderTradecraft_Guide("firstaid")
+Settle()
+CommanderTradecraft_Route()
+Settle()
+CHECK(_G.CommanderTradecraftLedger and _G.CommanderTradecraftLedger.title.__text:find("First Aid 1 – 375", 1, true), "G8 the route window is First Aid's", _G.CommanderTradecraftLedger and _G.CommanderTradecraftLedger.title.__text)
+CommanderTradecraft_Shopping()
+Settle()
+_G.CommanderTradecraftLedger:Hide()
+CommanderTradecraft_Guide("enchanting")
+Settle()
+me.rank, me.maxRank = 200, 225
+Fire("SKILL_LINES_CHANGED")
+Settle()
 
 CHECK(#harnessFailedErrors == 0, "Z no errors were swallowed", harnessFailedErrors[1])
 -- The headers were expanded exactly once: for the no-profession case in

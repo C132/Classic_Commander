@@ -367,7 +367,11 @@ end
 -- Roll helpers
 -- ===========================================================================
 local function IsLive(roll)
-    return not roll.resolved and roll.my == nil and (roll.canNeed or roll.canGreed)
+    -- `closing` is the window between the server ending the contest and the
+    -- verdict arriving. Nothing about it is actionable, so it must not glow,
+    -- take focus, or answer PASS ALL.
+    return not roll.resolved and not roll.closing and roll.my == nil
+        and (roll.canNeed or roll.canGreed)
 end
 
 -- Count and first-of are all the painters need, and they run at 10 Hz across
@@ -389,7 +393,7 @@ end
 local function FocusRoll()
     if focusedRoll and E.rollByID[focusedRoll] then
         local roll = E.rollByID[focusedRoll]
-        if not roll.resolved then return roll end
+        if not roll.resolved and not roll.closing then return roll end
     end
     return FirstLiveRoll()
 end
@@ -843,13 +847,17 @@ local function PaintRollRow(row, roll, dense, focus)
     row.caret:SetShown(focus == roll)
     row.roll = roll
 
-    if roll.resolved then
+    if roll.resolved or roll.closing then
         row.track:Hide(); row.bar:Hide(); row.clock:SetText("")
         for _, btn in ipairs(row.buttons) do btn:Hide() end
         row.note:SetText("")
         row.verdict:Show()
         local text, color = "RESOLVED", THEME.textDim
-        if roll.cancelled then
+        if not roll.resolved then
+            -- Closed, verdict still in flight. Saying "WITHDRAWN" here is what
+            -- the old code did, and it was wrong on almost every contest.
+            text = "CLOSED — waiting on the result"
+        elseif roll.cancelled then
             text = "WITHDRAWN"
         elseif roll.orphaned then
             text = "NO RESULT — the server stopped reporting"
@@ -1041,7 +1049,7 @@ local MODE_HELP = {
     BAGS  = "Why your bags are full.",
     PARTY = "Where the loot is going.",
 }
-local SCOPES = { "SESSION", "RUN", "HOUR" }
+local SCOPES = { "SESSION", "RUN", "HOUR", "ALL" }
 
 local function ScopeSegment()
     -- Ending a farm while its scope is selected used to leave the button
@@ -1502,8 +1510,11 @@ local function BuildRollList()
                     PushRoller(name, class, tonumber(rollType), (value ~= "" and value) or nil,
                         name == entry.w)
                 end
-            else
-                PushRoller(entry.w or "everyone passed", entry.wc, entry.wt, entry.wr, entry.w ~= nil)
+            elseif entry.w then
+                -- No per-player detail survived the prune (or none ever came):
+                -- the winner is all there is to say, and the header row already
+                -- carries "all passed" / "withdrawn" for the rest.
+                PushRoller(entry.w, entry.wc, entry.wt, entry.wr, true)
             end
         end
     end
@@ -1660,7 +1671,7 @@ end
 local EMPTY_STATE = {
     FEED  = { "NOTHING YET · LOOT SOMETHING.", "Chat loot lines are off — they appear here instead." },
     HAUL  = { "NO SPOILS THIS SCOPE", "Widen the scope, or go hit something." },
-    ROLLS = { "NO ROLLS SEEN", "Group loot rolls appear here, live and after." },
+    ROLLS = { "NO ROLLS SEEN", "Live rolls land here. Past contests are under the ALL scope." },
     BAGS  = { "BAGS EMPTY", "" },
     PARTY = { "SOLO", "Party income appears when you group. It resets when the group does." },
 }
@@ -1835,7 +1846,9 @@ local function PaintPanes()
     if total == 0 then
         local empty = EMPTY_STATE[mode]
         local sessionStats = E.Fold(E.SegmentFor("SESSION"))
-        if DB.ViewScope ~= "SESSION" and sessionStats.items > 0
+        -- ALL is already the widest scope there is; telling the player to
+        -- widen it is the one case where this hint is a lie.
+        if DB.ViewScope ~= "SESSION" and DB.ViewScope ~= "ALL" and sessionStats.items > 0
             and mode ~= "BAGS" and mode ~= "PARTY" then
             body.empty:SetText("NOTHING IN THIS SCOPE")
             body.emptyHint:SetText(format("Session has %d items — widen the scope.", sessionStats.items))
@@ -1994,6 +2007,10 @@ local function PaintPanes()
                     local wc = ClassColor(logged.wc)
                     row.right:SetText(logged.w)
                     row.right:SetTextColor(wc[1], wc[2], wc[3])
+                elseif logged.o == "c" then
+                    row.right:SetText("withdrawn")
+                elseif logged.o == "x" then
+                    row.right:SetText("no result")
                 else
                     row.right:SetText("all passed")
                 end

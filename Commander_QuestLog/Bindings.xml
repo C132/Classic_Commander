@@ -1,0 +1,16 @@
+<Bindings>
+    <!-- Auto loaded from the addon folder. Deliberately NOT listed in the TOC:
+         doing so loads it twice and the second pass silently wins.
+
+         A double hyphen is illegal inside an XML comment and the parser
+         rejects the WHOLE file on one, registering zero bindings with nothing
+         but a LUA_WARNING at load to say so. -->
+
+    <Binding name="COMMANDERQUESTLOG_TOGGLE" runOnUp="false">
+        CommanderQuestLog_Toggle()
+    </Binding>
+
+    <Binding name="COMMANDERQUESTLOG_SEARCH" runOnUp="false">
+        CommanderQuestLog_FocusSearch()
+    </Binding>
+</Bindings>

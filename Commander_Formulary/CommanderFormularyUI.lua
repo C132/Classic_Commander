@@ -10,12 +10,15 @@
 -- coordinates and a waypoint, every dropper with its chance, the quest, the
 -- reputation — and a Craft button.
 --
--- It replaces the stock Enchanting window. Enchanting is a CRAFT-frame
--- profession on this client and its window is a 1-column list with a
--- Create button; this is the same list with the other two thirds of the
--- profession beside it. The craft window's own list is still read every
--- time it opens, because it is the one authority on what this character
--- knows (ASSUMPTIONS A2), and then it is put away.
+-- It replaces the stock profession window. Enchanting is a CRAFT-frame
+-- profession on this client and First Aid a TRADE SKILL one; both windows
+-- are a 1-column list with a Create button, and this is the same list with
+-- the other two thirds of the profession beside it. The stock window's own
+-- list is still read every time it opens, because it is the one authority
+-- on what this character knows (ASSUMPTIONS A2), and then it is put away.
+-- One profession is on screen at a time -- the one whose window last
+-- opened, or the one picked by the rank readout in the toolbar -- and the
+-- character remembers which.
 --
 -- Chrome is drawn, not borrowed: selection bars, progress hairlines and
 -- chevrons are quads cut from WHITE8X8 and tinted from the Console palette,
@@ -51,13 +54,33 @@ local navRows = {}
 local view, rows
 local selectedSpell
 local searchText = ""
-local craftOpen = false
 local pendingRefresh = false
 
 local function DB() return CommanderFormularyDB or {} end
 
+-- The professions the Formulary carries, in the order the toolbar offers
+-- them. Each is a generated data file (DECISIONS D2) with the same shape.
+local PROFESSION_KEYS = { "ENCHANTING", "FIRSTAID" }
+
+local function ProfessionKey()
+    local key = char and char.profession
+    if key and D_ALL[key] then return key end
+    return "ENCHANTING"
+end
+
 local function Data()
-    return D_ALL.ENCHANTING
+    return D_ALL[ProfessionKey()]
+end
+
+-- Every profession, for the questions that are not about the one on
+-- screen: which window just opened, whose manual this tooltip is
+local function EachProfession()
+    local i = 0
+    return function()
+        i = i + 1
+        local key = PROFESSION_KEYS[i]
+        return key and D_ALL[key]
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -195,8 +218,8 @@ local function InCombat()
 end
 
 local expandTried = false
-local function ReadSkill()
-    local data = Data()
+local function ReadSkill(data)
+    data = data or Data()
     if not (GetNumSkillLines and GetSkillLineInfo) then return 0, 0 end
     local wanted = SpellName(data.abilitySpell) or data.name
     local function scan()
@@ -214,35 +237,98 @@ local function ReadSkill()
     return rank or 0, maxRank or 0
 end
 
--- The craft window: read on every open, put away when replacing
-local craftNameToSpell
-local function CraftWindowIsOurs()
-    local shown = craftOpen or (CraftFrame and CraftFrame.IsShown and CraftFrame:IsShown())
-    if not shown then return false end
-    if not GetCraftDisplaySkillLine then return true end
-    return GetCraftDisplaySkillLine() == (SpellName(Data().abilitySpell) or Data().name)
+-- The stock windows: read on every open, put away when replacing. The
+-- client shows a profession in one of two frames, and they have two APIs
+-- with the same shape: Enchanting is a CRAFT window (GetCraftDisplaySkillLine,
+-- GetNumCrafts / GetCraftInfo, the CraftFrame) and First Aid is a TRADE
+-- SKILL window (GetTradeSkillLine, GetNumTradeSkills / GetTradeSkillInfo,
+-- the TradeSkillFrame). Each is loaded on demand by UIParent from its own
+-- SHOW event, so the frame globals may not exist when our handler runs.
+local CHANNELS = {
+    CRAFT = {
+        events = { show = "CRAFT_SHOW", close = "CRAFT_CLOSE" },
+        frame = function() return CraftFrame end,
+        line = function() return GetCraftDisplaySkillLine and GetCraftDisplaySkillLine() or nil end,
+        count = function() return GetNumCrafts and GetNumCrafts() or 0 end,
+        -- GetCraftInfo answers name, subSpellName, craftType; the trade
+        -- skill call answers name, skillType: both wrappers give name, type
+        info = function(i) local name, _, craftType = GetCraftInfo(i) return name, craftType end,
+        open = false, hooked = false,
+    },
+    TRADESKILL = {
+        events = { show = "TRADE_SKILL_SHOW", close = "TRADE_SKILL_CLOSE" },
+        frame = function() return TradeSkillFrame end,
+        line = function() return GetTradeSkillLine and GetTradeSkillLine() or nil end,
+        count = function() return GetNumTradeSkills and GetNumTradeSkills() or 0 end,
+        info = function(i) local name, skillType = GetTradeSkillInfo(i) return name, skillType end,
+        open = false, hooked = false,
+    },
+}
+
+local function Channel(data)
+    return CHANNELS[(data or Data()).frame] or CHANNELS.CRAFT
 end
 
-local function ScanCraftWindow()
-    if not CraftWindowIsOurs() or not GetNumCrafts then return false end
-    if not craftNameToSpell then
-        craftNameToSpell = {}
-        for _, rec in ipairs(Data().recipes) do
-            craftNameToSpell[SpellName(rec.spell) or rec.name] = rec.spell
+-- Whether the profession's own window is open right now: the SHOW / CLOSE
+-- pair keeps the flag, and the frame's IsShown is the belt to that brace
+local function WindowOpen(data)
+    local ch = Channel(data)
+    if ch.open then return true end
+    local f = ch.frame()
+    return f and f.IsShown and f:IsShown() or false
+end
+
+-- The profession whose window is open on a channel, if it is one of ours.
+-- Strict: a hunter's Beast Training uses the craft frame and answers nil
+-- for the skill line, and the Formulary must not take that over.
+local function ProfessionOnChannel(channelKey)
+    local ch = CHANNELS[channelKey]
+    if not ch then return nil end
+    local shown = ch.open
+    if not shown then
+        local f = ch.frame()
+        shown = f and f.IsShown and f:IsShown()
+    end
+    if not shown then return nil end
+    local line = ch.line()
+    for data in EachProfession() do
+        if data.frame == channelKey and line == (SpellName(data.abilitySpell) or data.name) then
+            return data
         end
     end
+    return nil
+end
+
+local function CraftWindowIsOurs(data)
+    data = data or Data()
+    return ProfessionOnChannel(data.frame) == data
+end
+
+local nameToSpell = {}   -- profession key -> localised recipe name -> spell
+local function ScanCraftWindow(data)
+    data = data or Data()
+    if not CraftWindowIsOurs(data) then return false end
+    local ch = Channel(data)
+    local names = nameToSpell[data.key]
+    if not names then
+        names = {}
+        for _, rec in ipairs(data.recipes) do
+            names[SpellName(rec.spell) or rec.name] = rec.spell
+        end
+        nameToSpell[data.key] = names
+    end
     local seen = 0
-    for i = 1, GetNumCrafts() do
-        local name, _, craftType = GetCraftInfo(i)
+    for i = 1, ch.count() do
+        local name, craftType = ch.info(i)
         if name and craftType ~= "header" then
-            local spell = craftNameToSpell[name]
+            local spell = names[name]
             if spell then
                 char.known[spell] = true
                 seen = seen + 1
             end
         end
     end
-    char.scanned = true
+    char.scanned[data.key] = true
     return seen > 0
 end
 
@@ -413,7 +499,7 @@ end
 
 local function Rebuild()
     if not loaded then return end
-    if craftOpen then ScanCraftWindow() end
+    if WindowOpen() then ScanCraftWindow() end
     world = BuildWorld()
     view = M.Build(Data(), world, { bank = db.CountBank })
     Repaint()
@@ -503,12 +589,25 @@ local function EnsureOpenButton(parent)
     b:SetAllPoints(openHolder)
     b:RegisterForClicks("AnyDown", "AnyUp")
     b:SetAttribute("type", "spell")
-    b:SetAttribute("spell", SpellName(Data().abilitySpell) or Data().name)
     b:SetText("Read Recipes")
     AttachTooltip(b, "Read what you know",
-        "Opens the stock Enchanting window for a moment so the list of recipes you know can be read, then puts it away again. The Formulary does this on its own whenever that window opens.")
+        "Opens the stock profession window for a moment so the list of recipes you know can be read, then puts it away again. The Formulary does this on its own whenever that window opens.")
+    openHolder.button = b
     openHolder:Hide()
     return openHolder
+end
+
+-- The Open button casts whichever profession is on screen; rewritten out of
+-- combat only, like the craft macro
+local openSpell
+local function SetOpenSpell()
+    if not openHolder or InCombat() then return false end
+    local spell = SpellName(Data().abilitySpell) or Data().name
+    if spell ~= openSpell then
+        openSpell = spell
+        openHolder.button:SetAttribute("spell", spell)
+    end
+    return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -785,7 +884,8 @@ local function PaintNav()
             row:SetScript("OnClick", function(_, button)
                 if button == "RightButton" then ToggleAll() else ToggleCategory("TRAINERS") end
             end)
-            AttachTooltip(row, "Trainers", "Every Enchanting trainer your faction can use, with where they stand. Master rank is taught only in Outland.", "ANCHOR_RIGHT")
+            AttachTooltip(row, "Trainers", ("Every %s trainer your faction can use, with where they stand.%s"):format(Data().name,
+                M.MasterFromTrainer(Data()) and " Master rank is taught only in Outland." or ""), "ANCHOR_RIGHT")
         elseif r.kind == "trainer" then
             local t = r.trainer
             row:SetHeight(ROW_H)
@@ -1250,7 +1350,9 @@ local function PaintDetail()
                 icon:SetTexture(Data().icon)
                 icon:SetPoint("TOPLEFT", detailChild, "TOPLEFT", 2, dy)
                 Line(t.name, { indent = 46, font = GameFontNormalLarge, ink = "title", gap = 1 })
-                Line(("%s trainer%s"):format(Data().name, t.outland and " — teaches Master" or " — up to Artisan"), { indent = 46, ink = "secondary" })
+                local reach = ""
+                if M.MasterFromTrainer(Data()) then reach = t.outland and " — teaches Master" or " — up to Artisan" end
+                Line(("%s trainer%s"):format(Data().name, reach), { indent = 46, ink = "secondary" })
                 if dy > -44 then dy = -44 end
                 Gap(6)
                 local rowY = dy
@@ -1287,7 +1389,7 @@ local function PaintDetail()
     end
     local entry = view and selectedSpell and view.entries[selectedSpell]
     if not entry then
-        Line(view and view.hasProfession and "Pick a recipe on the left." or "Learn Enchanting from a trainer in any capital city, then come back here.", { ink = "secondary" })
+        Line(view and view.hasProfession and "Pick a recipe on the left." or ("Learn %s from a trainer in any capital city, then come back here."):format(Data().name), { ink = "secondary" })
         detailChild:SetHeight(-dy + 8)
         return
     end
@@ -1381,7 +1483,11 @@ local function PaintHeader()
     local nextRank, trainable = M.NextRank(data, view)
     local rankNote = ""
     if nextRank and trainable then
-        rankNote = ("  %s%s trainable|r"):format(Hex(GOOD[1], GOOD[2], GOOD[3]), nextRank.name)
+        -- "trainable" for a rank a trainer teaches; a book or a quest says
+        -- so, because the trainer will not have it (the tooltip on the
+        -- readout has the vendor or the quest giver)
+        local how = nextRank.book and "from a book" or nextRank.quests and "from a quest" or "trainable"
+        rankNote = ("  %s%s %s|r"):format(Hex(GOOD[1], GOOD[2], GOOD[3]), nextRank.name, how)
     end
     local pct = view.total > 0 and math.floor(view.known * 100 / view.total + 0.5) or 0
     local learnNote = ""
@@ -1442,9 +1548,9 @@ local function PaintActions()
     else
         frame.refreshButton:Hide()
     end
-    if not InCombat() and not craftOpen and not char.scanned then
+    if not InCombat() and not WindowOpen() and not char.scanned[Data().key] then
         local oh = EnsureOpenButton(actions)
-        if oh then
+        if oh and SetOpenSpell() then
             oh:ClearAllPoints()
             oh:SetPoint("RIGHT", actions, "RIGHT", rx, 0)
             oh:Show()
@@ -1554,6 +1660,9 @@ local function EnsureFrame()
     frame:SetClampedToScreen(true)
     frame:Hide()
     if frame.TitleText then frame.TitleText:SetText("Formulary") end
+    frame.SetProfessionTitle = function()
+        if frame.TitleText then frame.TitleText:SetText("Formulary — " .. Data().name) end
+    end
     if UISpecialFrames then table.insert(UISpecialFrames, "CommanderFormularyFrame") end
 
     local drag = CreateFrame("Frame", nil, frame)
@@ -1651,6 +1760,38 @@ local function EnsureFrame()
     frame.rankFS = toolbar:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     frame.rankFS:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT", -2, -1)
     frame.rankFS:SetJustifyH("RIGHT")
+    -- The readout is the profession switch: click it for the next
+    -- profession the Formulary carries. Its tooltip lists them all with
+    -- the character's rank in each and how the next rank is obtained.
+    frame.rankButton = CreateFrame("Button", nil, toolbar)
+    frame.rankButton:SetPoint("TOPLEFT", frame.rankFS, "TOPLEFT", -4, 2)
+    frame.rankButton:SetPoint("BOTTOMRIGHT", frame.rankFS, "BOTTOMRIGHT", 4, -2)
+    frame.rankButton:SetScript("OnClick", function() CommanderFormulary_Profession() end)
+    frame.rankButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+        GameTooltip:AddLine("Professions")
+        for _, key in ipairs(PROFESSION_KEYS) do
+            local d = D_ALL[key]
+            local rank, maxRank = ReadSkill(d)
+            local here = (key == ProfessionKey())
+            local label = maxRank > 0 and ("%s %d / %d"):format(d.name, rank, maxRank) or (d.name .. " — not learned")
+            GameTooltip:AddLine((here and "|cffffffff" or "|cff9d9d9d") .. label .. "|r")
+            if maxRank > 0 then
+                local nextRank, within = M.NextRank(d, { rank = rank, maxRank = maxRank })
+                if nextRank then
+                    for i, l in ipairs(M.RankRoute(d, nextRank, world or BuildWorld())) do
+                        local r, g, b = 0.8, 0.8, 0.8
+                        if i == 1 and within then r, g, b = GOOD[1], GOOD[2], GOOD[3] end
+                        GameTooltip:AddLine((i == 1 and "  " or "      ") .. l.text, r, g, b, true)
+                    end
+                end
+            end
+        end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Click to switch. A profession also comes on screen whenever its own window opens.", 0.6, 0.6, 0.6, true)
+        GameTooltip:Show()
+    end)
+    frame.rankButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
     frame.track = Quad(toolbar, "ARTWORK")
     frame.track:SetHeight(3)
     frame.track:SetWidth(180)
@@ -1768,10 +1909,10 @@ local function TakingOver()
     return db and db.EnableFormulary and db.ReplaceCraftWindow
 end
 
-local craftHooked = false
-local function PutAwayCraftFrame()
-    if CraftFrame and CraftFrame.IsShown and CraftFrame:IsShown() then
-        if HideUIPanel then HideUIPanel(CraftFrame) else CraftFrame:Hide() end
+local function PutAwayCraftFrame(data)
+    local f = Channel(data).frame()
+    if f and f.IsShown and f:IsShown() then
+        if HideUIPanel then HideUIPanel(f) else f:Hide() end
     end
 end
 
@@ -1786,8 +1927,63 @@ function CommanderFormulary_Show()
         return
     end
     EnsureFrame()
+    -- First open on this character: the profession they actually have
+    -- (the first they have, when they have both), rather than Enchanting
+    -- for a character who has never held a rod
+    if not char.profession then
+        for _, key in ipairs(PROFESSION_KEYS) do
+            local _, maxRank = ReadSkill(D_ALL[key])
+            if maxRank > 0 then
+                char.profession = key
+                break
+            end
+        end
+        char.profession = char.profession or PROFESSION_KEYS[1]
+    end
+    frame.SetProfessionTitle()
     selectedSpell = selectedSpell or char.selected
     if frame:IsShown() then Rebuild() else frame:Show() end
+end
+
+-- Switch the profession on screen: to `key`, or with none to the next one
+-- the Formulary carries (also: /cfm profession <name>, /cfm enchanting,
+-- /cfm firstaid). The selection is per profession, so the recipe that
+-- was open comes back when you switch back.
+function CommanderFormulary_Profession(key)
+    if not loaded then return end
+    local current = ProfessionKey()
+    local target
+    if key and key ~= "" then
+        local wanted = tostring(key):upper():gsub("[%s%-_]", "")
+        for _, k in ipairs(PROFESSION_KEYS) do
+            local d = D_ALL[k]
+            if k == wanted or d.name:upper():gsub("[%s%-_]", "") == wanted then target = k end
+        end
+        if not target then
+            Announce("no profession called " .. tostring(key) .. " — the Formulary carries Enchanting and First Aid")
+            return
+        end
+    else
+        for i, k in ipairs(PROFESSION_KEYS) do
+            if k == current then target = PROFESSION_KEYS[i % #PROFESSION_KEYS + 1] end
+        end
+        target = target or PROFESSION_KEYS[1]
+    end
+    if target ~= current then
+        char.selectedBy = char.selectedBy or {}
+        char.selectedBy[current] = selectedSpell
+        char.profession = target
+        selectedSpell = char.selectedBy[target]
+        char.selected = selectedSpell
+        searchText = ""
+        if frame and frame.searchBox then frame.searchBox:SetText("") end
+    end
+    if frame and frame:IsShown() then
+        frame.SetProfessionTitle()
+        Rebuild()
+    else
+        CommanderFormulary_Show()
+    end
 end
 
 -- Refresh prices at the auction house (also: /cfm refresh). With a recipe
@@ -1834,8 +2030,8 @@ end
 function CommanderFormulary_ResetChar()
     if not loaded then return end
     char.known = {}
-    char.scanned = nil
-    Announce("recipe memory forgotten for this character — open your Enchanting window to read it again")
+    char.scanned = {}
+    Announce("recipe memory forgotten for this character — open your profession window to read it again")
     if frame and frame:IsShown() then Rebuild() end
 end
 
@@ -1849,7 +2045,7 @@ function CommanderFormulary_Status()
         if (IsSpellKnown and IsSpellKnown(rec.spell)) or (IsPlayerSpell and IsPlayerSpell(rec.spell)) then bySpellbook = bySpellbook + 1 end
         if char.known[rec.spell] then byMemory = byMemory + 1 end
     end
-    Announce(("known by the spellbook: %d, seen in the craft window: %d"):format(bySpellbook, byMemory))
+    Announce(("known by the spellbook: %d, seen in the profession window: %d"):format(bySpellbook, byMemory))
 end
 
 function CommanderFormulary_View()
@@ -1867,7 +2063,10 @@ local function AppendDisenchantAdvice(tooltip, item, link)
     if not GetItemInfo_ then return end
     local name, _, quality, ilvl, _, _, _, _, _, _, sellPrice, classID = GetItemInfo_(link or item)
     if not (name and quality and ilvl and classID) then return end
-    local data = Data()
+    -- Enchanting's tables, whichever profession the window is showing;
+    -- and only for an enchanter, since nobody else can act on it
+    local data = D_ALL.ENCHANTING
+    if not data or select(2, ReadSkill(data)) == 0 then return end
     local results = M.Disenchant(data, quality, classID, ilvl)
     if not results then return end
     local w = world or BuildWorld()
@@ -1914,8 +2113,14 @@ local function AppendFormulaVerdict(tooltip)
     if not item then return end
     if tooltip._cfmItem == item then return end
     tooltip._cfmItem = item
-    local data = Data()
-    if not data.formulas[item] then
+    -- A formula or manual of any profession the Formulary carries gets its
+    -- verdict against THAT profession's skill; anything else is a candidate
+    -- for the disenchant advice (Enchanting's, whatever is on screen)
+    local data
+    for d in EachProfession() do
+        if d.formulas[item] then data = d break end
+    end
+    if not data then
         AppendDisenchantAdvice(tooltip, item, link)
         tooltip:Show()
         return
@@ -1923,6 +2128,12 @@ local function AppendFormulaVerdict(tooltip)
     if not db.TooltipVerdict then return end
     local w = world or BuildWorld()
     world = w
+    if data ~= Data() then
+        -- The cached world is the on-screen profession's; this one needs
+        -- its own rank
+        local rank, maxRank = ReadSkill(data)
+        w = setmetatable({ rank = rank, maxRank = maxRank }, { __index = w })
+    end
     local v = M.FormulaVerdict(data, item, w)
     if not v then return end
     if not v.hasProfession then
@@ -1958,6 +2169,7 @@ local WATCHED = {
     "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
     "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "BANKFRAME_OPENED",
     "CRAFT_SHOW", "CRAFT_UPDATE", "CRAFT_CLOSE",
+    "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "TRADE_SKILL_CLOSE",
     "SPELLS_CHANGED", "NEW_RECIPE_LEARNED",
     "UPDATE_FACTION", "UNIT_INVENTORY_CHANGED",
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
@@ -1965,33 +2177,52 @@ local WATCHED = {
     "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
 }
 
+-- A stock window opened on one of our professions: that profession comes
+-- on screen (the window is the surest statement of which one you are
+-- working), its list is read, and -- when replacing -- the stock window is
+-- put away. Blizzard's own UI loads on demand from this same event and
+-- shows itself in its own handler, which ran before ours; the OnShow hook
+-- catches every later open.
+local function OnStockWindowShown(channelKey)
+    local ch = CHANNELS[channelKey]
+    ch.open = true
+    local data = ProfessionOnChannel(channelKey)
+    if not data then return false end
+    if char.profession ~= data.key then
+        char.profession = data.key
+        selectedSpell = nil
+    end
+    ScanCraftWindow(data)
+    if not TakingOver() then return false end
+    PutAwayCraftFrame(data)
+    local f = ch.frame()
+    if f and not ch.hooked and f.HookScript then
+        ch.hooked = true
+        f:HookScript("OnShow", function(self)
+            local shown = ProfessionOnChannel(channelKey)
+            if TakingOver() and shown then
+                if char.profession ~= shown.key then
+                    char.profession = shown.key
+                    selectedSpell = nil
+                end
+                ScanCraftWindow(shown)
+                if HideUIPanel then HideUIPanel(self) else self:Hide() end
+                CommanderFormulary_Show()
+            end
+        end)
+    end
+    CommanderFormulary_Show()
+    return true
+end
+
 events:SetScript("OnEvent", function(_, event, arg1)
     if not loaded then return end
-    if event == "CRAFT_SHOW" then
-        craftOpen = true
-        local ours = CraftWindowIsOurs()
-        if ours then
-            ScanCraftWindow()
-            if TakingOver() then
-                -- Blizzard_CraftUI loads on demand from this same event and
-                -- shows itself in its own handler, which ran before ours
-                PutAwayCraftFrame()
-                if CraftFrame and not craftHooked and CraftFrame.HookScript then
-                    craftHooked = true
-                    CraftFrame:HookScript("OnShow", function(self)
-                        if TakingOver() and CraftWindowIsOurs() then
-                            ScanCraftWindow()
-                            if HideUIPanel then HideUIPanel(self) else self:Hide() end
-                            CommanderFormulary_Show()
-                        end
-                    end)
-                end
-                CommanderFormulary_Show()
-                return
-            end
-        end
+    if event == "CRAFT_SHOW" or event == "TRADE_SKILL_SHOW" then
+        if OnStockWindowShown(event == "CRAFT_SHOW" and "CRAFT" or "TRADESKILL") then return end
     elseif event == "CRAFT_CLOSE" then
-        craftOpen = false
+        CHANNELS.CRAFT.open = false
+    elseif event == "TRADE_SKILL_CLOSE" then
+        CHANNELS.TRADESKILL.open = false
     elseif event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then
         return
     end

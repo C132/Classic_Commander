@@ -3,23 +3,30 @@
 -- per class. PvP information wins fights: shields and their exact remaining
 -- absorb, shield uptime, dispels, CC status — raid upkeep (Int/Fort timers)
 -- is deliberately icon-sized, never a bar. The chassis is one compact row
--- per ally — health, mana, identity, range, who the enemies are targeting,
+-- per ally — health, power, identity, range, who the enemies are targeting,
 -- dispellable debuffs, secure click-cast — and a CLASS LAYER decides what
 -- the row's main bar and urgency states mean. Three cues triangulate every row so
 -- it reads at a glance and survives colorblindness — an accent stripe (the
 -- state), a strength bar, and a thin red drain (the thing blocking/afflicting).
 -- PRIEST layer ("PWS"): shield = Power Word: Shield (absorb remaining), drain
 --   = Weakened Soul, states = who to reshield next. The original board.
--- MAGE layer ("INT"): bar = HEALTH with a mana strip under it; the row's
+-- MAGE layer ("INT"): bar = HEALTH with a power strip under it; the row's
 --   number is the ally's TOTAL shielding (PW:S + Ice Barrier + Mana Shield +
 --   wards + Sacrifice, any caster, tooltip-calibrated and drained live by
 --   SPELL_ABSORBED); left status icons = Arcane Intellect state + the biggest
 --   shield; a removable Curse turns the row purple (drain = curse remaining).
---   The header is the mage's upkeep banner: armor (with a switch popout),
---   Ice Barrier, own total shielding, Water Elemental, shield uptime, team
---   alerts, plus conjure/consume buttons. An opt-in extra appends own-shield
---   rows.
--- DRUID layer ("HOT"): bar = HEALTH with a mana strip under it, same chassis
+--   The header is the mage's upkeep banner, and it is deliberately FOUR
+--   things: armor (with a switch popout), Ice Block, Cold Snap, and the team
+--   alert. Nothing goes on it that your action bar already tells you — every
+--   spell you press wears a cooldown swipe three times this size, right where
+--   you are looking to press it again — so the banner carries only the buff
+--   you lose without noticing, the survival pair you check when there is no
+--   time to look anywhere, and the two counts about your TEAM (curses you can
+--   remove, allies in CC). Session uptime is opt-in, and the conjure /
+--   consume / gem / portal cluster is opt-in as a group: between-games
+--   convenience does not get to crowd in-game information. An opt-in extra
+--   appends own-shield rows.
+-- DRUID layer ("HOT"): bar = HEALTH with a power strip under it, same chassis
 --   as INT; what the row MANAGES is YOUR hots on that ally — Rejuvenation,
 --   Regrowth and Lifebloom (with its stack count) as a strip of swept icons,
 --   the row's number being the soonest of them to fall off. States are the
@@ -30,7 +37,25 @@
 --   which: purple CURSED, green POISONED. The header is the druid's upkeep
 --   banner: current form (red when it blocks healing), Innervate / Nature's
 --   Swiftness / Rebirth / Barkskin, hot uptime, team alerts.
+--   Lifebloom is a ROLL rather than a hot and gets its own instruments (see
+--   the `roll` flag on SDATA.DRUID_HOTS): its own refresh window, a readable
+--   clock in place of a radial sweep, stack pips, the drain strip this layer
+--   never otherwise uses, and a late warning fired on the edge.
 -- Other classes: the module sits inert (see CLASS_PROFILES).
+--
+-- Two things are CHASSIS rather than a layer's, because they mean the same
+-- thing whatever you cast:
+--   * the power strip under each health bar — the ally's LIVE resource, so a
+--     rogue's energy and a warrior's rage are on the board and a druid's
+--     strip changes when it shifts (settings: PowerBar / PowerBarColor)
+--   * the FORECAST — pending dot damage, rolling hot healing, and a heal in
+--     the air from anyone in the group, drawn on the bar that is going to
+--     move. TBC exposes none of it, so all three are learned from the combat
+--     log; see the FORECAST block below for the whole argument.
+--   * the OVERHEAL RING — the forecast's other half, and the one part of the
+--     healing accounting the log reports outright: a hairline ring just
+--     inside a row when healing on that ally spilled, brightening with how
+--     much of it did (settings: Overheal*)
 --
 -- Two signals keep the absorb number honest, each with a clear job:
 --   1. C_UnitAuras scans of a unit we can address (self always; party/raid via
@@ -127,7 +152,20 @@ SDATA.DRUID_HOTS = {
       icon = "Interface\\Icons\\Spell_Nature_Rejuvenation" },
     { key = "REGROWTH", label = "Regrowth", baseId = 8936, duration = 21, default = true,
       icon = "Interface\\Icons\\Spell_Nature_ResistNature" },
+    -- Lifebloom is not a hot with a stack count on it. It is a ROLL: seven
+    -- seconds, one-second ticks, three stacks, and a refresh that resets the
+    -- whole duration — so keeping it up is a decision you make every five
+    -- seconds forever, and missing one costs three globals to rebuild (or
+    -- pops the bloom you were saving). Everything else on this strip runs
+    -- twelve to twenty-one seconds and forgives a late refresh.
+    --
+    -- `roll` is what earns it its own instruments: its own refresh window
+    -- (a four-second window on a seven-second buff is most of its life), a
+    -- readable clock instead of a radial sweep nobody can read at two
+    -- seconds on a fifteen-pixel icon, stack pips, a drain bar, and a
+    -- late-warning. See SDATA.ROLL_* and the Lifebloom settings section.
     { key = "LIFEBLOOM", label = "Lifebloom", baseId = 33763, duration = 7, stacking = true,
+      roll = true, maxStacks = 3,
       default = true, icon = "Interface\\Icons\\INV_Misc_Herb_Felblossom" },
 }
 for _, def in ipairs(SDATA.DRUID_HOTS) do def.dbKey = "HOT:" .. def.key end
@@ -176,10 +214,22 @@ for _, def in ipairs(SDATA.PALADIN_HANDS) do def.dbKey = "HAND:" .. def.key end
 -- Weakened Soul, and no hot outranks that. So the strip is purely a readout,
 -- and the per-slot refresh cue does the work the row colour does elsewhere.
 SDATA.PRIEST_HOTS = {
+    -- `lowHot` marks the cheap rolling heal this layer puts on somebody who
+    -- is dropping — the one whose ABSENCE on a low ally is worth saying out
+    -- loud. One per book; the row's low-health ring reads it (see r.hotUp).
     { key = "RENEW", label = "Renew", baseId = 139, duration = 15, default = true,
-      icon = "Interface\\Icons\\Spell_Holy_Renew" },
+      lowHot = true, icon = "Interface\\Icons\\Spell_Holy_Renew" },
+    -- Prayer of Mending is the one entry on any strip that is not a per-ally
+    -- aura at all. It is a single travelling object with five charges: it
+    -- lands on one ally, heals, and JUMPS to the next, and the priest owns
+    -- exactly one of them at a time. Every row's slot is therefore a view of
+    -- the same thing, which is why it carries `charges` (pips read as a
+    -- countdown of what is left of the object, not a stack that grew) and
+    -- why the interesting events -- spent, expired, dispelled -- belong to
+    -- the OBJECT rather than to any row. See util.pom.
     { key = "POM", label = "Mending", baseId = 33076, duration = 30, default = true,
-      stacking = true, icon = "Interface\\Icons\\Spell_Holy_PrayerOfMendingtga" },
+      stacking = true, charges = true, maxStacks = 5,
+      icon = "Interface\\Icons\\Spell_Holy_PrayerOfMendingtga" },
 }
 for _, def in ipairs(SDATA.PRIEST_HOTS) do def.dbKey = "PWS:" .. def.key end
 
@@ -199,7 +249,78 @@ SDATA.STRIP_BOOKS = {
 -- because that is what a priest is deciding between.
 SDATA.STRIP_STATE_LAYERS = { HOT = true, BLESS = true }
 SDATA.MAX_STRIP_ICONS = 3
+-- Pip lights along a strip icon's bottom edge. Three was Lifebloom's
+-- number; Prayer of Mending needs five, and a slot only ever lights as
+-- many as its own def asks for, so the extra two cost nothing on a roll.
+SDATA.MAX_PIPS = 5
 SDATA.STRIP_ACTIVE = {}       -- the active book's entries, tracked AND trained
+
+-- The combat mark's art: the crossed-swords quadrant of the client's own
+-- state icon — the same file and the same corner of it the stock player
+-- portrait lights when you are in combat. Named here rather than written at
+-- the call site so that if a client patch ever moves the file, the mark is
+-- one line to re-point instead of a hunt through the paint pass.
+SDATA.COMBAT_TEXTURE = "Interface\\CharacterFrame\\UI-StateIcon"
+SDATA.COMBAT_TEXCOORD = { 0.5, 1.0, 0.0, 0.49 }
+
+-- ---------------------------------------------------------------------------
+-- The battleground marks: the short list of auras that change what an ally IS
+-- on a battleground board, drawn beside the combat mark at the same size and
+-- read the same way — a positive claim only, about someone you can see.
+--
+-- The combat mark answers "is this ally fighting". These answer the question
+-- a battleground asks INSTEAD, which is "which of these ten people is the one
+-- the next thirty seconds are about": the flag carrier is a healing target
+-- with a different price on it than anyone else on the board, and a carrier
+-- who has just picked up Berserking is taking a third more damage while a
+-- carrier on Restoration needs a global less from you than the bar says.
+--
+-- Six entries and no toggles per entry, deliberately. This is not the ally
+-- buff registry — there is nothing to maintain here, nothing to cast, and no
+-- version of a battleground where a player wants the flag hidden but the
+-- speed berry shown. One switch covers the set.
+--
+--   prio   which mark wins a slot when an ally holds more than one. The flag
+--          outranks everything: a carrier with Berserking is still, first,
+--          the carrier. Below it the powerups rank by how much they change
+--          what you would do next — Berserking (they are taking 10% more and
+--          dealing 30% more), Restoration (healing they are getting without
+--          you), Speed (they are leaving).
+--
+-- IDs verified against this client's own spell data (2026-09-08).
+-- ---------------------------------------------------------------------------
+SDATA.MAX_BG_MARKS = 2      -- slots per row: the flag, and the best powerup
+-- The stacked mark seat (Mark Layout = GRID): one two-by-two cell block to
+-- the right of the bar, every mark in its own fixed cell, so a row carrying
+-- all four at once still reads at a glance --
+--     [ their target's raid mark | in combat ]
+--     [ carrying the flag        | powerup   ]
+SDATA.MARK_CELL = 10        -- one cell's edge; two rows of them fit a 22px row
+SDATA.MARK_SEAT = 2 * 10 + 1  -- the seat's width: two cells and a hairline gap
+SDATA.BG_BUFFS = {
+    -- The three flags. Which one an ally wears says which battleground you
+    -- are in, not which team they are on: you only ever hold the ENEMY flag,
+    -- so a Silverwing Flag on your row means a Horde player took ours.
+    { key = "WSG_H",  id = 23333, prio = 1, label = "Carrying the flag",
+      icon = "Interface\\Icons\\INV_BannerPVP_01" },
+    { key = "WSG_A",  id = 23335, prio = 1, label = "Carrying the flag",
+      icon = "Interface\\Icons\\INV_BannerPVP_02" },
+    { key = "EOTS",   id = 34976, prio = 1, label = "Carrying the flag",
+      icon = "Interface\\Icons\\INV_Misc_SummerFest_BrazierGreen" },
+    -- The three battleground powerups, on the ground in Warsong Gulch and
+    -- Arathi Basin alike
+    { key = "BERSERK", id = 23505, prio = 2, label = "Berserking",
+      icon = "Interface\\Icons\\Spell_Nature_BloodLust" },
+    { key = "RESTO",   id = 23493, prio = 3, label = "Restoration",
+      icon = "Interface\\Icons\\INV_Misc_Fork&Knife" },
+    { key = "SPEED",   id = 23451, prio = 4, label = "Speed",
+      icon = "Interface\\Icons\\INV_Enchant_EssenceNetherLarge" },
+}
+SDATA.BG_BY_NAME = {}       -- localized aura name -> def, resolved from the client
+-- The icon face without its border: these are item/spell art rather than the
+-- flat quadrant the combat mark cuts out of UI-StateIcon, and at thirteen
+-- pixels the stock 5%-per-side frame is a quarter of the mark.
+SDATA.BG_TEXCOORD = { 0.08, 0.92, 0.08, 0.92 }
 
 -- ---------------------------------------------------------------------------
 -- The ally-buff registry: every buff a supported class maintains on OTHER
@@ -380,6 +501,17 @@ SDATA.BLESS_CLASS_ORDER = {
     "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
     "SHAMAN", "MAGE", "WARLOCK", "DRUID", "PET",
 }
+
+-- The class-grouped row order's rank per class: the same canon order the
+-- blessing grid uses, so a board read top to bottom lists classes the way
+-- every other class list in this suite does. Built once rather than searched
+-- per comparison — the sort runs at draw rate. A pet carries its OWNER's
+-- class token (see ResolveRow), so it groups under its owner; "PET" is the
+-- grid's pseudo-class and never reaches a row.
+SDATA.CLASS_SORT_RANK = {}
+for i, classKey in ipairs(SDATA.BLESS_CLASS_ORDER) do
+    if classKey ~= "PET" then SDATA.CLASS_SORT_RANK[classKey] = i end
+end
 
 -- The synthetic def that stands in for the whole family in SDATA.BUFF_ACTIVE.
 -- It carries no `oneOf`: the supersede rule exists to stop six slots nagging
@@ -585,14 +717,29 @@ SDATA.PRIEST_BANNER_CDS = {
     { key = "MASSDISPEL", id = 32375, cd = 15, icon = "Interface\\Icons\\Spell_Arcane_MassDispel" },
     { key = "DESPERATE", id = 19236, cd = 600, icon = "Interface\\Icons\\Spell_Holy_Restoration" },
 }
--- The mage banner's cooldown segments. Ice Block and Cold Snap lead because
--- they are the two that decide whether you are alive in ten seconds; the
--- shorter ones trail, where the width truncation reaches them first.
+-- The mage banner's cooldown segments — TWO of them, and the shortness of
+-- this list is the whole point.
 --
--- Ice Barrier and the Water Elemental are deliberately absent: the barrier
--- already has a My Shields row carrying its real remaining absorb, and the
--- elemental has a richer personal row than a segment could ever be. A banner
--- that repeats what is two inches below it is width spent twice.
+-- It was ten (Evocation, Counterspell, Icy Veins, Presence of Mind, Arcane
+-- Power, Combustion, Invisibility, Frost Nova on top of these two), which
+-- made the banner a second action bar drawn in 12px icons. The filter that
+-- cut it is the one this board is built on: a segment earns its width only
+-- if it says something your ACTION BAR cannot. Every spell you press has a
+-- cooldown swipe already, three times the size, exactly where your eyes go
+-- to press it again — repeating it up here buys nothing and costs the room
+-- the things that ARE unique to this banner need.
+--
+-- What survives is the pair you check when there is no time to look at
+-- anything: can I Block, and can I Cold Snap it back. Cold Snap is here on
+-- its own merits too — its value is entirely relative to the other two
+-- (Block and Barrier), so it is the one mage cooldown that genuinely reads
+-- better next to them than alone on a bar.
+--
+-- Ice Barrier and the Water Elemental stay absent for the older version of
+-- the same rule: the barrier already has a My Shields row carrying its real
+-- remaining absorb, and the elemental has a richer personal row than a
+-- segment could ever be. A banner that repeats what is two inches below it
+-- is width spent twice.
 --
 -- The ids and icons are the ones the party ability book already uses, which
 -- is the only list in this addon that has been checked against the live
@@ -600,14 +747,6 @@ SDATA.PRIEST_BANNER_CDS = {
 SDATA.MAGE_BANNER_CDS = {
     { key = "BLOCK",    id = 45438, cd = 300, icon = "Interface\\Icons\\Spell_Frost_Frost" },
     { key = "COLDSNAP", id = 11958, cd = 480, icon = "Interface\\Icons\\Spell_Frost_WizardMark" },
-    { key = "EVOC",     id = 12051, cd = 480, icon = "Interface\\Icons\\Spell_Nature_Purge" },
-    { key = "CS",       id = 2139,  cd = 24,  icon = "Interface\\Icons\\Spell_Frost_IceShock" },
-    { key = "ICYVEINS", id = 12472, cd = 180, icon = "Interface\\Icons\\Spell_Frost_ColdHearted" },
-    { key = "POM",      id = 12043, cd = 180, icon = "Interface\\Icons\\Spell_Nature_EnchantArmor" },
-    { key = "AP",       id = 12042, cd = 180, icon = "Interface\\Icons\\Spell_Nature_Lightning" },
-    { key = "COMBUST",  id = 11129, cd = 180, icon = "Interface\\Icons\\Spell_Fire_SealOfFire" },
-    { key = "INVIS",    id = 66,    cd = 300, icon = "Interface\\Icons\\Ability_Mage_Invisibility" },
-    { key = "NOVA",     id = 122,   cd = 25,  icon = "Interface\\Icons\\Spell_Frost_FrostNova" },
 }
 SDATA.BANNER_CDS = {
     PWS   = SDATA.PRIEST_BANNER_CDS,
@@ -622,6 +761,182 @@ SDATA.BANNER_CDS = {
 -- per-slot "about to drop" cue was reading the priest's key on every layer,
 -- which left a druid and a paladin governed by a slider only a priest can see.
 -- One key per layer, the same shape SDATA.BANNER_CD_KEY uses.
+-- The roll's own settings, so the engine never spells out "Lifebloom" at a
+-- call site. Only the druid book has a roll today; a second one (a monk's
+-- Renewing Mist, in another expansion) would cost its def flag and nothing
+-- else. Colours are the roll bar's three states, which are also the clock's.
+SDATA.ROLL_SAFE   = { 0.35, 0.85, 0.45 }   -- plenty of time: leave it alone
+SDATA.ROLL_DUE    = { 1.00, 0.72, 0.20 }   -- inside the window: refresh now
+SDATA.ROLL_LATE   = { 1.00, 0.25, 0.22 }   -- you are late; the stacks are going
+SDATA.ROLL_BLOOM  = { 0.75, 0.55, 1.00 }   -- at max stacks: refresh, or let it pop
+
+-- Prayer of Mending's charge pips. A charge count is a fuel gauge, not a
+-- stack that grew, so it reads the other way round from the roll's: full is
+-- calm and empty is the thing you want to see coming, because the last
+-- charge is the one that ends the object and puts a global back on you.
+-- The health bar's colour ramp, as anchors rather than as arithmetic.
+--
+-- It used to be one linear expression per channel, which had two problems.
+-- The first was that a straight RGB line from green to red runs through a
+-- muddy olive, so the interesting middle of the range -- the part where you
+-- decide who to heal -- was the part that read worst. The second was that it
+-- was simply too forgiving: green held its full value until eighty percent
+-- and the slide to red was linear all the way down, so a teammate at sixty
+-- percent looked about as calm as one at eighty. In an arena sixty percent is
+-- one connect from dead.
+--
+-- So: anchors, spaced by how much each band actually MATTERS rather than
+-- evenly. Green survives the top fifteen percent (nobody needs a warning at
+-- 90%), the seventies are already yellow, sixty-five is amber outright, and
+-- it is properly red by a quarter -- while the path between them goes green
+-- to yellow to orange to red, the way a health bar is read everywhere else,
+-- instead of cutting the corner through olive.
+SDATA.HP_RAMP = {
+    { 0.00, 0.95, 0.13, 0.13 },   -- about to die: deep red
+    { 0.25, 1.00, 0.22, 0.16 },   -- red
+    { 0.45, 1.00, 0.48, 0.16 },   -- orange
+    { 0.65, 1.00, 0.76, 0.20 },   -- amber
+    { 0.85, 0.55, 0.80, 0.26 },   -- yellow-green
+    { 1.00, 0.20, 0.80, 0.30 },   -- untouched: green
+}
+
+SDATA.CHARGE_FULL = { 1.00, 0.92, 0.62 }   -- four or five left: it is working
+SDATA.CHARGE_MID  = { 1.00, 0.72, 0.30 }   -- two or three: plan the recast
+SDATA.CHARGE_LAST = { 1.00, 0.38, 0.26 }   -- one: the next tick spends it
+
+-- Why Prayer of Mending needs a tracker of its own, and what it is watching.
+--
+-- Every other entry on any strip is an aura on ONE ally: it lands, it runs
+-- down, it drops, and the row it sat on is the only row that ever had an
+-- opinion about it. Mending is a single object with five charges that MOVES.
+-- It heals whoever holds it, jumps to the next ally, and does that until the
+-- charges run out or the thirty seconds do. A priest owns exactly one.
+--
+-- From any single row's point of view every one of these looks identical —
+-- "the aura left this GUID":
+--
+--     it bounced to someone else          (nothing happened; this is the spell working)
+--     the last charge was spent           (it did its job; recast)
+--     the thirty seconds ran out          (it was wasted; recast)
+--     a dispel took it                    (it was stolen; recast NOW)
+--     the holder died                     (it went with them)
+--
+-- Only the first of those is not worth a sound, and it is by far the most
+-- common — a five-charge Mending bounces four times per cast. So an alert
+-- hung off "the aura left this row" would fire four times for every one time
+-- it should, which is the same as an alert that never fires, because you
+-- stop hearing it.
+--
+-- The tracker therefore follows the OBJECT rather than the rows. When the
+-- aura leaves its holder we do not declare anything: we arm a short grace
+-- (SDATA.POM_GRACE) and wait. If it reappears on ANY ally inside that grace
+-- it bounced — cancel silently, and light the hop. If the grace lapses with
+-- the object nowhere, it is genuinely gone, and by then we know WHY: what
+-- the combat log said last decides between spent, expired, dispelled and
+-- lost. That single wait is the whole trick, and it is why the alert cannot
+-- fire on a bounce even in principle.
+--
+-- The grace is deliberately not a setting. A bounce's REMOVED and APPLIED
+-- arrive in the same combat-log flush, so anything above a few frames is
+-- already generous; exposing it would only offer a knob whose wrong settings
+-- are "alerts on every bounce" and "alerts arrive late".
+-- ---------------------------------------------------------------------------
+-- Alert sounds: every noise this board can make, in one place.
+--
+-- There were three of these hardcoded at their call sites, two of them the
+-- same stock RAID_WARNING, which is also what half the addons on the client
+-- use — so "something happened" was the most any of them could tell you
+-- before you looked. A sound is only worth playing if you can name it without
+-- looking, and that means the board has to make FEWER kinds of noise, each
+-- one distinct, and let you pick which is which.
+--
+-- Two channels, tried in order, because neither is universally safe: a
+-- SOUNDKIT constant is the sanctioned route but the table is client-version
+-- dependent, and a file path is stable across those versions but only for
+-- files that actually shipped. Every play is pcall'd, so an entry this client
+-- does not have degrades to silence rather than to an error — and the Test
+-- buttons in the settings page are how you find that out in ten seconds
+-- instead of mid-arena.
+SDATA.ALERT_SOUNDS = {
+    { key = "WARNING", label = "Raid Warning",
+      kit = "RAID_WARNING", id = 8959, file = "Sound\\Interface\\RaidWarning.wav" },
+    { key = "READY",   label = "Ready Check",
+      kit = "READY_CHECK", id = 8960, file = "Sound\\Interface\\ReadyCheck.wav" },
+    { key = "QUEST",   label = "Quest Chime",
+      kit = "IG_QUEST_LIST_COMPLETE", id = 883 },
+    -- The two tolls are the Mending pair. Same instrument, two pitches: one
+    -- object, two outcomes, and you can tell which without looking at the
+    -- board — which is the entire reason the alert exists.
+    { key = "TOLL_HI", label = "Bell — High",
+      file = "Sound\\Doodad\\BellTollAlliance.wav" },
+    { key = "TOLL_LO", label = "Bell — Low",
+      file = "Sound\\Doodad\\BellTollHorde.wav" },
+    { key = "DOCK",    label = "Docking Bell",
+      file = "Sound\\Doodad\\BoatDockedWarning.wav" },
+    { key = "PING",    label = "Map Ping",
+      file = "Sound\\Interface\\MapPing.wav" },
+    { key = "OPEN",    label = "Window Open",
+      file = "Sound\\Interface\\AuctionWindowOpen.wav" },
+    { key = "LEVEL",   label = "Level Up",
+      file = "Sound\\Interface\\LevelUp.wav" },
+    { key = "NONE",    label = "Silent", silent = true },
+}
+SDATA.ALERT_SOUND_BY_KEY = {}
+for _, e in ipairs(SDATA.ALERT_SOUNDS) do SDATA.ALERT_SOUND_BY_KEY[e.key] = e end
+
+-- Which saved variable each alert's chosen sound lives under. A key table for
+-- the same reason SDATA.BANNER_CD_KEY is one: the engine never spells a saved
+-- variable at a call site, and the settings-reach check can read this and
+-- know these four are real reads.
+SDATA.ALERT_SOUND_KEY = {
+    EXPOSE   = "SoundExpose",
+    LBLATE   = "SoundLBLate",
+    POMSPENT = "SoundPoMSpent",
+    POMLOST  = "SoundPoMLost",
+}
+
+-- The alerts themselves, in the order the settings page lists them.
+--   layer     which board can even make this noise (nil = every board)
+--   onKey     the alert's own on/off switch, which lives with the feature it
+--             belongs to rather than here; the sounds page reads it so a
+--             muted alert is visibly greyed rather than silently dead
+--   default   the sound it makes out of the box
+SDATA.ALERT_LINES = {
+    { key = "EXPOSE", label = "Shield Break", default = "WARNING",
+      onKey = "ExposeAlertSound",
+      tip = "Your shield breaking off an ally who is still alive — a reshield you owe right now." },
+    { key = "LBLATE", label = "Lifebloom Late", default = "QUEST", layer = "HOT",
+      onKey = "LBAlertSound",
+      tip = "A Lifebloom of yours going late: past the point where you are refreshing early and into refreshing behind." },
+    { key = "POMSPENT", label = "Mending Spent", default = "TOLL_HI", layer = "PWS",
+      onKey = "PoMAlertSound",
+      tip = "Your Prayer of Mending spending its last charge. It did the job it was cast for, and only the cooldown is left to wait on." },
+    { key = "POMLOST", label = "Mending Lost", default = "TOLL_LO", layer = "PWS",
+      onKey = "PoMAlertSound",
+      tip = "Your Prayer of Mending ending early — the thirty seconds run out, a dispel taking it, or the holder dying with it. A recast you owe now." },
+}
+SDATA.ALERT_BY_KEY = {}
+for _, e in ipairs(SDATA.ALERT_LINES) do
+    e.dbKey = SDATA.ALERT_SOUND_KEY[e.key]
+    SDATA.ALERT_BY_KEY[e.key] = e
+end
+
+SDATA.POM_GRACE = 0.7           -- seconds to wait for a bounce before declaring a loss
+SDATA.POM_DURATION = 30         -- fallback scale only; the aura's own expiry wins
+SDATA.POM_CHARGES = 5
+SDATA.POM_HOP_HOLD = 0.55       -- how long the arrival flare and the departure ghost last
+-- Why it ended, and how each one reads. `alert` is whether it earns a sound:
+-- BOUNCE and RECAST never do, and they are the two that end a session
+-- without anything having gone wrong.
+SDATA.POM_REASONS = {
+    SPENT    = { label = "spent",     alert = true,  tint = { 0.55, 0.95, 0.70 } },
+    EXPIRED  = { label = "expired",   alert = true,  tint = { 1.00, 0.72, 0.20 } },
+    DISPELLED= { label = "dispelled", alert = true,  tint = { 0.85, 0.55, 1.00 } },
+    DIED     = { label = "lost",      alert = true,  tint = { 0.80, 0.80, 0.85 } },
+    LOST     = { label = "lost",      alert = true,  tint = { 1.00, 0.38, 0.26 } },
+    BOUNCE   = { label = "bounced",   alert = false },
+    RECAST   = { label = "recast",    alert = false },
+}
 SDATA.STRIP_REFRESH_KEY = {
     PWS   = "RenewRefreshAt",
     HOT   = "HotRefreshAt",
@@ -655,6 +970,25 @@ local CLASS_PROFILES = {
 -- this a health-bar layer" is one question and it was being answered in seven
 -- places.
 SDATA.HEALTH_LAYERS = { INT = true, HOT = true, BLESS = true }
+-- The power strip under the health bar. It used to be a MANA strip, drawn for
+-- mana users on the three health-bar layers only, which left a rogue's energy
+-- and a warrior's rage — the two resources an arena actually plans around —
+-- with nothing at all, and gave the priest board no strip on any class. It is
+-- now every class's live power, on every layer, off a setting that still has
+-- "mana users only" as an option for anyone who liked the old board.
+--
+-- Keyed by the TOKEN UnitPowerType returns as its second value, so a druid
+-- that shifts reads as RAGE or ENERGY the moment it does. Happiness is a
+-- hunter pet's, and it is drawn because a pet row is an ally row.
+SDATA.POWER_COLORS = {
+    MANA      = { 0.25, 0.5,  0.95 },
+    RAGE      = { 0.85, 0.2,  0.2  },
+    ENERGY    = { 0.95, 0.85, 0.25 },
+    FOCUS     = { 0.9,  0.55, 0.25 },
+    HAPPINESS = { 0.35, 0.8,  0.4  },
+    RUNIC_POWER = { 0.35, 0.7, 0.9 },
+}
+SDATA.POWER_COLOR_DEFAULT = { 0.25, 0.5, 0.95 }   -- the classic blue strip
 local profile               -- resolved at login; nil = unsupported class (module inert)
 local layer                 -- the active profile's layer ("PWS" / "INT"), nil when inert
 local playerClass           -- our class token, for self-row name coloring
@@ -766,6 +1100,10 @@ local gemBtn, bandageBtn
 local util = {
     portalButtons = {}, counts = {},
     bandageUntil = 0, bandageUnit = "player", nextBandageScan = 0,
+    -- Row-flash colour overrides, parallel to rowFlash. On `util` rather than
+    -- a chunk local for the reason everything else here is (Lua's 200-local
+    -- cap); nil for a row means the flash's own red.
+    rowFlashTint = {},
 }
 local mageBtnsDirty = false     -- attribute binds queued for after combat
 local settingsBtn               -- header gear opening the settings page (any class)
@@ -794,6 +1132,13 @@ SDATA.SAC_ID = 7812             -- warlock Sacrifice (absorb bubble)
 local absorbNames = {}          -- localized absorb-aura name -> true
 local allyAbsorbs = {}          -- guid -> { [name] = {expire, duration, icon, capacity, absorbed} }
 local scanAbsorbs = {}          -- per-scan scratch: name -> {expire, duration, icon, spellId, index}
+-- Per-scan scratch for the battleground marks. A COUNTED array rather than a
+-- wiped table: at most a couple of entries per unit, on every UNIT_AURA, for
+-- forty people — the entry tables are reused and the count is the wipe. On
+-- `util` rather than as chunk locals for the reason stated above (the 200-local
+-- cap), which this feature reached exactly.
+util.bgScan = { n = 0 }
+function util.BGCompare(x, y) return x.prio < y.prio end
 SDATA.SHIELD_COLORS = {}        -- localized absorb name -> segment tint
 SDATA.SHIELD_ORDER = {}         -- localized absorb name -> fixed segment order
 SDATA.SHIELD_COLOR_DEFAULT = { 0.55, 0.55, 0.58 }
@@ -880,6 +1225,25 @@ function CommanderPartyFrames_GetStripBook(layerKey)
     return book
 end
 
+-- Alert sounds, for the settings page's Alert Sounds section. Filtered to the
+-- layer here rather than there, so "which noises can THIS board make" is
+-- answered once, by the file that owns the answer.
+function CommanderPartyFrames_GetAlertLines(layerKey, out)
+    out = out or {}
+    for i = #out, 1, -1 do out[i] = nil end
+    for _, line in ipairs(SDATA.ALERT_LINES) do
+        if not line.layer or line.layer == layerKey then out[#out + 1] = line end
+    end
+    return out
+end
+
+function CommanderPartyFrames_GetAlertSounds() return SDATA.ALERT_SOUNDS end
+
+-- Auditioning one from the settings page deliberately ignores that alert's
+-- own mute: hearing a sound you have currently switched off is exactly how
+-- you decide whether to switch it back on.
+function CommanderPartyFrames_PlayAlert(key) util.PlayAlert(key) end
+
 function CommanderPartyFrames_GetProfileMode()
     local _, classToken = UnitClass("player")
     local p = CLASS_PROFILES[classToken or ""]
@@ -903,6 +1267,284 @@ local bless = {
     probe = {},         -- a stand-in row for a whole class
     roster = {}, seen = {},
 }
+
+-- ---------------------------------------------------------------------------
+-- FORECAST: what is already on its way to an ally, before anything lands.
+--
+-- Three questions the board could never answer, and every one of them decides
+-- a global:
+--   * their DOTS      how much damage is still queued in what is ticking on
+--                     them — a rogue at 40% with a full Corruption on him is
+--                     not a rogue at 40%
+--   * their HOTS      how much healing is already rolling — the reason NOT to
+--                     spend a big heal on someone who is about to be fine
+--   * an INBOUND cast a heal in the air from anyone in the group, you
+--                     included, so two healers stop landing on the same target
+--
+-- TBC gives none of this. There is no API for what a dot will do, no API for
+-- what a heal will land for, and no API at all for who another player is
+-- casting on. So all three are LEARNED, from the two things the client does
+-- tell us:
+--
+--   the combat log       every periodic tick and every completed heal arrives
+--                        with its exact amount. Watch them and you know what
+--                        THIS warlock's Corruption does to THIS target and
+--                        what THAT priest's Greater Heal lands for — better
+--                        numbers than any static table, because they already
+--                        include gear, talents, resistances and buffs.
+--   the aura list        what is currently on the ally, and when it falls off.
+--                        Ticks remaining = time remaining / tick interval.
+--
+-- Learning has one cost — an unseen spell is worth nothing until its first
+-- tick lands — so the shapes (is this a dot or a hot, how often does it tick)
+-- are SEEDED for the spells an arena actually runs into, and only the amounts
+-- wait on the log. In practice the first tick of anything fills the rest in.
+--
+-- Amounts are held per (target, spell) rather than per caster: the number
+-- that matters is what this spell is doing to THIS ally, which already folds
+-- in their resistances and their damage reduction. A cross-target average is
+-- the fallback for a dot that was applied but has not ticked yet.
+-- ---------------------------------------------------------------------------
+
+-- Tick shapes, by interval. Every rank of a TBC periodic shares one localized
+-- name, so one id per spell resolves the whole family.
+SDATA.PERIODIC_SEED = {
+    { kind = "DOT", interval = 3, ids = {
+        172,    -- Corruption
+        348,    -- Immolate
+        18265,  -- Siphon Life
+        30108,  -- Unstable Affliction
+        589,    -- Shadow Word: Pain
+        2944,   -- Devouring Plague
+        34914,  -- Vampiric Touch
+        8921,   -- Moonfire
+        1978,   -- Serpent Sting
+        8050,   -- Flame Shock
+        772,    -- Rend
+        703,    -- Garrote
+        1822,   -- Rake
+        2818,   -- Deadly Poison
+        11366,  -- Pyroblast (the burn)
+        12162,  -- Deep Wounds
+        13218,  -- Wound Poison
+    } },
+    { kind = "DOT", interval = 2, ids = {
+        980,    -- Curse of Agony
+        5570,   -- Insect Swarm
+        1943,   -- Rupture
+        1079,   -- Rip
+    } },
+    { kind = "HOT", interval = 3, ids = {
+        139,    -- Renew
+        774,    -- Rejuvenation
+        8936,   -- Regrowth
+    } },
+    { kind = "HOT", interval = 1, ids = {
+        33763,  -- Lifebloom
+    } },
+}
+-- Direct heals, so a cast can be recognised as a heal on its very first
+-- frame — before the log has ever shown us one land. The AMOUNT still waits
+-- on the log; until then an inbound cast is a fact without a number, which
+-- is still worth knowing ("someone else has them").
+SDATA.HEAL_SEED = {
+    2050, 2060, 2061, 596,          -- Priest: Lesser Heal, Greater Heal, Flash Heal, Prayer of Healing
+    25314, 33076,                   -- Priest: Greater Heal (TBC rank), Prayer of Mending
+    5185, 5186, 8936, 18562,        -- Druid: Healing Touch, ..., Regrowth, Swiftmend
+    331, 8004, 1064, 25357,         -- Shaman: Healing Wave, Lesser Healing Wave, Chain Heal
+    635, 19750, 633, 2800,          -- Paladin: Holy Light, Flash of Light, Lay on Hands
+    755,                            -- Warlock: Health Funnel
+}
+SDATA.FORECAST_MAX = 12     -- periodic auras tracked per ally (pooled, never grown)
+SDATA.HEAL_BURST = 0.4      -- heals this close together are one multi-target cast
+
+-- Everything the forecast keeps between calls, in ONE table for the same
+-- reason `util`, `strip` and `bless` are one each (Lua's 200-local chunk cap).
+--   kind      localized aura name -> { dot = bool, interval = seconds }
+--   heal      localized spell name -> true (a direct heal, seeded and learned)
+--   on        guid -> pooled array of live periodics; list.n is the live count
+--   amtOn     guid .. "\30" .. name -> last tick seen on THAT unit
+--   amtAny    name -> rolling mean across every target (the fallback)
+--   healAmt   srcGUID .. "\30" .. name -> that caster's rolling mean heal
+--   healAny   name -> rolling mean across every caster (the fallback)
+--   casts     casterGUID -> { dest, amt, endTime, name, icon } (one cast each)
+--   last      guid .. "\30" .. name -> last tick time, for learning the interval
+--   detail    scratch list for the row tooltip's breakdown
+-- On `util` rather than as a chunk local because this file sits ON Lua 5.1's
+-- 200-local ceiling — a new local here is a load error, not a style question.
+-- Every function that touches it opens with `local fc = util.fc`, so the
+-- indirection is paid once per call and never inside a loop.
+util.fc = {
+    kind = {}, heal = {}, on = {}, amtOn = {}, amtAny = {},
+    healAmt = {}, healAny = {}, healPend = {}, casts = {}, last = {}, detail = {},
+}
+
+-- Resolve the seeds into localized names. Called at login beside the CC and
+-- absorb name tables, and for the same reason: an aura arrives named, not
+-- numbered, and every rank of one spell answers to one name.
+function util.ResolveForecast()
+    local fc = util.fc
+    if not GetSpellInfo then return end
+    for _, grp in ipairs(SDATA.PERIODIC_SEED) do
+        for _, id in ipairs(grp.ids) do
+            local n = GetSpellInfo(id)
+            if n and not fc.kind[n] then
+                fc.kind[n] = { dot = grp.kind == "DOT", interval = grp.interval,
+                               seeded = true }
+            end
+        end
+    end
+    for _, id in ipairs(SDATA.HEAL_SEED) do
+        local n = GetSpellInfo(id)
+        if n then fc.heal[n] = true end
+    end
+end
+
+-- Rolling mean, seeded by its first sample. Weighted toward history (a crit
+-- we failed to normalise, or a partial resist, should nudge the number rather
+-- than become it) but light enough that a real gear change lands within a
+-- fight or two.
+local function Blend(old, new)
+    if not old then return new end
+    return old * 0.75 + new * 0.25
+end
+
+-- One periodic tick, straight off the log. `dot` says which side it is; the
+-- amount is normalised out of a crit so a lucky tick does not double the
+-- forecast for everyone downstream.
+function util.NotePeriodic(destGUID, name, amount, crit, dot, now)
+    local fc = util.fc
+    if not (destGUID and name) or type(amount) ~= "number" or amount <= 0 then return end
+    if crit then amount = amount / 1.5 end
+    local shape = fc.kind[name]
+    if not shape then
+        shape = { dot = dot, interval = 3 }
+        fc.kind[name] = shape
+    else
+        shape.dot = dot
+    end
+    -- Learn the interval from consecutive ticks — but only for a spell the
+    -- seed table does not already know. TBC lets two casters keep the same
+    -- dot on one target, and their tick streams interleave: watched naively
+    -- that reads as half the real interval, which would double the forecast
+    -- for the spells an arena runs into most. A seeded interval is a fact, so
+    -- it is never overwritten by an observation that might be two casters.
+    -- Periodics all tick on whole seconds, so the observation is rounded to
+    -- one, which also absorbs the latency jitter in a raw delta.
+    local key = destGUID .. "\30" .. name
+    local prev = fc.last[key]
+    fc.last[key] = now
+    if prev and not shape.seeded then
+        local dt = now - prev
+        if dt >= 0.75 and dt <= 10.5 then
+            local iv = math.floor(dt + 0.5)
+            if iv >= 1 then shape.interval = iv end
+        end
+    end
+    fc.amtOn[key] = amount
+    fc.amtAny[name] = Blend(fc.amtAny[name], amount)
+end
+
+-- One completed direct heal. Kept per caster because THIS is the number that
+-- differs by who is casting: a fresh priest's Flash Heal and a geared one's
+-- are not the same heal, and the inbound-cast read is per caster.
+--
+-- Keyed by SPELL ID, not by name, and that is not a detail. Every rank of one
+-- spell answers to one name, and TBC healers downrank constantly — a priest
+-- spamming rank 2 Flash Heal for efficiency and then landing a rank 7 is two
+-- wildly different numbers wearing the same label. Averaging them produced a
+-- prediction that matched neither and looked, from the outside, exactly like
+-- a spell-power bug.
+--
+-- The name is still recorded, both as the "is this spell a heal" test the
+-- cast read uses and as a last-resort bucket for a cast whose id the client
+-- did not hand us.
+function util.NoteHeal(srcGUID, spellId, name, amount, crit, now)
+    local fc = util.fc
+    if not srcGUID or type(amount) ~= "number" or amount <= 0 then return end
+    if name then fc.heal[name] = true end
+    if crit then amount = amount / 1.5 end
+    local key = srcGUID .. "\30" .. tostring(spellId or name)
+    -- MULTI-TARGET casts arrive as several heal events in one breath — Chain
+    -- Heal's three, Prayer of Healing's five, Circle of Healing's — each
+    -- smaller than the last. Blending all of them teaches a number well below
+    -- what the caster's TARGET actually receives, which is the number this
+    -- forecast is about. So a burst is held and only its LARGEST sample is
+    -- committed: one cast, one measurement, taken at the primary target.
+    local pend = fc.healPend[key]
+    if not pend then pend = {}; fc.healPend[key] = pend end
+    if pend.at and (now - pend.at) < SDATA.HEAL_BURST then
+        if amount > (pend.amt or 0) then pend.amt = amount end
+        return
+    end
+    if pend.at then util.CommitHeal(key, pend.amt, pend.name) end
+    pend.amt, pend.at, pend.name = amount, now, name
+end
+
+function util.CommitHeal(key, amt, name)
+    local fc = util.fc
+    if not amt or amt <= 0 then return end
+    fc.healAmt[key] = Blend(fc.healAmt[key], amt)
+    if name then fc.healAny[name] = Blend(fc.healAny[name], amt) end
+end
+
+-- Commit any burst whose breath has passed. Called when the numbers are about
+-- to be READ (a cast starting), which is the only moment their freshness
+-- matters — a burst nobody has flushed is committed by the next heal of the
+-- same spell anyway.
+function util.FlushHeals(now)
+    local fc = util.fc
+    for key, pend in pairs(fc.healPend) do
+        if pend.at and (now - pend.at) >= SDATA.HEAL_BURST then
+            util.CommitHeal(key, pend.amt, pend.name)
+            pend.at = nil
+        end
+    end
+end
+
+-- OVERHEAL. The other half of the healing accounting, and the only one the
+-- log reports directly: every heal event carries what it actually restored
+-- and what spilled. Wasted healing is a fact you can only learn AFTER the
+-- fact, which is exactly why it belongs on the row rather than in a meter —
+-- the useful moment is the one right after it happens, while the next global
+-- is still yours to spend somewhere else.
+--
+-- Stored as a FRACTION and a deadline rather than a running total. Nobody
+-- reads a number here; what the row has to say is "that one was mostly
+-- wasted", and how mostly decides how loud it says it.
+-- guid -> { until_, frac }. The table is declared here with the rest of the
+-- healing accounting; the two functions that use it live further down beside
+-- util.Forecast, because both read settings and `DB` is not declared yet at
+-- this point in the file — calling it from here resolves it as a nil global.
+util.overheal = {}
+
+-- What one tick of `name` is worth on `guid`: what it actually did to THEM if
+-- we have seen it, else what it does on average to anyone. Zero when neither
+-- is known — a dot we have never watched tick contributes nothing rather than
+-- a guess, because a wrong number here is worse than a missing one.
+function util.TickValue(guid, name)
+    local fc = util.fc
+    return fc.amtOn[guid .. "\30" .. name] or fc.amtAny[name] or 0
+end
+
+-- Record what the aura scan found, into the pooled per-ally list. Entry
+-- tables are reused rather than rebuilt: this runs per unit on every
+-- UNIT_AURA, and the whole point of the pool is that it never allocates.
+function util.NotePeriodicAura(guid, name, icon, expire, duration, dot)
+    local fc = util.fc
+    local shape = fc.kind[name]
+    if not shape or shape.dot ~= dot then return end
+    local list = fc.on[guid]
+    if not list then list = { n = 0 }; fc.on[guid] = list end
+    local slot = list.n + 1
+    if slot > SDATA.FORECAST_MAX then return end
+    local e = list[slot]
+    if not e then e = {}; list[slot] = e end
+    e.name, e.icon, e.expire, e.duration = name, icon, expire, duration
+    e.interval = shape.interval or 3
+    e.dot = dot
+    list.n = slot
+end
 
 -- A stand-in row for a whole CLASS, so the class grid can ask exactly the
 -- questions a real row asks: does Wisdom do a warrior any good (no), does
@@ -1107,11 +1749,21 @@ local IMPORTANT_COLORS = {
     CC      = { 1.00, 0.55, 0.15 },
     SILENCE = { 0.85, 0.55, 0.30 },
 }
-local MAX_DISPEL_ICONS = 5
+-- Debuffs that never earn an icon, whatever the strip is set to show. The
+-- ten minutes after a Bloodlust or Heroism sit on every row at once and tell
+-- a healer nothing they can act on; with Show All Debuffs on they would take
+-- a strip slot on the whole party for the rest of the fight.
+local MUTED_IDS = {
+    57724,  -- Sated (Bloodlust)
+    57723,  -- Exhaustion (Heroism)
+}
+-- Upper bound of the Debuff Icons setting; each row pre-builds this many slots
+local MAX_DISPEL_ICONS = 16
 
 local myDispelTypes = {}   -- dispel types OUR class can remove (resolved at login)
 local ccNames = {}          -- localized CC spell names -> true (resolved at login)
 local importantNames = {}   -- localized name -> category (HEAL / CC / SILENCE)
+local mutedNames = {}       -- localized names the strip never shows (resolved at login)
 
 -- CommanderPartyFramesDB accessor with a fallback, so every read is nil-safe even
 -- before defaults are applied.
@@ -1119,6 +1771,258 @@ local function DB(key, default)
     local v = CommanderPartyFramesDB and CommanderPartyFramesDB[key]
     if v == nil then return default end
     return v
+end
+
+-- ---------------------------------------------------------------------------
+-- Nearby Raid (flagged off by default)
+--
+-- Inside a raid or a battleground the roster is forty people and the board is
+-- unreadable, but the four allies who actually matter to a healer are the four
+-- standing next to them. This picks exactly that: you, plus the closest N-1
+-- raid members, on the same rows, with the same layers, as a party.
+--
+-- It is a SNAPSHOT rather than a live sort: the picked set holds still until
+-- something asks it to change — the header button, the auto-refresh timer, or
+-- the roster itself. Every one of those re-picks SORTS. An earlier version had
+-- the timer keep people on the rows they already held and only refill what
+-- emptied, on the theory that rows moving under the cursor cost you clicks;
+-- what that actually produced was a board that looked frozen, because the
+-- membership of "the four closest" rarely changes even while all four of them
+-- are moving. Auto-refresh that does not visibly re-sort is auto-refresh that
+-- appears broken, so it re-sorts.
+--
+-- What survives of that idea is `sticky`, and only where it is invisible: an
+-- automatic pick gives whoever is already on the board a few yards of credit
+-- on MEMBERSHIP, so two allies drifting either side of the cutoff do not swap
+-- in and out every tick. The order they are drawn in is always pure distance.
+--
+-- Everything lives in one table because this file is near Lua's 200-local
+-- chunk cap (see the SDATA note at the top).
+-- ---------------------------------------------------------------------------
+local near = {
+    slots = {},     -- ordered "raidN" tokens of the current pick (never "player")
+    held = {},      -- guid -> slot index, read only for the membership head start
+    order = {},     -- unit token -> board position, for the fixed row order
+    scratch = {},   -- per-pick candidate list, reused
+    pool = {},      -- candidate records, reused (a pick allocates nothing)
+    stamp = 0,      -- GetTime() of the last pick (0 = never picked)
+    exact = false,  -- the last pick had real coordinates, not range bands
+    since = 0,      -- auto-refresh accumulator
+    dirty = true,   -- something invalidated the pick; take a new one on demand
+    pending = false,-- a pick is waiting on combat to end (secure rows only)
+}
+
+-- An incumbent's head start, in yards, applied on automatic picks only. Two
+-- allies drifting either side of the cutoff would otherwise trade the last
+-- slot every single tick; this says a newcomer has to be meaningfully closer,
+-- not marginally, before it is worth moving somebody off the board. It biases
+-- WHO is on the board, never the order they are drawn in.
+-- (Constants and helpers hang off `near` rather than standing as file locals
+-- for the same 200-local reason the table itself does.)
+near.STICKY = 5
+near.FAR = 200              -- further than anything we can measure
+
+-- How far away an ally is, in yards, and whether that number is real.
+--
+-- UnitPosition is the only source that gives an actual distance, and it is
+-- also the one that can be taken away underneath us: the client blanks it
+-- inside instanced content on some builds, which is precisely where this
+-- feature is meant to live.
+--
+-- The fallback used to be an interact-distance ladder over CheckInteractDistance.
+-- That function is PROTECTED on this client (2.5.6): every call from addon code
+-- raises ADDON_ACTION_BLOCKED and returns nothing, so the ladder was already
+-- ranking nothing -- it fell through to UnitInRange every time, while spamming
+-- the error log from inside the picker's refresh. Do not put it back. Bands
+-- would have to come from an unprotected source (a spell- or item-range check),
+-- which is real work, not a one-liner.
+--
+-- So the fallback is UnitInRange: group members only, which is exactly who is
+-- being ranked, and one rung rather than three. The board still says which of
+-- the two it used, so a coarse pick never passes itself off as a measured one.
+function near.Yards(unit)
+    if UnitIsUnit and UnitIsUnit(unit, "player") then return 0, true end
+    -- A released ghost is standing at the graveyard, not where their corpse
+    -- is, and there is nothing on them to heal, buff or dispel anyway -- so a
+    -- nearby board treats them as infinitely far (Ghosts Count As Far). A
+    -- dead ally who has NOT released is still a body at a real distance: a
+    -- Rebirth or a Redemption is a decision about exactly that body, so their
+    -- yards stay honest.
+    if DB("NearGhostsFar", true) and UnitIsGhost and UnitIsGhost(unit) then
+        return near.FAR * 2, true
+    end
+    if UnitPosition then
+        local py, px, _, pInst = UnitPosition("player")
+        local uy, ux, _, uInst = UnitPosition(unit)
+        -- Coordinates from two different instances are two different worlds;
+        -- subtracting them would rank a stranger as adjacent (the same trap
+        -- Commander_Orders hits between Kalimdor and the Eastern Kingdoms).
+        if px and ux and pInst == uInst then
+            local dx, dy = ux - px, uy - py
+            return math.sqrt(dx * dx + dy * dy), true
+        end
+    end
+    -- UnitInRange answers for group members only, which is exactly who is
+    -- being ranked here. Its 40y is the last rung before "somewhere else".
+    if UnitInRange then
+        local inRange, checked = UnitInRange(unit)
+        if checked and inRange then return 40, false end
+    end
+    return near.FAR, false
+end
+
+-- Exposed for the harness, which has no other way to ask the ranker a
+-- question without standing up a forty-person raid
+function CommanderPartyFrames_NearYards(unit) return near.Yards(unit) end
+
+-- On only when the flag is set AND we are actually in a raid. A five-man
+-- party already IS this board, so the feature has nothing to do there and
+-- must not quietly reorder it.
+function near.Active()
+    if not DB("NearMode", false) then return false end
+    return (IsInRaid and IsInRaid()) and true or false
+end
+
+-- People on the board, you included. This is what bounds the board in nearby
+-- mode — Max Rows is the whole-raid control and would silently clip a pick of
+-- fifteen down to six.
+function near.Count()
+    local n = tonumber(DB("NearCount", 5)) or 5
+    if n < 2 then n = 2 elseif n > 15 then n = 15 end
+    return math.floor(n)
+end
+
+function near.Candidate(i, unit, guid, yards)
+    local rec = near.pool[i]
+    if not rec then rec = {}; near.pool[i] = rec end
+    rec.unit, rec.guid, rec.yards = unit, guid, yards
+    return rec
+end
+
+-- Closest first. The tie-break is the GUID rather than the name or the raid
+-- index: two allies at an identical distance must land in the same order on
+-- every pick, or the board flickers between two equally correct answers.
+function near.Compare(a, b)
+    if a.rank ~= b.rank then return a.rank < b.rank end
+    return a.guid < b.guid
+end
+
+-- Re-pick the snapshot, always nearest-first. `sticky` is the automatic pick's
+-- membership hysteresis (see near.STICKY); a pick you asked for by hand has
+-- none, because "give me a fresh collection" should mean exactly that. Returns
+-- true when the token list actually changed — the caller only has to redraw,
+-- or touch secure attributes, when it did.
+function near.Pick(sticky)
+    near.dirty = false
+    near.stamp = GetTime()
+    local slots, held, scratch = near.slots, near.held, near.scratch
+    local wanted = near.Count() - (DB("IncludeSelf", true) and 1 or 0)
+    if wanted < 0 then wanted = 0 end
+
+    wipe(scratch)
+    local exact = true
+    if IsInRaid and IsInRaid() then
+        for i = 1, 40 do
+            local u = "raid" .. i
+            if UnitExists(u) and not (UnitIsUnit and UnitIsUnit(u, "player")) then
+                -- A disconnected ally cannot be healed, buffed or dispelled,
+                -- and their last known position is wherever they dropped —
+                -- so they are not a candidate for a slot that is about to be
+                -- spent on somebody you can actually act on.
+                local online = (UnitIsConnected == nil) or UnitIsConnected(u)
+                local guid = UnitGUID and UnitGUID(u)
+                if online and guid then
+                    local yards, measured = near.Yards(u)
+                    if not measured then exact = false end
+                    local rec = near.Candidate(#scratch + 1, u, guid, yards)
+                    -- Incumbents are ranked with their head start applied, so
+                    -- the sort itself carries the hysteresis
+                    rec.rank = yards - (sticky and held[guid] and near.STICKY or 0)
+                    scratch[#scratch + 1] = rec
+                end
+            end
+        end
+    end
+    near.exact = exact
+    table.sort(scratch, near.Compare)
+    if #scratch > wanted then
+        for i = #scratch, wanted + 1, -1 do scratch[i] = nil end
+    end
+
+    -- The board IS the sorted order. Nothing is held back to preserve a row.
+    local before = table.concat(slots, ",")
+    wipe(slots)
+    for i = 1, #scratch do slots[i] = scratch[i].unit end
+
+    -- Recorded for the next automatic pick's head start, and nothing else
+    wipe(held)
+    for i = 1, #slots do
+        local g = UnitGUID and UnitGUID(slots[i])
+        if g then held[g] = i end
+    end
+    return table.concat(slots, ",") ~= before
+end
+
+-- Take a pick if one is owed. Cheap enough to sit on the roster path: it
+-- short-circuits on a flag rather than re-scanning forty units per draw.
+function near.Ensure()
+    -- An implicit pick (a roster change, a settings change, the first draw)
+    -- is the automatic kind: it carries the membership head start, unless
+    -- there is no previous board for anyone to be an incumbent of.
+    if near.dirty or near.stamp == 0 then near.Pick(near.stamp ~= 0) end
+end
+
+-- Invalidate without picking — the roster changed, the zone changed, or a
+-- setting that decides the pick's shape did. The next draw takes the new one.
+function near.Invalidate()
+    near.dirty = true
+end
+
+-- The pet token that follows a picked ally.
+function near.PetOf(unit)
+    return "raidpet" .. string.sub(unit, 5)
+end
+
+-- The board's row bound: nearby mode is sized by its own count, everything
+-- else by Max Rows.
+function near.Max()
+    return near.Active() and near.Count() or DB("MaxRows", 6)
+end
+
+-- The row alpha Range Fade dims an out-of-range ally to: the Strength
+-- setting is how much is taken AWAY, so 0.6 leaves the 0.4 the fade always
+-- used. Clamped so a hand-edited value can neither hide a row outright nor
+-- turn the fade into a no-op.
+function util.RangeFadeAlpha()
+    local s = tonumber(DB("RangeFadeStrength", 0.6)) or 0.6
+    if s < 0.1 then s = 0.1 elseif s > 0.9 then s = 0.9 end
+    return 1 - s
+end
+
+-- Which rows get the power strip: OFF, MANA (the old board — mana users
+-- only), or ALL (every class, every resource). Asked in four places, and one
+-- of them is the layout pass, so it is a function rather than four copies of
+-- the same legacy fallback.
+--
+-- The fallback IS the migration: PowerBar is absent for anyone upgrading, and
+-- their old ShowManaBar answers the question they actually gave — off stays
+-- off, on becomes the mana-only board they already had. New installs get ALL
+-- from the defaults table, so nobody's board changes under them.
+function util.PowerMode()
+    local m = CommanderPartyFramesDB and CommanderPartyFramesDB.PowerBar
+    if m == "OFF" or m == "MANA" or m == "ALL" then return m end
+    if CommanderPartyFramesDB and CommanderPartyFramesDB.ShowManaBar == false then return "OFF" end
+    return "MANA"
+end
+
+-- Does THIS row take the strip? Mode plus the row's own resource. Compact
+-- personal rows (My Shields, the elemental) never do: they are half height
+-- and the slot is spoken for.
+function util.PowerOn(r)
+    local m = util.PowerMode()
+    if m == "OFF" or not r or not r.power then return false end
+    if m == "MANA" then return r.powerType == 0 end
+    return true
 end
 
 -- Icon shading. The art and the drawing are Commander_Events' (a RequiredDep,
@@ -1586,21 +2490,24 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Layout constants. Kept tight on purpose: this is a HUD, not a window.
+-- Folded into SDATA (2026-09-12) to buy this file room under Lua's 200-local
+-- ceiling: fifteen constants were fifteen chunk locals, and the file had 199.
 -- ---------------------------------------------------------------------------
-local ROW_H = 22
-local ROW_GAP = 2
-local BAR_H = 12
-local HEALTH_H = 6
-local WS_H = 3
-local STRIPE_W = 3
-local ICON_SIZE = 18
-local SMALL_ICON = 15   -- INT layer: two status icons share the left slot
-local NAME_W = 60
-local SHORT_NAME_W = 44
-local PAD = 6
-local HEADER_H = 15
-local DRAW_THROTTLE = 0.1
-local UPTIME_SAMPLE = 1.0
+SDATA.ROW_H = 22
+SDATA.ROW_GAP = 2
+SDATA.BAR_H = 12
+SDATA.HEALTH_H = 6
+SDATA.WS_H = 3
+SDATA.STRIPE_W = 3
+SDATA.ICON_SIZE = 18
+SDATA.SMALL_ICON = 15   -- INT layer: two status icons share the left slot
+SDATA.COMBAT_MARK = 13  -- size of the crossed-swords combat mark
+SDATA.NAME_W = 60
+SDATA.SHORT_NAME_W = 44
+SDATA.PAD = 6
+SDATA.HEADER_H = 15
+SDATA.DRAW_THROTTLE = 0.1
+SDATA.UPTIME_SAMPLE = 1.0
 
 -- Personal rows (Water Elemental, My Shields) render at half an ally row's
 -- height: they are YOUR upkeep, read at a glance, and they now sit ABOVE the
@@ -1694,6 +2601,12 @@ for k in pairs(DISPEL_STATES) do ALERT_STATES[k] = true; CASTABLE_STATES[k] = tr
 local shieldState = {}   -- guid -> { spellId, expire, capacity, absorbed, mine }
 local wsState = {}        -- guid -> weakened-soul expirationTime
 local intState = {}       -- guid -> { expire, duration } for the layer's ally buff
+-- guid -> ordered list of live battleground marks (see SDATA.BG_BUFFS), best
+-- first. Rebuilt per reliable scan under the same contract as everything else
+-- on this board: an ally the client cannot see reports no auras at all, and
+-- reading that as "they dropped the flag" would blank the carrier every time
+-- they ran past the tunnel. On `util` for the 200-local reason, like the rest.
+util.bgState = {}
 local curseState = {}     -- guid -> { expire, duration, dispelName } first removable debuff
 local ccState = {}        -- guid -> { expire, duration, icon, name } first CC debuff
 -- Live header tallies for the buff layers (INT/HOT), rebuilt every draw pass
@@ -2174,12 +3087,14 @@ for i = 1, 40 do SDATA.PET_OWNER["raidpet" .. i] = "raid" .. i end
 -- entry tables are reused instead of reallocated on every aura event
 local dispelState = {}
 local prevMyShield = {}   -- guid -> had my shield last tick (Expose Alert edge)
+util.prevRollLate = {}    -- guid -> roll was already late last tick (roll-alert edge)
 local rowFlash = {}       -- rowIndex -> GetTime() the flash ends
 
 local rowPool = {}
 local personalPool = {}   -- always-insecure rows for the elemental / My Shields
-local sinceDraw = 0
-local sinceSample = 0
+-- The two ticker accumulators used to be file locals; they live on the ticker
+-- frame itself now (nothing else ever read them) because this chunk sits on
+-- Lua's 200-local ceiling and a new feature needs the slots more than they do.
 local testUntil = 0       -- test board lives until this GetTime()
 local targeters = {}      -- [guid] = enemy NPCs currently targeting that unit
 local nextTargeterScan = 0
@@ -2190,7 +3105,7 @@ local uptime              -- session table from Commander.RestoreSession
 
 local root = CreateFrame("Frame", "CommanderPartyFramesFrame", UIParent)
 root:SetPoint("LEFT", UIParent, "LEFT", 14, 40)
-root:SetSize(214, ROW_H)
+root:SetSize(214, SDATA.ROW_H)
 root:SetFrameStrata("MEDIUM")
 root:Hide()
 
@@ -2210,6 +3125,22 @@ end
 
 local function InCombat()
     return InCombatLockdown and InCombatLockdown()
+end
+
+-- Are we in a battleground? The battleground marks reserve their slots from
+-- THIS rather than from the setting alone, which is the one place they break
+-- the rule the combat mark states so carefully. The reason they may: those
+-- auras cannot exist outside a battleground, so a slot held open in an arena
+-- or a raid is width the health bar never gets back for a mark that can never
+-- light. Zoning is the only thing that flips it, and zoning is out of combat,
+-- so the relayout it triggers can never land mid-fight.
+--
+-- Guarded in two statements rather than the file's usual `Api and Api()`,
+-- because `and` yields ONE value and the answer wanted here is the second.
+function util.InBattleground()
+    if not IsInInstance then return false end
+    local _, kind = IsInInstance()
+    return kind == "pvp"
 end
 
 -- Show/Hide is a PROTECTED call on any frame that CARRIES secure children,
@@ -2508,6 +3439,26 @@ end
 -- Resolve the active layer's buff names and icons from the spellbook. Only the
 -- ACTIVE layer goes into the name map, so a mage's board can never count a
 -- druid's Mark of the Wild as "buffed" and vice versa.
+-- The battleground marks' names, read out of the client's own spell data.
+-- Unlike the ally-buff book this has nothing to do with the player's class or
+-- spellbook — nobody LEARNS Berserking off the ground — so it resolves once
+-- and is the same table on every board. Names, because that is what an aura
+-- list gives us and what survives a rank; the id is only the key we look the
+-- name up with.
+function util.ResolveBGBook()
+    wipe(SDATA.BG_BY_NAME)
+    if not GetSpellInfo then return end
+    for _, def in ipairs(SDATA.BG_BUFFS) do
+        local n, _, icon = GetSpellInfo(def.id)
+        if n then
+            SDATA.BG_BY_NAME[n] = def
+            -- The client's own art wins over the path written above, which is
+            -- there so a mark still draws if the spell data ever goes quiet
+            if icon then def.icon = icon end
+        end
+    end
+end
+
 function util.ResolveBuffBook()
     wipe(SDATA.BUFF_BY_NAME)
     wipe(SDATA.BUFF_LIST)
@@ -2612,6 +3563,34 @@ local function ResolveStripInfo()
             end
         end
     end
+    -- Mending's localized name and trained state, cached for the tracker.
+    -- Every event it follows arrives from the combat log as a name and
+    -- nothing else, and all three of its spell IDs (the cast, the aura it
+    -- places, the heal it fires) share that one name — which is the whole
+    -- reason a name is the right key here rather than an ID table.
+    -- The book's low-health hot, if it named one. Resolved here rather than
+    -- looked up per row per draw, and from the whole BOOK rather than from
+    -- the tracked slots: whether you have given Renew a slot on the strip is
+    -- a display choice, and it must not change whether the board can tell you
+    -- that a dying ally has nothing rolling on them.
+    util.lowHotDef = nil
+    for _, def in ipairs(SDATA.STRIP_BOOKS[layer or ""] or {}) do
+        if def.lowHot and def.known then util.lowHotDef = def end
+    end
+    util.pomName, util.pomKnown, util.pomDef = nil, false, nil
+    if layer == "PWS" then
+        for _, def in ipairs(SDATA.PRIEST_HOTS) do
+            if def.key == "POM" then
+                util.pomName = GetSpellInfo(def.baseId)
+                util.pomKnown = def.known and util.pomName and true or false
+                util.pomDef = def
+            end
+        end
+    end
+    -- A priest who cannot cast it cannot lose it. Respeccing or relogging
+    -- into a class with no Mending must not leave a session in flight.
+    if not util.pomKnown then util.PoMReset() end
+
     -- The banner's cooldown segments, from whichever book this layer brought
     wipe(strip.cds)
     for _, e in ipairs(SDATA.BANNER_CDS[layer] or {}) do
@@ -2826,7 +3805,7 @@ end
 -- plain text header, so none of them can drift onto the buttons.
 function util.ClusterOffset()
     local cw = util.ClusterWidth()
-    return STRIPE_W + 4 + (cw > 0 and (cw + 5) or 0)
+    return SDATA.STRIPE_W + util.HeaderInset() + (cw > 0 and (cw + 5) or 0)
 end
 
 -- Header convention: everything CLASS-specific is left-aligned, everything
@@ -2848,7 +3827,9 @@ function util.Layout()
                 if prev then
                     b:SetPoint("LEFT", prev, "RIGHT", 3, 0)
                 else
-                    b:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 3, -1)
+                    b:SetPoint("TOPLEFT", root, "TOPLEFT",
+                        SDATA.STRIPE_W + util.HeaderInset() - 1,
+                        -util.HeaderY(b:GetHeight() or 13))
                 end
                 prev = b
             end
@@ -2932,6 +3913,18 @@ local function BindMageUtilityButtons()
         return
     end
 
+    -- The mage utility cluster is OFF by default. Conjure, Consume, Mana Gem
+    -- and Portals are all things you do BETWEEN games; on the banner they sat
+    -- in front of the readout and pushed the segments that matter during one
+    -- toward the truncation edge. Four buttons of sit-down convenience is a
+    -- bad trade for that, so they are opt-in as a group and the two per-button
+    -- flags below stay as filters within it. Bandage is not in the group: it
+    -- is the one item you use mid-fight, and its Recently Bandaged lockout is
+    -- shown nowhere else.
+    local utilOn = DB("MageUtilityButtons", false) and true or false
+    conjureBtn.wanted = utilOn
+    consumeBtn.wanted = utilOn
+
     -- Conjure: left = water, right = food (cast by name = highest rank)
     local cwName, _, cwIcon = GetSpellInfo(SDATA.CONJURE_WATER_ID)
     local cfName = GetSpellInfo(SDATA.CONJURE_FOOD_ID)
@@ -2976,7 +3969,7 @@ local function BindMageUtilityButtons()
         gemBtn:SetAttribute("macrotext2", seq and ("/castsequence " .. seq) or "")
         gemBtn.icon:SetTexture(util.ItemIcon(c.gem) or "Interface\\Icons\\INV_Misc_Gem_Emerald_01")
         gemBtn.icon:SetDesaturated(not c.gem)
-        gemBtn.wanted = DB("ShowGemButton", true)
+        gemBtn.wanted = utilOn and DB("ShowGemButton", true)
             and (c.gem ~= nil or seq ~= nil) or false
     end
 
@@ -2993,7 +3986,8 @@ local function BindMageUtilityButtons()
         util.portalKnown = count > 0
         -- A mage with no teleport trained yet gets no button rather than an
         -- empty popout
-        util.portalBtn.wanted = DB("ShowPortalButton", true) and util.portalKnown or false
+        util.portalBtn.wanted = utilOn and DB("ShowPortalButton", true)
+            and util.portalKnown or false
         if not util.portalKnown then util.portalPop:Hide() end
     end
     util.Layout()
@@ -3021,7 +4015,7 @@ function util.EnsureSwitchers()
         sw.pop = CreateFrame("Frame", nil, UIParent)
         sw.pop:SetFrameStrata("DIALOG")
         sw.pop:SetSize(24, 24)
-        sw.pop:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 1, -(HEADER_H + 3))
+        sw.pop:SetPoint("TOPLEFT", root, "TOPLEFT", SDATA.STRIPE_W + 1, -(util.HeaderH() + 3))
         local bg = sw.pop:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints(sw.pop)
         bg:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -3123,8 +4117,9 @@ function util.PlaceSwitchers(segs)
             -- move in combat) reported as placed when it is not.
             sw._x = seg._x
             sw.pop:ClearAllPoints()
+            local ih = seg.icon:GetHeight() or util.HeaderIcon()
             sw.pop:SetPoint("TOPLEFT", root, "TOPLEFT", seg._x,
-                -(1 + seg.icon:GetHeight() + 3))
+                -(util.HeaderY(ih) + ih + 3))
         end
     end
 end
@@ -3158,6 +4153,198 @@ function util.SyncCluster()
 end
 
 -- ---------------------------------------------------------------------------
+-- Header presentation
+--
+-- The banner was a fifteen-pixel strip of twelve-pixel icons in one font at
+-- one size, which is the right answer for exactly one monitor. Everything it
+-- draws now takes its measurements from here instead, and every default below
+-- is the number that used to be hard-coded, so a board that never opens the
+-- section is pixel-for-pixel the board it always was.
+--
+-- The faces are the four the CLIENT ships rather than an art path that can
+-- move across patches -- the same reason every glyph on this header is drawn
+-- from quads instead of loaded.
+-- ---------------------------------------------------------------------------
+SDATA.HEADER_FONTS = {
+    DEFAULT = "Fonts\\FRIZQT__.TTF",
+    NARROW  = "Fonts\\ARIALN.TTF",
+    RUNE    = "Fonts\\SKURRI.TTF",
+    ROMAN   = "Fonts\\MORPHEUS.TTF",
+}
+SDATA.HEADER_OUTLINES = { NONE = "", OUTLINE = "OUTLINE", THICK = "THICKOUTLINE" }
+-- Panel tints, already mixed down to backdrop weight: this sits UNDER a
+-- readout whose whole job is to be read, so a saturated panel is a worse
+-- panel. CLASS is resolved per character in util.HeaderTint.
+SDATA.HEADER_TINTS = {
+    BLACK    = { 0, 0, 0 },
+    CHARCOAL = { 0.13, 0.13, 0.14 },
+    SLATE    = { 0.09, 0.13, 0.21 },
+    BLOOD    = { 0.19, 0.05, 0.06 },
+    FOREST   = { 0.06, 0.14, 0.09 },
+}
+SDATA.HEADER_CHROME = 12    -- the drawn size of every button on the right
+
+function util.HeaderH()
+    return math.max(8, tonumber(DB("HeaderHeight", SDATA.HEADER_H)) or SDATA.HEADER_H)
+end
+
+function util.HeaderIcon()
+    return math.max(6, tonumber(DB("HeaderIconSize", 12)) or 12)
+end
+
+function util.HeaderGap()
+    return math.max(0, tonumber(DB("HeaderSegmentGap", 8)) or 8)
+end
+
+function util.HeaderInset()
+    return math.max(0, tonumber(DB("HeaderInset", 4)) or 4)
+end
+
+function util.ChromeScale()
+    local v = tonumber(DB("HeaderChromeScale", 1)) or 1
+    if v < 0.5 then v = 0.5 elseif v > 2.5 then v = 2.5 end
+    return v
+end
+
+-- One slot of the right-hand rank, in the BOARD's pixels rather than the
+-- button's own: every caller measures against root, and a scaled button's
+-- own coordinates are not root's (see util.ChromeStyle).
+function util.ChromeStep()
+    return SDATA.HEADER_CHROME * util.ChromeScale() + 3
+end
+
+-- Centre something of height h in the strip, as the NEGATIVE y offset from
+-- the board's top edge that every anchor here is written as. Clamped at zero
+-- so a strip shorter than its contents hangs them from the top rather than
+-- pushing them up off the board.
+function util.HeaderY(h)
+    local y = (util.HeaderH() - h) / 2
+    return y > 0 and y or 0
+end
+
+function util.HeaderTint()
+    local key = DB("HeaderBackdropTint", "BLACK")
+    if key == "CLASS" then
+        local _, class = UnitClass("player")
+        local cc = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+        -- A class colour is chosen to be read AGAINST, not read THROUGH, so
+        -- it goes on the panel at a third strength: enough to say whose board
+        -- this is, nowhere near enough to fight the readout on top of it.
+        if cc then return cc.r * 0.35, cc.g * 0.35, cc.b * 0.35 end
+        return 0, 0, 0
+    end
+    local t = SDATA.HEADER_TINTS[key] or SDATA.HEADER_TINTS.BLACK
+    return t[1], t[2], t[3]
+end
+
+function util.HeaderAlpha()
+    local a = tonumber(DB("HeaderBackdropAlpha", 0.55)) or 0.55
+    if a < 0 then a = 0 elseif a > 1 then a = 1 end
+    return a
+end
+
+-- Face, size and outline for everything the banner writes.
+function util.HeaderFont()
+    local path = SDATA.HEADER_FONTS[DB("HeaderFont", "DEFAULT")]
+        or SDATA.HEADER_FONTS.DEFAULT
+    local size = math.max(6, tonumber(DB("HeaderFontSize", 10)) or 10)
+    return path, size, SDATA.HEADER_OUTLINES[DB("HeaderFontOutline", "NONE")] or ""
+end
+
+-- The hairline along the banner's bottom edge: the alternative to a panel for
+-- anyone who wants the strip separated from the rows without a slab of black
+-- over the world. Same tint as the panel, lifted and opened up, because a
+-- rule drawn in the panel's own colour against no panel is invisible.
+function util.HeaderRule()
+    if not root.headerRule then
+        root.headerRule = root:CreateTexture(nil, "BACKGROUND", nil, 0)
+        root.headerRule:SetTexture("Interface\\Buttons\\WHITE8X8")
+        root.headerRule:SetHeight(1)
+        util.StyleHeaderRule()
+    end
+    return root.headerRule
+end
+
+function util.StyleHeaderRule()
+    local rule = root.headerRule
+    if not rule then return end
+    local r, g, b = util.HeaderTint()
+    local a = util.HeaderAlpha() + 0.25
+    rule:ClearAllPoints()
+    rule:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -util.HeaderH())
+    rule:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, -util.HeaderH())
+    rule:SetVertexColor(math.min(1, r + 0.35), math.min(1, g + 0.35),
+        math.min(1, b + 0.35), a > 1 and 1 or a)
+end
+
+-- Scale and place one button on the right-hand rank. Each remembers what it
+-- was last given rather than trusting a shared cache, so a button built after
+-- the last settings change still gets styled on its first draw -- and this
+-- runs at the draw rate, so the three fields are compared instead of a
+-- formatted signature being built and thrown away ten times a second.
+--
+-- The division is the whole reason this is a function: SetPoint offsets are
+-- read in the anchored frame's OWN coordinates, so a button at scale 2 asked
+-- for -6 lands twelve of root's pixels away. Everything the caller passes is
+-- in root's pixels, and the scale is divided back out here once.
+function util.ChromeStyle(btn, slot)
+    if not btn then return end
+    local cs = util.ChromeScale()
+    local y = util.HeaderY(SDATA.HEADER_CHROME * cs)
+    if btn._hdrCS == cs and btn._hdrY == y and btn._hdrSlot == slot then return end
+    btn._hdrCS, btn._hdrY, btn._hdrSlot = cs, y, slot
+    btn:SetScale(cs)
+    btn:ClearAllPoints()
+    btn:SetPoint("TOPRIGHT", root, "TOPRIGHT",
+        (-(SDATA.PAD - 3) - slot * util.ChromeStep()) / cs, -y / cs)
+end
+
+-- Push the presentation onto everything already built. Called from Apply,
+-- because every piece of this header is constructed once and a settings
+-- change would otherwise only reach a board nobody has drawn yet.
+--
+-- Nothing touched here is protected: the segments are textures and font
+-- strings, and the three chrome buttons are plain Buttons parented to root
+-- (they re-style themselves on the next draw, so they are not in this pass).
+-- The popouts ARE protected, which is why they are the one thing that waits
+-- for combat to drop.
+function util.RestyleHeader()
+    local sz, gap = util.HeaderIcon(), util.HeaderGap()
+    local path, fsize, flags = util.HeaderFont()
+    local segs = root.hdrSegs
+    if segs then
+        for i = 1, #segs do
+            local seg = segs[i]
+            seg.icon:SetSize(sz, sz)
+            if path then seg.text:SetFont(path, fsize, flags) end
+            if i > 1 then
+                seg.icon:ClearAllPoints()
+                seg.icon:SetPoint("LEFT", segs[i - 1].text, "RIGHT", gap, 0)
+            end
+        end
+        -- PlaceSegs caches where it put the first one; both halves of that
+        -- cache describe a layout that no longer exists.
+        root._segX, root._segY = nil, nil
+    end
+    if root.headerBG then
+        local r, g, b = util.HeaderTint()
+        root.headerBG:SetHeight(util.HeaderH())
+        root.headerBG:SetVertexColor(r, g, b, util.HeaderAlpha())
+    end
+    util.StyleHeaderRule()
+    if not InCombat() then
+        if util.portalPop then
+            util.portalPop:ClearAllPoints()
+            util.portalPop:SetPoint("TOPRIGHT", root, "TOPRIGHT",
+                -(SDATA.PAD - 2), -(util.HeaderH() + 3))
+        end
+        -- Each switcher re-places itself against its own segment on the next
+        -- draw; forgetting where it was is how that is asked for.
+        for i = 1, #util.switchers do util.switchers[i]._x = nil end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- The upkeep banner's readout: a row of icon+text segments. Every class layer
 -- that HAS a banner draws the same shape, so the pool, the placement and the
 -- truncation live here once and each layer only decides what the segments SAY.
@@ -3177,19 +4364,25 @@ function util.EnsureSegs(want)
     if not segs then segs = {}; root.hdrSegs = segs end
     want = math.min(math.max(want or SDATA.MIN_SEGS, SDATA.MIN_SEGS), SDATA.MAX_SEGS)
     if #segs >= want then return segs end
+    local sz, gap = util.HeaderIcon(), util.HeaderGap()
+    local path, fsize, flags = util.HeaderFont()
     for i = #segs + 1, want do
         local icon = root:CreateTexture(nil, "OVERLAY")
-        icon:SetSize(12, 12)
+        icon:SetSize(sz, sz)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         local text = root:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        if path then text:SetFont(path, fsize, flags) end
         text:SetJustifyH("LEFT")
         if i > 1 then
-            icon:SetPoint("LEFT", segs[i - 1].text, "RIGHT", 8, 0)
+            icon:SetPoint("LEFT", segs[i - 1].text, "RIGHT", gap, 0)
         else
-            -- PlaceSegs owns the first segment's x and only re-anchors it when
-            -- the cluster width changes, so a pool built after it last ran has
-            -- to start from the offset it settled on rather than the default.
-            icon:SetPoint("TOPLEFT", root, "TOPLEFT", root._segX or (STRIPE_W + 4), -1)
+            -- PlaceSegs owns the first segment's x and y and only re-anchors
+            -- it when the cluster width or the strip's height changes, so a
+            -- pool built after it last ran has to start from the offsets it
+            -- settled on rather than from the defaults.
+            icon:SetPoint("TOPLEFT", root, "TOPLEFT",
+                root._segX or (SDATA.STRIPE_W + util.HeaderInset()),
+                -(root._segY or util.HeaderY(sz)))
         end
         text:SetPoint("LEFT", icon, "RIGHT", 2, 0)
         segs[i] = { icon = icon, text = text }
@@ -3202,11 +4395,12 @@ end
 -- is no obstacle. Returns the x the readout begins at.
 function util.PlaceSegs()
     local segX = util.ClusterOffset()
-    if root._segX ~= segX then
-        root._segX = segX
+    local segY = util.HeaderY(util.HeaderIcon())
+    if root._segX ~= segX or root._segY ~= segY then
+        root._segX, root._segY = segX, segY
         local segs = util.EnsureSegs()
         segs[1].icon:ClearAllPoints()
-        segs[1].icon:SetPoint("TOPLEFT", root, "TOPLEFT", segX, -1)
+        segs[1].icon:SetPoint("TOPLEFT", root, "TOPLEFT", segX, -segY)
     end
     return segX
 end
@@ -3229,6 +4423,7 @@ function util.Seg(icon, desat, text, tint)
     s.text:SetText(text or "")
     s.icon:Show()
     s.text:Show()
+    return s
 end
 
 -- The right-aligned Commander chrome is a hard wall, and the cluster shares
@@ -3238,10 +4433,12 @@ end
 function util.TruncSegs(segX)
     local segs = root.hdrSegs
     if not segs then return end
-    local chromeW = 0
-    if blizz and blizz.btn and blizz.btn:IsShown() then chromeW = chromeW + 12 + 3 end
-    if settingsBtn and settingsBtn:IsShown() then chromeW = chromeW + 12 + 3 end
-    local limit = FrameWidth() - (PAD - 3) - chromeW
+    local chromeW, step = 0, util.ChromeStep()
+    if blizz and blizz.btn and blizz.btn:IsShown() then chromeW = chromeW + step end
+    if settingsBtn and settingsBtn:IsShown() then chromeW = chromeW + step end
+    if near.btn and near.btn:IsShown() then chromeW = chromeW + step end
+    local limit = FrameWidth() - (SDATA.PAD - 3) - chromeW
+    local segW, segGap = util.HeaderIcon(), util.HeaderGap()
     -- segN is what the layer ASKED for; #segs is what it actually got. They
     -- diverge whenever a banner runs past MAX_SEGS, and walking segN over the
     -- pool is an index into nil.
@@ -3249,12 +4446,12 @@ function util.TruncSegs(segX)
     for i = 1, n do
         local s = segs[i]
         local tw = (s.text.GetStringWidth and s.text:GetStringWidth()) or 0
-        local w = 12 + 2 + tw
+        local w = segW + 2 + tw
         if x + w > limit then n = i - 1; break end
         -- Where this segment actually landed. A switcher popout hangs under
         -- its own segment, and only this walk knows where that is.
         s._x = x
-        x = x + w + 8
+        x = x + w + segGap
     end
     for i = n + 1, #segs do
         segs[i].icon:Hide()
@@ -3265,23 +4462,73 @@ end
 -- A cooldown as one banner segment: lit and bare when it is ready, dimmed
 -- with the time left when it is not. The mage banner's armor ring is its own
 -- special case; everything else reads better as the ability strip's grammar.
+function util.SegLeft(icon, left)
+    if left <= 0 then
+        return util.Seg(icon, false, nil)
+    end
+    local txt = left >= 90 and string.format("%dm", math.floor(left / 60 + 0.5))
+        or string.format("%d", math.floor(left + 0.5))
+    return util.Seg(icon, true, txt)
+end
+
 function util.SegCooldown(name, icon, cd, now)
     local start, duration = GetSpellCooldown and GetSpellCooldown(name)
     local left = 0
     if start and duration and duration > 1.5 then left = start + duration - now end
-    if left <= 0 then
-        util.Seg(icon, false, nil)
-        return
+    util.SegLeft(icon, left)
+end
+
+-- Commander_Production on the banner. The class cooldown run above is a
+-- hand-picked handful of match-deciders; Production is EVERY cooldown you are
+-- currently waiting on, sorted soonest-ready first, and with this on it takes
+-- the run's slot in the readout — the same icon-and-countdown grammar, the
+-- same truncation against the chrome wall, the utility cluster still leading
+-- and the gear, the rows toggle and the refresh still closing the line. The
+-- standalone Production frame carries on wherever it is parked; this is a
+-- second view of its queue, not a move.
+--
+-- Asked at the draw rate, so the whole test is two lookups. False when the
+-- option is off OR Production is absent or switched off at its own master
+-- switch — either way the class cooldowns draw as they always did, because
+-- a banner that went blank the day another module was disabled would be a
+-- banner nobody could trust.
+function util.ProductionOn()
+    return DB("HeaderProduction", false) and CommanderProduction_Queue ~= nil
+end
+
+-- One segment per queue entry: dimmed with the time left while it cools,
+-- lit and bare once it is READY (and fading on Production's own linger
+-- clock, since the item carries the alpha its bar is drawn at). The time
+-- left is computed here rather than read off the item: Production only
+-- re-sorts while its own frame is on screen, and a number a tenth of a
+-- second stale is fine but a segment for a cooldown that ended while that
+-- frame was closed is not. Returns false when there is no queue to draw.
+function util.SegProduction(now)
+    local q, n = CommanderProduction_Queue()
+    if not q then return false end
+    for i = 1, n do
+        local it = q[i]
+        local entry = it.entry
+        if entry then
+            local icon = entry.texture or "Interface\\Icons\\INV_Misc_QuestionMark"
+            if it.ready then
+                local s = util.Seg(icon, false, nil)
+                if s and it.alpha then s.icon:SetAlpha(it.alpha) end
+            else
+                local left = (entry.start or 0) + (entry.duration or 0) - now
+                if left > 0 then util.SegLeft(icon, left) end
+            end
+        end
     end
-    local txt = left >= 90 and string.format("%dm", math.floor(left / 60 + 0.5))
-        or string.format("%d", math.floor(left + 0.5))
-    util.Seg(icon, true, txt)
+    return true
 end
 
 -- The banner's whole cooldown run, shared by every layer that has one. The
 -- book was filtered to trained spells at login and each layer owns its own
 -- toggle (SDATA.BANNER_CD_KEY), so what was four identical loops is one.
+-- With Production embedded its queue stands in for the run.
 function util.SegCds(now)
+    if util.ProductionOn() and util.SegProduction(now) then return end
     local key = SDATA.BANNER_CD_KEY[layer or ""]
     if key and not DB(key, true) then return end
     for _, e in ipairs(strip.cds) do
@@ -3398,14 +4645,45 @@ end
 -- ourselves, while it was showing. We never decide that something Blizzard
 -- was keeping hidden ought to be visible.
 --
--- Everything here is gated on combat. PartyFrame itself is insecure, but it
--- parents secure buttons, and a settings toggle has no business finding out
--- exactly where the engine draws that line.
+-- The raid frames are the same shape one addon over: CompactRaidFrameContainer
+-- (Blizzard_CompactRaidFrames, parent UIParent, a plain Frame) holds every
+-- CompactUnitFrame, so hiding the container is again the whole job. It is
+-- NOT under PartyFrame, so it needs naming on its own. Blizzard re-shows it
+-- from CompactRaidFrameManager_UpdateContainerVisibility() on every roster
+-- change, which the OnShow hook below absorbs. CompactRaidFrameManager (the
+-- tab on the left edge) is deliberately left alone: it carries the raid
+-- tools — ready check, world markers, tank assignment — and nothing on this
+-- board replaces those.
+--
+-- Giving a frame back: PartyFrame's own OnShow re-derives its members, so a
+-- plain Show() is right there. The raid container is different — Blizzard
+-- decides its visibility from ShouldShowRaidFrames() and the manager's
+-- Show/Hide toggle, and the roster may have changed while we sat on it (hid
+-- in a raid, toggled back in a party). So its `restore` asks Blizzard's own
+-- updater to recompute instead of showing blindly; that updater also refreshes
+-- CompactPartyFrame, which is exactly the path Blizzard runs itself.
+--
+-- Everything here is gated on combat. The containers themselves are insecure,
+-- but they parent secure buttons, and a settings toggle has no business
+-- finding out exactly where the engine draws that line. A container Blizzard
+-- raises mid-fight is left up and flagged dirty, so it drops with the
+-- PLAYER_REGEN_ENABLED re-apply.
 --
 -- One chunk local, holding both state and functions: this file sits close to
 -- Lua's 200-local cap (see the SDATA note at the top).
 -- ---------------------------------------------------------------------------
-blizz = { names = { "PartyFrame" }, hooked = {}, hidByUs = {}, dirty = false }
+blizz = {
+    names = { "PartyFrame", "CompactRaidFrameContainer" },
+    restore = {
+        CompactRaidFrameContainer = function()
+            if CompactRaidFrameManager_UpdateContainerVisibility and CompactRaidFrameManager then
+                CompactRaidFrameManager_UpdateContainerVisibility()
+                return true
+            end
+        end,
+    },
+    hooked = {}, hidByUs = {}, dirty = false,
+}
 
 -- Effective state, not the raw setting: with the module switched off the
 -- board is gone, so leaving the default frames hidden would leave the player
@@ -3442,12 +4720,12 @@ function blizz.Apply()
                 -- leaving Edit Mode). The hook makes the setting stick without
                 -- us having to know every path that calls Show().
                 f:HookScript("OnShow", function(self)
-                    if blizz.Hidden() and not InCombat() then
-                        -- Marked as ours, or a frame Blizzard raised while
-                        -- the toggle was on could never be given back
-                        blizz.hidByUs[name] = true
-                        self:Hide()
-                    end
+                    if not blizz.Hidden() then return end
+                    if InCombat() then blizz.dirty = true; return end
+                    -- Marked as ours, or a frame Blizzard raised while the
+                    -- toggle was on could never be given back
+                    blizz.hidByUs[name] = true
+                    self:Hide()
                 end)
             end
             -- Strictly symmetric: hide only what is currently showing, and
@@ -3457,7 +4735,10 @@ function blizz.Apply()
                 if f:IsShown() then blizz.hidByUs[name] = true; f:Hide() end
             elseif blizz.hidByUs[name] then
                 blizz.hidByUs[name] = nil
-                f:Show()   -- PartyFrame's own OnShow re-initializes its members
+                local r = blizz.restore[name]
+                if not (r and r()) then
+                    f:Show()   -- PartyFrame's own OnShow re-initializes its members
+                end
             end
         end
     end
@@ -3473,8 +4754,8 @@ function blizz.Toggle()
     CommanderPartyFramesDB.HideBlizzardParty = not DB("HideBlizzardParty", false)
     blizz.Apply()
     print(blizz.Hidden()
-        and "|cff66ccffCommander Party Frames|r: default party frames |cffff7f50hidden|r."
-        or "|cff66ccffCommander Party Frames|r: default party frames |cff33ff33shown|r.")
+        and "|cff66ccffCommander Party Frames|r: default party and raid frames |cffff7f50hidden|r."
+        or "|cff66ccffCommander Party Frames|r: default party and raid frames |cff33ff33shown|r.")
 end
 
 -- Escape hatch for the settings page and /cpf blizzard: the header button
@@ -3516,8 +4797,8 @@ function blizz.EnsureButton()
     b:SetScript("OnClick", function() blizz.Toggle() end)
     b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-        GameTooltip:SetText(blizz.Hidden() and "Default party frames: hidden"
-            or "Default party frames: shown")
+        GameTooltip:SetText(blizz.Hidden() and "Default party/raid frames: hidden"
+            or "Default party/raid frames: shown")
         GameTooltip:AddLine("Click to toggle. Out of combat only; also |cffffd100/cpf blizzard|r.",
             0.8, 0.8, 0.8, true)
         GameTooltip:Show()
@@ -3530,8 +4811,10 @@ end
 local function EnsureSettingsButton()
     if settingsBtn or not profile then return end
     settingsBtn = CreateFrame("Button", nil, root)
-    settingsBtn:SetSize(12, 12)
-    settingsBtn:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(PAD - 3), -1.5)
+    settingsBtn:SetSize(SDATA.HEADER_CHROME, SDATA.HEADER_CHROME)
+    -- Provisional: util.ChromeStyle owns the real scale and placement, and
+    -- reaches this button on the first draw after it is built.
+    settingsBtn:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(SDATA.PAD - 3), -1.5)
     -- The cog is DRAWN, not loaded. It used to be Interface\WorldMap\
     -- Gear_64Grey, which is Cataclysm-era world-map art: this client runs the
     -- retail-style UI framework, that folder no longer ships it, and a texture
@@ -3591,6 +4874,105 @@ local function EnsureSettingsButton()
         GameTooltip:Show()
     end)
     settingsBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+
+-- The Nearby Raid control, third piece of chrome on the header and built the
+-- same way as the other two: quads, no art path, so nothing here can go stale
+-- the way a missing texture silently does (see the cog's note above).
+--
+-- The glyph is the two-arrow cycle mark — a shaft with a head at each end,
+-- pointing opposite ways — because at twelve pixels a circular arrow is mush
+-- and this one still reads as "swap these out". The BUTTON also reports the
+-- auto-refresh state through its tint, so the setting is legible from the
+-- board without opening anything: grey is manual, green is auto, amber means
+-- a re-pick is made and waiting for the fight to end (Click-Cast only —
+-- secure rows cannot be re-bound in combat).
+function near.Arrow(btn, dir, y)
+    -- dir is +1 for the head on the right, -1 for the head on the left
+    local parts = {}
+    local shaft = btn:CreateTexture(nil, "ARTWORK")
+    shaft:SetSize(8, 1.6)
+    shaft:SetPoint("CENTER", btn, "CENTER", -0.4 * dir, y)
+    parts[#parts + 1] = shaft
+    -- Two strokes meeting at the shaft's tip and opening back along it. A bar
+    -- rotated 45 degrees is a diagonal; one above the shaft and one below make
+    -- the arrowhead without ever needing a triangle.
+    for i = 1, 2 do
+        local t = btn:CreateTexture(nil, "ARTWORK")
+        t:SetSize(1.5, 3.4)
+        local up = (i == 1) and 1 or -1
+        t:SetPoint("CENTER", btn, "CENTER", 2.7 * dir, y + 1.1 * up)
+        t:SetRotation(math.rad(45 * dir * up))
+        parts[#parts + 1] = t
+    end
+    return parts
+end
+
+function near.EnsureButton()
+    if near.btn or not profile then return end
+    local b = CreateFrame("Button", nil, root)
+    b:SetSize(12, 12)
+    b.glyph = {}
+    for _, t in ipairs(near.Arrow(b, 1, 2.4)) do b.glyph[#b.glyph + 1] = t end
+    for _, t in ipairs(near.Arrow(b, -1, -2.4)) do b.glyph[#b.glyph + 1] = t end
+    local hl = b:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints(b)
+    hl:SetColorTexture(1, 1, 1, 0.25)
+    if b.RegisterForClicks then b:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+    b:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            CommanderPartyFramesDB.NearAuto = not DB("NearAuto", false)
+            near.since = 0
+            near.PaintButton()
+            if Commander and Commander.Notify then
+                Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+            end
+            print(string.format("|cff66ccffCommander Party Frames|r: nearby auto-refresh %s.",
+                DB("NearAuto", false) and "|cff33ff33on|r" or "|cffff8c26off|r"))
+        elseif CommanderPartyFrames_NearRefresh then
+            CommanderPartyFrames_NearRefresh(false)   -- by hand: no head start
+        end
+        -- The tooltip is open under the cursor while you click, and every
+        -- line in it just changed. Re-run the handler rather than leaving a
+        -- stale count and a stale auto state sitting there.
+        local enter = self.GetScript and self:GetScript("OnEnter")
+        if enter and GameTooltip:IsOwned(self) then enter(self) end
+    end)
+    b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+        GameTooltip:SetText("Nearby Raid")
+        local n = #near.slots + (DB("IncludeSelf", true) and 1 or 0)
+        GameTooltip:AddLine(string.format("%d of %d rows picked, %s.", n, near.Count(),
+            near.exact and "measured in yards" or "ranked by range bands"),
+            0.8, 0.8, 0.8, true)
+        if near.pending then
+            GameTooltip:AddLine("A new pick is waiting for the fight to end — Click-Cast rows cannot be re-bound in combat.",
+                0.95, 0.75, 0.3, true)
+        end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("|cffffd100Left-click|r  pick again, sorted by distance", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(string.format("|cffffd100Right-click|r  auto-refresh: %s",
+            DB("NearAuto", false)
+                and string.format("|cff33ff33on|r, every %ds", DB("NearInterval", 3))
+                or "|cffff8c26off|r"), 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    near.btn = b
+    near.PaintButton()
+end
+
+function near.PaintButton()
+    local b = near.btn
+    if not b then return end
+    local r, g, bl, a = 0.8, 0.8, 0.8, 0.75
+    if near.pending then
+        r, g, bl, a = 0.95, 0.75, 0.3, 0.95
+    elseif DB("NearAuto", false) then
+        r, g, bl, a = 0.35, 0.85, 0.45, 0.95
+    end
+    for i = 1, #b.glyph do b.glyph[i]:SetColorTexture(r, g, bl, a) end
 end
 
 -- Middle-click opens First Aid itself. A craft popout used to sit here, but
@@ -3657,7 +5039,7 @@ local function EnsureMageUtilButtons()
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
         -- Provisional anchor so a button is never unpositioned; the real
         -- right-to-left layout replaces it on the first bind pass
-        b:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(PAD - 2), -1)
+        b:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(SDATA.PAD - 2), -1)
         b.wanted = true
         return b
     end
@@ -3723,7 +5105,7 @@ local function EnsureMageUtilButtons()
         util.portalPop = CreateFrame("Frame", nil, UIParent)
         util.portalPop:SetFrameStrata("DIALOG")
         util.portalPop:SetSize(24, 45)
-        util.portalPop:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(PAD - 2), -(HEADER_H + 3))
+        util.portalPop:SetPoint("TOPRIGHT", root, "TOPRIGHT", -(SDATA.PAD - 2), -(util.HeaderH() + 3))
         local ppbg = util.portalPop:CreateTexture(nil, "BACKGROUND")
         ppbg:SetAllPoints(util.portalPop)
         ppbg:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -3872,6 +5254,7 @@ local function DispelCompare(a, b)
 end
 
 local function ScanUnit(unit, reliable)
+    local fc = util.fc
     if not (C_UnitAuras and C_UnitAuras.GetBuffDataByIndex and UnitGUID) then return end
     local guid = UnitGUID(unit)
     if not guid then return end
@@ -3888,9 +5271,30 @@ local function ScanUnit(unit, reliable)
     -- Ally buffs are read off the registry now: one pass fills a scratch pair
     -- keyed by buff, whatever class this is (see SDATA.CLASS_BUFFS)
     local buffOn = #SDATA.BUFF_ACTIVE > 0
+    -- Battleground marks: gated on the zone as well as the setting, because
+    -- these auras cannot exist anywhere else and the flag's own entry is
+    -- pruned by zoning rather than by an expiry (it has none).
+    local bgOn = DB("ShowBGBuffs", true) and util.InBattleground()
+    -- Forecast: the pending-damage / pending-healing read. Rebuilt from
+    -- scratch each scan (the list is pooled, so "rebuilt" is one integer),
+    -- because an aura that fell off has to stop counting immediately.
+    --
+    -- RELIABLE scans only, under the same contract as everything else on this
+    -- pass: an out-of-range ally's aura list comes back short or empty, and
+    -- rebuilding from that would blank their forecast and then restore it the
+    -- moment they stepped back in. Left alone, the list they already have
+    -- decays correctly on its own — every entry carries its own expiry.
+    local fcOn = reliable and DB("Forecast", "BAR") ~= "OFF"
+    if fcOn then
+        local flist = fc.on[guid]
+        if flist then flist.n = 0 end
+    elseif DB("Forecast", "BAR") == "OFF" and fc.on[guid] then
+        fc.on[guid] = nil
+    end
     local armorFound, formFound, auraFound, sealFound
     wipe(scanAbsorbs)
     if buffOn then wipe(util.buffExp); wipe(util.buffDur); wipe(util.buffMine) end
+    if bgOn then util.bgScan.n = 0 end
     if stripOn then wipe(strip.scan) end
     for i = 1, 40 do
         local aura = C_UnitAuras.GetBuffDataByIndex(unit, i, "HELPFUL")
@@ -3900,6 +5304,19 @@ local function ScanUnit(unit, reliable)
             pwsSpellId = aura.spellId
             pwsMine = aura.sourceUnit and UnitIsUnit(aura.sourceUnit, "player") or false
             pwsIndex = i
+        elseif bgOn and SDATA.BG_BY_NAME[aura.name] then
+            -- ANY caster, always: nobody casts these on anybody. The flag is
+            -- an aura the battleground puts on whoever clicked it and the
+            -- powerups come off the ground, so "who put it there" is not a
+            -- question with an answer, let alone a useful one.
+            local bdef = SDATA.BG_BY_NAME[aura.name]
+            local bs = util.bgScan
+            local e = bs[bs.n + 1]
+            if not e then e = {}; bs[bs.n + 1] = e end
+            bs.n = bs.n + 1
+            e.def, e.prio = bdef, bdef.prio
+            e.icon = aura.icon or bdef.icon
+            e.expire, e.duration = aura.expirationTime, aura.duration
         elseif buffOn and SDATA.BUFF_BY_NAME[aura.name] then
             -- Any caster's buff counts as covered, and the group version
             -- satisfies the same slot as the single (both map to one def).
@@ -3923,6 +5340,15 @@ local function ScanUnit(unit, reliable)
         elseif isPlayer and not armorFound and armorNames[aura.name] then
             armorFound = { icon = armorNames[aura.name], expire = aura.expirationTime,
                 duration = aura.duration }
+        end
+        -- Pending healing: ANY caster's hot counts. The question this
+        -- answers is "how much healing is already rolling on them" — a
+        -- reason not to spend a global — and their other healer's Renew is
+        -- exactly as good a reason as yours. (The ours-only strip a few
+        -- lines down answers a different question: what did *I* put here.)
+        if fcOn then
+            util.NotePeriodicAura(guid, aura.name, aura.icon,
+                aura.expirationTime, aura.duration, false)
         end
         -- The paladin's own aura and seal (banner segments). Read off
         -- ourselves like the mage's armor and the druid's form, and for the
@@ -3997,6 +5423,16 @@ local function ScanUnit(unit, reliable)
         elseif reliable then
             strip.state[guid] = nil
         end
+        -- The Mending tracker's second channel. The combat log tells it what
+        -- HAPPENED; the scan tells it what IS, which is where the charge
+        -- count and the real expiry come from, and which lets a session that
+        -- was already in flight across a reload be adopted rather than lost.
+        -- `reliable` is load-bearing: an out-of-range ally's empty scan is
+        -- not evidence of absence, and reading it as one would announce a
+        -- loss every time the holder ran behind a pillar.
+        if util.PoMOn() then
+            util.NotePoMSeen(guid, strip.scan.POM, reliable, GetTime())
+        end
     end
 
     -- Aggregate shielding: refresh this unit's absorb records. A new or
@@ -4062,6 +5498,33 @@ local function ScanUnit(unit, reliable)
         end
     end
 
+    -- Battleground marks, under the same contract, with one difference that
+    -- matters: the flag carries NO expiry, so nothing but a scan that could
+    -- actually see them ever takes the banner off a row. That is the right
+    -- way round — the whole point of the mark is the person who has run out
+    -- of your sight with it — and the two things that end a carry without a
+    -- scan are both already read straight off the unit at paint time: they
+    -- died (the mark hides with every other one on a dead row), or you left
+    -- the battleground (PLAYER_ENTERING_WORLD wipes the table).
+    if bgOn then
+        local bs = util.bgScan
+        if bs.n > 0 then
+            local rec = util.bgState[guid]
+            if not rec then rec = {}; util.bgState[guid] = rec end
+            for i = 1, bs.n do
+                local e, slot = bs[i], rec[i]
+                if not slot then slot = {}; rec[i] = slot end
+                slot.key, slot.prio = e.def.key, e.prio
+                slot.label, slot.icon = e.def.label, e.icon
+                slot.expire, slot.duration = e.expire, e.duration
+            end
+            for i = bs.n + 1, #rec do rec[i] = nil end
+            if bs.n > 1 then table.sort(rec, util.BGCompare) end
+        elseif reliable then
+            util.bgState[guid] = nil
+        end
+    end
+
     local wsExpire
     local dispelOn = DB("ShowDispels", false)
     local showAllDebuffs = DB("DispelShowAll", false)
@@ -4104,6 +5567,11 @@ local function ScanUnit(unit, reliable)
             ccIcon = aura.icon
             ccName = aura.name
         end
+        -- Pending damage: every dot ticking on them, whoever cast it
+        if fcOn then
+            util.NotePeriodicAura(guid, aura.name, aura.icon,
+                aura.expirationTime, aura.duration, true)
+        end
         -- Ability-bar lockout debuffs (Hypothermia / Forbearance) — chassis
         local lockKind = lockNames[aura.name]
         if lockKind == "hypo" then
@@ -4111,7 +5579,7 @@ local function ScanUnit(unit, reliable)
         elseif lockKind == "forb" then
             forbExpire = aura.expirationTime or 0
         end
-        if dispelOn and dispelCount < MAX_DISPEL_ICONS then
+        if dispelOn and dispelCount < MAX_DISPEL_ICONS and not mutedNames[aura.name] then
             local dt = aura.dispelName
             if dt == "" then dt = nil end
             local canDispel = (dt and myDispelTypes[dt]) and true or false
@@ -4253,6 +5721,30 @@ end
 local function OnCombatLog()
     local _, subevent, _, sourceGUID, _, _, _, destGUID, _, _, _,
         a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11 = CombatLogGetCurrentEventInfo()
+    -- Prayer of Mending. Not an aura on a row but an object in flight, so
+    -- every branch here only WRITES DOWN what happened — see the note at
+    -- SDATA.POM_GRACE. Nothing is declared until util.PoMTick has waited out
+    -- the bounce, which is why none of this can make a sound by itself.
+    if util.PoMOn() and util.pomName then
+        local pn, t = util.pomName, GetTime()
+        if subevent == "UNIT_DIED" then
+            -- Unsourced, so it cannot be filtered on the caster: the holder
+            -- dying takes our Mending with them.
+            util.NotePoMDeath(destGUID, t)
+        elseif (subevent == "SPELL_DISPEL" or subevent == "SPELL_STOLEN") and a5 == pn then
+            -- Also unsourced-by-us: the dispeller is on the other team, and
+            -- the buff they took is the EXTRA spell (a5), not a2.
+            util.NotePoMDispel(destGUID, t)
+        elseif sourceGUID == playerGUID and a2 == pn then
+            if subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_AURA_REFRESH" then
+                util.NotePoMApplied(destGUID, t)
+            elseif subevent == "SPELL_AURA_REMOVED" then
+                util.NotePoMRemoved(destGUID, t)
+            elseif subevent == "SPELL_HEAL" then
+                util.NotePoMHeal(destGUID, t)
+            end
+        end
+    end
     if subevent == "SPELL_CAST_SUCCESS" or subevent == "SPELL_AURA_APPLIED" then
         -- Group member activity (a2 = spellName, rank- and locale-safe):
         -- spec inference plus ability-bar cooldown stamping. AURA_APPLIED is
@@ -4266,6 +5758,25 @@ local function OnCombatLog()
         end
         if subevent == "SPELL_CAST_SUCCESS" then return end
         -- AURA_APPLIED falls through: SPELL_ABSORBED filtering below ignores it
+    end
+    -- Forecast learning. Every periodic tick and every completed heal on the
+    -- log is a free measurement of what that spell is worth RIGHT NOW, with
+    -- gear, talents, buffs and resistances already in it — which is the only
+    -- way TBC will ever tell us. Cheap enough to run unconditionally: two
+    -- string compares and, on a hit, one table store.
+    --   PERIODIC payload: amount, overkill, school, resisted, blocked,
+    --                     absorbed, critical  (a4 .. a10)
+    --   HEAL payload:     amount, overhealing, absorbed, critical (a4 .. a7)
+    -- Overhealing is deliberately NOT subtracted: what we are forecasting is
+    -- the heal's SIZE, and it only overhealed because they were already full.
+    if subevent == "SPELL_PERIODIC_DAMAGE" then
+        util.NotePeriodic(destGUID, a2, a4, a10, true, GetTime())
+    elseif subevent == "SPELL_PERIODIC_HEAL" then
+        util.NotePeriodic(destGUID, a2, a4, a7, false, GetTime())
+        util.NoteOverheal(destGUID, sourceGUID, a4, a5, GetTime())
+    elseif subevent == "SPELL_HEAL" then
+        util.NoteHeal(sourceGUID, a1, a2, a4, a7, GetTime())
+        util.NoteOverheal(destGUID, sourceGUID, a4, a5, GetTime())
     end
     -- Shadow damage from OFF the team. Reading the school off the log is the
     -- only detection that works on both halves of the problem: a warlock is
@@ -4415,7 +5926,13 @@ local function ResolveShieldState(r, now)
             r.state, r.mainText = "EXPOSED", "EXPOSED"
             r.rightText = string.format("%ds", math.ceil(r.wsLeft))
         else
-            r.state, r.mainText = "READY", "READY"
+            -- READY carries no WORD on this board. The state still does all
+            -- of its work — the pulsing stripe, the sort that floats a
+            -- shieldless ally up — but spelling it out was the row saying in
+            -- text what the ghosted shield icon beside it already says by
+            -- being ghosted, in the one slot wide enough to hold a number
+            -- that means something.
+            r.state, r.mainText = "READY", ""
         end
         return r
     end
@@ -4773,11 +6290,392 @@ end
 -- STATE reads the strip it is redundant with the row colour, but the priest
 -- board's state is its shield, so the slot itself has to say when a Renew is
 -- about to drop. That was the old right-edge Renew icon's whole job.
+-- Which instruments each Lifebloom display mode turns on. Two tables rather
+-- than a string compare at four call sites, and the settings dropdown's
+-- values are these keys.
+SDATA.LB_DISPLAY_CLOCK = { CLOCK = true, BOTH = true }
+SDATA.LB_DISPLAY_BAR   = { BAR = true, BOTH = true }
+
+-- ---------------------------------------------------------------------------
+-- Perimeter outlines: a timer drawn as a ring around an icon's own edge.
+--
+-- Every other clock on this board takes space from something — a sweep hides
+-- the art it covers, a drain bar costs the row three pixels of height, a
+-- number needs a corner. An icon's OUTLINE costs nothing but its own border,
+-- which is why it is the right place for a second timer on an icon that
+-- already has one: the Power Word: Shield slot is showing you the shield's
+-- thirty seconds on its sweep, and the thing you actually need beside it is
+-- whether you may cast it again — two clocks, one icon, no new width.
+--
+-- Five textures rather than four: the ring starts at TOP CENTRE and runs
+-- clockwise, the way a clock face does, so the top edge is split into the
+-- half it ends on and the half it starts on. Lengths are the only thing that
+-- changes per paint; the anchors are fixed at layout.
+-- A hairline, which is what the rest of this board calls one pixel: the
+-- overheal ring and the forecast ticks are both drawn at exactly this width.
+-- Two pixels on a fifteen-pixel slot is a border you read INSTEAD of the art
+-- it surrounds, which is the wrong way round -- the ring is an annotation on
+-- the icon, not a frame around it.
+SDATA.OUTLINE_W = 1
+SDATA.RING_LOCK = { 0.92, 0.22, 0.22 }   -- you cannot cast this here yet
+SDATA.RING_CD   = { 0.98, 0.52, 0.20 }   -- the spell itself is still coming back
+-- The longest the global cooldown can be. Haste only ever shortens it (toward
+-- a one-second floor), so this is a ceiling rather than an equality, and it
+-- is the BACKSTOP test in util.ReadSpellRings rather than the primary one --
+-- the primary is that two spells reporting the identical window are both
+-- reporting the global. Nothing either ring tracks has a real cooldown
+-- anywhere near this short.
+SDATA.GCD_MAX = 1.5
+
+function util.MakeOutline(parent)
+    local o = {}
+    for i = 1, 5 do
+        local t = parent:CreateTexture(nil, "OVERLAY")
+        t:SetTexture("Interface\\Buttons\\WHITE8X8")
+        t:Hide()
+        o[i] = t
+    end
+    return o
+end
+
+-- Fixed points, set once at layout: each segment grows from the corner it is
+-- pinned to, in the direction the ring travels.
+function util.AnchorOutline(o, icon)
+    o[1]:ClearAllPoints(); o[1]:SetPoint("TOPLEFT", icon, "TOP", 0, 0)
+    o[2]:ClearAllPoints(); o[2]:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, 0)
+    o[3]:ClearAllPoints(); o[3]:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
+    o[4]:ClearAllPoints(); o[4]:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, 0)
+    o[5]:ClearAllPoints(); o[5]:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
+end
+
+function util.HideOutline(o)
+    for i = 1, 5 do o[i]:Hide() end
+end
+
+-- `frac` is what is LEFT, not what has elapsed: these are lockouts, and the
+-- board's existing vocabulary for a lockout is a red bar that DRAINS (the
+-- Weakened Soul strip, the Forbearance drain). A ring that filled up as it
+-- came ready would be the same fact in the opposite direction on the same
+-- row, which is worse than not drawing it.
+function util.DrawOutline(o, size, frac, c)
+    if not (size and size > 0) or not frac or frac <= 0 then
+        util.HideOutline(o)
+        return
+    end
+    local w = SDATA.OUTLINE_W
+    if frac > 1 then frac = 1 end
+    local left = frac * size * 4
+    local half = size * 0.5
+    for i = 1, 5 do
+        local cap = (i == 1 or i == 5) and half or size
+        local len = left < cap and left or cap
+        left = left - len
+        local t = o[i]
+        -- Under half a pixel is not a ring segment, it is a dot on a corner
+        if len > 0.5 then
+            if i == 2 or i == 4 then t:SetSize(w, len) else t:SetSize(len, w) end
+            t:SetVertexColor(c[1], c[2], c[3], 0.95)
+            t:Show()
+        else
+            t:Hide()
+        end
+    end
+end
+
+-- Health fraction -> bar colour. Takes HEALTH, never the bar's fill ratio:
+-- see the note at the call site for why those are not the same number.
+function util.HealthTint(hp, out)
+    local ramp = SDATA.HP_RAMP
+    local h = hp or 1
+    if h ~= h then h = 1 end          -- a NaN ratio must not paint a black bar
+    if h < 0 then h = 0 elseif h > 1 then h = 1 end
+    local lo = ramp[1]
+    for i = 2, #ramp do
+        local hi = ramp[i]
+        if h <= hi[1] then
+            local span = hi[1] - lo[1]
+            local u = span > 0 and ((h - lo[1]) / span) or 0
+            out = out or {}
+            out[1] = lo[2] + (hi[2] - lo[2]) * u
+            out[2] = lo[3] + (hi[3] - lo[3]) * u
+            out[3] = lo[4] + (hi[4] - lo[4]) * u
+            return out
+        end
+        lo = hi
+    end
+    out = out or {}
+    out[1], out[2], out[3] = lo[2], lo[3], lo[4]
+    return out
+end
+SDATA.HP_TINT = {}      -- reused scratch: this runs per row per draw
+
+-- One colour for the roll, wherever it is drawn — the clock, the pips and the
+-- bar all say the same thing at the same moment, which is the whole reason
+-- three instruments are not three times the reading.
+function util.RollTint(slot)
+    if not slot then return SDATA.ROLL_SAFE end
+    if slot.late then return SDATA.ROLL_LATE end
+    if slot.bloom then return SDATA.ROLL_BLOOM end
+    if slot.due then return SDATA.ROLL_DUE end
+    return SDATA.ROLL_SAFE
+end
+
+-- Prayer of Mending's charge gauge. The pips are fuel, not a stack that grew,
+-- so the tint is a function of what is LEFT: calm while there is plenty,
+-- warning on the last one, because the last charge is the one that ends the
+-- object and hands you back the global.
+function util.ChargeTint(slot)
+    local n = (slot and slot.stacks) or 0
+    if n <= 1 then return SDATA.CHARGE_LAST end
+    if n <= 3 then return SDATA.CHARGE_MID end
+    return SDATA.CHARGE_FULL
+end
+
+-- ---------------------------------------------------------------------------
+-- The Mending session. ONE at a time, because a priest owns one Mending at a
+-- time, and it is an object that travels rather than an aura that sits. The
+-- long note at SDATA.POM_GRACE is the argument for why this exists at all;
+-- what follows is the machine.
+--
+-- That singleton is the one real assumption here, and it is worth saying what
+-- happens if this client turns out to disagree with it. A second Mending
+-- landing while one is live reads as a RECAST: the older session closes
+-- SILENTLY and the newer one is tracked. So the failure mode is a missed
+-- alert, never a false one — which is the right direction to fail in, because
+-- an alert that cries bounce is an alert you stop hearing, and one that
+-- occasionally stays quiet is merely an alert.
+--
+--   guid            who holds it right now (nil = no live session)
+--   stacks/expire   what we believe about it, corroborated by the aura scan
+--   pendingAt       armed the moment the aura left the holder: the deadline
+--                   past which silence means it is genuinely gone. NOTHING is
+--                   declared before this lapses — that wait IS the bounce test
+--   pendingReason   what we would call the loss if the grace lapsed now
+--   healAt          last charge consumption. A bounce and a spend BOTH open
+--                   with one, which is exactly why the heal never decides
+--                   between them and the grace always does
+--   hopAt/hopGuid   the arrival flare; fromGuid is the departure ghost
+--   flashGuid/Until/Reason   a finished session, waiting for its row to paint
+-- ---------------------------------------------------------------------------
+util.pom = { hops = 0 }
+
+-- The whole feature's gate, and the only thing any of it is asked before it
+-- does anything: the tracker, the pips, the hop and the alert all hang off
+-- this one call. Priest board only, only once the spell is actually in the
+-- book (a level-twelve priest has no Mending to lose), and only while the
+-- setting says so — so switching Track Mending off is genuinely off, not a
+-- board that keeps following the object with its mouth shut.
+function util.PoMOn()
+    if layer ~= "PWS" or not util.pomKnown then return false end
+    if not DB("PoMTrack", true) then
+        -- Switched off with one in flight. Drop the session rather than leave
+        -- it armed: a pending grace resolved on the far side of the switch
+        -- would announce a loss the moment tracking came back on, about an
+        -- object that has been gone for ten minutes.
+        if util.pom.guid then util.PoMReset() end
+        return false
+    end
+    return true
+end
+
+-- Wipe the session outright. A new arena is not the old one's Mending still
+-- in flight, and a roster wipe can strand it on a GUID that has left — in
+-- both cases the honest answer is "we no longer know", which is not the same
+-- as "it was lost" and must never make a sound.
+function util.PoMReset()
+    local p = util.pom
+    p.guid, p.stacks, p.expire, p.duration = nil, 0, nil, nil
+    p.pendingAt, p.pendingReason, p.healAt = nil, nil, nil
+    p.dispelAt, p.deathAt, p.deathGuid = nil, nil, nil
+    p.hopAt, p.hopGuid, p.fromGuid, p.castAt = nil, nil, nil, nil
+    p.flashGuid, p.flashUntil, p.flashReason = nil, nil, nil
+    p.hops = 0
+end
+
+-- Close the session and, if the reason earns one, hand the alert to the tick.
+-- BOUNCE and RECAST close a session without anything having gone wrong, so
+-- they return nil and the board stays quiet.
+function util.PoMEnd(reason, now)
+    local p = util.pom
+    if not p.guid then return nil end
+    local guid = p.guid
+    local info = SDATA.POM_REASONS[reason]
+    p.guid, p.stacks, p.expire, p.duration = nil, 0, nil, nil
+    p.pendingAt, p.pendingReason, p.healAt = nil, nil, nil
+    p.dispelAt, p.deathAt, p.deathGuid = nil, nil, nil
+    p.castAt, p.hops = nil, 0
+    if not (info and info.alert) then return nil end
+    p.endedGuid, p.endedReason, p.endedAt = guid, reason, now
+    return reason, guid
+end
+
+-- The aura landed on somebody. Three different things wear this shape, and
+-- telling them apart is the difference between a useful board and a metronome:
+--
+--   a BOUNCE  the grace was armed and the object has reappeared. Whatever we
+--             were about to call that loss, we were wrong — cancel it.
+--   a RECAST  a live session, no pending loss, a new holder: you moved it
+--             yourself, so nothing was lost and nothing should sound.
+--   a CAST    no session at all. Five charges and thirty seconds.
+--
+-- The out-of-order case is real and worth the two lines it costs: the scan
+-- and the log can deliver the new holder BEFORE the old one's removal, which
+-- looks exactly like a recast. A bounce is always opened by a charge firing,
+-- and a recast never is, so a recent heal breaks the tie.
+function util.NotePoMApplied(guid, now, expire, duration, stacks)
+    if not guid then return end
+    local p = util.pom
+    local bounced = false
+    if p.pendingAt then
+        bounced = true
+        p.fromGuid = p.guid
+        p.pendingAt, p.pendingReason = nil, nil
+        p.hops = (p.hops or 0) + 1
+    elseif p.guid and p.guid ~= guid then
+        if p.healAt and (now - p.healAt) <= SDATA.POM_GRACE then
+            bounced = true
+            p.fromGuid = p.guid
+            p.hops = (p.hops or 0) + 1
+        else
+            util.PoMEnd("RECAST", now)
+        end
+    end
+    if not p.guid then
+        p.castAt, p.hops, p.fromGuid = now, 0, nil
+        p.stacks = stacks or SDATA.POM_CHARGES
+    end
+    if p.guid ~= guid then p.hopAt, p.hopGuid = now, guid end
+    p.guid = guid
+    p.duration = (duration and duration > 0) and duration or SDATA.POM_DURATION
+    -- Which clock this is. A BOUNCE does not restart the thirty seconds --
+    -- the object keeps the life it was cast with, which is the whole reason
+    -- a long chain of hops can still time out mid-flight -- but any other
+    -- re-application is you casting it again, and a recast onto the ally who
+    -- already had it must not inherit the old expiry. Getting that backwards
+    -- is a live Mending the watchdog reports as expired a second later.
+    if expire and expire > 0 then
+        p.expire = expire
+    elseif bounced then
+        p.expire = p.expire or (now + p.duration)
+    else
+        p.expire = now + p.duration
+    end
+    if stacks and stacks > 0 then p.stacks = stacks end
+    p.lastSeen = now
+end
+
+-- A charge fired. Recorded, never acted on: a bounce opens with one of these
+-- too, and acting here is precisely the mistake this whole file is avoiding.
+function util.NotePoMHeal(guid, now)
+    local p = util.pom
+    if not p.guid then return end
+    p.healAt = now
+end
+
+function util.NotePoMDispel(guid, now)
+    local p = util.pom
+    if p.guid and p.guid == guid then p.dispelAt = now end
+end
+
+function util.NotePoMDeath(guid, now)
+    local p = util.pom
+    if p.guid and p.guid == guid then p.deathAt, p.deathGuid = now, guid end
+end
+
+-- The aura left its holder. This is the ONE place a loss can begin, and it
+-- declares nothing: it arms the grace and writes down what it would say if
+-- the grace lapsed. Everything here is provisional on purpose.
+function util.NotePoMRemoved(guid, now)
+    local p = util.pom
+    if not p.guid or p.guid ~= guid or p.pendingAt then return end
+    local reason
+    if p.dispelAt and (now - p.dispelAt) <= 0.5 then
+        reason = "DISPELLED"
+    elseif p.deathAt and p.deathGuid == guid and (now - p.deathAt) <= 1.0 then
+        reason = "DIED"
+    elseif p.expire and now >= (p.expire - 0.6) then
+        -- Thirty seconds of a five-charge Mending is a long time to be wrong
+        -- about, so the clock only gets to claim a loss when it has actually
+        -- run out — not when it is merely close.
+        reason = "EXPIRED"
+    elseif p.healAt and (now - p.healAt) <= 0.5 then
+        -- A charge fired and the aura went with it. If it bounced, the next
+        -- half second says so and this is thrown away; if it does not, that
+        -- was the fifth charge and the spell finished its job.
+        reason = "SPENT"
+    else
+        reason = "LOST"
+    end
+    p.pendingAt, p.pendingReason = now + SDATA.POM_GRACE, reason
+    p.fromGuid = guid
+end
+
+-- What the aura scan saw on one unit. A second, independent channel: it
+-- corroborates presence (so a dropped combat-log event cannot strand a
+-- session), supplies the charge count and the real expiry the log never
+-- carries, and adopts a Mending that was already in flight across a reload.
+--
+-- `reliable` is the scan's own word for "I could actually have seen this" —
+-- an out-of-range unit's empty scan is not evidence of absence, and treating
+-- it as such would fire a loss every time the holder ran round a pillar.
+function util.NotePoMSeen(guid, e, reliable, now)
+    if not guid then return end
+    local p = util.pom
+    if e then
+        if p.guid == guid then
+            p.lastSeen = now
+            if e.expire and e.expire > 0 then p.expire = e.expire end
+            if e.duration and e.duration > 0 then p.duration = e.duration end
+            if e.stacks and e.stacks > 0 then p.stacks = e.stacks end
+        else
+            util.NotePoMApplied(guid, now, e.expire, e.duration, e.stacks)
+        end
+    elseif reliable and p.guid == guid then
+        util.NotePoMRemoved(guid, now)
+    end
+end
+
+-- Once per draw. Resolves an armed grace, and watchdogs the case the combat
+-- log cannot cover: a holder who walked out of log range with it still on
+-- them. Returns the reason and the GUID when a session actually ended, so
+-- the caller owns the sound and nothing in here has to know about audio.
+function util.PoMTick(now)
+    local p = util.pom
+    if not p.guid then return nil end
+    if p.pendingAt then
+        if now < p.pendingAt then return nil end
+        -- The grace lapsed with the object nowhere on the board. It did not
+        -- bounce; it is gone, and pendingReason has been waiting to say why.
+        return util.PoMEnd(p.pendingReason or "LOST", now)
+    end
+    if p.expire and now > (p.expire + 0.5) then
+        -- No removal ever arrived. Either the holder is beyond the combat
+        -- log or the event was dropped; either way thirty seconds is thirty
+        -- seconds, and a session that outlives its own duration is a leak.
+        return util.PoMEnd("EXPIRED", now)
+    end
+    return nil
+end
+
 function util.ResolveStrip(r, now)
     local rec = strip.state[r.guid]
     local n, soonest = 0, nil
     local refreshAt = DB(SDATA.STRIP_REFRESH_KEY[layer or ""] or "RenewRefreshAt", 4)
+    -- The roll gets its OWN window. Sharing one with the twelve- and
+    -- twenty-one-second hots is what made Lifebloom unreadable: four seconds
+    -- of a seven-second buff is more than half its life, so the slot spent
+    -- most of every cycle already amber and the amber stopped meaning
+    -- anything. Its late threshold is separate again — that is the point
+    -- past which you are not refreshing early, you are refreshing behind.
+    -- Off means OFF: the roll goes back to being an ordinary strip entry,
+    -- window included. Leaving its private window in force while the setting
+    -- says "plain hot slot" would be the one thing worse than not having the
+    -- feature — a board behaving differently from what the page says it does.
+    local rollOn = DB("LBDisplay", "BOTH") ~= "OFF"
+    local rollAt = DB("LBRefreshAt", 3)
+    local lateAt = DB("LBLateAt", 1.5)
     r.strip = r.strip or {}
+    r.roll, r.rollSlot, r.wsTint = nil, nil, nil
     for i, def in ipairs(SDATA.STRIP_ACTIVE) do
         local slot = r.strip[i]
         if not slot then slot = {}; r.strip[i] = slot end
@@ -4791,17 +6689,80 @@ function util.ResolveStrip(r, now)
         slot.duration = h and ((h.duration and h.duration > 0) and h.duration or def.duration) or nil
         slot.stacks = (h and def.stacking) and (h.stacks or 0) or 0
         slot.due = false
+        slot.roll = (def.roll and rollOn) or false
+        slot.maxStacks = def.maxStacks
+        slot.charges = def.charges or false
+        slot.late, slot.bloom = false, false
+        slot.hop, slot.trail = 0, 0
         if h then
             n = n + 1
             local tl = h.expire and (h.expire - now) or math.huge
-            slot.due = tl <= refreshAt
+            slot.due = tl <= ((def.roll and rollOn) and rollAt or refreshAt)
+            if def.roll and rollOn then
+                slot.left = tl
+                slot.late = tl <= lateAt
+                -- At max stacks the window is a genuine fork rather than a
+                -- reminder: refresh and keep rolling, or let it bloom for the
+                -- burst. The slot says which situation it is; what to do
+                -- about it is the druid's call, not the addon's.
+                slot.bloom = slot.due and (slot.stacks or 0) >= (def.maxStacks or 3)
+                r.roll, r.rollSlot = slot, i
+            end
             if not soonest or tl < soonest then soonest = tl end
         end
     end
+    -- Is our cheap rolling heal on them? Read straight off the ours-only
+    -- record rather than off the visible slots, for the reason in the login
+    -- resolve: untracking Renew hides its icon, it does not stop a dying
+    -- ally from needing one. Expiry is checked here because the loop above
+    -- only prunes the entries that actually have a slot.
+    r.hotUp = false
+    if util.lowHotDef and rec then
+        local h = rec[util.lowHotDef.key]
+        if h and h.expire and h.expire > now then r.hotUp = true end
+    end
     if rec and not next(rec) then strip.state[r.guid] = nil end
+    -- Mending's hop, lit on BOTH ends of it at once: a flare on the slot that
+    -- just took the object and a fading ghost on the slot it left. Two rows
+    -- lighting a beat apart is what makes a bounce read AS a bounce, instead
+    -- of as a number that moved rows while you were watching the enemy team.
+    -- It is also the only thing on this board that says "that was fine" —
+    -- everything else Mending does now makes a noise.
+    local p = util.pom
+    if r.guid and p.hopAt and util.PoMOn() and DB("PoMTrail", true) then
+        local f = 1 - (now - p.hopAt) / SDATA.POM_HOP_HOLD
+        if f > 0 then
+            for i = 1, #SDATA.STRIP_ACTIVE do
+                local slot = r.strip[i]
+                if slot and slot.charges then
+                    if p.hopGuid == r.guid then slot.hop = f end
+                    -- The ghost belongs to the row it LEFT, and only while
+                    -- that row is genuinely empty: if the object came back to
+                    -- them it is a live slot again and a trail behind it
+                    -- would be the board contradicting itself.
+                    if p.fromGuid == r.guid and not slot.up then slot.trail = f end
+                end
+            end
+        end
+    end
     r.stripCount = n
     r.stripSlots = #SDATA.STRIP_ACTIVE
     return n, soonest
+end
+
+-- Is anything on the strip due, each by ITS OWN window? Read as a separate
+-- question from "how long has the soonest got", because since the roll got a
+-- window of its own the two can disagree: a Lifebloom at four seconds is
+-- inside the shared hot window and outside its own, and a row that turned
+-- cyan while the Lifebloom slot was still green would be the board
+-- contradicting itself in two places a druid reads at once.
+function util.StripDue(r)
+    if not r.strip then return false end
+    for i = 1, (r.stripSlots or 0) do
+        local slot = r.strip[i]
+        if slot and slot.up and slot.due then return true end
+    end
+    return false
 end
 
 -- INT layer (Mage ally rows): these are party frames first, so the main bar
@@ -4809,6 +6770,290 @@ end
 -- deliberately icon-sized — Arcane Intellect state rides the left status
 -- icon, an incoming priest shield rides the second — and only a removable
 -- Curse escalates the whole row (purple, drain = curse remaining).
+-- A group member started casting. TBC will not tell us who another player is
+-- casting AT, so the target is read the way the game itself resolves one: the
+-- caster's current target if it is friendly, and the caster themselves if it
+-- is not (cast a heal with an enemy targeted and it lands on you). That is
+-- exactly right for a healer playing off their target frame, and wrong for one
+-- playing off mouseover or click-casting — a limit of the client, not a bug to
+-- fix here, and the setting's tooltip says so rather than pretending otherwise.
+-- What OUR OWN heal is worth, read off the spell's own tooltip. This is the
+-- answer the learned numbers cannot give on their own, and the one the client
+-- computes with everything already in it: spell power, healing talents, set
+-- bonuses, and whatever trinket happens to be procced this second. Read fresh
+-- on every cast rather than cached, precisely so a proc counts — it is one
+-- tooltip parse per global, which is nothing.
+--
+-- Locale-tolerant by construction: rather than matching a sentence, it pulls
+-- the numbers out of each line and takes the first ADJACENT PAIR that looks
+-- like a heal range — both sizeable, ascending, and within a factor of three
+-- of each other. "Heals a friendly target for 2494 to 2892" gives that pair;
+-- a mana cost gives one number and no pair, and a hot's "1060 over 12 sec"
+-- fails the ascending test. Regrowth carries both a range and a hot, and the
+-- range comes first, which is the half a cast forecast is about.
+function util.HealTip(spellId)
+    -- Both methods checked, not just the setter: a client that cannot read
+    -- back the lines it just set must cost us the tooltip estimate and leave
+    -- the learned number standing, not throw out of the cast handler and take
+    -- the whole inbound-heal read with it.
+    if not (spellId and scanTip and scanTip.SetSpellByID and scanTip.NumLines) then
+        return nil
+    end
+    scanTip:SetOwner(UIParent, "ANCHOR_NONE")
+    scanTip:ClearLines()
+    if not pcall(scanTip.SetSpellByID, scanTip, spellId) then return nil end
+    local lines = scanTip:NumLines()
+    if type(lines) ~= "number" then return nil end
+    for i = 2, lines do
+        local fs = _G["CommanderPartyFramesScanTipTextLeft" .. i]
+        local text = fs and fs:GetText()
+        if text then
+            local prev
+            for n in text:gmatch("%d[%d,]*") do
+                local v = tonumber((n:gsub(",", "")))
+                if prev and v and prev >= 10 and v >= prev and v <= prev * 3 then
+                    return (prev + v) / 2
+                end
+                prev = v
+            end
+        end
+    end
+    return nil
+end
+
+-- What this caster's version of this heal lands for. For US the tooltip wins:
+-- it is exact, it is right on the very first cast of a session, and it cannot
+-- be dragged around by the thing that made the learned numbers wrong for a
+-- healer's own casts — a heal landing on someone under Mortal Strike teaches
+-- half a heal, and that is the TARGET's problem, not the spell's size.
+--
+-- For anyone else there is no tooltip to read (their gear is not ours), so
+-- the learned value stands, by exact rank first and by name as the fallback.
+function util.HealFor(srcGUID, spellId, name)
+    local fc = util.fc
+    if srcGUID == playerGUID then
+        local tip = util.HealTip(spellId)
+        if tip and tip > 0 then return tip end
+    end
+    return (spellId and fc.healAmt[srcGUID .. "\30" .. tostring(spellId)])
+        or (name and fc.healAmt[srcGUID .. "\30" .. name])
+        or (name and fc.healAny[name])
+        or 0
+end
+
+function util.NoteCast(unit, spellId)
+    local fc = util.fc
+    if not (unit and UnitGUID and UnitCastingInfo) then return end
+    local guid = UnitGUID(unit)
+    -- Group members only, which already includes us: this is a read of the
+    -- HEALING your side has in the air, not of everything anyone is casting.
+    if not guid or not groupGuids[guid] then return end
+    -- Ninth return is the spell id on this client. Taken positionally and
+    -- then type-checked rather than trusted: that slot has moved between
+    -- client generations, and a string landing in it must cost us the id,
+    -- not the whole cast.
+    local name, _, tex, _, endMs, _, _, _, tipId = UnitCastingInfo(unit)
+    if not name or not fc.heal[name] then fc.casts[guid] = nil; return end
+    -- The id from the EVENT is the reliable one; the tooltip's is the backstop
+    spellId = spellId or (type(tipId) == "number" and tipId) or nil
+    util.FlushHeals(GetTime())
+    local tgt = unit .. "target"
+    local dest
+    if UnitExists and UnitExists(tgt) and UnitIsFriend and UnitIsFriend("player", tgt)
+        and not (UnitIsDeadOrGhost and UnitIsDeadOrGhost(tgt)) then
+        dest = UnitGUID(tgt)
+    end
+    dest = dest or guid
+    local c = fc.casts[guid]
+    if not c then c = {}; fc.casts[guid] = c end
+    c.dest, c.name, c.icon = dest, name, tex
+    c.endTime = endMs and (endMs / 1000) or nil
+    -- What THIS caster's version of this heal lands for, else nothing — a
+    -- heal we have never watched land and cannot read a tooltip for is still
+    -- worth knowing about, it just has no number yet.
+    c.amt = util.HealFor(guid, spellId, name)
+end
+
+function util.ClearCast(unit)
+    local fc = util.fc
+    local guid = unit and UnitGUID and UnitGUID(unit)
+    if guid then fc.casts[guid] = nil end
+end
+
+-- The breakdown's own heading. The blank spacer above it separates it from
+-- the unit block — which only exists on the full setting, so it is only
+-- written when there is something above it to be separated FROM. Leading
+-- whitespace at the top of an otherwise empty tooltip reads as a bug.
+function util.ForecastHeader()
+    if (GameTooltip.NumLines and GameTooltip:NumLines() or 0) > 0 then
+        GameTooltip:AddLine(" ")
+    end
+    GameTooltip:AddLine("Pending", 1, 0.82, 0)
+end
+
+-- The forecast, itemised, for the row tooltip. Reads exactly what the bar
+-- read — same window, same learned amounts — so the two can never disagree.
+function util.ForecastTooltip(guid)
+    local fc = util.fc
+    if not guid then return end
+    local now = GetTime()
+    local win = DB("ForecastWindow", 5)
+    local list, any = fc.on[guid], false
+    if list then
+        for i = 1, list.n do
+            local e = list[i]
+            local rem = (e.expire and e.expire > 0) and (e.expire - now) or nil
+            if rem and rem > 0 then
+                local cap = (win > 0 and rem > win) and win or rem
+                local ticks = math.ceil(cap / (e.interval or 3) - 0.001)
+                local amt = ticks * util.TickValue(guid, e.name)
+                if amt > 0 and ((e.dot and DB("ForecastDots", true))
+                    or (not e.dot and DB("ForecastHots", true))) then
+                    if not any then
+                        util.ForecastHeader()
+                        any = true
+                    end
+                    local txt = string.format("%s  (%d tick%s)", e.name, ticks,
+                        ticks == 1 and "" or "s")
+                    if e.dot then
+                        GameTooltip:AddDoubleLine(txt, "-" .. FormatAmount(amt),
+                            0.85, 0.85, 0.85, 1, 0.42, 0.38)
+                    else
+                        GameTooltip:AddDoubleLine(txt, "+" .. FormatAmount(amt),
+                            0.85, 0.85, 0.85, 0.45, 1, 0.55)
+                    end
+                end
+            end
+        end
+    end
+    if DB("ForecastCasts", true) then
+        for src, c in pairs(fc.casts) do
+            if c.dest == guid and c.endTime and c.endTime > now then
+                if not any then
+                    util.ForecastHeader()
+                    any = true
+                end
+                -- Who is casting it. Guarded rather than inlined: select()
+                -- on a nil call errors, and a GUID the client cannot name
+                -- must cost the tooltip a name, not the whole line.
+                local who
+                if GetPlayerInfoByGUID then
+                    local ok, n = pcall(function() return select(6, GetPlayerInfoByGUID(src)) end)
+                    if ok then who = n end
+                end
+                local txt = string.format("%s  (%.1fs)", c.name or "?", c.endTime - now)
+                if who and who ~= "" then txt = who .. ": " .. txt end
+                GameTooltip:AddDoubleLine(txt,
+                    (c.amt and c.amt > 0) and ("+" .. FormatAmount(c.amt)) or "+?",
+                    0.85, 0.85, 0.85, 0.7, 0.95, 0.8)
+            end
+        end
+    end
+end
+
+-- `amount` is the heal's full size and `over` the part of it that spilled, so
+-- the ratio is the share wasted. Clamped rather than trusted: the two come
+-- from the same event but from different fields, and a ratio over one would
+-- be a glow brighter than the palette allows.
+function util.NoteOverheal(destGUID, srcGUID, amount, over, now)
+    if not DB("OverhealGlow", true) then return end
+    if not destGUID or type(amount) ~= "number" or type(over) ~= "number" then return end
+    if amount <= 0 or over <= 0 then return end
+    -- Yours only by default. Another healer's waste is real information (the
+    -- target is capped, nobody needs to top them) but it is not YOUR global
+    -- being thrown away, and conflating the two makes the cue mean less.
+    if DB("OverhealMine", true) and srcGUID ~= playerGUID then return end
+    local frac = math.min(1, over / amount)
+    if frac < (DB("OverhealPct", 50) / 100) then return end
+    local rec = util.overheal[destGUID]
+    if not rec then rec = {}; util.overheal[destGUID] = rec end
+    rec.until_ = now + DB("OverhealHold", 1)
+    -- The LOUDEST recent waste wins while the hold lasts: a tick that spilled
+    -- entirely should not be talked over by a big heal that spilled half.
+    rec.frac = (rec.frac and rec.until_ > now) and math.max(rec.frac, frac) or frac
+end
+
+-- How hard this row is currently overhealing, 0 when it is not. Read per
+-- paint, so the answer decays with the clock the way the glow does.
+function util.OverhealAt(guid, now)
+    -- Gated on the READ as well as the write. Off has to mean off now, not
+    -- once the last recorded spill finishes fading — a setting that keeps
+    -- drawing for another second after you clear it reads as a bug.
+    if not DB("OverhealGlow", true) then return 0 end
+    local rec = guid and util.overheal[guid]
+    if not rec or not rec.until_ then return 0 end
+    if rec.until_ <= now then util.overheal[guid] = nil; return 0 end
+    local hold = DB("OverhealHold", 1)
+    -- Fades out over the hold rather than blinking off, so a one-off waste
+    -- reads as a pulse and a hot spilling every tick reads as a steady ring.
+    local left = hold > 0 and math.min(1, (rec.until_ - now) / hold) or 1
+    return (rec.frac or 0) * left
+end
+
+-- The row's three forecast numbers. Called per paint rather than per scan,
+-- because the answer shrinks with the clock: a dot with two seconds left is
+-- worth a tick, and it was worth four when it landed.
+--
+--   r.fcDot    damage still queued in what is ticking on them
+--   r.fcHot    healing still rolling from hots, whoever cast them
+--   r.fcCast   healing in the air from casts that have not landed yet
+--   r.fcCastN  how many such casts (so an unlearned heal still reads as one)
+--
+-- The WINDOW is the setting that makes this usable rather than merely true.
+-- A full Curse of Agony is 1600 damage over twenty-four seconds; almost none
+-- of that is a reason to do anything right now. Capping every aura at the
+-- next N seconds turns "what will eventually happen" into "what happens
+-- before my next global matters", which is the actual question.
+function util.Forecast(r, now)
+    local fc = util.fc
+    r.fcDot, r.fcHot, r.fcCast, r.fcCastN = nil, nil, nil, nil
+    if not r.guid or r.selfSpell or r.dead then return end
+    local mode = DB("Forecast", "BAR")
+    if mode == "OFF" then return end
+    local win = DB("ForecastWindow", 5)
+    local dot, hot = 0, 0
+    local list = fc.on[r.guid]
+    if list then
+        for i = 1, list.n do
+            local e = list[i]
+            -- An aura the client reports with no expiry — a permanent one, or
+            -- a unit we cannot fully see — has no countable ticks left.
+            local rem = (e.expire and e.expire > 0) and (e.expire - now) or nil
+            if rem and rem > 0 then
+                if win > 0 and rem > win then rem = win end
+                local ticks = math.ceil(rem / (e.interval or 3) - 0.001)
+                if ticks > 0 then
+                    local amt = ticks * util.TickValue(r.guid, e.name)
+                    if amt > 0 then
+                        if e.dot then dot = dot + amt else hot = hot + amt end
+                    end
+                end
+            end
+        end
+    end
+    local cast, castN = 0, 0
+    for src, c in pairs(fc.casts) do
+        if not c.endTime or c.endTime <= now then
+            -- Landed, or was interrupted with the event lost. Pruned here so
+            -- a dropped UNIT_SPELLCAST_STOP can never strand a phantom heal.
+            fc.casts[src] = nil
+        elseif c.dest == r.guid and (win <= 0 or (c.endTime - now) <= win) then
+            cast = cast + (c.amt or 0)
+            castN = castN + 1
+        end
+    end
+    -- Noise floor, as a share of the target's own health: two hundred points
+    -- is a rounding error on a warrior and a real read on a mage, so the
+    -- threshold has to be theirs rather than a flat number.
+    local floor = (r.hpMax or 0) * (DB("ForecastMinPct", 2) / 100)
+    if DB("ForecastDots", true) and dot > floor then r.fcDot = dot end
+    if DB("ForecastHots", true) and hot > floor then r.fcHot = hot end
+    if DB("ForecastCasts", true) and castN > 0 then
+        r.fcCastN = castN
+        if cast > floor then r.fcCast = cast end
+    end
+end
+
 local function ResolveIntState(r, now)
     if r.dead then
         r.state = "DEAD"
@@ -4916,8 +7161,9 @@ local function ResolveStripState(r, now)
     else
         wants = (r.health or 1) <= (DB("HotReadyAt", 90) / 100)
     end
-    local refreshAt = layer == "BLESS" and DB("BlessRefreshAt", 3)
-        or DB("HotRefreshAt", 4)
+    -- No refresh threshold read here any more: which slots count as due is
+    -- ResolveStrip's answer now (util.StripDue), because each entry can have
+    -- a window of its own and the roll does.
     local emptyWord = layer == "BLESS" and "HAND" or "HOT"
 
     if n == 0 then
@@ -4939,13 +7185,21 @@ local function ResolveStripState(r, now)
             r.state, r.mainText = "OTHER", ""
             r.tLeft = (r.health or 1) * 1000
         end
-    elseif soonest and soonest <= refreshAt then
+    elseif util.StripDue(r) then
         -- Urgent rows sort by how long is actually left, not by health.
         -- Expiring while locked out is FADING rather than REFRESH: you can
         -- see it going and you cannot replace it.
         r.state = (lockLeft > 0) and "FADING" or "REFRESH"
         r.tLeft = soonest
-        r.mainText = string.format("%ds", math.max(0, math.ceil(soonest)))
+        -- Tenths when the roll is the thing running out and it is inside the
+        -- last three seconds: the row's big number is the most-read thing on
+        -- the board, and rounding 2.4 up to "3s" there while the slot's own
+        -- clock says 2.4 is the board disagreeing with itself again.
+        if r.roll and r.roll.left and r.roll.left <= soonest + 0.001 and r.roll.left < 3 then
+            r.mainText = string.format("%.1fs", math.max(0, r.roll.left))
+        else
+            r.mainText = string.format("%ds", math.max(0, math.ceil(soonest)))
+        end
     else
         r.state = "SHIELDED"
         r.tLeft = (r.health or 1) * 1000
@@ -4957,11 +7211,46 @@ local function ResolveStripState(r, now)
         r.wsLeft, r.lockMax = lockLeft, SDATA.FORBEARANCE_MAX
     end
 
+    -- The ROLL BAR. The druid board's drain strip has always been empty —
+    -- there is no Weakened Soul and no Forbearance on a hot board — and it is
+    -- exactly the instrument a rolling Lifebloom wants: a bar you read with
+    -- the corner of your eye while looking somewhere else, rather than a
+    -- radial sweep you have to focus on. It drains over the roll's own seven
+    -- seconds and changes colour as the window opens, so "still fine",
+    -- "refresh now" and "you are late" are three different things at a
+    -- glance. Never claimed from a lockout: on the paladin board Forbearance
+    -- is a harder fact than any hot, and this layer has no roll anyway.
+    local rollBar = SDATA.LB_DISPLAY_BAR[DB("LBDisplay", "BOTH")]
+    if rollBar and r.roll and r.roll.left and not r.wsLeft then
+        r.wsLeft = math.max(0, r.roll.left)
+        r.lockMax = r.roll.duration or 7
+        r.wsTint = util.RollTint(r.roll)
+    end
+
+    -- Sort weight. A Rejuvenation about to fall off is one global to replace;
+    -- a three-stack Lifebloom about to fall off is three, or the bloom you
+    -- were holding. Off by default because it reorders a board people have
+    -- learned to read, and on it simply halves the roll's sort key so it
+    -- outranks a hot with the same seconds left rather than jumping the
+    -- queue outright.
+    if r.roll and r.roll.due and r.state == "REFRESH" and DB("LBPriority", false) then
+        r.tLeft = math.min(r.tLeft or math.huge, (r.roll.left or 0) * 0.5)
+    end
+
     ApplyAlertStates(r, now)
     return r
 end
 
 local function ResolveState(r, now)
+    -- The forecast is chassis: pending dot damage, rolling hot healing and an
+    -- inbound cast heal mean the same thing on every board, so it is resolved
+    -- once here rather than in each layer's resolver. Ahead of them, because
+    -- the layer resolvers are the ones that return early.
+    util.Forecast(r, now)
+    -- Overheal is chassis for the same reason, and it is the forecast's
+    -- other half: one says what is about to be spent on this ally, the other
+    -- says the last thing spent on them was thrown away.
+    r.overheal = (not r.selfSpell) and util.OverhealAt(r.guid, now) or 0
     -- Self-spell rows always take the shield resolver whatever the layer:
     -- their bar IS an absorb and their lockout IS a cooldown
     if not r.selfSpell then
@@ -4996,14 +7285,14 @@ local function ResolveRow(unit, now)
     -- and the icon that answers "whose pet is that".
     local owner = SDATA.PET_OWNER[unit]
     local className = select(2, UnitClass(owner or unit))
-    -- Buff layers: mana users get the mana strip. For a player that is a
-    -- question of class (see MANA_CLASSES — a shapeshifted druid must not
-    -- flap in and out of it); for a pet there is no class to ask, so it is
-    -- the pet's own power bar, which also correctly excludes a hunter's
-    -- focus and a shadowfiend's energy.
-    -- Resolved on EVERY layer, not just the two that draw a mana strip: the
-    -- buff registry asks it to decide whether a mana-only buff (Intellect,
-    -- Divine Spirit) earns a slot on this row at all.
+    -- Is this ally a mana user? Purely a BUFF question — does Arcane
+    -- Intellect / Divine Spirit / Blessing of Wisdom earn a slot on this row
+    -- — and deliberately NOT the question the power strip asks. For a player
+    -- it is a question of class (see MANA_CLASSES: a shapeshifted druid must
+    -- not flap in and out of the buff strip every time it shifts); for a pet
+    -- there is no class to ask, so it is the pet's own power bar, which also
+    -- correctly excludes a hunter's focus and a shadowfiend's energy.
+    -- What the STRIP draws is r.powerToken, read live a few lines below.
     local manaUser
     if owner then
         manaUser = (UnitPowerType and UnitPowerType(unit) == 0) or nil
@@ -5052,16 +7341,50 @@ local function ResolveRow(unit, now)
             r.hpMax = hpMax
         end
     end
-    -- Buff layers: mana strip for mana users (read live; the ticker repaints).
-    -- Same contract, same clamp.
-    if SDATA.HEALTH_LAYERS[layer or ""] and r.manaUser and UnitPower and UnitPowerMax then
-        local m, mMax = UnitPower(unit, 0), UnitPowerMax(unit, 0)
-        if mMax and mMax > 0 then r.mana = math.min(1, math.max(0, m / mMax)) end
+    -- The power strip: whatever this unit actually runs on, read live (the
+    -- ticker repaints). Same contract, same clamp.
+    --
+    -- LIVE power type, not the class question manaUser answers. Those are two
+    -- different questions and the file used to conflate them: "does Arcane
+    -- Intellect apply to this row" must stay a class fact so a shapeshifted
+    -- druid does not flap in and out of the buff strip, but "what is in this
+    -- ally's bar right now" is exactly the thing that changes when they shift
+    -- — a bear on rage is the whole reason to look at the strip.
+    if UnitPower and UnitPowerMax and UnitPowerType then
+        local ptype, ptoken = UnitPowerType(unit)
+        ptype = ptype or 0
+        local m, mMax = UnitPower(unit, ptype), UnitPowerMax(unit, ptype)
+        if mMax and mMax > 0 then
+            r.power = math.min(1, math.max(0, m / mMax))
+            r.powerType = ptype
+            r.powerToken = ptoken
+        end
     end
     -- Their target's raid mark: watch the tank hold (or leave) skull
     if DB("ShowTargetMarks", true) and GetRaidTargetIndex then
         r.raidMark = GetRaidTargetIndex(unit .. "target")
     end
+    -- Are they in combat? Two questions on one board, and both of them are
+    -- about YOUR combat, not theirs: an ally who is fighting is a source of
+    -- combat you can pick up with one heal (and combat is what a Sap cannot
+    -- be opened on), and a board with no marks left on it is the board that
+    -- says the drink you are about to sit down for will finish.
+    --
+    -- Read as a POSITIVE claim only — mark the ones who are fighting, never
+    -- mark anyone as safe. UnitAffectingCombat answers off the unit's flags,
+    -- and an ally too far out for the client to have the unit at all answers
+    -- a quiet false; "in combat" is then still true whenever it is shown,
+    -- while a drawn "out of combat" would have been a claim we cannot make.
+    if DB("ShowCombat", true) and UnitAffectingCombat then
+        r.inCombat = UnitAffectingCombat(unit) and true or false
+    end
+    -- What the battleground has made of them: the flag, and whichever ground
+    -- powerup they picked up. Read out of the scan rather than off the unit —
+    -- these are auras, and the aura pass is the only thing that has ever seen
+    -- them — so the same positive-claim rule applies as everywhere else on
+    -- this board: an ally too far out to scan wears the last thing we saw on
+    -- them, and nobody is ever marked as NOT carrying.
+    r.bgMarks = util.bgState[guid]
     -- Is an enemy melee parked on them? The Thorns rule's whole question.
     r.meleeOnMe = util.meleeOn[guid] or false
     -- Can we even reach them? Read separately from the Range Fade SETTING,
@@ -5225,23 +7548,50 @@ end
 -- (bound to a fixed token so nothing secure changes in combat), plain frames
 -- otherwise. Every visual is an insecure child so it can update mid-combat.
 -- ---------------------------------------------------------------------------
+-- What hovering a click-cast row shows. Three answers, and none of them go
+-- anywhere near the row's `unit` ATTRIBUTE — that is what makes @mouseover
+-- macros work, it is set once out of combat in SetupSecureRows, and a tooltip
+-- script cannot affect it. Turning the tooltip off costs you the tooltip and
+-- nothing else.
+--
+--   FULL    the game's unit tooltip, with the board's own lines under it
+--   EXTRAS  only the board's lines. The unit half is name, level, health and
+--           a buff list — every one of which the row is already showing you,
+--           which is the whole argument for this being the default.
+--   OFF     nothing
 local function BuildRowTooltip(self)
+    local mode = DB("RowTooltip", "EXTRAS")
+    if mode == "OFF" then return end
     if not self.unitToken or not UnitExists(self.unitToken) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetUnit(self.unitToken)
-    GameTooltip:Show()
+    GameTooltip:ClearLines()
+    if mode == "FULL" then GameTooltip:SetUnit(self.unitToken) end
+    -- The forecast's working: which dot, which hot, whose cast, and what each
+    -- is worth. The bar answers "how much"; this answers "because of what",
+    -- which is the half you need when the read looks wrong.
+    if DB("ForecastTooltip", true) and DB("Forecast", "BAR") ~= "OFF" then
+        util.ForecastTooltip(UnitGUID and UnitGUID(self.unitToken))
+    end
+    -- An empty tooltip is a grey box that follows the cursor for no reason.
+    -- On the notes-only setting a quiet row genuinely has nothing to say, and
+    -- saying nothing has to mean showing nothing.
+    if (GameTooltip.NumLines and GameTooltip:NumLines() or 1) > 0 then
+        GameTooltip:Show()
+    else
+        GameTooltip:Hide()
+    end
 end
 
 -- Widget construction shared by ally rows (secure or plain) and the
 -- personal-row pool (always plain)
 local function BuildRowWidgets(row)
-    row:SetSize(FrameWidth(), ROW_H)
+    row:SetSize(FrameWidth(), SDATA.ROW_H)
 
     row.stripe = row:CreateTexture(nil, "BACKGROUND")
     row.stripe:SetTexture("Interface\\Buttons\\WHITE8X8")
     row.stripe:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
     row.stripe:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-    row.stripe:SetWidth(STRIPE_W)
+    row.stripe:SetWidth(SDATA.STRIPE_W)
 
     row.spellIcon = row:CreateTexture(nil, "ARTWORK")
     row.spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -5249,6 +7599,13 @@ local function BuildRowWidgets(row)
     if row.swipe.SetHideCountdownNumbers then row.swipe:SetHideCountdownNumbers(true) end
     util.TrackSweep(row.swipe)
     row.swipe:Hide()
+    -- The shield slot's second clock. Its sweep is the shield's own thirty
+    -- seconds; this ring is whether you may cast another one at this ally at
+    -- all — their Weakened Soul, and the spell's cooldown if the client ever
+    -- gives it one, whichever is longer. Two questions about one spell, on
+    -- one icon, and the answer to the second used to live three pixels tall
+    -- under the health bar where it competed with everything else.
+    row.lockRing = util.MakeOutline(row)
 
     -- Second left status slot (INT layer): an incoming priest shield, with a
     -- 30s sweep for its remaining duration
@@ -5323,6 +7680,41 @@ local function BuildRowWidgets(row)
         -- readable over the herb art whatever the sweep is doing behind it
         h.count = row:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
         h.count:Hide()
+        -- The ROLL slot's clock. A radial sweep is a fine way to say "there
+        -- is time" and a useless way to say "there are two seconds": at
+        -- fifteen pixels the last quarter of the arc is four pixels of
+        -- movement, which is precisely the part of a Lifebloom that decides
+        -- anything. The number takes the middle of the icon and the art
+        -- becomes its background. Built on every slot so the roll can be any
+        -- of them (the strip's order follows what you have tracked).
+        h.clock = row:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+        h.clock:SetJustifyH("CENTER")
+        h.clock:Hide()
+        -- Stack pips along the icon's bottom edge: three lights, so "am I at
+        -- three" is answered by shape rather than by reading a digit. The
+        -- digit remains for every other stacking aura on the strip.
+        -- Mending's arrival flare: a square that starts at the icon's size
+        -- and expands as it fades, which is the cheapest thing that reads as
+        -- "it landed HERE" from the corner of your eye. Additive, so it
+        -- brightens the art it sits on instead of covering it, and built on
+        -- every slot because the strip's order follows what you have tracked.
+        -- The strip slot's ring: the SPELL's cooldown, as opposed to the
+        -- sweep, which is the aura's remaining duration. On Mending those are
+        -- genuinely different facts — the object can be sitting on someone
+        -- with twenty seconds left while you are still four seconds from
+        -- being able to cast the next one.
+        h.ring = util.MakeOutline(row)
+        h.flare = row:CreateTexture(nil, "OVERLAY")
+        h.flare:SetTexture("Interface\\Buttons\\WHITE8X8")
+        if h.flare.SetBlendMode then h.flare:SetBlendMode("ADD") end
+        h.flare:Hide()
+        h.pips = {}
+        for k = 1, SDATA.MAX_PIPS do
+            local pip = row:CreateTexture(nil, "OVERLAY")
+            pip:SetTexture("Interface\\Buttons\\WHITE8X8")
+            pip:Hide()
+            h.pips[k] = pip
+        end
         row.strip[n] = h
     end
 
@@ -5357,11 +7749,42 @@ local function BuildRowWidgets(row)
     for n = 1, SDATA.MAX_SHIELD_SEGS do
         local t = row:CreateTexture(nil, "ARTWORK")
         t:SetTexture("Interface\\Buttons\\WHITE8X8")
-        t:SetSize(1, BAR_H)
+        t:SetSize(1, SDATA.BAR_H)
         t:SetPoint("TOPLEFT", n == 1 and row.bar or row.shieldSegs[n - 1], "TOPRIGHT", 0, 0)
         t:Hide()
         row.shieldSegs[n] = t
     end
+    -- Forecast overlays. Created AFTER the shield segments and the fill, so
+    -- within the same draw layer they sit on top of both (same-layer textures
+    -- draw in creation order) — which is exactly what the pending-damage
+    -- shade needs, since it eats into health the bar is already showing.
+    --   fcHot    healing already rolling, chained past the absorbs like a
+    --            segment: where the bar is going if nothing else happens
+    --   fcCast   a heal in the air, chained past that in its own paler tint,
+    --            so "rolling" and "someone is casting" stay tellable apart
+    --   fcDot    queued dot damage, retreating LEFT from the fill's edge:
+    --            the part of the bar that is already spoken for
+    --   fcTickH / fcTickD  the same two answers as hairlines, for the mode
+    --            that wants the projection without the paint
+    row.fcHot = row:CreateTexture(nil, "ARTWORK")
+    row.fcHot:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.fcHot:Hide()
+    row.fcCast = row:CreateTexture(nil, "ARTWORK")
+    row.fcCast:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.fcCast:Hide()
+    row.fcDot = row:CreateTexture(nil, "ARTWORK")
+    row.fcDot:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.fcDot:Hide()
+    row.fcTickH = row:CreateTexture(nil, "OVERLAY")
+    row.fcTickH:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.fcTickH:Hide()
+    row.fcTickD = row:CreateTexture(nil, "OVERLAY")
+    row.fcTickD:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.fcTickD:Hide()
+    row.fcText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.fcText:SetJustifyH("CENTER")
+    row.fcText:Hide()
+
     row.wsBar = row:CreateTexture(nil, "OVERLAY")
     row.wsBar:SetTexture("Interface\\Buttons\\WHITE8X8")
     row.wsBar:SetVertexColor(0.9, 0.2, 0.2, 0.9)
@@ -5377,10 +7800,69 @@ local function BuildRowWidgets(row)
     row.raidMark:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
     row.raidMark:Hide()
 
+    -- The combat mark: the client's OWN crossed swords, the quadrant of
+    -- UI-StateIcon the stock player frame lights when you are in combat.
+    -- Borrowed rather than drawn, and rather than picked out of the icon set,
+    -- because it is the glyph the player already reads as "fighting" — it is
+    -- on their own portrait every pull — and a mark you have to learn is a
+    -- mark you check late. The board's own chrome is drawn from quads
+    -- elsewhere; a diagonal is the one shape that technique cannot promise.
+    row.combatMark = row:CreateTexture(nil, "OVERLAY")
+    row.combatMark:SetTexture(SDATA.COMBAT_TEXTURE)
+    local ct = SDATA.COMBAT_TEXCOORD
+    row.combatMark:SetTexCoord(ct[1], ct[2], ct[3], ct[4])
+    row.combatMark:Hide()
+
+    -- The battleground marks, beside it and built from the same measurements:
+    -- same size, same right-edge cluster, same stride. They are spell ICONS
+    -- rather than a cut of the client's chrome, because unlike "in combat"
+    -- there is no glyph the player already reads as "carrying the flag" —
+    -- but the flag banner and the berserk spiral ARE the art they have been
+    -- clicking off the ground since Warsong Gulch opened, so the icon is
+    -- still the thing they know rather than a shape to learn.
+    row.bgMarks = {}
+    for n = 1, SDATA.MAX_BG_MARKS do
+        local t = row:CreateTexture(nil, "OVERLAY")
+        local bt = SDATA.BG_TEXCOORD
+        t:SetTexCoord(bt[1], bt[2], bt[3], bt[4])
+        t:Hide()
+        row.bgMarks[n] = t
+    end
+
     row.left = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.left:SetJustifyH("LEFT")
     row.right = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.right:SetJustifyH("RIGHT")
+
+    -- Overheal ring: four hairlines just inside the row's edges. A RING and
+    -- not a fill, because the row already spends its fill, its stripe and its
+    -- bar colours on other things, and because healing spilling over the edge
+    -- of a full bar is what the shape is meant to say. The left edge starts
+    -- past the state stripe rather than over it — the stripe is a channel of
+    -- its own and covering it would trade one answer for another.
+    row.ohGlow = {}
+    for n = 1, 4 do
+        local t = row:CreateTexture(nil, "OVERLAY")
+        t:SetTexture("Interface\\Buttons\\WHITE8X8")
+        t:Hide()
+        row.ohGlow[n] = t
+    end
+    -- The low-health ring: the same hairline one pixel further in, in red,
+    -- for an ally who wants a Renew and has none of ours on them.
+    --
+    -- Its OWN four textures rather than a second colour on the ring above,
+    -- which is how this was first built. Sharing the frame meant the two had
+    -- to take turns, and while either was showing there was no way — for the
+    -- board or for the person reading it — to know what the other would have
+    -- said. Four textures a row is a cheap price for two facts that can both
+    -- be true at once and are never the same news.
+    row.needGlow = {}
+    for n = 1, 4 do
+        local t = row:CreateTexture(nil, "OVERLAY")
+        t:SetTexture("Interface\\Buttons\\WHITE8X8")
+        t:Hide()
+        row.needGlow[n] = t
+    end
 
     -- Glow (reshield window) and flash (shield broke) overlays
     row.glow = row:CreateTexture(nil, "OVERLAY")
@@ -5443,6 +7925,11 @@ local function AcquirePersonalRow(index)
     if row then return row end
     row = CreateFrame("Frame", nil, root)
     BuildRowWidgets(row)
+    -- An ally row and a personal row are the same widget built by the same
+    -- constructor, so nothing about the frame says which pool it came from.
+    -- This does — which is what lets anything counting the ALLY board (the
+    -- harness, for one) tell your own Ice Barrier row apart from a teammate.
+    row.personal = true
     personalPool[index] = row
     return row
 end
@@ -5489,13 +7976,13 @@ local function AcquireAbilityRow(index)
     row.bg = row:CreateTexture(nil, "BACKGROUND", nil, -1)
     row.bg:SetTexture("Interface\\Buttons\\WHITE8X8")
     row.bg:SetVertexColor(0, 0, 0, 0.5)
-    row.bg:SetPoint("TOPLEFT", row, "TOPLEFT", STRIPE_W + 2, 0)
+    row.bg:SetPoint("TOPLEFT", row, "TOPLEFT", SDATA.STRIPE_W + 2, 0)
     row.bg:SetHeight(SDATA.ABILITY_H)
     row.bg:Hide()
     row.cells = {}
     for n = 1, SDATA.MAX_ABILITY_CELLS do
         local c = {}
-        local x = STRIPE_W + 3 + (n - 1) * (SDATA.ABILITY_H - 1)
+        local x = SDATA.STRIPE_W + 3 + (n - 1) * (SDATA.ABILITY_H - 1)
         c.rim = row:CreateTexture(nil, "BACKGROUND")
         c.rim:SetTexture("Interface\\Buttons\\WHITE8X8")
         c.rim:SetVertexColor(0.95, 0.2, 0.2, 0.95)
@@ -5547,17 +8034,25 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     -- `secondSlot` is the one exception, asked for by the elemental row alone:
     -- Freeze is its whole reason to exist, and a slot nobody reserved is a
     -- slot the icon cannot be drawn in.
-    local rowH = compact and SDATA.PERSONAL_ROW_H or ROW_H
-    local barH = compact and SDATA.PERSONAL_BAR_H or BAR_H
-    local wsH = compact and SDATA.PERSONAL_WS_H or WS_H
-    -- Health is the main bar on every layer now; the underlay slot carries
-    -- MANA on the mage board and is retired on the priest board
-    local showHealth
-    if compact or not SDATA.HEALTH_LAYERS[layer or ""] then
-        showHealth = false
-    else
-        showHealth = DB("ShowManaBar", true)
-    end
+    local rowH = compact and SDATA.PERSONAL_ROW_H or SDATA.ROW_H
+    local barH = compact and SDATA.PERSONAL_BAR_H or SDATA.BAR_H
+    local wsH = compact and SDATA.PERSONAL_WS_H or SDATA.WS_H
+    -- The power strip's own height, so it can be a hairline under the health
+    -- bar or a second bar in its own right. The row does not grow with it:
+    -- the stack is centred in a fixed row (see barTop below), so a taller
+    -- strip eats into the padding, not into Max Rows.
+    -- Clamped to what is left after the main bar and the lockout drain: the
+    -- stack is centred in a FIXED row height, so an unclamped strip would
+    -- push the bars up out of their own row and into the one above.
+    local healthH = math.max(1, math.min(DB("PowerBarHeight", SDATA.HEALTH_H), rowH - barH - wsH))
+    -- Health is the main bar on every layer now; the underlay slot carries the
+    -- ally's POWER — mana, rage, energy, focus, a pet's happiness — on every
+    -- layer including the priest board, which used to spend the slot on
+    -- nothing. Reserved from the SETTING alone, never from what this
+    -- particular unit runs on: the row's geometry has to be identical for a
+    -- rogue and a mage or the board jitters as the sort reorders it, and a
+    -- secure row cannot be re-laid-out mid-combat at all.
+    local showHealth = (not compact) and util.PowerMode() ~= "OFF"
     local showUnitIcon = not compact and (mode == "CLASS_ICON" or mode == "PORTRAIT"
         or mode == "ICON_NAME" or mode == "ICON_PORTRAIT" or mode == "SPEC"
         or mode == "SPEC_PORTRAIT")
@@ -5565,7 +8060,13 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     local showName = compact or (mode == "NAME" or mode == "ICON_NAME")
 
     row:SetSize(width, rowH)
-    local x = STRIPE_W + 3
+    local x = SDATA.STRIPE_W + 3
+    -- The row's anatomy, recorded as it is laid out, so the settings page can
+    -- draw an honest diagram of where the width goes (CommanderPartyFrames_RowBlueprint)
+    local bp = { slots = {} }
+    local function Slot(kind, w, label)
+        bp.slots[#bp.slots + 1] = { kind = kind, x = x, w = w, label = label }
+    end
 
     -- The ally-buff strip leads the row. Slots are reserved from the SETTINGS,
     -- not from what is currently up, so the row's geometry is stable for a
@@ -5577,12 +8078,13 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
         local b = row.buffs[n]
         if n <= buffSlots then
             b.icon:ClearAllPoints()
-            b.icon:SetSize(SMALL_ICON, SMALL_ICON)
+            b.icon:SetSize(SDATA.SMALL_ICON, SDATA.SMALL_ICON)
             b.icon:SetPoint("LEFT", row, "LEFT", x, 0)
             b.cd:ClearAllPoints()
             b.cd:SetAllPoints(b.icon)
             if SDATA.BUFF_ACTIVE[n] and SDATA.BUFF_ACTIVE[n].combined then blessSlot = b end
-            x = x + SMALL_ICON + 3
+            Slot("buff", SDATA.SMALL_ICON, (SDATA.BUFF_ACTIVE[n] and SDATA.BUFF_ACTIVE[n].label) or "buff")
+            x = x + SDATA.SMALL_ICON + 3
         else
             b.icon:Hide(); b.cd:Hide()
         end
@@ -5596,7 +8098,7 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
             row.blessBtn:SetAllPoints(blessSlot.icon)
         else
             row.blessBtn:SetPoint("LEFT", row, "LEFT", 0, 0)
-            row.blessBtn:SetSize(SMALL_ICON, SMALL_ICON)
+            row.blessBtn:SetSize(SDATA.SMALL_ICON, SDATA.SMALL_ICON)
         end
         row.blessBtn.slot = blessSlot
     end
@@ -5607,28 +8109,33 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     -- here now that their upkeep moved to the strip, so they spend no width.
     local ownSlot = showIcon and (compact or not SDATA.HEALTH_LAYERS[layer or ""])
     if ownSlot then
-        local iconSize = compact and SDATA.PERSONAL_ICON or ICON_SIZE
+        local iconSize = compact and SDATA.PERSONAL_ICON or SDATA.ICON_SIZE
         row.spellIcon:ClearAllPoints()
         row.spellIcon:SetSize(iconSize, iconSize)
         row.spellIcon:SetPoint("LEFT", row, "LEFT", x, 0)
         row.spellIcon:Show()
         row.swipe:ClearAllPoints()
         row.swipe:SetAllPoints(row.spellIcon)
+        util.AnchorOutline(row.lockRing, row.spellIcon)
+        row._ringSize = iconSize
+        Slot("own", iconSize, compact and "spell" or "shield")
         x = x + iconSize + 3
     else
         row.spellIcon:Hide()
         row.swipe:Hide()
+        util.HideOutline(row.lockRing)
     end
     -- Second status slot: an incoming priest shield on the mage board, or
     -- Freeze on the elemental's compact row.
     if showIcon then
         if (layer == "INT" and not compact) or secondSlot then
-            local slotSize = compact and SDATA.PERSONAL_ICON or SMALL_ICON
+            local slotSize = compact and SDATA.PERSONAL_ICON or SDATA.SMALL_ICON
             row.inShield:ClearAllPoints()
             row.inShield:SetSize(slotSize, slotSize)
             row.inShield:SetPoint("LEFT", row, "LEFT", x, 0)
             row.inShieldCd:ClearAllPoints()
             row.inShieldCd:SetAllPoints(row.inShield)
+            Slot("inshield", slotSize, secondSlot and "freeze" or "incoming")
             x = x + slotSize + 3
         else
             row.inShield:Hide()
@@ -5649,64 +8156,170 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
         local h = row.strip[n]
         if n <= stripSlots then
             h.icon:ClearAllPoints()
-            h.icon:SetSize(SMALL_ICON, SMALL_ICON)
+            h.icon:SetSize(SDATA.SMALL_ICON, SDATA.SMALL_ICON)
             h.icon:SetPoint("LEFT", row, "LEFT", x, 0)
             h.cd:ClearAllPoints()
             h.cd:SetAllPoints(h.icon)
             h.count:ClearAllPoints()
             h.count:SetPoint("BOTTOMRIGHT", h.icon, "BOTTOMRIGHT", 2, -1)
-            x = x + SMALL_ICON + 2
+            -- The paint moves this anchor when pips are under it; a relayout
+            -- has just put it back, so the memo of where it sits goes too.
+            h._countPos = nil
+            -- The clock sits ON the icon, nudged up by a pixel so the pip
+            -- row along the bottom edge does not crowd the digits.
+            h.clock:ClearAllPoints()
+            h.clock:SetPoint("CENTER", h.icon, "CENTER", 0, 1)
+            -- Pip width follows the slot's OWN pip count, so a five-charge
+            -- Mending row and a three-stack Lifebloom row both fill the same
+            -- fifteen pixels edge to edge instead of one of them trailing off
+            -- the icon. Laid out for whatever this slot's def asks for; the
+            -- rest are simply never shown.
+            h.flare:ClearAllPoints()
+            h.flare:SetPoint("CENTER", h.icon, "CENTER", 0, 0)
+            util.AnchorOutline(h.ring, h.icon)
+            local def = SDATA.STRIP_ACTIVE[n]
+            local pipN = (def and def.maxStacks) or 3
+            local pipW = math.max(1, math.floor((SDATA.SMALL_ICON - 2 - (pipN - 1)) / pipN))
+            for k = 1, SDATA.MAX_PIPS do
+                local pip = h.pips[k]
+                pip:ClearAllPoints()
+                pip:SetSize(pipW, 2)
+                pip:SetPoint("BOTTOMLEFT", h.icon, "BOTTOMLEFT",
+                    1 + (k - 1) * (pipW + 1), 1)
+            end
+            Slot("strip", SDATA.SMALL_ICON, (def and def.label) or "hot")
+            x = x + SDATA.SMALL_ICON + 2
         else
-            h.icon:Hide(); h.cd:Hide(); h.count:Hide()
+            h.icon:Hide(); h.cd:Hide(); h.count:Hide(); h.clock:Hide()
+            h.flare:Hide(); util.HideOutline(h.ring)
+            for k = 1, SDATA.MAX_PIPS do h.pips[k]:Hide() end
         end
     end
 
     if showUnitIcon then
         row.unitIcon:ClearAllPoints()
-        row.unitIcon:SetSize(ICON_SIZE, ICON_SIZE)
+        row.unitIcon:SetSize(SDATA.ICON_SIZE, SDATA.ICON_SIZE)
         row.unitIcon:SetPoint("LEFT", row, "LEFT", x, 0)
         row.unitIcon:Show()
-        x = x + ICON_SIZE + 3
+        Slot("unit", SDATA.ICON_SIZE, (mode == "PORTRAIT") and "portrait" or ((mode == "SPEC" or mode == "SPEC_PORTRAIT") and "spec" or "class"))
+        x = x + SDATA.ICON_SIZE + 3
     else
         row.unitIcon:Hide()
     end
     if showUnitIcon2 then
         row.unitIcon2:ClearAllPoints()
-        row.unitIcon2:SetSize(ICON_SIZE, ICON_SIZE)
+        row.unitIcon2:SetSize(SDATA.ICON_SIZE, SDATA.ICON_SIZE)
         row.unitIcon2:SetPoint("LEFT", row, "LEFT", x, 0)
         row.unitIcon2:Show()
-        x = x + ICON_SIZE + 3
+        Slot("unit2", SDATA.ICON_SIZE, "portrait")
+        x = x + SDATA.ICON_SIZE + 3
     else
         row.unitIcon2:Hide()
     end
 
     if showName then
         local nw = compact and SDATA.PERSONAL_NAME_W
-            or ((mode == "ICON_NAME") and SHORT_NAME_W or NAME_W)
+            or ((mode == "ICON_NAME") and SDATA.SHORT_NAME_W or SDATA.NAME_W)
         row.name:ClearAllPoints()
         row.name:SetPoint("LEFT", row, "LEFT", x, 0)
         row.name:SetWidth(nw)
         row.name:Show()
+        Slot("name", nw, "name")
         x = x + nw + 3
     else
         row.name:Hide()
     end
 
-    -- Reserve room at the right for the raid-mark watcher
+    -- Reserve room at the right for the marks: what this ally IS right now
+    -- that the bar cannot say. Two layouts. GRID (the default) stacks every
+    -- mark into ONE seat, a two-by-two block with a fixed cell per meaning:
+    -- their target's raid mark top-left, the crossed swords top-right, the
+    -- flag bottom-left, the powerup bottom-right -- so four marks at once
+    -- still read, and the seat costs 21 pixels instead of the 64 the old row
+    -- of seats did. ROW is that old layout: one seat per mark, side by side.
+    -- Either way every seat is reserved from the SETTING, never from what is
+    -- up, so the bar never twitches mid-fight (and Click-Cast stays legal).
     local marksOn = not compact and DB("ShowTargetMarks", true)
-    local rightReserve = marksOn and 16 or 0
-    if marksOn then
-        row.raidMark:ClearAllPoints()
-        row.raidMark:SetSize(14, 14)
-        row.raidMark:SetPoint("RIGHT", row, "RIGHT", -(PAD - 2), 0)
+    local combatOn = not compact and DB("ShowCombat", true)
+    local bgWanted = (not compact) and DB("ShowBGBuffs", true)
+    local grid = DB("MarkLayout", "GRID") == "GRID"
+    local rightReserve = 0
+    local bgSlots = 0
+    row._markGrid = grid and true or false
+    if grid then
+        if marksOn or combatOn or bgWanted then
+            local cell, seat = SDATA.MARK_CELL, SDATA.MARK_SEAT
+            local right = -(SDATA.PAD - 2)
+            local colR, colL = right - cell / 2, right - cell - 1 - cell / 2
+            local rowT, rowB = cell / 2 + 0.5, -(cell / 2 + 0.5)
+            rightReserve = seat + 3
+            row.raidMark:ClearAllPoints()
+            row.raidMark:SetSize(cell, cell)
+            row.raidMark:SetPoint("CENTER", row, "RIGHT", colL, rowT)
+            row.combatMark:ClearAllPoints()
+            row.combatMark:SetSize(cell, cell)
+            row.combatMark:SetPoint("CENTER", row, "RIGHT", colR, rowT)
+            -- The battleground cells are part of the seat whether or not you
+            -- are in one: the width is spent on the block, not per mark, so
+            -- there is nothing to hand back by zoning out
+            bgSlots = bgWanted and SDATA.MAX_BG_MARKS or 0
+            local t1, t2 = row.bgMarks[1], row.bgMarks[2]
+            t1:ClearAllPoints(); t1:SetSize(cell, cell); t1:SetPoint("CENTER", row, "RIGHT", colL, rowB)
+            t2:ClearAllPoints(); t2:SetSize(cell, cell); t2:SetPoint("CENTER", row, "RIGHT", colR, rowB)
+            for n = 3, SDATA.MAX_BG_MARKS do row.bgMarks[n]:Hide() end
+        end
+        if not marksOn then row.raidMark:Hide() end
+        if not combatOn then row.combatMark:Hide() end
+        if bgSlots == 0 then for n = 1, SDATA.MAX_BG_MARKS do row.bgMarks[n]:Hide() end end
     else
-        row.raidMark:Hide()
+        rightReserve = marksOn and 16 or 0
+        if marksOn then
+            row.raidMark:ClearAllPoints()
+            row.raidMark:SetSize(14, 14)
+            row.raidMark:SetPoint("RIGHT", row, "RIGHT", -(SDATA.PAD - 2), 0)
+        else
+            row.raidMark:Hide()
+        end
+        -- And beside it, the combat mark, reserved from the SETTING like every
+        -- other slot on this row: what it holds comes and goes with every pull,
+        -- and a row that re-laid itself out for that would be a row whose bar
+        -- twitched all fight -- and one Click-Cast could not touch in combat.
+        if combatOn then
+            row.combatMark:ClearAllPoints()
+            row.combatMark:SetSize(SDATA.COMBAT_MARK, SDATA.COMBAT_MARK)
+            row.combatMark:SetPoint("RIGHT", row, "RIGHT",
+                -(SDATA.PAD - 2) - (marksOn and 16 or 0), 0)
+            rightReserve = rightReserve + SDATA.COMBAT_MARK + 3
+        else
+            row.combatMark:Hide()
+        end
+        -- ...and beside THAT, the battleground marks. Reserved from the zone as
+        -- well as the setting (see util.InBattleground): every other slot on this row
+        -- holds itself open because what fills it comes and goes mid-fight, but
+        -- these cannot light at all outside a battleground, and a permanent
+        -- 32-pixel hole in the health bar of every arena row is not a trade the
+        -- board should make on the player's behalf. Zoning is out of combat, so
+        -- the relayout it costs is free.
+        bgSlots = bgWanted and (util.InBattleground() or testUntil > 0) and SDATA.MAX_BG_MARKS or 0
+        for n = 1, SDATA.MAX_BG_MARKS do
+            local t = row.bgMarks[n]
+            if n <= bgSlots then
+                t:ClearAllPoints()
+                t:SetSize(SDATA.COMBAT_MARK, SDATA.COMBAT_MARK)
+                t:SetPoint("RIGHT", row, "RIGHT",
+                    -(SDATA.PAD - 2) - (marksOn and 16 or 0) - (combatOn and (SDATA.COMBAT_MARK + 3) or 0)
+                        - (n - 1) * (SDATA.COMBAT_MARK + 3), 0)
+            else
+                t:Hide()
+            end
+        end
+        rightReserve = rightReserve + bgSlots * (SDATA.COMBAT_MARK + 3)
     end
     local barX = x
-    local barW = width - barX - PAD - rightReserve
+    local barW = width - barX - SDATA.PAD - rightReserve
     if barW < 40 then barW = 40 end
     -- Vertical stack: absorb bar on top, optional health, then WS drain
-    local barTop = -(rowH - barH - (showHealth and HEALTH_H or 0) - wsH) / 2
+    local barTop = -(rowH - barH - (showHealth and healthH or 0) - wsH) / 2
     row.barBG:ClearAllPoints()
     row.barBG:SetPoint("TOPLEFT", row, "TOPLEFT", barX, barTop)
     row.barBG:SetSize(barW, barH)
@@ -5718,8 +8331,8 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     if showHealth then
         row.healthBar:ClearAllPoints()
         row.healthBar:SetPoint("TOPLEFT", row, "TOPLEFT", barX, y)
-        row.healthBar:SetSize(barW, HEALTH_H)
-        y = y - HEALTH_H
+        row.healthBar:SetSize(barW, healthH)
+        y = y - healthH
     else
         row.healthBar:Hide()
     end
@@ -5727,10 +8340,38 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     row.wsBar:SetPoint("TOPLEFT", row, "TOPLEFT", barX, y)
     row.wsBar:SetSize(barW, wsH)
 
+    -- The overheal ring, sized with the row. One pixel thick and one pixel in
+    -- on three sides; on the left it clears the state stripe, so the ring
+    -- frames the row's CONTENT and the stripe still reads as itself. Anchored
+    -- rather than sized, so it follows the frame width without a second pass.
+    for _, ring in ipairs({ { 1, row.ohGlow }, { 2, row.needGlow } }) do
+        local ins, th, g = ring[1], 1, ring[2]
+        g[1]:ClearAllPoints()
+        g[1]:SetPoint("TOPLEFT", row, "TOPLEFT", SDATA.STRIPE_W + ins, -ins)
+        g[1]:SetPoint("TOPRIGHT", row, "TOPRIGHT", -ins, -ins)
+        g[1]:SetHeight(th)
+        g[2]:ClearAllPoints()
+        g[2]:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", SDATA.STRIPE_W + ins, ins)
+        g[2]:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -ins, ins)
+        g[2]:SetHeight(th)
+        g[3]:ClearAllPoints()
+        g[3]:SetPoint("TOPLEFT", g[1], "BOTTOMLEFT", 0, 0)
+        g[3]:SetPoint("BOTTOMLEFT", g[2], "TOPLEFT", 0, 0)
+        g[3]:SetWidth(th)
+        g[4]:ClearAllPoints()
+        g[4]:SetPoint("TOPRIGHT", g[1], "BOTTOMRIGHT", 0, 0)
+        g[4]:SetPoint("BOTTOMRIGHT", g[2], "TOPRIGHT", 0, 0)
+        g[4]:SetWidth(th)
+    end
+
     row.left:ClearAllPoints()
     row.left:SetPoint("LEFT", row.barBG, "LEFT", 3, 0)
     row.right:ClearAllPoints()
     row.right:SetPoint("RIGHT", row.barBG, "RIGHT", -3, 0)
+    -- The forecast number takes the bar's centre, the one span the state word
+    -- (left) and the health percent (right) both leave alone.
+    row.fcText:ClearAllPoints()
+    row.fcText:SetPoint("CENTER", row.barBG, "CENTER", 0, 0)
 
 
     -- Dispel strip: marches rightward OUTSIDE the frame so it never eats board width
@@ -5778,22 +8419,76 @@ local function LayoutRow(row, width, sig, compact, secondSlot)
     -- whatever UnitDisplay says, or its label would leave a hole where the
     -- bar should start), and how tall its lockout strip is.
     row._nameSlot = showName and true or false
+    row._combatSlot = combatOn and true or false
+    row._bgSlots = bgSlots
     row._wsH = wsH
     row._sig = sig
+    bp.width, bp.rowH, bp.pad, bp.stripeW = width, rowH, SDATA.PAD, SDATA.STRIPE_W
+    bp.barX, bp.barW, bp.barH = barX, barW, barH
+    bp.healthH = showHealth and healthH or 0
+    bp.grid = grid
+    if grid then
+        bp.seat = rightReserve > 0 and SDATA.MARK_SEAT or 0
+        bp.cell = SDATA.MARK_CELL
+        bp.marks, bp.combat, bp.bg, bp.bgPossible = 0, 0, 0, 0
+        bp.seatMarks = marksOn and true or false
+        bp.seatCombat = combatOn and true or false
+        bp.seatBg = bgWanted and true or false
+    else
+        bp.seat = 0
+        bp.marks = marksOn and 16 or 0
+        bp.combat = combatOn and (SDATA.COMBAT_MARK + 3) or 0
+        bp.bg = bgSlots * (SDATA.COMBAT_MARK + 3)
+        -- What the battleground slots WOULD cost when zoning in, for a diagram
+        -- drawn at the flight master
+        bp.bgPossible = bgWanted and (SDATA.MAX_BG_MARKS * (SDATA.COMBAT_MARK + 3)) or 0
+    end
+    bp.markW, bp.markGap = SDATA.COMBAT_MARK, 3
+    row._blueprint = bp
 end
 
 local function LayoutSig(width)
     return width .. "|" .. tostring(DB("ShowSpellIcon", true)) .. "|"
+        .. tostring(DB("ShowCombat", true)) .. "|"
+        .. tostring(DB("ShowBGBuffs", true)
+            and (util.InBattleground() or testUntil > 0)) .. "|"
         .. DB("UnitDisplay", "CLASS_ICON")
         .. "|" .. tostring(DB("ShowDispels", false)) .. "|" .. DB("DispelMaxIcons", 3)
-        .. "|" .. DB("DispelIconSize", 16) .. "|" .. tostring(DB("ShowManaBar", true))
-        .. "|" .. tostring(DB("ShowTargetMarks", true))
+        .. "|" .. DB("DispelIconSize", 16)
+        .. "|" .. util.PowerMode() .. "|" .. DB("PowerBarHeight", SDATA.HEALTH_H)
+        .. "|" .. tostring(DB("ShowTargetMarks", true)) .. "|" .. DB("MarkLayout", "GRID")
         .. "|" .. DB("BarTexture", "FLAT") .. "|" .. SDATA.BUFF_SIG
+end
+
+-- The anatomy of an ally row under the CURRENT settings, for the settings
+-- page's diagram. Laid out on a scratch row that never joins the board, with
+-- the very same LayoutRow every live row goes through, so the diagram cannot
+-- disagree with the plate: each slot's x and width, where the bar starts and
+-- how wide it is, and what is reserved to its right (the target mark, the
+-- combat mark, the battleground slots) -- the "blank space" that is really
+-- three held-open seats.
+-- (The scratch row lives in SDATA, not a chunk local: this file sits at Lua's
+-- 200-local ceiling and one more `local` here fails the whole file to load.)
+function CommanderPartyFrames_RowBlueprint()
+    if not root then return nil end
+    local previewRow = SDATA.previewRow
+    if not previewRow then
+        previewRow = CreateFrame("Frame", nil, root)
+        BuildRowWidgets(previewRow)
+        previewRow:Hide()
+        -- Says what it is, so anything counting rows (the harness) can skip it
+        previewRow.scratch = true
+        SDATA.previewRow = previewRow
+    end
+    local width = FrameWidth()
+    local ok = pcall(LayoutRow, previewRow, width, LayoutSig(width))
+    previewRow:Hide()
+    return ok and previewRow._blueprint or nil
 end
 
 -- Player rows stride taller when each carries an ability strip beneath it
 local function RowStride()
-    local s = ROW_H + ROW_GAP
+    local s = SDATA.ROW_H + SDATA.ROW_GAP
     if DB("ShowAbilityBar", true) then s = s + SDATA.ABILITY_H + 1 end
     return s
 end
@@ -5802,7 +8497,7 @@ end
 -- pushes the ally rows past it; growing UP the ally board already starts at
 -- the bottom and the personal block stacks on top of it, so base is unused.
 local function PersonalStride()
-    return SDATA.PERSONAL_ROW_H + ROW_GAP
+    return SDATA.PERSONAL_ROW_H + SDATA.ROW_GAP
 end
 
 -- How many personal rows the block can EVER hold. The ally board is offset by
@@ -5838,7 +8533,7 @@ local function PositionAbilityRow(row, index, topOffset, grow, base)
         row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * RowStride())
     else
         row:SetPoint("TOPLEFT", root, "TOPLEFT", 0,
-            -topOffset - (base or 0) - (index - 1) * RowStride() - ROW_H - 1)
+            -topOffset - (base or 0) - (index - 1) * RowStride() - SDATA.ROW_H - 1)
     end
 end
 
@@ -5894,22 +8589,30 @@ local function PaintRow(row, r, now, index)
     if not r or r.state == "EMPTY" then
         row:SetAlpha(0)
         row.spellIcon:Hide(); row.swipe:Hide(); row.unitIcon:Hide(); row.unitIcon2:Hide(); row.name:Hide()
+        util.HideOutline(row.lockRing)
         row.inShield:Hide(); row.inShieldCd:Hide()
         row.bar:Hide(); row.barBG:Hide(); row.healthBar:Hide(); row.wsBar:Hide()
         row.markTick:Hide(); row.raidMark:Hide()
+        row.combatMark:Hide()
+        for i = 1, SDATA.MAX_BG_MARKS do row.bgMarks[i]:Hide() end
+        row.fcHot:Hide(); row.fcCast:Hide(); row.fcDot:Hide()
+        row.fcTickH:Hide(); row.fcTickD:Hide(); row.fcText:Hide()
         for i = 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
         for i = 1, SDATA.MAX_STRIP_ICONS do
             local h = row.strip[i]
             h._exp = nil
-            h.icon:Hide(); h.cd:Hide(); h.count:Hide()
+            h.icon:Hide(); h.cd:Hide(); h.count:Hide(); h.clock:Hide()
+            h.flare:Hide(); util.HideOutline(h.ring)
+            for k = 1, SDATA.MAX_PIPS do h.pips[k]:Hide() end
         end
         row.left:SetText(""); row.right:SetText(""); row.glow:Hide(); row.flash:Hide()
+        for i = 1, 4 do row.ohGlow[i]:Hide(); row.needGlow[i]:Hide() end
         row.tgtCount:Hide()
         row.stripe:SetAlpha(0)
         if row.blessBtn then row.blessBtn:Hide() end
         return
     end
-    row:SetAlpha(r.outOfRange and 0.4 or 1)
+    row:SetAlpha(r.outOfRange and util.RangeFadeAlpha() or 1)
     row.barBG:Show()
 
     local def = STATES[r.state] or STATES.SHIELDED
@@ -5983,12 +8686,14 @@ local function PaintRow(row, r, now, index)
             end
             row.spellIcon:Hide()
             row.swipe:Hide()
+            util.HideOutline(row.lockRing)
         elseif SDATA.STRIP_STATE_LAYERS[layer or ""] and not r.selfSpell then
             -- The druid and paladin boards have nothing to put here: their
             -- upkeep all lives on the strips. The priest board is NOT in this
             -- branch even though it has a strip — its own status slot is the
             -- Power Word: Shield tracker, which is the whole board.
             row.spellIcon:Hide(); row.swipe:Hide()
+            util.HideOutline(row.lockRing)
             row.inShield:Hide(); row.inShieldCd:Hide()
         elseif r.eleRow then
             -- Elemental row: the pet's portrait, Freeze on the second slot
@@ -6005,6 +8710,8 @@ local function PaintRow(row, r, now, index)
             row.spellIcon:Show()
             row._swExp = nil
             row.swipe:Hide()
+            -- The elemental's portrait is not a spell you cast at anyone
+            util.HideOutline(row.lockRing)
             if freezeIcon then
                 row.inShield:SetTexture(freezeIcon)
                 if row.inShield.SetDesaturated then row.inShield:SetDesaturated((r.freezeCd or 0) > 0) end
@@ -6038,6 +8745,33 @@ local function PaintRow(row, r, now, index)
                 -- No shield of ours here: the same dark placeholder every
                 -- other missing tracker on the board wears
                 util.GhostIcon(row.spellIcon, r.icon or SDATA.PWS_ICON)
+            end
+            -- One ring, both gates. "Can I shield this person" has two
+            -- answers in TBC and they are asked together: their Weakened Soul
+            -- has to be gone, and the spell has to be off cooldown (which it
+            -- always is on this client — read anyway, because a ring that
+            -- silently ignores a real cooldown is worse than no ring). The
+            -- longer of the two is the honest wait, so that is what is drawn,
+            -- and an empty ring means go.
+            --
+            -- Deliberately NOT the shield's own duration: that is what the
+            -- sweep behind it already says. Two clocks on one icon are only
+            -- worth the confusion when they answer different questions.
+            if DB("ShieldLockRing", true) and not r.dead then
+                local lockLeft = r.wsLeft or 0
+                local lockDur = (r.lockMax and r.lockMax > 0)
+                    and r.lockMax or SDATA.WEAKENED_SOUL_MAX
+                if (util.pwsCdLeft or 0) > lockLeft then
+                    lockLeft, lockDur = util.pwsCdLeft, util.pwsCdDur
+                end
+                if lockLeft > 0 and lockDur > 0 then
+                    util.DrawOutline(row.lockRing, row._ringSize or SDATA.ICON_SIZE,
+                        lockLeft / lockDur, SDATA.RING_LOCK)
+                else
+                    util.HideOutline(row.lockRing)
+                end
+            else
+                util.HideOutline(row.lockRing)
             end
             row.inShield:Hide(); row.inShieldCd:Hide()
             -- Duration sweep comes from shieldState, which on the INT layer
@@ -6078,7 +8812,26 @@ local function PaintRow(row, r, now, index)
                     h._exp = nil
                     h.cd:Hide()
                     h.count:Hide()
+                    h.clock:Hide()
+                    for k = 1, SDATA.MAX_PIPS do h.pips[k]:Hide() end
                     util.GhostIcon(h.icon, e.icon)
+                    -- The other end of a hop. This slot is empty and would
+                    -- normally sit at the dark placeholder tint; for half a
+                    -- second after the object leaves it fades DOWN to that
+                    -- from something lit, so the row it went from and the row
+                    -- it went to light a beat apart and the movement is
+                    -- something you see rather than something you infer.
+                    if (e.trail or 0) > 0 then
+                        local g, f = SDATA.GHOST_TINT, e.trail
+                        local c = util.ChargeTint(e)
+                        if h.icon.SetDesaturated then h.icon:SetDesaturated(false) end
+                        h.icon:SetVertexColor(
+                            g[1] + (c[1] - g[1]) * f,
+                            g[2] + (c[2] - g[2]) * f,
+                            g[3] + (c[3] - g[3]) * f,
+                            (g[4] or 1) + (1 - (g[4] or 1)) * f)
+                    end
+                    h.flare:Hide()
                 else
                     h.icon:SetTexture(e.icon)
                     -- Inside the refresh window the slot itself says so. On
@@ -6087,7 +8840,23 @@ local function PaintRow(row, r, now, index)
                     -- state is its shield, the slot is the ONLY thing that can
                     -- tell you a Renew is about to drop — which is the job the
                     -- old right-edge Renew icon existed to do.
-                    if e.due and DB("RenewFlash", true) then
+                    -- The roll wears its own three-state tint rather than
+                    -- the strip's one amber, and pulses only once it is
+                    -- actually LATE. A slot that pulses through the whole
+                    -- refresh window pulses most of a seven-second buff's
+                    -- life, which is how Lifebloom became invisible on this
+                    -- strip in the first place — an alarm that is always on
+                    -- is not an alarm.
+                    local rollClock = e.roll and SDATA.LB_DISPLAY_CLOCK[DB("LBDisplay", "BOTH")]
+                    if rollClock then
+                        local c = util.RollTint(e)
+                        if e.late and DB("RenewFlash", true) then
+                            h.icon:SetVertexColor(c[1], c[2], c[3],
+                                0.55 + 0.45 * math.abs(math.sin(now * 5)))
+                        else
+                            h.icon:SetVertexColor(c[1], c[2], c[3], 1)
+                        end
+                    elseif e.due and DB("RenewFlash", true) then
                         local pulse = 0.55 + 0.45 * math.abs(math.sin(now * 4))
                         h.icon:SetVertexColor(1, 0.45, 0.45, pulse)
                     elseif e.due then
@@ -6107,14 +8876,132 @@ local function PaintRow(row, r, now, index)
                         h._exp = nil
                         h.cd:Hide()
                     end
-                    -- Only worth a digit once it actually stacks: a Lifebloom
-                    -- at one is the common case and a "1" on every row is noise
-                    if (e.stacks or 0) > 1 then
+                    -- The roll's clock, in place of the sweep's last unreadable
+                    -- quarter. Tenths under three seconds, because that is the
+                    -- range where a tenth is the difference between a refresh
+                    -- and a bloom; whole seconds above it, where it is not.
+                    if rollClock and e.left then
+                        local c = util.RollTint(e)
+                        h.clock:SetTextColor(c[1], c[2], c[3])
+                        if e.left < 3 then
+                            h.clock:SetText(string.format("%.1f", math.max(0, e.left)))
+                        else
+                            h.clock:SetText(string.format("%d", math.ceil(e.left)))
+                        end
+                        h.clock:Show()
+                        -- With a number on the icon the sweep is noise behind
+                        -- it, and on the roll it was never the readable half
+                        h.cd:Hide()
+                    else
+                        h.clock:Hide()
+                    end
+                    -- Stacks. The roll shows PIPS — three lights read as a
+                    -- shape, and "am I at three" is the question you ask a
+                    -- hundred times a fight. Everything else keeps the digit,
+                    -- and only once it actually stacks: a "1" on every row is
+                    -- noise.
+                    --
+                    -- Mending gets pips for the opposite reason. Its number
+                    -- only ever goes DOWN, and what you want off it is not
+                    -- "which number is this" but "how much of it is left" —
+                    -- five lights emptying is that question answered as a
+                    -- shape, and the tint reddens as the last charge nears.
+                    local pips = 0
+                    if rollClock and e.roll and DB("LBStackPips", true) then
+                        pips = e.maxStacks or 3
+                    elseif e.charges and DB("PoMPips", true) then
+                        pips = e.maxStacks or 5
+                    end
+                    for k = 1, SDATA.MAX_PIPS do
+                        local pip = h.pips[k]
+                        if k <= pips then
+                            if k <= (e.stacks or 0) then
+                                local c = e.charges and util.ChargeTint(e)
+                                    or util.RollTint(e)
+                                pip:SetVertexColor(c[1], c[2], c[3], 1)
+                            else
+                                pip:SetVertexColor(0.25, 0.25, 0.28, 0.9)
+                            end
+                            pip:Show()
+                        else
+                            pip:Hide()
+                        end
+                    end
+                    -- Arrival. Starts at the icon's own size and expands as
+                    -- it fades, so the pull is the MOVEMENT rather than a
+                    -- colour you then have to interpret. Sized every frame
+                    -- from the decay, which is also how it puts itself away.
+                    if (e.hop or 0) > 0 then
+                        local f = e.hop
+                        local grow = SDATA.SMALL_ICON * (1 + 0.85 * (1 - f))
+                        local c = util.ChargeTint(e)
+                        h.flare:SetSize(grow, grow)
+                        h.flare:SetVertexColor(c[1], c[2], c[3], 0.5 * f)
+                        h.flare:Show()
+                    else
+                        h.flare:Hide()
+                    end
+                    -- The digit, which now rides ALONGSIDE the pips rather
+                    -- than instead of them. The lights answer "how much is
+                    -- left" as a shape at a glance; the number answers "how
+                    -- much exactly" when you actually look — two different
+                    -- readings of the same fact, and on a five-charge object
+                    -- both are worth having.
+                    --
+                    -- CHARGES only. Charges show their number all the way
+                    -- down to one, because on a countdown the one is the
+                    -- interesting value, and the pips and the digit are
+                    -- answering different questions rather than competing.
+                    --
+                    -- The roll deliberately does not follow: Lifebloom's pips
+                    -- REPLACED its digit on purpose, because "am I at three"
+                    -- is a shape you read a hundred times a fight and a
+                    -- number you would have to read. That is a decision the
+                    -- druid board already made, and a five-charge object
+                    -- wanting both is not a reason to reopen it.
+                    local showCount = e.charges and (e.stacks or 0) >= 1
+                        or (pips == 0 and (e.stacks or 0) > 1)
+                    if showCount then
+                        -- With pips along the bottom edge the digit has to
+                        -- leave it, or the two draw on top of each other.
+                        -- Re-anchored only when it actually moves.
+                        local pos = pips > 0 and "TOP" or "BOTTOM"
+                        if h._countPos ~= pos then
+                            h._countPos = pos
+                            h.count:ClearAllPoints()
+                            if pos == "TOP" then
+                                h.count:SetPoint("TOPRIGHT", h.icon, "TOPRIGHT", 2, 1)
+                            else
+                                h.count:SetPoint("BOTTOMRIGHT", h.icon, "BOTTOMRIGHT", 2, -1)
+                            end
+                        end
+                        -- Tinted with the pips so the two never disagree: a
+                        -- red last pip beside a white "1" would be the slot
+                        -- saying the same thing in two moods.
+                        if e.charges then
+                            local c = util.ChargeTint(e)
+                            h.count:SetTextColor(c[1], c[2], c[3])
+                        else
+                            h.count:SetTextColor(1, 1, 1)
+                        end
                         h.count:SetText(e.stacks)
                         h.count:Show()
                     else
                         h.count:Hide()
                     end
+                end
+                -- The SPELL's cooldown, on every row's slot rather than only
+                -- the one holding it — because "can I cast this at this
+                -- person right now" is a question every row asks, and for a
+                -- travelling object the answer is the same everywhere. A dark
+                -- slot with a closing ring is Mending on cooldown; a dark
+                -- slot with no ring is one you can cast here this instant.
+                if e.charges and DB("PoMCooldownRing", true)
+                    and (util.pomCdLeft or 0) > 0 and (util.pomCdDur or 0) > 0 then
+                    util.DrawOutline(h.ring, SDATA.SMALL_ICON,
+                        util.pomCdLeft / util.pomCdDur, SDATA.RING_CD)
+                else
+                    util.HideOutline(h.ring)
                 end
             end
         end
@@ -6122,7 +9009,9 @@ local function PaintRow(row, r, now, index)
     for i = stripShown + 1, SDATA.MAX_STRIP_ICONS do
         local h = row.strip[i]
         h._exp = nil
-        h.icon:Hide(); h.cd:Hide(); h.count:Hide()
+        h.icon:Hide(); h.cd:Hide(); h.count:Hide(); h.clock:Hide()
+        h.flare:Hide(); util.HideOutline(h.ring)
+        for k = 1, SDATA.MAX_PIPS do h.pips[k]:Hide() end
     end
 
     -- Identity: class icon / portrait / name per UnitDisplay. Self-spell rows
@@ -6234,8 +9123,20 @@ local function PaintRow(row, r, now, index)
     if r.ratio then
         local h = math.min(1, math.max(0, r.ratio))
         if r.healthMain then
-            -- Health-colored main bar: green at full through amber to red
-            row.bar:SetVertexColor(math.min(1, 1.6 - h * 1.4), math.min(0.75, 0.15 + h * 0.75), 0.2, 0.9)
+            -- Health-coloured main bar. The colour rides r.health, NOT the
+            -- fill ratio above, and the difference is the whole point.
+            --
+            -- On this board the fill is deliberately compressed to make room
+            -- for the shield segments chained off its right edge: an ally at
+            -- full health carrying a shield worth a fifth of their pool has a
+            -- ratio of 1/1.2, because the track now has to hold 120% of a
+            -- health bar. That is correct for the WIDTH -- the segments make
+            -- the row up to full again -- and nonsense for the colour, which
+            -- read 0.83 and dutifully darkened toward amber. Shielding a
+            -- healthy teammate made them look hurt, which is the exact
+            -- opposite of what you just did for them.
+            local c = util.HealthTint(r.health or h, SDATA.HP_TINT)
+            row.bar:SetVertexColor(c[1], c[2], c[3], 0.9)
         elseif r.state == "OTHER" then
             row.bar:SetVertexColor(0.45, 0.5, 0.7, 0.9)
         else
@@ -6251,12 +9152,14 @@ local function PaintRow(row, r, now, index)
     -- vibrant blue Barrier, muted blue-grey Mana Shield, school-tinted
     -- wards, dark grey Sacrifice — all on the same scale as the health
     local nSegs = 0
+    -- The chain's remaining room, kept past the loop: the forecast ghosts
+    -- below extend the same run and have to respect the same budget.
+    local budget = barW - (row.bar:IsShown() and (row.bar:GetWidth() or 0) or barW)
     if r.healthMain and r.segs and r.segScale and r.segScale > 0 and row.bar:IsShown() then
         -- The segments CHAIN off the fill's right edge, so the budget they
         -- share is whatever the fill left behind. Spending it down as they go
         -- means the run can never reach past the track even if the scale it
         -- was measured against turns out to be wrong.
-        local budget = barW - (row.bar:GetWidth() or 0)
         for i = 1, #r.segs do
             local s = r.segs[i]
             local w = math.min(barW * (s.amount / r.segScale), budget)
@@ -6277,12 +9180,172 @@ local function PaintRow(row, r, now, index)
     end
     for i = nSegs + 1, SDATA.MAX_SHIELD_SEGS do row.shieldSegs[i]:Hide() end
 
-    -- Underlay strip: MANA on the buff boards' ally rows, the elemental's
-    -- HEALTH on its row (health is the main bar everywhere else now)
-    if SDATA.HEALTH_LAYERS[layer or ""] and not r.selfSpell and r.mana
-        and DB("ShowManaBar", true) then
-        row.healthBar:SetVertexColor(0.25, 0.5, 0.95, 0.9)
-        row.healthBar:SetWidth(math.max(barW * math.min(1, math.max(0, r.mana)), 1))
+    -- -----------------------------------------------------------------------
+    -- FORECAST: what is already on its way, drawn where the answer belongs —
+    -- on the bar that is going to move.
+    --
+    --   healing  chains off the absorb run in the same direction health
+    --            grows, so a ghost reaching the end of the track means "they
+    --            are going to be fine, spend your global elsewhere"
+    --   damage   shades back INTO the fill from its right edge, so a row whose
+    --            green is half eaten is a row already committed to that loss
+    --
+    -- Both are read at a glance and neither costs the row any width, which is
+    -- why this is the default shape. Ticks reduce both to hairlines for a
+    -- quieter board; Numbers spell them out for a board you would rather read
+    -- than estimate; Net folds the two into whichever way the ally is
+    -- actually heading.
+    -- -----------------------------------------------------------------------
+    local fcMode = DB("Forecast", "BAR")
+    local fcScale = r.segScale or r.hpMax
+    local fcOn = fcMode ~= "OFF" and r.healthMain and fcScale and fcScale > 0
+        and row.bar:IsShown() and (r.fcDot or r.fcHot or r.fcCast)
+    local fcNet = DB("ForecastNet", false)
+    local fcHeal = (r.fcHot or 0) + (r.fcCast or 0)
+    local fcHurt = r.fcDot or 0
+    if fcOn and fcNet then
+        -- Net: one direction only. Two ghosts pointing at each other is a sum
+        -- the reader has to do; this does it for them.
+        local net = fcHeal - fcHurt
+        fcHeal, fcHurt = math.max(0, net), math.max(0, -net)
+    end
+    local drawBars = fcOn and (fcMode == "BAR" or fcMode == "BOTH")
+    local drawTicks = fcOn and fcMode == "TICK"
+
+    if drawBars then
+        -- Rolling hots first, then the inbound cast past them: the cast is the
+        -- part that has not happened yet and can still be cancelled or
+        -- outrun, so it sits furthest from the fill. Net mode has already
+        -- collapsed both into one figure, so it draws one ghost.
+        local hotPts = fcNet and fcHeal or (r.fcHot or 0)
+        local hotW = math.min(barW * (hotPts / fcScale), budget)
+        local anchor = nSegs > 0 and row.shieldSegs[nSegs] or row.bar
+        if hotW >= 1 then
+            budget = budget - hotW
+            row.fcHot:ClearAllPoints()
+            row.fcHot:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 0, 0)
+            row.fcHot:SetPoint("BOTTOMLEFT", anchor, "BOTTOMRIGHT", 0, 0)
+            row.fcHot:SetVertexColor(0.35, 0.85, 0.45, 0.45)
+            row.fcHot:SetWidth(hotW)
+            row.fcHot:Show()
+            anchor = row.fcHot
+        else
+            row.fcHot:Hide()
+        end
+        local castW = (not fcNet) and r.fcCast
+            and math.min(barW * (r.fcCast / fcScale), budget) or 0
+        if castW >= 1 then
+            row.fcCast:ClearAllPoints()
+            row.fcCast:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 0, 0)
+            row.fcCast:SetPoint("BOTTOMLEFT", anchor, "BOTTOMRIGHT", 0, 0)
+            row.fcCast:SetVertexColor(0.7, 0.95, 0.8, 0.5)
+            row.fcCast:SetWidth(castW)
+            row.fcCast:Show()
+        else
+            row.fcCast:Hide()
+        end
+        local hurtW = fcHurt > 0
+            and math.min(barW * (fcHurt / fcScale), row.bar:GetWidth() or 0) or 0
+        if hurtW >= 1 then
+            row.fcDot:ClearAllPoints()
+            row.fcDot:SetPoint("TOPRIGHT", row.bar, "TOPRIGHT", 0, 0)
+            row.fcDot:SetPoint("BOTTOMRIGHT", row.bar, "BOTTOMRIGHT", 0, 0)
+            row.fcDot:SetVertexColor(0.55, 0.05, 0.05, 0.55)
+            row.fcDot:SetWidth(hurtW)
+            row.fcDot:Show()
+        else
+            row.fcDot:Hide()
+        end
+    else
+        row.fcHot:Hide(); row.fcCast:Hide(); row.fcDot:Hide()
+    end
+
+    if drawTicks then
+        -- Where the bar ENDS UP, as a hairline each way. No fill, so a busy
+        -- board keeps its colors and still answers the question.
+        local fill = row.bar:GetWidth() or 0
+        local segW = 0
+        for i = 1, nSegs do segW = segW + (row.shieldSegs[i]:GetWidth() or 0) end
+        local hx = fill + segW + math.min(barW * (fcHeal / fcScale), barW)
+        local dx = fill - math.min(barW * (fcHurt / fcScale), fill)
+        if fcHeal > 0 then
+            row.fcTickH:ClearAllPoints()
+            row.fcTickH:SetPoint("TOPLEFT", row.barBG, "TOPLEFT",
+                math.max(0, math.min(barW - 1, hx)), 0)
+            row.fcTickH:SetSize(1, row.barBG:GetHeight() or SDATA.BAR_H)
+            row.fcTickH:SetVertexColor(0.5, 1, 0.6, 0.95)
+            row.fcTickH:Show()
+        else
+            row.fcTickH:Hide()
+        end
+        if fcHurt > 0 then
+            row.fcTickD:ClearAllPoints()
+            row.fcTickD:SetPoint("TOPLEFT", row.barBG, "TOPLEFT",
+                math.max(0, math.min(barW - 1, dx)), 0)
+            row.fcTickD:SetSize(1, row.barBG:GetHeight() or SDATA.BAR_H)
+            row.fcTickD:SetVertexColor(1, 0.35, 0.3, 0.95)
+            row.fcTickD:Show()
+        else
+            row.fcTickD:Hide()
+        end
+    else
+        row.fcTickH:Hide(); row.fcTickD:Hide()
+    end
+
+    if fcOn and (fcMode == "TEXT" or fcMode == "BOTH") then
+        -- Numbers. Net is one signed figure; otherwise healing and damage are
+        -- two, each in its own color, because "+3.1k and -2.4k" and "+700"
+        -- are different situations and only one of them is quiet.
+        if fcNet then
+            -- A net of nothing has nothing to say, and "+0" is not nothing —
+            -- it is a number the eye has to stop on and then discard.
+            local net = fcHeal - fcHurt
+            if math.abs(net) < 1 then
+                row.fcText:SetText("")
+            else
+                row.fcText:SetText((net > 0 and "+" or "-") .. FormatAmount(math.abs(net)))
+            end
+            if net >= 0 then
+                row.fcText:SetTextColor(0.45, 1, 0.55)
+            else
+                row.fcText:SetTextColor(1, 0.45, 0.4)
+            end
+        else
+            local parts
+            if fcHeal > 0 then
+                parts = "|cff66ff88+" .. FormatAmount(fcHeal) .. "|r"
+            end
+            if fcHurt > 0 then
+                local d = "|cffff6655-" .. FormatAmount(fcHurt) .. "|r"
+                parts = parts and (parts .. " " .. d) or d
+            end
+            row.fcText:SetTextColor(1, 1, 1)
+            row.fcText:SetText(parts or "")
+        end
+        row.fcText:Show()
+    elseif fcMode ~= "OFF" and r.fcCastN and not fcOn then
+        -- A heal is in the air whose size we have never measured. The number
+        -- is unknown, the FACT is not, and "someone else has them" is most of
+        -- what the number was for.
+        row.fcText:SetTextColor(0.7, 0.95, 0.8)
+        row.fcText:SetText("+?")
+        row.fcText:Show()
+    else
+        row.fcText:Hide()
+    end
+
+    -- Underlay strip: the ally's POWER, whatever they run on. Tinted by
+    -- resource by default — blue mana, red rage, yellow energy, orange focus,
+    -- green happiness — because on a mixed board the color is the fastest
+    -- read of what a row even is; Classic Blue paints every strip the one
+    -- blue the board wore before, for anyone who wants the quieter bar.
+    if not r.selfSpell and util.PowerOn(r) then
+        local c = SDATA.POWER_COLOR_DEFAULT
+        if DB("PowerBarColor", "TYPE") == "TYPE" then
+            c = SDATA.POWER_COLORS[r.powerToken or ""] or c
+        end
+        row.healthBar:SetVertexColor(c[1], c[2], c[3], 0.9)
+        row.healthBar:SetWidth(math.max(barW * math.min(1, math.max(0, r.power)), 1))
         row.healthBar:Show()
     else
         row.healthBar:Hide()
@@ -6299,6 +9362,88 @@ local function PaintRow(row, r, now, index)
         row.raidMark:Hide()
     end
 
+    -- Crossed blades: this ally is in combat. Which is to say — this is an
+    -- ally you can take combat OFF: one heal on someone already fighting and
+    -- you are in combat too, and a Sap does not open on a target in combat.
+    -- Read the other way, a board with no blades on it is the one that says
+    -- sit down, the drink will finish, and nobody here is about to pull.
+    --
+    -- Dim when they are out of your cast range: they are fighting, but not
+    -- somewhere you can reach to join them, and a mark you cannot act on
+    -- should not read like one you can. Self-shield rows sit this out — they
+    -- are the same person as your own ally row, which already carries it.
+    --
+    -- Not dimmed TWICE, though: Range Fade dims the whole row on the same
+    -- 40-yard answer, and 0.4 on top of that is a mark nobody can see. When the
+    -- row is already carrying the news, the blades ride it at full strength.
+    local combatOn = row._combatSlot and r.inCombat and not r.selfSpell
+        and not r.dead
+    if combatOn then
+        local dim = r.outOfCastRange and not r.outOfRange
+        row.combatMark:SetVertexColor(1, 1, 1, dim and 0.4 or 1)
+        row.combatMark:Show()
+    else
+        row.combatMark:Hide()
+    end
+
+    -- The battleground marks, in the same cluster and read the same way: what
+    -- this ally IS right now that the rest of the row cannot say. The flag
+    -- first, always — a carrier with Berserking up is still, first, the
+    -- carrier — then the best powerup they are holding.
+    --
+    -- Dimmed on the same rule as the blades, and for the same reason: a
+    -- carrier you cannot reach is news, not a decision, and once Range Fade
+    -- is already dimming the whole row they are not dimmed twice. Hidden on a
+    -- dead row, which is also how a flag stops being drawn without a scan:
+    -- dying drops it, and health reaches us from across the map.
+    local bgShown = 0
+    if (row._bgSlots or 0) > 0 and r.bgMarks and not r.selfSpell and not r.dead then
+        local dim = r.outOfCastRange and not r.outOfRange
+        if row._markGrid then
+            -- Fixed cells: the flag is ALWAYS bottom-left and the powerup
+            -- ALWAYS bottom-right, so which cell is lit says what it is
+            -- before the icon is read. r.bgMarks is best-first, so the first
+            -- non-flag entry is the powerup that matters.
+            local flag, power
+            for i = 1, #r.bgMarks do
+                local m = r.bgMarks[i]
+                if not (m.expire and m.expire > 0 and m.expire <= now) then
+                    if m.prio == 1 then flag = flag or m else power = power or m end
+                end
+            end
+            local cells = { flag, power }
+            for i = 1, 2 do
+                local t, m = row.bgMarks[i], cells[i]
+                if m then
+                    if t._icon ~= m.icon then t._icon = m.icon; t:SetTexture(m.icon) end
+                    t:SetVertexColor(1, 1, 1, dim and 0.4 or 1)
+                    t:Show()
+                else
+                    t:Hide()
+                end
+            end
+            bgShown = 2
+        else
+            for i = 1, #r.bgMarks do
+                local m = r.bgMarks[i]
+                -- A powerup runs out on its own clock, and out of range that
+                -- clock is the only thing that can end it. The flag has no
+                -- expiry at all, so it never falls off this way.
+                if not (m.expire and m.expire > 0 and m.expire <= now) then
+                    bgShown = bgShown + 1
+                    local t = row.bgMarks[bgShown]
+                    -- Memoed: this runs at the draw rate, and the icon in a slot
+                    -- changes about twice a match
+                    if t._icon ~= m.icon then t._icon = m.icon; t:SetTexture(m.icon) end
+                    t:SetVertexColor(1, 1, 1, dim and 0.4 or 1)
+                    t:Show()
+                    if bgShown >= row._bgSlots then break end
+                end
+            end
+        end
+    end
+    for i = bgShown + 1, SDATA.MAX_BG_MARKS do row.bgMarks[i]:Hide() end
+
     -- Freeze planner tick (elemental row only), riding the lifespan DRAIN
     -- strip. Gold while Freeze is ready: the point past which a cast no
     -- longer leaves room for a second one. Frost blue once Freeze is spent:
@@ -6314,23 +9459,43 @@ local function PaintRow(row, r, now, index)
         row.markTick:ClearAllPoints()
         row.markTick:SetPoint("CENTER", row.wsBar, "LEFT", x, 0)
         -- Overhangs the strip it rides, at whatever height that strip is
-        row.markTick:SetSize(2, (row._wsH or WS_H) + 4)
+        row.markTick:SetSize(2, (row._wsH or SDATA.WS_H) + 4)
         row.markTick:Show()
     else
         row.markTick:Hide()
     end
 
     -- Recast-lockout drain: Weakened Soul on ally rows, the spell's own
-    -- cooldown on self-spell rows (r.lockMax carries that spell's full CD)
+    -- cooldown on self-spell rows (r.lockMax carries that spell's full CD) —
+    -- and, on the druid board, the Lifebloom roll, which is the one thing
+    -- this strip carries that you WANT to see full. A lockout is red because
+    -- it is a problem; the roll takes its colour from how long is left, so
+    -- the same strip reads "fine / refresh / late" without a second glance.
     if r.wsLeft and r.wsLeft > 0 then
         local lockMax = (r.lockMax and r.lockMax > 0) and r.lockMax or SDATA.WEAKENED_SOUL_MAX
+        local t = r.wsTint
+        row.wsBar:SetVertexColor(t and t[1] or 0.9, t and t[2] or 0.2, t and t[3] or 0.2, 0.9)
         row.wsBar:SetWidth(math.max((row._barW or 100) * math.min(r.wsLeft / lockMax, 1), 1))
         row.wsBar:Show()
     else
         row.wsBar:Hide()
     end
 
-    row.left:SetText(r.mainText or "")
+    -- The bar's left slot is the state word, and plenty of rows legitimately
+    -- have nothing to say there -- a shield board with no shield up, a quiet
+    -- cooldown row. A blank span over a health bar is a wasted answer, so it
+    -- falls back to WHOSE bar this is, in class colour: the one thing that is
+    -- always true of the row. Nothing else changes -- the percent on the right,
+    -- the strip, the name slot all stay exactly as they were. Self-spell rows
+    -- are left out: their r.name is the spell, not a person.
+    if (r.mainText and r.mainText ~= "") or r.selfSpell then
+        row.left:SetTextColor(1, 1, 1)
+        row.left:SetText(r.mainText or "")
+    else
+        local cc = r.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[r.class]
+        row.left:SetTextColor(cc and cc.r or 0.9, cc and cc.g or 0.9, cc and cc.b or 0.9)
+        row.left:SetText(ShortName(r.name, 10))
+    end
     row.right:SetText(r.rightText or "")
 
     -- Dispellable debuffs, marching right of the frame. Rim is colored by dispel
@@ -6407,16 +9572,220 @@ local function PaintRow(row, r, now, index)
     end
     local flashEnd = rowFlash[index]
     if flashEnd and flashEnd > now then
+        -- The flash is red by default because every other thing that fires it
+        -- is bad news. Mending's end is not always: a spent one did exactly
+        -- what it was cast to do, and colouring that the same as a dispelled
+        -- one would throw away the one bit of information the alert carries.
+        local t = util.rowFlashTint[index]
+        row.flash:SetVertexColor(t and t[1] or 1, t and t[2] or 0.2, t and t[3] or 0.2)
         row.flash:SetAlpha(0.55 * (flashEnd - now) / 0.9)
         row.flash:Show()
     else
         rowFlash[index] = nil
+        util.rowFlashTint[index] = nil
         row.flash:Hide()
+    end
+
+    -- Overheal ring. Brightness rides the share that was wasted, so a heal
+    -- that spilled a little is a hint and one that spilled entirely is a
+    -- statement — and a hot ticking into a capped ally, which refreshes the
+    -- hold every tick, sits there as a steady ring saying so. Pale green
+    -- white: the same family as the forecast's healing ghost, because it is
+    -- the same subject seen a second later.
+    local oh = r.overheal or 0
+    if oh > 0 then
+        local a = math.min(0.9, 0.3 + 0.55 * oh)
+        for i = 1, 4 do
+            local t = row.ohGlow[i]
+            t:SetVertexColor(0.55, 1, 0.68, a)
+            t:Show()
+        end
+    else
+        for i = 1, 4 do row.ohGlow[i]:Hide() end
+    end
+
+    -- The low-health ring, a hairline just inside it: this ally is far enough
+    -- down to want our cheap rolling heal and has none of it on them.
+    -- Independent of the ring above on purpose — they are different news,
+    -- they can both be true at once, and neither gets to hide the other.
+    local needAt = DB("RenewNeedAt", 85) / 100
+    if DB("RenewNeedRing", true) and util.lowHotDef and r.healthMain
+        and not r.hotUp and not r.dead and (r.health or 1) <= needAt then
+        -- Faint at the threshold and deepening as they fall: a nudge about
+        -- somebody who is merely low, not an alarm about somebody who is
+        -- dying. By the time it is an emergency the bar colour and the sort
+        -- are already saying so, far louder than a hairline can — and a
+        -- binary would either nag at 85% or say nothing until too late.
+        local depth = needAt > 0 and (1 - (r.health or 1) / needAt) or 0
+        if depth < 0 then depth = 0 elseif depth > 1 then depth = 1 end
+        local a = 0.20 + 0.45 * depth
+        for i = 1, 4 do
+            local t = row.needGlow[i]
+            t:SetVertexColor(0.95, 0.25, 0.25, a)
+            t:Show()
+        end
+    else
+        for i = 1, 4 do row.needGlow[i]:Hide() end
     end
 end
 
 -- Expose Alert: fire when an ally we were shielding just lost our shield while
 -- still alive (they need a reshield). Edge-triggered per GUID.
+-- The roll's LATE warning. Deliberately not an alert on the refresh window:
+-- a rolling Lifebloom enters its window every five seconds by design, and an
+-- alarm that fires every five seconds is a metronome, not a warning. This
+-- fires once per cycle at the point where you are no longer refreshing early
+-- but refreshing behind — under LBLateAt, which defaults to a second and a
+-- half, about one global plus travel. Miss it and the stacks are gone.
+--
+-- Edge-triggered per GUID, so holding the roll late does not re-fire, and a
+-- refresh re-arms it for the next cycle.
+-- On `util` rather than a chunk local: this file is ON Lua's 200-local
+-- ceiling, so a new one here is a load error (see the note at the top).
+function util.CheckRollAlert(r, index, now)
+    if not (r.guid and layer == "HOT") then return end
+    local late = (r.roll and r.roll.late) or false
+    local was = util.prevRollLate[r.guid]
+    util.prevRollLate[r.guid] = late
+    if late and not was and not r.dead and DB("LBAlert", false) then
+        rowFlash[index] = now + 0.9
+        util.rowFlashTint[index] = nil
+        if DB("LBAlertSound", false) then util.PlayAlert("LBLATE") end
+    end
+end
+
+-- Play one alert's chosen sound, and the only route any of them take — so
+-- "which noise was that" has exactly one answer per alert, and the settings
+-- page can both name it and audition it.
+--
+-- Two channels tried in order: the SOUNDKIT constant (the sanctioned route,
+-- but the table is client-version dependent), then the raw id it resolves to,
+-- then the file path (stable across versions, for files that shipped). Each
+-- is pcall'd and only a real success stops the chain, so an entry this client
+-- is missing falls through to the channel it does have rather than going
+-- quiet — and if it has neither, silence beats a Lua error mid-arena.
+function util.PlayAlert(alertKey)
+    local line = SDATA.ALERT_BY_KEY[alertKey]
+    if not line then return end
+    local dbKey = SDATA.ALERT_SOUND_KEY[alertKey]
+    local choice = dbKey and DB(dbKey, line.default) or line.default
+    local snd = SDATA.ALERT_SOUND_BY_KEY[choice]
+        or SDATA.ALERT_SOUND_BY_KEY[line.default]
+    if not snd or snd.silent then return end
+    if snd.kit or snd.id then
+        local id = (SOUNDKIT and snd.kit and SOUNDKIT[snd.kit]) or snd.id
+        if id and PlaySound then
+            local ok, played = pcall(PlaySound, id, "Master")
+            if ok and played ~= false then return end
+        end
+    end
+    if snd.file and PlaySoundFile then
+        pcall(PlaySoundFile, snd.file, "Master")
+    end
+end
+
+-- Mending's alert, and the one property that matters about it: it cannot
+-- fire on a bounce. Not "rarely" and not "unless you are unlucky" — nothing
+-- reaches this function while the object is still in flight, because a
+-- re-application cancels the pending loss before the grace can lapse (see
+-- SDATA.POM_GRACE). What arrives here is only ever the END of the object:
+-- the fifth charge spent, the thirty seconds run out, a dispel, or a holder
+-- who took it with them.
+--
+-- Run once per draw rather than once per row, because the sound belongs to
+-- the OBJECT and the object's last holder may not be on the board at all —
+-- they can die off a tight board or leave the group in the same instant that
+-- ends the session, and "you lost your Mending" is not less true because the
+-- person who had it is no longer drawn. The row flash is the opportunistic
+-- half, and it is allowed to miss.
+-- The two spell cooldowns the rings draw, read ONCE per draw rather than once
+-- per row: both are facts about YOU, identical on every row that shows them,
+-- and GetSpellCooldown is not free enough to call six times for one answer.
+--
+-- The GCD is filtered out deliberately. Every cast puts a second and a half
+-- on every spell you own, and a ring that closed around every icon after
+-- every global would be a strobe that means "you just cast something" — which
+-- you already know, because you just cast it.
+function util.ReadSpellRings(now)
+    util.pomCdLeft, util.pomCdDur = 0, 0
+    util.pwsCdLeft, util.pwsCdDur = 0, 0
+    if not GetSpellCooldown then return end
+
+    -- Read both first, raw, because the global cooldown is only identifiable
+    -- by comparing two of them (see below).
+    local pomStart, pomDur, pwsStart, pwsDur
+    if util.PoMOn() and util.pomName then
+        pomStart, pomDur = GetSpellCooldown(util.pomName)
+    end
+    if layer == "PWS" and PWS_NAME then
+        pwsStart, pwsDur = GetSpellCooldown(PWS_NAME)
+    end
+
+    -- THE GLOBAL COOLDOWN IS NOT A COOLDOWN, and keeping it out of these
+    -- rings is most of what makes them readable. While only the global is
+    -- running, EVERY spell you own reports the same window through this API —
+    -- the global's own start and duration — so a ring driven straight off it
+    -- closes around every icon on the board after every single cast. That
+    -- says "you just cast something", which you know, because you cast it.
+    --
+    -- Two tests, because neither is sound alone.
+    --
+    --   IDENTITY is the real one. Two different spells cannot coincidentally
+    --   share a cooldown window: if Mending and Power Word: Shield report the
+    --   same start AND the same duration, that window belongs to neither of
+    --   them and is the global. This needs no magic number and survives a
+    --   client whose global is not the length we expect — hasted down toward
+    --   its one-second floor, or changed outright by a patch.
+    --
+    --   The DURATION BOUND is the backstop for when identity cannot answer:
+    --   only one of the two spells is being read (a priest below Mending's
+    --   level), or the other is on a real cooldown of its own so the two
+    --   windows differ for an honest reason. Nothing either ring tracks has a
+    --   real cooldown under two seconds, so anything at or below the global's
+    --   longest possible length is the global.
+    local gcd = pomStart and pwsStart and pomStart == pwsStart
+        and pomDur == pwsDur and pomStart or nil
+    local function real(start, dur)
+        if not (start and dur) or start <= 0 or dur <= 0 then return 0, 0 end
+        if gcd and start == gcd then return 0, 0 end
+        if dur <= SDATA.GCD_MAX then return 0, 0 end
+        local left = start + dur - now
+        if left <= 0 then return 0, 0 end
+        return left, dur
+    end
+    util.pomCdLeft, util.pomCdDur = real(pomStart, pomDur)
+    util.pwsCdLeft, util.pwsCdDur = real(pwsStart, pwsDur)
+end
+
+function util.CheckPoMEnd(now)
+    local reason, guid = util.PoMTick(now)
+    if not reason or not DB("PoMAlert", true) then return end
+    local p = util.pom
+    p.flashGuid, p.flashReason, p.flashUntil = guid, reason, now + 0.9
+    if DB("PoMAlertSound", true) then
+        -- Two sounds, because the two outcomes are opposite instructions.
+        -- SPENT means the spell finished its job and the cooldown is the only
+        -- thing you are waiting on; every other reason means it was taken off
+        -- you early and the recast is the next thing you do. They default to
+        -- the two bell tolls — one instrument, two pitches — so Mending has a
+        -- voice of its own rather than borrowing the raid-warning every other
+        -- addon on the client is already using.
+        util.PlayAlert(reason == "SPENT" and "POMSPENT" or "POMLOST")
+    end
+end
+
+-- The flash half: the row that was holding it when it ended, tinted by why.
+-- Spent once — a second row must not inherit a flash aimed at the first.
+function util.CheckPoMAlert(r, index, now)
+    local p = util.pom
+    if not (p.flashGuid and p.flashUntil and now < p.flashUntil) then return end
+    if r.guid ~= p.flashGuid then return end
+    p.flashGuid = nil
+    rowFlash[index] = now + 0.9
+    local info = SDATA.POM_REASONS[p.flashReason or ""]
+    util.rowFlashTint[index] = info and info.tint or nil
+end
+
 local function CheckExposeAlert(r, index, now)
     if not DB("ExposeAlert", false) then return end
     local has = r.shieldUp and r.mine or false
@@ -6426,9 +9795,8 @@ local function CheckExposeAlert(r, index, now)
     -- self board the whole point is your own shield breaking.
     if was and not has and not r.dead and (r.selfSpell or not r.isSelf) then
         rowFlash[index] = now + 0.9
-        if DB("ExposeAlertSound", false) and PlaySound then
-            pcall(PlaySound, (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959, "Master")
-        end
+        util.rowFlashTint[index] = nil
+        if DB("ExposeAlertSound", false) then util.PlayAlert("EXPOSE") end
     end
 end
 
@@ -6456,7 +9824,21 @@ local function BuildSecureTokens(out)
     end
     -- Bind only units that currently exist (a tight board), but rebind only
     -- out of combat — so the token->slot mapping never shifts mid-fight.
-    if DB("Scope", "PARTY") == "RAID" and IsInRaid and IsInRaid() then
+    if near.Active() then
+        -- The pick is already bounded by its own count, so Max Rows does not
+        -- clip it here. Secure attributes still only move out of combat, which
+        -- is why a mid-fight re-pick sets secureDirty and waits: see
+        -- CommanderPartyFrames_NearRefresh.
+        near.Ensure()
+        if DB("IncludeSelf", true) then
+            out[#out + 1] = "player"
+            addPet("pet")
+        end
+        for i = 1, #near.slots do
+            out[#out + 1] = near.slots[i]
+            addPet(near.PetOf(near.slots[i]))
+        end
+    elseif DB("Scope", "PARTY") == "RAID" and IsInRaid and IsInRaid() then
         for i = 1, 40 do
             if #out >= maxRows then break end
             if UnitExists("raid" .. i) then
@@ -6526,7 +9908,7 @@ local function SetupSecureRows()
     local width = FrameWidth()
     local sig = LayoutSig(width)
     local showHeader = DB("ShowHeader", true)
-    local topOffset = showHeader and HEADER_H or 0
+    local topOffset = showHeader and util.HeaderH() or 0
     local grow = DB("Grow", "DOWN")
     local personalBase = PersonalReserve() * PersonalStride()
     -- Resolved once per pass, not per row: the talent scan is cheap but there
@@ -6562,9 +9944,9 @@ local function SetupSecureRows()
     for i = #secureTokens + 1, #rowPool do
         rowPool[i]:Hide()
     end
-    local slots = DB("FixedHeight", false) and DB("MaxRows", 6) or math.max(#secureTokens, 1)
+    local slots = DB("FixedHeight", false) and near.Max() or math.max(#secureTokens, 1)
     root:SetSize(width, topOffset + personalBase
-        + math.max(slots * RowStride() - ROW_GAP, ROW_H))
+        + math.max(slots * RowStride() - SDATA.ROW_GAP, SDATA.ROW_H))
 end
 
 function CommanderPartyFrames_RebindRows()
@@ -6686,6 +10068,7 @@ local rosterUnits = {}
 
 local function BuildRoster(out)
     wipe(out)
+    wipe(near.order)
     local seen = {}
     local function add(unit)
         if not UnitExists(unit) then return end
@@ -6693,6 +10076,10 @@ local function BuildRoster(out)
         if not guid or seen[guid] then return end
         seen[guid] = true
         out[#out + 1] = unit
+        -- Where this unit sits in the roster as BUILT. Nearby mode draws in
+        -- that order rather than by urgency (the pick IS the ordering there),
+        -- and only this walk knows it.
+        near.order[unit] = #out
     end
     local pets = DB("IncludePets", true)
     -- Your own pet on the mage layer is deliberately absent from the ALLY
@@ -6710,7 +10097,16 @@ local function BuildRoster(out)
     end
     -- Each pet follows its owner, so the Click-Cast board keeps the pair
     -- adjacent; the sorted board re-orders by urgency anyway.
-    if DB("Scope", "PARTY") == "RAID" and IsInRaid and IsInRaid() then
+    if near.Active() then
+        -- Nearby Raid: the pick replaces the roster wholesale. Watch (Party /
+        -- Raid) has nothing to say here — the whole point is that neither of
+        -- those is what you want in a battleground.
+        near.Ensure()
+        for i = 1, #near.slots do
+            add(near.slots[i])
+            if pets then add(near.PetOf(near.slots[i])) end
+        end
+    elseif DB("Scope", "PARTY") == "RAID" and IsInRaid and IsInRaid() then
         for i = 1, 40 do
             add("raid" .. i)
             if pets then add("raidpet" .. i) end
@@ -6738,6 +10134,63 @@ local function SortRows(a, b)
     return a.name < b.name
 end
 
+-- Nearby Raid's row order: the roster exactly as BuildRoster laid it out —
+-- you, then the picked allies closest-first, each trailed by its pet. Anything
+-- the roster did not stamp (it cannot happen on this path, but a nil index
+-- would compare against a number and throw) sorts to the bottom by name.
+function near.OrderSort(a, b)
+    local ia = near.order[a.unit or ""] or math.huge
+    local ib = near.order[b.unit or ""] or math.huge
+    if ia ~= ib then return ia < ib end
+    return (a.name or "") < (b.name or "")
+end
+
+-- Class, then distance: the board read as a class list, each class's members
+-- closest-first. The class order is the suite's canon (SDATA.CLASS_SORT_RANK);
+-- a pet groups under its owner's class and trails that class's players,
+-- because it is still the row that gives way when the board is tight. The
+-- distance is r.yards, stamped by util.StampYards just before the sort so a
+-- comparison never asks the client for a position twice. Where the client
+-- will not report positions (near.Yards says which), everyone in range ties
+-- at one band and the tie goes to the name — the same way every pick on
+-- this board breaks its ties, so two equal answers do not swap every tick.
+-- (On util rather than a file local: the 200-local cap, see the SDATA note.)
+function util.ClassSort(a, b)
+    local ra = SDATA.CLASS_SORT_RANK[a.class or ""] or 99
+    local rb = SDATA.CLASS_SORT_RANK[b.class or ""] or 99
+    if ra ~= rb then return ra < rb end
+    if (a.isPet or false) ~= (b.isPet or false) then return not a.isPet end
+    local ya, yb = a.yards or math.huge, b.yards or math.huge
+    if ya ~= yb then return ya < yb end
+    return (a.name or "") < (b.name or "")
+end
+
+-- Every row's distance from you, for the class sort. Live rows ask near.Yards
+-- (real yards when UnitPosition answers, one range band when it does not);
+-- the test board's rows ride no unit, so they carry no distance and sort by
+-- class then name, which is all a sample needs to show.
+function util.StampYards(rows, live)
+    for i = 1, #rows do
+        local r = rows[i]
+        r.yards = (live and type(r.unit) == "string") and near.Yards(r.unit) or nil
+    end
+end
+
+-- Which order the sorted board draws in: FIXED (Nearby Raid's own pick order,
+-- which the pins may not disturb), CLASS (class then distance), or URGENCY
+-- (the board's original most-urgent-first sort). Nearby mode answers from its
+-- own Row Order setting, because the pick is a different board with a
+-- different question; everywhere else, and on the test board, it is Sort
+-- Rows. Click-Cast never gets here: its roster order is fixed at bind time.
+function util.SortMode(live)
+    if live and near.Active() then
+        local m = DB("NearSort", "DISTANCE")
+        if m == "CLASS" then return "CLASS" end
+        return m == "URGENCY" and "URGENCY" or "FIXED"
+    end
+    return DB("RowOrder", "URGENCY") == "CLASS" and "CLASS" or "URGENCY"
+end
+
 local function PinToTop(pred)
     for i, r in ipairs(rowData) do
         if pred(r) then
@@ -6754,10 +10207,15 @@ local function HeaderBackdrop()
     if not root.headerBG then
         root.headerBG = root:CreateTexture(nil, "BACKGROUND", nil, -1)
         root.headerBG:SetTexture("Interface\\Buttons\\WHITE8X8")
-        root.headerBG:SetVertexColor(0, 0, 0, 0.55)
         root.headerBG:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
         root.headerBG:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
-        root.headerBG:SetHeight(HEADER_H)
+        -- Tint, opacity and height come from the settings on the way in and
+        -- from util.RestyleHeader every time after: styling it here rather
+        -- than on each pass keeps a draw-rate function free of work whose
+        -- answer only changes when somebody moves a slider.
+        local r, g, b = util.HeaderTint()
+        root.headerBG:SetVertexColor(r, g, b, util.HeaderAlpha())
+        root.headerBG:SetHeight(util.HeaderH())
     end
     return root.headerBG
 end
@@ -6781,25 +10239,42 @@ local function DrawHeader(now, showHeader)
     elseif root.headerBG then
         root.headerBG:Hide()
     end
+    if showHeader and DB("HeaderRule", false) then
+        util.HeaderRule():Show()
+    elseif root.headerRule then
+        root.headerRule:Hide()
+    end
     if settingsBtn then
         settingsBtn:SetShown(showHeader and DB("ShowSettingsButton", true))
+        -- Always slot zero: the gear is the rank's right-hand end.
+        util.ChromeStyle(settingsBtn, 0)
     end
     if blizz.btn then
         -- Sits left of the gear, or takes its slot when the gear is off.
         -- Re-anchored only when that changes: this runs at the draw rate.
-        local gearOn = (settingsBtn and settingsBtn:IsShown()) and true or false
-        if blizz.gearOn ~= gearOn then
-            blizz.gearOn = gearOn
-            blizz.btn:ClearAllPoints()
-            blizz.btn:SetPoint("TOPRIGHT", root, "TOPRIGHT",
-                -(PAD - 3) - (gearOn and 15 or 0), -1.5)
-        end
+        util.ChromeStyle(blizz.btn, (settingsBtn and settingsBtn:IsShown()) and 1 or 0)
         blizz.btn:SetShown(showHeader)
+    end
+    if near.btn then
+        -- Only while the feature is actually doing something: the flag is on
+        -- AND we are in a raid. A button that refreshes nothing is chrome
+        -- spent for no reason, and it would eat banner width to do it.
+        local on = showHeader and near.Active() and DB("NearButton", true)
+        near.btn:SetShown(on)
+        if on then
+            -- Third in the same right-to-left rank as the other two, and
+            -- re-anchored only when that rank changes: this runs at the draw
+            -- rate.
+            local slot = 0
+            if settingsBtn and settingsBtn:IsShown() then slot = slot + 1 end
+            if blizz.btn and blizz.btn:IsShown() then slot = slot + 1 end
+            util.ChromeStyle(near.btn, slot)
+        end
     end
     if showHeader then
         if not root.header then
             root.header = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-            root.header:SetPoint("TOPLEFT", root, "TOPLEFT", STRIPE_W + 4, -1)
+            root.header:SetPoint("TOPLEFT", root, "TOPLEFT", SDATA.STRIPE_W + 4, -1)
             root.header:SetJustifyH("LEFT")
         end
         -- INT layer: the upkeep banner — YOUR class management as icon+text
@@ -6856,11 +10331,11 @@ local function DrawHeader(now, showHeader)
                 util.Seg("Interface\\Icons\\Spell_Frost_FrostArmor02", true, nil, { 1, 0.25, 0.25 })
                 if root.armorCd then root._armorExp = nil; root.armorCd:Hide() end
             end
-            -- 2) The cooldowns that decide games, filtered at login to what
-            -- this mage actually trained — an arcane mage never sees a Cold
-            -- Snap slot. Ice Barrier and the elemental stay off the banner:
-            -- both already have a personal row saying more than a segment
-            -- could (see SDATA.MAGE_BANNER_CDS).
+            -- 2) The survival pair, and only the pair: Ice Block and Cold
+            -- Snap, filtered at login to what this mage actually trained, so
+            -- an arcane mage never sees a Cold Snap slot. Everything else a
+            -- mage presses reads better off its own action-bar swipe than
+            -- off a 12px repeat up here (see SDATA.MAGE_BANNER_CDS).
             util.SegCds(now)
             -- 3) Session shield uptime — the live shield tracking itself
             -- (Barrier state, absorb totals) lives on the My Shields rows now
@@ -6973,9 +10448,19 @@ local function DrawHeader(now, showHeader)
         util.Paint(now)
         -- Everything below is the PRIEST banner. A layer with no banner of
         -- its own gets the utility cluster and the gear and nothing else,
-        -- rather than somebody else's numbers.
+        -- rather than somebody else's numbers — unless Production is
+        -- embedded, in which case its queue is the whole readout.
         if layer ~= "PWS" then
             root.header:Hide()
+            if util.ProductionOn() then
+                util.EnsureSegs()
+                local segX = util.PlaceSegs()
+                util.segN = 0
+                util.SegProduction(now)
+                util.TruncSegs(segX)
+            elseif root.hdrSegs then
+                for _, s in ipairs(root.hdrSegs) do s.icon:Hide(); s.text:Hide() end
+            end
             return
         end
         -- PWS layer: the priest's upkeep banner. This was a one-line string
@@ -7122,11 +10607,57 @@ end
 
 -- Drop every injected test entry from the shared state tables
 local function ClearTestState()
-    for _, t in ipairs({ shieldState, wsState, dispelState, intState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters, strip.state }) do
+    local fc = util.fc
+    for _, t in ipairs({ shieldState, wsState, dispelState, intState, util.bgState, curseState, ccState, allyAbsorbs, specState, abilityState, lockState, targeters, strip.state, fc.on, fc.amtOn, fc.casts, util.overheal }) do
         for guid in pairs(t) do
             if type(guid) == "string" and guid:find("^cshieldtest") then t[guid] = nil end
         end
     end
+end
+
+-- The forecast, on the test board. Seeded into the SAME state the live path
+-- fills — a learned tick size and a list of live periodics — rather than
+-- stamped onto the rows as finished numbers, so the preview is drawn by the
+-- real resolver and shows exactly what a real fight would.
+--   row 1  a dot ticking hard: the ally who is not as healthy as the bar says
+--   row 3  two hots rolling: the ally who does not need your global
+--   row 5  a heal in the air from a teammate: the reason to spend it elsewhere
+-- On `util` and not a chunk local: this file is ON Lua's 200-local
+-- ceiling, so a new one here is a load error (see the note at the top).
+function util.SeedTestForecast(now)
+    local fc = util.fc
+    local dotN = (GetSpellInfo and GetSpellInfo(172)) or "Corruption"
+    local hotN = (GetSpellInfo and GetSpellInfo(139)) or "Renew"
+    local hot2N = (GetSpellInfo and GetSpellInfo(774)) or "Rejuvenation"
+    local healN = (GetSpellInfo and GetSpellInfo(2060)) or "Greater Heal"
+    fc.kind[dotN] = fc.kind[dotN] or { dot = true, interval = 3, seeded = true }
+    fc.kind[hotN] = fc.kind[hotN] or { dot = false, interval = 3, seeded = true }
+    fc.kind[hot2N] = fc.kind[hot2N] or { dot = false, interval = 3, seeded = true }
+    fc.amtOn["cshieldtest1\30" .. dotN] = 210
+    fc.amtOn["cshieldtest3\30" .. hotN] = 160
+    fc.amtOn["cshieldtest3\30" .. hot2N] = 140
+    fc.on["cshieldtest1"] = { n = 1,
+        { name = dotN, expire = now + 12, duration = 18, interval = 3, dot = true } }
+    fc.on["cshieldtest3"] = { n = 2,
+        { name = hotN, expire = now + 9, duration = 15, interval = 3, dot = false },
+        { name = hot2N, expire = now + 6, duration = 12, interval = 3, dot = false } }
+    fc.heal[healN] = true
+    fc.casts["cshieldtestcaster"] = { dest = "cshieldtest5", name = healN,
+        amt = 1900, endTime = now + 2.5 }
+end
+
+-- The overheal ring's preview, on the two rows where it reads as the two
+-- things it has to say: one spilled half a heal (a hint), the other spilled
+-- the whole of one (a statement). Held well past the preview's thirty
+-- seconds so it does not fade out from under whoever is looking at it — the
+-- fade is capped at full, so a deadline this far out simply reads as steady.
+--
+-- Its own function under its own guard: overheal and the forecast are two
+-- features that happen to be about the same subject, and turning one off
+-- must not silently take the other's preview with it.
+function util.SeedTestOverheal(now)
+    util.overheal["cshieldtest2"] = { until_ = now + 40, frac = 0.55 }
+    util.overheal["cshieldtest6"] = { until_ = now + 40, frac = 1 }
 end
 
 -- Personal rows (INT layer): the Water Elemental while it is in play, then
@@ -7176,6 +10707,8 @@ local function PaintPersonalRows(now, shownPlayers, topOffset, grow, width, sig)
         end
         local r = personalRows[i]
         CheckExposeAlert(r, shownPlayers + i, now)
+        util.CheckRollAlert(r, shownPlayers + i, now)
+        util.CheckPoMAlert(r, shownPlayers + i, now)
         PaintRow(row, r, now, shownPlayers + i)
         row:Show()
     end
@@ -7306,11 +10839,17 @@ end
 
 local function Draw()
     local now = GetTime()
+    -- Ahead of everything, and outside the board's visibility: an armed grace
+    -- has to be resolved on time whether or not the rows are on screen, and a
+    -- Combat Only board is hidden at exactly the moment you most want to know
+    -- your Mending went.
+    if util.PoMOn() then util.CheckPoMEnd(now) end
+    util.ReadSpellRings(now)
     ScanTargeters(now)
     -- Buff-layer header tallies rebuild as this pass resolves rows
     if layer then intCurses, intCCs = 0, 0 end
     local showHeader = DB("ShowHeader", true)
-    local topOffset = showHeader and HEADER_H or 0
+    local topOffset = showHeader and util.HeaderH() or 0
     local grow = DB("Grow", "DOWN")
     local width = FrameWidth()
     local sig = LayoutSig(width)
@@ -7342,7 +10881,11 @@ local function Draw()
             local row = rowPool[i]
             if row then
                 local r = UnitExists(token) and ResolveRow(token, now) or { state = "EMPTY" }
-                if r.guid then CheckExposeAlert(r, i, now) end
+                if r.guid then
+                    CheckExposeAlert(r, i, now)
+                    util.CheckRollAlert(r, i, now)
+                    util.CheckPoMAlert(r, i, now)
+                end
                 PaintRow(row, r, now, i)
                 if barsOn then
                     -- Ability strips are insecure: positionable mid-combat
@@ -7369,10 +10912,10 @@ local function Draw()
         -- worth the mid-combat taint risk). The personal block is charged at
         -- its RESERVE, not its live count, so the box never breathes.
         if not InCombat() then
-            local mainSlots = DB("FixedHeight", false) and DB("MaxRows", 6)
+            local mainSlots = DB("FixedHeight", false) and near.Max()
                 or math.max(#secureTokens, 1)
-            local bodyH = mainSlots * RowStride() + personalBase - ROW_GAP
-            root:SetSize(width, topOffset + math.max(bodyH, ROW_H))
+            local bodyH = mainSlots * RowStride() + personalBase - SDATA.ROW_GAP
+            root:SetSize(width, topOffset + math.max(bodyH, SDATA.ROW_H))
         end
         SafeSetShown(root, boardOn)
         return
@@ -7388,8 +10931,12 @@ local function Draw()
             else
                 local r = { guid = tr.guid, name = tr.name, class = tr.class, isSelf = tr.isSelf, unit = tr.unit,
                     selfSpell = tr.selfSpell, icon = tr.icon, duration = tr.duration, lockMax = tr.lockMax,
-                    dispelKey = tr.dispelKey, tgtKey = tr.tgtKey, manaUser = tr.manaUser, mana = tr.mana,
-                    raidMark = tr.raidMark, isPet = tr.isPet, petOwner = tr.petOwner }
+                    dispelKey = tr.dispelKey, tgtKey = tr.tgtKey, manaUser = tr.manaUser,
+                    power = tr.power, powerType = tr.powerType, powerToken = tr.powerToken,
+                    raidMark = tr.raidMark, inCombat = tr.inCombat,
+                    bgMarks = tr.bgMarks or util.bgState[tr.guid],
+                    outOfCastRange = tr.outOfCastRange,
+                    isPet = tr.isPet, petOwner = tr.petOwner }
                 r.health = tr.health
                 r.hpMax = tr.hpMax
                 ResolveState(r, now)
@@ -7411,12 +10958,29 @@ local function Draw()
         end
     end
 
-    table.sort(rowData, SortRows)
-    if DB("PinFocus", false) and UnitExists("focus") then
-        local fg = UnitGUID("focus")
-        if fg then PinToTop(function(r) return r.guid == fg end) end
+    -- Nearby Raid draws in the order it PICKED, not by urgency: the pick is
+    -- the answer to "who is near me", and a board that then re-ranks it every
+    -- tick throws away the slot stability the pick exists to give. Urgency
+    -- and the class order are still available there as a setting; outside
+    -- nearby mode, Sort Rows decides between urgency (the board as it always
+    -- was) and class-then-distance.
+    local sortMode = util.SortMode(testUntil == 0)
+    local nearFixed = sortMode == "FIXED"
+    if sortMode == "CLASS" then
+        util.StampYards(rowData, testUntil == 0)
+        table.sort(rowData, util.ClassSort)
+    else
+        table.sort(rowData, nearFixed and near.OrderSort or SortRows)
     end
-    if DB("SelfFirst", false) then PinToTop(function(r) return r.isSelf end) end
+    -- Both pins reorder rows, which is exactly what the fixed order forbids —
+    -- and in nearby mode you are already row one when Include Self is on.
+    if not nearFixed then
+        if DB("PinFocus", false) and UnitExists("focus") then
+            local fg = UnitGUID("focus")
+            if fg then PinToTop(function(r) return r.guid == fg end) end
+        end
+        if DB("SelfFirst", false) then PinToTop(function(r) return r.isSelf end) end
+    end
 
     -- Personal rows live in their own list and pool: test rows built as such
     -- pull out of the sorted list here, live ones generate fresh. Max Rows
@@ -7431,7 +10995,11 @@ local function Draw()
     end
     if testUntil == 0 then AppendLivePersonalRows(now) end
 
+    -- Nearby mode is bounded by its own count (plus the pets that ride their
+    -- owners), never by Max Rows — which is the whole-raid control and would
+    -- silently clip a pick of ten down to six.
     local maxRows = DB("MaxRows", 6)
+    if testUntil == 0 and near.Active() then maxRows = math.max(#rosterUnits, 1) end
     for i = #rowData, maxRows + 1, -1 do rowData[i] = nil end
 
     local shown = #rowData
@@ -7446,6 +11014,8 @@ local function Draw()
         PositionRow(row, i, topOffset, grow, base)
         local r = rowData[i]
         CheckExposeAlert(r, i, now)
+        util.CheckRollAlert(r, i, now)
+        util.CheckPoMAlert(r, i, now)
         PaintRow(row, r, now, i)
         row:Show()
         if barsOn then
@@ -7469,9 +11039,9 @@ local function Draw()
     -- secure rows back under it, and there the token set only changes out of
     -- combat, so the frozen size is always the right one anyway.
     local mainSlots = DB("FixedHeight", false) and math.max(maxRows, shown) or shown
-    local bodyH = mainSlots * RowStride() + base - ROW_GAP
+    local bodyH = mainSlots * RowStride() + base - SDATA.ROW_GAP
     if not (InCombat() and root.IsProtected and root:IsProtected()) then
-        root:SetSize(width, topOffset + math.max(bodyH, ROW_H))
+        root:SetSize(width, topOffset + math.max(bodyH, SDATA.ROW_H))
     end
     SafeSetShown(root, boardOn)
 end
@@ -7491,7 +11061,32 @@ function CommanderPartyFrames_Test()
     local now = GetTime()
     testUntil = now + 30
     ClearTestState()
+    -- Battleground marks in the preview. Seeded into the state table rather
+    -- than onto the row samples because each layer builds its own set of
+    -- those and these are chassis: the first two rows are common to all four
+    -- boards, so one seed previews the pair on every one of them. The slots
+    -- only exist here at all because the test board counts as a battleground
+    -- for layout (see LayoutRow) — nothing else at the flight master does.
+    do
+        local function BGSample(id, expire)
+            local def
+            for _, d in ipairs(SDATA.BG_BUFFS) do if d.id == id then def = d end end
+            if not def then return nil end
+            return { key = def.key, prio = def.prio, label = def.label,
+                icon = def.icon, expire = expire, duration = expire and 10 or nil }
+        end
+        -- Row one carries the flag AND has just taken Berserking: both slots
+        -- filled, in priority order, which is the case the ordering exists for
+        local flag, zerk = BGSample(23333), BGSample(23505, now + 7)
+        if flag and zerk then util.bgState["cshieldtest1"] = { flag, zerk } end
+        -- Row two is on the Restoration berry alone: one slot, one mark
+        local resto = BGSample(23493, now + 5)
+        if resto then util.bgState["cshieldtest2"] = { resto } end
+    end
     wipe(testRows)
+    -- Chassis, so it is seeded once for every layer's board below
+    if DB("Forecast", "BAR") ~= "OFF" then util.SeedTestForecast(now) end
+    if DB("OverhealGlow", true) then util.SeedTestOverheal(now) end
 
     -- INT layer (Mage): a party in every state — buffed, rebuff window,
     -- cursed, unbuffed, a non-mana ally (pure chassis row), you — plus
@@ -7538,12 +11133,12 @@ function CommanderPartyFrames_Test()
         abilityState["cshieldtest2"] = { FEAR = now + 14, TRINKET = now + 80 }
         abilityState["cshieldtest5"] = { LASTSTAND = now + 60, PUMMEL = now + 4 }
         testRows = {
-            { guid = "cshieldtest1", name = "Mage2", class = "MAGE", manaUser = true, health = 0.9, mana = 0.55, hpMax = 3800 },
-            { guid = "cshieldtest2", name = "Priest", class = "PRIEST", manaUser = true, health = 0.85, mana = 0.7, hpMax = 4100 },
-            { guid = "cshieldtest3", name = "Druid", class = "DRUID", manaUser = true, health = 0.6, mana = 0.4, hpMax = 4600 },
-            { guid = "cshieldtest4", name = "Pally", class = "PALADIN", manaUser = true, health = 1.0, mana = 0.92, hpMax = 5200 },
-            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200, raidMark = 8 },
-            { guid = "cshieldtest6", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.75, mana = 0.8, hpMax = 4000 },
+            { guid = "cshieldtest1", name = "Mage2", class = "MAGE", manaUser = true, health = 0.9, power = 0.55, powerType = 0, powerToken = "MANA", hpMax = 3800, inCombat = true, outOfCastRange = true },
+            { guid = "cshieldtest2", name = "Priest", class = "PRIEST", manaUser = true, health = 0.85, power = 0.7, powerType = 0, powerToken = "MANA", hpMax = 4100 },
+            { guid = "cshieldtest3", name = "Druid", class = "DRUID", manaUser = true, health = 0.6, power = 0.4, powerType = 0, powerToken = "MANA", hpMax = 4600 },
+            { guid = "cshieldtest4", name = "Pally", class = "PALADIN", manaUser = true, health = 1.0, power = 0.92, powerType = 0, powerToken = "MANA", hpMax = 5200 },
+            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.42, power = 0.55, powerType = 1, powerToken = "RAGE", hpMax = 6200, raidMark = 8, inCombat = true },
+            { guid = "cshieldtest6", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.75, power = 0.8, powerType = 0, powerToken = "MANA", hpMax = 4000 },
         }
         -- The test board is a preview of the real thing, so its rows carry the
         -- identity the real resolver builds — otherwise the paladin's blessing
@@ -7563,7 +11158,7 @@ function CommanderPartyFrames_Test()
             testRows[#testRows + 1] = { guid = "cshieldtest7", name = "Felhunter",
                 class = "WARLOCK", isPet = true, petOwner = "party4",
                 petOwnerName = "Lock", fullName = "Felhunter",
-                manaUser = true, health = 0.68, mana = 0.35, hpMax = 2900 }
+                manaUser = true, health = 0.68, power = 0.35, powerType = 0, powerToken = "MANA", hpMax = 2900 }
         end
         if DB("SelfShieldRows", true) then
             local defs = {}
@@ -7618,13 +11213,25 @@ function CommanderPartyFrames_Test()
             REGROWTH = { expire = now + 17, duration = 21, icon = defs.REGROWTH.icon, stacks = 0 },
             LIFEBLOOM = { expire = now + 6, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 3 },
         }
-        -- About to bloom: one stack, inside the refresh window -> REFRESH
+        -- The roll's three readings, side by side, because the whole point of
+        -- giving Lifebloom its own instruments is that these have to be
+        -- tellable apart at a glance and the only way to know they are is to
+        -- see them together:
+        --   row 2  inside the window at ONE stack — a plain gold refresh
+        --   row 4  inside the window at THREE — purple: refresh, or let it
+        --          bloom, and that is a real fork rather than a reminder
+        --   row 5  LATE, red and pulsing, with the bar nearly empty
         strip.state["cshieldtest2"] = {
-            LIFEBLOOM = { expire = now + 3, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 1 },
+            LIFEBLOOM = { expire = now + 2.5, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 1 },
         }
-        -- Rejuv only, healthy clock
+        strip.state["cshieldtest4"] = {
+            REJUV = { expire = now + 8, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
+            LIFEBLOOM = { expire = now + 2.2, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 3 },
+        }
+        -- Rejuv only, healthy clock — and a roll on its last second
         strip.state["cshieldtest5"] = {
             REJUV = { expire = now + 11, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
+            LIFEBLOOM = { expire = now + 1.2, duration = 7, icon = defs.LIFEBLOOM.icon, stacks = 3 },
         }
         -- The two schools a druid removes, so both row colors are on screen
         curseState["cshieldtest3"] = { expire = now + 18, duration = 30, dispelName = "Curse" }
@@ -7653,24 +11260,25 @@ function CommanderPartyFrames_Test()
         lockState["cshieldtest3"] = { hypo = now + 18 }
         abilityState["cshieldtest5"] = { LASTSTAND = now + 60, PUMMEL = now + 4 }
         testRows = {
-            { guid = "cshieldtest1", name = "Priest", class = "PRIEST", manaUser = true, health = 0.72, mana = 0.6, hpMax = 4100 },
-            { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.66, hpMax = 4300 },
-            { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 0.9, mana = 0.45, hpMax = 3800 },
-            { guid = "cshieldtest4", name = "Hunter", class = "HUNTER", manaUser = true, health = 0.83, mana = 0.7, hpMax = 4800 },
-            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.38, hpMax = 6200, raidMark = 8 },
-            { guid = "cshieldtest6", name = "Pally", class = "PALADIN", manaUser = true, health = 0.55, mana = 0.5, hpMax = 5200 },
-            { guid = "cshieldtest7", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.95, mana = 0.8, hpMax = 4400 },
+            { guid = "cshieldtest1", name = "Priest", class = "PRIEST", manaUser = true, health = 0.72, power = 0.6, powerType = 0, powerToken = "MANA", hpMax = 4100 },
+            { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.66, power = 0.7, powerType = 3, powerToken = "ENERGY", hpMax = 4300, inCombat = true, outOfCastRange = true },
+            { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 0.9, power = 0.45, powerType = 0, powerToken = "MANA", hpMax = 3800 },
+            { guid = "cshieldtest4", name = "Hunter", class = "HUNTER", manaUser = true, health = 0.83, power = 0.7, powerType = 0, powerToken = "MANA", hpMax = 4800 },
+            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.38, power = 0.62, powerType = 1, powerToken = "RAGE", hpMax = 6200, raidMark = 8, inCombat = true },
+            { guid = "cshieldtest6", name = "Pally", class = "PALADIN", manaUser = true, health = 0.55, power = 0.5, powerType = 0, powerToken = "MANA", hpMax = 5200 },
+            { guid = "cshieldtest7", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.95, power = 0.8, powerType = 0, powerToken = "MANA", hpMax = 4400 },
         }
         -- The hunter's pet (Include Pets). Mark of the Wild lands on a pet
         -- whatever it runs on, so the buff slot applies even though a boar
-        -- has no mana strip — and a hot of yours rolls on it like any ally.
+        -- runs on focus rather than mana — and a hot of yours rolls on it
+        -- like any ally.
         if DB("IncludePets", true) then
             strip.state["cshieldtest8"] = {
                 REJUV = { expire = now + 5, duration = 12, icon = defs.REJUV.icon, stacks = 0 },
             }
             testRows[#testRows + 1] = { guid = "cshieldtest8", name = "Boar",
                 class = "HUNTER", isPet = true, petOwner = "party4",
-                health = 0.47, hpMax = 3300 }
+                power = 0.85, powerType = 2, powerToken = "FOCUS", health = 0.47, hpMax = 3300 }
         end
         Draw()
         print("Commander Party Frames: test board injected — rows drain and clear themselves")
@@ -7735,16 +11343,16 @@ function CommanderPartyFrames_Test()
         specState["cshieldtest5"] = "PROTECTION"
         abilityState["cshieldtest5"] = { LASTSTAND = now + 60, PUMMEL = now + 4 }
         testRows = {
-            { guid = "cshieldtest1", name = "Priest", class = "PRIEST", manaUser = true, health = 0.88, mana = 0.6, hpMax = 4100 },
-            { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.44, hpMax = 4300 },
-            { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 0.9, mana = 0.45, hpMax = 3800 },
-            { guid = "cshieldtest4", name = "Hunter", class = "HUNTER", manaUser = true, health = 0.83, mana = 0.7, hpMax = 4800 },
-            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.31, hpMax = 6200, raidMark = 8 },
-            { guid = "cshieldtest6", name = "Druid", class = "DRUID", manaUser = true, health = 0.55, mana = 0.5, hpMax = 4600 },
-            { guid = "cshieldtest7", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.95, mana = 0.8, hpMax = 5200 },
+            { guid = "cshieldtest1", name = "Priest", class = "PRIEST", manaUser = true, health = 0.88, power = 0.6, powerType = 0, powerToken = "MANA", hpMax = 4100 },
+            { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.44, power = 0.35, powerType = 3, powerToken = "ENERGY", hpMax = 4300, inCombat = true, outOfCastRange = true },
+            { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 0.9, power = 0.45, powerType = 0, powerToken = "MANA", hpMax = 3800 },
+            { guid = "cshieldtest4", name = "Hunter", class = "HUNTER", manaUser = true, health = 0.83, power = 0.7, powerType = 0, powerToken = "MANA", hpMax = 4800 },
+            { guid = "cshieldtest5", name = "Tank", class = "WARRIOR", health = 0.31, power = 0.48, powerType = 1, powerToken = "RAGE", hpMax = 6200, raidMark = 8, inCombat = true },
+            { guid = "cshieldtest6", name = "Druid", class = "DRUID", manaUser = true, health = 0.55, power = 0.5, powerType = 0, powerToken = "MANA", hpMax = 4600 },
+            { guid = "cshieldtest7", name = "You", class = playerClass, isSelf = true, manaUser = true, health = 0.95, power = 0.8, powerType = 0, powerToken = "MANA", hpMax = 5200 },
         }
         -- The hunter's pet (Include Pets). Might applies to anything that
-        -- swings, so a boar keeps that slot with no mana strip at all — and a
+        -- swings, so a boar keeps that slot on focus rather than mana — and a
         -- Freedom of yours rides it like any ally row.
         if DB("IncludePets", true) then
             intState["cshieldtest8"] = { MIGHT = { expire = now + 400, duration = 600 } }
@@ -7753,7 +11361,7 @@ function CommanderPartyFrames_Test()
             }
             testRows[#testRows + 1] = { guid = "cshieldtest8", name = "Boar",
                 class = "HUNTER", isPet = true, petOwner = "party4",
-                health = 0.47, hpMax = 3300 }
+                power = 0.85, powerType = 2, powerToken = "FOCUS", health = 0.47, hpMax = 3300 }
         end
         Draw()
         print("Commander Party Frames: test board injected — rows drain and clear themselves")
@@ -7852,12 +11460,12 @@ function CommanderPartyFrames_Test()
     }
 
     testRows = {
-        { guid = "cshieldtest1", name = "Tank", class = "WARRIOR", health = 0.42, hpMax = 6200, raidMark = 8 },
-        { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.78, hpMax = 4300, raidMark = 7 },
-        { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 1.0, hpMax = 3800 },  -- full: shields extend the scale
-        { guid = "cshieldtest4", name = "Druid", class = "DRUID", manaUser = true, health = 0.6, hpMax = 4600 },
-        { guid = "cshieldtest5", name = "Hunter", class = "HUNTER", health = 0.9, hpMax = 4800 },
-        { guid = "cshieldtest6", name = "You", class = select(2, UnitClass("player")), isSelf = true, manaUser = true, health = 0.85, hpMax = 4000 },
+        { guid = "cshieldtest1", name = "Tank", class = "WARRIOR", health = 0.42, power = 0.55, powerType = 1, powerToken = "RAGE", hpMax = 6200, raidMark = 8, inCombat = true },
+        { guid = "cshieldtest2", name = "Rogue", class = "ROGUE", health = 0.78, power = 0.9, powerType = 3, powerToken = "ENERGY", hpMax = 4300, raidMark = 7, inCombat = true, outOfCastRange = true },
+        { guid = "cshieldtest3", name = "Mage", class = "MAGE", manaUser = true, health = 1.0, power = 0.62, powerType = 0, powerToken = "MANA", hpMax = 3800 },  -- full: shields extend the scale
+        { guid = "cshieldtest4", name = "Druid", class = "DRUID", manaUser = true, health = 0.6, power = 0.38, powerType = 0, powerToken = "MANA", hpMax = 4600 },
+        { guid = "cshieldtest5", name = "Hunter", class = "HUNTER", health = 0.9, power = 0.8, powerType = 0, powerToken = "MANA", hpMax = 4800 },
+        { guid = "cshieldtest6", name = "You", class = select(2, UnitClass("player")), isSelf = true, manaUser = true, health = 0.85, power = 0.7, powerType = 0, powerToken = "MANA", hpMax = 4000 },
     }
     -- The warlock's pet (Include Pets): a shieldable ally like any other —
     -- one of yours is on it here, draining — with no ability strip of its own.
@@ -7868,7 +11476,7 @@ function CommanderPartyFrames_Test()
             { expire = now + 15, duration = 30, capacity = cap, absorbed = cap * 0.5 } }
         testRows[#testRows + 1] = { guid = "cshieldtest7", name = "Voidwalker",
             class = "WARLOCK", isPet = true, petOwner = "party4",
-            health = 0.55, hpMax = 3100 }
+            power = 0.6, powerType = 0, powerToken = "MANA", health = 0.55, hpMax = 3100 }
     end
     Draw()
     print("Commander Party Frames: test board injected — rows drain and clear themselves")
@@ -7988,6 +11596,10 @@ function CommanderPartyFrames_Debug()
     for _, def in ipairs(trackedSpells) do
         print(string.format("  tracked: %s (nominal %d)", def.name or def.key, def.nominal or 0))
     end
+    print(string.format("  nearby: flag=%s  active=%s  count=%d  picked=%d  exact=%s  auto=%s  pending=%s",
+        tostring(DB("NearMode", false)), tostring(near.Active()), near.Count(),
+        #near.slots, tostring(near.exact), tostring(DB("NearAuto", false)),
+        tostring(near.pending)))
     if layer == "INT" then
         print(string.format("  barrier=%s  elemental=%s  armor=%s",
             tostring(barrierDef and barrierDef.name or "unknown"),
@@ -8019,6 +11631,52 @@ function CommanderPartyFrames_Debug()
         end
     end
     print(string.format("  abilityBook=%d names  cooldownsRunning=%d", bookNames, watched))
+    -- The forecast is the one feature on this board whose accuracy depends
+    -- entirely on state you cannot see: what it has LEARNED. Printing the
+    -- learned amounts is the only way to answer "why is this number wrong"
+    -- in game — a spell with no measurement yet is worth zero by design, and
+    -- that looks identical to a bug until you can see the table.
+    local fc = util.fc
+    local shapes, measured, live = 0, 0, 0
+    for _ in pairs(fc.kind) do shapes = shapes + 1 end
+    for _ in pairs(fc.amtAny) do measured = measured + 1 end
+    local nowT = GetTime()
+    for _, list in pairs(fc.on) do
+        for i = 1, list.n do
+            if list[i].expire and list[i].expire > nowT then live = live + 1 end
+        end
+    end
+    local casting = 0
+    for _, c in pairs(fc.casts) do
+        if c.endTime and c.endTime > nowT then casting = casting + 1 end
+    end
+    print(string.format("  forecast=%s window=%s  shapes=%d  measured=%d  ticking=%d  casting=%d",
+        DB("Forecast", "BAR"),
+        (DB("ForecastWindow", 5) > 0) and (DB("ForecastWindow", 5) .. "s") or "full",
+        shapes, measured, live, casting))
+    for name, amt in pairs(fc.amtAny) do
+        local shape = fc.kind[name]
+        print(string.format("    %s: %s ~%d per tick every %ds",
+            name, (shape and shape.dot) and "dot" or "hot",
+            math.floor(amt + 0.5), (shape and shape.interval) or 3))
+    end
+    for name, amt in pairs(fc.healAny) do
+        print(string.format("    %s: heal ~%d", name, math.floor(amt + 0.5)))
+    end
+    -- What OUR heals are worth off their own tooltips, which is what the cast
+    -- forecast actually uses for us. Printed beside the learned numbers on
+    -- purpose: if the two disagree wildly, one of them is telling you
+    -- something (a target under Mortal Strike, or a rank you downrank with).
+    if GetSpellInfo then
+        for _, id in ipairs(SDATA.HEAL_SEED) do
+            local n = GetSpellInfo(id)
+            local tip = n and util.HealTip(id)
+            if tip and tip > 0 then
+                print(string.format("    %s (%d): tooltip ~%d", n, id,
+                    math.floor(tip + 0.5)))
+            end
+        end
+    end
 end
 
 -- Session shield-coverage report (/cpf report)
@@ -8043,6 +11701,64 @@ function CommanderPartyFrames_Report()
         math.floor(pct + 0.5), mins, dur - mins * 60, uptime.shieldsCast or 0))
 end
 
+-- ---------------------------------------------------------------------------
+-- Nearby Raid: applying a pick.
+--
+-- Split from near.Pick because the pick is pure — it decides who belongs on
+-- the board and touches nothing else — while APPLYING it has to reach both
+-- boards, and only one of them is free to change mid-fight. So a re-pick made
+-- in combat on the Click-Cast board is parked rather than lost: secureDirty is
+-- already what PLAYER_REGEN_ENABLED watches, and the button goes amber to say
+-- so instead of silently doing nothing.
+-- ---------------------------------------------------------------------------
+function CommanderPartyFrames_NearRefresh(sticky, quiet)
+    if not near.Active() then
+        if not quiet then
+            print("|cff66ccffCommander Party Frames|r: Nearby Raid is "
+                .. (DB("NearMode", false)
+                    and "on, but you are not in a raid or battleground."
+                    or "off — turn it on in the settings (|cffffd100/cpf|r)."))
+        end
+        return false
+    end
+    local changed = near.Pick(sticky and true or false)
+    if changed and testUntil == 0 then
+        if securePool then SetupSecureRows() end
+        Draw()
+    end
+    if securePool then near.pending = secureDirty and true or false end
+    near.PaintButton()
+    return changed
+end
+
+-- The live nearby pick, read-only: the ordered unit tokens (never "player" —
+-- your own row is Include Self's, and always the first), whether the distances
+-- behind them are real yards, and whether the feature is even on right now.
+function CommanderPartyFrames_NearPick(out)
+    out = out or {}
+    wipe(out)
+    for i = 1, #near.slots do out[i] = near.slots[i] end
+    return out, near.exact, near.Active()
+end
+
+-- /cpf near — re-pick and say what came back. Doubles as the diagnostic for
+-- the one thing about this feature you cannot see by looking at it: whether
+-- the distances are real yards or interact-distance bands.
+function CommanderPartyFrames_Near()
+    if not CommanderPartyFrames_NearRefresh(false) then return end
+    print(string.format("|cff66ccffCommander Party Frames|r: nearby pick — %d of %d rows, %s%s.",
+        #near.slots + (DB("IncludeSelf", true) and 1 or 0), near.Count(),
+        near.exact and "|cff33ff33measured in yards|r"
+            or "|cffff8c26ranked by range bands|r (the client is not reporting positions here)",
+        DB("NearAuto", false) and string.format(", auto every %ds", DB("NearInterval", 3)) or ""))
+    for i = 1, #near.slots do
+        local u = near.slots[i]
+        local yards = near.Yards(u)
+        print(string.format("  %d. %s  %s%.0fy", i, UnitName(u) or u,
+            near.exact and "" or "~", yards or 0))
+    end
+end
+
 -- The ticker rides its own always-shown frame, NOT root: a board hidden by
 -- Only Show Alerts must still notice absorb- and clock-driven transitions —
 -- a shield chewed low by SPELL_ABSORBED fires no aura event, and "expiring
@@ -8050,10 +11766,23 @@ end
 local ticker = CreateFrame("Frame")
 ticker:SetScript("OnUpdate", function(self, elapsed)
     if not (profile and CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield) then return end
-    sinceDraw = sinceDraw + elapsed
-    if sinceDraw >= DRAW_THROTTLE then sinceDraw = 0; Draw() end
-    sinceSample = sinceSample + elapsed
-    if sinceSample >= UPTIME_SAMPLE then sinceSample = 0; SampleUptime(GetTime()) end
+    self.sinceDraw = (self.sinceDraw or 0) + elapsed
+    if self.sinceDraw >= SDATA.DRAW_THROTTLE then self.sinceDraw = 0; Draw() end
+    self.sinceSample = (self.sinceSample or 0) + elapsed
+    if self.sinceSample >= SDATA.UPTIME_SAMPLE then self.sinceSample = 0; SampleUptime(GetTime()) end
+    -- Nearby Raid auto-refresh: the same sorted re-pick the button takes, on a
+    -- timer. `sticky` is the only difference — an automatic pick lets whoever
+    -- is already on the board keep their place against a marginally closer
+    -- outsider, so the membership does not flicker between two equally correct
+    -- answers. The ORDER is always live distance; a board that did not visibly
+    -- re-sort here is what made this look broken in the first place.
+    if near.Active() and DB("NearAuto", false) then
+        self.sinceNear = (self.sinceNear or 0) + elapsed
+        if self.sinceNear >= (tonumber(DB("NearInterval", 3)) or 3) then
+            self.sinceNear = 0
+            CommanderPartyFrames_NearRefresh(true, true)
+        end
+    end
 end)
 
 -- ---------------------------------------------------------------------------
@@ -8065,6 +11794,7 @@ local function Apply()
     blizz.Apply()
     if profile and CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield then
         if not DB("ShowDispels", false) then wipe(dispelState) end
+        if not DB("OverhealGlow", true) then wipe(util.overheal) end
         if not DB("ShowTargeters", true) then wipe(targeters) end
         Commander.UI.ApplyHudChrome(root, CommanderPartyFramesDB, "Hud", {
             title = "Party",
@@ -8090,6 +11820,13 @@ local function Apply()
         -- in the same place and are just as far out of a redraw's reach
         util.RestyleIcons()
         util.RestyleSweeps()
+        -- Same reason, one storey up: the banner's strip, its panel and its
+        -- popouts are all built once and never revisited by a redraw
+        util.RestyleHeader()
+        -- Nearby Raid's count, its flag and Include Self all decide the SHAPE
+        -- of a pick, so a settings change invalidates the one we are holding
+        near.Invalidate()
+        near.PaintButton()
         -- Utility toggles changed which buttons belong on the banner
         BindMageUtilityButtons()
         ScanGroup()
@@ -8100,10 +11837,19 @@ local function Apply()
         wipe(wsState)
         wipe(dispelState)
         wipe(intState)
+        wipe(util.bgState)
         wipe(curseState)
         wipe(ccState)
         wipe(allyAbsorbs)
         wipe(strip.state)
+        util.PoMReset()
+        -- The forecast's LIVE state goes; what it has LEARNED stays. The
+        -- learned amounts are the expensive half (they cost a fight to
+        -- gather) and none of them describe anyone currently on the board,
+        -- so switching the module off and on again should not cost you them.
+        wipe(util.fc.on)
+        wipe(util.fc.casts)
+        wipe(util.overheal)
         root:Hide()
     end
 end
@@ -8122,13 +11868,25 @@ events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:RegisterEvent("SPELLS_CHANGED")
 events:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 events:RegisterEvent("UNIT_PET")
+-- Inbound-heal forecast: a group member's cast, from the frame it starts on.
+-- pcall'd like the talent events below, so a client that never shipped one of
+-- these leaves the rest of the board alone.
+for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP",
+                     "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED",
+                     "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_FAILED_QUIET" }) do
+    pcall(events.RegisterEvent, events, e)
+end
 -- A respec changes which binding profile is live, so the secure rows have to
 -- be rewritten. Soft-registered: a client without the event must not stop the
 -- rest of the board from loading.
 pcall(events.RegisterEvent, events, "CHARACTER_POINTS_CHANGED")
 pcall(events.RegisterEvent, events, "PLAYER_TALENT_UPDATE")
 pcall(events.RegisterEvent, events, "BAG_UPDATE_DELAYED")
-events:SetScript("OnEvent", function(self, event, arg1)
+-- arg2/arg3 are read by exactly one event: UNIT_SPELLCAST_START hands over
+-- (unit, castGUID, spellID), and the spell ID is what tells the inbound-heal
+-- forecast WHICH RANK is in the air — the difference between a downranked
+-- filler and the real thing.
+events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     if event == "PLAYER_LOGIN" then
         playerGUID = UnitGUID("player")
         PWS_NAME = (GetSpellInfo and GetSpellInfo(17)) or "Power Word: Shield"
@@ -8147,10 +11905,14 @@ events:SetScript("OnEvent", function(self, event, arg1)
         -- so the spellbook has to be scanned before anything asks it
         RefreshKnownSpells()
         util.ResolveBuffBook()
+        -- Class-independent and read once: nothing here is ever learned or
+        -- untrained, so it does not ride SPELLS_CHANGED with the book above
+        util.ResolveBGBook()
         util.ResolveBindables()
         util.MigrateBinds()
         EnsureSettingsButton()
         blizz.EnsureButton()
+        near.EnsureButton()
         -- The self-buff this layer's banner watches: the mage's armor line,
         -- or the priest's Inner Fire. One map, whichever book applies, so the
         -- scan and the banner segment do not have to know which class they
@@ -8222,6 +11984,11 @@ events:SetScript("OnEvent", function(self, event, arg1)
                     if category == "CC" then ccNames[n] = true end
                 end
             end
+            for _, id in ipairs(MUTED_IDS) do
+                local n = GetSpellInfo(id)
+                if n then mutedNames[n] = true end
+            end
+            util.ResolveForecast()
         end
         securePool = DB("ClickCast", false) and true or false
         if layer == "INT" then ResolveTrackedSpells() end
@@ -8244,6 +12011,17 @@ events:SetScript("OnEvent", function(self, event, arg1)
     if not (profile and CommanderPartyFramesDB and CommanderPartyFramesDB.EnableShield) then return end
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
         OnCombatLog()
+    elseif event == "UNIT_SPELLCAST_START" then
+        util.NoteCast(arg1, type(arg3) == "number" and arg3 or nil)
+        if testUntil == 0 then Draw() end
+    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_SUCCEEDED"
+        or event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED"
+        or event == "UNIT_SPELLCAST_FAILED_QUIET" then
+        -- SUCCEEDED lands with the heal, so clearing here is not premature:
+        -- the moment the cast completes its healing stops being "inbound" and
+        -- starts being health the bar already shows.
+        util.ClearCast(arg1)
+        if testUntil == 0 then Draw() end
     elseif event == "UNIT_AURA" then
         -- Pet tokens ride the same path as their owners': a shield landing on
         -- someone's felhunter, or a curse on it, has to repaint that row.
@@ -8272,7 +12050,41 @@ events:SetScript("OnEvent", function(self, event, arg1)
         -- A new zone is a new enemy team: the shadow-damage memory is sticky
         -- on purpose within a fight (60s, so a quiet warlock still counts) and
         -- must not survive being carried into the next arena.
-        if event == "PLAYER_ENTERING_WORLD" then util.enemyShadowUntil = 0 end
+        if event == "PLAYER_ENTERING_WORLD" then
+            util.enemyShadowUntil = 0
+            -- Same reasoning: nothing that was ticking in the last arena is
+            -- ticking in this one, and a roster change can strand a list on
+            -- a GUID that has left. The learned amounts survive both.
+            wipe(util.fc.on)
+            wipe(util.fc.casts)
+            wipe(util.overheal)
+            -- Nothing was in flight when the loading screen started, and a
+            -- session stranded across one would resolve into a loss you did
+            -- not take. "We no longer know" is not the same as "it was lost",
+            -- and only one of those is allowed to make a noise.
+            util.PoMReset()
+            -- The flag is the one mark on this board with no expiry of its
+            -- own, so leaving the battleground is what ends it. Nobody from
+            -- the last one is carrying anything into this zone.
+            wipe(util.bgState)
+            -- The spell data can still be cold at login; a battleground is
+            -- the moment it stops being optional
+            if not next(SDATA.BG_BY_NAME) then util.ResolveBGBook() end
+        end
+        -- A roster change can strand the nearby pick on someone who left, so
+        -- it is invalidated here and re-taken by whichever of the two roster
+        -- builders runs next (slot-preserving — the pick is not thrown away
+        -- because one person quit). Entering a new world is the harder reset:
+        -- nobody's old slot means anything in a battleground you just zoned
+        -- into, so those go too and the next pick sorts from scratch.
+        near.Invalidate()
+        if event == "PLAYER_ENTERING_WORLD" then
+            wipe(near.slots)
+            wipe(near.held)
+            near.stamp = 0
+            near.pending = false
+            near.PaintButton()
+        end
         ScanGroup()
         if layer == "INT" then ScanSelfShields() end
         if securePool then SetupSecureRows() end
@@ -8280,6 +12092,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Left combat: safe to reconfigure secure rows/buttons queued mid-fight
         if securePool and secureDirty then SetupSecureRows() end
+        if near.pending then near.pending = false; near.PaintButton() end
         if mageBtnsDirty then BindMageUtilityButtons() end
         if testUntil == 0 then Draw() end
     elseif event == "PLAYER_REGEN_DISABLED" then

@@ -13,7 +13,15 @@ local DefaultSettings = {
     AlertBagsFull = true,
     AlertLevelUp = true,
     AlertReinforcements = true,
+    AlertQueuePop = true,
+    -- Deployment countdown
+    ShowQueueTimer = true,
+    KeepQueueTimer = true,
+    QueueTimerWarning = 10,
 }
+for key, value in pairs(Commander.UI.HudChromeDefaults("QueueTimer", "DARK")) do
+    DefaultSettings[key] = value
+end
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
@@ -30,7 +38,7 @@ local function CreateOptionsPanel()
         key = "Adjutant",
         title = "Adjutant",
         addonName = "Commander_Adjutant",
-        description = "Your personal battle adjutant, RTS-style: dramatic on-screen banners and alert sounds when your forces come under attack, take critical damage, need repairs, run out of storage, finish an upgrade, or receive reinforcements.",
+        description = "Your personal battle adjutant, RTS-style: dramatic on-screen banners and alert sounds when your forces come under attack, take critical damage, need repairs, run out of storage, finish an upgrade, or receive reinforcements — plus a countdown on the battleground invite, so you know exactly how long you can keep doing what you were doing before the port expires.",
         event = COMMANDER_ADJUTANT_EVENTS.UPDATE,
         slash = { "/cadj" },
         slashHandlers = {
@@ -39,9 +47,13 @@ local function CreateOptionsPanel()
                     CommanderAdjutant_TestAlert()
                 end
             end,
+            timer = function()
+                if CommanderAdjutant_TestQueueTimer then
+                    CommanderAdjutant_TestQueueTimer()
+                end
+            end,
         },
     })
-
     panel:AddSection("Adjutant", "The master switch; turn it off and the announcer stands down entirely.")
     panel:AddCheckbox({
         label = "Enable Adjutant",
@@ -58,21 +70,62 @@ local function CreateOptionsPanel()
     })
 
     panel:AddSection("Alerts", "Use /cadj test to preview the banner.")
-    local function AlertCheckbox(key, label, tooltip)
-        panel:AddCheckbox({
+    -- Two to a row: the alert list has outgrown a single column
+    local function Alert(key, label, tooltip)
+        return {
             label = label,
             tooltip = tooltip,
             get = function() return CommanderAdjutantDB[key] end,
             set = function(value) CommanderAdjutantDB[key] = value end,
             isEnabled = function() return CommanderAdjutantDB.EnableAdjutant end,
-        })
+        }
     end
-    AlertCheckbox("AlertUnderAttack", "Under Attack", "\"Our forces are under attack!\" when combat begins after a stretch of peace.")
-    AlertCheckbox("AlertLowHealth", "Critical Damage", "\"We're taking critical damage!\" when your health drops below 25% (once per fight).")
-    AlertCheckbox("AlertRepair", "Units Require Repair", "When your lowest equipment durability falls below 20%.")
-    AlertCheckbox("AlertBagsFull", "Storage at Capacity", "When your bags run completely out of free slots.")
-    AlertCheckbox("AlertLevelUp", "Upgrade Complete", "When you level up.")
-    AlertCheckbox("AlertReinforcements", "Reinforcements", "When players join your party or raid.")
+    panel:AddCheckboxPair(
+        Alert("AlertUnderAttack", "Under Attack", "\"Our forces are under attack!\" when combat begins after a stretch of peace."),
+        Alert("AlertLowHealth", "Critical Damage", "\"We're taking critical damage!\" when your health drops below 25% (once per fight)."))
+    panel:AddCheckboxPair(
+        Alert("AlertRepair", "Units Require Repair", "When your lowest equipment durability falls below 20%."),
+        Alert("AlertBagsFull", "Storage at Capacity", "When your bags run completely out of free slots."))
+    panel:AddCheckboxPair(
+        Alert("AlertLevelUp", "Upgrade Complete", "When you level up."),
+        Alert("AlertReinforcements", "Reinforcements", "When players join your party or raid."))
+    panel:AddCheckboxPair(
+        Alert("AlertQueuePop", "Transport Ready", "When a battleground or arena invite arrives. No sound of its own: the client already plays one for the invite."))
+
+    panel:AddSection("Deployment Countdown",
+        "The battleground invite never says how long the port stays open. This puts the clock on it. Use /cadj timer for a 20-second demo.")
+    local function TimerEnabled()
+        return CommanderAdjutantDB.EnableAdjutant and CommanderAdjutantDB.ShowQueueTimer
+    end
+    panel:AddCheckboxPair({
+        label = "Countdown on the Invite",
+        tooltip = "Draw a draining countdown bar under the battleground invite window.",
+        get = function() return CommanderAdjutantDB.ShowQueueTimer end,
+        set = function(value) CommanderAdjutantDB.ShowQueueTimer = value end,
+        isEnabled = function() return CommanderAdjutantDB.EnableAdjutant end,
+    }, {
+        label = "Keep It After Hiding",
+        tooltip = "Press Hide on the invite and the countdown stays on screen on its own, click-to-enter, until the port expires. Drag it anywhere with the frame options below.",
+        get = function() return CommanderAdjutantDB.KeepQueueTimer end,
+        set = function(value) CommanderAdjutantDB.KeepQueueTimer = value end,
+        isEnabled = TimerEnabled,
+    })
+    panel:AddSlider({
+        label = "Closing Warning",
+        tooltip = "Banner and alert sound when the port is about to expire. Set to Off for a silent countdown.",
+        min = 0, max = 30, step = 5,
+        format = function(value)
+            if value <= 0 then return "Off" end
+            return string.format("%ds", value)
+        end,
+        get = function() return CommanderAdjutantDB.QueueTimerWarning end,
+        set = function(value) CommanderAdjutantDB.QueueTimerWarning = value end,
+        isEnabled = TimerEnabled,
+    })
+    Commander.UI.AddHudChromeOptions(panel, CommanderAdjutantDB, "QueueTimer", {
+        isEnabled = function() return TimerEnabled() and CommanderAdjutantDB.KeepQueueTimer end,
+        onChanged = function() Commander.Notify(COMMANDER_ADJUTANT_EVENTS.UPDATE) end,
+    })
 
     panel:Finalize({ onDefaults = Reset })
 end

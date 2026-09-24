@@ -1,0 +1,14 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Kicks
+## Author: Devin
+## Version: 1.0.0
+## Notes: An interrupt bar for arena and battlegrounds -- the oldest arena addon there is, rebuilt on this suite's rules. Every enemy interrupt (Kick, Pummel, Shield Bash, Counterspell, Earth Shock, Spell Lock, Silencing Shot, Silence, Feral Charge, Arcane Torrent) as an icon with a clock, so "can I cast right now?" is answered by glancing rather than by reading. Three things make it more than the old bar again: icons are grouped PER ENEMY with a seat badge on each, because a double-rogue team has two Kicks and "one of them is down" is not an answer; an arena seat's whole book is on the bar FROM THE GATES, lit while ready and grey with a clock while down, so the bar has a fixed shape you read by position and a ready kick is the visible state; and the clock is red for exactly the lockout that kick just inflicted, then white, then the icon flashes the moment the cooldown ends. Ranks matched by name, the three shocks sharing one cooldown, a felhunter's Spell Lock credited to its warlock through the arena pet tokens, a battleground stranger drawn only with what they were seen to spend. Its rules run under plain luajit with no client attached, and it forgets people on its own, which an arena tracker never has to and a battleground one always does.
+## IconTexture: Interface\Icons\Ability_Kick
+## SavedVariables: CommanderKicksDB
+## RequiredDeps: Commander_Events
+
+CommanderKicksData.lua
+CommanderKicksEngine.lua
+CommanderKicksDB.lua
+CommanderKicks.lua

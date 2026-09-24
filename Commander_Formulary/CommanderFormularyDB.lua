@@ -67,7 +67,7 @@ local function CreateOptionsPanel()
         key = "Formulary",
         title = "Formulary",
         addonName = "Commander_Formulary",
-        description = "The whole of a profession in one double-wide window: every recipe there is, grouped by the slot it enchants or the thing it makes, the ones you know coloured by difficulty and the ones you do not with where they come from — trainer, vendor, drop, quest, reputation — searchable across names, reagents, sellers and droppers. The right half is the recipe: its tooltip, its reagents against your bags, exactly how to learn it, and a Craft button. It replaces the stock Enchanting window rather than sitting beside it. Enchanting for now.",
+        description = "The whole of a profession in one double-wide window: every recipe there is, grouped by the slot it enchants or the thing it makes, the ones you know coloured by difficulty and the ones you do not with where they come from — trainer, vendor, drop, quest, reputation — searchable across names, reagents, sellers and droppers. The right half is the recipe: its tooltip, its reagents against your bags, exactly how to learn it, and a Craft button. It replaces the stock profession window rather than sitting beside it. Enchanting and First Aid; the rank readout in the toolbar switches between them, and whichever window you open comes on screen.",
         event = COMMANDER_FORMULARY_EVENTS.UPDATE,
         slash = { "/cfm", "/cformulary" },
         slashHandlers = {
@@ -77,19 +77,22 @@ local function CreateOptionsPanel()
             status = function() Call("CommanderFormulary_Status") end,
             refresh = function(arg) Call("CommanderFormulary_RefreshPrices", arg) end,
             reset = function() Call("CommanderFormulary_ResetChar") end,
+            profession = function(arg) Call("CommanderFormulary_Profession", arg) end,
+            enchanting = function() Call("CommanderFormulary_Profession", "ENCHANTING") end,
+            firstaid = function() Call("CommanderFormulary_Profession", "FIRSTAID") end,
         },
     })
 
     panel:AddSection("Formulary")
     panel:AddCheckbox({
         label = "Enable the Formulary",
-        tooltip = "Master switch. Turning it off gives you the stock Enchanting window back.",
+        tooltip = "Master switch. Turning it off gives you the stock profession windows back.",
         get = function() return CommanderFormularyDB.EnableFormulary end,
         set = function(value) CommanderFormularyDB.EnableFormulary = value end,
     })
     panel:AddCheckbox({
-        label = "Replace The Enchanting Window",
-        tooltip = "When your Enchanting window opens, show the Formulary in its place. Off, the stock window opens as usual and the Formulary is a separate window from /cfm.",
+        label = "Replace The Profession Windows",
+        tooltip = "When your Enchanting or First Aid window opens, show the Formulary in its place, on that profession. Off, the stock window opens as usual and the Formulary is a separate window from /cfm.",
         get = function() return CommanderFormularyDB.ReplaceCraftWindow end,
         set = function(value) CommanderFormularyDB.ReplaceCraftWindow = value end,
         isEnabled = function() return CommanderFormularyDB.EnableFormulary end,
@@ -189,6 +192,10 @@ local function OnEvent(self, event, addonName)
         local char = CommanderFormularyChar
         char.known = type(char.known) == "table" and char.known or {}
         char.collapsed = type(char.collapsed) == "table" and char.collapsed or {}
+        -- `scanned` is per profession now; the old boolean meant Enchanting
+        if type(char.scanned) ~= "table" then
+            char.scanned = char.scanned and { ENCHANTING = true } or {}
+        end
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         CreateOptionsPanel()

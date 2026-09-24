@@ -403,7 +403,7 @@ function GetNumSkillLines() return me.maxRank > 0 and 3 or 1 end
 function GetSkillLineInfo(i)
     if i == 1 then return "Professions", true end
     if i == 2 and me.maxRank > 0 then return "Enchanting", false, false, me.rank, 0, 0, me.maxRank end
-    if i == 3 then return "First Aid", false, false, 10, 0, 0, 75 end
+    if i == 3 then return "First Aid", false, false, me.faRank or 10, 0, 0, me.faMax or 75 end
     return nil
 end
 local expandedHeaders = 0
@@ -417,7 +417,8 @@ local GEAR = { [2140] = { 2, 60, 3000, 4 }, [2141] = { 3, 115, 5000, 4 }, [2144]
 function GetItemInfo(id)
     if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) or id end
     local D = CommanderFormulary_Data and CommanderFormulary_Data.ENCHANTING
-    local name = D and D.items[id] or ("Item" .. id)
+    local FA = CommanderFormulary_Data and CommanderFormulary_Data.FIRSTAID
+    local name = (D and D.items[id]) or (FA and FA.items[id]) or ("Item" .. id)
     local g = GEAR[id]
     return name, "|Hitem:" .. id .. "|h[" .. name .. "]|h", g and g[1] or 1, g and g[2] or 1, 1, "Armor", "Misc", 20, EQUIPLOC[id],
         "Interface\\Icons\\Item" .. id, g and g[3] or 0, g and g[4] or 7, 12
@@ -446,6 +447,18 @@ function GetCraftInfo(i)
     local row = craft.list[i]
     if not row then return nil end
     return row.name, nil, row.header and "header" or "optimal", row.available or 5
+end
+-- The trade skill window (First Aid): its own frame, its own list, and a
+-- skill line that answers name, rank, maxRank
+local trade = { shown = false, list = {}, skill = "First Aid" }
+TradeSkillFrame = NewWidget("Frame", "TradeSkillFrame")
+TradeSkillFrame.IsShown = function() return trade.shown end
+function GetTradeSkillLine() return trade.skill, me.faRank or 10, me.faMax or 75 end
+function GetNumTradeSkills() return #trade.list end
+function GetTradeSkillInfo(i)
+    local row = trade.list[i]
+    if not row then return nil end
+    return row.name, row.header and "header" or "optimal", row.available or 5, true
 end
 -- Macros
 -- Account macros index 1..120, character macros 121+, as the client does
@@ -494,7 +507,7 @@ local KNOWN_EVENTS = {}
 for name in ([[
 ADDON_LOADED PLAYER_LOGIN PLAYER_LOGOUT PLAYER_ENTERING_WORLD
 SKILL_LINES_CHANGED CHAT_MSG_SKILL BAG_UPDATE_DELAYED PLAYERBANKSLOTS_CHANGED BANKFRAME_OPENED
-CRAFT_SHOW CRAFT_UPDATE CRAFT_CLOSE SPELLS_CHANGED NEW_RECIPE_LEARNED UPDATE_FACTION
+CRAFT_SHOW CRAFT_UPDATE CRAFT_CLOSE TRADE_SKILL_SHOW TRADE_SKILL_UPDATE TRADE_SKILL_CLOSE SPELLS_CHANGED NEW_RECIPE_LEARNED UPDATE_FACTION
 UNIT_INVENTORY_CHANGED PLAYER_REGEN_ENABLED PLAYER_REGEN_DISABLED REPLACE_ENCHANT
 GET_ITEM_INFO_RECEIVED UPDATE_MACROS AUCTION_HOUSE_SHOW AUCTION_HOUSE_CLOSED
 ]]):gmatch("%S+") do KNOWN_EVENTS[name] = true end
@@ -607,9 +620,12 @@ end
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 Load(ADDONS .. "/Commander_Formulary/CommanderFormularyData_Enchanting.lua")
+Load(ADDONS .. "/Commander_Formulary/CommanderFormularyData_FirstAid.lua")
 Load(ADDONS .. "/Commander_Formulary/CommanderFormularyModel.lua")
 for _, rec in ipairs(CommanderFormulary_Data.ENCHANTING.recipes) do DATA_NAMES[rec.spell] = rec.name end
+for _, rec in ipairs(CommanderFormulary_Data.FIRSTAID.recipes) do DATA_NAMES[rec.spell] = rec.name end
 DATA_NAMES[7411] = "Enchanting"
+DATA_NAMES[3273] = "First Aid"
 Load(ADDONS .. "/Commander_Formulary/CommanderFormularyDB.lua")
 Load(ADDONS .. "/Commander_Formulary/CommanderFormularyUI.lua")
 
@@ -639,10 +655,13 @@ CreateFrame = function(frameType, name, parent, template)
     return f
 end
 
+-- Under `root`, and under no hidden frame on the way: a pooled row that
+-- was hidden keeps its text, and text under a hidden row is not on screen
 local function Under(root, f)
     local p = f.__parent
     local depth = 0
     while p and depth < 8 do
+        if p.__shown == false then return false end
         if p == root then return true end
         p = p.__parent
         depth = depth + 1
@@ -941,7 +960,7 @@ craft.list = {
 }
 Fire("CRAFT_SHOW")
 Settle()
-CHECK(CommanderFormularyChar.known[13419] == true and CommanderFormularyChar.scanned, "D1 craft list read into memory")
+CHECK(CommanderFormularyChar.known[13419] == true and CommanderFormularyChar.scanned.ENCHANTING, "D1 craft list read into memory")
 CHECK(CraftFrame.__hiddenViaPanel == true, "D2 stock craft window put away")
 CHECK(frame.__shown == true, "D2 formulary shown in its place")
 Fire("CRAFT_CLOSE")
@@ -1029,6 +1048,94 @@ CHECK(frame.refreshButton.__shown == false, "F5 button gone when the auction hou
 printLog = {}
 CommanderFormulary_RefreshPrices()
 CHECK(printLog[1] and printLog[1]:find("open the auction house", 1, true), "F5 refresh away from the auction house says why", printLog[1])
+
+-- ===========================================================================
+-- G. First Aid: the second profession
+-- ===========================================================================
+
+-- The readout switches; the selection is kept per profession
+CommanderFormulary_Show()
+Settle()
+CommanderFormulary_Select(13501)
+Settle()
+me.faRank, me.faMax = 200, 225
+CommanderFormulary_Profession("firstaid")
+Settle()
+CHECK(CommanderFormularyChar.profession == "FIRSTAID", "G1 /cfm firstaid switches the profession", CommanderFormularyChar.profession)
+CHECK(frame.TitleText and frame.TitleText.__text == "Formulary — First Aid", "G1 the title names it", frame.TitleText and frame.TitleText.__text)
+view = CommanderFormulary_View()
+CHECK(view and view.rank == 200 and view.maxRank == 225 and view.total == 15, "G1 the view is First Aid's", view and (view.rank .. " " .. view.total))
+nav = TextUnder(frame.navPane)
+CHECK(nav:find("Bandages", 1, true) and nav:find("Anti-Venom", 1, true) and nav:find("Heavy Silk Bandage", 1, true), "G2 First Aid categories and rows", nav:sub(1, 120))
+CHECK(not nav:find("Bracer", 1, true), "G2 no Enchanting rows", nav)
+header = TextUnder(frame.toolbar)
+CHECK(header:find("First Aid", 1, true) and header:find("200 / 225", 1, true), "G2 the readout is First Aid's", header)
+detail = TextUnder(frame.detailPane)
+CHECK(detail:find("Pick a recipe", 1, true), "G2 the Enchanting selection does not carry over")
+-- the readout's tooltip lists both professions and how the next rank comes
+frame.rankButton.__scripts.OnEnter(frame.rankButton)
+local tip = table.concat(GameTooltip.__lines, "\n")
+CHECK(tip:find("Enchanting 146 / 150", 1, true) and tip:find("First Aid 200 / 225", 1, true), "G3 both professions in the tooltip", tip)
+CHECK(tip:find("Triage", 1, true) and tip:find("Gregory Victor", 1, true) and not tip:find("VanHowzen", 1, true), "G3 Artisan First Aid is the Horde doctor's quest", tip)
+CHECK(tip:find("Expert Enchanting is taught by any Enchanting trainers", 1, true), "G3 Expert Enchanting from a trainer", tip)
+GameTooltip.__lines = {}
+-- the Read Recipes button now casts First Aid
+local openBtn = _G.CommanderFormularyOpen
+CHECK(openBtn and openBtn.__attr and openBtn.__attr.spell == "First Aid", "G3 the open button casts First Aid", openBtn and openBtn.__attr and openBtn.__attr.spell)
+-- a known bandage: the craft macro is a bare /cast, no gear line
+CommanderFormularyChar.known[7929] = true
+CommanderFormulary_Select(7929)
+Settle()
+CHECK(craftBtn.__attr.macrotext == "/cast Heavy Silk Bandage", "G4 bandage macro is /cast alone", craftBtn.__attr.macrotext)
+detail = TextUnder(frame.detailPane)
+CHECK(detail:find("Silk Cloth", 1, true) and detail:find("Manual: Heavy Silk Bandage", 1, true), "G4 reagents and the manual in the briefing", detail:sub(1, 200))
+-- the trade skill window opening switches to First Aid, is read, and is put away
+CommanderFormulary_Profession("enchanting")
+Settle()
+CHECK(CommanderFormularyChar.profession == "ENCHANTING", "G5 back to Enchanting")
+frame:Hide()
+trade.shown = true
+trade.list = { { name = "Bandages", header = true }, { name = "Mageweave Bandage", spell = 10840 }, { name = "Runecloth Bandage", spell = 18629 } }
+Fire("TRADE_SKILL_SHOW")
+Settle()
+CHECK(CommanderFormularyChar.profession == "FIRSTAID", "G5 the trade skill window brings First Aid on screen")
+CHECK(CommanderFormularyChar.known[10840] == true and CommanderFormularyChar.scanned.FIRSTAID, "G5 its list read into memory")
+CHECK(TradeSkillFrame.__hiddenViaPanel == true and frame.__shown == true, "G5 stock trade skill window put away, Formulary in its place")
+Fire("TRADE_SKILL_CLOSE")
+Settle()
+-- and the craft window brings Enchanting back
+craft.shown = true
+Fire("CRAFT_SHOW")
+Settle()
+CHECK(CommanderFormularyChar.profession == "ENCHANTING", "G5 the craft window brings Enchanting back")
+Fire("CRAFT_CLOSE")
+Settle()
+-- a trade skill window on a profession the Formulary does not carry is left alone
+trade.skill = "Cooking"
+frame:Hide()
+TradeSkillFrame.__hiddenViaPanel = nil
+Fire("TRADE_SKILL_SHOW")
+Settle()
+CHECK(frame.__shown == false and TradeSkillFrame.__hiddenViaPanel == nil, "G6 Cooking is left alone")
+Fire("TRADE_SKILL_CLOSE")
+trade.skill = "First Aid"
+-- a First Aid manual's tooltip verdict is judged against First Aid's skill
+-- while Enchanting is on screen
+CommanderFormulary_Profession("enchanting")
+Settle()
+GameTooltip.__lines = {}
+GameTooltip.GetItem = function() return "Manual: Mageweave Bandage", "|Hitem:16113|h[Manual: Mageweave Bandage]|h" end
+GameTooltip._cfmItem = nil
+GameTooltip.__scripts.OnTooltipSetItem(GameTooltip)
+tip = table.concat(GameTooltip.__lines, "\n")
+CHECK(tip:find("you already know this recipe", 1, true), "G7 a known manual (First Aid at 200, Mageweave read from the window)", tip)
+GameTooltip.__lines = {}
+GameTooltip.GetItem = function() return "Manual: Netherweave Bandage", "|Hitem:21992|h[Manual: Netherweave Bandage]|h" end
+GameTooltip._cfmItem = nil
+GameTooltip.__scripts.OnTooltipSetItem(GameTooltip)
+tip = table.concat(GameTooltip.__lines, "\n")
+CHECK(tip:find("learn this at 330 skill (you are 200)", 1, true), "G7 a manual out of reach, against First Aid's 200 not Enchanting's 146", tip)
+GameTooltip.GetItem = nil
 
 -- Restore defaults leaves the character's memory alone
 CommanderFormularyChar.known[13501] = true

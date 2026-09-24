@@ -605,7 +605,51 @@ local function ScanAllBankContainers(rows)
     return rows
 end
 
+-- Is the bank ANSWERABLE right now, as distinct from empty? A container the
+-- client has already torn down reports zero slots, and zero slots is a state no
+-- real bank is ever in -- the 24-slot bank proper exists before a single bag is
+-- bought. So "no slots anywhere" means the read failed, never that there is
+-- nothing there.
+local function BankIsReadable()
+    if (C_Container.GetContainerNumSlots(BANK_CONTAINER or -1) or 0) > 0 then
+        return true
+    end
+    local first, last = BankContainers()
+    for bag = first, last do
+        if (C_Container.GetContainerNumSlots(bag) or 0) > 0 then return true end
+    end
+    return false
+end
+
+-- Two guards, and the cache is only worth having because of them. Both protect
+-- the same thing: an empty READ must never become an empty CACHE, because the
+-- write also stamps `at`, so a clobbered cache does not read as broken -- it
+-- reads as freshly confirmed. Every banked piece in every set then reports
+-- MISSING with a timestamp two minutes old vouching for it. That is D9 exactly
+-- inverted: the dead end this module exists to remove, reintroduced by our own
+-- writer, and silent because a wiped cache and a genuinely gear-free bank are
+-- byte-identical afterwards.
+--
+-- 1. Only ever scan while the bank is genuinely open. BANKFRAME_CLOSED is not
+--    proof that it ever was: Escape routes through CloseAllWindows, which calls
+--    CloseBankFrame unconditionally, so the event arrives on a character who
+--    has not been near a banker all session. Commander_Vault's ScanBank and
+--    Commander_Quartermaster's dirtyBank flag are the same guard; this module
+--    was the only one of the three writing unguarded.
+--
+-- 2. Even on a REAL close, trust an empty result only if the containers were
+--    answerable. Vault's ASSUMPTIONS 16 -- that bank containers stay readable
+--    for the length of the BANKFRAME_CLOSED dispatch -- is an assumption, not a
+--    proof, and it is precisely the kind a patch changes without telling
+--    anyone. The readability check makes being wrong about it cost nothing.
+--
+-- The narrowness is deliberate: a readable bank holding no gear DOES empty the
+-- cache. Keeping a row the player has withdrawn would leave a stale promise in
+-- a store the UI presents as fact, and "I already took that out" is a worse
+-- answer than "your bank has nothing for this slot".
 local function CacheBank()
+    if not bankOpen then return end
+    if not BankIsReadable() then return end
     local store = CharStore()
     store.bank = store.bank or { items = {}, at = 0 }
     store.bank.items = ScanAllBankContainers({})
@@ -2476,6 +2520,26 @@ function CommanderArmory_ListSets()
     end
 end
 
+-- Every item this character's saved sets ask for, as itemID -> the name of a
+-- set that wants it. For other modules rather than for chat: Commander_Vault's
+-- report uses it to stop itself telling you to vendor a piece of a set you
+-- authored on purpose — a bank full of "outclassed" gear is, more often than
+-- not, a PvP set. Read-only, and an empty table when nothing is saved.
+function CommanderArmory_SetItemIDs()
+    local store = CharStore()
+    local wanted = {}
+    for _, set in ipairs(store.sets or {}) do
+        for _, entry in pairs(set.entries or {}) do
+            -- "ITEM" is the only state that names a physical object; EMPTY
+            -- means "wear nothing there" and IGNORED means "do not touch it"
+            if type(entry) == "table" and entry.state == "ITEM" and entry.itemID then
+                wanted[entry.itemID] = set.name or "a saved set"
+            end
+        end
+    end
+    return wanted
+end
+
 -- Unconditional: the DB file owns StaticPopupDialogs["COMMANDER_ARMORY_WIPE"]
 -- and this is what its OnAccept calls. A second confirmation here would be a
 -- double prompt, and registering our own key would race the DB's.
@@ -2600,6 +2664,11 @@ local function OnEvent(_, event, arg1, arg2)
         -- Refresh on the way out too: the player almost certainly moved
         -- something while it was open, and a cache one visit stale is worse
         -- than no cache because it still reads as authoritative.
+        --
+        -- Order is load-bearing and the scan comes FIRST, while bankOpen is
+        -- still true and the containers still answer. Flipping the flag first
+        -- would make CacheBank's own guard decline the final scan, and the
+        -- move the player just made would be the one thing the cache missed.
         CacheBank()
         bankOpen = false
         Invalidate()
@@ -2680,6 +2749,15 @@ local function OnEvent(_, event, arg1, arg2)
     -- CURSOR_CHANGED, PLAYER_REGEN_DISABLED. BAG_UPDATE matters even though the
     -- ticker drives the run: a bag re-sort moves items under a plan, and the
     -- next snapshot has to see it before any coordinate is reused.
+    --
+    -- It is also how the bank cache learns about the bank BAGS. Containers 5..11
+    -- announce their contents with BAG_UPDATE; PLAYERBANKSLOTS_CHANGED speaks
+    -- only for the 24-slot bank proper, so the branch above misses every item
+    -- stashed in a purchased bag. Cheap to re-scan: the guard in CacheBank makes
+    -- this a no-op everywhere except standing at an open bank.
+    if bankOpen and (event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED") then
+        CacheBank()
+    end
     Invalidate()
     if event == "PLAYER_EQUIPMENT_CHANGED" or event == "BAG_UPDATE_DELAYED" then
         Notify()

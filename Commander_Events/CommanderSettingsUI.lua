@@ -6,12 +6,30 @@
 -- event fires (or the panel is shown), dependent enable/disable states, a
 -- standard "Restore Defaults" footer, and standardized slash commands.
 --
+-- Every page also SCROLLS, from here rather than from each module. A canvas
+-- subcategory is handed a fixed viewport and simply clips whatever runs past
+-- it — no scrollbar, no error, just options that stop existing, and since
+-- Finalize adds the footer last the first casualty of an overlong page is
+-- Restore Defaults. Modules used to each grow their own copy of the scroll
+-- frame to escape that, which meant the next page to grow one option too
+-- many quietly lost its tail; NewPanel builds it for all of them now. The
+-- header stays on the canvas above the scroll, so title, version and
+-- description hold still while the options move under them.
+--
+-- One consequence for module code: anything you hang on the page yourself
+-- belongs on the ROW it relates to, not on the panel frame — the panel is
+-- the fixed viewport, and a widget parented there holds still while the
+-- control it belongs to scrolls away underneath it.
+--
 -- Panels register themselves in the Commander module registry
 -- (Commander.RegisterModule / Commander.GetModules) so suite-level UIs such
 -- as Commander_Suite can enumerate every installed module.
 
 Commander = Commander or {}
 Commander.UI = Commander.UI or {}
+-- Which foldouts are open, per page. Declared here so it exists before any
+-- module builds a page; the client's saved copy replaces it at ADDON_LOADED.
+CommanderUIDB = CommanderUIDB or {}
 
 local UI = Commander.UI
 
@@ -54,6 +72,10 @@ end
 local LEFT_MARGIN = 16
 local RIGHT_MARGIN = 16
 local ROW_SPACING = 6
+-- Room under the last row so the footer never sits flush against the bottom
+local SCROLL_BOTTOM_PAD = 24
+-- The scrollbar lives in this strip on the right of the canvas
+local SCROLLBAR_GUTTER = 28
 local SLIDER_WIDTH = 280
 local DROPDOWN_WIDTH = 180
 local DISABLED_ALPHA = 0.4
@@ -140,12 +162,28 @@ local PanelMethods = {}
 
 -- Create a full-width row container of the given height, flowing below the
 -- previously added row.
+--
+-- Rows live in the page's scroll child, not on the canvas: the Settings
+-- window hands a canvas page a fixed height and simply CLIPS whatever runs
+-- past it, so a page that grew one option too many lost its footer — and
+-- with it Restore Defaults — with no scrollbar and no warning. The child is
+-- the full width of the viewport, so a row still spans the page.
 function PanelMethods.AddRow(panel, height, spacing)
-    local row = CreateFrame("Frame", nil, panel)
+    local host = panel._content or panel
+    local row = CreateFrame("Frame", nil, host)
     row:SetHeight(height)
     row:SetPoint("TOPLEFT", panel._anchor, "BOTTOMLEFT", 0, -(spacing or ROW_SPACING))
-    row:SetPoint("RIGHT", panel, "RIGHT", -RIGHT_MARGIN, 0)
+    -- The scroll child already sits inside the page margins; the bare canvas
+    -- (a panel built before its scroll frame exists) still needs them
+    row:SetPoint("RIGHT", host, "RIGHT", panel._content and 0 or -RIGHT_MARGIN, 0)
     panel._anchor = row
+    -- Every row is remembered in order, with the foldout it was added under,
+    -- so a page that uses foldouts can re-flow itself (Relayout). A page that
+    -- never calls AddFoldout never re-flows, and lays out exactly as before.
+    panel._rows = panel._rows or {}
+    local entry = { row = row, spacing = spacing or ROW_SPACING, fold = panel._fold }
+    panel._rows[#panel._rows + 1] = entry
+    row._panelEntry = entry
     -- Running total of what has been flowed. A panel that scrolls its rows
     -- needs it to size the scroll child; GrowRow keeps it honest when a row
     -- turns out taller than it could be declared. Tracked here so GrowRow's
@@ -162,12 +200,44 @@ function PanelMethods.GrowRow(panel, row, height)
     local cur = row:GetHeight() or 0
     if not height or height <= cur then return end
     row:SetHeight(height)
+    -- A folding page recounts its whole height on every Relayout (a row in a
+    -- closed foldout takes no room at all), so a running total would only
+    -- double-count
+    if panel._hasFolds then
+        -- Grown outside a refresh (a live readout on a ticker): re-flow now,
+        -- or everything under it overlaps until the next one
+        if not panel._loading then panel:Relayout() end
+        return
+    end
     if panel._contentHeight then
         panel._contentHeight = panel._contentHeight + (height - cur)
     end
 end
 
-function PanelMethods.AddSection(panel, text, subtext)
+-- Size the scroll child to what has actually been flowed into it. Called
+-- from Finalize and again on every Refresh, because GrowRow only learns a
+-- wrapped section note's real height once the page has a resolved width —
+-- latching the build-time number would leave the last rows unreachable.
+function PanelMethods.ResizeScroll(panel)
+    if not panel._content then return end
+    panel._content:SetHeight((panel._contentHeight or 0) + SCROLL_BOTTOM_PAD)
+    -- Width normally arrives through the scroll frame's OnSizeChanged, but a
+    -- page whose size settled before the child existed never fires one, and a
+    -- zero-width child draws the whole page as a column of invisible frames.
+    -- Re-asserting it here is idempotent and costs a single call.
+    local width = panel._scroll and panel._scroll:GetWidth()
+    if width and width > 1 then panel._content:SetWidth(width) end
+end
+
+-- Every section is a FOLDOUT unless the page opted out (NewPanel's
+-- foldSections = false) or this one asked to stay a plain heading
+-- (opts.plain). A page with only a few sections opens them all by default;
+-- a longer one opens its first and remembers the rest as they are left.
+function PanelMethods.AddSection(panel, text, subtext, opts)
+    if not (opts and opts.plain) and panel._autoFold and panel.AddRow == PanelMethods.AddRow then
+        local fold = panel:AddFoldout(text, subtext, { key = text, auto = true })
+        return fold.header
+    end
     local row = panel:AddRow(subtext and 40 or 24, 14)
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     label:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -4)
@@ -184,19 +254,31 @@ function PanelMethods.AddSection(panel, text, subtext)
         note:SetJustifyH("LEFT")
         note:SetTextColor(0.75, 0.75, 0.75)
         note:SetText(subtext)
-        -- Two lines is all the 40 above pays for. A longer note used to draw
-        -- straight over whatever control came next, which is not a subtle
-        -- failure — it is a checkbox sitting on top of a paragraph. The
-        -- wrapped height is only knowable once the panel has a real width, so
-        -- it is measured on refresh (when the page is shown) rather than here.
+        -- Two lines is all the 40 above pays for. A longer note draws straight
+        -- over whatever control comes next, which is not a subtle failure — it
+        -- is a checkbox sitting on top of a paragraph. The wrapped height is
+        -- only knowable once the panel has a real width, so it is measured on
+        -- refresh rather than here.
+        --
+        -- Measured on EVERY refresh, and deliberately not latched after the
+        -- first. Panel:Refresh() is called once at BUILD time, before this
+        -- page has ever been shown and therefore before its rows have a
+        -- resolved width — and a fontstring with no width to wrap into
+        -- reports its height as a single line. Latching that first answer
+        -- pinned every long note to two lines' worth of row for the life of
+        -- the session, which is exactly the overlap the row growth exists to
+        -- prevent. Re-measuring is cheap (refreshers run on show and on a
+        -- settings change, not per frame) and GrowRow only ever grows, so the
+        -- reading taken with a real width is the one that wins and repeating
+        -- it is idempotent.
         panel:AddRefresher(function()
-            if row._sized then return end
-            -- Guarded: a fontstring that cannot measure itself yet (no
-            -- resolved width) must leave the row alone rather than collapse it
             if not note.GetStringHeight then return end
+            -- A row with no resolved width yet cannot wrap, so its answer
+            -- would be the single-line one. Wait for a real page.
+            local w = row.GetWidth and row:GetWidth() or 0
+            if w <= 1 then return end
             local h = note:GetStringHeight()
             if not h or h <= 0 then return end
-            row._sized = true
             panel:GrowRow(row, 22 + math.ceil(h) + 6)
         end)
     end
@@ -207,7 +289,23 @@ function PanelMethods.AddSpacer(panel, height)
     return panel:AddRow(height or 8, 0)
 end
 
+-- What a search box matches a row against: every control's label and
+-- tooltip, lower-cased. Public as TagRow for rows a module builds itself.
+local function Tag(row, ...)
+    local parts = { row._keywords or "" }
+    for i = 1, select("#", ...) do
+        local text = select(i, ...)
+        if type(text) == "string" then parts[#parts + 1] = text:lower() end
+    end
+    row._keywords = table.concat(parts, " ")
+end
+
+function PanelMethods.TagRow(panel, row, ...)
+    Tag(row, ...)
+end
+
 local function BuildCheckbox(panel, row, opts, xOffset)
+    Tag(row, opts.label, opts.tooltip)
     local check = CreateFrame("CheckButton", nil, row, "InterfaceOptionsCheckButtonTemplate")
     check:SetPoint("LEFT", row, "LEFT", xOffset or 0, 0)
     check.Text:SetText(opts.label)
@@ -252,6 +350,7 @@ end
 
 -- opts: label, tooltip, min, max, step, get, set, format, isEnabled
 local function BuildSlider(panel, row, opts, xOffset, width)
+    Tag(row, opts.label, opts.tooltip)
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     label:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset + 2, 0)
     label:SetText(opts.label)
@@ -350,6 +449,7 @@ end
 -- opts: label, tooltip, options ({text=, value=}...), get, set, width,
 --       isEnabled, onSelect
 local function BuildDropdown(panel, row, opts, xOffset, defaultWidth)
+    Tag(row, opts.label, opts.tooltip)
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     label:SetPoint("TOPLEFT", row, "TOPLEFT", xOffset + 2, 0)
     label:SetText(opts.label)
@@ -442,6 +542,7 @@ function PanelMethods.AddButtonRow(panel, buttons)
             button:SetPoint("LEFT", row, "LEFT", 0, 0)
         end
         button:SetText(spec.label)
+        Tag(row, spec.label, spec.tooltip)
         button:SetScript("OnClick", function()
             spec.onClick()
         end)
@@ -455,6 +556,240 @@ function PanelMethods.AddButtonRow(panel, buttons)
         created[#created + 1] = button
     end
     return created
+end
+
+-- ---------------------------------------------------------------------------
+-- Foldouts and search. Opt-in: a long page groups its options under headers
+-- that open and close, and a search box above them filters every option on
+-- the page by its label and tooltip. Open/closed is remembered per page in
+-- CommanderUIDB, so a page reopens the way it was left.
+--
+-- Rows added after AddFoldout belong to it until the next AddFoldout,
+-- EndFoldout, or Finalize. Rows added before the first one (an enable box, a
+-- preview) are always on the page. A foldout's `isShown` hides it header and
+-- all -- the radial plate's options on a page set to bar plates, say -- and is
+-- re-asked on every refresh, so it follows the setting it depends on.
+-- ---------------------------------------------------------------------------
+local FOLD_OPEN = "Interface\\Buttons\\UI-MinusButton-Up"
+local FOLD_SHUT = "Interface\\Buttons\\UI-PlusButton-Up"
+local FOLD_HEADER_H = 22
+
+local function FoldStore()
+    CommanderUIDB = CommanderUIDB or {}   -- declared at load; the saved copy replaces it
+    CommanderUIDB.Folds = CommanderUIDB.Folds or {}
+    return CommanderUIDB.Folds
+end
+
+local function FoldShown(fold)
+    return not fold.isShown or fold.isShown() and true or false
+end
+
+-- opts: key (what the open/closed state is remembered by; defaults to the
+--       title), expanded (the state before anyone touched it; default shut),
+--       isShown (predicate), summary (function -> a few words drawn at the
+--       right of the header, visible while it is shut)
+function PanelMethods.AddFoldout(panel, title, subtext, opts)
+    opts = opts or {}
+    panel._fold = nil
+    panel._hasFolds = true
+    local row = panel:AddRow(FOLD_HEADER_H, 10)
+    local fold = {
+        title = title, header = row, isShown = opts.isShown, summary = opts.summary,
+        key = tostring(panel._key or "?") .. ":" .. tostring(opts.key or title),
+    }
+    local saved = FoldStore()[fold.key]
+    if saved == nil then fold.expanded = opts.expanded == true else fold.expanded = saved end
+    -- An automatic foldout nobody has touched gets its default at Finalize,
+    -- once the page knows how many foldouts it has
+    fold.auto = opts.auto == true
+    fold.defaulted = saved == nil
+    row._panelEntry.header = fold
+    Tag(row, title, subtext)
+    panel._folds = panel._folds or {}
+    panel._folds[#panel._folds + 1] = fold
+
+    local button = CreateFrame("Button", nil, row)
+    button:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    button:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    button:SetHeight(FOLD_HEADER_H)
+    local bg = button:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(button)
+    bg:SetColorTexture(1, 1, 1, 0.06)
+    local hover = button:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints(button)
+    hover:SetColorTexture(1, 0.82, 0, 0.10)
+    local icon = button:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(14, 14)
+    icon:SetPoint("LEFT", button, "LEFT", 4, 0)
+    local label = button:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    label:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    label:SetText(title)
+    local summary = button:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    summary:SetPoint("RIGHT", button, "RIGHT", -8, 0)
+    fold.icon, fold.summaryText, fold.button = icon, summary, button
+
+    if subtext then
+        local note = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        note:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 4, -6)
+        note:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        note:SetJustifyH("LEFT")
+        note:SetTextColor(0.75, 0.75, 0.75)
+        note:SetText(subtext)
+        fold.note = note
+    end
+
+    button:SetScript("OnClick", function()
+        PlaySound(fold.expanded and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        panel:SetFoldout(fold, not fold.expanded)
+    end)
+
+    -- The note's wrapped height is only knowable once the page has a width
+    -- (the same reason AddSection measures on refresh), and the summary
+    -- follows the settings it describes
+    panel:AddRefresher(function()
+        if fold.note and fold.note.GetStringHeight then
+            local w = row.GetWidth and row:GetWidth() or 0
+            if w > 1 then
+                local h = fold.note:GetStringHeight()
+                if h and h > 0 then fold.noteHeight = math.ceil(h) end
+            end
+        end
+        if fold.summary then
+            local ok, text = pcall(fold.summary)
+            summary:SetText(ok and text or "")
+        end
+    end)
+
+    panel._fold = fold
+    return fold
+end
+
+function PanelMethods.EndFoldout(panel)
+    panel._fold = nil
+end
+
+function PanelMethods.SetFoldout(panel, fold, expanded)
+    fold.expanded = expanded and true or false
+    FoldStore()[fold.key] = fold.expanded
+    panel:Relayout()
+end
+
+function PanelMethods.SetAllFoldouts(panel, expanded)
+    for _, fold in ipairs(panel._folds or {}) do
+        fold.expanded = expanded and true or false
+        FoldStore()[fold.key] = fold.expanded
+    end
+    panel:Relayout()
+end
+
+-- Re-flow the page: every row that should be seen, one under the next,
+-- and the scroll child resized to exactly what is left
+function PanelMethods.Relayout(panel)
+    if not panel._rows or not panel._anchorSeed then return end
+    local host = panel._content or panel
+    local rightInset = panel._content and 0 or -RIGHT_MARGIN
+    local search = panel._search
+
+    -- Under a search, a foldout is open if anything in it matched, and all
+    -- of it is shown if its own title or note did
+    local hit = {}
+    if search then
+        for _, e in ipairs(panel._rows) do
+            local keywords = e.row._keywords
+            if keywords and keywords:find(search, 1, true) then
+                if e.header then hit[e.header] = "all"
+                elseif e.fold and not hit[e.fold] then hit[e.fold] = "some" end
+            end
+        end
+    end
+
+    local prev, total = panel._anchorSeed, 0
+    for _, e in ipairs(panel._rows) do
+        local row, visible = e.row, true
+        if e.header then
+            local fold = e.header
+            visible = FoldShown(fold) and (not search or hit[fold] ~= nil)
+            local open = search and true or fold.expanded
+            fold.icon:SetTexture(open and FOLD_OPEN or FOLD_SHUT)
+            if fold.summaryText then fold.summaryText:SetShown(not open) end
+            local h = FOLD_HEADER_H
+            if fold.note then
+                if open and not search then
+                    fold.note:Show()
+                    h = h + 10 + (fold.noteHeight or 24)
+                else
+                    fold.note:Hide()
+                end
+            end
+            row:SetHeight(h)
+        elseif e.fold then
+            local fold = e.fold
+            if not FoldShown(fold) then
+                visible = false
+            elseif search then
+                local keywords = row._keywords
+                visible = hit[fold] == "all" or (keywords ~= nil and keywords:find(search, 1, true) ~= nil)
+            else
+                visible = fold.expanded
+            end
+        end
+        if visible then
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -e.spacing)
+            row:SetPoint("RIGHT", host, "RIGHT", rightInset, 0)
+            row:Show()
+            total = total + (row:GetHeight() or 0) + e.spacing
+            prev = row
+        else
+            row:Hide()
+        end
+    end
+    panel._contentHeight = total
+    panel:ResizeScroll()
+end
+
+-- A search box, with Expand All / Collapse All beside it. Typing filters
+-- every foldout down to the options whose label or tooltip mention it.
+function PanelMethods.AddSearchBox(panel, opts)
+    opts = opts or {}
+    local row = panel:AddRow(26, 10)
+    local box = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+    box:SetSize(opts.width or 260, 20)
+    box:SetPoint("LEFT", row, "LEFT", 8, 0)
+    box:SetAutoFocus(false)
+    box:SetMaxLetters(60)
+    local hint = row:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    hint:SetPoint("LEFT", box, "LEFT", 2, 0)
+    hint:SetText(opts.placeholder or "Search options...")
+    AttachTooltip(box, "Search", "Type a word to show only the options that mention it -- in their name or their description -- with their sections opened. Escape clears it.")
+
+    local function Apply(self)
+        local text = (self:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        hint:SetShown(text == "" and not self:HasFocus())
+        local search = text ~= "" and text or nil
+        if search ~= panel._search then
+            panel._search = search
+            panel:Relayout()
+        end
+    end
+    box:SetScript("OnTextChanged", Apply)
+    box:SetScript("OnEditFocusGained", function() hint:Hide() end)
+    box:SetScript("OnEditFocusLost", Apply)
+    box:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus(); Apply(self) end)
+    box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    panel._searchBox = box
+
+    local collapse = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    collapse:SetSize(100, 22)
+    collapse:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    collapse:SetText("Collapse All")
+    collapse:SetScript("OnClick", function() panel:SetAllFoldouts(false) end)
+    local expand = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    expand:SetSize(100, 22)
+    expand:SetPoint("RIGHT", collapse, "LEFT", -6, 0)
+    expand:SetText("Expand All")
+    expand:SetScript("OnClick", function() panel:SetAllFoldouts(true) end)
+    return box
 end
 
 -- Public extension point: register a function run on every panel Refresh
@@ -506,6 +841,26 @@ end
 -- triggers and slash commands, and registers the module in the registry.
 function PanelMethods.Finalize(panel, opts)
     opts = opts or {}
+    -- The footer never belongs to the last foldout
+    panel._fold = nil
+
+    if panel._hasFolds then
+        local folds = panel._folds or {}
+        for i, fold in ipairs(folds) do
+            if fold.auto and fold.defaulted then fold.expanded = (#folds <= 3) or i == 1 end
+        end
+        -- A page long enough to fold is long enough to search: the box goes
+        -- in above the first foldout
+        if #folds >= 4 and not panel._searchBox then
+            panel:AddSearchBox()
+            local entry = table.remove(panel._rows)
+            local at = #panel._rows + 1
+            for i, e in ipairs(panel._rows) do
+                if e.header then at = i break end
+            end
+            table.insert(panel._rows, at, entry)
+        end
+    end
 
     local footer = panel:AddRow(34, 16)
     local line = footer:CreateTexture(nil, "ARTWORK")
@@ -531,6 +886,15 @@ function PanelMethods.Finalize(panel, opts)
         hint:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 0, 4)
         hint:SetText("Slash command: " .. panel._slash[1])
     end
+
+    -- Registered last, so it runs after every GrowRow refresher above it and
+    -- sizes the scroll child against heights that have already settled
+    if panel._hasFolds then
+        panel:AddRefresher(function() panel:Relayout() end)
+        panel:Relayout()
+    end
+    panel:AddRefresher(function() panel:ResizeScroll() end)
+    panel:ResizeScroll()
 
     local category = Settings.RegisterCanvasLayoutSubcategory(Commander.MainCategory, panel, panel._title)
     panel._categoryID = category:GetID()
@@ -639,10 +1003,27 @@ end
 -- Panel constructor
 -- ---------------------------------------------------------------------------
 
+-- UIPanelScrollFrameTemplate resolves its scrollbar through _G[name .. "ScrollBar"],
+-- so the scroll frame needs a real global name — and the panel it hangs on
+-- has none. Panel keys are already unique (they key the slash commands), so
+-- they make the name; anything not name-safe is dropped.
+local usedScrollNames = {}
+local function ScrollFrameName(key)
+    local base = "CommanderUIScroll" .. tostring(key or "Panel"):gsub("%W", "")
+    local name, n = base, 1
+    while usedScrollNames[name] do
+        n = n + 1
+        name = base .. n
+    end
+    usedScrollNames[name] = true
+    return name
+end
+
 -- opts: key (unique short id), title (subcategory name), addonName,
 --       description, event (Commander update event to listen for / notify),
 --       slash (array of slash commands), slashHandlers (map subcommand->fn;
---       a "" key overrides what the bare command does)
+--       a "" key overrides what the bare command does), foldSections (false
+--       keeps AddSection a plain heading instead of a foldout)
 function UI.NewPanel(opts)
     local panel = CreateFrame("Frame")
     panel.name = opts.title
@@ -656,6 +1037,7 @@ function UI.NewPanel(opts)
     panel._refreshers = {}
     panel._contentHeight = 0
     panel._loading = false
+    panel._autoFold = opts.foldSections ~= false
 
     for name, fn in pairs(PanelMethods) do
         panel[name] = fn
@@ -668,12 +1050,46 @@ function UI.NewPanel(opts)
     })
     panel._version = version
 
+    -- Every page scrolls, from here rather than from each module.
+    --
+    -- A canvas subcategory is handed a fixed viewport and clips whatever runs
+    -- past it: no scrollbar, no error, just options that stop existing — and
+    -- since Finalize adds the footer LAST, the first thing an overlong page
+    -- loses is Restore Defaults. Sixteen modules had each grown their own
+    -- copy of this scroll frame to get out from under that, which meant the
+    -- seventeenth page to grow one option too many silently lost its tail.
+    --
+    -- The header stays on the canvas above the scroll frame, so the title,
+    -- version and description hold still while the options move under them.
+    local scroll = CreateFrame("ScrollFrame", ScrollFrameName(opts.key), panel,
+        "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -SCROLLBAR_GUTTER, 12)
+    -- The template's own scrollbar handles dragging; the wheel has to be
+    -- asked for, and it is the only way most people will ever scroll this
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", function(self, delta)
+        local target = self:GetVerticalScroll() - delta * 28
+        local limit = self:GetVerticalScrollRange()
+        if target < 0 then target = 0 elseif target > limit then target = limit end
+        self:SetVerticalScroll(target)
+    end)
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(1, 1)
+    scroll:SetScrollChild(content)
+    -- A scroll child does not inherit its parent's width; without this every
+    -- row is one pixel wide and every label wraps to nothing
+    scroll:SetScript("OnSizeChanged", function(_, width) content:SetWidth(width) end)
+    panel._scroll, panel._content = scroll, content
+
     -- Anchor target for the first row
-    local anchorSeed = CreateFrame("Frame", nil, panel)
+    local anchorSeed = CreateFrame("Frame", nil, content)
     anchorSeed:SetHeight(1)
-    anchorSeed:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
-    anchorSeed:SetPoint("RIGHT", panel, "RIGHT", -RIGHT_MARGIN, 0)
+    anchorSeed:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    anchorSeed:SetPoint("RIGHT", content, "RIGHT", 0, 0)
     panel._anchor = anchorSeed
+    panel._anchorSeed = anchorSeed
 
     return panel
 end
@@ -744,6 +1160,84 @@ local HUD_STYLES = {
 -- Standalone style backdrop for frames that manage their own window art
 -- (Commander_Inventory's grid): applies the CLASSIC/DARK backdrops from
 -- the shared style table, or hides the backdrop for NONE/WINDOW.
+-- ---------------------------------------------------------------------------
+-- Window dressing
+--
+-- Every region BasicFrameTemplate / BasicFrameTemplateWithInset draws, by
+-- parentKey, taken from THIS client's UIPanelTemplates.xml
+-- (BaseBasicFrameTemplate + BasicFrameTemplate + BasicFrameTemplateWithInset).
+--
+-- This list lives here because three separate windows guessed at it and got it
+-- wrong the same way. The guess was { "NineSlice", "Bg", "TitleBg", "Inset" },
+-- and on this client THREE of those four do not exist: there is no NineSlice
+-- and no Inset frame. What there is instead is nine border pieces, a tiled
+-- title bar, a streak layer and a marble inset -- none of which were being
+-- hidden. The visible result is a window wearing the template's steel frame
+-- with its own art stranded behind it (the art frame sits a level below, which
+-- is what lets the template's Bg cover it), a doubled title bar, and text
+-- coloured for a background nobody can see.
+--
+-- CloseButton is deliberately absent: every window here wants one.
+UI.TEMPLATE_REGIONS = {
+    "TopLeftCorner", "TopRightCorner", "TopBorder", "TitleText",
+    "BotLeftCorner", "BotRightCorner", "BottomBorder",
+    "LeftBorder", "RightBorder",
+    "Bg", "TitleBg", "TopTileStreaks",
+    "InsetBg",
+    "InsetBorderTopLeft", "InsetBorderTopRight",
+    "InsetBorderBottomLeft", "InsetBorderBottomRight",
+    "InsetBorderTop", "InsetBorderBottom",
+    "InsetBorderLeft", "InsetBorderRight",
+    -- Names this client does not use but a future one might; harmless here
+    "NineSlice", "Inset", "PortraitContainer", "portrait",
+}
+
+-- Show or hide a templated window's own dressing as one piece, so a module
+-- that draws its own frame art can get the template out of the way.
+--
+-- Every region is guarded: a template that stops shipping one must degrade to
+-- a plainer window, never to an error.
+function UI.SetTemplateDressing(frame, shown)
+    if not frame then return end
+    for _, key in ipairs(UI.TEMPLATE_REGIONS) do
+        local region = frame[key]
+        -- type-checked, not just truthy: several of these names are only
+        -- present on some clients, and a frame whose metatable answers an
+        -- unknown key with something other than a widget must cost us a
+        -- hidden region, never an error inside a repaint.
+        if type(region) == "table" and region.SetShown then
+            region:SetShown(shown)
+        end
+    end
+end
+
+-- UIPanelScrollFrameTemplate hangs a stepper bar off the right of the scroll
+-- frame: a slider with an up and a down button, both of which are drawn as
+-- floating squares against a dark pane because the bar's own track art does
+-- not read there. The wheel and the drag do everything those buttons do, so
+-- they come off and the bar is pulled in tight against the content.
+--
+-- The template resolves its children through _G[name .. suffix], which is why
+-- the scroll frame has to have been created with a real global name.
+function UI.SlimScrollBar(scrollFrameName, insetTop, insetBottom)
+    local bar = _G[scrollFrameName .. "ScrollBar"]
+    if not bar then return nil end
+    for _, suffix in ipairs({ "ScrollUpButton", "ScrollDownButton" }) do
+        local button = _G[scrollFrameName .. "ScrollBar" .. suffix]
+        if button then
+            button:Hide()
+            if button.SetWidth then button:SetWidth(1) end
+        end
+    end
+    local scroll = _G[scrollFrameName]
+    if scroll and bar.ClearAllPoints then
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 2, -(insetTop or 0))
+        bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 2, (insetBottom or 0))
+    end
+    return bar
+end
+
 function UI.ApplyStyleBackdrop(frame, styleKey)
     local style = HUD_STYLES[styleKey]
     if style and style.window then

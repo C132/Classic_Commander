@@ -209,3 +209,32 @@ the route is re-priced when Auctionator's search ends (its event bus, in a pcall
 completion re-prices too). The crafted goods that are sold — wand, oils — now have names in
 `D.ITEMS` so the search can ask for them before the client has ever seen one. `/ctc refresh` does
 the same.
+
+## D15 — First Aid is a second guide on the same engine, and its ranks are the banner's
+
+First Aid 1–375 (2026-09-19) is `D.GUIDES.FIRSTAID`: the cloth ladder with its two vendor trips,
+after Wowhead's TBC Classic First Aid guide (Nodge), with thresholds, reagents and placements from
+the same client tables and world DB as Enchanting (through Commander_Formulary's generator). The
+engine did not change; D1 said this is the shape a second profession needs, and it was. The guide on
+screen is the character's: the title of the guide window is the switch (click to cycle, hover for
+each guide with the character's rank in it), `/ctc firstaid` and `/ctc enchanting` do the same, and
+whichever profession window opens brings its guide on screen. A new character starts on the first
+guide whose profession they have.
+
+Two things First Aid does differently. It is a **trade-skill** profession (`frame = "TRADESKILL"`):
+`TradeSkillFrame`, `TRADE_SKILL_SHOW / CLOSE`, `GetNumTradeSkills / GetTradeSkillInfo` and
+`GetTradeSkillLine`, so the window code keeps one channel table per frame kind with the same four
+operations. And **three of its ranks are not trainer-taught**: Expert is "Expert First Aid - Under
+Wraps" from Deneb Walker (Stromgarde) or Balai Lok'Wein (Brackenwall), Artisan is the Triage quest
+from the doctor of your faction, and Master is "Master First Aid - Doctor in the House" from Burko or
+Aresella, which needs 300 — not 275, so it is offered at the cap. Per D4 these stay a banner rather
+than steps: a rank row carries `book` or `quest`, and the banner names the book and its price with
+the vendor and a waypoint (and says when you already hold it), or the quest with the doctor and a
+waypoint. The manuals for Heavy Silk (180) and Mageweave (210) are buy steps on the 115–150 segment,
+on the same vendor as the Expert book, so the preview shows the whole trip at 125 and each becomes
+current at its own skill (D5).
+
+**The published counts are generous and stand as the floor.** Heavy Linen 40–80 is listed at 70
+against a model of 46; D3 makes the guide's figure the floor, so the shopping list never asks for
+less cloth than the published list (190 linen, 165 wool, 150 silk, 115 mageweave, 240 runecloth,
+90 netherweave) and the model is never more than twenty percent over it (harness B3c, C17).

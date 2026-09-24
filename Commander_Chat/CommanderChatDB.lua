@@ -213,41 +213,6 @@ local function CreateOptionsPanel()
             end,
         },
     })
-
-    -- Far taller than the Settings canvas, so flow the rows into a scroll
-    -- frame. NewPanel's header stays fixed above; AddRow is overridden on THIS
-    -- panel instance only, so the shared framework is untouched.
-    local scroll = CreateFrame("ScrollFrame", "CommanderChatScroll", panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local target = self:GetVerticalScroll() - delta * 28
-        local maxScroll = self:GetVerticalScrollRange()
-        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
-        self:SetVerticalScroll(target)
-    end)
-    local scrollChild = CreateFrame("Frame", nil, scroll)
-    scrollChild:SetSize(1, 1)
-    scroll:SetScrollChild(scrollChild)
-    scroll:SetScript("OnSizeChanged", function(_, w) scrollChild:SetWidth(w) end)
-
-    local seed = CreateFrame("Frame", nil, scrollChild)
-    seed:SetHeight(1)
-    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
-    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-    panel._anchor = seed
-    panel._contentHeight = 0
-    panel.AddRow = function(self, height, spacing)
-        local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetHeight(height)
-        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
-        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-        self._anchor = row
-        self._contentHeight = self._contentHeight + height + (spacing or 8)
-        return row
-    end
-
     panel:AddSection("Module", "The master switch. Turned off, this addon touches nothing — Blizzard's chat window, fonts, opacity, and channels all go back to how they were, and nothing here does anything until you turn it on again.")
     panel:AddCheckboxPair({
         label = "Enable Commander Chat",
@@ -513,7 +478,6 @@ local function CreateOptionsPanel()
         isEnabled = function() return On() and (CommanderChatDB.SoundPingWhisper or CommanderChatDB.SoundPingParty) end,
     })
     panel:Finalize({ onDefaults = Reset })
-    scrollChild:SetHeight(panel._contentHeight + 24)
 end
 
 local function OnEvent(self, event, arg1)

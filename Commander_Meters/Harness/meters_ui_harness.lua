@@ -455,7 +455,7 @@ do
     CHECK(d and #d.log > 0, "C: death has an event trail")
 end
 
--- Menus: mode menu lists all eight modes; pick HEALING
+-- Menus: mode menu lists all nine modes; pick HEALING
 do
     local modeBtn
     -- find via scripts: buttons whose OnClick opens a menu; drive the real one
@@ -465,13 +465,13 @@ do
         if f.__kind == "Button" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
-            if #menuCaptured == 8 and menuCaptured[1].text == "DAMAGE" then
+            if #menuCaptured == 9 and menuCaptured[1].text == "DAMAGE" then
                 modeBtn = f
                 break
             end
         end
     end
-    CHECK(modeBtn ~= nil, "C: mode menu opens with 8 modes")
+    CHECK(modeBtn ~= nil, "C: mode menu opens with 9 modes")
     if modeBtn then
         for _, info in ipairs(menuCaptured) do
             if info.text == "HEALING" then info.func() end
@@ -488,6 +488,14 @@ do
     local priest = f1 and f1.actors["Player-0-CMTEST03"]
     CHECK(warrior and warrior.ints == 1, "C: test fight recorded the interrupt")
     CHECK(priest and priest.dispels == 1, "C: test fight recorded the dispel")
+    -- APM: keypresses only — the warrior's wand shot and the pet's Cleave
+    -- are not counted, the warlock's ten bolts and the priest's two heals are
+    local warlock = f1 and f1.actors["Player-0-CMTEST02"]
+    CHECK(warrior and warrior.casts == 10, "C: test fight counted the warrior's casts (wand excluded)",
+        warrior and warrior.casts)
+    CHECK(warlock and warlock.casts == 10 and warlock.castSpells["Grimtongue: Cleave"] == nil,
+        "C: test fight counted the warlock's casts, not the pet's")
+    CHECK(priest and priest.casts == 2, "C: test fight counted the priest's heal casts")
 end
 
 -- Kill/wipe tagging via ENCOUNTER_END (fires while the fight is open)
@@ -611,6 +619,189 @@ do
     end
 end
 
+-- Per-pane segments: each caption is the WHOLE pane — a mode section and
+-- a segment section — so the right pane can be pinned to Overall while
+-- the left one runs live, without any hidden gesture.
+do
+    local splitBtn, cap1, cap2, segButton
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" then
+            if f.glyphName == "split" and f.__scripts.OnClick then splitBtn = f end
+            if f.paneIndex == 1 and f.text and not f.rank then cap1 = f end
+            if f.paneIndex == 2 and f.text and not f.rank then cap2 = f end
+        end
+    end
+    -- A caption reads "<MODE>  ·  <SEGMENT>", stripped of color escapes
+    local function CaptionHalves(cap)
+        local text = cap and cap.text.__text or ""
+        local head, tail = text:match("^(.-)%s+·%s+(.*)$")
+        if not tail then return text, "" end
+        return (head:gsub("|c%x%x%x%x%x%x%x%x", "")), (tail:gsub("|r$", ""))
+    end
+    local function Pick(cap, title, label)
+        -- Click a caption and invoke the entry named `label` from the
+        -- section headed by `title` — proving the sections exist and are
+        -- addressed separately, since OVERALL/CURRENT appear only under OVER
+        menuCaptured = {}
+        cap.__scripts.OnClick(cap)
+        local inSection, entry = false, nil
+        for _, info in ipairs(menuCaptured) do
+            if info.isTitle then
+                inSection = (info.text == title)
+            elseif inSection and info.text == label then
+                entry = info
+            end
+        end
+        if entry then entry.func() end
+        return entry, menuCaptured
+    end
+
+    if splitBtn and cap1 and cap2 then
+        splitBtn.__scripts.OnClick(splitBtn) -- open the split
+        CHECK(CommanderMetersDB.SplitOpen == true, "C: per-pane block opened the split")
+
+        -- The right caption's menu is two titled sections, one level deep
+        menuCaptured = {}
+        cap2.__scripts.OnClick(cap2)
+        local titles, modeSeen, segSeen, followSeen = {}, false, false, false
+        local section
+        for _, info in ipairs(menuCaptured) do
+            if info.isTitle then
+                titles[#titles + 1] = info.text
+                section = info.text
+            elseif section == "RIGHT PANE SHOWS" and info.text == "HEALING" then
+                modeSeen = true
+            elseif section == "OVER" then
+                if info.text == "OVERALL" then segSeen = true end
+                if info.text == "FOLLOW LEFT PANE" then followSeen = true end
+            end
+        end
+        CHECK(#titles == 2 and titles[1] == "RIGHT PANE SHOWS" and titles[2] == "OVER",
+            "C: pane caption menu has a mode section and a segment section",
+            table.concat(titles, "/"))
+        CHECK(modeSeen and segSeen and followSeen,
+            "C: right caption offers modes, segments, and FOLLOW LEFT PANE")
+
+        -- Unpinned is the default, and it is the checked entry
+        menuCaptured = {}
+        cap2.__scripts.OnClick(cap2)
+        local followEntry, overallEntry
+        local sec
+        for _, info in ipairs(menuCaptured) do
+            if info.isTitle then sec = info.text
+            elseif sec == "OVER" then
+                if info.text == "FOLLOW LEFT PANE" then followEntry = info end
+                if info.text == "OVERALL" then overallEntry = info end
+            end
+        end
+        CHECK(followEntry and followEntry.checked == true,
+            "C: the right pane follows the window by default")
+        CHECK(overallEntry and not overallEntry.checked,
+            "C: an unfollowed pane checks no segment of its own")
+
+        root.__scripts.OnUpdate(root, 0.6)
+        local _, s1 = CaptionHalves(cap1)
+        local _, s2 = CaptionHalves(cap2)
+        CHECK(s1 == s2 and s1 ~= "",
+            "C: unpinned, both captions name the same segment", s1 .. " | " .. s2)
+
+        -- Pin the right pane to OVERALL from its own caption — the thing
+        -- that was unreachable before
+        harnessFailedErrors = {}
+        Pick(cap2, "OVER", "OVERALL")
+        root.__scripts.OnUpdate(root, 0.6)
+        CHECK(#harnessFailedErrors == 0, "C: pinned repaint clean", harnessFailedErrors[1])
+        local m1, seg1 = CaptionHalves(cap1)
+        local m2, seg2 = CaptionHalves(cap2)
+        CHECK(seg2 == "OVERALL" and seg1 ~= "OVERALL",
+            "C: the right pane pins to its own segment", seg1 .. " | " .. seg2)
+        CHECK(CommanderMetersDB.SplitSegment == "overall",
+            "C: the pin persists", CommanderMetersDB.SplitSegment)
+        -- A pinned caption wears the accent on its segment half so the
+        -- divergence is never silent
+        -- ACCENT_ESC is the seeded FEL accent (0.5, 0.95, 0.15) as this
+        -- addon writes color openers — the same escape the LIVE dot uses
+        local ACCENT_ESC = "|cff80f226"
+        CHECK(cap2.text.__text:find(ACCENT_ESC, 1, true) ~= nil,
+            "C: a pinned caption wears the accent", cap2.text.__text)
+        CHECK(cap1.text.__text:find(ACCENT_ESC, 1, true) == nil,
+            "C: the following caption does not", cap1.text.__text)
+
+        -- Each pane still owns its own MODE at the same time — the two
+        -- are independent, not an either/or axis
+        Pick(cap2, "RIGHT PANE SHOWS", "HEALING")
+        Pick(cap1, "LEFT PANE SHOWS", "DMG TAKEN")
+        root.__scripts.OnUpdate(root, 0.6)
+        m1, seg1 = CaptionHalves(cap1)
+        m2, seg2 = CaptionHalves(cap2)
+        CHECK(m1 == "DMG TAKEN" and m2 == "HEALING" and seg1 ~= seg2,
+            "C: mode and segment differ per pane at once",
+            m1 .. "/" .. seg1 .. " | " .. m2 .. "/" .. seg2)
+        CHECK(CommanderMetersDB.ViewMode == "TAKEN" and CommanderMetersDB.SplitMode == "HEAL",
+            "C: each pane's mode writes its own key",
+            CommanderMetersDB.ViewMode .. "/" .. CommanderMetersDB.SplitMode)
+
+        -- The header's segment button moves the window but not the pin
+        local pinnedBefore = seg2
+        for _, f in ipairs(frames) do
+            if f.__kind == "Button" and f.text and f.__scripts.OnClick and not f.paneIndex
+                and not f.rank and f ~= splitBtn then
+                menuCaptured = {}
+                f.__scripts.OnClick(f)
+                if #menuCaptured >= 4 and menuCaptured[1].text == "OVERALL"
+                    and not menuCaptured[1].isTitle then
+                    segButton = f
+                end
+            end
+        end
+        if segButton then
+            -- Remember which segment the fixture was on: later blocks read
+            -- the detail, and an idle CURRENT has nothing in it
+            menuCaptured = {}
+            segButton.__scripts.OnClick(segButton)
+            local restore
+            for _, info in ipairs(menuCaptured) do
+                if info.checked then restore = info.text end
+            end
+            menuCaptured = {}
+            segButton.__scripts.OnClick(segButton)
+            for _, info in ipairs(menuCaptured) do
+                if info.text == "CURRENT" then info.func() end
+            end
+            root.__scripts.OnUpdate(root, 0.6)
+            local _, hs1 = CaptionHalves(cap1)
+            local _, hs2 = CaptionHalves(cap2)
+            CHECK(hs1:find("CURRENT", 1, true) ~= nil and hs2 == pinnedBefore,
+                "C: the header segment moves the window, never the pin",
+                hs1 .. " | " .. hs2)
+            if restore then
+                menuCaptured = {}
+                segButton.__scripts.OnClick(segButton)
+                for _, info in ipairs(menuCaptured) do
+                    if info.text == restore then info.func() end
+                end
+            end
+        end
+
+        -- FOLLOW LEFT PANE is the way back
+        Pick(cap2, "OVER", "FOLLOW LEFT PANE")
+        root.__scripts.OnUpdate(root, 0.6)
+        local _, f1 = CaptionHalves(cap1)
+        local _, f2 = CaptionHalves(cap2)
+        CHECK(f1 == f2, "C: FOLLOW LEFT PANE unpins the right pane", f1 .. " | " .. f2)
+        CHECK(CommanderMetersDB.SplitSegment == "follow",
+            "C: unfollowing persists too", CommanderMetersDB.SplitSegment)
+        CHECK(cap2.text.__text:find(ACCENT_ESC, 1, true) == nil,
+            "C: the accent leaves with the pin")
+
+        -- Leave the window as the earlier blocks left it
+        Pick(cap1, "LEFT PANE SHOWS", "DAMAGE")
+        splitBtn.__scripts.OnClick(splitBtn)
+        CHECK(CommanderMetersDB.SplitOpen == false,
+            "C: per-pane block leaves the split closed")
+    end
+end
+
 -- Pie breakdown: click an ability row in the open detail
 do
     -- reopen a detail on the top bar row
@@ -697,7 +888,7 @@ do
         if f.__kind == "Button" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
-            if #menuCaptured == 8 and menuCaptured[1].text == "DAMAGE" then
+            if #menuCaptured == 9 and menuCaptured[1].text == "DAMAGE" then
                 modeBtn = f
                 break
             end
@@ -904,6 +1095,79 @@ do
     end
 end
 
+-- APM mode: the headline is a per-minute rate, the graph's scale says so,
+-- the bar tooltip names the count CASTS, and the detail sub-line quotes APM
+do
+    local modeBtn
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.__scripts.OnClick then
+            menuCaptured = {}
+            f.__scripts.OnClick(f)
+            if #menuCaptured == 9 and menuCaptured[1].text == "DAMAGE" then
+                modeBtn = f
+                break
+            end
+        end
+    end
+    local picked = false
+    if modeBtn then
+        for _, info in ipairs(menuCaptured) do
+            if info.text == "APM" then info.func(); picked = true end
+        end
+    end
+    CHECK(picked, "C: mode menu offers APM")
+    if picked then
+        SlashCmdList.COMMANDERUI_METERS("test")
+        now = now + 6
+        RunTickers()
+        local graphBtn
+        for _, f in ipairs(frames) do
+            if f.__kind == "Button" and f.glyphName == "graph" then graphBtn = f break end
+        end
+        graphBtn.__scripts.OnClick(graphBtn)
+        root.__scripts.OnUpdate(root, 0.6)
+        CHECK(#harnessFailedErrors == 0, "C: APM repaint with graph clean", harnessFailedErrors[1])
+        local scaleFound, apmRow = false, nil
+        for _, fs in ipairs(allFontStrings) do
+            if fs.__text and tostring(fs.__text):match("^%d[%d%.km]* APM$") then scaleFound = true end
+        end
+        CHECK(scaleFound, "C: APM graph scale is quoted in APM")
+        -- The top bar: big column = rate, small column = cast count — checked
+        -- against the engine's own LAST segment (Follow Combat lands the view
+        -- there once the injected fight closes)
+        for _, f in ipairs(frames) do
+            if f.__kind == "Button" and f.guid == "Player-0-CMTEST02" and f.rate then apmRow = f break end
+        end
+        CHECK(apmRow ~= nil, "C: APM bar row for the warlock painted")
+        if apmRow then
+            local last = CommanderMetersEngine.GetFights()[1]
+            local casts = last.actors["Player-0-CMTEST02"].casts
+            CHECK(apmRow.rate.__text == tostring(casts), "C: APM row small column is the cast count",
+                apmRow.rate.__text .. " vs " .. casts)
+            local big = tonumber(apmRow.value.__text)
+            local want = casts * 60 / last.dur
+            CHECK(big and math.abs(big - want) <= 1, "C: APM row headline is casts per minute",
+                (apmRow.value.__text or "?") .. " vs " .. want)
+            apmRow.__scripts.OnEnter(apmRow)
+            apmRow.__scripts.OnLeave(apmRow)
+            apmRow.__scripts.OnClick(apmRow)
+            root.__scripts.OnUpdate(root, 0.6)
+            CHECK(#harnessFailedErrors == 0, "C: APM detail repaint clean", harnessFailedErrors[1])
+            local sub = _G.CommanderMetersDetailFrame.sub.__text or ""
+            CHECK(sub:find("APM%)") ~= nil, "C: APM detail sub-line quotes the rate", sub)
+            CHECK(sub:find("ACTIVE") ~= nil, "C: APM detail sub-line shows cast-active time", sub)
+        end
+        graphBtn.__scripts.OnClick(graphBtn)
+        -- Back to DAMAGE so the rest of the run sees the mode it expects
+        menuCaptured = {}
+        modeBtn.__scripts.OnClick(modeBtn)
+        for _, info in ipairs(menuCaptured) do
+            if info.text == "DAMAGE" then info.func() end
+        end
+        root.__scripts.OnUpdate(root, 0.6)
+    end
+end
+
 -- Fight-follow behavior: AutoSwitchCurrent flashes and switches (indirect:
 -- fresh fight then close, repaint stays clean and segment label updates)
 now = now + 10
@@ -988,7 +1252,7 @@ Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
 -- Session persistence: logout writes the snapshot only when opted in
 CommanderMetersDB.PersistData = true
 Fire("PLAYER_LOGOUT")
-CHECK(type(CommanderMetersSession) == "table" and CommanderMetersSession.v == 1,
+CHECK(type(CommanderMetersSession) == "table" and CommanderMetersSession.v == 2,
     "C: logout wrote the session snapshot")
 CHECK(CommanderMetersSession.overall ~= nil, "C: snapshot carries Overall")
 CommanderMetersDB.PersistData = false

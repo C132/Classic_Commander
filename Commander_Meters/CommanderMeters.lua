@@ -13,12 +13,20 @@
 --
 -- Split view: the window can split into two side-by-side panes WITHOUT
 -- changing its footprint — the total width holds, each pane takes half,
--- and the number columns condense to fit. Each pane has its own MODE
--- (damage left, healing right, say), named in its caption; the SEGMENT is
--- one selection shared by everything — bars, detail, graph — because two
--- views silently reading different fights is exactly the ambiguity this
--- addon exists to kill, and each caption repeats it so a pane always says
--- in full what it is showing.
+-- and the number columns condense to fit.
+--
+-- Each pane owns BOTH halves of what it shows, and its caption is the
+-- menu for both: a MODE section and a SEGMENT section, one click away.
+-- Damage beside healing on the same fight; or DAMAGE · CURRENT beside
+-- DAMAGE · OVERALL, the same metric read twice — "am I ramping or falling
+-- off?" — without a trip to the header. Both at once is allowed too,
+-- because the caption states the pane in full either way.
+--
+-- The right pane FOLLOWS the window's segment until you pin it to one of
+-- its own; pinned, its caption wears the accent so a divergence can never
+-- be silent (the ambiguity this addon exists to kill is two views
+-- reading different fights while LOOKING identical). "Follow" is the
+-- default and the way back.
 
 local E = CommanderMetersEngine
 local db
@@ -64,6 +72,7 @@ local THEME = {
     statHeal  = { 0.40, 0.85, 0.45 },  -- healing
     statDeath = { 0.85, 0.25, 0.20 },  -- deaths
     statUtil  = { 0.35, 0.80, 0.90 },  -- interrupts / dispels / cc breaks
+    statApm   = { 0.72, 0.62, 0.95 },  -- actions per minute (violet)
     statCrit  = { 1.00, 0.82, 0.25 },  -- crit gold
     statMiss  = { 0.55, 0.62, 0.72 },  -- misses / avoidance steel
     hpGood    = { 0.40, 0.85, 0.45 },  -- HP readouts ≥ 50%
@@ -150,6 +159,7 @@ local function BuildThemeTags()
     ESC.miss = EscOf(THEME.statMiss)
     ESC.text = EscOf(THEME.tipText)
     ESC.dim = EscOf(THEME.textDim)
+    ESC.accent = EscOf(THEME.accent)
 end
 BuildThemeTags()
 
@@ -157,10 +167,17 @@ BuildThemeTags()
 local MODE_COLOR_KEYS = {
     DMG = "statDmg", DPS = "statDmg", TAKEN = "statTaken", HEAL = "statHeal",
     DEATHS = "statDeath", INT = "statUtil", DISPEL = "statUtil", CCBREAK = "statUtil",
+    APM = "statApm",
 }
 
 local function ModeColor(mode)
     return THEME[MODE_COLOR_KEYS[mode.key]] or THEME.text
+end
+
+-- A mode's rate over a duration: per second, or per minute for modes that
+-- quote one (APM). The engine's CollectRows applies the same scale.
+local function ModeRate(mode, value, dur)
+    return value * (mode.rateScale or 1) / dur
 end
 
 local function HpColor(frac)
@@ -278,7 +295,9 @@ end
 -- ---------------------------------------------------------------------------
 
 local view = {
-    segSel = "current", -- "overall" | "current" | "last" | fight id — SHARED
+    segSel = "current", -- "overall" | "current" | "last" | fight id — the
+                        -- window's segment (pane 2 too, unless comparing)
+    segSel2 = nil,      -- pane 2's PINNED segment; nil = follow segSel
     graphOpen = false,
     detailGuid = nil,   -- open detail actor
     detailPane = 1,     -- which pane's mode the detail follows
@@ -315,8 +334,31 @@ local function ModeByKey(key)
     return E.MODES[1]
 end
 
+-- Is the right pane pinned to a segment of its own? nil segSel2 means it
+-- follows the window, which is the default and the way back. The pin only
+-- means anything while the split is actually open.
+local function PinnedPane2()
+    return db and db.SplitOpen and view.segSel2 ~= nil
+end
+
+-- Which segment a pane is reading: the window's, unless the right pane
+-- has been pinned away from it.
+local function PaneSelector(paneIndex)
+    if paneIndex == 2 and PinnedPane2() then return view.segSel2 end
+    return view.segSel
+end
+
+local function PaneSegment(paneIndex)
+    return E.GetSegment(PaneSelector(paneIndex))
+end
+
+local function PaneMode(paneIndex)
+    local pane = panes[paneIndex]
+    return (pane and pane.mode) or panes[1].mode
+end
+
 local function ViewSegment()
-    return E.GetSegment(view.segSel)
+    return PaneSegment(1)
 end
 
 local function SuccessTag(seg, plain)
@@ -327,16 +369,17 @@ local function SuccessTag(seg, plain)
     return seg.success and KILL_TAG or WIPE_TAG
 end
 
-local function SegmentLabel(plain)
-    if view.segSel == "overall" then return "OVERALL" end
-    if view.segSel == "current" then
+local function SegmentLabel(plain, sel)
+    sel = sel or view.segSel
+    if sel == "overall" then return "OVERALL" end
+    if sel == "current" then
         return E.InFight() and "CURRENT" or "CURRENT (IDLE)"
     end
-    if view.segSel == "last" then
+    if sel == "last" then
         local seg = E.GetSegment("last")
         return seg and (("LAST — " .. (seg.name or "?")):upper() .. SuccessTag(seg, plain)) or "LAST"
     end
-    local seg = E.GetSegment(view.segSel)
+    local seg = E.GetSegment(sel)
     if seg then
         return ("F#" .. seg.id .. " — " .. (seg.name or "?")):upper() .. SuccessTag(seg, plain)
     end
@@ -454,11 +497,10 @@ end
 
 local function BarTooltip(row)
     if not row.guid then return end
-    local seg = ViewSegment()
+    local seg = PaneSegment(row.paneIndex)
     local actor = seg and seg.actors[row.guid]
     if not actor then return end
-    local pane = panes[row.paneIndex]
-    local mode = pane.mode
+    local mode = PaneMode(row.paneIndex)
     local value = mode.value(actor)
     local dur = E.SegmentDuration(seg, time())
     local c = ClassColor(actor.class)
@@ -467,10 +509,10 @@ local function BarTooltip(row)
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     GameTooltip:SetText(ShortName(actor.name), c[1], c[2], c[3])
     -- Label/value column pairs: dim labels left, mode-colored numbers right
-    GameTooltip:AddDoubleLine(mode.label, FmtNum(value),
+    GameTooltip:AddDoubleLine(mode.valueLabel or mode.label, FmtNum(value),
         td[1], td[2], td[3], mc[1], mc[2], mc[3])
     if mode.rateLabel then
-        GameTooltip:AddDoubleLine(mode.rateLabel, FmtNum(value / dur),
+        GameTooltip:AddDoubleLine(mode.rateLabel, FmtNum(ModeRate(mode, value, dur)),
             td[1], td[2], td[3], mc[1], mc[2], mc[3])
     end
     local total = 0
@@ -652,8 +694,9 @@ end
 
 local function RepaintPane(paneIndex)
     local pane = panes[paneIndex]
-    local seg = ViewSegment()
-    local mode = pane.mode
+    local sel = PaneSelector(paneIndex)
+    local seg = PaneSegment(paneIndex)
+    local mode = PaneMode(paneIndex)
     local now = time()
     local want = db.MaxRows
 
@@ -666,10 +709,15 @@ local function RepaintPane(paneIndex)
 
     if pane.caption then
         local mc = ModeColor(mode)
-        -- The split caption is the pane's full statement: the MODE, worn
-        -- in its stat color, then the shared segment, dimmed — each half
-        -- says what it is showing without a trip to the header
-        pane.caption.text:SetText(mode.label .. ESC.dim .. "  ·  " .. SegmentLabel(true) .. "|r")
+        -- The caption is the pane's full statement — MODE in its stat
+        -- color, then the segment. The segment trails DIMMED while it is
+        -- the window's shared one and switches to the ACCENT the moment
+        -- this pane is pinned to a segment of its own: a divergence you
+        -- did not ask for can never look like agreement.
+        local pinned = paneIndex == 2 and PinnedPane2()
+        pane.caption.text:SetText(mode.label
+            .. (pinned and ESC.accent or ESC.dim)
+            .. "  ·  " .. SegmentLabel(true, sel) .. "|r")
         pane.caption.text:SetTextColor(mc[1], mc[2], mc[3])
     end
 
@@ -678,7 +726,7 @@ local function RepaintPane(paneIndex)
             local row = pane.rows[i]
             if i == 1 then
                 row.rank:SetText("")
-                row.name:SetText(view.segSel == "current" and "No active fight" or "No data")
+                row.name:SetText(sel == "current" and "No active fight" or "No data")
                 row.name:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
                 row.value:SetText("")
                 row.pct:SetText("")
@@ -846,7 +894,7 @@ local function RepaintGraph()
             end
             LayoutGraphLine(line)
         end
-        graphFrame.scale:SetText(FmtNum(graph.ymax) .. " " .. (mode.rateLabel or "/S"))
+        graphFrame.scale:SetText(FmtNum(graph.ymax * (mode.rateScale or 1)) .. " " .. (mode.rateLabel or "/S"))
         local mc = ModeColor(mode)
         graphFrame.scale:SetTextColor(mc[1], mc[2], mc[3])
         -- Honest about the series cap: buckets stop at one hour
@@ -1003,7 +1051,14 @@ local DETAIL_BASE_H = 20 + 16 + (THEME.detailRows + 1) * (THEME.rowH - 1)
     + (THEME.deathTrailRows + 1) * (THEME.rowH - 1) + 18
 
 local function DetailMode()
-    return panes[view.detailPane] and panes[view.detailPane].mode or panes[1].mode
+    return PaneMode(view.detailPane)
+end
+
+-- The detail belongs to the pane its bar was clicked in — comparing, that
+-- is also which SEGMENT it reads, so its subtitle must never quote the
+-- window's selection over the pane's
+local function DetailSelector()
+    return PaneSelector(view.detailPane)
 end
 
 local function BuildDetailRow(parent, small)
@@ -1388,7 +1443,7 @@ end
 
 RepaintDetail = function()
     if not detailFrame:IsShown() then return end
-    local seg = ViewSegment()
+    local seg = PaneSegment(view.detailPane)
     local mode = DetailMode()
     local now = time()
 
@@ -1407,7 +1462,7 @@ RepaintDetail = function()
         detailFrame:SetHeight(DETAIL_BASE_H + THEME.curveH + 4)
         detailFrame.title:SetText("DEATH LOG")
         detailFrame.title:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
-        detailFrame.sub:SetText(SegmentLabel())
+        detailFrame.sub:SetText(SegmentLabel(nil, DetailSelector()))
         detailFrame.list1Title:SetText("DEATHS (CLICK ONE)")
         detailFrame.list2Title:SetText("LAST EVENTS BEFORE DEATH")
         detailFrame.col1V:SetText("TIME")
@@ -1519,7 +1574,7 @@ RepaintDetail = function()
     if not actor then
         detailFrame.title:SetText("NO DATA IN THIS SEGMENT")
         detailFrame.title:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
-        detailFrame.sub:SetText(SegmentLabel())
+        detailFrame.sub:SetText(SegmentLabel(nil, DetailSelector()))
         detailFrame.list1Title:SetText("")
         detailFrame.list2Title:SetText("")
         detailFrame.col1V:SetText("")
@@ -1541,8 +1596,8 @@ RepaintDetail = function()
     local total = mode.value(actor)
     local dur = E.SegmentDuration(seg, now)
     detailFrame.sub:SetText(format("%s%s|r · %s · %s%s|r%s%s",
-        EscOf(mc), mode.label, SegmentLabel(), EscOf(mc), FmtNum(total),
-        mode.rateLabel and format(" (%s %s)", FmtNum(total / dur), mode.rateLabel) or "",
+        EscOf(mc), mode.label, SegmentLabel(nil, DetailSelector()), EscOf(mc), FmtNum(total),
+        mode.rateLabel and format(" (%s %s)", FmtNum(ModeRate(mode, total, dur)), mode.rateLabel) or "",
         mode.active and format(" · ACTIVE %s", FmtTime(actor[mode.active])) or ""))
 
     local lists = mode.lists
@@ -1872,46 +1927,59 @@ end
 -- Menus (all one level deep)
 -- ---------------------------------------------------------------------------
 
-local function SelectSegment(sel)
-    view.segSel = sel
-    if sel == "overall" or sel == "current" then
-        db.ViewSegment = sel
+-- paneIndex 2 addresses the compare pane's own segment; anything else is
+-- the window's shared selection. Only "current"/"overall" persist —
+-- "last" and fight ids are session-scoped on both selectors alike.
+local function SelectSegment(sel, paneIndex)
+    if paneIndex == 2 then
+        view.segSel2 = sel -- nil: the pane follows the window again
+        if sel == nil then
+            db.SplitSegment = "follow"
+        elseif sel == "overall" or sel == "current" then
+            db.SplitSegment = sel
+        end
+        panes[2].offset = 0
+    else
+        view.segSel = sel
+        if sel == "overall" or sel == "current" then
+            db.ViewSegment = sel
+        end
+        panes[1].offset, panes[2].offset = 0, 0
     end
     view.detailDeath = nil
-    panes[1].offset, panes[2].offset = 0, 0
     repaintNow()
 end
 
-local function SegmentMenu()
-    local info = UIDropDownMenu_CreateInfo()
-    info.text = "OVERALL"
-    info.checked = view.segSel == "overall"
-    info.func = function() SelectSegment("overall") end
-    UIDropDownMenu_AddButton(info)
-    info = UIDropDownMenu_CreateInfo()
-    info.text = "CURRENT"
-    info.checked = view.segSel == "current"
-    info.func = function() SelectSegment("current") end
-    UIDropDownMenu_AddButton(info)
-    info = UIDropDownMenu_CreateInfo()
-    info.text = "LAST"
-    info.checked = view.segSel == "last"
-    info.func = function() SelectSegment("last") end
-    UIDropDownMenu_AddButton(info)
+local function SegmentMenu(paneIndex)
+    -- An unpinned right pane has no segment of its OWN, so nothing in its
+    -- list is checked — the FOLLOW entry above it carries the checkmark
+    local current = (paneIndex == 2 and not PinnedPane2())
+        and false or PaneSelector(paneIndex or 1)
+    local function AddSeg(text, sel)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = text
+        info.checked = current == sel
+        info.func = function() SelectSegment(sel, paneIndex) end
+        UIDropDownMenu_AddButton(info)
+    end
+    AddSeg("OVERALL", "overall")
+    AddSeg("CURRENT", "current")
+    AddSeg("LAST", "last")
     local fightList = E.GetFights()
     for i = 1, #fightList do
         local seg = fightList[i]
-        info = UIDropDownMenu_CreateInfo()
-        info.text = format("F#%d — %s (%s)%s", seg.id, seg.name or "?", FmtTime(seg.dur),
-            SuccessTag(seg))
-        info.checked = view.segSel == seg.id
-        local id = seg.id
-        info.func = function() SelectSegment(id) end
-        UIDropDownMenu_AddButton(info)
+        AddSeg(format("F#%d — %s (%s)%s", seg.id, seg.name or "?", FmtTime(seg.dur),
+            SuccessTag(seg)), seg.id)
     end
 end
 
-local function PaneModeMenu(paneIndex)
+local function AddMenuTitle(text)
+    local info = UIDropDownMenu_CreateInfo()
+    info.text, info.isTitle, info.notCheckable = text, true, true
+    UIDropDownMenu_AddButton(info)
+end
+
+local function ModeMenu(paneIndex)
     local function AddModeEntry(mode)
         local info = UIDropDownMenu_CreateInfo()
         info.text = mode.label
@@ -1941,6 +2009,31 @@ local function PaneModeMenu(paneIndex)
     for _, key in ipairs(keys) do
         AddModeEntry(externalModes[key])
     end
+end
+
+-- The caption IS the pane, so its menu is the whole pane: what it
+-- measures and which stretch of combat it measures over — two titled
+-- sections, still one level deep. The left pane's segment section is the
+-- window's own (that caption and the header's segment button are the
+-- same control); the right pane's PINS a segment of its own, with
+-- FOLLOW LEFT PANE as the default and the way back.
+local function PaneMenu(paneIndex)
+    AddMenuTitle(paneIndex == 2 and "RIGHT PANE SHOWS" or "LEFT PANE SHOWS")
+    ModeMenu(paneIndex)
+
+    -- An external pane owns its data outright and knows nothing about
+    -- segments (D22) — offering it one would be a lie
+    if panes[paneIndex].mode and panes[paneIndex].mode.external then return end
+
+    AddMenuTitle("OVER")
+    if paneIndex == 2 then
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "FOLLOW LEFT PANE"
+        info.checked = not PinnedPane2()
+        info.func = function() SelectSegment(nil, 2) end
+        UIDropDownMenu_AddButton(info)
+    end
+    SegmentMenu(paneIndex)
 end
 
 local function ResetMenu()
@@ -2008,7 +2101,7 @@ end
 -- keeps a death exactly as heavy as a top-5 ranking.
 local function BuildDeathReportLines(d)
     reportScratch[1] = format("Commander Meters — DEATH: %s %s, %s",
-        ShortName(d.name), date("%H:%M:%S", d.ts), SegmentLabel(true))
+        ShortName(d.name), date("%H:%M:%S", d.ts), SegmentLabel(true, DetailSelector()))
     local nLog = #d.log
     local count = math.min(nLog, REPORT_LINES)
     for i = 1, count do
@@ -2124,6 +2217,7 @@ local function Layout()
     graphFrame:SetShown(view.graphOpen)
 end
 
+
 local function BuildWindow()
     root = CreateFrame("Frame", "CommanderMetersFrame", UIParent)
     root:SetFrameStrata("MEDIUM")
@@ -2159,21 +2253,26 @@ local function BuildWindow()
     modeBtn:SetPoint("LEFT", headerFrame, "LEFT", 0, 0)
     modeBtn:SetWidth(74)
     modeBtn:SetScript("OnClick", function(self)
-        OpenMenu(function() PaneModeMenu(1) end, self)
+        OpenMenu(function() ModeMenu(1) end, self)
     end)
-    Commander.UI.AttachTooltip(modeBtn, "Mode", "What the bars measure. Click for the list. (While split, each pane's caption is its own mode menu and this button steps aside.)")
+    Commander.UI.AttachTooltip(modeBtn, "Mode", "What the bars measure. Click for the list. (While split, each pane's caption is its own menu — mode AND segment — and this button steps aside.)")
 
     segBtn = MakeHeaderButton(headerFrame, "LEFT")
     segBtn:SetPoint("LEFT", modeBtn, "RIGHT", 0, 0)
     segBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -84, 0)
-    segBtn:SetScript("OnClick", function(self) OpenMenu(SegmentMenu, self) end)
+    segBtn:SetScript("OnClick", function(self)
+        OpenMenu(function() SegmentMenu(1) end, self)
+    end)
     Commander.UI.AttachTooltip(segBtn, "Segment", function()
         local seg = ViewSegment()
         local extra = ""
         if seg then
             extra = "\nDuration " .. FmtTime(E.SegmentDuration(seg, time()))
         end
-        return "Which stretch of combat the whole window (both panes, detail, graph) shows. Click for Overall, Current, Last, and every kept fight." .. extra
+        local scope = PinnedPane2()
+            and "Which stretch of combat the window shows — the right pane is PINNED to its own right now, so this moves everything but it."
+            or "Which stretch of combat the whole window (both panes, detail, graph) shows."
+        return scope .. " Click for Overall, Current, Last, and every kept fight." .. extra
     end)
     segFlash = segBtn:CreateTexture(nil, "OVERLAY")
     segFlash:SetTexture(WHITE)
@@ -2197,7 +2296,14 @@ local function BuildWindow()
         repaintNow()
     end)
     splitBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -42, 0)
-    Commander.UI.AttachTooltip(splitBtn, "Split View", "Split the window into two half-width panes with independent modes — damage beside healing, say. The window keeps its exact footprint, and both panes always show the SAME segment.")
+    Commander.UI.AttachTooltip(splitBtn, "Split View",
+        "Split the window into two half-width panes; the footprint never changes."
+        .. "\n\nEach pane's CAPTION is its own menu — what it measures and which"
+        .. " segment it measures over. So the split can be damage beside healing"
+        .. " on one fight, or the same metric twice (DAMAGE · CURRENT beside"
+        .. " DAMAGE · OVERALL), or both."
+        .. "\n\nThe right pane follows the header's segment until you pin it to"
+        .. " one of its own; pinned, its caption wears the accent.")
 
     graphBtn = MakeGlyphButton(headerFrame, "graph")
     graphBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -21, 0)
@@ -2231,9 +2337,14 @@ local function BuildWindow()
         caption.hover:SetAllPoints()
         local index = i
         caption:SetScript("OnClick", function(self)
-            OpenMenu(function() PaneModeMenu(index) end, self)
+            OpenMenu(function() PaneMenu(index) end, self)
         end)
-        Commander.UI.AttachTooltip(caption, "Pane Mode", "What this pane measures. Click for the list.")
+        Commander.UI.AttachTooltip(caption, "Pane", function()
+            if index == 2 then
+                return "This pane, both halves: what it measures and which segment it measures over. Click for the list.\n\nOVER › FOLLOW LEFT PANE keeps it on the header's segment (the default); pick a segment instead to pin it — Current here beside Overall there reads a ramp at a glance. A pinned caption wears the accent."
+            end
+            return "This pane, both halves: what it measures and which segment it measures over. Click for the list. Its segment is the window's, so the header's segment button is the same control."
+        end)
 
         local frame = CreateFrame("Frame", nil, root)
         pane.frame = frame
@@ -2335,6 +2446,9 @@ local function OnFightStart()
     if type(view.segSel) == "number" and not E.GetSegment(view.segSel) then
         view.segSel = "current"
     end
+    if type(view.segSel2) == "number" and not E.GetSegment(view.segSel2) then
+        view.segSel2 = "overall"
+    end
     if db.AutoSwitchCurrent and view.segSel ~= "current" then
         view.segSel = "current"
         FlashSegment()
@@ -2348,6 +2462,14 @@ local function OnFightEnd(seg)
     elseif type(view.segSel) == "number" and not E.GetSegment(view.segSel) then
         -- The fight the user was looking at just got pruned
         view.segSel = "last"
+    end
+    -- A PINNED right pane never auto-follows combat: it is the fixed
+    -- reference the left pane is being read against, and Follow Combat
+    -- yanking it to Last would collapse the comparison at every kill.
+    -- Only a pruned fight id moves it, and then to Overall, which can
+    -- never be pruned.
+    if type(view.segSel2) == "number" and not E.GetSegment(view.segSel2) then
+        view.segSel2 = "overall"
     end
 end
 
@@ -2477,6 +2599,9 @@ local function WipeAllData(reason)
     if type(view.segSel) == "number" or view.segSel == "last" then
         view.segSel = "current"
     end
+    if type(view.segSel2) == "number" or view.segSel2 == "last" then
+        view.segSel2 = "overall"
+    end
     view.detailDeath = nil
     panes[1].offset, panes[2].offset = 0, 0
     print("|cff66ccffCommander Meters|r: everything reset" ..
@@ -2523,8 +2648,9 @@ function CommanderMeters_Health()
 end
 
 -- Injects a small canned fight through the REAL parser (sentinel GUIDs, a
--- pet, crits, misses, an absorb, overheal, an interrupt, a dispel, one
--- death) so every view has something to show. RESET EVERYTHING clears it.
+-- pet, crits, misses, an absorb, overheal, an interrupt, a dispel, casts
+-- for APM, one death) so every view has something to show. RESET
+-- EVERYTHING clears it.
 function CommanderMeters_Test()
     if not (db and db.EnableMeters) then
         print("|cff66ccffCommander Meters|r: meters are disabled — enable them in the settings first")
@@ -2553,6 +2679,23 @@ function CommanderMeters_Test()
         ev(2.5 + i * 2, "SWING_DAMAGE", nil, PET, "Grimtongue", FPET, 0, M2, "Dummy Guard", FM, 0,
             210 + i * 3, 0, 1, 0, 0, 0, false, false, false, false)
     end
+    -- Casts for APM: the warlock hard-casts every bolt, the warrior presses
+    -- something every other second, the priest heals; the pet's cast and
+    -- the warrior's wand are not keypresses and must not count
+    for i = 0, 9 do
+        ev(1.9 + i * 2, "SPELL_CAST_SUCCESS", nil, P2, "Diabolist", FPP, 0, M1, "Training Dummy", FM, 0,
+            686, "Shadow Bolt", 32)
+        ev(1 + i * 2, "SPELL_CAST_SUCCESS", nil, P1, "Vanguard", FP, 0, M1, "Training Dummy", FM, 0,
+            i % 2 == 0 and 11567 or 7373, i % 2 == 0 and "Heroic Strike" or "Hamstring", 1)
+        ev(2.4 + i * 2, "SPELL_CAST_SUCCESS", nil, PET, "Grimtongue", FPET, 0, M2, "Dummy Guard", FM, 0,
+            30213, "Cleave", 1)
+    end
+    ev(4.0, "SPELL_CAST_SUCCESS", nil, P1, "Vanguard", FP, 0, M1, "Training Dummy", FM, 0,
+        5019, "Shoot", 1)
+    ev(12.9, "SPELL_CAST_SUCCESS", nil, P3, "Confessor", FP, 0, P1, "Vanguard", FP, 0,
+        2060, "Greater Heal", 2)
+    ev(13.9, "SPELL_CAST_SUCCESS", nil, P3, "Confessor", FP, 0, P1, "Vanguard", FP, 0,
+        139, "Renew", 2)
     ev(5.2, "SWING_MISSED", nil, P1, "Vanguard", FP, 0, M1, "Training Dummy", FM, 0, "DODGE", false, 0)
     ev(9.7, "SPELL_MISSED", nil, P2, "Diabolist", FPP, 0, M2, "Dummy Guard", FM, 0,
         686, "Shadow Bolt", 32, "RESIST", false, 0)
@@ -2661,7 +2804,9 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
         end
         panes[1].mode = ModeByKey(db.ViewMode)
         panes[2].mode = ModeByKey(db.SplitMode)
-        view.segSel = db.ViewSegment == "overall" and "overall" or "current"
+            view.segSel = db.ViewSegment == "overall" and "overall" or "current"
+        view.segSel2 = (db.SplitSegment == "current" or db.SplitSegment == "overall")
+            and db.SplitSegment or nil
         BuildWindow()
         RefreshRoster()
         LoadCCNames()

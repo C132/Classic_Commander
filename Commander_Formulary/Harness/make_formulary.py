@@ -36,6 +36,13 @@ ONE_HAND = {0, 4, 7, 13, 15}          # axe, mace, sword, fist, dagger
 TWO_HAND = {1, 5, 6, 8, 10}           # 2h axe, 2h mace, polearm, 2h sword, staff
 RANGED = {2, 3, 18, 19}               # bow, gun, crossbow, wand
 
+# Creatures on a zone's rim that the box rule gives to the neighbour: the
+# uiMapID they belong to. Both checked against the published location.
+PLACE_IN = {
+    1081: 1435,     # Mire Lord — Misty Valley, west edge of the Swamp of Sorrows (not Deadwind Pass)
+    11557: 1448,    # Meilosh — Timbermaw Hold, north edge of Felwood (not Darkshore)
+}
+
 def enchanting_category(rec):
     if rec["enchant"]:
         cls, sub = rec.get("equipClass"), rec.get("equipSubclass") or 0
@@ -195,16 +202,22 @@ uimap = {int(r["ID"]): r for r in C("UiMap")}
 assign = [r for r in C("UiMapAssignment")]
 mapName = {int(r["ID"]): r["MapName_lang"] for r in C("Map")}
 
-def zone_of(mapid, wx, wy):
-    """Zone map name, uiMapID and (x, y) percent for a world position. Zone
-    boxes overlap at their edges, so a point is given to the smallest box it
-    sits well inside (ten percent from every edge); only when no box holds it
-    that deep does the smallest box of all win. Smallest-alone put Deneb
-    Walker at Hillsbrad 90.8, 91.2 (he is at Stromgarde, Arathi 27.0, 58.8)
-    and Balai Lok'Wein at Mulgore 96.1, 82.4 (Brackenwall, Dustwallow 36.5,
-    30.4). Inside an instance (no zone box) the instance's name and no
-    coordinates: a boss is found by his room, not by a map percent."""
-    inside, edge = None, None
+def zone_of(mapid, wx, wy, prefer=None):
+    """Zone map name, uiMapID and (x, y) percent for a world position.
+
+    Zone boxes overlap, so the rule has three parts. A box that wholly
+    contains another candidate loses to it (a city inside its zone: Lower
+    City is Shattrath, not Terokkar). Then, among boxes the point sits well
+    inside (ten percent from every edge), the smallest wins; a point that is
+    at the edge of every box goes to the box it is deepest in. Smallest-box-
+    alone put Deneb Walker at Hillsbrad 90.8, 91.2 (he is at Stromgarde,
+    Arathi 27.0, 58.8), Balai Lok'Wein at Mulgore 96.1, 82.4 (Brackenwall,
+    Dustwallow 36.5, 30.4) and Dalria at Stonetalon 73.1, 7.6 (Astranaar,
+    Ashenvale 35.1, 52.1). `prefer` names a uiMapID to take when it is a
+    candidate, for the handful of creatures that live on a zone's rim
+    (PLACE_IN below). Inside an instance (no zone box) the instance's name
+    and no coordinates: a boss is found by his room, not by a map percent."""
+    hits = []
     for r in assign:
         if int(r["MapID"]) != mapid:
             continue
@@ -213,17 +226,22 @@ def zone_of(mapid, wx, wy):
             continue
         x0, y0, x1, y1 = float(r["Region_0"]), float(r["Region_1"]), float(r["Region_3"]), float(r["Region_4"])
         if x0 <= wx <= x1 and y0 <= wy <= y1:
-            area = (x1 - x0) * (y1 - y0)
             px, py = (y1 - wy) / (y1 - y0) * 100, (x1 - wx) / (x1 - x0) * 100
-            hit = (area, u["Name_lang"], int(r["UiMapID"]), round(px, 1), round(py, 1))
-            if 10 <= px <= 90 and 10 <= py <= 90:
-                if inside is None or area < inside[0]:
-                    inside = hit
-            elif edge is None or area < edge[0]:
-                edge = hit
-    best = inside or edge
+            hits.append({"area": (x1 - x0) * (y1 - y0), "name": u["Name_lang"], "id": int(r["UiMapID"]),
+                         "x": round(px, 1), "y": round(py, 1), "depth": min(px, py, 100 - px, 100 - py),
+                         "rect": (x0, y0, x1, y1)})
+    if prefer:
+        for h in hits:
+            if h["id"] == prefer:
+                return (h["name"], h["id"], h["x"], h["y"])
+    def contains(outer, inner):
+        return outer is not inner and outer["rect"][0] <= inner["rect"][0] and outer["rect"][1] <= inner["rect"][1] \
+            and outer["rect"][2] >= inner["rect"][2] and outer["rect"][3] >= inner["rect"][3]
+    hits = [h for h in hits if not any(contains(h, o) for o in hits)]
+    deep = [h for h in hits if h["depth"] >= 10]
+    best = min(deep, key=lambda h: h["area"]) if deep else (max(hits, key=lambda h: h["depth"]) if hits else None)
     if best:
-        return best[1:]
+        return (best["name"], best["id"], best["x"], best["y"])
     if mapid not in (0, 1, 530) and mapid in mapName:
         return (mapName[mapid], 0, None, None)
     return None
@@ -328,7 +346,7 @@ def generate(P):
 
     def npc_place(entry):
         for mp, x, y in spawns.get(entry, []):
-            z = zone_of(mp, x, y)
+            z = zone_of(mp, x, y, PLACE_IN.get(entry))
             if z:
                 return z + (mp,)
         return None

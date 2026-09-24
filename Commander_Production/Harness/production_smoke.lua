@@ -1,6 +1,8 @@
--- Commander Production smoke (luajit) — verification for the 2.2.0 change:
--- Icon Strip direction (ICONS / ICONS_RTL) and the Ready Sound / Ready
--- Callout alert options. Mock modeled on Commander_Meters/Harness.
+-- Commander Production smoke (luajit) — Icon Strip direction (ICONS /
+-- ICONS_RTL), the Ready Sound / Ready Callout alert options, and the 2.4.0
+-- compact metrics: Icon Size, Icons per Row wrapping, Row Height, Spacing,
+-- and the name/countdown split in the Bars layouts. Mock modeled on
+-- Commander_Meters/Harness.
 
 local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
@@ -416,6 +418,93 @@ CHECK(root.__w == (CommanderProductionDB.BarWidth or 110) + 20, "BARS_DOWN: root
     tostring(root.__w))
 
 -- ===========================================================================
+-- Compact metrics: Icon Size, Icons per Row, Row Height, Spacing
+-- ===========================================================================
+
+-- One icon per line: the strip wraps into a column instead of a banner
+CommanderProductionDB.Layout = "ICONS"
+CommanderProductionDB.IconSize = 18
+CommanderProductionDB.Spacing = 2
+CommanderProductionDB.PerRow = 1
+Redraw()
+local STRIP_ROW = 18 + 4 + 2   -- icon + slim bar + its 2px offset
+rows = ShownRows()
+CHECK(#rows == 2, "wrap: two rows shown", #rows)
+if #rows == 2 then
+    local a1, a2 = rows[1].__points[1], rows[2].__points[1]
+    CHECK(a1 and a1.x == 0 and a1.y == 0, "wrap: first icon sits on the anchor",
+        a1 and (tostring(a1.x) .. "," .. tostring(a1.y)))
+    CHECK(a2 and a2.x == 0 and a2.y == -(STRIP_ROW + 2),
+        "wrap: second icon drops to line two", a2 and (tostring(a2.x) .. "," .. tostring(a2.y)))
+    CHECK(rows[1].__w == 18 and rows[1].__h == STRIP_ROW, "wrap: icon size honoured",
+        tostring(rows[1].__w) .. "x" .. tostring(rows[1].__h))
+end
+CHECK(root.__w == 18 and root.__h == 2 * (STRIP_ROW + 2) - 2,
+    "wrap: root is one column, two lines",
+    tostring(root.__w) .. "x" .. tostring(root.__h))
+
+-- With the slim bar off, the strip row stops reserving its height
+CommanderProductionDB.CooldownOverlay = "SWEEP"
+Redraw()
+rows = ShownRows()
+CHECK(rows[1] and rows[1].__h == 18, "wrap: sweep-only rows are the icon alone",
+    rows[1] and tostring(rows[1].__h))
+CHECK(root.__h == 2 * (18 + 2) - 2, "wrap: no slim bar, no reserved height",
+    tostring(root.__h))
+CommanderProductionDB.CooldownOverlay = "BAR"
+
+-- RTL wraps the same way, marching left from the right edge
+CommanderProductionDB.Layout = "ICONS_RTL"
+CommanderProductionDB.PerRow = 2
+Redraw()
+rows = ShownRows()
+if #rows == 2 then
+    local a2 = rows[2].__points[1]
+    CHECK(a2 and a2.point == "TOPRIGHT" and a2.x == -20 and a2.y == 0,
+        "wrap: RTL keeps a two-wide line on one row",
+        a2 and (a2.point .. "@" .. tostring(a2.x) .. "," .. tostring(a2.y)))
+end
+CHECK(root.__w == 2 * 20 - 2 and root.__h == STRIP_ROW,
+    "wrap: RTL root is two columns, one line",
+    tostring(root.__w) .. "x" .. tostring(root.__h))
+
+-- Bars: Row Height drives the row, its icon, and the frame
+CommanderProductionDB.Layout = "BARS_DOWN"
+CommanderProductionDB.RowHeight = 10
+CommanderProductionDB.Spacing = 1
+CommanderProductionDB.BarWidth = 80
+Redraw()
+rows = ShownRows()
+CHECK(#rows == 2, "compact bars: two rows shown", #rows)
+if #rows == 2 then
+    CHECK(rows[1].__w == 80 + 10 + 4 + 4 and rows[1].__h == 10,
+        "compact bars: row sized from width + row height",
+        tostring(rows[1].__w) .. "x" .. tostring(rows[1].__h))
+    local a2 = rows[2].__points[1]
+    CHECK(a2 and a2.y == -11, "compact bars: rows stack at height + spacing",
+        a2 and tostring(a2.y))
+    -- Name left, countdown its own right-aligned string
+    local label = rows[1].__fontStrings and rows[1].__fontStrings[1]
+    local timeFS = rows[1].__fontStrings and rows[1].__fontStrings[2]
+    CHECK(label and label.__text == "Lay on Hands", "compact bars: label is the name alone",
+        label and tostring(label.__text))
+    CHECK(timeFS and timeFS.__text and timeFS.__text:match("^%d+s$"),
+        "compact bars: countdown is its own string", timeFS and tostring(timeFS.__text))
+end
+CHECK(root.__w == 98 and root.__h == 2 * 11, "compact bars: root fits the compact rows",
+    tostring(root.__w) .. "x" .. tostring(root.__h))
+
+-- Back to the defaults the rest of the run assumes
+CommanderProductionDB.IconSize = 26
+CommanderProductionDB.Spacing = 4
+CommanderProductionDB.PerRow = 20
+CommanderProductionDB.RowHeight = 12
+CommanderProductionDB.BarWidth = 110
+Redraw()
+CHECK(root.__w == 130, "metrics: default bars geometry restored", tostring(root.__w))
+CHECK(#harnessFailedErrors == 0, "metrics redraws clean", harnessFailedErrors[1])
+
+-- ===========================================================================
 -- Alert matrix
 -- ===========================================================================
 
@@ -557,6 +646,13 @@ cooldowns[1] = nil
 Redraw()
 rows = ShownRows()
 CHECK(#rows == 1, "linger: finished cooldown parks as a READY row", #rows)
+if #rows == 1 then
+    local label = rows[1].__fontStrings and rows[1].__fontStrings[1]
+    local timeFS = rows[1].__fontStrings and rows[1].__fontStrings[2]
+    CHECK(label and label.__text == "Lay on Hands" and timeFS and timeFS.__text == "READY",
+        "linger: READY sits in the countdown slot, name untouched",
+        (label and tostring(label.__text)) .. "/" .. (timeFS and tostring(timeFS.__text)))
+end
 CHECK(rows[1] and (rows[1].__alpha or 1) == 1, "linger: full opacity during the hold",
     rows[1] and tostring(rows[1].__alpha))
 
@@ -669,6 +765,37 @@ now = now + 16
 Redraw()
 CommanderProductionDB.LingerReady = false
 CommanderProductionDB.ReadyAlert = false
+
+-- ===========================================================================
+-- The embed accessor (2.5.0): what Commander_PartyFrames reads to carry this
+-- queue on its banner — the same sorted list the frame draws, capped at
+-- Queue Length, and nothing at all while the module is off
+-- ===========================================================================
+
+now = now + 1
+cooldowns[1] = { start = now, duration = 60 }
+cooldowns[2] = { start = now, duration = 20 }
+CommanderProductionDB.MaxBars = 5
+Redraw()
+local q, n = CommanderProduction_Queue()
+CHECK(q ~= nil and n == 2, "embed: the accessor hands over the queue with its count", tostring(n))
+CHECK(q and q[1] and q[1].entry and q[1].entry.duration == 20,
+    "embed: ...sorted soonest-ready first, exactly as the frame draws it",
+    q and q[1] and q[1].entry and tostring(q[1].entry.duration))
+CHECK(q and q[1].entry.texture ~= nil and q[1].entry.start == now,
+    "embed: an entry carries the texture and clock the banner needs")
+CommanderProductionDB.MaxBars = 1
+Redraw()
+q, n = CommanderProduction_Queue()
+CHECK(n == 1 and #q == 2, "embed: the count is capped at Queue Length, the list is not",
+    string.format("%s/%s", tostring(n), tostring(q and #q)))
+CommanderProductionDB.MaxBars = 5
+CommanderProductionDB.EnableProduction = false
+Redraw()
+CHECK(CommanderProduction_Queue() == nil, "embed: nothing while the module is off")
+CommanderProductionDB.EnableProduction = true
+cooldowns[1], cooldowns[2] = nil, nil
+Redraw()
 
 CHECK(#harnessFailedErrors == 0, "no errors across the run", harnessFailedErrors[1])
 

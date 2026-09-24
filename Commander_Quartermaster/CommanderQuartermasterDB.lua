@@ -31,6 +31,8 @@ local DefaultSettings = {
     -- false (not nil) so Restore Defaults clears a saved drag position
     BrowserPos = false,
     OwnedOnly = false,          -- browse filter: only rows you hold somewhere
+    FavoritesOnly = false,      -- browse filter: only rows wearing a star
+    ShopFavorites = true,       -- put starred items you hold none of on the list
 
     -- Browser session memory (which page you were on)
     BrowserView = "BROWSE",     -- BROWSE | LOADOUT | CHARS | GEAR
@@ -41,9 +43,10 @@ local DefaultSettings = {
     EraFilter = "ALL",          -- ALL | TBC | VANILLA
     SourceFilter = "ALL",       -- ALL | a source key
 
-    -- NOTE: the Watchlist map (per-character restock targets) deliberately
-    -- lives OUTSIDE this table — the Orders rally-point precedent — so
-    -- Restore Defaults never wipes targets. It is initialized on load below.
+    -- NOTE: the Watchlist map (per-character restock targets) and the
+    -- Favorites map (account-wide stars) deliberately live OUTSIDE this table
+    -- — the Orders rally-point precedent — so Restore Defaults never wipes a
+    -- mark you made by hand. Both are initialized on load below.
 }
 
 local frame = CreateFrame("FRAME")
@@ -65,54 +68,12 @@ local function MyCharToken()
         .. "\001" .. ((UnitName and UnitName("player")) or "Unknown")
 end
 
--- This page carries more rows than the Settings canvas is tall, so its rows
--- flow into a scroll frame — the Reticle/Shield pattern: AddRow is
--- overridden on this panel INSTANCE only, the shared framework is untouched.
--- Returns the function to call once Finalize has added the footer.
-local function MakeScrollable(panel, frameName)
-    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local target = self:GetVerticalScroll() - delta * 28
-        local maxScroll = self:GetVerticalScrollRange()
-        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
-        self:SetVerticalScroll(target)
-    end)
-
-    local scrollChild = CreateFrame("Frame", nil, scroll)
-    scrollChild:SetSize(1, 1)
-    scroll:SetScrollChild(scrollChild)
-    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
-
-    local seed = CreateFrame("Frame", nil, scrollChild)
-    seed:SetHeight(1)
-    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
-    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-    panel._anchor = seed
-    panel._contentHeight = 0
-    panel.AddRow = function(self, height, spacing)
-        local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetHeight(height)
-        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
-        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-        self._anchor = row
-        self._contentHeight = self._contentHeight + height + (spacing or 8)
-        return row
-    end
-
-    return function()
-        scrollChild:SetHeight(panel._contentHeight + 24)
-    end
-end
-
 local function CreatePanel()
     local panel = Commander.UI.NewPanel({
         key = "Quartermaster",
         title = "Quartermaster",
         addonName = "Commander_Quartermaster",
-        description = "The supply ledger. A browsable database of every TBC consumable — flasks to bandages to ammunition — with loadout recommendations per class and spec, and live counts of what you hold across bags, bank, mail, and every alt. Each character reports as it plays: bags are live, bank and mail are as of the last visit; mail sent to alts stays counted in transit. Bare /cqm opens the browser; 'ready' grades your raid loadout, 'shop' builds the shopping list, 'gear' audits what your equipped gear is enchanted and gemmed with.",
+        description = "The supply ledger. A browsable database of every TBC consumable — flasks to bandages to ammunition — with loadout recommendations per class and spec, and live counts of what you hold across bags, bank, mail, and every alt. Each character reports as it plays: bags are live, bank and mail are as of the last visit; mail sent to alts stays counted in transit. Star any row to keep it on the Favorites shelf — stars are account-wide, so the character who wants the flask and the one standing at the auction house see the same list. Bare /cqm opens the browser; 'ready' grades your raid loadout, 'shop' builds the shopping list, 'gear' audits what your equipped gear is enchanted and gemmed with, 'fav' lists your stars.",
         event = COMMANDER_QUARTERMASTER_EVENTS.UPDATE,
         slash = { "/cquartermaster", "/cqm" },
         slashHandlers = {
@@ -122,9 +83,9 @@ local function CreatePanel()
             ready = function() if CommanderQuartermaster_Ready then CommanderQuartermaster_Ready() end end,
             shop = function() if CommanderQuartermaster_ShoppingList then CommanderQuartermaster_ShoppingList() end end,
             gear = function() if CommanderQuartermaster_Gear then CommanderQuartermaster_Gear() end end,
+            fav = function() if CommanderQuartermaster_Favorites then CommanderQuartermaster_Favorites() end end,
         },
     })
-    local FinishScroll = MakeScrollable(panel, "CommanderQuartermasterSettingsScroll")
 
     local function Enabled()
         return CommanderQuartermasterDB.EnableQuartermaster
@@ -238,6 +199,39 @@ local function CreatePanel()
         isEnabled = Enabled,
     })
 
+    panel:AddSection("Favorites", "The star in the left gutter of every browser row.")
+    panel:AddCheckboxPair({
+        label = "Favorites in Shopping List",
+        tooltip = "Add a section to the shopping list for starred items you hold none of — not in bags, not in the bank, not on an alt. A star with a zero behind it is the plainest shopping signal there is.",
+        get = function() return CommanderQuartermasterDB.ShopFavorites end,
+        set = function(value) CommanderQuartermasterDB.ShopFavorites = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Favorites Only",
+        tooltip = "Browser filter: show only starred rows. Toggleable from the browser's Filter menu too.",
+        get = function() return CommanderQuartermasterDB.FavoritesOnly end,
+        set = function(value) CommanderQuartermasterDB.FavoritesOnly = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddButtonRow({
+        {
+            label = "List Favorites",
+            tooltip = "Print every starred item to chat, with what you hold of each (same as /cqm fav).",
+            onClick = function() if CommanderQuartermaster_Favorites then CommanderQuartermaster_Favorites() end end,
+            isEnabled = Enabled,
+        },
+        {
+            label = "Clear Favorites",
+            tooltip = "Remove every star. Stars are account-wide and survive Restore Defaults, so this button is the only thing that clears them.",
+            onClick = function()
+                if StaticPopup_Show then
+                    StaticPopup_Show("COMMANDER_QM_CLEARFAVS")
+                end
+            end,
+            isEnabled = Enabled,
+        },
+    })
+
     panel:AddSection("Browser", "The item browser window itself.")
     panel:AddDropdown({
         label = "Window Style",
@@ -339,7 +333,6 @@ local function CreatePanel()
     })
 
     panel:Finalize({ onDefaults = Reset })
-    FinishScroll()
 end
 
 frame:SetScript("OnEvent", function(self, event, arg1)
@@ -347,6 +340,7 @@ frame:SetScript("OnEvent", function(self, event, arg1)
         Commander.UI.ApplyDefaults(CommanderQuartermasterDB, DefaultSettings)
         -- Outside DefaultSettings on purpose (survives Restore Defaults)
         CommanderQuartermasterDB.Watchlist = CommanderQuartermasterDB.Watchlist or {}
+        CommanderQuartermasterDB.Favorites = CommanderQuartermasterDB.Favorites or {}
     elseif event == "PLAYER_LOGIN" then
         CreatePanel()
     end

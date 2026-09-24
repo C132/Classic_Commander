@@ -50,7 +50,6 @@ local DefaultSettings = {
     petBarPosition = "ABOVE",
     petBarScale = 0.7,
     showKeyring = false,
-    showStanceBar = false,
     extraBars = "DEFAULT",
 }
 
@@ -204,16 +203,11 @@ local function CreateOptionsPanel()
         set = function(value) db().mouseoverReveal = value end,
         isEnabled = function() return db().oocFade end,
     })
-    panel:AddCheckboxPair({
+    panel:AddCheckbox({
         label = "Show Keyring",
         tooltip = "Show the keyring button above the bag buttons.",
         get = function() return db().showKeyring end,
         set = function(value) db().showKeyring = value end,
-    }, {
-        label = "Show Stance Bar",
-        tooltip = "Un-park the stance/shapeshift bar and place it above the card.",
-        get = function() return db().showStanceBar end,
-        set = function(value) db().showStanceBar = value end,
     })
 
     panel:Finalize({ onDefaults = Reset })
@@ -225,7 +219,7 @@ local function CreateButtonsPanel()
         key = "ActionBarButtons",
         title = "Action Bar Buttons",
         addonName = "Commander_ActionBar",
-        description = "Button-level behavior for the command card — text, tints, cooldown feedback — plus the satellite pieces: bag buttons, micro menu, pet bar, keyring, and stance bar. Everything here is feature-flagged; the defaults match the classic card.",
+        description = "Button-level behavior for the command card — text, tints, cooldown feedback — plus the satellite pieces: bag buttons, micro menu, pet bar, and keyring. Everything here is feature-flagged; the defaults match the classic card.",
         event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
     })
 
@@ -411,6 +405,8 @@ local function OnEvent(self, event, addonName)
         if addonName == "Commander_ActionBar" then
             CommanderActionBarDB = CommanderActionBarDB or {}
             Commander.UI.ApplyDefaults(CommanderActionBarDB, DefaultSettings)
+            -- Retired option: the stance bar is Blizzard's again
+            CommanderActionBarDB.showStanceBar = nil
             self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then

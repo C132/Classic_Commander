@@ -20,6 +20,9 @@ local DefaultSettings = {
     showCastIcon = true,
     plateScale = 1.0,
     castBarColor = "GOLD",
+    targetFrameNumeric = true,
+    plateHealthText = "TARGET",
+    estimateHealth = true,
     position = {"CENTER", "UIParent", "CENTER", 0, 300}
 }
 
@@ -146,6 +149,32 @@ local function CreateOptionsPanel()
         set = function(value) CommanderNameplateDB.fadeIntensity = value end,
         isEnabled = function() return CommanderNameplateDB.fadeWhileMoving end,
     })
+    panel:AddSection("Target Health", "The target's health as a real number instead of a percentage, on Blizzard's target frame and on the nameplate over its head. Neither touches the account-wide status text setting, so the player frame and the other plates keep showing whatever you picked in Blizzard's options. For enemy PLAYERS the client only ever reports a percent; the estimate below fills the number in.")
+    panel:AddCheckbox({
+        label = "Estimate Enemy Player Health",
+        tooltip = "The client reports a hostile player's health as a percentage and nothing more. This watches the combat log against that percentage and reverse-engineers the bar: 900 damage for a ten-point drop is a 9000 bar, and a death from full is exact. The number is drawn with a tilde (~3.2k / 7.2k) because it is a measurement -- rough after a few points of movement, good after thirty, and remembered per player across sessions so the next arena starts from what the last one learned. Off, a percent-only bar stays a percent.",
+        get = function() return CommanderNameplateDB.estimateHealth end,
+        set = function(value) CommanderNameplateDB.estimateHealth = value end,
+    })
+    panel:AddCheckbox({
+        label = "Target Frame: Current / Max",
+        tooltip = "Draw the target's (and focus's) health as \"current / max\" on Blizzard's target frame, whatever the Status Text option says. Left alone when the client only knows a unit's health as a percentage.",
+        get = function() return CommanderNameplateDB.targetFrameNumeric end,
+        set = function(value) CommanderNameplateDB.targetFrameNumeric = value end,
+    })
+    panel:AddDropdown({
+        label = "Nameplate Health Text",
+        tooltip = "Which world nameplates read \"current / max\" over the health bar. Target Only leaves every other plate on Blizzard's own Nameplates > Info Display setting; All Nameplates puts the number on every plate that shows health text at all.",
+        options = {
+            { text = "Blizzard Default", value = "OFF" },
+            { text = "Target Only", value = "TARGET" },
+            { text = "All Nameplates", value = "ALL" },
+        },
+        width = 140,
+        get = function() return CommanderNameplateDB.plateHealthText end,
+        set = function(value) CommanderNameplateDB.plateHealthText = value end,
+    })
+
     panel:AddButtonRow({
         {
             label = "Reset Position",

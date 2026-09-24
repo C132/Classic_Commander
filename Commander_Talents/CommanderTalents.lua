@@ -1660,12 +1660,14 @@ local function ApplyFraming()
     if not calc then return end
     local style = db.BrowserStyle or "WINDOW"
     local windowArt = style == "WINDOW"
-    if calc.NineSlice then calc.NineSlice:SetShown(windowArt) end
-    if calc.Bg then calc.Bg:SetShown(windowArt) end
-    if calc.TitleBg then calc.TitleBg:SetShown(windowArt) end
-    if calc.TitleText then calc.TitleText:SetShown(windowArt) end
+    -- The whole template dressing, from the shared verified list: this was
+    -- five names, and it was missing the nine border pieces, the title
+    -- streaks and the inset border -- so turning the window art off left
+    -- the template's steel frame and two bars either side of the title
+    -- behind. CloseButton is not in the shared list (most windows want to
+    -- keep it), so this window keeps saying what it wants for that one.
+    Commander.UI.SetTemplateDressing(calc, windowArt)
     if calc.CloseButton then calc.CloseButton:SetShown(windowArt) end
-    if calc.Inset then calc.Inset:SetShown(windowArt) end
     Commander.UI.ApplyStyleBackdrop(calc, windowArt and "NONE" or style)
 end
 

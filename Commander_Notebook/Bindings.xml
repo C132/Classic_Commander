@@ -1,0 +1,23 @@
+<Bindings>
+    <!-- Auto-loaded from the addon folder. Deliberately NOT listed in the TOC:
+         doing so loads it twice and the second pass silently wins.
+
+         Note for anyone editing the prose in these comments: a double hyphen is
+         illegal inside an XML comment and the parser rejects the WHOLE file on
+         one, which means zero bindings register with nothing but a LUA_WARNING
+         at load to say so.
+
+         Capture is the one worth binding. It opens nothing, so it is the only
+         way to write something down without leaving what you are doing. -->
+    <Binding name="COMMANDERNOTEBOOK_TOGGLE" header="COMMANDERNOTEBOOK" runOnUp="false">
+        CommanderNotebook_Toggle()
+    </Binding>
+
+    <Binding name="COMMANDERNOTEBOOK_NEW" runOnUp="false">
+        CommanderNotebook_NewNote()
+    </Binding>
+
+    <Binding name="COMMANDERNOTEBOOK_SEARCH" runOnUp="false">
+        CommanderNotebook_FocusSearch()
+    </Binding>
+</Bindings>

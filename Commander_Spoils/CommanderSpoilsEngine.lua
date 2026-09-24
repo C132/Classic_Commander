@@ -701,6 +701,30 @@ end
 function E.SegmentFor(scope)
     if scope == "RUN" then return segments.RUN end
     if scope == "FARM" then return segments.FARM end
+    if scope == "ALL" then
+        -- Everything still retained. Without it the roll log — written for 60
+        -- days and 400 contests — was unreadable: every other scope starts at
+        -- login or later, and the ROLLS pane drops logged rows older than the
+        -- scope's start, so a relog emptied the pane permanently.
+        local all = E.allSegment
+        if not all then
+            all = { id = -2, kind = "all", label = "All time" }
+            E.allSegment = all
+        end
+        -- The oldest retained stamp of EVERY log, not just events: the three
+        -- rings are trimmed independently, so rolls and coin routinely reach
+        -- back further than the event log does. startEpoch is what the roll
+        -- filter and FoldGold cut against, and taking it from events alone
+        -- would hide exactly the rows this scope exists to show.
+        local oldest = Data.events[1] and Data.events[1][1]
+        local function Earlier(stamp)
+            if stamp and (not oldest or stamp < oldest) then oldest = stamp end
+        end
+        Earlier(Data.rolls[1] and Data.rolls[1].t)
+        Earlier(Data.money.log[1] and Data.money.log[1][1])
+        all.fromIdx, all.toIdx, all.startEpoch = 1, #Data.events, oldest or Now()
+        return all
+    end
     if scope == "HOUR" then
         -- A synthetic segment: the last hour of the log. Reused rather than
         -- rebuilt so the fold cache can key off it, and its boundary is
@@ -1504,6 +1528,17 @@ E.rolls = {}        -- ordered, oldest first; live and recently-resolved
 E.rollByID = {}
 local historyIndexByRollID = {}
 
+-- Roll tracing. Deliberately a slash toggle and not a setting: it exists for
+-- exactly one question — "the log is empty, what is the server actually
+-- sending?" — and the answer is a transcript, not a checkbox. It prints every
+-- roll event AND every roll-shaped chat line that failed to parse, which is the
+-- only way to tell a swallowed verdict from a format string we cannot read.
+local function Trace(...)
+    if not CommanderSpoilsDB.RollDebug then return end
+    print("|cff66ccffSpoils|r roll:", ...)
+end
+E.RollTrace = Trace
+
 local ROLL_HOLD = 6      -- seconds a resolved row stays before it collapses
 
 local function RollTimeLeft(rollID)
@@ -1545,7 +1580,7 @@ end
 
 function E.Roll(rollID, rollType)
     local roll = E.rollByID[rollID]
-    if not roll or roll.resolved then return end
+    if not roll or roll.resolved or roll.closing then return end
     if (GetTime and GetTime() or 0) < (roll.guardUntil or 0) then return end
     if rollType == 1 and not roll.canNeed then return end
     if rollType == 2 and not roll.canGreed then return end
@@ -1579,6 +1614,21 @@ local function PackRollers(roll)
     return #packed > 0 and packed or nil
 end
 
+-- Loot history revises a contest after the fact. Fold whatever it now knows
+-- back into the row already written, rather than writing a second one.
+local function Restamp(roll)
+    local row = roll.logRow
+    if not row then return end
+    row.p = PackRollers(roll) or row.p
+    row.my = roll.missed and -1 or roll.my
+    row.myRoll = roll.myRoll
+    if roll.winner then
+        row.w, row.wc = roll.winner, roll.winnerClass
+        row.wt, row.wr = roll.winnerType, roll.winnerRoll
+        row.o = nil        -- a verdict arrived: it was never withdrawn
+    end
+end
+
 function E.ResolveRoll(rollID, winner, winnerClass, winnerType, winnerRoll)
     local roll = E.rollByID[rollID]
     if not roll or roll.resolved then return end
@@ -1599,14 +1649,25 @@ function E.ResolveRoll(rollID, winner, winnerClass, winnerType, winnerRoll)
     end
 
     if Data and CommanderSpoilsDB.TrackHistory then
-        RingPush(Data.rolls, {
+        -- Kept on the roll: loot history keeps revising a contest AFTER the
+        -- verdict lands (the completion update is what carries everyone's roll
+        -- NUMBERS), and without a handle back to the row those revisions had
+        -- nowhere to go.
+        local row = {
             t = Now(), id = roll.itemID, q = roll.quality, n = roll.count,
             map = E.MapID(), src = roll.sourceName,
             my = roll.missed and -1 or roll.my,
             myRoll = roll.myRoll,
             w = winner, wc = winnerClass, wt = winnerType, wr = winnerRoll,
+            o = roll.cancelled and "c" or roll.orphaned and "x" or nil,
             p = PackRollers(roll),
-        }, LIMITS.rolls)
+        }
+        roll.logRow = row
+        RingPush(Data.rolls, row, LIMITS.rolls)
+        Trace("logged", roll.itemID, "winner", tostring(winner),
+              "outcome", tostring(row.o), "rows", #Data.rolls)
+    else
+        Trace("NOT logged (TrackHistory off)", roll.itemID)
     end
 
     if roll.won then
@@ -1650,14 +1711,25 @@ function E.DeclineRoll(rollID)
     Commander.Notify(EV.ROLL, roll, "update")
 end
 
+-- CANCEL_LOOT_ROLL is NOT only "the roll was withdrawn". The server also sends
+-- it the instant a contest ENDS — it is how the Blizzard pop-up knows to come
+-- down — and it arrives AHEAD of the chat line and the loot-history update that
+-- say who actually won. Resolving here closed the row before the verdict could
+-- land: ResolveRoll ran with no winner, the real result was dropped on the
+-- floor, and the roll log stayed empty for months.
+--
+-- So a cancel only CLOSES the row. The verdict gets a grace window to arrive;
+-- if none does, PruneRolls files it as withdrawn — still not missed, because a
+-- withdrawn contest had no winner to lose to, and mislabelling that destroys
+-- the credibility of the missed-roll counter.
+local ROLL_CLOSE_GRACE = 4
+
 function E.CancelRoll(rollID)
-    -- Withdrawn, not missed. Mislabelling this destroys the credibility of the
-    -- missed-roll counter.
     local roll = E.rollByID[rollID]
-    if not roll then return end
-    roll.resolved, roll.cancelled = true, true
-    roll.resolvedAt = GetTime and GetTime() or 0
-    Commander.Notify(EV.ROLL, roll, "resolved")
+    if not roll or roll.resolved then return end
+    roll.closing = true
+    roll.closeAt = (GetTime and GetTime() or 0) + ROLL_CLOSE_GRACE
+    Commander.Notify(EV.ROLL, roll, "update")
 end
 
 local ROLL_ORPHAN_GRACE = 20   -- seconds past expiry before we give up
@@ -1666,7 +1738,13 @@ function E.PruneRolls()
     local now = GetTime and GetTime() or 0
     for i = #E.rolls, 1, -1 do
         local roll = E.rolls[i]
-        if not roll.resolved then
+        if not roll.resolved and roll.closing then
+            -- The grace ran out with no verdict: this one really was withdrawn.
+            if now >= (roll.closeAt or 0) then
+                roll.cancelled = true
+                E.ResolveRoll(roll.id, nil, nil, nil, nil)
+            end
+        elseif not roll.resolved then
             -- The server can stop talking about a roll. Without a timeout the
             -- row stays "live" forever and the urgency glow never lets go.
             local left = RollTimeLeft(roll.id)
@@ -1688,7 +1766,7 @@ end
 function E.PendingRolls()
     local count, soonest = 0, nil
     for _, roll in ipairs(E.rolls) do
-        if not roll.resolved then
+        if not roll.resolved and not roll.closing then
             local live = (roll.canNeed or roll.canGreed) and roll.my == nil
             if live then
                 count = count + 1
@@ -1748,16 +1826,72 @@ local function RefreshRollers(roll)
     roll.decided = #roll.rollers
     if isDone and winnerIdx and roll.rollers[winnerIdx] then
         local win = roll.rollers[winnerIdx]
-        E.ResolveRoll(roll.id, win.name, win.class, win.rollType, win.roll)
+        if roll.resolved then
+            -- The verdict already landed from chat, which names the winner and
+            -- nothing else. History is the only place their class, their choice
+            -- and the number they rolled ever come from — take them now.
+            local hadWinner = roll.winner ~= nil
+            roll.winner = roll.winner or win.name
+            roll.winnerClass = roll.winnerClass or win.class
+            roll.winnerType = roll.winnerType or win.rollType
+            roll.winnerRoll = roll.winnerRoll or win.roll
+            playerName = playerName or UnitName("player")
+            roll.won = roll.winner == playerName
+            if not hadWinner and roll.winner then
+                -- The row closed with no verdict and history has now supplied
+                -- one. ResolveRoll never credited this win, so it lands here —
+                -- and the contest was decided after all, not withdrawn.
+                roll.cancelled = nil
+                PartyRow(roll.winner).won = PartyRow(roll.winner).won + 1
+                if roll.my == nil and not roll.auto
+                    and (roll.canNeed or roll.canGreed) then
+                    roll.missed = true
+                end
+            end
+        else
+            E.ResolveRoll(roll.id, win.name, win.class, win.rollType, win.roll)
+        end
     end
+    -- The row is already in the log by now; fold the revision into it.
+    Restamp(roll)
 end
 E.RefreshRollers = RefreshRollers
+
+-- A verdict with no row to attach it to. That happens when the contest ended
+-- before we ever saw START_LOOT_ROLL (a zone-in mid-pull, a /reload), or when
+-- the row was already swept. The contest still happened, and a pane whose whole
+-- job is "every contest and what everyone did" must not lose it.
+local function LogLooseVerdict(itemID, winner)
+    if not (Data and CommanderSpoilsDB.TrackHistory and itemID) then return end
+    -- A roll we DID see has already written its own row. Two rows for one
+    -- contest is worse than none.
+    for _, roll in ipairs(E.rolls) do
+        if roll.itemID == itemID and (roll.resolved or roll.closing) then return end
+    end
+    local entry = E.Meta(itemID)
+    playerName = playerName or UnitName("player")
+    RingPush(Data.rolls, {
+        t = Now(), id = itemID, q = entry and entry.quality, n = 1,
+        map = E.MapID(), w = winner,
+        wc = winner and winner == playerName and select(2, UnitClass("player")) or nil,
+        o = "l",
+    }, LIMITS.rolls)
+end
 
 function E.OnRollChat(message)
     if type(message) ~= "string" then return end
     rollMatchers = rollMatchers or BuildMatchers(ROLL_SPECS)
     local matcher, caps = Match(rollMatchers, message)
-    if not matcher then return end
+    if not matcher then
+        -- A line carrying the loot-history hyperlink IS a roll line. If one
+        -- reaches here, our format strings do not match this client's and no
+        -- amount of event wiring will ever fill the log.
+        if message:find("lootHistory", 1, true) then
+            Trace("UNPARSED roll line:", message)
+        end
+        return
+    end
+    Trace("chat", matcher.kind, "who", tostring(caps.who), "item", tostring(caps.item))
     playerName = playerName or UnitName("player")
     if matcher.kind == "won" then
         local who = matcher.self and playerName or caps.who
@@ -1781,6 +1915,7 @@ function E.OnRollChat(message)
                 return
             end
         end
+        LogLooseVerdict(itemID, who)
         FeedPush({ kind = "roll", label = "WON", who = who, link = caps.item,
                    itemID = itemID, t = Now(), mine = matcher.self })
     elseif matcher.kind == "allpassed" then
@@ -1792,6 +1927,7 @@ function E.OnRollChat(message)
                 return
             end
         end
+        LogLooseVerdict(itemID, nil)
     elseif matcher.kind == "rolled" then
         -- Chat is the FALLBACK, not a second source: if loot history already
         -- covers this roll, its tally is authoritative and adding here would
@@ -2021,11 +2157,14 @@ local function OnEvent(self, event, a, b, c, d)
     elseif event == "START_LOOT_ROLL" then
         local roll = E.AddRoll(a, b)
         if roll and currentSource then roll.sourceName = currentSource.name end
+        Trace("START", a, "item", roll and tostring(roll.itemID))
     elseif event == "CANCEL_LOOT_ROLL" then
+        Trace("CANCEL", a)
         E.CancelRoll(a)
     elseif event == "LOOT_ITEM_ROLL_WON" then
         -- (itemLink, rollQuantity, rollType, roll, upgraded). This is the
         -- fastest path to "you won" and carries your own roll number.
+        Trace("YOU WON", tostring(a))
         playerName = playerName or UnitName("player")
         local itemID = LinkItemID(a)
         for _, roll in ipairs(E.rolls) do
@@ -2062,12 +2201,16 @@ local function OnEvent(self, event, a, b, c, d)
             end
         end
     elseif event == "LOOT_HISTORY_FULL_UPDATE" then
+        Trace("HISTORY full update")
         SyncHistoryIndex()
         for _, roll in ipairs(E.rolls) do RefreshRollers(roll) end
     elseif event == "LOOT_HISTORY_ROLL_CHANGED" or event == "LOOT_HISTORY_ROLL_COMPLETE" then
-        for _, roll in ipairs(E.rolls) do
-            if not roll.resolved then RefreshRollers(roll) end
-        end
+        Trace("HISTORY", event == "LOOT_HISTORY_ROLL_COMPLETE" and "complete" or "changed")
+        -- Resolved rolls are refreshed too. The COMPLETE update is the one that
+        -- finally carries everyone's roll NUMBERS, and it lands after the
+        -- verdict — skipping it left every logged contest with names and
+        -- choices but no numbers at all.
+        for _, roll in ipairs(E.rolls) do RefreshRollers(roll) end
     elseif event == "MERCHANT_SHOW" then context.merchant = true
     elseif event == "MERCHANT_CLOSED" then context.merchant = false
     elseif event == "TRADE_SHOW" then context.trade = true

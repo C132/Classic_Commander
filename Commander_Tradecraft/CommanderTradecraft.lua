@@ -23,11 +23,14 @@
 --     so there is no insecure way to craft (DECISIONS D7).
 --
 -- Enchanting on this client goes through the CRAFT frame and its API
--- (GetNumCrafts / GetCraftInfo), which is only populated while the window
--- is open. Recipes seen there are remembered per character so the guide can
--- tell a formula you have learned from one you have not while the window is
--- closed; IsSpellKnown is asked first and the memory is the fallback
--- (ASSUMPTIONS.md A2).
+-- (GetNumCrafts / GetCraftInfo), First Aid through the TRADE SKILL frame
+-- and its (GetNumTradeSkills / GetTradeSkillInfo); either is only
+-- populated while its window is open. Recipes seen there are remembered
+-- per character so the guide can tell a formula you have learned from one
+-- you have not while the window is closed; IsSpellKnown is asked first and
+-- the memory is the fallback (ASSUMPTIONS.md A2). One guide is on screen
+-- at a time -- the character's, switched from the window's title, by
+-- /ctc guide, or by whichever profession window opens (DECISIONS D15).
 
 local D = CommanderTradecraft_Data
 local E = CommanderTradecraft_Engine
@@ -110,9 +113,15 @@ local function InCombat()
     return InCombatLockdown and InCombatLockdown() or false
 end
 
+-- The guides, in the order the switch offers them
+local GUIDE_KEYS = { "ENCHANTING", "FIRSTAID" }
+
+-- The guide on screen is the character's: the one whose window last
+-- opened, or the one they asked for (/ctc guide <name>), or -- before
+-- either -- the first guide whose profession they have
 local function Guide()
-    local key = char and char.guide or "ENCHANTING"
-    return D.GUIDES[key] or D.GUIDES.ENCHANTING
+    local key = char and char.guide
+    return (key and D.GUIDES[key]) or D.GUIDES.ENCHANTING
 end
 
 local function Profession()
@@ -150,25 +159,69 @@ local function ReadSkill(prof)
     return rank or 0, maxRank or 0
 end
 
--- The craft window, when it is open on our profession. CRAFT_SHOW and
--- CRAFT_CLOSE keep `craftOpen`; the frame's own IsShown is the belt to that
--- brace, because Blizzard_CraftUI is loaded on demand by the same event and
--- may not be there yet when our handler runs.
-local craftIndexBySpell = {}   -- spell -> index in the open craft list
-local craftNameToSpell          -- localised recipe name -> spell, built once
-local craftOpen = false
+-- The stock window, when it is open on our profession. The client shows a
+-- profession in one of two frames with two APIs of the same shape:
+-- Enchanting is a CRAFT window (GetCraftDisplaySkillLine, GetNumCrafts /
+-- GetCraftInfo, the CraftFrame) and First Aid a TRADE SKILL window
+-- (GetTradeSkillLine, GetNumTradeSkills / GetTradeSkillInfo, the
+-- TradeSkillFrame). The SHOW / CLOSE pair keeps `open` per channel; the
+-- frame's own IsShown is the belt to that brace, because Blizzard's UI for
+-- either is loaded on demand by the same event and may not be there yet
+-- when our handler runs.
+local CHANNELS = {
+    CRAFT = {
+        frame = function() return CraftFrame end,
+        line = function() return GetCraftDisplaySkillLine and GetCraftDisplaySkillLine() or nil end,
+        count = function() return GetNumCrafts and GetNumCrafts() or 0 end,
+        -- GetCraftInfo answers name, subSpellName, craftType; the trade
+        -- skill call answers name, skillType: both wrappers give name, type
+        info = function(i) local name, _, craftType = GetCraftInfo(i) return name, craftType end,
+        open = false,
+    },
+    TRADESKILL = {
+        frame = function() return TradeSkillFrame end,
+        line = function() return GetTradeSkillLine and GetTradeSkillLine() or nil end,
+        count = function() return GetNumTradeSkills and GetNumTradeSkills() or 0 end,
+        info = function(i) local name, skillType = GetTradeSkillInfo(i) return name, skillType end,
+        open = false,
+    },
+}
 
-local function CraftWindowIsOurs()
-    local shown = craftOpen or (CraftFrame and CraftFrame.IsShown and CraftFrame:IsShown())
-    if not shown then return false end
-    if not GetCraftDisplaySkillLine then return true end
-    -- Strict: a hunter's Beast Training uses the same frame and answers
-    -- nil here, and the guide must not pop for it
-    return GetCraftDisplaySkillLine() == SpellName(Profession().abilitySpell)
+local function Channel(prof)
+    return CHANNELS[(prof or Profession()).frame] or CHANNELS.CRAFT
 end
 
+local function ChannelShown(ch)
+    if ch.open then return true end
+    local f = ch.frame()
+    return f and f.IsShown and f:IsShown() or false
+end
+
+-- The profession a channel's window is open on, if a guide covers it.
+-- Strict: a hunter's Beast Training uses the craft frame and answers nil
+-- for the skill line, and the guide must not pop for it.
+local function ProfessionOnChannel(channelKey)
+    local ch = CHANNELS[channelKey]
+    if not (ch and ChannelShown(ch)) then return nil end
+    local line = ch.line()
+    for _, key in ipairs(GUIDE_KEYS) do
+        local prof = D.PROFESSIONS[D.GUIDES[key].profession]
+        if prof.frame == channelKey and line == SpellName(prof.abilitySpell) then
+            return prof, key
+        end
+    end
+    return nil
+end
+
+local function CraftWindowIsOurs()
+    return ProfessionOnChannel(Profession().frame) == Profession()
+end
+
+local craftNameToSpell          -- localised recipe name -> spell, built once
+
 local function ScanCraftWindow()
-    if not CraftWindowIsOurs() or not GetNumCrafts then return false end
+    if not CraftWindowIsOurs() then return false end
+    local ch = Channel()
     if not craftNameToSpell then
         craftNameToSpell = {}
         for spell in pairs(D.RECIPES) do
@@ -176,13 +229,11 @@ local function ScanCraftWindow()
         end
     end
     local seen = false
-    craftIndexBySpell = {}
-    for i = 1, GetNumCrafts() do
-        local name, _, craftType = GetCraftInfo(i)
+    for i = 1, ch.count() do
+        local name, craftType = ch.info(i)
         if name and craftType ~= "header" then
             local spell = craftNameToSpell[name]
             if spell then
-                craftIndexBySpell[spell] = i
                 char.knownRecipes[spell] = true
                 seen = true
             end
@@ -296,7 +347,7 @@ local function Rebuild()
     if not loaded then return end
     -- The craft list is read here, a frame after the event that announced
     -- it, so it is populated by the time it is scanned
-    if craftOpen then ScanCraftWindow() end
+    if ChannelShown(Channel()) then ScanCraftWindow() end
     local world = BuildWorld()
     plan = E.Build(Guide(), world, char, {
         margin = db.Margin,
@@ -381,6 +432,29 @@ local headerRank = guide:CreateFontString(nil, "OVERLAY")
 headerRank:SetFontObject(GameFontNormal)
 headerRank:SetPoint("TOPRIGHT", guide, "TOPRIGHT", -2, -2)
 headerRank:SetJustifyH("RIGHT")
+
+-- The title is the guide switch: click it for the next guide, hover it for
+-- the list with the character's rank in each
+local headerSwitch = CreateFrame("Button", nil, guide)
+headerSwitch:SetPoint("TOPLEFT", headerIcon, "TOPLEFT", 0, 0)
+headerSwitch:SetPoint("BOTTOMRIGHT", headerName, "BOTTOMRIGHT", 4, 0)
+headerSwitch:SetScript("OnClick", function() CommanderTradecraft_Guide() end)
+headerSwitch:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+    GameTooltip:AddLine("Guides")
+    for _, key in ipairs(GUIDE_KEYS) do
+        local g = D.GUIDES[key]
+        local prof = D.PROFESSIONS[g.profession]
+        local rank, maxRank = ReadSkill(prof)
+        local here = (key == (char and char.guide))
+        local label = maxRank > 0 and ("%s — %d / %d"):format(g.title, rank, maxRank) or (g.title .. " — not learned")
+        GameTooltip:AddLine((here and "|cffffffff" or "|cff9d9d9d") .. label .. "|r")
+    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Click to switch. A guide also comes on screen whenever its profession's window opens.", 0.6, 0.6, 0.6, true)
+    GameTooltip:Show()
+end)
+headerSwitch:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 local bar = CreateFrame("StatusBar", nil, guide)
 bar:SetPoint("TOPLEFT", headerIcon, "BOTTOMLEFT", 0, -4)
@@ -530,10 +604,14 @@ local function EnsureOpenButton()
         tip:AddLine("Open " .. Profession().name)
         tip:AddLine("Casts the profession to open its window — handy for watching the list, though the Craft button does not need it open.", 1, 1, 1, true)
     end)
-    if s and not s.ready then
-        s.ready = true
+    -- Re-aimed whenever the guide changes profession (out of combat only,
+    -- like every attribute write); the label follows it
+    local spell = SpellName(Profession().abilitySpell)
+    if s and s.spell ~= spell and not InCombat() then
+        s.spell = spell
         s.button:SetAttribute("type", "spell")
-        s.button:SetAttribute("spell", SpellName(Profession().abilitySpell))
+        s.button:SetAttribute("spell", spell)
+        s.button:SetText("Open " .. Profession().name)
     end
     return s and s.holder
 end
@@ -911,22 +989,49 @@ local function PaintTrainBanner(p)
         else
             text = ("%sTrainer:|r %s %s is available (needs %d, cap %d)."):format(HEX.title, rankName, prof.name, t.rank.at, t.rank.cap)
         end
-        Line(text, { color = C.text })
-        if t.rank.outland and prof.masterTrainers then
-            local faction = Faction()
-            for _, trainer in ipairs(prof.masterTrainers) do
-                if not trainer.faction or not faction or trainer.faction == faction then
-                    local rowY = y
-                    Line(("%s — %s (%.1f, %.1f)"):format(trainer.name, trainer.where, trainer.x, trainer.y),
-                        { indent = 10, color = C.dim, rightPad = 50 })
-                    local b = NewButton("Go", 44, function() SetWaypoint(trainer, trainer.name) end,
-                        function(tip) tip:AddLine("Waypoint to " .. trainer.name) end)
-                    b:SetPoint("TOPRIGHT", guide, "TOPRIGHT", 0, rowY + 2)
-                    b:SetHeight(18)
-                end
+        local faction = Faction()
+        local function PlaceRow(place)
+            local rowY = y
+            Line(("%s — %s (%.1f, %.1f)"):format(place.name, place.where, place.x, place.y),
+                { indent = 10, color = C.dim, rightPad = 50 })
+            local b = NewButton("Go", 44, function() SetWaypoint(place, place.name) end,
+                function(tip) tip:AddLine("Waypoint to " .. place.name) end)
+            b:SetPoint("TOPRIGHT", guide, "TOPRIGHT", 0, rowY + 2)
+            b:SetHeight(18)
+        end
+        -- A rank no trainer teaches: the book to buy, or the quest to do,
+        -- in place of "train" -- the trainer will not have it
+        if t.rank.book then
+            local book = t.rank.book
+            text = t.urgent
+                and ("%sYou are at your cap (%d).|r %s %s comes from a book: %s (%s, needs %d)."):format(HEX.bad, p.maxRank, rankName, prof.name, ItemName(book.item), E.FormatMoney(book.cost), t.rank.at)
+                or ("%sBook:|r %s %s comes from %s (%s, needs %d, cap %d)."):format(HEX.title, rankName, prof.name, ItemName(book.item), E.FormatMoney(book.cost), t.rank.at, t.rank.cap)
+            Line(text, { color = C.text })
+            if Count(book.item, true) > 0 then
+                Line(HEX.good .. "You have it — right-click it to read it." .. "|r", { indent = 10 })
+            end
+            for _, npc in ipairs(book.vendors or {}) do
+                local v = D.VENDORS[npc]
+                if v and (not v.faction or not faction or v.faction == faction) then PlaceRow(v) end
+            end
+        elseif t.rank.quest then
+            local q = t.rank.quest
+            text = t.urgent
+                and ("%sYou are at your cap (%d).|r %s %s is the reward of the quest %s (needs %d)."):format(HEX.bad, p.maxRank, rankName, prof.name, q.name, t.rank.at)
+                or ("%sQuest:|r %s %s is the reward of %s (needs %d, cap %d)."):format(HEX.title, rankName, prof.name, q.name, t.rank.at, t.rank.cap)
+            Line(text, { color = C.text })
+            for _, giver in ipairs(q.givers or {}) do
+                if not giver.faction or not faction or giver.faction == faction then PlaceRow(giver) end
             end
         else
-            Line("Any " .. prof.name .. " trainer in a capital city.", { indent = 10, color = C.dim })
+            Line(text, { color = C.text })
+            if t.rank.outland and prof.masterTrainers then
+                for _, trainer in ipairs(prof.masterTrainers) do
+                    if not trainer.faction or not faction or trainer.faction == faction then PlaceRow(trainer) end
+                end
+            else
+                Line("Any " .. prof.name .. " trainer in a capital city.", { indent = 10, color = C.dim })
+            end
         end
     end
     Gap(4)
@@ -985,7 +1090,7 @@ local function PaintCraftStep(step, p)
     -- "Not known" is only certain once the craft list has been read this
     -- character; before that, IsSpellKnown may simply not answer for
     -- recipes (ASSUMPTIONS A2), and the honest line is to ask for a look
-    if (step.needsFormula or step.needsTrainer) and next(char.knownRecipes) == nil and not craftOpen then
+    if (step.needsFormula or step.needsTrainer) and next(char.knownRecipes) == nil and not ChannelShown(Channel()) then
         Line(("%sOpen your %s window once|r so the guide can read which recipes you know."):format(HEX.warn, p.profession.name), { indent = 8 })
     elseif step.needsFormula then
         Line(("%sYou do not know this recipe yet.|r Learn it from %s."):format(HEX.warn, ItemName(step.needsFormula)), { indent = 8 })
@@ -1187,7 +1292,8 @@ Repaint = function()
         Line(HEX.good .. Guide().title .. " — complete." .. "|r", { font = GameFontNormal })
         Line("Nothing left on the route. /ctc hides the window; it comes back if the guide ever changes.", { color = C.dim })
     elseif not p.hasProfession then
-        Line("Once you have learned it, the first step is a Runed Copper Rod.", { color = C.dim })
+        local first = p.steps[1]
+        Line(("Once you have learned it, the first step is %s."):format(first and E.StepTitle(first) or "the first craft"), { color = C.dim })
     elseif p.current then
         if p.current.kind == "craft" then
             PaintCraftStep(p.current, p)
@@ -1974,7 +2080,8 @@ function CommanderTradecraft_Status()
         Announce(("step %d of %d: %s"):format(p.current.index, p.totalSteps, StepTitle(p.current)))
     end
     if p.train then
-        Announce(("trainer: %s %s (needs %d)"):format(p.train.rank.name, p.profession.name, p.train.rank.at))
+        local how = p.train.rank.book and "book" or p.train.rank.quest and "quest" or "trainer"
+        Announce(("%s: %s %s (needs %d)"):format(how, p.train.rank.name, p.profession.name, p.train.rank.at))
     end
     -- How recipes are being detected (ASSUMPTIONS A2): by the spellbook
     -- call, by the craft-window memory, or not at all yet
@@ -2049,6 +2156,7 @@ local WATCHED = {
     "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL",
     "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "BANKFRAME_OPENED",
     "CRAFT_SHOW", "CRAFT_UPDATE", "CRAFT_CLOSE",
+    "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "TRADE_SKILL_CLOSE",
     "SPELLS_CHANGED", "NEW_RECIPE_LEARNED",
     "UPDATE_FACTION", "PLAYER_ENTERING_WORLD",
     "UNIT_INVENTORY_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
@@ -2056,16 +2164,33 @@ local WATCHED = {
     "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
 }
 
+-- A stock window opened on a profession a guide covers: that guide comes
+-- on screen (the window is the surest statement of which profession you
+-- are working), and with the option the guide window shows itself
+local function OnStockWindowShown(channelKey)
+    CHANNELS[channelKey].open = true
+    local prof, key = ProfessionOnChannel(channelKey)
+    if not prof then return end
+    if char.guide ~= key then
+        char.guide = key
+        lastCurrentKey, lastRank = nil, nil
+        Commander.Notify(Events.UPDATE)
+    end
+    if db.AutoOpenWithCraft and db.EnableTradecraft then
+        db.ShowGuide = true
+    end
+end
+
 events:SetScript("OnEvent", function(_, event, arg1)
     if not loaded then return end
     if event == "CRAFT_SHOW" then
-        craftOpen = true
-        if db.AutoOpenWithCraft and db.EnableTradecraft and CraftWindowIsOurs() then
-            db.ShowGuide = true
-        end
+        OnStockWindowShown("CRAFT")
+    elseif event == "TRADE_SKILL_SHOW" then
+        OnStockWindowShown("TRADESKILL")
     elseif event == "CRAFT_CLOSE" then
-        craftOpen = false
-        craftIndexBySpell = {}
+        CHANNELS.CRAFT.open = false
+    elseif event == "TRADE_SKILL_CLOSE" then
+        CHANNELS.TRADESKILL.open = false
     elseif event == "UPDATE_MACROS" or event == "PLAYER_ENTERING_WORLD" then
         macrosReady = true
     elseif event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then
@@ -2095,5 +2220,50 @@ function CommanderTradecraft_OnLogin()
     end)
     -- The binding's button, so the key works before the guide ever paints
     EnsureKeyButton()
+    -- A character who has never chosen a guide gets the first one whose
+    -- profession they have; Enchanting when they have neither
+    if not char.guide then
+        for _, key in ipairs(GUIDE_KEYS) do
+            local _, maxRank = ReadSkill(D.PROFESSIONS[D.GUIDES[key].profession])
+            if maxRank > 0 then
+                char.guide = key
+                break
+            end
+        end
+        char.guide = char.guide or GUIDE_KEYS[1]
+    end
     Rebuild()
+end
+
+-- Switch guides: to `key`, or with none to the next one there is (also:
+-- /ctc guide <name>, /ctc enchanting, /ctc firstaid). Progress is per
+-- guide already -- choices are keyed by segment -- so switching loses
+-- nothing.
+function CommanderTradecraft_Guide(key)
+    if not loaded then return end
+    local current = char.guide or GUIDE_KEYS[1]
+    local target
+    if key and key ~= "" then
+        local wanted = tostring(key):upper():gsub("[%s%-_]", "")
+        for _, k in ipairs(GUIDE_KEYS) do
+            local prof = D.PROFESSIONS[D.GUIDES[k].profession]
+            if k == wanted or prof.name:upper():gsub("[%s%-_]", "") == wanted then target = k end
+        end
+        if not target then
+            Announce("no guide called " .. tostring(key) .. " — there is Enchanting and First Aid")
+            return
+        end
+    else
+        for i, k in ipairs(GUIDE_KEYS) do
+            if k == current then target = GUIDE_KEYS[i % #GUIDE_KEYS + 1] end
+        end
+        target = target or GUIDE_KEYS[1]
+    end
+    if target ~= current then
+        char.guide = target
+        lastCurrentKey, lastRank = nil, nil
+        Commander.Notify(Events.UPDATE)
+    end
+    Announce("guide: " .. D.GUIDES[target].title)
+    CommanderTradecraft_Show()
 end

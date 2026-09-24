@@ -740,12 +740,32 @@ end
 
 C_Container = {}
 
+-- The bank containers answer ONLY while the bank is open, which is the single
+-- most consequential thing this mock models. A mock that answers for bag -1 all
+-- session makes a cache that is never written and a cache that is clobbered on
+-- every stray BANKFRAME_CLOSED look exactly alike -- and both of those shipped.
+-- BankReadable is flipped by the tests, not by the events, because the timing is
+-- the part under test: the containers are still live DURING the close dispatch
+-- and dead immediately after it.
+local bankReadable = false
+
+local function IsBankBag(bag)
+    if bag == BANK_CONTAINER then return true end
+    return bag >= NUM_BAG_SLOTS + 1 and bag <= NUM_BAG_SLOTS + NUM_BANKBAGSLOTS
+end
+
+function BankReadable(value)
+    bankReadable = value and true or false
+end
+
 function C_Container.GetContainerNumSlots(bag)
+    if IsBankBag(bag) and not bankReadable then return 0 end
     local c = containers[bag]
     return c and c.size or 0
 end
 
 function C_Container.GetContainerItemInfo(bag, slot)
+    if IsBankBag(bag) and not bankReadable then return nil end
     local c = containers[bag]
     local id = c and c.items[slot]
     if not id then return nil end
@@ -1140,8 +1160,11 @@ CommanderConsole_Colors = {
 }
 
 -- A previous session's saved variables: a suite accent the defaults must not
--- stamp over, and an empty set store.
-CommanderArmoryDB = { AccentColor = "FEL" }
+-- stamp over, and an empty set store. DBVersion is 1 on purpose -- this is an
+-- EXISTING database, so the ladder has a rung to climb. A file with no version
+-- at all is a fresh install and correctly skips every migration, which is why
+-- seeding it here is what makes the 1->2 repair testable.
+CommanderArmoryDB = { AccentColor = "FEL", DBVersion = 1 }
 CommanderArmorySets = {}
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
@@ -1279,9 +1302,25 @@ end
 -- sheet must return nil rather than throw when that sheet is not there, and
 -- must build itself later when it appears.
 
+-- Two bank caches written by the unguarded writer that D9a replaced: one
+-- clobbered (stamped, but empty) and one intact. The 1->2 migration has to
+-- withdraw the false confidence from the first and leave the second alone.
+CommanderArmorySets.Chars = {
+    ["Dreamscythe\001Clobbered"] = { sets = {}, hidden = {},
+        bank = { items = {}, at = 1788000000 } },
+    ["Dreamscythe\001Intact"] = { sets = {}, hidden = {},
+        bank = { items = { { link = "x", bag = -1, slot = 1 } }, at = 1788000000 } },
+}
+
 Fire("ADDON_LOADED", "Commander_Armory")
 CHECK(CommanderArmoryDB.EnableArmory == true, "A: defaults applied at ADDON_LOADED")
-CHECK(CommanderArmoryDB.DBVersion == 1, "A: the migration ladder stamps a version")
+CHECK(CommanderArmoryDB.DBVersion == 2, "A: the migration ladder stamps a version")
+CHECK(CommanderArmorySets.Chars["Dreamscythe\001Clobbered"].bank.at == 0,
+    "A: 1->2 un-confirms a stamped-but-empty bank cache -- it never saw a bank",
+    CommanderArmorySets.Chars["Dreamscythe\001Clobbered"].bank.at)
+CHECK(CommanderArmorySets.Chars["Dreamscythe\001Intact"].bank.at == 1788000000,
+    "A: and leaves a cache that actually holds something completely alone",
+    CommanderArmorySets.Chars["Dreamscythe\001Intact"].bank.at)
 CHECK(CommanderArmoryDB.AccentColor == "FEL", "A: a saved suite accent survives ApplyDefaults")
 CHECK(CommanderArmoryDB.FlyoutSort == "ILVL", "A: the flyout default sort is item level")
 CHECK(type(CommanderArmorySets.Chars) == "table", "A: the set store is seeded outside DefaultSettings")
@@ -1332,7 +1371,7 @@ CHECK(TextMatching("separate saved file") or TextMatching("separate from every o
     "B: the Armory section says the sets live in their own file")
 CHECK(TextMatching("Restore Defaults") ~= nil, "B: the Restore Defaults footer is drawn")
 CHECK(TextMatching("Slash command: /cgear") ~= nil, "B: the footer names the slash command")
-CHECK(_G.CommanderArmoryPanelScroll ~= nil, "B: the page is scrollable (MakeScrollable ran)")
+CHECK(_G.CommanderUIScrollArmory ~= nil, "B: the page is scrollable")
 
 local registered = false
 for _, mod in ipairs(Commander.GetModules and Commander.GetModules() or {}) do
@@ -1565,6 +1604,7 @@ OpenFlyout(5)
 CHECK(not Contains(FlyoutNames(), "Onslaught Breastplate"),
     "F: an unvisited bank contributes nothing -- we never invent stock")
 
+BankReadable(true)
 Fire("BANKFRAME_OPENED")
 CHECK(CommanderArmory.AtBank(), "F: BANKFRAME_OPENED puts us at the bank")
 CHECK(CommanderArmory.BankAge() > 0, "F: and stamps the cache")
@@ -1578,6 +1618,7 @@ CHECK(onslaught and onslaught.badge == "bank →",
     onslaught and onslaught.badge)
 
 Fire("BANKFRAME_CLOSED")
+BankReadable(false)
 CHECK(not CommanderArmory.AtBank(), "F: BANKFRAME_CLOSED leaves the bank")
 OpenFlyout(5)
 local awayChest = FlyoutList()
@@ -1599,6 +1640,51 @@ CHECK(PrintedMatching("open a banker") ~= nil,
     "F: clicking it says what to do rather than failing silently",
     printLog[#printLog])
 CHECK(equipped[5] == 41005, "F: and nothing was equipped")
+
+-- The stray close. Escape routes through CloseAllWindows, which calls
+-- CloseBankFrame whether or not a bank is open, so BANKFRAME_CLOSED arrives at
+-- arbitrary moments with the containers long gone. An unguarded scan reads
+-- nothing, writes that nothing over a good cache, and stamps the clock -- so
+-- every banked piece in every set reports MISSING with a fresh timestamp
+-- vouching for it. Three of four characters in the author's own saved variables
+-- were sitting in exactly that state when this test was written.
+local ageBefore = CommanderArmory.BankAge()
+Fire("BANKFRAME_CLOSED")
+OpenFlyout(5)
+CHECK(Contains(FlyoutNames(), "Onslaught Breastplate"),
+    "F: a stray BANKFRAME_CLOSED away from the bank does NOT wipe the cache",
+    Joined(FlyoutNames()))
+CHECK(CommanderArmory.BankAge() == ageBefore,
+    "F: and does not re-stamp it -- a failed read is not a sighting",
+    CommanderArmory.BankAge(), ageBefore)
+CommanderArmoryUI.CloseFlyout()
+
+-- The narrowness, which is the other half of the guard being right: a bank we
+-- genuinely CAN read, holding no gear, DOES empty the cache. Keeping a row the
+-- player has withdrawn would leave a stale promise in a store the flyout
+-- presents as fact.
+local stashedChest = containers[-1].items[1]
+containers[-1].items[1] = nil
+BankReadable(true)
+Fire("BANKFRAME_OPENED")
+Fire("BANKFRAME_CLOSED")
+BankReadable(false)
+OpenFlyout(5)
+CHECK(not Contains(FlyoutNames(), "Onslaught Breastplate"),
+    "F: a readable but gear-free bank DOES clear the cache -- no stale promises",
+    Joined(FlyoutNames()))
+CommanderArmoryUI.CloseFlyout()
+
+-- Restore the bank the sections below were written against.
+containers[-1].items[1] = stashedChest
+BankReadable(true)
+Fire("BANKFRAME_OPENED")
+Fire("BANKFRAME_CLOSED")
+BankReadable(false)
+OpenFlyout(5)
+CHECK(Contains(FlyoutNames(), "Onslaught Breastplate"),
+    "F: and re-visiting the bank picks it straight back up")
+CommanderArmoryUI.CloseFlyout()
 
 -- Show Banked Items off removes it from the list entirely.
 CommanderArmoryDB.FlyoutShowBank = false
@@ -1907,8 +1993,10 @@ CHECK(missingReason and missingReason.itemName == "Lightbringer Faceguard",
 -- The legplates go into the bank while we are standing at it, then we walk away.
 equipped[7] = nil
 containers[-1].items[2] = 41009
+BankReadable(true)
 Fire("BANKFRAME_OPENED")
 Fire("BANKFRAME_CLOSED")
+BankReadable(false)
 WorldChanged()
 
 local bankPlan = CommanderArmory.Preflight(legsKit)
@@ -1966,8 +2054,10 @@ CHECK(TooltipHas("is in your bank") ~= nil,
 equipped[1] = 41001
 equipped[7] = 41009
 containers[-1].items[2] = nil
+BankReadable(true)
 Fire("BANKFRAME_OPENED")
 Fire("BANKFRAME_CLOSED")
+BankReadable(false)
 WorldChanged()
 
 -- ===========================================================================
@@ -2244,7 +2334,7 @@ CHECK(CommanderArmoryDB.FlyoutMinQuality == 0, "S: Restore Defaults restores a c
     CommanderArmoryDB.FlyoutMinQuality)
 CHECK(CommanderArmoryDB.AccentColor == "AMBER", "S: including the accent",
     CommanderArmoryDB.AccentColor)
-CHECK(CommanderArmoryDB.DBVersion == 1,
+CHECK(CommanderArmoryDB.DBVersion == 2,
     "S: and does NOT un-migrate the database", CommanderArmoryDB.DBVersion)
 CHECK(#CommanderArmory.Sets() == setCountBeforeReset,
     "S: and leaves every saved set exactly where it was",

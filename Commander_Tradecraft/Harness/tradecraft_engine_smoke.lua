@@ -48,7 +48,10 @@ end
 -- ===========================================================================
 
 -- A1 every route step points at a recipe / formula that exists, and every
--- reagent and vendor it names is described
+-- reagent and vendor it names is described -- on every guide
+for _, guideKey in ipairs({ "ENCHANTING", "FIRSTAID" }) do
+local GUIDE = D.GUIDES[guideKey]
+CHECK(GUIDE and D.PROFESSIONS[GUIDE.profession], "A1 guide names its profession", guideKey)
 for _, segment in ipairs(GUIDE.segments) do
     for _, path in ipairs(segment.paths) do
         CHECK(#path.steps > 0, "A1 path has steps", segment.key)
@@ -115,6 +118,7 @@ do
     end
     CHECK(last == 375, "A2 route ends at 375", last)
 end
+end
 
 -- A3 every formula's vendor set includes someone each faction can use
 for item, f in pairs(D.FORMULAS) do
@@ -135,6 +139,43 @@ do
         CHECK(ranks[i].at < ranks[i - 1].cap, "A4 next rank trainable before the cap", ranks[i].name)
     end
     CHECK(ranks[#ranks].at == 275 and ranks[#ranks].cap == 375, "A4 Master at 275")
+end
+
+-- A5 First Aid's ladder: a book, a quest and a book, each placed for both
+-- factions; Master needs 300 (it is a book, not a trainer, and the book
+-- says 300) and so is offered AT the cap, not before it
+do
+    local ranks = D.PROFESSIONS.FIRSTAID.ranks
+    for i = 2, #ranks do CHECK(ranks[i].cap > ranks[i - 1].cap, "A5 caps rise") end
+    CHECK(ranks[3].book and ranks[3].book.item == 16084 and ranks[3].at == 125, "A5 Expert is a book at 125")
+    CHECK(ranks[4].quest and ranks[4].quest.name == "Triage" and ranks[4].at == 225, "A5 Artisan is Triage at 225")
+    CHECK(ranks[5].book and ranks[5].book.item == 22012 and ranks[5].at == 300 and ranks[5].cap == 375, "A5 Master is a book at 300")
+    for _, r in ipairs(ranks) do
+        if r.book then
+            CHECK(D.ITEMS[r.book.item] and r.book.cost > 0, "A5 book described", r.name)
+            local a, h = false, false
+            for _, npc in ipairs(r.book.vendors) do
+                local v = D.VENDORS[npc]
+                CHECK(v and D.ZONES[v.zone], "A5 book vendor placed on a known zone", npc)
+                if v and (not v.faction or v.faction == "Alliance") then a = true end
+                if v and (not v.faction or v.faction == "Horde") then h = true end
+            end
+            CHECK(a and h, "A5 both factions can buy the book", r.name)
+        end
+        if r.quest then
+            local a, h = false, false
+            for _, g in ipairs(r.quest.givers) do
+                CHECK(g.x and g.y and D.ZONES[g.zone], "A5 quest giver placed on a known zone", g.name)
+                if g.faction == "Alliance" then a = true elseif g.faction == "Horde" then h = true end
+            end
+            CHECK(a and h, "A5 a doctor for each faction")
+        end
+    end
+    -- the First Aid recipes on the route have the client's thresholds
+    CHECK(D.RECIPES[3276].yellow == 50 and D.RECIPES[3276].grey == 100 and D.RECIPES[3276].learn == 40, "A5 Heavy Linen: yellow 50, grey 100, trainer 40")
+    CHECK(D.RECIPES[18630].yellow == 290 and D.RECIPES[18630].grey == 350, "A5 Heavy Runecloth carries to 330 without going grey")
+    CHECK(D.RECIPES[27033].formula == 21993 and D.FORMULAS[21993].at == 360, "A5 Heavy Netherweave is a manual at 360")
+    CHECK(D.RECIPES[3275].learn == 0 and D.RECIPES[3275].creates == 1251, "A5 Linen Bandage comes with the rank and makes a bandage")
 end
 
 -- ===========================================================================
@@ -168,6 +209,21 @@ for _, segment in ipairs(GUIDE.segments) do
             local expected = E.ExpectedCrafts(rec, def.from, def.to)
             CHECK(expected <= def.count * 1.2, "B3 model within 20% over guide", rec.name .. " " .. expected .. " vs " .. def.count)
             CHECK(expected >= def.count * 0.8, "B3 model within 20% under guide", rec.name .. " " .. expected .. " vs " .. def.count)
+        end
+    end
+end
+
+-- B3c First Aid: the published counts are generous (Heavy Linen 40-80 is
+-- listed at 70 against a model of 46), and D3 makes the guide's figure a
+-- floor -- so the plan never shops UNDER the published list, and the
+-- model is never more than twenty percent OVER it
+for _, segment in ipairs(D.GUIDES.FIRSTAID.segments) do
+    for _, def in ipairs(segment.paths[1].steps) do
+        if def.kind == "craft" and def.count then
+            local rec = D.RECIPES[def.spell]
+            local expected = E.ExpectedCrafts(rec, def.from, def.to)
+            CHECK(expected < math.huge and expected <= def.count * 1.2, "B3c model within 20% over the guide", rec.name .. " " .. expected .. " vs " .. def.count)
+            CHECK(E.PlannedFor(rec, def.from, def.to, 0.1, def) >= def.count, "B3c plan never under the guide", rec.name)
         end
     end
 end
@@ -530,6 +586,59 @@ do
     -- No price function at all: everything still builds, nothing priced
     plan = E.Build(GUIDE, World(320, 375, { [27961] = true }), nil, { autoPath = true })
     CHECK(plan.current.spell == 33990 and not plan.priced and next(plan.autoPaths) == nil, "C16 without prices the recommendation stands")
+end
+
+-- C17 First Aid characters: the ladder's banners and the manual trips
+do
+    local FA = D.GUIDES.FIRSTAID
+    -- a fresh First Aider: Linen Bandage, which comes with the rank
+    local plan = E.Build(FA, World(1, 75, { [3275] = true }, { [2589] = 60 }))
+    CHECK(plan.current and plan.current.spell == 3275 and plan.current.known, "C17 first step is Linen Bandage, known")
+    CHECK(plan.current.reagents[1].id == 2589 and plan.current.reagents[1].have == 60, "C17 linen counted")
+    CHECK(plan.train == nil, "C17 no banner at 1")
+    -- 130 / 150: Expert is within reach and it is a book, with both vendors
+    plan = E.Build(FA, World(130, 150, { [3278] = true }, {}, {}, "Horde"))
+    CHECK(plan.train and plan.train.rank.name == "Expert" and plan.train.rank.book and not plan.train.urgent, "C17 Expert book offered at 125+")
+    CHECK(plan.current and plan.current.spell == 3278, "C17 Heavy Wool is current at 130 (the manuals need 180 and 210)", plan.current and plan.current.kind)
+    local pendingBuys = 0
+    for _, step in ipairs(plan.steps) do if step.kind == "buy" and step.status == "pending" then pendingBuys = pendingBuys + 1 end end
+    CHECK(pendingBuys == 4, "C17 four manuals still to buy", pendingBuys)
+    local up = E.Upcoming(plan, 2)
+    CHECK(up[1] and up[1].kind == "buy" and up[1].item == 16112 and up[1].at == 180, "C17 the Heavy Silk manual previews with its skill")
+    -- 150 / 150 with no Expert: the cap, and the book is the way past it
+    plan = E.Build(FA, World(150, 150, { [3278] = true, [7928] = true }))
+    CHECK(plan.train and plan.train.urgent and plan.train.rank.book.item == 16084, "C17 at the cap the Expert book is urgent")
+    -- 180 / 225 without the Heavy Silk manual: the buy step is current
+    plan = E.Build(FA, World(180, 225, { [7928] = true }, {}, {}, "Alliance"))
+    CHECK(plan.current and plan.current.kind == "buy" and plan.current.item == 16112, "C17 buy the Heavy Silk manual at 180", plan.current and plan.current.kind)
+    CHECK(#plan.current.vendors == 1 and plan.current.vendors[1].name == "Deneb Walker", "C17 the Alliance vendor only", plan.current.vendors[1] and plan.current.vendors[1].name)
+    -- ...and holding it, or knowing the recipe, moves on
+    plan = E.Build(FA, World(180, 225, { [7928] = true, [7929] = true }))
+    CHECK(plan.current and plan.current.spell == 7929, "C17 known: Heavy Silk is current")
+    -- 225 / 225: Artisan is the quest, urgent at the cap
+    plan = E.Build(FA, World(225, 225, { [10840] = true }))
+    CHECK(plan.train and plan.train.urgent and plan.train.rank.quest and plan.train.rank.quest.name == "Triage", "C17 Triage at the cap")
+    CHECK(plan.current and plan.current.spell == 10840 and plan.current.capped, "C17 Mageweave capped until Triage")
+    -- 300 / 300: the Master book, at the cap (it needs 300)
+    plan = E.Build(FA, World(300, 300, { [18630] = true }))
+    CHECK(plan.train and plan.train.urgent and plan.train.rank.book.item == 22012, "C17 Master book at 300")
+    plan = E.Build(FA, World(295, 300, { [18630] = true }))
+    CHECK(plan.train == nil, "C17 no Master banner at 295: the book needs 300")
+    -- 330 / 375, Netherweave manual not bought: current, from the Hellfire vendor of your faction
+    plan = E.Build(FA, World(330, 375, { [18630] = true }, {}, {}, "Horde"))
+    CHECK(plan.current and plan.current.kind == "buy" and plan.current.item == 21992 and plan.current.vendors[1].name == "Aresella", "C17 Netherweave manual from Aresella")
+    -- the whole-route shopping list is cloth only, and the bandages are made along the way
+    plan = E.Build(FA, World(1, 75, { [3275] = true }))
+    local cloth = {}
+    for _, row in ipairs(plan.shopping) do cloth[row.id] = row.need end
+    CHECK(cloth[2589] and cloth[2592] and cloth[4306] and cloth[4338] and cloth[14047] and cloth[21877], "C17 six cloths on the list")
+    CHECK(cloth[2589] >= 190 and cloth[14047] >= 240 and cloth[21877] >= 90, "C17 never under the published list (190 linen, 240 runecloth, 90 netherweave)", cloth[2589] .. " " .. cloth[14047] .. " " .. cloth[21877])
+    CHECK(#plan.made == 12, "C17 twelve bandages made along the way", #plan.made)
+    -- brackets: the Master book's bracket starts at 300
+    CHECK(plan.brackets[5].from == 300 and plan.brackets[5].name == "Master", "C17 Master bracket 300-375")
+    -- finished
+    plan = E.Build(FA, World(375, 375, {}))
+    CHECK(plan.finished and plan.current == nil, "C17 finished at 375")
 end
 
 -- C14 helpers

@@ -114,3 +114,21 @@ boxes and agree with the published guide to within a point everywhere both have 
 that have no published figure to check against: Karaaz at Netherstorm 43.6, 34.3 and High Enchanter
 Bardolan at Shattrath 43.4, 92.4. Lower City is at the bottom of the Shattrath map, so the 92 is
 plausible; look once.
+
+## A12 — The trade skill window behaves like the craft window (First Aid)
+
+`TRADE_SKILL_SHOW` arrives after UIParent has loaded `Blizzard_TradeSkillUI`; `GetTradeSkillLine()`
+answers the localised profession name (the one `GetSpellInfo(3273)` gives) with rank and max rank;
+`GetNumTradeSkills` / `GetTradeSkillInfo(i)` list the recipes with `"header"` rows. Read from this
+client's own `Blizzard_TradeSkillUI/TBC` code 2026-09-19. Cooking and Fishing use the same frame and
+are ignored by name, as Beast Training is on the craft frame (harness B0, G7).
+
+Symptom if wrong: opening First Aid does not switch the guide, or a manual step stays current after
+the recipe was learned until `/ctc status` is run. Test: open First Aid with the Enchanting guide
+on screen.
+
+## A13 — `IsSpellKnown` answers for the rank spells, or the cap does
+
+Nothing depends on it: a book or quest rank is done when the max rank rises past its cap, which
+`GetSkillLineInfo` reports (A1). Listed only because the banner's "You have it — right-click it to
+read it" line reads the book from the bags with `GetItemCount`, which is A7.

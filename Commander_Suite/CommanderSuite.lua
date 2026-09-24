@@ -15,15 +15,15 @@ local GROUP_HEADER_HEIGHT = 30
 -- not know yet falls through to Other Modules, so nothing ever vanishes.
 local PILLARS = {
     { title = "Command & Control",
-      keys = { "Comms", "Orders", "Ping", "Camera", "Radar", "Dossier" } },
+      keys = { "Comms", "Orders", "Ping", "Camera", "Radar", "Dossier", "Muster" } },
     { title = "Battle HUD",
-      keys = { "Production", "Afflictions", "Buffs", "PartyFrames", "Vitals", "Nameplate", "Casting", "Reticle", "Resources", "Meters", "Threat" } },
+      keys = { "Production", "Afflictions", "Buffs", "PartyFrames", "Vitals", "Nameplate", "Plates", "Casting", "Reticle", "Resources", "Forecast", "Meters", "Threat" } },
     { title = "Feedback & Alerts",
       keys = { "Momentum", "Impact", "Spoils", "Promotion", "Adjutant", "Idle" } },
     { title = "Operations",
       keys = { "Economy", "Logistics", "Quartermaster", "Talents", "Objectives", "ObjectivesBoard", "Recovery", "Who" } },
     { title = "Interface",
-      keys = { "ActionBar", "ActionBarButtons", "RankCheck", "Armory", "Bags", "Inventory", "Chat", "Minimap", "TopBar", "Tooltip", "Console" } },
+      keys = { "ActionBar", "ActionBarButtons", "RankCheck", "Armory", "Bags", "Vault", "Inventory", "Chat", "Minimap", "TopBar", "Tooltip", "Console" } },
 }
 
 local function AddSectionHeader(panel, anchor, text)
@@ -174,6 +174,7 @@ local function BuildDashboard(panel, anchor)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(CONTENT_WIDTH, 10)
     scroll:SetScrollChild(content)
+    Commander.UI.SlimScrollBar("CommanderSuiteModuleScroll", 2, 2)
 
     -- Seed anchor sits 8px above the content top so the first row's -8
     -- offset lands exactly at 0

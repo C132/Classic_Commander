@@ -128,9 +128,17 @@ a menu item that is off screen cannot signal), and act as a visible table of
 contents so a player arriving with a question sees that the product has an
 answer without clicking.
 
-Scope (`SESSION · RUN · HOUR`) is shared across every pane, exactly as Meters
-shares one segment across two panes. BAGS has no time dimension: its scope
-button dims and reads `NOW` rather than silently doing nothing.
+Scope (`SESSION · RUN · HOUR · ALL`) is shared across every pane, exactly as
+Meters shares one segment across two panes. BAGS has no time dimension: its
+scope button dims and reads `NOW` rather than silently doing nothing.
+
+`ALL` was added late and is not a convenience. Every other scope begins at
+login or later, and the ROLLS pane drops logged contests older than the scope's
+start — so the roll log, retained for 60 days and 400 contests, was written on
+every resolution and readable by nothing. A relog emptied the pane for good.
+`ALL` is the only scope that reaches the persisted ledger, and it starts at the
+oldest stamp across all three rings (events, rolls, coin), which are trimmed
+independently and do not share a floor.
 
 Default mode is FEED. It is the chat-frame replacement, and the chat frame is
 what we deleted.
@@ -307,6 +315,36 @@ arrived 45 seconds late on a 60-second roll — worse than no alert. And a roll
 the player was never eligible for is **not** marked MISSED; a mage accumulating
 a miss for every plate drop in Karazhan turns the one metric that matters into
 noise.
+
+### D10a — `CANCEL_LOOT_ROLL` closes a row, it never decides one
+
+The server sends `CANCEL_LOOT_ROLL` the instant a contest **ends** — it is how
+the Blizzard pop-up knows to come down — not only when a roll is withdrawn. It
+arrives *ahead* of the chat line and the loot-history update that say who won.
+
+Treating it as a verdict resolved the row with no winner, so `ResolveRoll` wrote
+a withdrawal and the real result had nothing left to attach to. Field evidence:
+one contest in the roll log across a month and 125 instance runs.
+
+So a cancel sets `closing` and starts a four-second grace. Any real verdict
+inside that window wins and is logged normally. Only silence is filed as
+withdrawn — still never as MISSED, because a withdrawn contest had no winner to
+lose to.
+
+Two consequences that fall out of the same ordering:
+
+- The `LOOT_HISTORY_ROLL_COMPLETE` update is the one that finally carries every
+  player's **roll number**, and it lands *after* the verdict. Refreshing only
+  unresolved rolls skipped it, so every logged contest held names and choices
+  and no numbers. Resolved rolls are refreshed too, and the revision is folded
+  back into the row already written (`roll.logRow`) rather than appended.
+- A verdict with no row of its own — zoned in mid-pull, reloaded mid-roll — is
+  logged as a loose row rather than dropped, guarded against writing a second
+  row for a contest that already wrote its own.
+
+`/cspoils rolldebug` prints the whole sequence, including roll-shaped chat lines
+that fail to parse. That last case is the only way to tell a swallowed verdict
+from a format string this client does not share.
 
 ## D11 — Master loot is not a feature, it is the cost of suppression
 

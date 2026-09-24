@@ -36,12 +36,14 @@ end)
 local function ApplyFraming()
     local style = (CommanderInventoryDB and CommanderInventoryDB.frameStyle) or "WINDOW"
     local windowArt = style == "WINDOW"
-    if ItemGrid.NineSlice then ItemGrid.NineSlice:SetShown(windowArt) end
-    if ItemGrid.Bg then ItemGrid.Bg:SetShown(windowArt) end
-    if ItemGrid.TitleBg then ItemGrid.TitleBg:SetShown(windowArt) end
-    if ItemGrid.TitleText then ItemGrid.TitleText:SetShown(windowArt) end
+    -- The whole template dressing, from the shared verified list: this was
+    -- five names, and it was missing the nine border pieces, the title
+    -- streaks and the inset border -- so turning the window art off left
+    -- the template's steel frame and two bars either side of the title
+    -- behind. CloseButton is not in the shared list (most windows want to
+    -- keep it), so this window keeps saying what it wants for that one.
+    Commander.UI.SetTemplateDressing(ItemGrid, windowArt)
     if ItemGrid.CloseButton then ItemGrid.CloseButton:SetShown(windowArt) end
-    if ItemGrid.Inset then ItemGrid.Inset:SetShown(windowArt) end
     Commander.UI.ApplyStyleBackdrop(ItemGrid, windowArt and "NONE" or style)
     if ButtonsContainer then
         -- No title bar outside window art; reclaim its space

@@ -18,6 +18,10 @@ local DefaultSettings = {
     Layout = "BARS_DOWN",
     IconRecess = "SOFT",   -- shared suite icon shading: OFF|SOFT|DEEP|CARVED
     BarWidth = 110,
+    RowHeight = 12,
+    IconSize = 26,
+    Spacing = 4,
+    PerRow = 20,          -- == the Queue Length ceiling: one line, no wrap
     CooldownOverlay = "BAR",
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
@@ -39,7 +43,7 @@ local function CreateOptionsPanel()
         key = "Production",
         title = "Production",
         addonName = "Commander_Production",
-        description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar draining toward ready — full when the cooldown starts, empty the moment it's back — stacked at the left edge of the screen, longest waits at the bottom, with a sound and callout of your choice the moment something finishes.",
+        description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar draining toward ready — full when the cooldown starts, empty the moment it's back — stacked at the left edge of the screen, longest waits at the bottom, with a sound and callout of your choice the moment something finishes. With Commander Party Frames loaded, the same queue can also ride its banner in place of the class cooldowns — Party Frames → Header → Production in Header — as a second view alongside this frame.",
         event = COMMANDER_PRODUCTION_EVENTS.UPDATE,
         slash = { "/cprod" },
         slashHandlers = {
@@ -86,18 +90,58 @@ local function CreateOptionsPanel()
         set = function(value) CommanderProductionDB.CooldownOverlay = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
-    panel:AddSlider({
+    local isStrip = function()
+        local layout = CommanderProductionDB.Layout
+        return layout == "ICONS" or layout == "ICONS_RTL"
+    end
+    local barsEnabled = function()
+        return CommanderProductionDB.EnableProduction and not isStrip()
+    end
+    local stripEnabled = function()
+        return CommanderProductionDB.EnableProduction and isStrip()
+    end
+    panel:AddSliderPair({
         label = "Bar Width",
-        tooltip = "Width of the progress bars in the Bars layouts — widen until names and timers fit.",
-        min = 100, max = 240, step = 5,
+        tooltip = "Width of the progress bars in the Bars layouts. Names sit left and the countdown hard right, so a narrow bar clips the name and keeps the number.",
+        min = 60, max = 240, step = 5,
         format = "%.0f px",
         get = function() return CommanderProductionDB.BarWidth end,
         set = function(value) CommanderProductionDB.BarWidth = value end,
-        isEnabled = function()
-            local layout = CommanderProductionDB.Layout
-            return CommanderProductionDB.EnableProduction
-                and layout ~= "ICONS" and layout ~= "ICONS_RTL"
-        end,
+        isEnabled = barsEnabled,
+    }, {
+        label = "Row Height",
+        tooltip = "Height of each bar in the Bars layouts, which is also the size of its icon. The text shrinks with the row, so a short row is a compact one rather than a clipped one.",
+        min = 8, max = 24, step = 1,
+        format = "%.0f px",
+        get = function() return CommanderProductionDB.RowHeight end,
+        set = function(value) CommanderProductionDB.RowHeight = value end,
+        isEnabled = barsEnabled,
+    })
+    panel:AddSliderPair({
+        label = "Icon Size",
+        tooltip = "Size of each icon in the Icon Strip layouts.",
+        min = 14, max = 40, step = 1,
+        format = "%.0f px",
+        get = function() return CommanderProductionDB.IconSize end,
+        set = function(value) CommanderProductionDB.IconSize = value end,
+        isEnabled = stripEnabled,
+    }, {
+        label = "Icons per Row",
+        tooltip = "How many icons go on one line before the strip wraps onto the next — a long queue becomes a compact block instead of a banner across the screen. At or above Queue Length nothing wraps and the strip stays a single line.",
+        min = 1, max = 20, step = 1,
+        format = "%.0f",
+        get = function() return CommanderProductionDB.PerRow end,
+        set = function(value) CommanderProductionDB.PerRow = value end,
+        isEnabled = stripEnabled,
+    })
+    panel:AddSlider({
+        label = "Spacing",
+        tooltip = "Gap between entries, in both layouts. Zero packs them edge to edge.",
+        min = 0, max = 12, step = 1,
+        format = "%.0f px",
+        get = function() return CommanderProductionDB.Spacing end,
+        set = function(value) CommanderProductionDB.Spacing = value end,
+        isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
     panel:AddSliderPair({
         label = "Minimum Cooldown",

@@ -145,47 +145,6 @@ local function PortraitOn()
     return CommanderBuffsDB.EnableBuffs and CommanderBuffsDB.EnablePortrait
 end
 
--- This page is far past the Settings canvas, so its rows flow into a scroll
--- frame — AddRow overridden on the panel INSTANCE only (the Reticle /
--- Quartermaster / Meters pattern).
-local function MakeScrollable(panel, frameName)
-    local scroll = CreateFrame("ScrollFrame", frameName, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel._anchor, "TOPLEFT", 0, 0)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 12)
-    scroll:EnableMouseWheel(true)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local target = self:GetVerticalScroll() - delta * 28
-        local maxScroll = self:GetVerticalScrollRange()
-        if target < 0 then target = 0 elseif target > maxScroll then target = maxScroll end
-        self:SetVerticalScroll(target)
-    end)
-
-    local scrollChild = CreateFrame("Frame", nil, scroll)
-    scrollChild:SetSize(1, 1)
-    scroll:SetScrollChild(scrollChild)
-    scroll:SetScript("OnSizeChanged", function(_, width) scrollChild:SetWidth(width) end)
-
-    local seed = CreateFrame("Frame", nil, scrollChild)
-    seed:SetHeight(1)
-    seed:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
-    seed:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-    panel._anchor = seed
-    panel._contentHeight = 0
-    panel.AddRow = function(self, height, spacing)
-        local row = CreateFrame("Frame", nil, scrollChild)
-        row:SetHeight(height)
-        row:SetPoint("TOPLEFT", self._anchor, "BOTTOMLEFT", 0, -(spacing or 8))
-        row:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-        self._anchor = row
-        self._contentHeight = self._contentHeight + height + (spacing or 8)
-        return row
-    end
-
-    return function()
-        scrollChild:SetHeight(panel._contentHeight + 24)
-    end
-end
-
 local function CreatePanel()
     local panel = Commander.UI.NewPanel({
         key = "Buffs",
@@ -206,7 +165,6 @@ local function CreatePanel()
             end,
         },
     })
-    local finishScroll = MakeScrollable(panel, "CommanderBuffsPanelScroll")
 
     panel:AddSection("Buffs")
 
@@ -628,7 +586,6 @@ local function CreatePanel()
         onDefaults = Reset,
         defaultsTooltip = "Reset every option on this page to its default value. Your priority rules are kept — only the editor's own Restore Default Rules button replaces those.",
     })
-    finishScroll()
 end
 
 frame:SetScript("OnEvent", function(_, event, arg1)

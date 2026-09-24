@@ -1,0 +1,14 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Diminish
+## Author: Devin
+## Version: 1.1.0
+## Notes: A diminishing-returns tracker for battlegrounds and arena, tailored to whatever you are playing. Commander Arena Frames already tracks DR — per seat, against arena1..arena5, which are unit tokens that do not exist in a battleground, so that board answers nothing in the place most PvP actually happens. This is the same rules with the seats taken out: state keyed by GUID alone, drawn against the people you can name — yourself, your target, your focus, the arena seats when there are any, and whoever you have most recently landed control on, which is the only honest answer to sapping someone and swapping target. The tailoring is the point: TBC has sixteen DR categories and no character can open more than a handful, so the handful drawn is the one YOUR SPELLBOOK can open — player book and pet book, re-read at login and again whenever your spells change, so an arcane mage has no Dragon's Breath row, a fire mage does, a warlock's Seduction row follows the demon that is out, and nobody maintains a table of classes for this to go stale against. Pointed the other way it answers the other question: your own row, and a friendly target's, drop the filter entirely, because what is being done to you has nothing to do with what you can cast — and the ladder being run on YOU is the one nothing else on screen can show you. TBC's real rules underneath, generated from the client's own spell tables through the classifier the server itself uses: Kidney Shot on its own ladder so a rogue can Cheap Shot into a full Kidney, proc stuns laddering separately from cast stuns while Charge and Intercept do not, Freezing Trap not on the Polymorph ladder, and no bracket at all on silence because silence DR does not exist until 3.0.8. Three things make it correct rather than approximately correct: the fifteen-second reset clock starts when the aura FADES rather than when it lands, it freezes entirely while anything in the category is still up — drawn as a halo, because that is the moment every number on the cell is deliberately blank — and CC broken by damage is caught, which arrives as a different combat-log event and, missed, leaves a bracket stuck for the rest of the game. Its rules run under plain luajit with no client attached, its copy of the spell table is diffed against Arena Frames' so the two can never drift apart unnoticed, and it forgets people on its own, which an arena tracker never has to and a battleground one always does.
+## IconTexture: Interface\Icons\Spell_Nature_Polymorph
+## SavedVariables: CommanderDiminishDB
+## RequiredDeps: Commander_Events
+
+CommanderDiminishData.lua
+CommanderDiminishEngine.lua
+CommanderDiminishDB.lua
+CommanderDiminish.lua

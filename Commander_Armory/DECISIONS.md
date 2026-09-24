@@ -236,6 +236,47 @@ So we snapshot the bank on `BANKFRAME_OPENED` and keep it. The cache is never us
 can be honest about when it last looked. Nothing else on this client does this, and it converts a
 dead end into an instruction.
 
+### D9a — The cache is only as good as its refusal to write
+
+Keeping the snapshot turned out to be the easy half. The hard half is that **an empty read must
+never become an empty cache**, and the first implementation got that wrong in the most expensive
+way available: `CacheBank` ran on every `BANKFRAME_CLOSED`, and `BANKFRAME_CLOSED` fires whenever
+`CloseAllWindows` runs — every Escape keypress, bank or no bank (ASSUMPTIONS A4a). The scan read
+containers that were not there, wrote the resulting nothing over a good snapshot, and stamped `at`.
+
+What makes this worse than an ordinary cache bug is the timestamp. A wiped cache does not read as
+broken; it reads as **freshly confirmed**. The module then says "0 equippable items, last seen 1
+minute ago" about a bank full of gear, and every set with a banked piece reports MISSING — D9
+exactly inverted, the dead end this module exists to remove, reintroduced by our own writer and
+completely silent, because a wiped cache and a genuinely gear-free bank are byte-identical.
+
+So there are two guards, and the second is not redundant:
+
+1. **Never scan unless `bankOpen`.** Kills the stray-Escape case outright. It also means the order
+   in the `BANKFRAME_CLOSED` handler is load-bearing — the final scan happens *before* the flag
+   flips, or the guard declines the one scan that matters (`Commander_Vault` D6, same trap).
+2. **Never trust an empty read unless the containers were answerable.** A4 — bank containers stay
+   readable for the length of the close dispatch — is an assumption, not a proof, and precisely the
+   kind a patch changes without telling anyone. Zero slots across every bank container is a state no
+   real bank is in (the 24-slot bank proper exists before a single bag is bought), so zero slots
+   means the read failed, not that the bank is empty. Guard 2 makes being wrong about A4 cost
+   nothing.
+
+The guard is deliberately **narrow**: a bank we really can read, holding no gear, *does* clear the
+cache. A row the player has withdrawn is a stale promise in a store the flyout presents as fact, and
+"I already took that out" is a worse answer than "your bank has nothing for this slot".
+
+The reason this survived a 356-check harness is worth recording too, because it is the reusable
+lesson: **the mock was kinder than the client.** Bank containers answered all session long, so the
+one behaviour the entire feature is built on — that they stop answering — was the one behaviour
+never modelled, and a cache that is written and a cache that is clobbered looked identical to every
+test. The mock now goes dark outside the bank, which is what turns section F from a test of the
+happy path into a test of the invariant.
+
+A related gap the same pass closed: bank **bags** announce their contents with `BAG_UPDATE`, not
+`PLAYERBANKSLOTS_CHANGED` — that one speaks only for the 24-slot bank proper — so an item stashed
+in a purchased bag was invisible to the cache until the close scan happened to catch it.
+
 ## D10 — The Character panel is enhanced, never replaced
 
 Two additive surfaces: a popout on each of the nineteen existing paperdoll slot buttons, and a

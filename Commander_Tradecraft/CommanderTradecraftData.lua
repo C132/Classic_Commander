@@ -19,6 +19,10 @@
 --     carry roughly a ten percent safety margin over the skill-up model; the
 --     engine models the remaining crafts itself and keeps the guide's count
 --     as the reference figure.
+--   * First Aid (2026-09-19): the same tables for thresholds, reagents and
+--     placements (through Commander_Formulary's generator, which is where
+--     the world-DB reading lives), and Wowhead's TBC Classic First Aid
+--     leveling guide (Nodge, 2026-02-05) for the route and its counts.
 --
 -- Two ids never to confuse: 16207 is the Runed Arcanite ROD (a reagent of the
 -- Fel Iron rod), 16243 is the FORMULA that teaches it. Likewise 25127 is
@@ -35,7 +39,9 @@ local D = CommanderTradecraft_Data
 
 -- ranks: the trainer ladder. `at` is the skill you need before the trainer
 -- will teach the rank, `cap` is the new maximum. `outland` marks a rank only
--- taught past the Dark Portal.
+-- taught past the Dark Portal. A rank that no trainer teaches says how it
+-- IS obtained: `book` (an item to buy and read, with who sells it) or
+-- `quest` (with who gives it); the guide window's banner reads these.
 D.PROFESSIONS = {
     ENCHANTING = {
         key = "ENCHANTING",
@@ -64,6 +70,36 @@ D.PROFESSIONS = {
             { name = "Felannia", where = "Thrallmar, Hellfire Peninsula", zone = "Hellfire Peninsula", x = 52.3, y = 36.0, faction = "Horde" },
             { name = "High Enchanter Bardolan", where = "Lower City, Shattrath", zone = "Shattrath City", x = 43.4, y = 92.4 },
             { name = "Asarnan", where = "The Stormspire, Netherstorm", zone = "Netherstorm", x = 44.2, y = 33.7 },
+        },
+    },
+    FIRSTAID = {
+        key = "FIRSTAID",
+        name = "First Aid",
+        skillLine = 129,
+        abilitySpell = 3273,
+        icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice",
+        -- First Aid is a TRADE SKILL profession: its window is the trade
+        -- skill frame and its list is read with GetNumTradeSkills.
+        frame = "TRADESKILL",
+        -- Two ranks from a trainer, then a book, a quest and a book. The
+        -- world DB has no trainer row for Expert, Artisan or Master, and the
+        -- published guide agrees: Expert is "Expert First Aid - Under Wraps"
+        -- from the manual vendors, Artisan is the Triage quest (the book
+        -- "Artisan First Aid - Heal Thyself" exists in the item table and is
+        -- sold by nobody), Master is "Master First Aid - Doctor in the
+        -- House" from Burko or Aresella and needs 300, not 275.
+        ranks = {
+            { name = "Apprentice", spell = 3273, at = 0, cap = 75 },
+            { name = "Journeyman", spell = 3274, at = 50, cap = 150 },
+            { name = "Expert", spell = 7924, at = 125, cap = 225,
+              book = { item = 16084, cost = 10000, vendors = { 2805, 13476 } } },
+            { name = "Artisan", spell = 10846, at = 225, cap = 300,
+              quest = { name = "Triage", givers = {
+                  { name = "Doctor Gustaf VanHowzen", where = "Theramore Isle, Dustwallow Marsh", zone = "Dustwallow Marsh", x = 67.8, y = 49.0, faction = "Alliance" },
+                  { name = "Doctor Gregory Victor", where = "Hammerfall, Arathi Highlands", zone = "Arathi Highlands", x = 73.4, y = 36.9, faction = "Horde" },
+              } } },
+            { name = "Master", spell = 27028, at = 300, cap = 375, outland = true,
+              book = { item = 22012, cost = 50000, vendors = { 18990, 18991 } } },
         },
     },
 }
@@ -138,6 +174,34 @@ D.ITEMS = {
     [25848] = { name = "Formula: Runed Adamantite Rod", formula = true },
     [22536] = { name = "Formula: Enchant Ring - Spellpower", formula = true },
     [22535] = { name = "Formula: Enchant Ring - Striking", formula = true },
+
+    -- First Aid: the cloths (Auction House, or your own drops), what the
+    -- route makes (bandages -- kept, not sold, but named so a price search
+    -- can ask), the manuals, and the two rank books
+    [2589] = { name = "Linen Cloth" },
+    [2592] = { name = "Wool Cloth" },
+    [4306] = { name = "Silk Cloth" },
+    [4338] = { name = "Mageweave Cloth" },
+    [14047] = { name = "Runecloth" },
+    [21877] = { name = "Netherweave Cloth" },
+    [1251] = { name = "Linen Bandage" },
+    [2581] = { name = "Heavy Linen Bandage" },
+    [3530] = { name = "Wool Bandage" },
+    [3531] = { name = "Heavy Wool Bandage" },
+    [6450] = { name = "Silk Bandage" },
+    [6451] = { name = "Heavy Silk Bandage" },
+    [8544] = { name = "Mageweave Bandage" },
+    [8545] = { name = "Heavy Mageweave Bandage" },
+    [14529] = { name = "Runecloth Bandage" },
+    [14530] = { name = "Heavy Runecloth Bandage" },
+    [21990] = { name = "Netherweave Bandage" },
+    [21991] = { name = "Heavy Netherweave Bandage" },
+    [16112] = { name = "Manual: Heavy Silk Bandage", formula = true },
+    [16113] = { name = "Manual: Mageweave Bandage", formula = true },
+    [21992] = { name = "Manual: Netherweave Bandage", formula = true },
+    [21993] = { name = "Manual: Heavy Netherweave Bandage", formula = true },
+    [16084] = { name = "Expert First Aid - Under Wraps", formula = true },
+    [22012] = { name = "Master First Aid - Doctor in the House", formula = true },
 }
 
 -- ---------------------------------------------------------------------------
@@ -147,7 +211,9 @@ D.ITEMS = {
 -- uiMapIDs for the zone maps the vendors and trainers stand on (UiMap table,
 -- this build), so a waypoint can be handed to TomTom without a name lookup.
 D.ZONES = {
+    ["Arathi Highlands"] = 1417,
     ["Ashenvale"] = 1440,
+    ["Dustwallow Marsh"] = 1445,
     ["Stonetalon Mountains"] = 1442,
     ["Tanaris"] = 1446,
     ["Moonglade"] = 1450,
@@ -182,6 +248,13 @@ D.VENDORS = {
     [18960] = { name = "Rungor", where = "Stonebreaker Hold", zone = "Terokkar Forest", x = 48.8, y = 46.0, faction = "Horde" },
     [21643] = { name = "Alurmi", where = "Caverns of Time", zone = "Tanaris", x = 63.6, y = 57.6 },
     [20242] = { name = "Karaaz", where = "The Stormspire", zone = "Netherstorm", x = 43.6, y = 34.3 },
+    -- First Aid: the two classic manual vendors (one per faction) and the
+    -- two Hellfire ones. Placed from the world DB's spawn points through
+    -- this build's UiMapAssignment, and agreeing with the published guide.
+    [2805] = { name = "Deneb Walker", where = "Stromgarde Keep", zone = "Arathi Highlands", x = 27.0, y = 58.8, faction = "Alliance" },
+    [13476] = { name = "Balai Lok'Wein", where = "Brackenwall Village", zone = "Dustwallow Marsh", x = 36.5, y = 30.4, faction = "Horde" },
+    [18990] = { name = "Burko", where = "Temple of Telhamat", zone = "Hellfire Peninsula", x = 22.3, y = 39.4, faction = "Alliance" },
+    [18991] = { name = "Aresella", where = "Falcon Watch", zone = "Hellfire Peninsula", x = 26.2, y = 62.1, faction = "Horde" },
 }
 
 -- ---------------------------------------------------------------------------
@@ -243,6 +316,20 @@ local RECIPE_LIST = {
     R(33995, "Enchant Gloves - Major Strength", 350, 380, { { 22445, 12 }, { 22446, 1 } }, { target = INVTYPE.HAND }),
     R(27920, "Enchant Ring - Striking", 370, 400, { { 22449, 2 }, { 22445, 6 } }, { target = INVTYPE.FINGER, formula = 22535 }),
     R(27924, "Enchant Ring - Spellpower", 370, 400, { { 22449, 2 }, { 22446, 2 } }, { target = INVTYPE.FINGER, formula = 22536 }),
+    -- First Aid. Every bandage is one or two of its cloth; nothing to
+    -- target, so the Craft button is a bare /cast.
+    R(3275, "Linen Bandage", 30, 60, { { 2589, 1 } }, { creates = 1251 }),
+    R(3276, "Heavy Linen Bandage", 50, 100, { { 2589, 2 } }, { creates = 2581 }),
+    R(3277, "Wool Bandage", 80, 150, { { 2592, 1 } }, { creates = 3530 }),
+    R(3278, "Heavy Wool Bandage", 115, 185, { { 2592, 2 } }, { creates = 3531 }),
+    R(7928, "Silk Bandage", 150, 210, { { 4306, 1 } }, { creates = 6450 }),
+    R(7929, "Heavy Silk Bandage", 180, 240, { { 4306, 2 } }, { creates = 6451, formula = 16112 }),
+    R(10840, "Mageweave Bandage", 210, 270, { { 4338, 1 } }, { creates = 8544, formula = 16113 }),
+    R(10841, "Heavy Mageweave Bandage", 240, 300, { { 4338, 2 } }, { creates = 8545 }),
+    R(18629, "Runecloth Bandage", 260, 320, { { 14047, 1 } }, { creates = 14529 }),
+    R(18630, "Heavy Runecloth Bandage", 290, 350, { { 14047, 2 } }, { creates = 14530 }),
+    R(27032, "Netherweave Bandage", 330, 390, { { 21877, 1 } }, { creates = 21990, formula = 21992 }),
+    R(27033, "Heavy Netherweave Bandage", 360, 410, { { 21877, 2 } }, { creates = 21991, formula = 21993 }),
 }
 
 D.RECIPES = {}
@@ -261,6 +348,9 @@ local TRAINER_LEARN = {
     [13815] = 210, [13836] = 215, [13858] = 220,
     [32664] = 300, [34002] = 300, [27899] = 305, [27961] = 310, [33990] = 320,
     [33995] = 340,
+    -- First Aid (Linen Bandage comes with Apprentice First Aid itself)
+    [3275] = 0, [3276] = 40, [3277] = 80, [3278] = 115, [7928] = 150,
+    [10841] = 240, [18629] = 260, [18630] = 290,
 }
 for spell, at in pairs(TRAINER_LEARN) do
     if D.RECIPES[spell] then
@@ -287,6 +377,11 @@ D.FORMULAS = {
         rep = { faction = 989, standing = 5, label = "Honored with Keepers of Time" } },
     [22535] = { learns = 27920, at = 360, cost = 100000, vendors = { 20242 },
         rep = { faction = 933, standing = 6, label = "Revered with The Consortium" } },
+    -- First Aid manuals
+    [16112] = { learns = 7929, at = 180, cost = 2200, vendors = { 2805, 13476 } },
+    [16113] = { learns = 10840, at = 210, cost = 5000, vendors = { 2805, 13476 } },
+    [21992] = { learns = 27032, at = 330, cost = 20000, vendors = { 18990, 18991 } },
+    [21993] = { learns = 27033, at = 360, cost = 40000, vendors = { 18990, 18991 } },
 }
 
 -- ---------------------------------------------------------------------------
@@ -482,6 +577,82 @@ D.GUIDES = {
                 paths = { { key = "main", label = "Enchant Ring - Spellpower",
                     note = "Formula from Alurmi at the Caverns of Time — Honored with Keepers of Time (10 gold).",
                     steps = { buy(22536), craft(27924, 365, 375, 12) } } },
+            },
+        },
+    },
+    -- First Aid. One way through every segment: bandages are the only
+    -- recipes worth a skill point (anti-venoms want venom sacs), so the
+    -- route is the cloth ladder and its two vendor trips. The ranks that
+    -- are not trainer-taught -- the Expert book at 125, Triage at 225, the
+    -- Master book at 300 -- are the banner's, as every rank is.
+    FIRSTAID = {
+        key = "FIRSTAID",
+        profession = "FIRSTAID",
+        title = "First Aid 1 – 375",
+        credit = "Route after Wowhead's TBC Classic First Aid guide (Nodge)",
+        tips = {
+            "Every bandage you make is worth keeping: a Heavy Runecloth Bandage heals 2000 and a Heavy Netherweave 3400, and they are what you will use in every battleground.",
+            "The cloth is what the mobs you are already killing drop. Level First Aid as you go and it costs nothing.",
+            "Both Arathi-tier manuals and the Expert book are on the same vendor — buy all three in one trip at 125.",
+        },
+        segments = {
+            {
+                key = "1-40", from = 1, to = 40,
+                paths = { { key = "main", label = "Linen Bandage", steps = { craft(3275, 1, 40, 50) } } },
+            },
+            {
+                key = "40-80", from = 40, to = 80,
+                paths = { { key = "main", label = "Heavy Linen Bandage", steps = { craft(3276, 40, 80, 70) } } },
+            },
+            {
+                key = "80-115", from = 80, to = 115,
+                paths = { { key = "main", label = "Wool Bandage", steps = { craft(3277, 80, 115, 55) } } },
+            },
+            {
+                key = "115-150", from = 115, to = 150,
+                paths = { { key = "main", label = "Heavy Wool Bandage",
+                    note = "Past 150 needs Expert First Aid - Under Wraps (the banner has the vendor). Buy the Heavy Silk and Mageweave manuals in the same trip; they are used at 180 and 210.",
+                    steps = { buy(16112), buy(16113), craft(3278, 115, 150, 55) } } },
+            },
+            {
+                key = "150-180", from = 150, to = 180,
+                paths = { { key = "main", label = "Silk Bandage", steps = { craft(7928, 150, 180, 50) } } },
+            },
+            {
+                key = "180-210", from = 180, to = 210,
+                paths = { { key = "main", label = "Heavy Silk Bandage", steps = { craft(7929, 180, 210, 50) } } },
+            },
+            {
+                key = "210-240", from = 210, to = 240,
+                paths = { { key = "main", label = "Mageweave Bandage",
+                    note = "Artisan First Aid is the Triage quest at 225 (the banner has the doctor); Mageweave carries you to 240 either side of it.",
+                    steps = { craft(10840, 210, 240, 55) } } },
+            },
+            {
+                key = "240-260", from = 240, to = 260,
+                paths = { { key = "main", label = "Heavy Mageweave Bandage", steps = { craft(10841, 240, 260, 30) } } },
+            },
+            {
+                key = "260-290", from = 260, to = 290,
+                paths = { { key = "main", label = "Runecloth Bandage", steps = { craft(18629, 260, 290, 50) } } },
+            },
+            {
+                key = "290-330", from = 290, to = 330,
+                paths = { { key = "main", label = "Heavy Runecloth Bandage",
+                    note = "Master First Aid - Doctor in the House at 300 (Burko or Aresella in Hellfire; the banner has them), then carry on with the same bandage to 330.",
+                    steps = { craft(18630, 290, 330, 95) } } },
+            },
+            {
+                key = "330-360", from = 330, to = 360,
+                paths = { { key = "main", label = "Netherweave Bandage",
+                    note = "Manual from Burko (Temple of Telhamat) or Aresella (Falcon Watch), 2 gold — the same vendor as the Master book and the Heavy Netherweave manual.",
+                    steps = { buy(21992), craft(27032, 330, 360, 50) } } },
+            },
+            {
+                key = "360-375", from = 360, to = 375,
+                paths = { { key = "main", label = "Heavy Netherweave Bandage",
+                    note = "Manual from the same Hellfire vendor, 4 gold.",
+                    steps = { buy(21993), craft(27033, 360, 375, 20) } } },
             },
         },
     },

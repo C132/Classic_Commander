@@ -50,14 +50,32 @@ LAYER_SCOPED = {
     # Priest — the absorb board's own vocabulary
     "RenewFlash": {"PWS"},
     "RenewRefreshAt": {"PWS"},
+    # The low-health ring reads the priest book's `lowHot` entry, and only
+    # that book names one.
+    "RenewNeedRing": {"PWS"},
+    "RenewNeedAt": {"PWS"},
     "ShieldSwipe": {"PWS"},
+    # The reshield ring rides the Power Word: Shield slot, which only the
+    # priest board draws — the other three put their upkeep on the strips.
+    "ShieldLockRing": {"PWS"},
     "LowAbsorbPct": {"PWS"},
     "LowTimeSecs": {"PWS"},
     "PriestBannerCooldowns": {"PWS"},
+    # ...and Prayer of Mending's own instruments. The `charges` flag sits on
+    # the priest book alone, so nothing off the absorb board reads any of
+    # these — the tracker itself is gated on util.PoMOn(), which is the PWS
+    # layer plus the spell actually being trained.
+    "PoMTrack": {"PWS"},
+    "PoMAlert": {"PWS"},
+    "PoMAlertSound": {"PWS"},
+    "PoMPips": {"PWS"},
+    "PoMCooldownRing": {"PWS"},
+    "PoMTrail": {"PWS"},
     # Mage — self-shield rows and the conjure cluster
     "SelfShieldRows": {"INT"},
     "TrackManaShield": {"INT"},
     "TrackWards": {"INT"},
+    "MageUtilityButtons": {"INT"},
     "ShowGemButton": {"INT"},
     "ShowPortalButton": {"INT"},
     "MageBannerCooldowns": {"INT"},
@@ -65,6 +83,15 @@ LAYER_SCOPED = {
     "HotReadyAt": {"HOT"},
     "HotRefreshAt": {"HOT"},
     "HotBannerCooldowns": {"HOT"},
+    # ...and Lifebloom's own instruments. The roll flag lives on the druid
+    # book alone, so nothing off the hot board reads any of these.
+    "LBDisplay": {"HOT"},
+    "LBRefreshAt": {"HOT"},
+    "LBLateAt": {"HOT"},
+    "LBStackPips": {"HOT"},
+    "LBPriority": {"HOT"},
+    "LBAlert": {"HOT"},
+    "LBAlertSound": {"HOT"},
     # Paladin
     "BlessReadyAt": {"BLESS"},
     "BlessRefreshAt": {"BLESS"},
@@ -167,8 +194,15 @@ def page_keys(lines):
         while True:
             text = "\n".join(expanded)
             more = [n for n, _ in bodies.items()
-                    if n not in pulled
-                    and (n + "(panel" in text or "(" + n + ")" in text)]
+                    if n not in pulled and (
+                        n + "(panel" in text
+                        # An option table can sit in ANY argument slot, not
+                        # just alone: AddDropdownPair(A_OPTION, B_OPTION) is
+                        # how a page reaches two of them side by side, and
+                        # matching only "(NAME)" saw the first and missed the
+                        # second — reporting the second's settings as
+                        # unreachable from every page.
+                        or re.search(r"[(,]\s*" + n + r"\s*[,)]", text))]
             if not more:
                 break
             for n in more:
