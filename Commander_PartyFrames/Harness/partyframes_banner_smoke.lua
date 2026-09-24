@@ -990,6 +990,83 @@ if SECURE then
     UnitExists, UnitGUID = nE, nG
     Fire("GROUP_ROSTER_UPDATE")
 
+    -- --- Class orders on secure rows -------------------------------------
+    -- Urgency can never move a secure row, but a class list is a property of
+    -- the roster and is applied when the rows are BOUND: out of combat, on
+    -- every trigger that already rebinds them, plus a recheck for the
+    -- distance kind whose answer moves while the bound list stands still.
+    local partyClass = { party1 = "PRIEST", party2 = "WARRIOR", party3 = "PRIEST", party4 = "HUNTER" }
+    local partyYards = { party1 = 30, party2 = 8, party3 = 12, party4 = 25, partypet4 = 3, player = 0 }
+    local cE, cG, cN, cC = UnitExists, UnitGUID, UnitName, UnitClass
+    UnitExists = function(u)
+        if partyClass[u] or u == "partypet4" then return true end
+        return cE(u)
+    end
+    UnitGUID = function(u)
+        if partyClass[u] or u == "partypet4" then return u .. "-guid" end
+        return cG(u)
+    end
+    UnitName = function(u)
+        if partyClass[u] or u == "partypet4" then return u end
+        return cN(u)
+    end
+    UnitClass = function(u)
+        local c = partyClass[u]
+        if c then return c, c end
+        return cC(u)
+    end
+    UnitPosition = function(u)
+        local d = partyYards[u]
+        if not d then return nil end
+        return 0, d, 0, 1
+    end
+    local function Tokens()
+        local out = {}
+        for i = 1, 6 do out[i] = tostring(TokenOf(i)) end
+        return table.concat(out, " ")
+    end
+    db.IncludeSelf, db.IncludePets, db.SelfFirst = true, true, false
+    db.MaxRows = 6
+    db.RowOrder = "URGENCY"
+    Fire("GROUP_ROSTER_UPDATE")
+    CHECK(Tokens() == "player party1 party2 party3 party4 partypet4",
+        "Urgency leaves the secure rows in roster order, the pet after its owner", Tokens())
+    db.RowOrder = "CLASS_NAME"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    CHECK(Tokens() == "party2 party4 partypet4 party1 party3 player",
+        "class then name binds the class list, alphabetical inside a class, the pet under its owner's class",
+        Tokens())
+    db.SelfFirst = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    CHECK(Tokens() == "player party2 party4 partypet4 party1 party3",
+        "Self First pins you above the class list on secure rows too", Tokens())
+    db.SelfFirst = false
+    db.RowOrder = "CLASS_DIST"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    CHECK(Tokens() == "party2 party4 partypet4 party3 party1 player",
+        "class then distance binds each class closest-first", Tokens())
+    -- The far priest walks in. Out of combat the recheck binds again on its
+    -- own; in combat it waits, and lands when the fight ends.
+    partyYards.party1 = 5
+    for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    CHECK(Tokens() == "party2 party4 partypet4 party1 party3 player",
+        "out of combat the distance order rebinds itself as people move", Tokens())
+    inCombat = true
+    blockedCalls = {}
+    partyYards.party1 = 30
+    for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    CHECK(Tokens() == "party2 party4 partypet4 party1 party3 player",
+        "in combat the bound order holds", Tokens())
+    CHECK(#blockedCalls == 0, "without a protected call", blockedCalls[1])
+    inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(Tokens() == "party2 party4 partypet4 party3 party1 player",
+        "and the moved order lands when combat drops", Tokens())
+    db.RowOrder = "URGENCY"
+    UnitExists, UnitGUID, UnitName, UnitClass = cE, cG, cN, cC
+    UnitPosition = nil
+    Fire("GROUP_ROSTER_UPDATE")
+
     CHECK(#caughtErrors == 0, "no errors on the click-cast board", caughtErrors[1])
     io.write(string.format("[%s clickcast] %d checks, %d failures\n", CLASS, checks, fails))
     os.exit(fails == 0 and 0 or 1)
@@ -4787,12 +4864,13 @@ function CheckNearby()
     CHECK(#caughtErrors == 0, "the urgency order draws without erroring", caughtErrors[1])
 
     -- --- Class, then distance ---------------------------------------------
-    -- The third order reads the pick as a class list in the suite's canon
-    -- order, each class's members closest-first. The pick is still the four
-    -- closest (raid4 5y, raid2 10y, raid7 15y, raid5 20y); the class list
-    -- then puts the warrior first, the priest next, and the mages together
-    -- with the nearer one leading. You are a mage on this run at zero yards,
-    -- so you head the mage group rather than the board.
+    -- Nearby Raid's Row Order lists every order itself. The class order
+    -- reads the pick as a class list in the suite's canon order, each
+    -- class's members closest-first. The pick is still the four closest (raid4 5y, raid2 10y, raid7
+    -- 15y, raid5 20y); the class list then puts the warrior first, the priest
+    -- next, and the mages together with the nearer one leading. You are a
+    -- mage on this run at zero yards, so you head the mage group rather than
+    -- the board.
     local function RowNames()
         local out = {}
         for _, f in ipairs(allFrames) do
@@ -4816,12 +4894,24 @@ function CheckNearby()
     -- fresh pick so the four closest are the four this block reasons about
     for i = 1, 12 do raidYards["raid" .. i] = D[i] end
     CommanderPartyFramesDB.NearCount = 5
-    CommanderPartyFramesDB.NearSort = "CLASS"
     CommanderPartyFramesDB.SelfFirst = false
+    -- The day-one trap: Sort Rows set to a class order while the pick still
+    -- draws As Picked. The pick order has to win there — that is what the
+    -- nearby setting says — and the board must say nothing about classes
+    CommanderPartyFramesDB.NearSort = "DISTANCE"
+    CommanderPartyFramesDB.RowOrder = "CLASS_DIST"
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     CommanderPartyFrames_NearRefresh(false)
     DrawOnce(); DrawOnce()
     CHECK(Pick() == "raid4 raid2 raid7 raid5", "the pick under test is the four closest", Pick())
+    CHECK(RowNames() == "Tester raid4 raid2 raid7 raid5",
+        "As Picked keeps the pick's own nearest-first order whatever Sort Rows says", RowNames())
+    -- The nearby setting's own class order takes the pick, whatever Sort
+    -- Rows says
+    CommanderPartyFramesDB.RowOrder = "URGENCY"
+    CommanderPartyFramesDB.NearSort = "CLASS_DIST"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
     CHECK(RowNames() == "raid5 raid2 Tester raid4 raid7",
         "class order groups the pick by class, each class closest-first", RowNames())
     CHECK(#caughtErrors == 0, "and draws without erroring", caughtErrors[1])
@@ -4848,6 +4938,31 @@ function CheckNearby()
     CHECK(banded == RowNames() and banded:find("^raid5 raid2 Tester"),
         "without positions the class groups hold and the tie is stable", banded)
     UnitPosition = posWas
+    -- Class, then name: the same groups, alphabetical inside each, and the
+    -- far mage walking in moves nothing
+    CommanderPartyFramesDB.NearSort = "CLASS_NAME"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    raidYards.raid7 = 2
+    DrawOnce()
+    CHECK(RowNames() == "raid5 raid2 Tester raid4 raid7",
+        "class then name is alphabetical inside a class and ignores distance", RowNames())
+    raidYards.raid7 = 15
+    -- The spellings one build wrote still mean what they meant: CLASS was
+    -- the distance kind, BOARD was "whatever Sort Rows says"
+    CommanderPartyFramesDB.NearSort = "CLASS"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    raidYards.raid7 = 2
+    DrawOnce()
+    CHECK(RowNames() == "raid5 raid2 Tester raid7 raid4",
+        "a stored NearSort of CLASS still reads as class then distance", RowNames())
+    CommanderPartyFramesDB.NearSort = "BOARD"
+    CommanderPartyFramesDB.RowOrder = "CLASS_NAME"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(RowNames() == "raid5 raid2 Tester raid4 raid7",
+        "a stored NearSort of BOARD still defers to Sort Rows", RowNames())
+    raidYards.raid7 = 15
+    CommanderPartyFramesDB.RowOrder = "URGENCY"
     UnitClass = realClass
     playerClass = CLASS
     CommanderPartyFramesDB.NearSort = "DISTANCE"
@@ -4885,11 +5000,17 @@ function CheckNearby()
     end
     playerClass = "MAGE"
     CommanderPartyFramesDB.IncludePets = true
-    CommanderPartyFramesDB.RowOrder = "CLASS"
+    CommanderPartyFramesDB.RowOrder = "CLASS_DIST"
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Fire("GROUP_ROSTER_UPDATE"); DrawOnce(); DrawOnce()
     CHECK(RowNames() == "party2 party4 partyp party3 party1 Tester",
         "Sort Rows groups the party by class, closest-first, the pet under its owner's class",
+        RowNames())
+    CommanderPartyFramesDB.RowOrder = "CLASS_NAME"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(RowNames() == "party2 party4 partyp party1 party3 Tester",
+        "class then name keeps the groups and puts the priests in alphabetical order",
         RowNames())
     CommanderPartyFramesDB.RowOrder = "URGENCY"
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)

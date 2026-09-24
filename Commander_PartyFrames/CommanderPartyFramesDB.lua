@@ -10,7 +10,7 @@ local DefaultSettings = {
     IncludeSelf = true,
     IncludePets = true,      -- allies' pets get ally rows too (buffable, healable)
     SelfFirst = false,       -- pin yourself to the top instead of sorting by urgency
-    RowOrder = "URGENCY",    -- the sorted board's order: URGENCY | CLASS (class, then distance)
+    RowOrder = "URGENCY",    -- the sorted board's order: URGENCY | CLASS_DIST | CLASS_NAME
     ShowHeader = true,       -- PW:S cooldown + your nominal shield value strip
     HeaderBackdrop = true,   -- dark panel behind the top bar
 
@@ -42,7 +42,7 @@ local DefaultSettings = {
     -- touched them behaves exactly as it always did.
     NearMode = false,        -- master flag for the whole nearby-raid feature
     NearCount = 5,           -- how many PEOPLE on the board, you included (2-15)
-    NearSort = "DISTANCE",   -- row order once picked: DISTANCE | URGENCY | CLASS
+    NearSort = "DISTANCE",   -- row order once picked: DISTANCE (as picked) | URGENCY | CLASS_DIST | CLASS_NAME
     NearAuto = false,        -- re-pick on a timer instead of on the button
     NearInterval = 3,        -- seconds between automatic re-picks (1-15)
     NearGhostsFar = true,    -- a released ghost ranks as infinitely far; an unreleased corpse keeps its yards
@@ -2548,21 +2548,35 @@ local function AddPageHead(panel, ui)
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         }, {
             label = "Self First",
-            tooltip = "Pin your own row to the top instead of sorting it in with everyone else — by urgency, or into your class's group under the class order. No effect in Click-Cast mode (fixed roster order).",
+            tooltip = "Pin your own row to the top instead of sorting it in with everyone else — by urgency, or into your class's group under a class order. In Click-Cast mode you are already the first row unless a class order is on, where this pins you above the class list.",
             get = function() return CommanderPartyFramesDB.SelfFirst end,
             set = function(value) CommanderPartyFramesDB.SelfFirst = value end,
-            isEnabled = function() return SortableMode() and CommanderPartyFramesDB.IncludeSelf end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.IncludeSelf end,
         })
         panel:AddDropdown({
             label = "Sort Rows",
-            tooltip = "How the board orders its rows. Urgency is the board as it has always been: most-urgent first, so the row that wants a global is the top one. Class, then Distance reads as a class list instead — warriors, paladins, hunters, rogues, priests, shamans, mages, warlocks, druids — with each class's members closest to you first, so the rows hold still while the fight changes and the nearest mage is always the first mage. A pet sits under its owner's class, after that class's players. Where the client will not report positions (some instanced content), everyone in range ties at one band and the tie goes to the name. Self First and Pin Focus still lift a row to the top in either order. With Max Rows tight, the classes at the bottom of the order are the ones that fall off.\n\nNo effect in Click-Cast mode (fixed roster order). Nearby Raid has its own Row Order below, because the pick is a different question.",
+            tooltip = "How the board orders its rows, on every board. Urgency is the board as it has always been: most-urgent first, so the row that wants a global is the top one. The two class orders read the board as a class list instead — warriors, paladins, hunters, rogues, priests, shamans, mages, warlocks, druids — so the rows hold still while the fight changes: Class, then Distance puts each class's members closest to you first, so the nearest mage is always the first mage; Class, then Name keeps each class alphabetical, the order that never moves at all. A pet sits under its owner's class, after that class's players. Where the client will not report positions (some instanced content), the distance order ties everyone in range and falls back to the name. Self First and Pin Focus still lift a row to the top in any order. With Max Rows tight, the classes at the bottom of the order are the ones that fall off.\n\nIn Click-Cast mode the rows are secure buttons bound out of combat, so Urgency cannot apply there (the board keeps its roster order) — but the class orders can: they are applied when the rows are bound, a change asked for mid-fight lands the moment the fight ends, and the distance kind re-checks itself every few seconds out of combat. Nearby Raid has its own Row Order in its section below, with these same orders and the pick's own nearest-first order, because the pick is a different board.",
             options = {
                 { text = "Urgency", value = "URGENCY" },
-                { text = "Class, then Distance", value = "CLASS" },
+                { text = "Class, then Distance", value = "CLASS_DIST" },
+                { text = "Class, then Name", value = "CLASS_NAME" },
             },
-            get = function() return CommanderPartyFramesDB.RowOrder or "URGENCY" end,
-            set = function(value) CommanderPartyFramesDB.RowOrder = value end,
-            isEnabled = SortableMode,
+            get = function()
+                local v = CommanderPartyFramesDB.RowOrder
+                if v == "CLASS" then return "CLASS_DIST" end
+                return v or "URGENCY"
+            end,
+            set = function(value)
+                CommanderPartyFramesDB.RowOrder = value
+                -- The trap this setting fell into on its first day: Nearby
+                -- Raid was drawing its pick nearest-first and quietly
+                -- ignoring the class order. Say so the moment it would.
+                if value ~= "URGENCY" and CommanderPartyFramesDB.NearMode
+                    and (CommanderPartyFramesDB.NearSort or "DISTANCE") == "DISTANCE" then
+                    print("Commander Party Frames: Nearby Raid keeps drawing its pick nearest-first until its own Row Order (in the Nearby Raid section) is changed.")
+                end
+            end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
         panel:AddCheckbox({
             label = "Include Pets",
@@ -2716,13 +2730,25 @@ local function AddPageHead(panel, ui)
         })
         panel:AddDropdown({
             label = "Row Order",
-            tooltip = "How the picked allies are laid out. Distance draws them nearest-first, which is what makes a refresh visible as a refresh. Urgency hands them back to the board's urgency sort — most-urgent first — so the pick decides WHO is on the board and urgency decides the order. Class, then Distance groups the pick by class in the suite's class order, each class's members closest-first, live rather than held to the snapshot: the pick still decides who, and the class list decides where.",
+            tooltip = "How the picked allies are laid out. The pick decides WHO is on the board; this decides where. As Picked draws them nearest-first, held to the snapshot, which is what makes a refresh visible as a refresh. Urgency is the board's own most-urgent-first sort. Class, then Distance groups the pick by class in the suite's class order — warriors, paladins, hunters, rogues, priests, shamans, mages, warlocks, druids — each class's members closest-first, live rather than held to the snapshot. Class, then Name keeps the same groups alphabetical, the order that never moves at all. A pet sits under its owner's class, after that class's players. On the Click-Cast board Urgency cannot apply (secure rows keep the pick order instead); the class orders are applied when the rows are bound, so a refresh made mid-fight lands when the fight ends.",
             options = {
-                { text = "Distance", value = "DISTANCE" },
+                { text = "As Picked (nearest first)", value = "DISTANCE" },
                 { text = "Urgency", value = "URGENCY" },
-                { text = "Class, then Distance", value = "CLASS" },
+                { text = "Class, then Distance", value = "CLASS_DIST" },
+                { text = "Class, then Name", value = "CLASS_NAME" },
             },
-            get = function() return CommanderPartyFramesDB.NearSort end,
+            get = function()
+                local v = CommanderPartyFramesDB.NearSort
+                -- Older spellings: one build wrote CLASS for the distance
+                -- kind and BOARD for "whatever Sort Rows says"
+                if v == "CLASS" then return "CLASS_DIST" end
+                if v == "BOARD" then
+                    local r = CommanderPartyFramesDB.RowOrder
+                    if r == "CLASS" then return "CLASS_DIST" end
+                    return r or "URGENCY"
+                end
+                return v or "DISTANCE"
+            end,
             set = function(value) CommanderPartyFramesDB.NearSort = value end,
             isEnabled = function()
                 return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.NearMode

@@ -2507,6 +2507,7 @@ SDATA.SHORT_NAME_W = 44
 SDATA.PAD = 6
 SDATA.HEADER_H = 15
 SDATA.DRAW_THROTTLE = 0.1
+SDATA.SECURE_ORDER_RECHECK = 3   -- seconds between Click-Cast class-order rechecks, out of combat
 SDATA.UPTIME_SAMPLE = 1.0
 
 -- Personal rows (Water Elemental, My Shields) render at half an ally row's
@@ -9859,6 +9860,10 @@ local function BuildSecureTokens(out)
             end
         end
     end
+    -- A class order is a property of the roster, not of the fight, so it can
+    -- be applied here, at bind time (see util.OrderSecureTokens). Urgency
+    -- and the pick order leave the list as built.
+    util.OrderSecureTokens(out)
 end
 
 -- Bind one mouse button (optionally with a modifier prefix like "shift-") on a
@@ -9951,6 +9956,25 @@ end
 
 function CommanderPartyFrames_RebindRows()
     if securePool then SetupSecureRows() end
+end
+
+-- Would binding the Click-Cast rows again change their order? Asked out of
+-- combat only (a bind cannot land in combat anyway) and only under a class
+-- order, where the distance half of the answer moves while the bound list
+-- stands still. The probe is the same walk the bind takes, into a scratch
+-- list, compared token by token.
+util.secureProbe = {}
+function util.SecureOrderStale()
+    if not securePool or InCombat() then return false end
+    local mode = util.SortMode(true)
+    if mode ~= "CLASS_DIST" and mode ~= "CLASS_NAME" then return false end
+    local probe = util.secureProbe
+    BuildSecureTokens(probe)
+    if #probe ~= #secureTokens then return true end
+    for i = 1, #probe do
+        if probe[i] ~= secureTokens[i] then return true end
+    end
+    return false
 end
 
 -- ---------------------------------------------------------------------------
@@ -10145,30 +10169,44 @@ function near.OrderSort(a, b)
     return (a.name or "") < (b.name or "")
 end
 
--- Class, then distance: the board read as a class list, each class's members
--- closest-first. The class order is the suite's canon (SDATA.CLASS_SORT_RANK);
--- a pet groups under its owner's class and trails that class's players,
--- because it is still the row that gives way when the board is tight. The
--- distance is r.yards, stamped by util.StampYards just before the sort so a
--- comparison never asks the client for a position twice. Where the client
--- will not report positions (near.Yards says which), everyone in range ties
--- at one band and the tie goes to the name — the same way every pick on
--- this board breaks its ties, so two equal answers do not swap every tick.
--- (On util rather than a file local: the 200-local cap, see the SDATA note.)
-function util.ClassSort(a, b)
+-- The class orders: the board read as a class list, in the suite's canon
+-- order (SDATA.CLASS_SORT_RANK), with a pet grouped under its owner's class
+-- and trailing that class's players, because it is still the row that gives
+-- way when the board is tight. Inside a class the two orders differ: one is
+-- closest-first, the other is the name.
+--
+-- The distance is r.yards, stamped by util.StampYards just before the sort
+-- so a comparison never asks the client for a position twice. Where the
+-- client will not report positions (near.Yards says which), everyone in
+-- range ties at one band and the tie goes to the name — the same way every
+-- pick on this board breaks its ties, so two equal answers do not swap every
+-- tick. (On util rather than file locals: the 200-local cap, see SDATA.)
+function util.ClassHead(a, b)
     local ra = SDATA.CLASS_SORT_RANK[a.class or ""] or 99
     local rb = SDATA.CLASS_SORT_RANK[b.class or ""] or 99
     if ra ~= rb then return ra < rb end
     if (a.isPet or false) ~= (b.isPet or false) then return not a.isPet end
+    return nil
+end
+
+function util.ClassSort(a, b)
+    local head = util.ClassHead(a, b)
+    if head ~= nil then return head end
     local ya, yb = a.yards or math.huge, b.yards or math.huge
     if ya ~= yb then return ya < yb end
     return (a.name or "") < (b.name or "")
 end
 
--- Every row's distance from you, for the class sort. Live rows ask near.Yards
--- (real yards when UnitPosition answers, one range band when it does not);
--- the test board's rows ride no unit, so they carry no distance and sort by
--- class then name, which is all a sample needs to show.
+function util.ClassNameSort(a, b)
+    local head = util.ClassHead(a, b)
+    if head ~= nil then return head end
+    return (a.name or "") < (b.name or "")
+end
+
+-- Every row's distance from you, for the class-then-distance sort. Live rows
+-- ask near.Yards (real yards when UnitPosition answers, one range band when
+-- it does not); the test board's rows ride no unit, so they carry no
+-- distance and sort by class then name, which is all a sample needs to show.
 function util.StampYards(rows, live)
     for i = 1, #rows do
         local r = rows[i]
@@ -10176,19 +10214,70 @@ function util.StampYards(rows, live)
     end
 end
 
--- Which order the sorted board draws in: FIXED (Nearby Raid's own pick order,
--- which the pins may not disturb), CLASS (class then distance), or URGENCY
--- (the board's original most-urgent-first sort). Nearby mode answers from its
--- own Row Order setting, because the pick is a different board with a
--- different question; everywhere else, and on the test board, it is Sort
--- Rows. Click-Cast never gets here: its roster order is fixed at bind time.
+-- Which order the sorted board draws in: FIXED (Nearby Raid's own pick
+-- order, which the pins may not disturb), URGENCY (the board's original
+-- most-urgent-first sort), CLASS_DIST or CLASS_NAME (the class list, closest-
+-- first or alphabetical inside a class). Nearby Raid answers from its own Row
+-- Order, which lists every one of these plus the pick order, because the
+-- pick is a different board with a different question; everywhere else, and
+-- on the test board, it is Sort Rows. Older spellings are read the way they
+-- were meant: a RowOrder of CLASS was the distance kind before the name kind
+-- existed, and a NearSort of BOARD (one build's "same as Sort Rows") defers.
+-- Click-Cast never gets here: its roster order is fixed at bind time.
 function util.SortMode(live)
+    local m
     if live and near.Active() then
-        local m = DB("NearSort", "DISTANCE")
-        if m == "CLASS" then return "CLASS" end
-        return m == "URGENCY" and "URGENCY" or "FIXED"
+        m = DB("NearSort", "DISTANCE")
+        if m == "DISTANCE" then return "FIXED" end
+        if m == "BOARD" then m = nil end
     end
-    return DB("RowOrder", "URGENCY") == "CLASS" and "CLASS" or "URGENCY"
+    m = m or DB("RowOrder", "URGENCY")
+    if m == "CLASS_DIST" or m == "CLASS" then return "CLASS_DIST" end
+    if m == "CLASS_NAME" then return "CLASS_NAME" end
+    return "URGENCY"
+end
+
+-- The Click-Cast board's order. Its rows are secure buttons bound to raw
+-- unit tokens out of combat, so nothing on it can follow urgency — but a
+-- CLASS list is a property of the roster, not of the fight, and it can be
+-- applied at bind time. The token list BuildSecureTokens laid out (owner,
+-- then pet, roster order) is re-ordered in place through the same
+-- comparators the sorted board uses: class rank, players before pets, then
+-- distance or name; Self First pins you above it, as it does there. The
+-- distance kind is as fresh as the last bind, which is why the ticker and
+-- the nearby refresh ask util.SecureOrderStale whether to bind again.
+-- Records are pooled: a bind allocates nothing after the first.
+util.secureRecs = {}
+util.secureList = {}
+function util.OrderSecureTokens(out)
+    local mode = util.SortMode(true)
+    if mode ~= "CLASS_DIST" and mode ~= "CLASS_NAME" then return end
+    local list, recs = util.secureList, util.secureRecs
+    wipe(list)
+    for i = 1, #out do
+        local unit = out[i]
+        local rec = recs[i]
+        if not rec then rec = {}; recs[i] = rec end
+        local owner = SDATA.PET_OWNER[unit]
+        rec.unit = unit
+        rec.isPet = owner and true or nil
+        rec.class = select(2, UnitClass(owner or unit))
+        rec.name = UnitName(unit) or "?"
+        rec.yards = mode == "CLASS_DIST" and near.Yards(unit) or nil
+        list[i] = rec
+    end
+    table.sort(list, mode == "CLASS_DIST" and util.ClassSort or util.ClassNameSort)
+    wipe(out)
+    local selfFirst = DB("SelfFirst", false)
+    if selfFirst then
+        for i = 1, #list do
+            if list[i].unit == "player" then out[1] = "player"; break end
+        end
+    end
+    for i = 1, #list do
+        local unit = list[i].unit
+        if not (selfFirst and unit == "player") then out[#out + 1] = unit end
+    end
 end
 
 local function PinToTop(pred)
@@ -10958,17 +11047,18 @@ local function Draw()
         end
     end
 
-    -- Nearby Raid draws in the order it PICKED, not by urgency: the pick is
-    -- the answer to "who is near me", and a board that then re-ranks it every
-    -- tick throws away the slot stability the pick exists to give. Urgency
-    -- and the class order are still available there as a setting; outside
-    -- nearby mode, Sort Rows decides between urgency (the board as it always
-    -- was) and class-then-distance.
+    -- Nearby Raid draws in the order it PICKED unless its own Row Order says
+    -- otherwise: the pick is the answer to "who is near me", and a board that
+    -- then re-ranks it every tick throws away the slot stability the pick
+    -- exists to give. Everywhere else Sort Rows decides: urgency (the board
+    -- as it always was), or one of the two class lists.
     local sortMode = util.SortMode(testUntil == 0)
     local nearFixed = sortMode == "FIXED"
-    if sortMode == "CLASS" then
+    if sortMode == "CLASS_DIST" then
         util.StampYards(rowData, testUntil == 0)
         table.sort(rowData, util.ClassSort)
+    elseif sortMode == "CLASS_NAME" then
+        table.sort(rowData, util.ClassNameSort)
     else
         table.sort(rowData, nearFixed and near.OrderSort or SortRows)
     end
@@ -11722,6 +11812,12 @@ function CommanderPartyFrames_NearRefresh(sticky, quiet)
         return false
     end
     local changed = near.Pick(sticky and true or false)
+    -- Same members, different order: under a class-then-distance order the
+    -- Click-Cast rows may still want binding again (the sorted board asks
+    -- every draw and needs nothing here)
+    if not changed and securePool and testUntil == 0 and util.SecureOrderStale() then
+        changed = true
+    end
     if changed and testUntil == 0 then
         if securePool then SetupSecureRows() end
         Draw()
@@ -11781,6 +11877,18 @@ ticker:SetScript("OnUpdate", function(self, elapsed)
         if self.sinceNear >= (tonumber(DB("NearInterval", 3)) or 3) then
             self.sinceNear = 0
             CommanderPartyFrames_NearRefresh(true, true)
+        end
+    end
+    -- Click-Cast under a class-then-distance order: distance is as fresh as
+    -- the last bind, so out of combat the board asks every few seconds
+    -- whether the order it bound is still the order, and binds again when
+    -- not. Nearby mode asks the same question from its own refresh instead,
+    -- so a board with auto-refresh off stays as still as it promises.
+    if securePool and not near.Active() and util.SortMode(true) == "CLASS_DIST" then
+        self.sinceOrder = (self.sinceOrder or 0) + elapsed
+        if self.sinceOrder >= SDATA.SECURE_ORDER_RECHECK then
+            self.sinceOrder = 0
+            if util.SecureOrderStale() then SetupSecureRows(); Draw() end
         end
     end
 end)
@@ -12090,8 +12198,9 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
         if securePool then SetupSecureRows() end
         if testUntil == 0 then Draw() end
     elseif event == "PLAYER_REGEN_ENABLED" then
-        -- Left combat: safe to reconfigure secure rows/buttons queued mid-fight
-        if securePool and secureDirty then SetupSecureRows() end
+        -- Left combat: safe to reconfigure secure rows/buttons queued mid-fight,
+        -- and to re-order a class list whose distances moved during the fight
+        if securePool and (secureDirty or util.SecureOrderStale()) then SetupSecureRows() end
         if near.pending then near.pending = false; near.PaintButton() end
         if mageBtnsDirty then BindMageUtilityButtons() end
         if testUntil == 0 then Draw() end
