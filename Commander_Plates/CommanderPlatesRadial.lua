@@ -46,12 +46,35 @@ R.RING_FILES = {
 }
 R.RING_RATIOS = { 0.93, 0.88, 0.80, 0.71, 0.60, 0.46 }
 R.RING_OUTER = 0.485         -- the donut's outer radius over the texture's width
-R.GLOW_FILE = TEX .. "RingGlow.png"
+-- The glows (Harness/make_glows.py). Every one rises from GLOW_BASE of its
+-- width -- the disc's edge -- and is fully transparent from GLOW_REACH out,
+-- so none of them ends in the hard square the old art did, and all of them
+-- are safe to spin.
+R.GLOW_FILE = TEX .. "GlowSoft.png"
+R.GLOW_STYLES = {
+    SOFT = TEX .. "GlowSoft.png", EMBER = TEX .. "GlowEmber.png",
+    RUNIC = TEX .. "GlowRunic.png", ARCANE = TEX .. "GlowArcane.png",
+    RADIANT = TEX .. "GlowRadiant.png", FROST = TEX .. "GlowFrost.png",
+    VOID = TEX .. "GlowVoid.png", HALO = TEX .. "GlowHalo.png",
+    SIGIL = TEX .. "GlowSigil.png", STORM = TEX .. "GlowStorm.png",
+}
+R.GLOW_ORDER = { "SOFT", "EMBER", "RUNIC", "ARCANE", "RADIANT", "FROST", "VOID", "HALO", "SIGIL", "STORM" }
+R.GLOW_LABEL = {
+    SOFT = "Soft Halo", EMBER = "Emberflame", RUNIC = "Runebound", ARCANE = "Arcane Orbit",
+    RADIANT = "Radiant Sunburst", FROST = "Frostshard", VOID = "Voidsmoke", HALO = "Holy Halo",
+    SIGIL = "Star Sigil", STORM = "Stormcall",
+}
 R.TICK_FILE = TEX .. "Tick.png"
 R.EDGE_FILE = TEX .. "Edge.png"
 R.MASK_FILE = TEX .. "CircleMask.png"
+-- The clock wipe's halves (Harness/make_wipe.py); the disc in them is
+-- WIPE_RADIUS of the texture's width, inside a transparent margin
+R.HALF_RIGHT = TEX .. "HalfRight.png"
+R.HALF_LEFT = TEX .. "HalfLeft.png"
+local WIPE_RADIUS = 0.46
 R.RAID_FILE = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
-local GLOW_PEAK = 0.36       -- RingGlow's brightest radius over its width
+local GLOW_BASE = 0.28       -- where every glow rises from, over its width
+local SPIN_RATE = 0.5        -- radians a second, for the turning glows
 local EDGE_CORE = 0.30       -- half-length of the spark's flat core over its width
 local STATIC = 86400         -- a frozen arc is a cooldown at most this long
 local DRIFT = 0.001          -- ...re-set once it could have moved this share of a turn
@@ -107,6 +130,8 @@ function R.Config(get)
         debuffArc = E.RADIAL_ARCS[G("RadialDebuffArc", "TOP")] or 0,
         buffArc = E.RADIAL_ARCS[G("RadialBuffArc", "RIGHT")] or 90,
         roundAuras = G("RadialRoundAuras", true),
+        debuffGrow = G("RadialDebuffGrow", "CENTER"),
+        buffGrow = G("RadialBuffGrow", "CENTER"),
         drMode = G("RadialDr", "ENEMIES"),
         drArc = E.RADIAL_ARCS[G("RadialDrArc", "LEFT")] or 270,
         castTarget = G("RadialCastTarget", true),
@@ -120,6 +145,13 @@ function R.Config(get)
         eliteRim = G("RadialEliteRim", true),
         mouseover = G("RadialMouseover", true),
         rimColor = G("RadialRimColor", "REACTION"),
+        backdrop = G("RadialBackdrop", "DARK"),
+        backdropAlpha = G("RadialBackdropAlpha", 0.6),
+        backdropPad = G("RadialBackdropSize", 2),
+        glowStyle = G("RadialGlowStyle", "SOFT"),
+        glowScale = G("RadialGlowSize", 1.0),
+        glowMotion = G("RadialGlowMotion", "NONE"),
+        backdropBorder = G("RadialBackdropBorder", true),
     }
     cfg.power = cfg.powerMode ~= "OFF"
     cfg.radii = E.RadialRadii({
@@ -131,7 +163,8 @@ function R.Config(get)
     cfg.pipSize = math.max(4, math.floor(cfg.castThick + 2))
     cfg.signature = table.concat({
         cfg.size, cfg.healthThick, tostring(cfg.power), cfg.powerThick, tostring(cfg.cast),
-        cfg.castThick, cfg.nameSize, cfg.nameWidth, cfg.name, cfg.offsetY,
+        cfg.castThick, cfg.nameSize, cfg.nameWidth, cfg.name, cfg.offsetY, cfg.backdropPad,
+        cfg.glowStyle, cfg.glowScale, tostring((cfg.backdropAlpha or 0) > 0),
     }, ":")
     return cfg
 end
@@ -211,9 +244,16 @@ function R.New(parent)
     w.base = base
     w.laid = {}
 
-    -- Behind everything: the soft halos
+    -- Behind everything: the soft halos, then the backdrop the whole disc
+    -- sits on, so it reads against snow and against a black cave alike
     w.glow = NewGlow(w, "BACKGROUND", -8)       -- target / focus
     w.alert = NewGlow(w, "BACKGROUND", -7)      -- threat
+    w.backdrop = w:CreateTexture(nil, "BACKGROUND", nil, -6)
+    w.backdrop:SetTexture(R.MASK_FILE)
+    w.backdrop:SetPoint("CENTER", w, "CENTER")
+    w.backdropRim = w:CreateTexture(nil, "BACKGROUND", nil, -5)
+    w.backdropRim:SetTexture(R.RING_FILES[2])
+    w.backdropRim:SetPoint("CENTER", w, "CENTER")
     w.coreBg = w:CreateTexture(nil, "BACKGROUND", nil, 0)
     w.coreBg:SetTexture(R.MASK_FILE)
     w.coreBg:SetPoint("CENTER", w, "CENTER")
@@ -223,19 +263,43 @@ function R.New(parent)
     w.core:SetPoint("CENTER", w, "CENTER")
     w.coreMasked = Masked(w, w.core)
 
+    -- A control's countdown over the face, as a clock wipe CLIPPED to it: two
+    -- half discs, each masked to its own half of the face and turned to the
+    -- countdown (E.WipeAngles). A Cooldown's swipe cannot take a mask, and an
+    -- unmasked one is free to paint past the face onto the rings.
+    w.wipe = {}
+    for i, clip in ipairs({ R.HALF_RIGHT, R.HALF_LEFT }) do
+        local tex = w:CreateTexture(nil, "BACKGROUND", nil, 2)
+        tex:SetTexture(R.HALF_RIGHT)
+        tex:SetPoint("CENTER", w, "CENTER")
+        tex:SetVertexColor(0, 0, 0, 0.6)
+        tex:Hide()
+        w.wipe[i] = tex
+        local ok = w.CreateMaskTexture and tex.AddMaskTexture and pcall(function()
+            local mask = w:CreateMaskTexture()
+            mask:SetTexture(clip, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            mask:SetPoint("CENTER", w, "CENTER")
+            tex:AddMaskTexture(mask)
+            tex.clip = mask
+        end)
+        w.wipeMasked = (i == 1 or w.wipeMasked) and ok == true
+    end
+
     -- The arcs, lowest first: a heal on the way and the trail of health just
     -- lost both sit UNDER the health arc and start where it does, so all that
     -- shows of them is the part that runs past it
-    w.powerArc = NewArc(w, base + 1, 2)
-    w.healArc = NewArc(w, base + 1, 2)
-    w.trailArc = NewArc(w, base + 2, 2)
-    w.healthArc = NewArc(w, base + 3, 3)
-    w.castArc = NewArc(w, base + 3, 2)
+    -- Every ring draws ABOVE the face and whatever darkens it
+    w.powerArc = NewArc(w, base + 2, 2)
+    w.healArc = NewArc(w, base + 2, 2)
+    w.trailArc = NewArc(w, base + 3, 2)
+    w.healthArc = NewArc(w, base + 4, 3)
+    w.castArc = NewArc(w, base + 4, 2)
     -- The trail and the heal draw no track of their own: the health arc's is theirs
     w.trailArc.noTrack, w.healArc.noTrack = true, true
 
-    -- A control's countdown, darkening the core the way an aura icon darkens
-    w.coreCd = NewSweep(w, base + 4, R.MASK_FILE)
+    -- The fallback for a client with no masks: a Cooldown, kept BELOW the
+    -- rings so that even unclipped it can only ever darken the face
+    w.coreCd = NewSweep(w, base + 1, R.MASK_FILE)
     w.coreCd:SetPoint("CENTER", w, "CENTER")
     if w.coreCd.SetReverse then w.coreCd:SetReverse(true) end
     if w.coreCd.SetSwipeColor then w.coreCd:SetSwipeColor(0, 0, 0, 0.6) end
@@ -348,7 +412,18 @@ function R.Layout(w, cfg)
     w.coreBg:SetSize(coreD + 2, coreD + 2)
     local coreSize = w.coreMasked and coreD or coreD * 0.7071
     w.core:SetSize(coreSize, coreSize)
-    w.coreCd:SetSize(coreD, coreD)
+    w.coreCd:SetSize(coreSize, coreSize)
+    local wipeSize = (coreSize / 2) / WIPE_RADIUS
+    for _, tex in ipairs(w.wipe) do
+        tex:SetSize(wipeSize, wipeSize)
+        if tex.clip then tex.clip:SetSize(wipeSize, wipeSize) end
+    end
+    -- How far past the outer ring the backdrop reaches (negative pulls it in,
+    -- never smaller than the face it sits behind)
+    local backR = math.max(r.core + 1, r.outer + (cfg.backdropPad or 2))
+    w.laid.backdropRadius = backR
+    w.backdrop:SetSize(backR * 2, backR * 2)
+    w.backdropRim:SetSize((backR + 1) / R.RING_OUTER, (backR + 1) / R.RING_OUTER)
     -- The rim fills the pixel of air between the face and the first band
     local rimOuter = r.core + 1.5
     w.rim:SetSize(rimOuter / R.RING_OUTER, rimOuter / R.RING_OUTER)
@@ -359,10 +434,16 @@ function R.Layout(w, cfg)
     if r.power then LayArc(w.powerArc, r.power, cfg.powerThick) end
     if r.cast then LayArc(w.castArc, r.cast, cfg.castThick) end
 
-    local glowSize = (r.outer + 2) / GLOW_PEAK
-    w.glow:SetSize(glowSize, glowSize)
-    w.alert:SetSize(glowSize * 1.08, glowSize * 1.08)
-    w.flash:SetSize(glowSize * 1.15, glowSize * 1.15)
+    -- Every glow rises from the plate's visible edge: the backdrop's when
+    -- there is one, else the outermost ring
+    local edge = r.outer
+    if (cfg.backdropAlpha or 0) > 0 and w.laid.backdropRadius then edge = math.max(edge, w.laid.backdropRadius) end
+    local glowSize = (edge + 1) / GLOW_BASE
+    w.glow:SetTexture(R.GLOW_STYLES[cfg.glowStyle] or R.GLOW_FILE)
+    w.glow:SetSize(glowSize * cfg.glowScale, glowSize * cfg.glowScale)
+    w.alert:SetSize(glowSize * 1.05, glowSize * 1.05)
+    w.flash:SetSize(glowSize * 1.12, glowSize * 1.12)
+    w.laid.glowMotion = cfg.glowMotion
 
     local castBand = (r.cast and w.castArc.band) or 3
     local sparkSize = castBand / (EDGE_CORE * 2)
@@ -391,11 +472,14 @@ function R.Layout(w, cfg)
         tex:ClearAllPoints()
         tex:SetPoint("CENTER", w, "CENTER", x, y)
     end
-    OnRim(w.raid, E.RADIAL_BADGES.raid, r.health)
-    OnRim(w.healer, E.RADIAL_BADGES.healer, r.health)
-    OnRim(w.classBadge, E.RADIAL_BADGES.class, r.health)
-    OnRim(w.levelText, E.RADIAL_BADGES.level, r.health + 2)
-    OnRim(w.trinket, E.RADIAL_BADGES.trinket, r.health)
+    -- Just outside the rings (and the backdrop's edge), never on them
+    local badgeR = r.outer + 2 + badge / 2
+    w.laid.badgeRadius = badgeR
+    OnRim(w.raid, E.RADIAL_BADGES.raid, badgeR)
+    OnRim(w.healer, E.RADIAL_BADGES.healer, badgeR)
+    OnRim(w.classBadge, E.RADIAL_BADGES.class, badgeR)
+    OnRim(w.levelText, E.RADIAL_BADGES.level, badgeR)
+    OnRim(w.trinket, E.RADIAL_BADGES.trinket, badgeR)
     w.trinket:SetSize(badge, badge)
     local youOuter = r.outer + 3
     w.youRing:SetSize(youOuter / R.RING_OUTER, youOuter / R.RING_OUTER)
@@ -471,7 +555,17 @@ end
 -- Only runs while one of them is live.
 -- ---------------------------------------------------------------------------
 local function Animating(w)
-    return w.sparkLive or w.flashUntil or w.trailLive
+    return w.sparkLive or w.flashUntil or w.trailLive or w.wipeLive or w.glowLive
+end
+
+-- Turn the two halves of the clock wipe to `p` of the face darkened
+local function PaintWipe(w, p)
+    local a1, a2 = E.WipeAngles(p)
+    if w.wipe[1].SetRotation then
+        w.wipe[1]:SetRotation(-math.rad(a1))
+        w.wipe[2]:SetRotation(-math.rad(a2))
+    end
+    w.wipePhase = p
 end
 
 local function MoveSpark(w, now)
@@ -487,7 +581,25 @@ end
 
 local function OnUpdate(w, elapsed)
     local now = GetTime()
+    if w.glowLive then
+        local motion = w.glowMotion
+        if (motion == "SPIN" or motion == "BOTH") and w.glow.SetRotation then
+            w.glow:SetRotation(-(now * SPIN_RATE) % (math.pi * 2))
+        end
+        if motion == "PULSE" or motion == "BOTH" then
+            w.glow:SetAlpha(0.65 + 0.35 * (0.5 + 0.5 * math.sin(now * 3.2)))
+        end
+    end
     if w.sparkLive then MoveSpark(w, now) end
+    if w.wipeLive then
+        local p = (now - w.wipeStart) / w.wipeDuration
+        if p >= 1 then
+            w.wipeLive = false
+            for _, tex in ipairs(w.wipe) do tex:Hide() end
+        else
+            PaintWipe(w, p)
+        end
+    end
     if w.flashUntil then
         local left = w.flashUntil - now
         if left <= 0 then
@@ -642,13 +754,41 @@ function R.SetCore(w, kind, value, coords, force)
     w.coreKind = kind
 end
 
--- A control's countdown over the face
+-- A control's countdown over the face: the masked clock wipe, or on a
+-- client without masks the Cooldown (below the rings, so still never on them)
 function R.SetCoreSwipe(w, start, duration)
-    if start and duration and duration > 0 then
+    local live = start and duration and duration > 0 and GetTime() < start + duration
+    if not live then
+        w.coreCd:Hide()
+        w.wipeLive = false
+        for _, tex in ipairs(w.wipe) do tex:Hide() end
+        return
+    end
+    if w.wipeMasked then
+        w.coreCd:Hide()
+        w.wipeStart, w.wipeDuration, w.wipeLive = start, duration, true
+        for _, tex in ipairs(w.wipe) do tex:Show() end
+        PaintWipe(w, (GetTime() - start) / duration)
+        Animate(w)
+    else
         w.coreCd:SetCooldown(start, duration)
         w.coreCd:Show()
+    end
+end
+
+-- The backdrop: a disc behind all of it, and a thin rim round its edge
+function R.SetBackdrop(w, r, g, b, a, border)
+    if not a or a <= 0 then
+        w.backdrop:Hide()
     else
-        w.coreCd:Hide()
+        w.backdrop:SetVertexColor(r, g, b, a)
+        w.backdrop:Show()
+    end
+    if border then
+        w.backdropRim:SetVertexColor(0, 0, 0, math.min(1, (a or 0) + 0.3))
+        w.backdropRim:Show()
+    else
+        w.backdropRim:Hide()
     end
 end
 
@@ -662,10 +802,21 @@ function R.SetRim(w, r, g, b, a)
     w.rim:Show()
 end
 
-function R.SetGlow(w, shown, r, g, b, a)
-    if not shown then w.glow:Hide() return end
+-- The target / focus glow. `motion` NONE | SPIN | PULSE | BOTH; the motion
+-- runs on the widget's own clock only while the glow is up
+function R.SetGlow(w, shown, r, g, b, a, motion)
+    if not shown then
+        w.glow:Hide()
+        w.glowLive = false
+        return
+    end
     w.glow:SetVertexColor(r, g, b, a or 0.8)
+    w.glow:SetAlpha(1)
+    if w.glow.SetRotation then w.glow:SetRotation(0) end
     w.glow:Show()
+    w.glowMotion = motion or "NONE"
+    w.glowLive = w.glowMotion ~= "NONE"
+    if w.glowLive then Animate(w) end
 end
 
 function R.SetAlert(w, shown, r, g, b, a)
@@ -881,10 +1032,11 @@ function R.NewOrbitIcon(parent)
     return f
 end
 
--- Place icons[from .. from+count-1] round the orbit centred on `center`
--- degrees. Returns the slots, so the caller can see what it covered.
-function R.LayoutOrbit(w, cfg, icons, from, count, center)
-    local slots = E.OrbitLayout(count, cfg.radii.orbit, cfg.auraSize, cfg.auraSpacing, center, cfg.maxArc)
+-- Place icons[from .. from+count-1] round the orbit from `center` degrees,
+-- growing the way `grow` says. Returns the slots, so the caller can see what
+-- it covered.
+function R.LayoutOrbit(w, cfg, icons, from, count, center, grow)
+    local slots = E.OrbitLayout(count, cfg.radii.orbit, cfg.auraSize, cfg.auraSpacing, center, cfg.maxArc, grow)
     for i = 1, count do
         local f = icons[from + i - 1]
         local s = slots[i]
@@ -944,9 +1096,12 @@ function R.Clear(w)
     ArcHide(w.healthArc); ArcHide(w.healArc); ArcHide(w.powerArc)
     ArcTrack(w.healthArc, false); ArcTrack(w.powerArc, false)
     w.coreCd:Hide()
+    w.wipeLive = false
+    for _, tex in ipairs(w.wipe) do tex:Hide() end
     w.coreKey = nil
     w.flashUntil, w.flashText = nil, nil
     w.flash:Hide(); w.glow:Hide(); w.alert:Hide()
+    w.glowLive = false
     for _, t in pairs(w.ticks) do t:Hide() end
     for _, p in ipairs(w.pips) do p:Hide() end
     w.raid:Hide(); w.healer:Hide(); w.classBadge:Hide()

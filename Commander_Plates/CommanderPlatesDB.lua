@@ -57,6 +57,13 @@ local DefaultSettings = {
     RadialNameSize = 10,
     RadialNameWidth = 96,
     RadialRimColor = "REACTION",        -- OFF | CLASS | REACTION | palette
+    RadialBackdrop = "DARK",            -- DARK | CLASS | REACTION (dimmed tints)
+    RadialBackdropAlpha = 0.6,          -- 0 = no backdrop
+    RadialBackdropSize = 2,             -- px past the outer ring; negative pulls it in
+    RadialGlowStyle = "SOFT",           -- see CommanderPlates_Radial.GLOW_ORDER
+    RadialGlowSize = 1.0,
+    RadialGlowMotion = "NONE",          -- NONE | SPIN | PULSE | BOTH
+    RadialBackdropBorder = true,
     RadialEliteRim = true,
     RadialMouseover = true,
     RadialLevel = true,
@@ -68,6 +75,8 @@ local DefaultSettings = {
     -- Radial: the orbit
     RadialDebuffArc = "TOP",            -- a clock position: TOP, TOP_RIGHT, RIGHT, ...
     RadialBuffArc = "RIGHT",
+    RadialDebuffGrow = "CENTER",        -- CENTER | CLOCKWISE | COUNTERCLOCKWISE
+    RadialBuffGrow = "CENTER",
     RadialAuraSize = 16,
     RadialAuraGap = 2,
     RadialAuraArc = 160,                -- degrees an orbit may span before a second one starts
@@ -706,6 +715,13 @@ local function PaintRadialMock(m, now)
     end
     Radial.SetClassBadge(w, (sheeped or casting) and ((isFriend and db.ClassIconFriendly) or (not isFriend and db.ClassIconEnemy)) and spec.class or nil)
     Radial.SetBacking(w, 0, 0, 0, 0.85)
+    local br, bg, bb = 0.02, 0.02, 0.03
+    if cfg.backdrop == "CLASS" or cfg.backdrop == "REACTION" then
+        local key = cfg.backdrop == "CLASS" and "CLASS" or (db.ReactionScheme or "REACTION")
+        local r2, g2, b2 = Draw.ResolveColor(key, ctx)
+        br, bg, bb = r2 * 0.28, g2 * 0.28, b2 * 0.28
+    end
+    Radial.SetBackdrop(w, br, bg, bb, cfg.backdropAlpha, cfg.backdropBorder)
     if sheeped then
         Radial.SetRim(w, ccTint[1], ccTint[2], ccTint[3], 1)
     elseif cfg.rimColor == "OFF" then
@@ -732,7 +748,7 @@ local function PaintRadialMock(m, now)
     -- Target and focus
     local glowOn = isFriend and db.FocusGlow or db.TargetGlow
     local gr, gg, gb = Draw.ResolveColor(isFriend and db.FocusGlowColor or db.TargetGlowColor, ctx)
-    Radial.SetGlow(w, glowOn, gr, gg, gb, db.TargetGlowAlpha or 0.75)
+    Radial.SetGlow(w, glowOn, gr, gg, gb, db.TargetGlowAlpha or 0.75, cfg.glowMotion)
     Radial.SetPips(w, cfg, (cfg.combo and not isFriend) and 3 or 0, 5)
     Radial.SetRaid(w, (cfg.raid and not isFriend) and 8 or nil)
     Radial.SetHealer(w, false)
@@ -772,7 +788,8 @@ local function PaintRadialMock(m, now)
             f:Hide()
         end
     end
-    local slots = Radial.LayoutOrbit(w, cfg, pool, 1, shown, isFriend and cfg.buffArc or cfg.debuffArc)
+    local slots = Radial.LayoutOrbit(w, cfg, pool, 1, shown, isFriend and cfg.buffArc or cfg.debuffArc,
+        isFriend and cfg.buffGrow or cfg.debuffGrow)
     -- The mage was stunned a few seconds ago: the next stun lands at half,
     -- and the category resets in nine seconds
     local E = CommanderPlates_Engine
@@ -1736,6 +1753,76 @@ local function AddRadialRingsSection(panel)
         set = function(v) CommanderPlatesDB.RadialTargetScale = v end,
         isEnabled = RadialOn,
     })
+    panel:AddDropdownPair({
+        label = "Backdrop",
+        tooltip = "A disc behind the whole plate, so the rings read against bright snow and a dark cave alike. 'Dark' is near-black; the tints are the unit's class or its standing, dimmed well down so the rings stay the brightest thing on it.",
+        options = {
+            { text = "Dark", value = "DARK" },
+            { text = "Class tint", value = "CLASS" },
+            { text = "Friend / foe tint", value = "REACTION" },
+        },
+        get = function() return CommanderPlatesDB.RadialBackdrop end,
+        set = function(v) CommanderPlatesDB.RadialBackdrop = v end,
+        isEnabled = function() return RadialOn() and (CommanderPlatesDB.RadialBackdropAlpha or 0) > 0 end,
+    })
+    panel:AddSliderPair({
+        label = "Backdrop Opacity",
+        tooltip = "How solid the backdrop is. 0 draws none.",
+        min = 0, max = 1, step = 0.05,
+        format = function(v) return v == 0 and "Off" or string.format("%d%%", v * 100) end,
+        get = function() return CommanderPlatesDB.RadialBackdropAlpha end,
+        set = function(v) CommanderPlatesDB.RadialBackdropAlpha = v end,
+        isEnabled = RadialOn,
+    }, {
+        label = "Backdrop Size",
+        tooltip = "How far the backdrop reaches past the outermost ring, in pixels. Larger gives the orbiting icons something to sit on too; negative pulls it in behind the rings, down to just the face.",
+        min = -20, max = 40, step = 1,
+        format = function(v) return (v > 0 and "+" or "") .. v .. " px" end,
+        get = function() return CommanderPlatesDB.RadialBackdropSize end,
+        set = function(v) CommanderPlatesDB.RadialBackdropSize = v end,
+        isEnabled = function() return RadialOn() and (CommanderPlatesDB.RadialBackdropAlpha or 0) > 0 end,
+    })
+    local glowOptions = {}
+    for _, key in ipairs(Radial.GLOW_ORDER) do
+        glowOptions[#glowOptions + 1] = { text = Radial.GLOW_LABEL[key], value = key }
+    end
+    panel:AddDropdownPair({
+        label = "Target Glow Style",
+        tooltip = "The glow round your target's disc (and your focus's), in the colour and strength set under Target, Focus & Who Is Who.\n\nSoft Halo: a clean bloom.\nEmberflame: licking flame tongues.\nRunebound: a ring of glowing runes.\nArcane Orbit: twin rings with spiralling motes.\nRadiant Sunburst: rays of light.\nFrostshard: ice spikes and barbs.\nVoidsmoke: swirling shadow wisps.\nHoly Halo: a bright ring with cardinal flares.\nStar Sigil: an eight-pointed star of orbs.\nStormcall: crackling lightning.",
+        options = glowOptions,
+        width = 160,
+        get = function() return CommanderPlatesDB.RadialGlowStyle end,
+        set = function(v) CommanderPlatesDB.RadialGlowStyle = v end,
+        isEnabled = function() return RadialOn() and (CommanderPlatesDB.TargetGlow or CommanderPlatesDB.FocusGlow) end,
+    }, {
+        label = "Glow Motion",
+        tooltip = "Turn the glow slowly (the runes, the sigil and the storm come alive), breathe it in and out, or both. Only the target's and focus's discs ever carry a glow, so it costs next to nothing.",
+        options = {
+            { text = "Still", value = "NONE" },
+            { text = "Spin", value = "SPIN" },
+            { text = "Pulse", value = "PULSE" },
+            { text = "Spin and pulse", value = "BOTH" },
+        },
+        get = function() return CommanderPlatesDB.RadialGlowMotion end,
+        set = function(v) CommanderPlatesDB.RadialGlowMotion = v end,
+        isEnabled = function() return RadialOn() and (CommanderPlatesDB.TargetGlow or CommanderPlatesDB.FocusGlow) end,
+    })
+    panel:AddSlider({
+        label = "Glow Size",
+        tooltip = "How far the glow reaches out from the disc.",
+        min = 0.6, max = 1.6, step = 0.05,
+        format = function(v) return string.format("%d%%", v * 100) end,
+        get = function() return CommanderPlatesDB.RadialGlowSize end,
+        set = function(v) CommanderPlatesDB.RadialGlowSize = v end,
+        isEnabled = function() return RadialOn() and (CommanderPlatesDB.TargetGlow or CommanderPlatesDB.FocusGlow) end,
+    })
+    panel:AddCheckbox({
+        label = "Backdrop Border",
+        tooltip = "A thin dark line round the edge of the backdrop, so neighbouring plates separate cleanly.",
+        get = function() return CommanderPlatesDB.RadialBackdropBorder end,
+        set = function(v) CommanderPlatesDB.RadialBackdropBorder = v end,
+        isEnabled = RadialOn,
+    })
     panel:AddSliderPair({
         label = "Health Ring Thickness",
         tooltip = "Thickness of the health ring in pixels (the nearest of six weights of ring art).",
@@ -2031,6 +2118,26 @@ local function AddRadialOrbitSection(panel)
         options = CLOCK_OPTIONS,
         get = function() return CommanderPlatesDB.RadialBuffArc end,
         set = function(v) CommanderPlatesDB.RadialBuffArc = v end,
+        isEnabled = RadialOn,
+    })
+    local GROW_OPTIONS = {
+        { text = "Fan out both ways", value = "CENTER" },
+        { text = "Clockwise from it", value = "CLOCKWISE" },
+        { text = "Counter-clockwise from it", value = "COUNTERCLOCKWISE" },
+    }
+    panel:AddDropdownPair({
+        label = "Debuffs Grow",
+        tooltip = "How the debuffs spread from their clock position: fanned out evenly either side of it, or starting on it and running round one way (the first debuff always sits exactly on the position).",
+        options = GROW_OPTIONS,
+        get = function() return CommanderPlatesDB.RadialDebuffGrow end,
+        set = function(v) CommanderPlatesDB.RadialDebuffGrow = v end,
+        isEnabled = RadialOn,
+    }, {
+        label = "Buffs Grow",
+        tooltip = "How the buffs spread from their clock position.",
+        options = GROW_OPTIONS,
+        get = function() return CommanderPlatesDB.RadialBuffGrow end,
+        set = function(v) CommanderPlatesDB.RadialBuffGrow = v end,
         isEnabled = RadialOn,
     })
     panel:AddSliderPair({

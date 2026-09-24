@@ -426,7 +426,10 @@ E.RADIAL_ARCS = {
 
 -- The fixed places on the rim a badge sits, chosen to clear the default
 -- orbits (debuffs over the top, buffs down the right) and the name beneath
-E.RADIAL_BADGES = { raid = 225, healer = 315, level = 135, class = 45, trinket = 0 }
+-- They sit just OUTSIDE the rings, never on them: a badge on the health band
+-- hides the very health it sits on. The class badge and the level share a
+-- place because only players get the one and only NPCs the other.
+E.RADIAL_BADGES = { raid = 225, healer = 315, level = 135, class = 135, trinket = 45 }
 
 -- Which plates go radial. A totem never does: its icon IS the plate, and
 -- the totem path stays exactly as it was.
@@ -489,10 +492,12 @@ function E.RadialRadii(cfg)
 end
 
 -- Aura icons round an orbit. `count` icons `size` across, `spacing` apart
--- along the circle, centred on the clock angle `center`. An orbit may span
--- at most `maxArc` degrees; the rest start a second orbit one icon further
--- out, centred the same way. Returns { { x, y, deg, orbit }, ... }.
-function E.OrbitLayout(count, radius, size, spacing, center, maxArc)
+-- along the circle, starting from the clock angle `center`. `grow` says
+-- which way: CENTER fans them out both ways from it, CLOCKWISE and
+-- COUNTERCLOCKWISE start ON it and run one way. An orbit may span at most
+-- `maxArc` degrees; the rest start a second orbit one icon further out,
+-- laid the same way. Returns { { x, y, deg, orbit }, ... }.
+function E.OrbitLayout(count, radius, size, spacing, center, maxArc, grow)
     local slots = {}
     if count <= 0 then return slots end
     maxArc = math.max(0, math.min(360, maxArc or 180))
@@ -505,7 +510,14 @@ function E.OrbitLayout(count, radius, size, spacing, center, maxArc)
         if capacity * step > 360 then capacity = math.max(1, math.floor(360 / step)) end
         local n = math.min(capacity, count - placed)
         for i = 1, n do
-            local deg = center + (i - (n + 1) / 2) * step
+            local deg
+            if grow == "CLOCKWISE" then
+                deg = center + (i - 1) * step
+            elseif grow == "COUNTERCLOCKWISE" then
+                deg = center - (i - 1) * step
+            else
+                deg = center + (i - (n + 1) / 2) * step
+            end
             local theta = math.rad(deg)
             slots[#slots + 1] = { math.sin(theta) * radius, math.cos(theta) * radius, deg % 360, orbit }
         end
@@ -643,4 +655,14 @@ function E.WantTargetsYou(mode, isPlayer, isFriend)
     if isFriend or mode == "OFF" or mode == nil then return false end
     if mode == "ENEMY_PLAYERS" then return isPlayer == true end
     return true
+end
+
+-- The masked clock wipe over the face: fraction `p` darkened, clockwise from
+-- twelve. It is drawn with two copies of a right-half disc -- the first
+-- clipped to the right half of the face, the second to the left -- each turned
+-- CLOCKWISE by the degrees returned. At p = 0 both halves are turned out of
+-- their clips; at 0.5 the right one fills its half; at 1 both do.
+function E.WipeAngles(p)
+    if not p or p < 0 then p = 0 elseif p > 1 then p = 1 end
+    return math.min(p, 0.5) * 360 - 180, math.max(p, 0.5) * 360 - 180
 end

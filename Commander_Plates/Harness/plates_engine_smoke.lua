@@ -573,6 +573,15 @@ do
             if d < 16 - 1e-6 then check(false, "no two orbit icons overlap (" .. i .. "," .. j .. ")") end
         end
     end
+    -- Which way an arc grows
+    local cw = E.OrbitLayout(3, 37, 16, 2, 0, 160, "CLOCKWISE")
+    check(math.abs(cw[1][1]) < 1e-9 and cw[2][1] > 0 and cw[3][1] > cw[2][1], "CLOCKWISE starts on the clock position and runs clockwise")
+    local ccw = E.OrbitLayout(3, 37, 16, 2, 90, 160, "COUNTERCLOCKWISE")
+    check(math.abs(ccw[1][2]) < 1e-9 and ccw[2][2] > 0 and ccw[3][2] > ccw[2][2], "COUNTERCLOCKWISE from three o'clock runs up toward twelve")
+    local fan = E.OrbitLayout(3, 37, 16, 2, 0, 160, "CENTER")
+    check(math.abs(fan[2][1]) < 1e-9 and fan[1][1] < 0 and fan[3][1] > 0, "CENTER fans out both ways")
+    local spill = E.OrbitLayout(12, 37, 16, 2, 0, 160, "CLOCKWISE")
+    check(math.abs(spill[#spill][3] - spill[1][3]) > 1e-6 or #spill == 12, "a clockwise arc still spills into a second orbit")
     check(#E.OrbitLayout(0, 37, 16, 2, 0, 160) == 0, "no auras, no slots")
     check(#E.OrbitLayout(3, 2, 16, 2, 0, 160) == 3, "an absurdly small radius still places every icon")
     local L, R = E.OrbitSideExtents(E.OrbitLayout(2, 37, 16, 2, 90, 160), 16, 11)
@@ -637,6 +646,22 @@ do
     check(E.WantTargetsYou("ENEMIES", false, false) == true, "...an NPC under ENEMIES")
     check(E.WantTargetsYou("ENEMIES", true, true) == false, "a friend never")
     check(E.WantTargetsYou("OFF", true, false) == false, "OFF is off")
+
+    -- The masked clock wipe: two half discs, each turned into or out of its clip
+    local a1, a2 = E.WipeAngles(0)
+    check(a1 == -180 and a2 == 0, "nothing elapsed: each half parked in the OTHER half, outside its own clip")
+    a1, a2 = E.WipeAngles(0.25)
+    check(a1 == -90 and a2 == 0, "a quarter: the right half turned in to three o'clock, the left still parked")
+    a1, a2 = E.WipeAngles(0.5)
+    check(a1 == 0 and a2 == 0, "a half: the right half full, the left still parked")
+    a1, a2 = E.WipeAngles(0.75)
+    check(a1 == 0 and a2 == 90, "three quarters: the left half turned in to nine o'clock")
+    a1, a2 = E.WipeAngles(2)
+    check(a1 == 0 and a2 == 180, "past the end clamps to the whole face")
+    -- No badge sits on the rings
+    for key, deg in pairs(E.RADIAL_BADGES) do
+        check(deg % 45 == 0 and deg % 90 ~= 0, "badge '" .. key .. "' is on a diagonal, clear of the cardinal orbits")
+    end
 
     -- Every clock position the dropdown offers exists
     for _, key in ipairs({ "TOP", "TOP_RIGHT", "RIGHT", "BOTTOM_RIGHT", "BOTTOM", "BOTTOM_LEFT", "LEFT", "TOP_LEFT" }) do

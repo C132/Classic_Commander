@@ -4,11 +4,13 @@ Five checks and one generator. (`CommanderPlatesDraw.lua` holds the ring, halo a
 runs without it, which is the point.
 
 ```
-luajit  Harness/plates_engine_smoke.lua       the rules (1298 checks)
-luajit  Harness/plates_board_smoke.lua        the runtime over a widget mock (329 checks)
+luajit  Harness/plates_engine_smoke.lua       the rules (1312 checks)
+luajit  Harness/plates_board_smoke.lua        the runtime over a widget mock (378 checks)
 python3 Harness/order_lint.py                 use-before-declaration
 python3 Harness/settings_reach.py             every setting has a control
 python3 Harness/make_cc_table.py              regenerate the CC block (after a patch)
+python3 Harness/make_wipe.py                  regenerate the clock-wipe half discs
+python3 Harness/make_glows.py                 regenerate the ten target-glow styles (asserts no alpha on any edge)
 ```
 
 ## Where the crowd-control table comes from
@@ -102,5 +104,5 @@ read in the runtime and engine, every `toggle = "Key"` in `DATA.KIND`, every
 `key = "Cv..."` in `DATA.CVARS`, and every `CommanderPlatesDB.Key` the page
 touches, and reports a setting the plates obey that no control can change
 (UNREACHABLE) or a control that writes a setting nothing declares (DEAD).
-162 settings, all reachable (the radial brushes read theirs through `G("Key")`,
+171 settings, all reachable (the radial brushes read theirs through `G("Key")`,
 which the check also walks).

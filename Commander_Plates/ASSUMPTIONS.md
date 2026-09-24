@@ -48,5 +48,13 @@ down so a first session in game knows what to look at.
   only appears on a disc once the plate is matched to an arena seat.
 - **A12. `UNIT_TARGET` fires for nameplate tokens**, driving the
   targets-you ring. The twice-a-second tick re-checks regardless.
+- **A13. The control countdown on the face is a MASKED clock wipe**, not a
+  Cooldown (a Cooldown's swipe cannot be masked, and was drawing past the
+  face onto the rings). Two `HalfRight.png` textures, each clipped by a
+  half-disc mask and turned with `SetRotation` (E.WipeAngles). Relies on a
+  mask clipping a ROTATED texture, and on rotation turning the picture about
+  the quad's centre. Look for: a dark wedge that grows clockwise from twelve
+  and never leaves the round icon. Without masks it falls back to the
+  Cooldown, drawn beneath every ring.
 - **A9. `Texture:SetRotation`** for the markers and the cast spark (Casting
   relies on it on this client).

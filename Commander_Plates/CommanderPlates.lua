@@ -367,6 +367,53 @@ end
 -- Blizzard-frame state this module WRITES, and therefore restores. Alphas
 -- only; nothing else on the plate is ours.
 -- ---------------------------------------------------------------------------
+-- Blizzard's plate textures a disc cannot hide by alpha. The selection
+-- highlight (the faint bar on mouseover and target) is ignoreParentAlpha, so
+-- a health bar at alpha 0 leaves it drawn; the aggro flare and flash run on
+-- alpha ANIMATIONS that overwrite any alpha written to them; the behind-the-
+-- camera arrow hangs off the name. Under a disc they are HIDDEN, and kept
+-- hidden by a hook on their own Show / SetShown (Blizzard_NamePlates.xml on
+-- classic_anniversary is where each is declared).
+local RADIAL_HIDDEN = {
+    "selectionHighlight", "aggroHighlightBase", "aggroHighlightAdditive",
+    "aggroHighlightMask", "aggroFlash", "behindCameraIcon",
+}
+local guardedParts = setmetatable({}, { __mode = "k" })
+
+local function KeepHidden(uf, tex)
+    if guardedParts[tex] then return end
+    guardedParts[tex] = true
+    local function Guard(self)
+        local rec = byUF[uf]
+        if rec and rec.wasRadial and self:IsShown() then self:Hide() end
+    end
+    hooksecurefunc(tex, "Show", Guard)
+    hooksecurefunc(tex, "SetShown", Guard)
+end
+
+local function HideRadialHighlights(uf)
+    for _, key in ipairs(RADIAL_HIDDEN) do
+        local tex = uf[key]
+        if tex and tex.Hide then
+            KeepHidden(uf, tex)
+            tex:Hide()
+        end
+    end
+end
+
+-- Handed back in the state Blizzard's own bookkeeping says they are in
+local function RestoreRadialHighlights(uf)
+    if uf.selectionHighlight and CompactUnitFrame_UpdateSelectionHighlight then
+        pcall(CompactUnitFrame_UpdateSelectionHighlight, uf)
+    end
+    if uf.aggroHighlightShown then
+        for _, key in ipairs({ "aggroHighlightBase", "aggroHighlightAdditive", "aggroHighlightMask" }) do
+            if uf[key] then uf[key]:Show() end
+        end
+    end
+    if uf.behindCameraIcon then uf.behindCameraIcon:SetShown(uf.isBehindCamera == true) end
+end
+
 local function RestoreBlizzard(rec)
     local uf = rec.uf
     if uf.HealthBarsContainer then uf.HealthBarsContainer:SetAlpha(1) end
@@ -378,7 +425,10 @@ local function RestoreBlizzard(rec)
     if uf.CastBarsContainer then uf.CastBarsContainer:SetAlpha(1) end
     if uf.RaidTargetFrame then uf.RaidTargetFrame:SetAlpha(1) end
     if uf.ClassificationFrame then uf.ClassificationFrame:SetAlpha(1) end
-    rec.wasRadial = nil
+    if rec.wasRadial then
+        rec.wasRadial = nil
+        RestoreRadialHighlights(uf)
+    end
     local hb = HealthBar(uf)
     if hb and hb.bgTexture then hb.bgTexture:SetVertexColor(1, 1, 1, 1) end
     if cb and cb.Border then cb.Border:SetVertexColor(1, 1, 1, 1) end
@@ -562,6 +612,7 @@ local function HideBlizzardForRadial(rec)
         if part and part.SetAlpha then part:SetAlpha(0) end
     end
     rec.wasRadial = true
+    HideRadialHighlights(rec.uf)
 end
 
 -- The bar-mode layer, all of it: a radial plate draws none of it
@@ -594,6 +645,7 @@ local function ReleaseRadial(rec)
         local part = parts[i]
         if part and part.SetAlpha then part:SetAlpha(1) end
     end
+    RestoreRadialHighlights(rec.uf)
     if rec.ov.radial then Radial.Clear(rec.ov.radial) end
     HideOrbit(rec.ov)
     rec.coreCC, rec.castCore, rec.casting, rec.loudCast = nil, nil, nil, nil
@@ -845,6 +897,14 @@ local function RadialIdentity(rec)
     local nr, ng, nb = NameRGB(rec)
     Radial.SetName(w, cfg, DisplayName(rec), nr, ng, nb, reserve)
     Radial.SetBacking(w, 0, 0, 0, 0.85)
+    -- The backdrop: dark, or a dimmed tint of the class or the standing
+    local br, bg, bb = 0.02, 0.02, 0.03
+    if cfg.backdrop == "CLASS" or cfg.backdrop == "REACTION" then
+        local key = (cfg.backdrop == "CLASS" and rec.isPlayer) and "CLASS" or ReactionKey()
+        local r, g, b = Color(rec, key)
+        br, bg, bb = r * 0.28, g * 0.28, b * 0.28
+    end
+    Radial.SetBackdrop(w, br, bg, bb, cfg.backdropAlpha, cfg.backdropBorder)
     if cfg.level and not rec.isPlayer and UnitLevel then
         local level = UnitLevel(unit) or 0
         local text = level > 0 and tostring(level) or "??"
@@ -894,8 +954,8 @@ local function RadialAuras(rec, pick)
             PaintIcon(f, aura, unit, opts)
         end
     end
-    local slotsD = Radial.LayoutOrbit(w, cfg, pool, 1, nd, cfg.debuffArc)
-    local slotsB = Radial.LayoutOrbit(w, cfg, pool, nd + 1, nb, cfg.buffArc)
+    local slotsD = Radial.LayoutOrbit(w, cfg, pool, 1, nd, cfg.debuffArc, cfg.debuffGrow)
+    local slotsB = Radial.LayoutOrbit(w, cfg, pool, nd + 1, nb, cfg.buffArc, cfg.buffGrow)
     local all = {}
     for _, s in ipairs(slotsD) do all[#all + 1] = s end
     for _, s in ipairs(slotsB) do all[#all + 1] = s end
@@ -972,10 +1032,10 @@ local function RadialTarget(rec)
 
     local gr, gg, gb = Color(rec, DB("TargetGlowColor", "WHITE"))
     if isTarget and DB("TargetGlow", true) then
-        Radial.SetGlow(w, true, gr, gg, gb, DB("TargetGlowAlpha", 0.75))
+        Radial.SetGlow(w, true, gr, gg, gb, DB("TargetGlowAlpha", 0.75), cfg.glowMotion)
     elseif isFocus and DB("FocusGlow", true) then
         local fr, fg, fb = Color(rec, DB("FocusGlowColor", "MAGENTA"))
-        Radial.SetGlow(w, true, fr, fg, fb, DB("TargetGlowAlpha", 0.75))
+        Radial.SetGlow(w, true, fr, fg, fb, DB("TargetGlowAlpha", 0.75), cfg.glowMotion)
     else
         Radial.SetGlow(w, false)
     end

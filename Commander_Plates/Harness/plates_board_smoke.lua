@@ -141,6 +141,21 @@ WidgetMT.__index = function(self, key)
         local fn = function(s, path, size, flags) s.__font = { path, size, flags } end
         rawset(self, key, fn); return fn
     end
+    -- Draw order is recorded: "beneath every ring" is a claim about levels
+    if key == "SetFrameLevel" then
+        local fn = function(s, v) s.__level = v end
+        rawset(self, key, fn); return fn
+    end
+    if key == "GetFrameLevel" then
+        local fn = function(s) return rawget(s, "__level") or NUMERIC_GETTERS.GetFrameLevel end
+        rawset(self, key, fn); return fn
+    end
+    -- Masks exist on this client, and the radial plate's clock wipe depends
+    -- on them: a mock without them only ever tests the fallback
+    if key == "CreateMaskTexture" then
+        local fn = function(s) local m = NewWidget("MaskTexture"); m.__parent = s; return m end
+        rawset(self, key, fn); return fn
+    end
     if NUMERIC_GETTERS[key] ~= nil then
         local v = NUMERIC_GETTERS[key]
         local fn = function() return v end
@@ -240,6 +255,12 @@ WidgetMT.__index = function(self, key)
     -- was recorded every one of those was invisible to the harness.
     if key == "SetTextColor" then
         local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
+        rawset(self, key, fn); return fn
+    end
+    -- Rotation is recorded: the glows spin, the wipe turns, and a no-op
+    -- would let all of it be wrong without a single failure
+    if key == "SetRotation" then
+        local fn = function(s, rad) s.__rot = rad end
         rawset(self, key, fn); return fn
     end
     if key == "SetDesaturated" then
@@ -617,6 +638,13 @@ local function NewPlate(unit)
         s2.__texture = "blizzard-atlas"; s2.__color = { 1, 1, 1 }
     end
     uf.LevelFrame = NewWidget("Frame")
+    -- The textures Blizzard_NamePlates.xml hangs on the unit frame itself:
+    -- the selection highlight IGNORES parent alpha, so it has to be modelled
+    for _, key in ipairs({ "selectionHighlight", "aggroHighlightBase", "aggroHighlightAdditive",
+        "aggroHighlightMask", "aggroFlash", "behindCameraIcon" }) do
+        uf[key] = NewWidget("Texture")
+        uf[key].__shown = false
+    end
     uf.AurasFrame = NewWidget("Frame")
     uf.AurasFrame.__parent = uf
     uf.AurasFrame.UpdateShownState = function(s) s.__shown = true end
@@ -637,6 +665,11 @@ C_NamePlate = {
 -- Blizzard's colouring and naming, the two functions the runtime hooks
 function CompactUnitFrame_UpdateHealthColor(frame)
     frame.healthBar:SetStatusBarColor(0.67, 0.67, 1)   -- Blizzard's flat friendly blue
+end
+-- Blizzard's selection highlight: shown on the target (and, on this client,
+-- the mouseover)
+function CompactUnitFrame_UpdateSelectionHighlight(frame)
+    frame.selectionHighlight:SetShown(UnitIsUnit(frame.unit, "target"))
 end
 function CompactUnitFrame_UpdateName(frame)
     local u = U(frame.unit)
@@ -1293,6 +1326,20 @@ CHECK(Near(ArcFraction(w.healthArc), 0.6), "health ring at 60%", ArcFraction(w.h
 CHECK(w.healthArc.cd.__reverse == false, "health ring ends at twelve and drains clockwise (an unreversed sweep)")
 CHECK(Near(ArcFraction(w.powerArc), 0.5), "mana ring at 50%", ArcFraction(w.powerArc))
 CHECK(w.nameText.__text == "Gankmage" and w.nameText.__shown, "the name under the disc")
+CHECK(w.backdrop.__shown == true and w.backdrop.__color[4] == CommanderPlatesDB.RadialBackdropAlpha, "a backdrop behind the disc")
+CHECK(w.backdropRim.__shown == true, "...with a border")
+local cfgNow = CommanderPlates_Radial.Config(function(k) return CommanderPlatesDB[k] end)
+CHECK(w.backdrop.__w > cfgNow.radii.outer * 2, "...larger than every ring")
+local function OffRings(tex)
+    local pt = tex.__points and tex.__points[1]
+    return pt and math.sqrt(pt.x * pt.x + pt.y * pt.y) - (tex.__w or 0) / 2 >= cfgNow.radii.outer - 0.01
+end
+CHECK(OffRings(w.raid) and OffRings(w.healer) and OffRings(w.trinket) and OffRings(w.classBadge), "no badge sits on the rings")
+CommanderPlatesDB.RadialBackdropAlpha = 0
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+CHECK(w.backdrop.__shown == false, "backdrop opacity 0: no backdrop")
+CommanderPlatesDB.RadialBackdropAlpha = 0.6
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
 CHECK(w.centerText.__text == "60", "SMART centre text: the percent once hurt", w.centerText.__text)
 CHECK(rm.__hit and rm.__hit[1].relativePoint == "CENTER" and rm.__hit[1].offsetX < 0, "hit box is the disc, from the bar's centre")
 local half = CommanderPlates_Radial.Config(function(k) return CommanderPlatesDB[k] end).radii.outer
@@ -1337,6 +1384,32 @@ CHECK(orb ~= nil and orb.__shown == true, "my Corruption orbits the disc")
 local p = orb and orb.__points and orb.__points[1]
 CHECK(p and Near(p.x, 0, 0.5) and p.y > half, "...centred over the top, outside the rings", p and (p.x .. "," .. p.y))
 CHECK(orb and orb.round == true, "...as a round icon")
+-- Debuffs over the top, buffs down the right: the two arcs never share a side
+units.nameplate4.buffs = { Aura("Arcane Power", 12042, 10, 15, false, { isStealable = true }) }
+Fire("UNIT_AURA", "nameplate4")
+local dp1 = rov.orbitRound[1].__points[1]
+local bp1 = rov.orbitRound[2] and rov.orbitRound[2].__points and rov.orbitRound[2].__points[1]
+CHECK(dp1 and dp1.y > half and math.abs(dp1.x) < 1, "the debuff sits at twelve")
+CHECK(bp1 and bp1.x > half and math.abs(bp1.y) < 1, "the notable buff sits at three", bp1 and (bp1.x .. "," .. bp1.y))
+CommanderPlatesDB.RadialBuffArc = "BOTTOM"
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+bp1 = rov.orbitRound[2].__points[1]
+CHECK(bp1.y < -half and math.abs(bp1.x) < 1, "Buffs Orbit = Bottom moves them to six", bp1.x .. "," .. bp1.y)
+CommanderPlatesDB.RadialBuffArc = "RIGHT"
+units.nameplate4.buffs = {}
+Fire("UNIT_AURA", "nameplate4")
+-- The backdrop is sized by its own setting
+local cfgB = CommanderPlates_Radial.Config(function(k) return CommanderPlatesDB[k] end)
+local before = w.backdrop.__w
+CommanderPlatesDB.RadialBackdropSize = 20
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+CHECK(Near(w.backdrop.__w, (cfgB.radii.outer + 20) * 2), "Backdrop Size +20 reaches 20px past the rings", w.backdrop.__w)
+CommanderPlatesDB.RadialBackdropSize = -40
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+CHECK(Near(w.backdrop.__w, (cfgB.radii.core + 1) * 2), "...and pulled all the way in it stops at the face", w.backdrop.__w)
+CommanderPlatesDB.RadialBackdropSize = 2
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+CHECK(Near(w.backdrop.__w, before), "...and back")
 CommanderPlatesDB.RadialRoundAuras = false
 Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
 CHECK(rov.orbitSquare[1] and rov.orbitSquare[1].__shown == true and orb.__shown == false, "Round Icons off swaps in square ones")
@@ -1368,7 +1441,9 @@ CHECK(w.flash.__shown == false and w.castText.__shown == false, "...and fades")
 units.nameplate4.debuffs = { Aura("Corruption", 172, 12, 18, true), Aura("Cheap Shot", 1833, 3, 4, false) }
 Fire("UNIT_AURA", "nameplate4")
 CHECK(w.core.__texture == "Interface\\Icons\\Cheap Shot", "a stun takes the face", w.core.__texture)
-CHECK(w.coreCd.__shown == true and Near(w.coreCd.__cdDur, 4), "...its countdown sweeping over it")
+CHECK(w.wipe[1].__shown == true and w.wipe[2].__shown == true and w.coreCd.__shown == false, "...its countdown a clock wipe over it, not a Cooldown")
+CHECK(w.wipe[1].__layer == "BACKGROUND" and w.coreCd:GetFrameLevel() < w.healthArc.cd:GetFrameLevel(), "...drawn beneath every ring")
+CHECK(Near(w.wipe[1].__w, (half2core or w.core.__w) / 2 / 0.46, 0.01), "...the wipe's disc exactly the face's size", w.wipe[1].__w)
 CHECK(w.rim.__color and w.rim.__color[1] == 1 and w.rim.__color[2] == 0.85, "...the rim in the stun's colour")
 CHECK(rov.big.__shown == false, "...and the floating big icon stays away")
 local orbited = 0
@@ -1381,12 +1456,21 @@ CHECK(rov.big.__points[1].rel == w and rov.big.__points[1].y > half, "...above t
 CommanderPlatesDB.RadialCoreCC = true
 units.nameplate4.debuffs = {}
 Fire("UNIT_AURA", "nameplate4")
-CHECK(w.core.__texture == CommanderPlates_Data.CLASS_ICON and w.coreCd.__shown == false, "control over: the face comes back")
+CHECK(w.core.__texture == CommanderPlates_Data.CLASS_ICON and w.wipe[1].__shown == false, "control over: the face comes back, wipe gone")
 
 -- Target: glow, arrows, bigger, combo points
 comboPoints = 3
 playerTarget = "nameplate4"
 Fire("PLAYER_TARGET_CHANGED")
+-- Blizzard shows its selection highlight -- a bar-shaped texture that
+-- ignores parent alpha -- the moment the unit is targeted. Under a disc it
+-- has to stay down, or a faint bar pokes out either side of it.
+rm.UnitFrame.selectionHighlight:Show()
+CHECK(rm.UnitFrame.selectionHighlight.__shown == false, "Blizzard's selection highlight is kept hidden under a disc")
+rm.UnitFrame.selectionHighlight:SetShown(true)
+CHECK(rm.UnitFrame.selectionHighlight.__shown == false, "...through SetShown too")
+rm.UnitFrame.aggroHighlightBase:SetShown(true)
+CHECK(rm.UnitFrame.aggroHighlightBase.__shown == false, "...and the aggro flare over the bar")
 CHECK(w.glow.__shown == true, "the target glows")
 CHECK(w.arrowL.__shown == true and w.arrowR.__shown == true, "...with arrows either side")
 CHECK(w.__scale == CommanderPlatesDB.RadialTargetScale, "...drawn bigger", w.__scale)
@@ -1397,6 +1481,40 @@ playerTarget = nil
 comboPoints = 0
 Fire("PLAYER_TARGET_CHANGED")
 CHECK(w.glow.__shown == false and w.arrowL.__shown == false and w.__scale == 1, "untargeted: back to normal")
+
+-- The glow: ten styles, every one on disk, sized from the plate's edge,
+-- and a motion that only runs while it is up
+for _, key in ipairs(CommanderPlates_Radial.GLOW_ORDER) do
+    local file = CommanderPlates_Radial.GLOW_STYLES[key]:gsub("^Interface\\AddOns\\", ADDONS .. "/"):gsub("\\", "/")
+    local fh = io.open(file, "rb")
+    CHECK(fh ~= nil, "glow art on disk: " .. key, file)
+    if fh then fh:close() end
+    CHECK(CommanderPlates_Radial.GLOW_LABEL[key] ~= nil, "glow style has a name: " .. key)
+end
+CommanderPlatesDB.RadialGlowStyle = "STORM"
+CommanderPlatesDB.RadialGlowMotion = "SPIN"
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+playerTarget = "nameplate4"
+Fire("PLAYER_TARGET_CHANGED")
+CHECK(w.glow.__texture and w.glow.__texture:find("GlowStorm.png", 1, true), "Target Glow Style picks the art", w.glow.__texture)
+local cfgG = CommanderPlates_Radial.Config(function(k) return CommanderPlatesDB[k] end)
+local edgeG = math.max(cfgG.radii.outer, cfgG.radii.outer + CommanderPlatesDB.RadialBackdropSize)
+CHECK(Near(w.glow.__w, (edgeG + 1) / 0.28), "the glow rises from the backdrop's edge", w.glow.__w)
+now = now + 1
+PumpFrame(w, 0.1)
+CHECK(w.glow.__rot and w.glow.__rot ~= 0, "Spin turns it", w.glow.__rot)
+CommanderPlatesDB.RadialGlowSize = 1.5
+CommanderPlatesDB.RadialGlowMotion = "PULSE"
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+CHECK(Near(w.glow.__w, (edgeG + 1) / 0.28 * 1.5), "Glow Size scales it", w.glow.__w)
+now = now + 0.37
+PumpFrame(w, 0.1)
+CHECK(w.glow.__alpha and w.glow.__alpha < 1 and w.glow.__alpha >= 0.65, "Pulse breathes it", w.glow.__alpha)
+playerTarget = nil
+Fire("PLAYER_TARGET_CHANGED")
+CHECK(w.glow.__shown == false and not w.glowLive, "untargeted: the glow and its motion stop")
+CommanderPlatesDB.RadialGlowStyle, CommanderPlatesDB.RadialGlowMotion, CommanderPlatesDB.RadialGlowSize = "SOFT", "NONE", 1.0
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
 
 -- A healer cross on the rim
 combatEvent = { 0, "SPELL_HEAL", false, "Player-R1", "Gankmage", 0x400 + 0x40, 0, "x", "y", 0, 0, 0, "Flash Heal" }
@@ -1561,6 +1679,12 @@ CommanderPlatesDB.PlateStyle = "CLASSIC"
 Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
 CHECK(w.__shown == false and rm.UnitFrame.HealthBarsContainer.__alpha == 1, "Classic again: disc gone, bar back")
 CHECK(rm.UnitFrame.CastBarsContainer.__alpha == 1 and rm.UnitFrame.name.__alpha == 1, "...cast bar and name back")
+playerTarget = "nameplate4"
+Fire("PLAYER_TARGET_CHANGED")
+CompactUnitFrame_UpdateSelectionHighlight(rm.UnitFrame)
+CHECK(rm.UnitFrame.selectionHighlight.__shown == true, "a bar plate gets its selection highlight back when targeted")
+playerTarget = nil
+Fire("PLAYER_TARGET_CHANGED")
 CHECK(rm.__hit and rm.__hit[1].relativePoint ~= "CENTER", "...and the bar's hit box")
 CHECK(rtov.totemIcon.__shown == true, "the totem never noticed")
 NoErrors("radial section clean")
