@@ -1,0 +1,16 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Plates
+## Author: Devin
+## Version: 1.2.0
+## Notes: Blizzard's own nameplates made fit for an arena, as a layer rather than a replacement. Class-coloured health bars and names on friendly and enemy players; two rows of buff and debuff icons on both, filtered the way a PvP player filters (yours always, the fight-deciding ones always, everything only on request, a whitelist that beats every filter); one big "loose control" icon for the stun, sheep, fear, silence, root or immunity the unit is sitting in, with the stun beating the root and the longer one beating the shorter; and a taller clickable region under a plate that looks exactly as it did. Around that, the things the high-rated players' nameplate addons settled on years ago: target arrows and glow, focus glow, arena numbers in place of names, class icons, a healer cross for anyone the combat log has caught healing, totems drawn as their spell icon so Grounding reads from across the room, seconds left on the cast bar with a loud border on the casts that matter, optional friendly click-through for instances, and the client's own nameplate CVars kept as one re-applied profile. A second plate style, Radial, turns each plate into a disc: the class (or portrait) in the middle, turning into the spell being cast or the stun being sat in; health, mana and the cast as arcs around it with a damage trail, incoming heals and a spark on the cast; buffs and debuffs in orbit; target glow, combo points, threat, level, raid marker and elite rim on the rim. Totems keep their own look. What an aura IS comes from Commander Diminish's DR table (the server's own classifier, copied and diffed) plus a hand-written list of TBC's notable buffs and debuffs; the rules run under plain luajit with no client attached.
+## IconTexture: Interface\Icons\Ability_Hunter_SniperShot
+## SavedVariables: CommanderPlatesDB
+## RequiredDeps: Commander_Events
+
+CommanderPlatesData.lua
+CommanderPlatesEngine.lua
+CommanderPlatesDraw.lua
+CommanderPlatesRadial.lua
+CommanderPlatesDB.lua
+CommanderPlates.lua
