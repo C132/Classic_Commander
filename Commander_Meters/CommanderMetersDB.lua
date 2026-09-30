@@ -4,6 +4,9 @@ CommanderMetersDB = _G.CommanderMetersDB or {}
 -- (A third, CommanderMetersSession, holds the opt-in Overall+Last snapshot
 -- written at logout; the engine owns its shape.)
 CommanderMetersLog = _G.CommanderMetersLog or {}
+-- Fourth SavedVariables: closed arena matches (CommanderMetersArenaLog),
+-- written at logout when Arena › Keep Matches is above zero; the arena
+-- engine owns its shape.
 
 COMMANDER_METERS_EVENTS = {
     UPDATE = "COMMANDER_METERS_UPDATE"
@@ -15,12 +18,15 @@ COMMANDER_METERS_EVENTS = {
 -- MIGRATIONS[n] migrates version n -> n+1; the ladder runs in order.
 -- ---------------------------------------------------------------------------
 
-local DB_VERSION = 2
+local DB_VERSION = 3
 local MIGRATIONS = {
     -- v1 was the pre-versioning original release; v2 adds the version
     -- stamp itself plus the batch-3 keys (new keys need no migration —
     -- ApplyDefaults fills them). Future reshapes slot in here.
     [1] = function(db) end,
+    -- v3: the Arena Report never opens itself (Devin: "only when I click
+    -- the button"), so the ArenaAutoOpen key is retired
+    [2] = function(db) db.ArenaAutoOpen = nil end,
 }
 
 local function Migrate(db)
@@ -73,6 +79,11 @@ local DefaultSettings = {
                              -- session-scoped exactly like ViewSegment.
     LastInstanceKey = false, -- auto-reset baseline: persists so a /reload
                              -- inside an instance never counts as entering it
+
+    -- Arena (D27): both teams recorded per match, the report window, and
+    -- how many past matches survive a logout
+    ArenaRecord = true,      -- record arena matches (both teams, replayable)
+    ArenaKeepMatches = 6,    -- past matches saved across logout (0 = session only)
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "DARK")) do
     DefaultSettings[key] = value
@@ -122,6 +133,8 @@ local function CreateCorePanel()
             unlock = function() if CommanderMeters_SetLock then CommanderMeters_SetLock(false) end end,
             dump = function() if CommanderMeters_Dump then CommanderMeters_Dump() end end,
             health = function() if CommanderMeters_Health then CommanderMeters_Health() end end,
+            arena = function() if CommanderMeters_ArenaToggle then CommanderMeters_ArenaToggle() end end,
+            arenatest = function() if CommanderMeters_ArenaTest then CommanderMeters_ArenaTest() end end,
         },
     })
 
@@ -160,7 +173,7 @@ local function CreateCorePanel()
 
     panel:AddSlider({
         label = "Fight Ends After",
-        tooltip = "Seconds without any group combat activity (while you are out of combat) before the fight is closed into Last. The fight's duration always ends at its last real event, never at this deadline.",
+        tooltip = "Seconds without any group combat activity (while you are out of combat) before the fight is closed into Last. The fight's duration always ends at its last real event, never at this deadline. Inside an arena or battleground this never applies: the whole match is one fight, closed when a winner is declared.",
         min = 2, max = 10, step = 1,
         format = "%d sec",
         get = function() return CommanderMetersDB.IdleTimeout end,
@@ -270,6 +283,45 @@ local function CreateCorePanel()
         get = function() return CommanderMetersDB.ClickThrough end,
         set = function(value) CommanderMetersDB.ClickThrough = value end,
         isEnabled = Enabled,
+    })
+
+    panel:AddSection("Arena",
+        "Arena matches are recorded as a whole: both teams, every seat, from the gates to the result — damage, healing, control with DR brackets, kicks, dispels, kills, mana, cooldowns — with a replayable timeline. The crossed-swords button in the meter window (or /cm arena) opens the report; ARENA modes in the meter window show both teams live.")
+
+    panel:AddCheckbox({
+        label = "Record Arena Matches",
+        tooltip = "Record every arena match you play into the Arena Report. Off leaves the meter window's ordinary modes untouched and records nothing arena-specific. The report never opens on its own — the crossed-swords button in the meter window, /cm arena, or an ARENA row opens it.",
+        get = function() return CommanderMetersDB.ArenaRecord end,
+        set = function(value) CommanderMetersDB.ArenaRecord = value end,
+        isEnabled = Enabled,
+    })
+
+    panel:AddSlider({
+        label = "Keep Matches",
+        tooltip = "How many past arena matches are saved when you log out or /reload, so a night of games can be reviewed later. With the replay's cast and aura logs a typical 3v3 weighs 200–400 KB on disk and a long 5v5 up to about 1 MB; six matches stay under a few megabytes. 0 keeps matches for this session only.",
+        min = 0, max = 20, step = 1,
+        format = "%d",
+        get = function() return CommanderMetersDB.ArenaKeepMatches end,
+        set = function(value) CommanderMetersDB.ArenaKeepMatches = value end,
+        isEnabled = function() return Enabled() and CommanderMetersDB.ArenaRecord end,
+    })
+
+    panel:AddButtonRow({
+        {
+            label = "Arena Report",
+            tooltip = "Open the Arena Report (same as /cm arena).",
+            onClick = function() if CommanderMeters_ArenaToggle then CommanderMeters_ArenaToggle() end end,
+        },
+        {
+            label = "Test Match",
+            tooltip = "Inject a canned 3v3 through the real arena engine so the report has a match to show (same as /cm arenatest).",
+            onClick = function() if CommanderMeters_ArenaTest then CommanderMeters_ArenaTest() end end,
+        },
+        {
+            label = "Forget Matches",
+            tooltip = "Drop every recorded arena match, including the saved history.",
+            onClick = function() if CommanderMeters_ArenaForget then CommanderMeters_ArenaForget() end end,
+        },
     })
 
     panel:AddSection("Auto Reset",

@@ -29,3 +29,24 @@ simplicity; none is blocked by the architecture.
 - **Window snap/grouping, multiple windows, realtime strips** — Epic DM
   territory; explicitly out.
 - **Cross-client sync** — non-goal, permanently.
+
+## Arena (D27) — considered and not built
+
+- **Positioning / pillars** — the log has no positions; nothing to replay.
+- **Cross-match trends** (win rate per comp, average first-blood time,
+  DR bracket distribution) over the saved history — the data is on disk.
+- **Exporting a match as text** beyond the five-line share (a chat
+  channel cannot carry a ledger; a copy box would need an edit box).
+- **Damage by school / partial resists** on arena seats (the core
+  engine tracks them; the arena seat keeps totals, crits, misses, absorbs).
+- **Pet HP / pet deaths** as seat events.
+- **Insights and History surfaces.** Both engine passes (`A.Insights`,
+  `A.History`) stay pinned in the harness; their tabs left the replay
+  window in D27 pass 9 (Devin: "all those different tabs are hard to
+  understand"). A home for them — a tooltip on the match title, a
+  second page — is a design question, not a data one.
+- **Cast bar duration for open casts on a live match** (the bar has no
+  end until the success lands; it fills against the 10 s cap until then).
+- **Compact 5v5 cards.** Five cards a side stand ~870 px tall; a
+  two-row card (buffs and debuffs sharing one row) would save ~100 px if
+  a smaller screen ever needs it.

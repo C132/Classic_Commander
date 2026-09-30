@@ -894,6 +894,71 @@ do
         buckets, ts - T0))
 end
 
+-- ===========================================================================
+-- Stage M: match mode (D28) — one fight per arena / battleground match
+-- ===========================================================================
+
+do
+    local EM = LoadEngine()
+    local dbm = { IdleTimeout = 3 }
+    EM.Init(dbm, T0)
+    local closed = {}
+    EM.onFightEnd = function(seg) closed[#closed + 1] = seg end
+    local M1 = "Creature-0-0-0-0-9001-M1"
+    local function blow(ts)
+        EM.OnCleu(ts, "SWING_DAMAGE", nil, "Player-0-A", "Alpha", FP_MINE, 0, M1, "Mob", FENEMY, 0,
+            100, 0, 1, 0, 0, 0, false, false, false, false)
+    end
+    EM.SetMatch(true)
+    CHECK(EM.InMatch(), "M: match mode armed")
+    blow(T0 + 10)
+    CHECK(EM.InFight(), "M: the first blow opens the fight")
+    -- Out of combat, idle for far longer than the timeout: still open
+    EM.SetPlayerCombat(false, T0 + 11)
+    EM.Tick(T0 + 60)
+    CHECK(EM.InFight(), "M: no idle close inside a match")
+    eq(#closed, 0, "M: nothing closed")
+    blow(T0 + 70)
+    EM.SetPlayerCombat(false, T0 + 71)
+    EM.Tick(T0 + 200)
+    CHECK(EM.InFight(), "M: still one fight across a second lull")
+    -- The match ends: closed, named, tagged
+    EM.SetMatch(false, "3v3 Nagrand Arena", "WIN", T0 + 210)
+    CHECK(not EM.InMatch() and not EM.InFight(), "M: match end closes the fight")
+    eq(#closed, 1, "M: one segment for the whole match")
+    local seg = closed[1]
+    eq(seg.name, "3v3 Nagrand Arena", "M: named after the match")
+    eq(seg.match, true, "M: flagged as a match segment")
+    eq(seg.success, true, "M: WIN is success")
+    near(seg.dur, 200, "M: duration runs to the match end, not the last blow")
+    eq(seg.totals.dmg, 200, "M: both blows in the one segment")
+    -- Outside a match the idle close is back
+    blow(T0 + 300)
+    EM.SetPlayerCombat(false, T0 + 301)
+    EM.Tick(T0 + 305)
+    CHECK(not EM.InFight(), "M: idle close works again after the match")
+    eq(#closed, 2, "M: the post-match pull closed on its own")
+    eq(closed[2].match, nil, "M: a pull is not a match")
+    -- A match left without a result: named, untagged
+    EM.SetMatch(true)
+    blow(T0 + 400)
+    EM.SetMatch(false, "Arathi Basin", nil, T0 + 450)
+    eq(closed[3].name, "Arathi Basin", "M: a left match is still named")
+    eq(closed[3].success, nil, "M: ...and carries no result tag")
+    -- LOSS
+    EM.SetMatch(true)
+    blow(T0 + 500)
+    EM.SetMatch(false, "Warsong Gulch", "LOSS", T0 + 520)
+    eq(closed[4].success, false, "M: LOSS is failure")
+    -- Ending a match that never had a blow is quiet
+    EM.SetMatch(true)
+    EM.SetMatch(false, "Empty", "WIN", T0 + 600)
+    eq(#closed, 4, "M: a match with no fight closes nothing")
+    -- Ending match mode when it was never armed is quiet
+    EM.SetMatch(false, "Never", "WIN", T0 + 700)
+    eq(#closed, 4, "M: deactivating unarmed match mode is a no-op")
+end
+
 if fails > 0 then
     io.write(string.format("RESULT: %d/%d FAILED\n", fails, checks))
     os.exit(1)

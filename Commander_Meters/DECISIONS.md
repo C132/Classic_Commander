@@ -660,3 +660,616 @@ Engine harness 736 → 842 checks, UI harness 152 → 164; the fixture pins
 the counts, the record/series sum invariants, the auto-attack and
 pet/totem/enemy exclusions, the unmoved fight-end stamp, the per-minute
 rate, and the v1 snapshot rejection.
+
+## D27. The Arena Report — both teams, the whole match, replayable (2026-09-27)
+
+Devin asked for "a new arena mode that does a team split view breakdown for
+all the different stats — I want to know everything about the match and
+even have a time replay breakdown." Decisions:
+
+- **A second engine, not a second segment kind.** The core engine records
+  the GROUP's story (D3: actors are group-affiliated players and their
+  minions; everything else is "bystander violence"). An arena's question
+  is symmetric — the enemy's numbers matter exactly as much — and has a
+  shape a fight segment lacks: two rosters, a gate clock, a result that
+  costs rating. Bolting `them` onto segments would have put a
+  team-conditional into every credit helper and every mode. So
+  `CommanderMetersArena.lua` is its own pure engine (no frames, no unit
+  reads, harness-replayable byte-for-byte) fed by the same CLEU payload —
+  one getter call, varargs riding the stack to both engines (`DispatchCleu`).
+  *Rejected*: a Recount-style "record everyone" flag on the core engine
+  (it would have made Overall a battleground-evening memory hog again, the
+  exact thing D18's name caps exist to prevent).
+
+- **Seats are learned three ways and never guessed.** Unit tokens
+  (`player`/`partyN`, `arenaN`, with `arenapetN`/`partypetN` owners),
+  `GetArenaOpponentSpec` at the prep phase (class + spec), and the combat
+  log itself: a hostile PLAYER GUID (TYPE_PLAYER + REACTION_HOSTILE) the
+  tokens have not shown yet becomes an enemy seat on the spot — the log
+  sees a stealthed rogue's opener before any token does. Nil unit answers
+  never erase a seat (the stealth trap from Arena Frames). Minions with no
+  owner are skipped with an anomaly, per D3.
+
+- **The clock is match-relative and the gates are a moment.** Everything
+  is stored as seconds from zoning in; the gates are stamped when Arena
+  Preparation (32727/32728) FADES on any seat, or on the first blow between
+  the teams if that fade was missed (a mid-match /reload). Rates divide by
+  gates→cursor, so the pre-gate minute never dilutes DPS. The server's
+  `GetBattlefieldInstanceRunTime` is kept alongside as the honest duration.
+
+- **Everything the log knows, as counters AND as a ledger.** Per seat:
+  damage/healing/taken with the core engine's attribution rules, CC
+  applied and taken with the DR BRACKET each cast landed at (the server's
+  rule: 15 s reset from the FADE, frozen while stacked — the same ladder
+  Arena Frames and Diminish implement), real CC durations from apply to
+  fade, who broke a CC early and whether that was an OWN-TEAM break (the
+  mistake worth a number), CC cast into immunity/resist (wasted), kicks and
+  what they stopped, dispels split into friendly dispels and offensive
+  purges/steals, killing blows (last hit within 6 s of a death), deaths,
+  casts (APM, D26's rules), mana drained and drunk, trinkets, and every
+  book cooldown pressed. Alongside the counters a bounded LEDGER of
+  moments (4000; past it only deaths and END land, and the drop count is
+  shown) keeps the order of events, which is what makes the timeline and
+  the ledger list possible. Per-second series (damage, healing, taken,
+  casts) and HP snapshots (UNIT_HEALTH while a match is on, plus a 1 Hz
+  sample of every readable seat) feed the replay.
+
+- **The cursor IS the replay.** One time value drives the whole report:
+  the team board (values, HP strips, control tags, DEAD), the totals, the
+  versus bar and the ledger all read the match AS OF the cursor. Series
+  stats sum buckets to the cursor; ledger stats count moments to it, so
+  every one of the ten stats replays, not just damage. Drag the timeline,
+  wheel a second, click a moment, or press play (1x/2x/4x). *Rejected*:
+  a separate "replay" view (two windows that disagree about the same
+  match is D10's ambiguity again) and per-event storage of every damage
+  tick (a 10-minute 5v5 would be tens of thousands of rows for a curve
+  the 1 s buckets already draw).
+
+- **Team is its own color jurisdiction.** Blue us / red them touches only
+  team chrome: the 2 px stripe on ARENA pane rows, the team headers, the
+  versus bar, the pressure columns. Class colors keep seats, stat colors
+  keep values, the accent keeps selection (cursor, tab, seat). Three new
+  stat colors joined D20's set: control (violet-magenta, matching Arena
+  Frames' FULL control tint), mana (blue), cooldowns (pale gold).
+
+- **Rule data is borrowed, never copied.** The DR table (Arena Frames or
+  Diminish — the same generated block), control kinds, the cooldown book
+  and the drink list are read from those addons' globals at login when
+  installed. Without them CC still counts by the locale-safe CC name list
+  the CC BREAKS mode already resolves (no brackets), cooldowns are not
+  logged, and `/cmeters health` says exactly which is missing. *Rejected*:
+  a third copy of the 884-spell DR table (Diminish's harness already diffs
+  two; a third is a third way to drift).
+
+- **Pane modes for the live glance, one window for everything.** Four
+  ARENA modes (DMG / HEAL / TAKEN / CC) join the mode menu under their own
+  title, painting BOTH teams' seats sorted by the stat with the team
+  stripe; they ignore the pane's segment (a match is its own segment, so
+  the caption menu drops the OVER section like an external mode) and a
+  click opens the Arena Report on that seat instead of the detail popup.
+  The report itself (`CommanderMetersArenaUI.lua`, 640 px, DIALOG strata,
+  title-drag, Escape) has fixed bands top to bottom: header with a match
+  menu, summary line, ten stat tabs, the team board, the mirrored
+  pressure timeline with the scrubber, the moments ledger, and the
+  selected seat's two breakdown lists. It builds itself on first open, so a
+  raider who never queues pays nothing.
+
+- **Persistence is the point this time.** D13 kept combat data
+  session-only because raid segments are not revisited; arena matches ARE
+  — "why did we lose that one" is asked the next morning. So closed matches
+  persist by default (`ArenaKeepMatches`, 10, 0 = session only) into a
+  fourth SavedVariables file written at PLAYER_LOGOUT (still never
+  mid-play, D13's crash lesson), with a live match archived as LEFT first
+  so a /reload mid-match keeps what was recorded. Import validates every
+  match's shape and refuses malformed ones outright. Memory: a seat is a
+  few dozen numbers plus ≤40-entry record maps and ≤1800-bucket series; a
+  ten-minute 5v5 with a full ledger is a few hundred KB, ten of them a few
+  MB. The session ring holds 20.
+
+- **Settings ceiling 14 → 17, by request.** `ArenaRecord` (the master
+  switch for a whole recorder; a raider may want none of it),
+  `ArenaAutoOpen` (a window that pops at match end is exactly the kind of
+  thing people turn off), `ArenaKeepMatches` (the one memory policy a user
+  legitimately owns, because it is their SavedVariables file). Everything
+  else — ledger cap, series cap, kill window, ring size — stays a constant.
+
+- **Result and ratings from the scoreboard API, type-checked.**
+  `GetBattlefieldWinner()` on `UPDATE_BATTLEFIELD_SCORE` compared with
+  `GetBattlefieldArenaFaction()` decides WIN/LOSS; `GetBattlefieldScore`
+  rows (Blizzard's TBC WorldStateFrame order, D-notes) merge onto seats by
+  short name for the server's damage/healing/KB/deaths/rating change/MMR —
+  the board shows "server 31.2k" beside our number when they differ, since
+  the server saw the whole box; `GetBattlefieldTeamInfo(0/1)` gives team
+  names and before/after ratings when it answers with numbers, and is
+  simply not recorded otherwise. Bracket comes from the larger roster
+  snapped to 2/3/5, never from `GetBattlefieldStatus`'s positional
+  `teamSize` (its return order differs between the Classic and retail
+  shapes and this client is a retail UI over TBC).
+
+- **Test path.** `/cmeters arenatest` injects a canned 3v3 (RMP vs
+  warrior/druid/warlock: a full opener, a half-bracket Intercept, an
+  own-team sap break, a fear dispelled, a wasted sheep, a spell lock, a
+  counterspell, three mana burns, a drink, a trinket, book cooldowns,
+  three kills) through the REAL arena engine with HP snapshots, and closes
+  it as a WIN with a scoreboard — so the whole report can be read at a
+  desk. It joins the match list like any other; Arena › Forget Matches
+  removes it. `/cmeters health` prints the arena engine's anomalies and
+  which rule data is missing.
+
+Harnesses: `Harness/meters_arena_harness.lua` (new, 186 checks: both
+teams' attribution, the DR ladder from the fade, the frozen clock, own-team
+breaks, wasted CC, kicks/purges/drains/drinks/trinkets/book, kills and
+unattributed deaths, cumulative values and replay state at chosen seconds,
+pressure buckets, retention, the ledger cap, discard/LEFT, the persistence
+round trip and refusals, determinism, throughput 0.08 µs/event) and the UI
+harness 164 → 304 (the canned match, all ten tabs, scrubbing, playback at
+2x, the ledger jump and bracket text, seat selection, the match menu,
+plain-text share, the ARENA pane mode with stripes and click-through to
+the report, a LIVE match driven through PLAYER_ENTERING_WORLD /
+ARENA_OPPONENT_UPDATE / UNIT_HEALTH / UPDATE_BATTLEFIELD_SCORE with a
+scoreboard and team-info fixture, LOSS, LEFT/discard, and the logout
+export). The harness stopped brute-force clicking every Button to find
+menus (it was firing the settings panel's Test/Forget buttons as a side
+effect); the header buttons are tagged `headerRole` for it instead.
+
+### D27 review pass 1 (2026-09-27, the loop's second iteration)
+
+Six findings against the fresh engine, all confirmed and fixed, each
+pinned in `meters_arena_harness.lua` Stage F:
+
+1. **A missed fade froze an aura for the whole match.** The apply path
+   returned early whenever the same aura name was already open on the
+   target, so a Cheap Shot whose REMOVED was never logged (target out of
+   range) silently swallowed every later Cheap Shot on that target — no
+   moment, no count, and a DR ladder that never reset. Now a fresh
+   APPLIED while the aura is open closes the stale one at its cap and
+   counts; only a REFRESH is "the same CC". Drinks got the same rule.
+2. **The unclosed-CC cap was 60 s.** TBC's PvP cap is 10 s; nothing that
+   controls a player lasts longer. 60 s of phantom control on one missed
+   fade is a lie the seat card would repeat. Now 12.
+3. **Self-inflicted deaths earned a kill.** A Life Tap or Hellfire death's
+   last hit was the victim's own, so the victim was credited a killing
+   blow; a death to an orphan minion named a GUID nobody could label. A
+   killing blow now requires a SEAT that is not the victim; the blow is
+   still named either way.
+4. **END could land before the last event.** Finish stamps from `time()`
+   (whole seconds) while the log carries milliseconds, so a 12:00:00.7
+   blow followed by Finish at 12:00:00 put END out of order and shaved the
+   duration. The match tracks the newest log time; END is at least that.
+5. **Scoreboard rows for unseen players were dropped.** A 5v5 healer who
+   stayed out of range all game had a scoreboard row and no seat, so the
+   board showed nine players. The merge now seats such rows (team from the
+   row's faction against `GetBattlefieldArenaFaction`, synthetic guid,
+   `fromScoreboard`), with the server's numbers as their only numbers.
+6. **Ledger stats rescanned the ledger per seat per repaint.** Ten seats ×
+   4000 moments at 10 Hz while scrubbing. `CollectRows` now makes one pass
+   filling per-guid accumulators; the per-seat scan survives for single
+   queries and the harness asserts the two agree for every ledger stat.
+
+Also: the 1 Hz ticker re-reads the arena/party tokens while a match is on
+(ten unit reads — insurance against a missed roster event), and the
+harness's HEAL special case in `SeatValueAt` was dead code and went.
+
+### D27 review pass 2 (2026-09-27, the loop's third iteration) — the window
+
+Five findings on the report and the pane integration, all fixed:
+
+1. **The live timeline drifted.** Pressure columns were laid out over the
+   newest bucket any seat had written while the cursor and markers were
+   laid out over elapsed time — during a lull the columns compressed and
+   a death marker sat a few seconds off its column. `Pressure` now takes
+   the bucket count the window wants (the bucket holding the end time),
+   and the plot uses ONE x scale (`pw / endT`) for columns, markers, the
+   gates line and the cursor.
+2. **Seat rows overlapped themselves.** The bottom-line tag ran to −70 and
+   the 90 px sub-value column started at −93: twenty pixels of collision
+   on every row. Tag now ends at −96.
+3. **A drag could outlive the mouse.** Releasing the button outside the
+   plot never reaches its OnMouseUp, so the cursor kept following the
+   mouse until the next click. The OnUpdate loop now checks
+   `IsMouseButtonDown` and ends the drag itself.
+4. **Scoreboard-only seats looked like silent players.** A seat created
+   from a scoreboard row (review pass 1) showed zero for every log stat
+   with nothing saying why. Its tag now leads with SCOREBOARD ONLY.
+5. **The header lied while the left pane read an arena match.** The
+   segment button still said CURRENT (IDLE) over a pane showing 3v3
+   NAGRAND · WIN. While pane 1 is an arena mode the button names the
+   match; its menu still moves the segment for the right pane and the
+   detail popup.
+
+Also in the pane menu's ARENA section: OPEN ARENA REPORT…, so the report
+is reachable from the menu everyone already opens, not only from `/cm
+arena` and the settings page. Harness: arena 284 → 288, UI 304 → 308.
+
+### D27 pass 3 (2026-09-27, the loop's fourth iteration) — two backlog items
+
+- **Cooldowns at the cursor.** The book already carried each ability's
+  cooldown and the ledger the press time, so the replay state now lists,
+  per seat, every book press and trinket whose cooldown still covers the
+  cursor, with seconds left (trinkets carry 120 s, Escape Artist 60 s, on
+  the moment itself). On the board the seat's tag line switches from
+  class · race to "Shield Wall 22s · Trinket 1:40" whenever anything is
+  down at the cursor — live or scrubbed — because "their trinket is down
+  for 1:40" is what that second is about. Three shown, "+N" beyond.
+- **Spec inference from signature spells.** Arena Frames' SPEC_MARKERS
+  (one unmistakable spell per spec) are borrowed like the DR table; a
+  player seat without a spec that casts one learns it, the seat is marked
+  `specRevealed`, and a SPEC moment lands on the ledger ("Arms revealed").
+  Pets never reveal their owner's spec; class alone never becomes a spec
+  (Arena Frames' rule, kept). The canned match leaves the warrior's spec
+  to be revealed by his first Mortal Strike so the path runs at a desk.
+
+Backlog trimmed accordingly.
+
+Found while pinning: the canned match's script is written by SUBJECT (the
+opener, then the mage's damage loop, then the kicks…) and the Intercept
+block landed in the code before a loop that emits earlier seconds — so the
+engine received events out of clock order, its bisection-searched ledger
+went unsorted, and the report quietly skipped a moment. The injector now
+queues its events and replays them sorted by time (emission order breaks
+ties), and the engine's ledger clamps any moment that arrives behind the
+newest one up to it, so a misordered feed can degrade a timestamp but never
+the search. Harness: arena 288 → 302, UI 308 → 310.
+
+### D27 pass 4 (2026-09-27, the loop's fifth iteration) — insights
+
+"Know everything about the match" was so far a ledger and a board: every
+fact, none of the conclusions. `A.Insights(m)` is the engine reading its
+own match back as findings — pure derivation, so every line can point at
+the moment it came from: first blood; every KILL with the controls that sat
+on the VICTIM's teammates inside the last ten seconds ("Leafshade
+Polymorph 4.0s" beside the warrior's death is the sentence an arena player
+looks for first); own-team breaks (who broke whose CC on whom); each
+trinket and the control it ended (a CC on the presser closing within half
+a second of the press); wasted CC and drink time per seat; each team's top
+damage and healing seat with its share; and control time, kicks and purges
+us-vs-them. Timed findings lead in clock order, summaries follow.
+
+Surface: the ledger band's title became its mode switch — MOMENTS ·
+INSIGHTS — so the geometry holds and the eight pooled rows serve both;
+insights that carry a time jump the cursor on click, the wheel scrolls
+them. Cached per match and ledger length (a live match re-derives as it
+grows). The canned match gained a Polymorph on the druid across the
+warrior's death so the pattern is visible at a desk.
+
+Measured: the canned 3v3 (30 moments, ~80 s) serializes to ~33 KB, so the
+"few hundred KB" ceiling in D27 holds for a ten-minute 5v5 with a full
+ledger; ten saved matches stay in the low megabytes.
+Harness: arena 302 → 321, UI 310 → 321.
+
+### D27 pass 5 (2026-09-27, the loop's sixth iteration) — history
+
+The kept matches were ten separate reports; `A.History(list)` reads them
+together: the record (W/L/left) and win rate, the rating trend across
+rated games (team ratings first, the player's own scoreboard change as the
+fallback), per-bracket and per-map records, the record against every enemy
+COMPOSITION (class tokens sorted inside the key, so "WARRIOR/DRUID" and
+"DRUID/WARRIOR" are one comp), average length (forfeits excluded), average
+first-blood time from the gates, and first-blood conversion — how often we
+drew it and won, how often we gave it and still won. Surface: a third tab
+on the ledger band, HISTORY, sharing the eight pooled rows; cached on the
+kept-match count. Rejected: a separate history window (the band already
+has the room and the wheel).
+
+The store gained the settings DB's version ladder (`STORE_MIGRATIONS[v]`
+upgrades v → v+1 on import; a store newer than the code, or older with no
+step, is refused rather than guessed), so a future reshape of a saved
+match never costs a user their history.
+Harness: arena 321 → 334, UI 321 → 326.
+
+### D27 pass 6 (2026-09-27, the loop's seventh iteration) — hardening numbers
+
+A worst-case fixture (5v5, ten minutes from the gates, a blow every
+quarter second from both sides, a Polymorph every 1.5 s, a kick and a
+Shield Wall every 3 s, HP every second; 803 moments) under LuaJIT with the
+JIT OFF — the closest stand-in for the client's interpreter:
+
+| call (per repaint) | interpreter |
+|---|---|
+| StateAt (all seats: hp, alive, control, cooldowns) | 0.075 ms |
+| CollectRows DMG at cursor | 0.018 ms |
+| CollectRows CC at cursor / whole | 0.011 / 0.063 ms |
+| Pressure (661 buckets) | 0.056 ms |
+| Insights | 0.067 ms |
+| LedgerIndexAt | 0.001 ms |
+
+At the report's 10 Hz scrub rate that is well under a millisecond a second;
+even a full 4000-moment ledger scales to a few tenths. No optimization was
+warranted, and none was made.
+
+The footprint was the finding. That match serialized to **520 KB**, and the
+per-second HP fractions were part of it: a fraction lands in SavedVariables
+as a 17-digit float, and there are up to 600 of them per seat. HP snapshots
+are now per-mille integers (0..1000; readers divide), which took the match
+to **448 KB**; the rest is the per-second damage/taken series (up to 600
+buckets × 10 seats × 2) and the ledger itself, both of which ARE the replay
+and stay. Honest numbers replace D27's "a few hundred KB": a typical 3v3
+(2–4 minutes) is 100–200 KB, a long 5v5 about 450 KB, ten kept matches one
+to a few megabytes. The Keep Matches tooltip says so. *Rejected*:
+downsampling the series of older saved matches (a replay that gets
+blurrier with age is a second data shape to reason about, for a file size
+Details and WeakAuras exceed routinely).
+Also: the timeline lost its hover tooltip (the mouse lives there while scrubbing; a tooltip popping on every crossing sat over the board) and carries its marker key on the plot instead.
+
+### D27 pass 7 (2026-09-27, the loop's eighth iteration) — audit
+
+Consistency read across both windows against D20: the report's window title
+wore the accent (reserved for the cursor, the chosen tab, the chosen seat)
+and now wears plain text like every other Meters title. ASSUMPTIONS 33-36
+added for what iterations 2-7 came to rely on without an in-game test:
+signature casts in the log, IsMouseButtonDown, GetInstanceInfo's name, and
+the scoreboard faction index in arenas. Nothing else diverged.
+
+### D27 pass 8 (2026-09-27) — Devin's first look: layout, and no auto-open
+
+Devin ran it: "the arena report has a lot of layout issues and I only want
+it to open when I click a button on commander meters instead of auto open
+after a match."
+
+**Opening.** `ArenaAutoOpen` is retired (DB v2 → v3 migration deletes the
+key; the settings ceiling drops to 16) and the report never opens itself.
+It opens from a crossed-swords glyph in the meter window's header (accent
+while the report is up), from `/cm arena`, from OPEN ARENA REPORT… in the
+mode menu, or by clicking an ARENA row. An open report still switches to
+the finished match when one ends. *Rejected*: keeping the setting with a
+false default — a window that pops during the scoreboard was the whole
+complaint, and a setting is a second place it could come back from.
+
+**Layout, found in a picture rather than a guess.** The Meters UI mock now
+records anchors, textures, layers and justification like Arena Frames'
+board mock, and `Harness/meters_arena_render.lua` dumps the report's
+resolved rectangles after the canned match (optionally with the cursor
+scrubbed) for Arena Frames' `render_svg.py`. The first render showed,
+in order of severity:
+
+1. Seat rows overlapped themselves: two text lines (11 + 10 pt) and an HP
+   strip in a 24 px row. Rows are 30 px; the name line owns the top 13,
+   the tag line the next 12, the strip the bottom 4, each with a fixed
+   height so no line can drift into another.
+2. The versus bar's "77% · 23%" label had nowhere to sit on a 6 px bar and
+   collided with the team heads and the first row. The share now rides
+   with each team's total ("56.7k  77%"); the bar is just a bar.
+3. The timeline spent half its width on the pre-gate minute. The plot's
+   origin is three seconds before the gates; columns, markers, the gates
+   line and the cursor all share `pw / span` from that origin.
+4. The marker key sat over the enemy's pressure columns; it lives in the
+   hint line now, and the peak readout moved into the axis row.
+5. Enemy death markers hung below the plot (anchored upside down); they
+   stand on the bottom edge inside it.
+6. A 3v3 board reserved five rows a side and left a 180 px hole above the
+   timeline. The three lower bands live in container frames that a small
+   `Layout(rows)` positions from the bracket (the larger roster seen,
+   never fewer than two rows, never more than five); the window's height
+   follows. This is the one deliberate geometry change per match — it
+   happens once, when the match is known, never while reading.
+7. Cooldown tags ("Shield Wall 29:16") showed on a finished match at its
+   end, where the class line belongs; they show only while the cursor is
+   inside the match or the match is live.
+8. The hint line was longer than the window.
+
+The renderer is now part of the harness kit: render before shipping any
+report change, the way the Gladdy pass did for Arena Frames.
+
+### D27 pass 9 (2026-09-28) — the replay, redesigned as a spectator view
+
+Devin: "I don't want both teams combined, I want them split, and I really
+want more of a replay system. I like the time scrubber but all those
+different tabs are hard to understand. I want something that looks like an
+arena spectator addon — fully time-scrubbable replay watching where I can
+see everyone's GCD, buff/debuff/loss-of-control style class icon
+portraits, with all the details below it for meters."
+
+**Engine.** Three records joined the seat so a spectator view can be
+read at any second: POWER snapshots (per-mille, with Blizzard's power
+type — mana, rage, energy — fed by UNIT_POWER_UPDATE and the 1 Hz pass),
+a CAST LOG (`SPELL_CAST_START` opens, `_SUCCESS` closes OK — or records
+an instant when nothing was open — `_FAILED` closes FAIL, a kick on the
+target closes KICKED, a death or the next start closes anything left at
+a 10 s cap; capped at 1500 per seat) from which `StateAt` derives the
+cast in progress and the GLOBAL COOLDOWN (the last success within 1.5 s,
+as a fraction), and AURA INTERVALS (every APPLIED opens one, REFRESH and
+a DOSE extend it, REMOVED or death closes it; buff/debuff and the source
+kept; capped at 800 per seat with the overflow counted). Pets' casts
+are not their owner's bar. The persisted store carries them; an older
+store without them imports with empty logs.
+
+**Window — one screen, no tabs.** The ten stat tabs, the MOMENTS ·
+INSIGHTS · HISTORY switch and the breakdown lists are gone from the
+window (the engine's Insights and History stay, pinned, for a later
+surface). What replaced them, top to bottom:
+
+- TEAMS: your team left, the enemy right, one PLAYER CARD per seat, the
+  shape an arena frame or a spectator client uses — class portrait (the
+  class ring with CLASS_ICON_TCOORDS, a class-tinted tile with the class
+  letter when the sheet is absent), dimmed with a red ring and DEAD
+  under it when dead, ringed violet with the control's icon over it and
+  the seconds left under it when controlled; name and spec; a health bar
+  with "6.2k / 8.2k · 75%" tinted by the HP thresholds; a power bar in
+  the power's color; a CAST BAR that shows, in order of what matters, the
+  control on them (violet, counting down — a controlled player is not
+  casting anyway), the cast in progress with its time left (accent), a
+  kicked cast (red, for a second and a half), or the GCD sweep (dim); a
+  row of buffs (green border) beside the running cooldowns (gold border,
+  minutes or seconds left over the icon); a row of debuffs (red border).
+  Icons carry the real spell tooltip plus when it was applied, by whom,
+  and when it ends.
+- TIMELINE: unchanged — the scrubber Devin liked.
+- METERS: one table per team (DMG · HEAL · TAKEN · CC · KICK · K/D), as of
+  the cursor. The two teams are never in one list.
+- MOMENTS: the feed around the cursor, each row striped in its team's
+  color.
+
+The ARENA pane modes in the meter window also stopped interleaving: our
+seats first, theirs after, each side ranked within itself.
+
+**Verified in pictures.** Three renders (end, mid-cast at 0:15, mid-stun
+at 1:08) drove the two fixes the first render needed: the control word
+under a 44 px portrait ("KIDNEY SHOT 1.0s") overran the buff row — the
+control's name, bracket and clock moved onto the cast bar and the word
+under the portrait is just the seconds; and "29:29" over a 16 px icon
+collided with its neighbour — cooldowns past a minute read "29m".
+
+Harness: arena 334 → 370 (Stage G: power fractions and types, a hard
+cast start→success, the GCD fraction and its expiry, instants, a kick,
+a failed cast, a pet's start, the 10 s cap, buff/debuff intervals with
+refresh/dose/removal, newest-first ordering, a stun being both a control
+and a debuff, death closing casts and auras, the 800 cap, the round
+trip); UI 330 → 304 (the tab checks went with the tabs; new checks cover
+the cards, the cast bar text, the loss-of-control text, cooldown and
+aura icons and their tooltips, the team-split meters, the striped feed,
+play restarting before the gates, and the pane's us-then-them order).
+
+### D27 pass 10 (2026-09-28) — card polish
+
+- **DR on the icon.** A debuff that is also a control at the cursor wears
+  the control color on its border and its DR bracket ("½ 4") over the
+  icon, so the half-duration sheep is visible on the card itself.
+- **Who they are on.** A cast success carries the spell's target in the
+  combat log; the cast log keeps it, and the card's name line ends with
+  "on Nethra" (class-colored) for eight seconds after the newest targeted
+  cast. Honest and cheap: no target polling, nothing inferred from
+  damage direction.
+- **A cast still open on a live match** fills against a typical three
+  seconds and reads "Frostbolt …" instead of crawling toward the ten-
+  second cap.
+- **5v5 rendered** (the renderer's `5v5` argument synthesizes one through
+  the engine): five cards a side, ~870 px tall, no collisions; fits 1080p
+  at the default UI scale. A compact card for five-a-side is in the
+  backlog if that ever proves tight.
+
+Harness: arena 370 → 373, UI 304 → 306.
+
+### D27 pass 11 (2026-09-28) — what a spectator client says that the cards did not
+
+- **Killed by.** For five seconds after a death the dead card's cast bar
+  reads "KILLED ← Frostbolt (Frostweaver)" in red — the blow and the
+  killer from the death record, where the eye already is.
+- **Pressure.** When nothing else claims the cast bar (no control, no
+  cast, no kick aftermath, no GCD) it reads "2 on them: Frostweaver,
+  Shiv" — every seat's cast target, inverted once per repaint. "Three on
+  the healer" is the sentence a caster spectates for, and the bar was
+  idle exactly when it matters.
+- **Hover clock.** A dim hairline and the gate-time follow the mouse across
+  the plot (the graph's hover hairline, in dim), so a click lands where
+  the eye expects. Hidden on leave.
+- The readout tells allies from enemies: "1 on them: Frostweaver · with: Leafshade" — a healer casting on a teammate is not pressure. The canned match also stopped driving a seat's HP to zero before its scripted death (non-fatal hits floor at 5%).
+
+Harness: UI 306 → 311.
+
+### D27 pass 12 (2026-09-28) — the recorder and the live path, measured again
+
+The worst-case fixture grew the replay's records: two aura applies a
+second per side (each removed 12 s on), a hard cast every 0.75 s per side,
+power every second — 2,800 aura intervals and 1,000 cast records over a
+ten-minute 5v5, on top of the 803 moments. Under the interpreter:
+
+| call (per repaint) | interpreter |
+|---|---|
+| StateAt (hp, power, cast, GCD, auras, control, cooldowns; all seats) | 0.22 ms |
+| the six-stat meters pass (one CollectRows per stat) | 0.04 ms |
+| SeatValueAt DMG at t, ten seats (cumulative cache) | 0.001 ms |
+| Pressure / Insights | 0.07 / 0.08 ms |
+
+Two costs were fixed on the way: the meters table had asked each of ten
+seats for each of six stats, and the three ledger stats rescanned the
+ledger per seat — it now asks the engine once per stat (one ledger pass
+each); and "damage up to t" summed up to 1,800 buckets per seat per
+repaint — a CLOSED match now keeps a cumulative array per seat and series,
+built on first use, session-only (stripped from the store), while a live
+match still sums directly. The live-edge path (window open at 10 Hz on a
+match in progress) is under half a millisecond per repaint. The
+UNIT_HEALTH / UNIT_POWER_UPDATE handler stays a GUID lookup that returns
+for anything that is not a seat — nameplates fire it constantly.
+
+The store is the finding, again: that match serializes to **1.2 MB** (was
+448 KB before casts, auras and power rode along). Nothing in it is
+padding — the aura intervals ARE the buff and debuff rows, the cast log IS
+the cast bar — so the response is to bound and to say so: aura intervals
+cap at 600 per seat (280 per seat in the fixture; the cap catches the
+pathological match), the default Keep Matches drops from 10 to 6 (six
+long 5v5s ≈ 7 MB; six typical 3v3s ≈ 2 MB), and the tooltip quotes the
+real numbers. Existing saves keep their own value. *Rejected*: dropping
+aura names from the store (the tooltip and the control match need them
+when the client cannot resolve an id) and a positional interval format
+(a second shape to reason about for ~40% off one component).
+
+Harness: arena 373 → 379 (the cache agrees with the direct sum, is built on
+first use, is stripped from the store; the 600 cap).
+
+### D27 pass 13 (2026-09-28) — the last desk pass
+
+What a headless mock cannot see was checked the two ways left: Arena
+Frames' bytecode order lint over all four Meters files (no local used
+above its declaration — the failure that throws only when a branch first
+runs mid-match), now a fourth step in the harness README; and every
+client API the replay leans on cross-checked against the rest of the
+suite for prior use (IsMouseButtonDown, UnitPowerType, UNIT_POWER_UPDATE,
+UnitRace, GetSpecializationInfoByID, GetBattlefieldTeamInfo,
+GetBattlefieldArenaFaction, SetTexCoord, the drag and Escape idioms).
+The remaining unknowns are the in-game ones ASSUMPTIONS 24–36 list, and
+they end this loop: the next quality gain needs a queue, not a desk.
+
+### D27 pass 14 (2026-09-29) — the GCD names its spell
+
+Devin: "for the GCD timer, the spell icon and name for what it was spent
+on." `StateAt` already found the last cast success to size the sweep; it
+now hands that cast to the card, and the cast bar reads the spell's icon
+(inline, the suite's 5..59 trim) and name with a dim GCD after it — "they
+just Kidney Shotted" reads off the bar instead of a bare sweep. Harness:
+arena 379 → 381, UI 311 → 312.
+
+## D28. One fight per match (2026-09-30)
+
+Devin: "for both arena and non arena metrics ensure everything is properly
+grouped by match and not combat cycles." D4's segmentation — a fight
+closes when the player is out of combat and nothing has happened for
+IdleTimeout — is right for a raid and wrong for a game: an arena has a
+lull at the pillar, a battleground has the ride between nodes, and each
+one split the match into a fight per skirmish, with Follow Combat flipping
+the window to LAST at every drop.
+
+The engine gained MATCH MODE: `E.SetMatch(true)` on entering an arena or a
+battleground suspends the idle close entirely (Tick returns), so the fight
+that opens on the first blow stays open through every lull;
+`E.SetMatch(false, name, result, now)` when a winner is declared or the
+player leaves closes it named after the match ("3v3 Nagrand Arena",
+"Arathi Basin"), flagged `match`, with `success` set from WIN / LOSS (or
+left nil when the player left without a result). The end stamp is the
+match end, not the last blow, so a game that ends with thirty quiet
+seconds keeps them in its duration. Outside a match nothing changed:
+pulls still close on idle, and the fight-ends-after slider still governs
+them.
+
+The window's KILL / WIPE tags become WIN / LOSS on match segments (raid
+words on a game were wrong), so the segment button, the fight list and
+the chat report read "LAST — 3V3 NAGRAND ARENA WIN". Arenas drive it from
+the recorder's begin / finish / abort; battlegrounds from PLAYER_ENTERING_
+WORLD (`instanceType == "pvp"`) and `GetBattlefieldWinner` against
+`UnitFactionGroup` (0 Horde / 1 Alliance, the TBC scoreboard convention).
+A battleground gets no replay — forty players are beyond the log's reach —
+but DAMAGE, HEALING, deaths and the graph read per game there.
+
+*Rejected*: a longer idle timeout inside instances (a two-minute node ride
+would still split, and it changes what "fight" means everywhere) and
+merging the segments at read time (the same lazy-aggregation trap D6
+refused).
+
+Harness: engine 842 → 862 (Stage M: no idle close while armed, the close
+on deactivate with name / flag / tag / end stamp, idle back afterwards, a
+left match untagged, LOSS, no-fight and unarmed deactivations quiet); the
+UI harness drives both lifecycles through the event path.
+
+### D27 pass 15 (2026-09-30) — the match history sidebar
+
+Devin: "add a side bar that lets me navigate my match history." The
+replay grew a 172 px column down the left: MATCHES with a count, one
+two-line row per kept match newest first ("3v3  NAGRAND ARENA" over
+"WIN +14  1:21  Sep 27 21:14", the result colored and a stripe in its
+color), the live match on top while one is on, the shown match
+highlighted in the accent, the wheel scrolling when the list outgrows the
+window, and the running record at the foot ("3 W 1 L"). Click opens that
+match at its end. The window widened to 812 px rather than squeezing the
+cards (the icon rows need every pixel of a 315 px card); the content
+column is one frame anchored past the sidebar, so every band moved with
+one number. The header's match menu stays as the keyboard-free duplicate.
+Harness after the sidebar and D28: engine 862, arena 381, UI 330; a WIN/LOSS tag declared below its own assignment (a global written, a nil local read) was caught by the UI harness on the way.

@@ -77,7 +77,59 @@ WidgetMT.__index = function(self, key)
         return fn
     end
     if key == "CreateTexture" then
-        local fn = function(s) local t = NewWidget("Texture"); t.__parent = s; return t end
+        local fn = function(s, _, layer, _, sublevel)
+            local t = NewWidget("Texture")
+            t.__parent, t.__layer, t.__sublevel = s, layer, sublevel or 0
+            return t
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    -- Layout recording (the renderer resolves these into rectangles)
+    if key == "SetPoint" then
+        local fn = function(s, point, rel, relPoint, x, y)
+            s.__points = s.__points or {}
+            -- Re-anchoring an existing point replaces it, as the client does
+            for i = #s.__points, 1, -1 do
+                if s.__points[i].point == point then table.remove(s.__points, i) end
+            end
+            s.__points[#s.__points + 1] = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "ClearAllPoints" then
+        local fn = function(s) s.__points = {}; s.__allPoints = nil end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetAllPoints" then
+        local fn = function(s, rel) s.__allPoints = rel or s.__parent or true end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetJustifyH" then
+        local fn = function(s, j) s.__justify = j end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetTexture" then
+        local fn = function(s, tex) s.__texture = tex end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetAlpha" then
+        local fn = function(s, a) s.__alpha = a end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetHeight" then
+        local fn = function(s, h) s.__h = h end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetRotation" then
+        local fn = function(s, r) s.__rotation = r end
         rawset(self, key, fn)
         return fn
     end
@@ -225,12 +277,14 @@ NewWidget = function(kind, name)
     local w = setmetatable({
         __kind = kind, __name = name, __scripts = {}, __shown = true,
     }, WidgetMT)
+    if _G.__widgets then _G.__widgets[#_G.__widgets + 1] = w end
     return w
 end
 
 function CreateFrame(frameType, name, parent, template)
     local f = NewWidget(frameType, name)
     f.__template = template
+    f.__parent = parent
     if frameType == "CheckButton" or (template and template:find("CheckButton")) then
         f.Text = NewWidget("FontString")
     end
@@ -372,13 +426,33 @@ CommanderConsole_Colors = {
 }
 -- Saved variables from a "previous session": a suite accent key, so login
 -- must resolve it through the Console palette, not the local five
-CommanderMetersDB = { AccentColor = "FEL" }
+CommanderMetersDB = { AccentColor = "FEL", ArenaAutoOpen = true, DBVersion = 2 } -- a v2 save: the ladder must retire ArenaAutoOpen
+-- Commander Arena Frames data fixture, shaped like the real generated
+-- tables: the arena engine's DR brackets, control kinds, cooldown book and
+-- drink list resolve through it (absent, CC still counts by name only)
+CommanderArenaFrames_Data = {
+    DR_BY_SPELL = { [11297] = "POLY", [12826] = "POLY", [1833] = "STUN", [11578] = "STUN",
+        [20615] = "STUN", [408] = "KIDNEY", [8643] = "KIDNEY", [6215] = "FEAR", [27223] = "HORROR",
+        [1715] = "LIMIT" },
+    CONTROL_EXTRA = { [24259] = "SILENCE", [15487] = "SILENCE" },
+    ENEMY_BOOK = {
+        WARRIOR = { { id = 871, name = "Shield Wall", role = "DEF", cd = 1800, dur = 10 } },
+        DRUID = { { id = 22812, name = "Barkskin", role = "DEF", cd = 60, dur = 12 } },
+        WARLOCK = { { id = 19647, name = "Spell Lock", role = "KICK", cd = 24 } },
+        MAGE = { { id = 2139, name = "Counterspell", role = "KICK", cd = 24, dur = 8 } },
+    },
+    RACIAL_BOOK = { BloodElf = { { id = 28730, name = "Arcane Torrent", role = "KICK", cd = 120 } } },
+    DRINK_IDS = { 430, 27089 },
+    SPEC_MARKERS = { WARRIOR = { { spec = "Arms", ids = { 30330 } } } },
+}
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 Load(ADDONS .. "/Commander_Meters/CommanderMetersDB.lua")
 Load(ADDONS .. "/Commander_Meters/CommanderMetersEngine.lua")
+Load(ADDONS .. "/Commander_Meters/CommanderMetersArena.lua")
 Load(ADDONS .. "/Commander_Meters/CommanderMeters.lua")
+Load(ADDONS .. "/Commander_Meters/CommanderMetersArenaUI.lua")
 
 local function Fire(event, ...)
     local list = eventRegistry[event]
@@ -395,7 +469,8 @@ Fire("PLAYER_LOGIN")
 
 CHECK(#harnessFailedErrors == 0, "C: login clean", harnessFailedErrors[1])
 CHECK(CommanderMetersDB.EnableMeters == true, "C: defaults applied")
-CHECK(CommanderMetersDB.DBVersion == 2, "C: schema version stamped", CommanderMetersDB.DBVersion)
+CHECK(CommanderMetersDB.ArenaAutoOpen == nil, "C: v3 migration retired ArenaAutoOpen")
+    CHECK(CommanderMetersDB.DBVersion == 3, "C: schema version stamped", CommanderMetersDB.DBVersion)
 CHECK(CommanderMetersDB.TextSize == 11 and CommanderMetersDB.BgOpacity == 0.92,
     "C: appearance defaults applied")
 CHECK(CommanderMetersDB.AccentColor == "FEL",
@@ -462,16 +537,19 @@ do
     -- through the header button reference exposed by click behavior instead:
     -- simulate by calling the OnClick of each button child until menu captured
     for _, f in ipairs(frames) do
-        if f.__kind == "Button" and f.__scripts.OnClick then
+        -- The header's mode button is tagged for the harness; clicking
+        -- every button in creation order would fire the settings panel's
+        -- Test/Forget buttons as a side effect
+        if f.__kind == "Button" and f.headerRole == "mode" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
-            if #menuCaptured == 9 and menuCaptured[1].text == "DAMAGE" then
+            if #menuCaptured == 15 and menuCaptured[1].text == "DAMAGE" then
                 modeBtn = f
                 break
             end
         end
     end
-    CHECK(modeBtn ~= nil, "C: mode menu opens with 9 modes")
+    CHECK(modeBtn ~= nil, "C: mode menu opens with 9 modes + the arena section (15 entries)")
     if modeBtn then
         for _, info in ipairs(menuCaptured) do
             if info.text == "HEALING" then info.func() end
@@ -676,8 +754,9 @@ do
                 if info.text == "FOLLOW LEFT PANE" then followSeen = true end
             end
         end
-        CHECK(#titles == 2 and titles[1] == "RIGHT PANE SHOWS" and titles[2] == "OVER",
-            "C: pane caption menu has a mode section and a segment section",
+        CHECK(#titles == 3 and titles[1] == "RIGHT PANE SHOWS" and titles[2] == "ARENA — BOTH TEAMS"
+            and titles[3] == "OVER",
+            "C: pane caption menu has a mode section (with the arena block) and a segment section",
             table.concat(titles, "/"))
         CHECK(modeSeen and segSeen and followSeen,
             "C: right caption offers modes, segments, and FOLLOW LEFT PANE")
@@ -804,9 +883,9 @@ end
 
 -- Pie breakdown: click an ability row in the open detail
 do
-    -- reopen a detail on the top bar row
+    -- reopen a detail on the top bar row (bar rows carry a rank column)
     for _, f in ipairs(frames) do
-        if f.__kind == "Button" and f.guid and f.__scripts.OnClick then
+        if f.__kind == "Button" and f.rank and f.guid and f.__scripts.OnClick then
             f.__scripts.OnClick(f)
             break
         end
@@ -885,10 +964,13 @@ end
 do
     local modeBtn
     for _, f in ipairs(frames) do
-        if f.__kind == "Button" and f.__scripts.OnClick then
+        -- The header's mode button is tagged for the harness; clicking
+        -- every button in creation order would fire the settings panel's
+        -- Test/Forget buttons as a side effect
+        if f.__kind == "Button" and f.headerRole == "mode" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
-            if #menuCaptured == 9 and menuCaptured[1].text == "DAMAGE" then
+            if #menuCaptured == 15 and menuCaptured[1].text == "DAMAGE" then
                 modeBtn = f
                 break
             end
@@ -975,7 +1057,7 @@ end
 do
     local segBtn, entries
     for _, f in ipairs(frames) do
-        if f.__kind == "Button" and f.__scripts.OnClick then
+        if f.__kind == "Button" and f.headerRole == "segment" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
             if #menuCaptured >= 4 and menuCaptured[1].text == "OVERALL" then
@@ -1028,7 +1110,7 @@ end
 do
     local entries
     for _, f in ipairs(frames) do
-        if f.__kind == "Button" and f.__scripts.OnClick then
+        if f.__kind == "Button" and f.glyphName == "reset" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
             if #menuCaptured == 2 and menuCaptured[1].text:find("RESET FIGHT") then
@@ -1100,10 +1182,13 @@ end
 do
     local modeBtn
     for _, f in ipairs(frames) do
-        if f.__kind == "Button" and f.__scripts.OnClick then
+        -- The header's mode button is tagged for the harness; clicking
+        -- every button in creation order would fire the settings panel's
+        -- Test/Forget buttons as a side effect
+        if f.__kind == "Button" and f.headerRole == "mode" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
-            if #menuCaptured == 9 and menuCaptured[1].text == "DAMAGE" then
+            if #menuCaptured == 15 and menuCaptured[1].text == "DAMAGE" then
                 modeBtn = f
                 break
             end
@@ -1372,7 +1457,7 @@ do
     local beforeChat = #sentChat
     local shareBtn
     for _, f in ipairs(frames) do
-        if f.__kind == "Button" and f.glyphName == "share" and f.__scripts.OnClick then
+        if f.__kind == "Button" and f.headerRole == "share" and f.__scripts.OnClick then
             shareBtn = f
         end
     end
@@ -1410,6 +1495,539 @@ do
         "C: retire points orphaned panes at real modes")
     root.__scripts.OnUpdate(root, 0.6)
     CHECK(#harnessFailedErrors == 0, "C: post-retire repaint clean", harnessFailedErrors[1])
+end
+
+-- ===========================================================================
+-- ARENA: the match engine wired into the window, and the Arena Replay
+-- ===========================================================================
+
+do
+    local A = CommanderMetersArena
+    local function FindButton(pred)
+        for _, f in ipairs(frames) do
+            if f.__kind == "Button" and pred(f) then return f end
+        end
+    end
+    local function FindFrame(pred)
+        for _, f in ipairs(frames) do
+            if pred(f) then return f end
+        end
+    end
+    local function fsMatching(pattern)
+        for _, fs in ipairs(allFontStrings) do
+            if type(fs.__text) == "string" and fs.__text:find(pattern) then return true end
+        end
+        return false
+    end
+    local function Errors(label)
+        CHECK(#harnessFailedErrors == 0, label, harnessFailedErrors[1])
+        for i = #harnessFailedErrors, 1, -1 do harnessFailedErrors[i] = nil end
+    end
+
+    CHECK(_G.CommanderMetersArenaFrame == nil, "ARENA: replay window is built lazily")
+
+    -- Canned match through the slash path: recorded, WIN, never auto-opened
+    CHECK(#A.GetMatches() == 0, "ARENA: no matches before the test")
+    SlashCmdList.COMMANDERUI_METERS("arenatest")
+    CHECK(#A.GetMatches() == 1, "ARENA: test match archived", #A.GetMatches())
+    local tm = A.GetMatches()[1]
+    CHECK(tm and tm.result == "WIN" and tm.bracket == 3, "ARENA: test match is a 3v3 WIN")
+    CHECK(tm and tm.teams.us.n == 3 and tm.teams.them.n == 3, "ARENA: three seats a side")
+    CHECK(tm and #tm.deaths == 3, "ARENA: three deaths recorded", tm and #tm.deaths)
+    CHECK(tm and tm.seats["Player-1-CMARENA13"].deaths == 1 and tm.seats["Player-0-CMARENA01"].kills >= 1,
+        "ARENA: the warlock died, the mage has a kill")
+    CHECK(tm and tm.seats["Player-0-CMARENA01"].ccBroke == 1, "ARENA: the mage broke his own team's sap (the mistake counter)")
+    CHECK(tm and tm.seats["Player-1-CMARENA11"].ccBroke == 0, "ARENA: freeing a teammate is not a mistake")
+    CHECK(tm and tm.seats["Player-1-CMARENA11"].cds == 1 and tm.seats["Player-1-CMARENA12"].cds == 1,
+        "ARENA: book cooldowns logged through the Arena Frames fixture")
+    CHECK(tm and tm.seats["Player-0-CMARENA02"].ccCasts >= 4, "ARENA: rogue CC casts counted", tm and tm.seats["Player-0-CMARENA02"].ccCasts)
+    CHECK(tm and tm.seats["Player-1-CMARENA11"].trinkets == 1, "ARENA: trinket press recorded")
+    CHECK(tm and tm.seats["Player-0-CMARENA03"].drained == 3300, "ARENA: mana burns summed")
+    CHECK(tm and tm.seats["Player-1-CMARENA12"].drinks == 1, "ARENA: the druid drank once")
+    CHECK(tm and tm.scored and tm.seats["Player-0-CMARENA01"].sb.ratingChange == 14, "ARENA: scoreboard merged")
+    CHECK(tm and tm.teams.us.name == "Frostbite Warrant", "ARENA: team info merged")
+    CHECK(tm and tm.seats["Player-1-CMARENA11"].spec == "Arms" and tm.seats["Player-1-CMARENA11"].specRevealed,
+        "ARENA: the warrior's spec was revealed by Mortal Strike")
+    -- The replay records the canned match carries
+    CHECK(tm and tm.seats["Player-0-CMARENA01"].castLogN >= 8, "ARENA: the mage's casts were logged", tm and tm.seats["Player-0-CMARENA01"].castLogN)
+    CHECK(tm and tm.seats["Player-0-CMARENA01"].aurasN >= 3, "ARENA: the mage's auras were logged", tm and tm.seats["Player-0-CMARENA01"].aurasN)
+    CHECK(tm and tm.seats["Player-0-CMARENA01"].sPow ~= nil and tm.seats["Player-0-CMARENA01"].powType == 0, "ARENA: mage mana snapshots")
+    CHECK(tm and tm.seats["Player-1-CMARENA11"].powType == 1, "ARENA: warrior rage type")
+
+    CHECK(_G.CommanderMetersArenaFrame == nil, "ARENA: the replay never opens itself at match end")
+    local arenaGlyph = FindButton(function(f) return f.headerRole == "arena" end)
+    CHECK(arenaGlyph ~= nil, "ARENA: header has an arena glyph button")
+    if arenaGlyph then arenaGlyph.__scripts.OnClick(arenaGlyph) end
+    local report = _G.CommanderMetersArenaFrame
+    CHECK(report ~= nil, "ARENA: the header glyph builds and opens the replay")
+    CHECK(report and report.__shown == true, "ARENA: replay shown after the glyph click")
+    root.__scripts.OnUpdate(root, 0.6)
+    CHECK(arenaGlyph and arenaGlyph.icon[1].__color and arenaGlyph.icon[1].__color[1] == 0.5,
+        "ARENA: the arena glyph wears the accent while the replay is open")
+    report.__scripts.OnUpdate(report, 0.6)
+    Errors("ARENA: replay first paint clean")
+    if _G.__afterArenaReport then _G.__afterArenaReport(report) end
+    CHECK(fsMatching("Frostweaver") and fsMatching("Gorehowl"), "ARENA: both teams' cards painted")
+    CHECK(fsMatching("FIRST BLOOD"), "ARENA: summary names first blood")
+    CHECK(fsMatching("3v3 · NAGRAND ARENA"), "ARENA: header names the match")
+    CHECK(fsMatching("1850 → 1864"), "ARENA: header shows the rating move")
+    CHECK(fsMatching("MOMENTS"), "ARENA: moments feed titled")
+    CHECK(fsMatching("YOUR TEAM") and fsMatching("ENEMY"), "ARENA: teams split, never combined")
+    CHECK(fsMatching("DEAD|r"), "ARENA: dead seats read DEAD at the end")
+    -- Cards: one per seat, with a portrait button carrying the guid
+    local view = CommanderMetersArena_View()
+    local card = FindButton(function(f) return f.guid == "Player-1-CMARENA11" and f.__parent and f.__parent.cardIndex end)
+    CHECK(card ~= nil, "ARENA: enemy warrior has a card")
+    if card then
+        card.__scripts.OnEnter(card)
+        Errors("ARENA: portrait tooltip clean")
+        card.__scripts.OnLeave(card)
+    end
+    -- Meters table: six columns per team, values as of the cursor
+    CHECK(fsMatching("^K/D$") and fsMatching("^KICK$"), "ARENA: meters table columns painted")
+
+    -- Scrubbing: the wheel nudges the cursor off the end, skip returns it
+    local plotFrame
+    for _, f in ipairs(frames) do
+        if f.__kind == "Frame" and f.__scripts.OnMouseWheel and f.__scripts.OnMouseDown and f.__scripts.OnMouseUp then
+            plotFrame = f
+        end
+    end
+    CHECK(plotFrame ~= nil, "ARENA: timeline plot found")
+    if plotFrame then
+        CHECK(view.t == nil, "ARENA: cursor starts at the end")
+        plotFrame.__scripts.OnMouseWheel(plotFrame, -1)
+        CHECK(view.t ~= nil and math.abs(view.t - (tm.tEnd - 1)) < 1e-6, "ARENA: wheel nudged the cursor one second back", view.t)
+        report.__scripts.OnUpdate(report, 0.6)
+        Errors("ARENA: scrubbed repaint clean")
+        -- Mid-match: a cast in progress, buffs on the mage, the warlock's control
+        view.t = 74.5
+        report.__scripts.OnUpdate(report, 0.6)
+        Errors("ARENA: mid-match repaint clean")
+        CHECK(fsMatching("^Frostbolt  0%.5s$"), "ARENA: the mage's Frostbolt is on the cast bar with its time left")
+        CHECK(fsMatching("on |r|cff[0-9a-f]+Nethra|r"), "ARENA: the card says who the mage is on")
+        -- A controlled seat: kidney shot on the warlock at +70.2..76
+        CHECK(fsMatching("KIDNEY SHOT") , "ARENA: the control on the warlock is written on his cast bar")
+        local kidneyIcon = FindButton(function(f) return f.rec and f.rec.name == "Kidney Shot" and f.__shown and f.border end)
+        CHECK(kidneyIcon ~= nil and kidneyIcon.border.__color and math.abs(kidneyIcon.border.__color[1] - 0.86) < 1e-6,
+            "ARENA: a control debuff icon wears the control color")
+        -- Cooldown icons on a card at +75: the warrior's trinket (pressed +71)
+        local cdIcon = FindButton(function(f) return f.rec and f.rec.kind == "TRINKET" and f.__shown end)
+        CHECK(cdIcon ~= nil, "ARENA: the warrior's trinket shows as a running cooldown icon")
+        if cdIcon then
+            CHECK(cdIcon.text.__text == "2m", "ARENA: cooldown timer is compact minutes", cdIcon.text.__text)
+            cdIcon.__scripts.OnEnter(cdIcon)
+            Errors("ARENA: cooldown tooltip clean")
+            cdIcon.__scripts.OnLeave(cdIcon)
+        end
+        local buffIcon = FindButton(function(f) return f.rec and f.rec.name == "Ice Barrier" and f.__shown end)
+        CHECK(buffIcon ~= nil, "ARENA: the mage's Ice Barrier shows as a buff icon")
+        if buffIcon then
+            buffIcon.__scripts.OnEnter(buffIcon)
+            Errors("ARENA: aura tooltip clean")
+            buffIcon.__scripts.OnLeave(buffIcon)
+        end
+        -- The GCD sweep names its spell: the rogue 0.7 s after a Sinister Strike
+        view.t = 68.2
+        report.__scripts.OnUpdate(report, 0.6)
+        CHECK(fsMatching("|T.-|t Sinister Strike|cff[0-9a-f]+  GCD|r"), "ARENA: the GCD bar shows the icon and name of the spell it was spent on")
+        -- Pressure: with nothing else on the cast bar, who is on them
+        view.t = 95
+        report.__scripts.OnUpdate(report, 0.6)
+        CHECK(fsMatching("1 on them: |r|cff[0-9a-f]+Frostweaver"), "ARENA: an idle card says who is on that player")
+        -- A dead seat later on: DEAD, and what killed them for five seconds
+        view.t = tm.deaths[1].t + 0.5
+        report.__scripts.OnUpdate(report, 0.6)
+        CHECK(fsMatching("DEAD|r"), "ARENA: a dead seat reads DEAD at the cursor")
+        CHECK(fsMatching("^KILLED  ← Frostbolt %(Frostweaver%)$"), "ARENA: the killing blow is on the dead card's cast bar")
+        view.t = tm.deaths[1].t + 6
+        report.__scripts.OnUpdate(report, 0.6)
+        CHECK(not fsMatching("^KILLED  ← "), "ARENA: the killing blow readout lasts five seconds")
+        -- Hover: a hairline and a clock follow the mouse across the plot
+        plotFrame.__scripts.OnEnter(plotFrame)
+        report.__scripts.OnUpdate(report, 0.01)
+        -- The hover clock is the "-0:03" string parented to the PLOT (the
+        -- axis row shows the same time, permanently)
+        local hoverText
+        for _, fs in ipairs(allFontStrings) do
+            if fs.__text == "-0:03" and fs.__shown and fs.__parent == plotFrame then hoverText = fs end
+        end
+        CHECK(hoverText ~= nil, "ARENA: hovering the plot shows the time under the mouse (x=0 → -0:03)")
+        plotFrame.__scripts.OnLeave(plotFrame)
+        report.__scripts.OnUpdate(report, 0.01)
+        CHECK(hoverText and hoverText.__shown == false, "ARENA: leaving the plot hides the hover clock")
+        -- Before the gates nothing has happened
+        view.t = 10
+        report.__scripts.OnUpdate(report, 0.6)
+        Errors("ARENA: pre-gate repaint clean")
+        plotFrame.__scripts.OnMouseDown(plotFrame)
+        CHECK(view.dragging == true and view.t ~= nil and math.abs(view.t - (tm.tGates - 3)) < 1e-6,
+            "ARENA: mouse down starts a drag at the plot's origin (3 s before the gates)", view.t)
+        plotFrame.__scripts.OnMouseUp(plotFrame)
+        CHECK(view.dragging == false, "ARENA: mouse up ends the drag")
+    end
+    local skipBtn = FindButton(function(f) return f.role == "skip" end)
+    CHECK(skipBtn ~= nil, "ARENA: skip-to-end button found")
+    if skipBtn then
+        skipBtn.__scripts.OnClick(skipBtn)
+        CHECK(view.t == nil, "ARENA: skip returns the cursor to the end")
+    end
+
+    -- Playback: play from the end restarts just before the gates
+    local playBtn = FindButton(function(f) return f.role == "play" end)
+    CHECK(playBtn ~= nil, "ARENA: play button found")
+    if playBtn then
+        playBtn.__scripts.OnClick(playBtn)
+        CHECK(view.playing == true and view.t ~= nil and math.abs(view.t - (tm.tGates - 3)) < 1e-6, "ARENA: play from the end restarts before the gates", view.t)
+        local before = view.t
+        report.__scripts.OnUpdate(report, 0.6)
+        CHECK(view.t and view.t > before + 0.5, "ARENA: the clock advances while playing", view.t)
+        Errors("ARENA: playing repaint clean")
+        local speedBtn = FindButton(function(f) return f.role == "speed" end)
+        CHECK(speedBtn ~= nil, "ARENA: speed button found")
+        if speedBtn then
+            speedBtn.__scripts.OnClick(speedBtn)
+            CHECK(view.speedIndex == 2, "ARENA: speed steps to 2x")
+            before = view.t
+            report.__scripts.OnUpdate(report, 0.5)
+            CHECK(view.t - before > 0.9, "ARENA: 2x advances a second per half second", view.t - before)
+        end
+        playBtn.__scripts.OnClick(playBtn)
+        CHECK(view.playing == false, "ARENA: play toggles to pause")
+        view.playing = true
+        view.t = tm.tEnd - 0.1
+        report.__scripts.OnUpdate(report, 1)
+        CHECK(view.playing == false and view.t == nil, "ARENA: playback stops at the end")
+    end
+
+    -- The moments feed: clicking a moment moves the cursor to it
+    report.__scripts.OnUpdate(report, 0.6)
+    local ledgerRow = FindButton(function(f) return f.ledgerRow == 3 and f.idx end)
+    CHECK(ledgerRow ~= nil, "ARENA: feed row painted with a moment")
+    if ledgerRow then
+        local e = tm.ledger[ledgerRow.idx]
+        ledgerRow.__scripts.OnClick(ledgerRow)
+        CHECK(view.t ~= nil and math.abs(view.t - e.t) < 1e-6, "ARENA: clicking a moment jumps the cursor to it")
+        ledgerRow.__scripts.OnEnter(ledgerRow)
+        Errors("ARENA: moment tooltip clean")
+        ledgerRow.__scripts.OnLeave(ledgerRow)
+        CHECK(ledgerRow.team and ledgerRow.team.__shown == true, "ARENA: feed rows carry a team stripe")
+        local ccIdx
+        for i = 1, tm.ledgerN do
+            if tm.ledger[i].kind == "CC" and tm.ledger[i].x == 2 then ccIdx = i; break end
+        end
+        CHECK(ccIdx ~= nil, "ARENA: the Intercept stun landed at half")
+        if ccIdx then
+            view.t = tm.ledger[ccIdx].t
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(fsMatching("Intercept Stun|cff") and fsMatching("\194\189"), "ARENA: feed row shows the half bracket")
+        end
+        view.t = nil
+    end
+
+    -- Match menu lists the kept match
+    local matchBtn = FindButton(function(f) return f.headerRole == "arenaMatch" end)
+    CHECK(matchBtn ~= nil, "ARENA: match button found")
+    if matchBtn then
+        menuCaptured = {}
+        matchBtn.__scripts.OnClick(matchBtn)
+        CHECK(#menuCaptured == 1 and menuCaptured[1].text:find("3v3 NAGRAND ARENA") ~= nil,
+            "ARENA: match menu lists the kept match", menuCaptured[1] and menuCaptured[1].text)
+        CHECK(menuCaptured[1] and menuCaptured[1].checked == true, "ARENA: the shown match is checked")
+    end
+
+    -- Sidebar: the match history, one row per kept match, click selects
+    local sideRow = FindButton(function(f) return f.sideRow == 1 and f.matchSel ~= nil and f.__shown end)
+    CHECK(sideRow ~= nil, "ARENA: sidebar lists the kept match")
+    CHECK(sideRow and sideRow.matchSel == tm.id, "ARENA: the first sidebar row is the newest match")
+    CHECK(sideRow and sideRow.sel.__shown == true, "ARENA: the shown match's row is highlighted")
+    CHECK(fsMatching("^MATCHES$") and fsMatching("WIN %+14|r  "), "ARENA: sidebar row reads the result and length")
+    CHECK(fsMatching("1 W|r"), "ARENA: the sidebar foot carries the running record")
+    if sideRow then
+        view.sel = "last"
+        sideRow.__scripts.OnClick(sideRow)
+        CHECK(view.sel == tm.id and view.t == nil, "ARENA: clicking a sidebar row opens that match at its end")
+    end
+
+    -- Share: plain lines, both teams, first blood
+    local arenaShare = FindButton(function(f) return f.headerRole == "arenaShare" end)
+    CHECK(arenaShare ~= nil, "ARENA: replay share button found")
+    if arenaShare then
+        menuCaptured = {}
+        arenaShare.__scripts.OnClick(arenaShare)
+        local before = #sentChat
+        for _, info in ipairs(menuCaptured) do
+            if info.text == "GUILD" then info.func() end
+        end
+        CHECK(#sentChat == before + 4, "ARENA: report is four lines", #sentChat - before)
+        CHECK(sentChat[before + 1] and sentChat[before + 1].msg:find("ARENA 3v3 Nagrand Arena: WIN") ~= nil,
+            "ARENA: report header", sentChat[before + 1] and sentChat[before + 1].msg)
+        CHECK(sentChat[before + 2] and sentChat[before + 2].msg:find("^US: ") ~= nil, "ARENA: report US line")
+        CHECK(sentChat[before + 3] and sentChat[before + 3].msg:find("^THEM: ") ~= nil, "ARENA: report THEM line")
+        CHECK(sentChat[before + 4] and sentChat[before + 4].msg:find("First blood") ~= nil, "ARENA: report first blood line")
+        for i = before + 1, #sentChat do
+            CHECK(not sentChat[i].msg:find("|c", 1, true), "ARENA: report line " .. (i - before) .. " is plain text")
+        end
+    end
+    io.write(string.format("ARENA: canned 3v3 serializes to %.0f KB (%d moments)\n", #A.Serialize(tm) / 1024, tm.ledgerN))
+
+    local special = false
+    for _, name in ipairs(UISpecialFrames) do if name == "CommanderMetersArenaFrame" then special = true end end
+    CHECK(special, "ARENA: replay closes on Escape")
+
+    -- ARENA pane mode in the meter window: our team first, then theirs
+    _G.CommanderMetersArenaFrame:Hide()
+    CommanderMetersDB.ViewMode = "ARENA_DMG"
+    CommanderMetersDB.SplitOpen = false
+    Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
+    root.__scripts.OnUpdate(root, 0.6)
+    Errors("ARENA: arena pane repaint clean")
+    local enemyRow = FindButton(function(f) return f.paneIndex == 1 and f.rank and f.guid == "Player-1-CMARENA11" end)
+    CHECK(enemyRow ~= nil, "ARENA: enemy seat painted in the meter pane")
+    if enemyRow then
+        CHECK(enemyRow.team and enemyRow.team.__shown == true, "ARENA: team stripe shown on an arena row")
+        CHECK(enemyRow.team.__color and enemyRow.team.__color[1] == 0.90, "ARENA: enemy stripe is red")
+        CHECK(enemyRow.rank.__text == 1, "ARENA: enemy rank is within the enemy team (the warrior leads it)", enemyRow.rank.__text)
+        enemyRow.__scripts.OnEnter(enemyRow)
+        Errors("ARENA: arena row tooltip clean")
+        enemyRow.__scripts.OnLeave(enemyRow)
+        enemyRow.__scripts.OnClick(enemyRow)
+        CHECK(_G.CommanderMetersArenaFrame.__shown == true, "ARENA: clicking an arena row opens the replay")
+        CHECK(_G.CommanderMetersDetailFrame.__shown == false, "ARENA: arena rows never open the detail popup")
+    end
+    -- Our team's rows come before theirs, whatever the values
+    do
+        local firstEnemyAt, lastUsAt = 99, 0
+        for _, f in ipairs(frames) do
+            if f.__kind == "Button" and f.paneIndex == 1 and f.rank and f.guid and f.__shown then
+                local seat = tm.seats[f.guid]
+                local slot = tonumber(f.rank.__text) or 0
+                if seat and seat.team == "them" then firstEnemyAt = math.min(firstEnemyAt, slot) end
+            end
+        end
+        local usRow = FindButton(function(f) return f.paneIndex == 1 and f.rank and f.guid == "Player-0-CMARENA01" end)
+        CHECK(usRow and usRow.team.__color and usRow.team.__color[1] == 0.30, "ARENA: friendly stripe is blue")
+        -- Pane rows are painted top to bottom in creation order: the first
+        -- three carry our guids, the last three theirs
+        local order = {}
+        for _, f in ipairs(frames) do
+            if f.__kind == "Button" and f.paneIndex == 1 and f.rank and f.guid and f.__shown then order[#order + 1] = tm.seats[f.guid].team end
+        end
+        CHECK(#order == 6 and order[1] == "us" and order[3] == "us" and order[4] == "them" and order[6] == "them",
+            "ARENA: pane lists our three seats, then their three — never interleaved", table.concat(order, ","))
+    end
+    CHECK(fsMatching("ARENA DMG"), "ARENA: header mode label")
+    local graphBtn = FindButton(function(f) return f.glyphName == "graph" end)
+    if graphBtn then
+        graphBtn.__scripts.OnClick(graphBtn)
+        root.__scripts.OnUpdate(root, 0.6)
+        CHECK(fsMatching("ARENA REPORT"), "ARENA: graph band points at the replay")
+        graphBtn.__scripts.OnClick(graphBtn)
+    end
+    local headerShare = FindButton(function(f) return f.headerRole == "share" end)
+    if headerShare then
+        menuCaptured = {}
+        headerShare.__scripts.OnClick(headerShare)
+        local before = #sentChat
+        for _, info in ipairs(menuCaptured) do
+            if info.text == "GUILD" then info.func() end
+        end
+        CHECK(#sentChat > before and sentChat[before + 1].msg:find("ARENA DMG") ~= nil, "ARENA: pane report header names the arena mode")
+    end
+    CommanderMetersDB.ViewMode = "DMG"
+    Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
+    root.__scripts.OnUpdate(root, 0.6)
+    local anyStripe = false
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.paneIndex == 1 and f.team and f.team.__shown then anyStripe = true end
+    end
+    CHECK(not anyStripe, "ARENA: team stripes hide outside arena modes")
+
+    -- A LIVE match through the event path: zone in, opponents appear, HP
+    -- arrives, blows land, a winner is declared, the scoreboard is read
+    local units = {
+        player = { guid = playerGuid, name = "Devinp", class = "WARRIOR", race = "Human", hp = 9000, max = 9000 },
+        party1 = { guid = "Player-0-P1", name = "Hallow", class = "PRIEST", race = "Dwarf", hp = 7000, max = 7000 },
+        arena1 = { guid = "Player-1-E1", name = "Rime", class = "MAGE", race = "Undead", hp = 6000, max = 6000 },
+    }
+    function UnitExists(unit) return units[unit] ~= nil end
+    function UnitGUID(unit) return units[unit] and units[unit].guid end
+    function UnitName(unit) return units[unit] and units[unit].name end
+    function UnitClass(unit) local u = units[unit]; if u then return u.class, u.class end end
+    function UnitRace(unit) local u = units[unit]; if u then return u.race, u.race end end
+    function UnitHealth(unit) return units[unit] and units[unit].hp or 5000 end
+    function UnitHealthMax(unit) return units[unit] and units[unit].max or 8000 end
+    local winner, ourFaction = nil, 1
+    function GetBattlefieldWinner() return winner end
+    function GetBattlefieldArenaFaction() return ourFaction end
+    function GetBattlefieldInstanceRunTime() return 95000 end
+    local scoreRows = {
+        { "Devinp-Realm", 1, 2, 0, 0, 1, 0, "Human", "Warrior", "WARRIOR", 12000, 300, 11, 1700 },
+        { "Rime", 0, 0, 1, 0, 0, 0, "Undead", "Mage", "MAGE", 8000, 0, -9, 1650 },
+        -- An enemy the log never saw: seated from the scoreboard alone
+        { "Wraith", 0, 0, 0, 0, 0, 0, "Orc", "Warlock", "WARLOCK", 3000, 0, -9, 1640 },
+    }
+    function GetNumBattlefieldScores() return #scoreRows end
+    function GetBattlefieldScore(i) return unpack(scoreRows[i]) end
+    function GetBattlefieldTeamInfo(index)
+        if index == 1 then return "Home Team", 1700, 1711, 1705 end
+        return "Away Team", 1660, 1651, 1648
+    end
+
+    instState.inInstance, instState.itype, instState.id = true, "arena", 559
+    Fire("PLAYER_ENTERING_WORLD", false, false)
+    CHECK(A.Live() ~= nil, "ARENA: zoning into an arena begins a match")
+    local live = A.Live()
+    CHECK(live and live.seats[playerGuid] and live.seats[playerGuid].team == "us", "ARENA: player seated on US")
+    CHECK(live and live.seats["Player-0-P1"] ~= nil, "ARENA: party member seated")
+    CHECK(live and live.seats["Player-1-E1"] and live.seats["Player-1-E1"].team == "them", "ARENA: arena1 seated on THEM")
+    CHECK(live and live.seats["Player-1-E1"].race == "Undead", "ARENA: race read from the unit")
+    CHECK(live and live.bracket == 2, "ARENA: bracket 2 from the rosters", live and live.bracket)
+    CHECK(live and live.map == "Azeroth", "ARENA: map from GetInstanceInfo")
+    -- A second opponent shows up later
+    units.arena2 = { guid = "Player-1-E2", name = "Sting", class = "HUNTER", race = "Orc", hp = 8000, max = 8000 }
+    Fire("ARENA_OPPONENT_UPDATE", "arena2", "seen")
+    CHECK(live.seats["Player-1-E2"] ~= nil, "ARENA: late opponent seated on ARENA_OPPONENT_UPDATE")
+    -- UNIT_HEALTH feeds the replay while the match is on
+    units.arena1.hp = 3000
+    Fire("UNIT_HEALTH", "arena1")
+    CHECK(live.seats["Player-1-E1"].sHp ~= nil, "ARENA: UNIT_HEALTH fed an hp snapshot")
+    -- The ticker samples everyone once a second
+    RunTickers()
+    CHECK(live.seats[playerGuid].sHp ~= nil, "ARENA: the ticker samples friendly hp")
+    -- The CORE meter reads the match as one fight (D28): armed on entry
+    CHECK(CommanderMetersEngine.InMatch(), "ARENA: entering the arena arms the core meter's match mode")
+    local coreFightsBefore = #CommanderMetersEngine.GetFights()
+    -- Blows through the engine (the harness has no combat-log getter mock)
+    local ts = time()
+    CommanderMetersEngine.OnCleu(ts + 5, "SWING_DAMAGE", nil, playerGuid, "Devinp", 0x511, 0, "Player-1-E1", "Rime", 0x548, 0, 700, 0, 1, 0, 0, 0, false, false, false, false)
+    CommanderMetersEngine.SetPlayerCombat(false, ts + 6)
+    now = now + 30
+    RunTickers()
+    CHECK(CommanderMetersEngine.InFight(), "ARENA: the core fight stays open through a lull inside the match")
+    A.OnCleu(ts, "SPELL_AURA_REMOVED", nil, playerGuid, "Devinp", 0x511, 0, playerGuid, "Devinp", 0x511, 0, 32727, "Arena Preparation", 1, "BUFF")
+    A.OnCleu(ts + 5, "SWING_DAMAGE", nil, playerGuid, "Devinp", 0x511, 0, "Player-1-E1", "Rime", 0x548, 0, 700, 0, 1, 0, 0, 0, false, false, false, false)
+    A.OnCleu(ts + 6, "SPELL_DAMAGE", nil, "Player-1-E1", "Rime", 0x548, 0, playerGuid, "Devinp", 0x511, 0, 27072, "Frostbolt", 16, 1200, 0, 16, 0, 0, 0, true, false, false, false)
+    A.OnCleu(ts + 7, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, "Player-1-E1", "Rime", 0x548, 0)
+    -- Meter window in arena mode shows the live match with a live caption
+    CommanderMetersDB.ViewMode = "ARENA_DMG"
+    Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
+    root.__scripts.OnUpdate(root, 0.6)
+    Errors("ARENA: live arena pane repaint clean")
+    CHECK(fsMatching("LIVE"), "ARENA: live match labeled LIVE")
+    do
+        local segButton = FindButton(function(f) return f.headerRole == "segment" end)
+        CHECK(segButton and type(segButton.text.__text) == "string" and segButton.text.__text:find("LIVE", 1, true) ~= nil,
+            "ARENA: the header segment button names the match while the left pane is arena",
+            segButton and segButton.text.__text)
+    end
+    -- The report follows the live match if it is open
+    CommanderMetersArena_Open()
+    CHECK(view.sel == "live", "ARENA: opening during a match reads the live match")
+    report.__scripts.OnUpdate(report, 0.6)
+    Errors("ARENA: live report repaint clean")
+    -- The scoreboard update before a winner changes nothing
+    Fire("UPDATE_BATTLEFIELD_SCORE")
+    CHECK(A.Live() == live, "ARENA: no winner yet keeps the match live")
+    -- Winner declared: our faction wins
+    winner = 1
+    Fire("UPDATE_BATTLEFIELD_SCORE")
+    CHECK(A.Live() == nil, "ARENA: winner declared ends the match")
+    CHECK(not CommanderMetersEngine.InMatch() and not CommanderMetersEngine.InFight(), "ARENA: the winner closes the core meter's match fight")
+    do
+        local cf = CommanderMetersEngine.GetFights()[1]
+        CHECK(#CommanderMetersEngine.GetFights() == coreFightsBefore + 1, "ARENA: one core segment for the whole match")
+        CHECK(cf and cf.match == true and cf.success == true and cf.name == "3v3 Azeroth",
+            "ARENA: the core segment is named after the match and tagged WIN", cf and cf.name)
+        -- The left pane is still in an ARENA mode here (its header names
+        -- the replay's match); a plain mode shows the SEGMENT label
+        CommanderMetersDB.ViewMode = "DMG"
+        Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
+        root.__scripts.OnUpdate(root, 0.6)
+        CHECK(fsMatching("LAST — 3V3 AZEROTH.*WIN"), "ARENA: the meter window's segment label reads the match with its WIN tag")
+        CommanderMetersDB.ViewMode = "ARENA_DMG"
+        Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
+    end
+    local done = A.GetMatches()[1]
+    CHECK(done == live and done.result == "WIN", "ARENA: live match archived as WIN")
+    CHECK(done.runTime == 95, "ARENA: server run time recorded (s)")
+    CHECK(done.seats[playerGuid].sb and done.seats[playerGuid].sb.ratingChange == 11, "ARENA: scoreboard merged on finish")
+    CHECK(done.seats[playerGuid].kills == 1 and done.seats["Player-1-E1"].deaths == 1, "ARENA: kill and death credited")
+    CHECK(done.teams.us.name == "Home Team" and done.teams.us.ratingAfter == 1711, "ARENA: our team info from index 1 (our faction)")
+    CHECK(done.teams.them.name == "Away Team", "ARENA: their team info from the other index")
+    CHECK(done.rated == true, "ARENA: rated by rating change")
+    local wraith = done.seats["Score-Wraith"]
+    CHECK(wraith and wraith.team == "them" and wraith.fromScoreboard and wraith.class == "WARLOCK",
+        "ARENA: an unseen enemy on the scoreboard took a seat on THEM")
+    CHECK(done.bracket == 3, "ARENA: bracket grows to 3 once a third enemy is seated from the scoreboard", done.bracket)
+    CHECK(view.sel == done.id, "ARENA: report switched to the finished match")
+    report.__scripts.OnUpdate(report, 0.6)
+    Errors("ARENA: finished report repaint clean")
+    CHECK(fsMatching("scoreboard only"), "ARENA: a scoreboard-only seat is labeled as such")
+    CHECK(#A.GetMatches() == 2, "ARENA: two matches kept")
+    -- A LOSS reads as a loss
+    winner = 0
+    instState.itype = "none"; instState.inInstance = false
+    Fire("PLAYER_ENTERING_WORLD", false, false)
+    CHECK(A.Live() == nil, "ARENA: leaving with no live match is quiet")
+    instState.itype = "arena"; instState.inInstance = true
+    Fire("ZONE_CHANGED_NEW_AREA")
+    CHECK(A.Live() ~= nil, "ARENA: zone change into an arena begins a match")
+    A.OnCleu(ts + 100, "SWING_DAMAGE", nil, playerGuid, "Devinp", 0x511, 0, "Player-1-E1", "Rime", 0x548, 0, 100, 0, 1, 0, 0, 0, false, false, false, false)
+    Fire("UPDATE_BATTLEFIELD_SCORE")
+    CHECK(A.GetMatches()[1].result == "LOSS", "ARENA: the other faction winning is a LOSS")
+    -- Leaving mid-match with no winner archives as LEFT only if played
+    winner = nil
+    Fire("ZONE_CHANGED_NEW_AREA") -- still in the arena: a new match begins
+    local third = A.Live()
+    CHECK(third ~= nil, "ARENA: a fresh match begins")
+    instState.itype = "none"; instState.inInstance = false
+    Fire("ZONE_CHANGED_NEW_AREA")
+    CHECK(A.Live() == nil and #A.GetMatches() == 3, "ARENA: an unplayed match is discarded on leaving", #A.GetMatches())
+
+    -- A battleground is one fight per match too (no replay): enter, fight, a lull, the winner
+    function UnitFactionGroup() return "Alliance", "Alliance" end
+    winner = nil
+    instState.inInstance, instState.itype, instState.id = true, "pvp", 529
+    Fire("PLAYER_ENTERING_WORLD", false, false)
+    CHECK(CommanderMetersEngine.InMatch(), "BG: entering a battleground arms match mode")
+    CHECK(A.Live() == nil, "BG: no arena replay is recorded for a battleground")
+    local bgBefore = #CommanderMetersEngine.GetFights()
+    CommanderMetersEngine.OnCleu(ts + 300, "SWING_DAMAGE", nil, playerGuid, "Devinp", 0x511, 0, "Player-1-H9", "Hordie", 0x548, 0, 500, 0, 1, 0, 0, 0, false, false, false, false)
+    CommanderMetersEngine.SetPlayerCombat(false, ts + 301)
+    now = now + 120
+    RunTickers()
+    CHECK(CommanderMetersEngine.InFight(), "BG: a two-minute lull at a node does not close the fight")
+    winner = 1 -- Alliance
+    Fire("UPDATE_BATTLEFIELD_SCORE")
+    CHECK(not CommanderMetersEngine.InFight() and #CommanderMetersEngine.GetFights() == bgBefore + 1, "BG: the winner closes the match fight")
+    do
+        local bf = CommanderMetersEngine.GetFights()[1]
+        CHECK(bf and bf.match == true and bf.success == true and bf.name == "Azeroth", "BG: named after the battleground, tagged WIN", bf and bf.name)
+    end
+    instState.inInstance, instState.itype, instState.id = false, "none", 0
+    Fire("PLAYER_ENTERING_WORLD", false, false)
+    CHECK(not CommanderMetersEngine.InMatch(), "BG: leaving disarms match mode")
+
+    -- Logout writes the history; zero keeps nothing
+    Fire("PLAYER_LOGOUT")
+    CHECK(type(CommanderMetersArenaLog) == "table" and CommanderMetersArenaLog.v == 1
+        and #CommanderMetersArenaLog.matches == 3, "ARENA: logout exported the matches")
+    CommanderMetersDB.ArenaKeepMatches = 0
+    Fire("PLAYER_LOGOUT")
+    CHECK(CommanderMetersArenaLog == nil, "ARENA: Keep Matches 0 writes no history")
+    CommanderMetersDB.ArenaKeepMatches = 10
+
+    -- Forget drops everything and the open report paints an empty state clean
+    CommanderMeters_ArenaForget()
+    CHECK(#A.GetMatches() == 0, "ARENA: forget clears the matches")
+    report.__scripts.OnUpdate(report, 0.6)
+    Errors("ARENA: empty report repaint clean")
+    CHECK(fsMatching("NO MATCH RECORDED"), "ARENA: empty report says so")
+    CommanderMetersDB.ViewMode = "DMG"
+    Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
+    root.__scripts.OnUpdate(root, 0.6)
+    Errors("ARENA: final repaint clean")
 end
 
 if fails > 0 then

@@ -129,3 +129,93 @@ visible wrong label, or missing feature) rather than silently mis-attributing.
     already relies on this).
     *Test*: enable Keep Data Through /reload, run a test fight, /reload —
     "session resumed" prints and Overall still shows the fight.
+
+## Arena (D27, 2026-09-27) — none of these has been seen in a live match yet
+
+24. **Arena Preparation is aura 32727 or 32728, and its REMOVED event on a
+    seat reaches the combat log.** The gate clock hangs on it (the first
+    blow between the teams is the fallback).
+    *Test*: in the report of any match, the summary must read a GATES time
+    near 1:00 and the first moment must be GATES, not a blow.
+
+25. **`GetBattlefieldWinner()` compared with `GetBattlefieldArenaFaction()`
+    decides the result** (Blizzard's TBC WorldStateFrame pattern; the
+    faction indexes 0/1 are the arena's green/gold sides).
+    *Test*: win a skirmish — the header must read WIN, not LOSS.
+
+26. **`GetBattlefieldTeamInfo(index)` returns teamName, oldTeamRating,
+    newTeamRating, teamMMR for a rated match.** Every value is type-checked
+    and anything odd is not recorded, so a different shape costs only the
+    ratings line.
+    *Test*: after a rated game the summary shows "US 1850 → 1864"; if it
+    shows only the RATED tag, the shape differs — /dump GetBattlefieldTeamInfo(0).
+
+27. **Every TBC PvP trinket casts spell 42292 ("PvP Trinket").** Will of
+    the Forsaken (7744) and Escape Artist (20589) ride along as breaks.
+    *Test*: trinket a Polymorph — a TRINKET moment must appear on the
+    ledger at that second.
+
+28. **`UNIT_HEALTH` fires for `arenaN` and `partyN` tokens, and
+    `UnitHealth` answers for visible enemies.** The 1 Hz sample covers the
+    gaps; a stealthed enemy simply has no snapshot until seen.
+    *Test*: scrub the timeline of a finished match — every seat's HP strip
+    must move, and a dead seat must read 0 from its death onward.
+
+29. **`GetArenaOpponentSpec(i)` → `GetSpecializationInfoByID(specId)`
+    yields (id, name, description, icon, role, classToken)** in the prep
+    phase on this client. Failure means no spec tag beside enemy names,
+    nothing else.
+    *Test*: enter a rated match — enemy seats should show "Resto"/"Arms"
+    before the gates open.
+
+30. **Hostile players carry `COMBATLOG_OBJECT_REACTION_HOSTILE` (0x40) and
+    `TYPE_PLAYER`** in arena combat-log flags, so a not-yet-seen enemy can
+    be seated from the log alone.
+    *Test*: an enemy rogue's Sap opener must create their seat (with their
+    name) before Arena Frames ever shows them.
+
+31. **`SPELL_AURA_BROKEN(_SPELL)` and `SPELL_DISPEL` orientation** as in
+    assumptions 16/18 hold for player targets, and the DR table from Arena
+    Frames / Diminish classifies the AURA id the log reports.
+    *Test*: cheap shot, then kidney, then a second cheap shot — the ledger
+    must read full, full, half.
+
+32. **Ranged/spell damage into an immune target arrives as `SPELL_MISSED`
+    with missType IMMUNE**, so wasted CC counts.
+    *Test*: sheep a Divine Shield — the seat card's "CC into immunity"
+    must increment.
+
+33. **Signature spells reach the combat log as `SPELL_CAST_SUCCESS` with the
+    ids in Arena Frames' SPEC_MARKERS** (Mortal Strike, Lifebloom, …), so
+    an enemy's spec is revealed on their first cast of one.
+    *Test*: fight a warrior whose prep spec was not shown — after their
+    first Mortal Strike the seat reads "Arms" and a SPEC moment appears.
+
+34. **`IsMouseButtonDown("LeftButton")` exists** (the timeline drag ends
+    itself when the button is released off the plot). Guarded: absent, the
+    drag ends on the plot's own OnMouseUp only.
+    *Test*: drag the cursor, release outside the plot — the cursor must
+    stop following the mouse.
+
+35. **`GetInstanceInfo()`'s first return is the arena's name** ("Nagrand
+    Arena") inside an arena; the zone text is the fallback.
+    *Test*: the report header and the match menu name the arena, not
+    "Azeroth" or a city.
+
+36. **`GetBattlefieldScore`'s `faction` in an ARENA is the same 0/1 index
+    `GetBattlefieldArenaFaction()` returns**, which is what seats a
+    scoreboard-only player on the right team.
+    *Test*: in a 5v5 where an enemy never came into range, the SCOREBOARD
+    ONLY seat must appear under ENEMY, not YOUR TEAM.
+
+37. **In a battleground `GetBattlefieldWinner()` returns 0 for Horde and
+    1 for Alliance**, matching `UnitFactionGroup("player")`; the match
+    segment's WIN / LOSS tag depends on it (D28).
+    *Test*: win any battleground — LAST in the meter window must read
+    "<MAP> WIN", not LOSS.
+
+38. **`IsInInstance()` reports `"pvp"` for battlegrounds and `"arena"` for
+    arenas on this client**, the two gates of match mode.
+    *Test*: enter a battleground, fight, ride to another node for two
+    minutes, fight again — the meter window must still show ONE current
+    fight, not a new one per skirmish.

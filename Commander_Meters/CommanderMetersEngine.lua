@@ -76,6 +76,7 @@ local overallDur = 0          -- sum of closed fight durations
 local lastEventTs = 0         -- last group-relevant combat event (fight end stamp)
 local lastActivityTs = 0      -- idle-timer clock (events + leaving combat)
 local playerInCombat = false
+local matchMode = false       -- inside an arena / battleground: one fight per MATCH
 
 local ownerOf = {}            -- minion GUID -> owner GUID
 local ownerSeen = {}          -- minion GUID -> last use ts (for pruning)
@@ -334,11 +335,39 @@ end
 -- stamped at the LAST event (not the idle deadline), so idle time never
 -- pads the fight's duration.
 function E.Tick(now)
+    -- A match is one fight from its first blow to its result: no idle
+    -- close between its combat cycles (a lull at the pillar is still the
+    -- same game)
+    if matchMode then return end
     if current and not playerInCombat
         and now - lastActivityTs >= (db.IdleTimeout or 3) then
         CloseFight()
     end
 end
+
+-- Match mode (D28): arenas and battlegrounds are read per MATCH, not per
+-- combat cycle. Entering one arms it; the fight that opens on the first
+-- blow stays open through every lull until the match ends, when it closes
+-- named after the match with a WIN / LOSS tag (or untagged, when you left
+-- with no result). Outside a match nothing changes: pulls close on idle.
+function E.SetMatch(active, name, result, now)
+    if active then
+        matchMode = true
+        return
+    end
+    if not matchMode then return end
+    matchMode = false
+    if current then
+        if name then current.name = name end
+        current.match = true
+        if result == "WIN" then current.success = true
+        elseif result == "LOSS" then current.success = false end
+        if now and now > lastEventTs then lastEventTs = now end
+        CloseFight()
+    end
+end
+
+function E.InMatch() return matchMode end
 
 function E.SetPlayerCombat(inCombat, now)
     playerInCombat = inCombat

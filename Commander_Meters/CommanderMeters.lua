@@ -29,6 +29,7 @@
 -- default and the way back.
 
 local E = CommanderMetersEngine
+local A = CommanderMetersArena -- the arena match engine
 local db
 
 -- ---------------------------------------------------------------------------
@@ -73,6 +74,11 @@ local THEME = {
     statDeath = { 0.85, 0.25, 0.20 },  -- deaths
     statUtil  = { 0.35, 0.80, 0.90 },  -- interrupts / dispels / cc breaks
     statApm   = { 0.72, 0.62, 0.95 },  -- actions per minute (violet)
+    statCC    = { 0.86, 0.45, 1.00 },  -- crowd control (violet-magenta)
+    statMana  = { 0.35, 0.55, 0.95 },  -- mana drained (mana blue)
+    statCd    = { 0.95, 0.80, 0.45 },  -- cooldowns and trinkets (pale gold)
+    teamUs    = { 0.30, 0.70, 0.95 },  -- arena: our team (blue)
+    teamThem  = { 0.90, 0.32, 0.30 },  -- arena: the enemy team (red)
     statCrit  = { 1.00, 0.82, 0.25 },  -- crit gold
     statMiss  = { 0.55, 0.62, 0.72 },  -- misses / avoidance steel
     hpGood    = { 0.40, 0.85, 0.45 },  -- HP readouts ≥ 50%
@@ -143,7 +149,7 @@ end
 
 -- Escape-code tags derived from theme colors (rebuilt after the overrides
 -- resolve at login)
-local LIVE_DOT, KILL_TAG, WIPE_TAG
+local LIVE_DOT, KILL_TAG, WIPE_TAG, WIN_TAG, LOSS_TAG
 local ESC = {} -- precomputed "|cffRRGGBB" openers for the semantic colors
 
 local function EscOf(c)
@@ -155,6 +161,8 @@ local function BuildThemeTags()
     LIVE_DOT = EscOf(THEME.accent) .. "●|r "
     KILL_TAG = " " .. EscOf(THEME.healTx) .. "KILL|r"
     WIPE_TAG = " " .. EscOf(THEME.danger) .. "WIPE|r"
+    WIN_TAG = " " .. EscOf(THEME.healTx) .. "WIN|r"
+    LOSS_TAG = " " .. EscOf(THEME.danger) .. "LOSS|r"
     ESC.crit = EscOf(THEME.statCrit)
     ESC.miss = EscOf(THEME.statMiss)
     ESC.text = EscOf(THEME.tipText)
@@ -168,10 +176,26 @@ local MODE_COLOR_KEYS = {
     DMG = "statDmg", DPS = "statDmg", TAKEN = "statTaken", HEAL = "statHeal",
     DEATHS = "statDeath", INT = "statUtil", DISPEL = "statUtil", CCBREAK = "statUtil",
     APM = "statApm",
+    ARENA_DMG = "statDmg", ARENA_HEAL = "statHeal", ARENA_TAKEN = "statTaken", ARENA_CC = "statCC",
 }
 
 local function ModeColor(mode)
     return THEME[MODE_COLOR_KEYS[mode.key]] or THEME.text
+end
+
+-- The arena match a pane reads: the live one while a match is on, else
+-- the newest closed one
+local function ArenaMatch()
+    return A.Live() or A.GetMatch("last")
+end
+
+local function ArenaMatchLabel(m, plain)
+    if not m then return "NO MATCH" end
+    local live = A.Live() == m
+    local size = m.bracket > 0 and (m.bracket .. "v" .. m.bracket) or "ARENA"
+    local head = size .. (m.map and (" " .. m.map:upper()) or "")
+    if live then return (plain and "" or LIVE_DOT) .. head .. " · LIVE" end
+    return head .. " · " .. (m.result or "?")
 end
 
 -- A mode's rate over a duration: per second, or per minute for modes that
@@ -324,8 +348,24 @@ local panes = {
 -- no detail view, no graph series, no segment label.
 local externalModes = {}
 
+-- Arena pane modes: BOTH teams' seats from the arena match engine, one
+-- stat each, so the split can read ARENA DMG beside ARENA HEAL for the
+-- whole box. They ignore the pane's segment (a match is its own segment)
+-- and open the Arena Report instead of the detail popup. `stat` names an
+-- entry in CommanderMetersArena.STATS; `lists` is empty like an external
+-- mode's so the segment machinery never touches a seat.
+local ARENA_MODES = {
+    { key = "ARENA_DMG", label = "ARENA DMG", arena = true, stat = "DMG", lists = {} },
+    { key = "ARENA_HEAL", label = "ARENA HEAL", arena = true, stat = "HEAL", lists = {} },
+    { key = "ARENA_TAKEN", label = "ARENA TAKEN", arena = true, stat = "TAKEN", lists = {} },
+    { key = "ARENA_CC", label = "ARENA CC", arena = true, stat = "CC", lists = {} },
+}
+
 local function ModeByKey(key)
     for _, m in ipairs(E.MODES) do
+        if m.key == key then return m end
+    end
+    for _, m in ipairs(ARENA_MODES) do
         if m.key == key then return m end
     end
     -- A saved key whose provider is absent this session (addon disabled)
@@ -363,6 +403,11 @@ end
 
 local function SuccessTag(seg, plain)
     if not seg or seg.success == nil then return "" end
+    if seg.match then
+        -- A match segment (D28) won or lost; KILL/WIPE are raid words
+        if plain then return seg.success and " (WIN)" or " (LOSS)" end
+        return seg.success and WIN_TAG or LOSS_TAG
+    end
     if plain then
         return seg.success and " (KILL)" or " (WIPE)"
     end
@@ -390,7 +435,7 @@ end
 -- Frames (created once at PLAYER_LOGIN)
 -- ---------------------------------------------------------------------------
 
-local root, headerFrame, modeBtn, segBtn, shareBtn, splitBtn, graphBtn, resetBtn, segFlash
+local root, headerFrame, modeBtn, segBtn, shareBtn, splitBtn, graphBtn, resetBtn, arenaBtn, segFlash
 local paneDivider
 local graphFrame, detailFrame
 local menuFrame, menuBuilder
@@ -447,6 +492,28 @@ local GLYPHS = {
         Quad(b, 1.5, 9, 0, 0, math.pi / 4)
         Quad(b, 1.5, 9, 0, 0, -math.pi / 4)
     end,
+    play = function(b) -- a right-pointing wedge, built from three bars
+        Quad(b, 2, 10, -3, 0)
+        Quad(b, 2, 7, -0.5, 0)
+        Quad(b, 2, 4, 2, 0)
+        Quad(b, 2, 1.5, 4.5, 0)
+    end,
+    pause = function(b) -- two bars
+        Quad(b, 3, 10, -2.5, 0)
+        Quad(b, 3, 10, 2.5, 0)
+    end,
+    arena = function(b) -- crossed swords: two long blades, two short hilts
+        Quad(b, 1.5, 12, 0, 0, math.pi / 3.2)
+        Quad(b, 1.5, 12, 0, 0, -math.pi / 3.2)
+        Quad(b, 5, 1.5, -3, -3.2, math.pi / 3.2)
+        Quad(b, 5, 1.5, 3, -3.2, -math.pi / 3.2)
+    end,
+    skip = function(b) -- to the end: wedge + bar
+        Quad(b, 2, 8, -3.5, 0)
+        Quad(b, 2, 5, -1, 0)
+        Quad(b, 2, 2, 1.5, 0)
+        Quad(b, 2, 9, 4, 0)
+    end,
 }
 
 local function SetGlyphColor(btn, c)
@@ -495,8 +562,14 @@ local function TooltipTop3(map)
     return k1, v1, r1, k2, v2, r2, k3, v3, r3
 end
 
+local ArenaSeatTooltip -- forward: defined with the arena pane painter
+
 local function BarTooltip(row)
     if not row.guid then return end
+    if PaneMode(row.paneIndex).arena then
+        ArenaSeatTooltip(row)
+        return
+    end
     local seg = PaneSegment(row.paneIndex)
     local actor = seg and seg.actors[row.guid]
     if not actor then return end
@@ -590,7 +663,21 @@ local function BuildPaneRows(paneIndex)
             row.rate = MakeText(row, THEME.fontSize, "RIGHT")
             row.rate:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             row.rate:SetWidth(42)
+            -- Arena modes: a 2px team stripe on the left edge (blue us, red
+            -- them) — team is data with its own jurisdiction, so the class
+            -- color still owns the bar and the name
+            row.team = row:CreateTexture(nil, "OVERLAY")
+            row.team:SetTexture(WHITE)
+            row.team:SetWidth(2)
+            row.team:SetPoint("TOPLEFT")
+            row.team:SetPoint("BOTTOMLEFT")
+            row.team:Hide()
             row:SetScript("OnClick", function(self)
+                if self.guid and PaneMode(self.paneIndex).arena then
+                    -- Arena rows open the Arena Report on that seat
+                    if CommanderMetersArena_Open then CommanderMetersArena_Open(self.guid) end
+                    return
+                end
                 if self.guid then
                     if view.detailGuid == self.guid and view.detailPane == self.paneIndex
                         and detailFrame:IsShown() then
@@ -692,6 +779,157 @@ local function RepaintExternalPane(pane, mode, want)
     end
 end
 
+-- An arena mode's pane: every seat of both teams from the match engine,
+-- sorted by the mode's stat, with a team stripe. The caption names the
+-- MATCH, not a segment. Rows carry the seat guid so hover and click
+-- work, but the click opens the Arena Report, never the detail popup.
+local arenaOrder = {} -- pane rows regrouped by team, reused per repaint
+
+local function RepaintArenaPane(pane, mode, want)
+    local m = ArenaMatch()
+    local stat = A.StatByKey(mode.stat)
+    local sc = THEME[stat.color] or THEME.text
+    if pane.caption then
+        pane.caption.text:SetText(mode.label .. ESC.dim .. "  ·  " .. ArenaMatchLabel(m, true) .. "|r")
+        pane.caption.text:SetTextColor(sc[1], sc[2], sc[3])
+    end
+    if not m then
+        for i = 1, want do
+            local row = pane.rows[i]
+            row.guid = nil
+            row.team:Hide()
+            if i == 1 then
+                row.rank:SetText("")
+                row.name:SetText("No arena match yet")
+                row.name:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+                row.value:SetText("")
+                row.pct:SetText("")
+                row.rate:SetText("")
+                row.bar:SetWidth(0.001)
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+        return
+    end
+    local t = A.Live() == m and (time() - m.tsStart) or nil
+    local rowsData, n, totals, dur = A.CollectRows(m, stat, t)
+    local total = totals.us + totals.them
+    -- The teams never interleave: our seats first, theirs after, each
+    -- side in its own order with its own rank numbers (Devin: "I don't
+    -- want both teams combined")
+    local order = arenaOrder
+    local k = 0
+    for pass = 1, 2 do
+        local team = pass == 1 and "us" or "them"
+        local rank = 0
+        for i = 1, n do
+            local data = rowsData[i]
+            if data.seat.team == team then
+                rank = rank + 1
+                k = k + 1
+                order[k] = data
+                data.teamRank = rank
+            end
+        end
+    end
+    for i = k + 1, #order do order[i] = nil end
+    local maxOff = math.max(0, n - want)
+    if pane.offset > maxOff then pane.offset = maxOff end
+    local off = pane.offset
+    local top = n > 0 and rowsData[1].value or 1
+    for i = 1, want do
+        local row = pane.rows[i]
+        local data = (i + off) <= n and order[i + off]
+        if data then
+            local seat = data.seat
+            local c = ClassColor(seat.class)
+            local tc = seat.team == "us" and THEME.teamUs or THEME.teamThem
+            row.guid = seat.guid
+            row.rank:SetText(data.teamRank)
+            row.name:SetText(ShortName(seat.name or "?"))
+            row.name:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
+            local big, small
+            if stat.primary == "rate" then
+                big, small = FmtNum(data.rate), FmtNum(data.value)
+            elseif stat.seconds then
+                big, small = FmtTime(data.value), (data.count or 0) .. "x"
+            else
+                big = FmtNum(data.value)
+                small = stat.rateLabel and FmtNum(data.rate) or ""
+            end
+            row.value:SetText(big)
+            row.pct:SetText(total > 0 and format("%.0f%%", data.value / total * 100) or "")
+            row.rate:SetText(small)
+            local frac = top > 0 and data.value / top or 0
+            local w = row:GetWidth()
+            if w <= 0 then
+                w = db.SplitOpen and (db.FrameWidth - 1) / 2 or db.FrameWidth
+            end
+            row.bar:SetWidth(math.max(frac * w, 0.001))
+            row.bar:SetVertexColor(c[1], c[2], c[3], db.BarOpacity or 0.30)
+            row.team:SetVertexColor(tc[1], tc[2], tc[3], 1)
+            row.team:Show()
+            row:Show()
+        else
+            row.guid = nil
+            row.team:Hide()
+            row:Hide()
+        end
+    end
+end
+
+-- Hover on an arena row: the seat's whole card — every stat the match
+-- engine keeps for it, plus the server's scoreboard numbers when merged
+ArenaSeatTooltip = function(row, matchOverride)
+    local m = matchOverride or ArenaMatch()
+    local seat = m and m.seats[row.guid]
+    if not seat then return end
+    local c = ClassColor(seat.class)
+    local td, tf = THEME.tipDim, THEME.tipFaint
+    local tc = seat.team == "us" and THEME.teamUs or THEME.teamThem
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    GameTooltip:SetText(ShortName(seat.name or "?"), c[1], c[2], c[3])
+    GameTooltip:AddDoubleLine(seat.team == "us" and "YOUR TEAM" or "ENEMY TEAM",
+        (seat.spec and (seat.spec .. " ") or "") .. (seat.class or "?"),
+        tc[1], tc[2], tc[3], tf[1], tf[2], tf[3])
+    local function line(label, value, color)
+        color = color or tf
+        GameTooltip:AddDoubleLine(label, value, td[1], td[2], td[3], color[1], color[2], color[3])
+    end
+    local dur = A.DurationAt(m, A.Live() == m and (time() - m.tsStart) or nil)
+    line("DAMAGE", format("%s  (%s DPS)", FmtNum(seat.dmg), FmtNum(seat.dmg / dur)), THEME.statDmg)
+    line("HEALING", format("%s  (%s HPS)", FmtNum(seat.heal + seat.absorb), FmtNum((seat.heal + seat.absorb) / dur)), THEME.statHeal)
+    line("DMG TAKEN", FmtNum(seat.taken), THEME.statTaken)
+    line("CONTROL", format("%dx · %s on target", seat.ccCasts, FmtTime(seat.ccSeconds)), THEME.statCC)
+    line("CONTROLLED", format("%dx · %s", seat.ccTaken, FmtTime(seat.ccTakenSeconds)), THEME.statCC)
+    if seat.ccWasted > 0 then line("CC INTO IMMUNITY", tostring(seat.ccWasted), THEME.danger) end
+    if seat.ccBroke > 0 then line("BROKE OWN TEAM'S CC", tostring(seat.ccBroke), THEME.danger) end
+    line("KICKS", format("%d  (kicked %d)", seat.ints, seat.intsTaken), THEME.statUtil)
+    line("DISPELS / PURGES", format("%d / %d", seat.dispels, seat.purges), THEME.statUtil)
+    line("KILLS / DEATHS", format("%d / %d", seat.kills, seat.deaths), THEME.statDeath)
+    line("APM", format("%.0f  (%d casts)", seat.casts * 60 / dur, seat.casts), THEME.statApm)
+    if seat.drained > 0 or seat.drainedTaken > 0 then
+        line("MANA DRAINED", format("%s  (lost %s)", FmtNum(seat.drained), FmtNum(seat.drainedTaken)), THEME.statMana)
+    end
+    if seat.drinks > 0 then line("DRINKS", format("%d  (%s)", seat.drinks, FmtTime(seat.drinkSeconds)), THEME.statMana) end
+    line("COOLDOWNS / TRINKETS", format("%d / %d", seat.cds, seat.trinkets), THEME.statCd)
+    if seat.sb then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("SCOREBOARD (SERVER)", THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3])
+        line("DAMAGE / HEALING", FmtNum(seat.sb.dmg) .. " / " .. FmtNum(seat.sb.heal))
+        line("KILLING BLOWS / DEATHS", seat.sb.kb .. " / " .. seat.sb.deaths)
+        if seat.sb.ratingChange then
+            line("RATING CHANGE", format("%+d", seat.sb.ratingChange),
+                seat.sb.ratingChange >= 0 and THEME.healTx or THEME.danger)
+        end
+        if seat.sb.mmr then line("MMR", tostring(seat.sb.mmr)) end
+    end
+    GameTooltip:AddLine("Click for the Arena Report", THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3])
+    GameTooltip:Show()
+end
+
 local function RepaintPane(paneIndex)
     local pane = panes[paneIndex]
     local sel = PaneSelector(paneIndex)
@@ -706,6 +944,12 @@ local function RepaintPane(paneIndex)
         RepaintExternalPane(pane, mode, want)
         return
     end
+    if mode.arena then
+        RepaintArenaPane(pane, mode, want)
+        return
+    end
+    -- Non-arena modes never show the team stripe
+    for i = 1, want do pane.rows[i].team:Hide() end
 
     if pane.caption then
         local mc = ModeColor(mode)
@@ -823,6 +1067,7 @@ local function RepaintGraph()
     local showable = seg and seg ~= E.GetOverall() and seg.series and mode.series
     graphFrame.msg:SetText(
         (not seg and "NO ACTIVE FIGHT") or
+        (mode.arena and "THE MATCH TIMELINE LIVES IN THE ARENA REPORT (/cm arena)") or
         (not mode.series and "NO GRAPH FOR THIS MODE") or
         (seg == E.GetOverall() and "PER-FIGHT ONLY — PICK A FIGHT SEGMENT") or
         (not seg.series and "GRAPH EXPIRED (KEPT FOR THE NEWEST 5 FIGHTS)") or "")
@@ -1450,7 +1695,7 @@ RepaintDetail = function()
     -- External rows never open the detail (no guid), but a detail already
     -- open when its pane SWITCHES to an external mode would repaint through
     -- segment fields the mode does not have — close it instead
-    if mode.external then
+    if mode.external or mode.arena then
         view.detailGuid = nil
         detailFrame:Hide()
         return
@@ -1889,10 +2134,18 @@ local function RepaintHeader()
     local mc = ModeColor(panes[1].mode)
     modeBtn.text:SetText(panes[1].mode.label)
     modeBtn.text:SetTextColor(mc[1], mc[2], mc[3])
-    local live = view.segSel == "current" and E.InFight()
-    segBtn.text:SetText((live and LIVE_DOT or "") .. SegmentLabel())
+    -- While the left pane reads an arena match, the segment label would
+    -- describe a fight nobody is looking at — name the match instead (the
+    -- button's menu still moves the segment for the right pane and detail)
+    if panes[1].mode.arena then
+        segBtn.text:SetText(ArenaMatchLabel(ArenaMatch()))
+    else
+        local live = view.segSel == "current" and E.InFight()
+        segBtn.text:SetText((live and LIVE_DOT or "") .. SegmentLabel())
+    end
     SetGlyphColor(graphBtn, view.graphOpen and THEME.accent or THEME.textDim)
     SetGlyphColor(splitBtn, db.SplitOpen and THEME.accent or THEME.textDim)
+    SetGlyphColor(arenaBtn, (CommanderMetersArena_IsShown and CommanderMetersArena_IsShown()) and THEME.accent or THEME.textDim)
 end
 
 repaintNow = function()
@@ -2002,6 +2255,18 @@ local function ModeMenu(paneIndex)
     for _, mode in ipairs(E.MODES) do
         AddModeEntry(mode)
     end
+    -- Arena modes: both teams, from the match engine — and the way into
+    -- the report itself, so the window is discoverable from the menu a
+    -- user already opens
+    AddMenuTitle("ARENA — BOTH TEAMS")
+    for _, mode in ipairs(ARENA_MODES) do
+        AddModeEntry(mode)
+    end
+    local open = UIDropDownMenu_CreateInfo()
+    open.text = "OPEN ARENA REPORT…"
+    open.notCheckable = true
+    open.func = function() if CommanderMetersArena_Toggle then CommanderMetersArena_Toggle() end end
+    UIDropDownMenu_AddButton(open)
     -- External modes (sorted for a stable menu) join the bottom of the list
     local keys = {}
     for key in pairs(externalModes) do keys[#keys + 1] = key end
@@ -2023,7 +2288,8 @@ local function PaneMenu(paneIndex)
 
     -- An external pane owns its data outright and knows nothing about
     -- segments (D22) — offering it one would be a lie
-    if panes[paneIndex].mode and panes[paneIndex].mode.external then return end
+    local pm = panes[paneIndex].mode
+    if pm and (pm.external or pm.arena) then return end
 
     AddMenuTitle("OVER")
     if paneIndex == 2 then
@@ -2070,6 +2336,24 @@ local function BuildReportLines()
             local data = rowsData[i]
             reportScratch[i + 1] = format("%d. %s  %s", i,
                 ShortName(data.name or "?"), data.valueText or "")
+        end
+        return count + 1
+    end
+    if mode.arena then
+        local m = ArenaMatch()
+        if not m then return 0 end
+        local stat = A.StatByKey(mode.stat)
+        local t = A.Live() == m and (time() - m.tsStart) or nil
+        local rowsData, n, totals, dur = A.CollectRows(m, stat, t)
+        if n == 0 then return 0 end
+        reportScratch[1] = format("Commander Meters — %s, %s (%s)", mode.label,
+            ArenaMatchLabel(m, true), FmtTime(dur))
+        local count = math.min(n, REPORT_LINES)
+        for i = 1, count do
+            local data = rowsData[i]
+            reportScratch[i + 1] = format("%d. %s (%s)  %s", i, ShortName(data.seat.name or "?"),
+                data.seat.team == "us" and "us" or "enemy",
+                stat.seconds and FmtTime(data.value) or FmtNum(data.value))
         end
         return count + 1
     end
@@ -2182,7 +2466,7 @@ local function Layout()
     else
         segBtn:SetPoint("LEFT", modeBtn, "RIGHT", 0, 0)
     end
-    segBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -84, 0)
+    segBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -105, 0)
 
     for i = 1, 2 do
         local pane = panes[i]
@@ -2258,8 +2542,9 @@ local function BuildWindow()
     Commander.UI.AttachTooltip(modeBtn, "Mode", "What the bars measure. Click for the list. (While split, each pane's caption is its own menu — mode AND segment — and this button steps aside.)")
 
     segBtn = MakeHeaderButton(headerFrame, "LEFT")
+    segBtn.headerRole = "segment" -- how the headless harness finds it
     segBtn:SetPoint("LEFT", modeBtn, "RIGHT", 0, 0)
-    segBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -84, 0)
+    segBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -105, 0)
     segBtn:SetScript("OnClick", function(self)
         OpenMenu(function() SegmentMenu(1) end, self)
     end)
@@ -2280,7 +2565,19 @@ local function BuildWindow()
     segFlash:SetAllPoints()
     segFlash:Hide()
 
+    -- Arena Report: the one way the report opens besides /cm arena and
+    -- the ARENA rows — it never opens itself
+    arenaBtn = MakeGlyphButton(headerFrame, "arena")
+    arenaBtn.headerRole = "arena"
+    arenaBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -84, 0)
+    arenaBtn:SetScript("OnClick", function()
+        if CommanderMetersArena_Toggle then CommanderMetersArena_Toggle() end
+        repaintNow()
+    end)
+    Commander.UI.AttachTooltip(arenaBtn, "Arena Report", "Open or close the Arena Report: both teams of every recorded match, ten stats, a replayable timeline, insights and history. It never opens on its own.")
+
     shareBtn = MakeGlyphButton(headerFrame, "share")
+    shareBtn.headerRole = "share" -- how the headless harness finds it
     shareBtn:SetPoint("RIGHT", headerFrame, "RIGHT", -63, 0)
     shareBtn:SetScript("OnClick", function(self) OpenMenu(ShareMenu, self) end)
     Commander.UI.AttachTooltip(shareBtn, "Share", "Report the current view's top 5 — or the open death log — to a chat channel. Nothing is ever sent automatically.")
@@ -2563,6 +2860,7 @@ local function LoadCCNames()
             resolved, #CC_IDS))
     end
     E.SetCCNames(names)
+    A.SetCCNames(names)
 end
 
 -- ---------------------------------------------------------------------------
@@ -2645,6 +2943,13 @@ function CommanderMeters_Health()
     if not any then
         print("  no parse anomalies this session")
     end
+    -- Arena engine: matches, live state, rule data, its own anomalies
+    print(format("  arena: %d match%s kept · live: %s · rule data: %s",
+        #A.GetMatches(), #A.GetMatches() == 1 and "" or "es", tostring(A.InMatch()),
+        (CommanderMetersArena_DataNote and CommanderMetersArena_DataNote()) or "complete (DR table + cooldown book)"))
+    for key, count in pairs(A.GetAnomalies()) do
+        print(format("  |cffff8833arena anomaly|r ×%d: %s", count, key))
+    end
 end
 
 -- Injects a small canned fight through the REAL parser (sentinel GUIDs, a
@@ -2722,6 +3027,560 @@ function CommanderMeters_Test()
     repaintNow()
 end
 
+
+-- ---------------------------------------------------------------------------
+-- Arena: match lifecycle, rosters, HP snapshots, the scoreboard
+-- ---------------------------------------------------------------------------
+
+local ARENA_UNITS = { "arena1", "arena2", "arena3", "arena4", "arena5" }
+local ARENA_PETS = { "arenapet1", "arenapet2", "arenapet3", "arenapet4", "arenapet5" }
+local US_UNITS = { "player", "party1", "party2", "party3", "party4" }
+local US_PETS = { "pet", "partypet1", "partypet2", "partypet3", "partypet4" }
+local arenaEvents -- the frame that registers UNIT_HEALTH only while a match is on
+local arenaHpAcc = 0
+
+local function InArenaNow()
+    if IsActiveBattlefieldArena then
+        local ok, isArena = pcall(IsActiveBattlefieldArena)
+        if ok and isArena then return true end
+    end
+    local _, instanceType = IsInInstance()
+    return instanceType == "arena"
+end
+
+-- A seat from a unit token. Nil answers (stealth, out of range) leave the
+-- seat's identity alone — the engine treats nil as "not right now".
+local function ArenaSeatFromUnit(team, token)
+    if not UnitExists(token) then return end
+    local guid = UnitGUID(token)
+    if not guid then return end
+    local _, class = UnitClass(token)
+    -- The race FILE token (second return: "BloodElf"), the racial book's key
+    local race
+    if UnitRace then
+        local _, raceToken = UnitRace(token)
+        race = raceToken
+    end
+    A.SetSeat(team, guid, UnitName(token), class, race, token)
+    return guid
+end
+
+-- Opponent specs from the prep phase: the one API that names an enemy's
+-- spec outright. GetSpecializationInfoByID gives class + spec name.
+local function ArenaReadSpecs()
+    if not (GetNumArenaOpponentSpecs and GetArenaOpponentSpec and GetSpecializationInfoByID) then return end
+    local ok, count = pcall(GetNumArenaOpponentSpecs)
+    if not ok or type(count) ~= "number" then return end
+    for index = 1, math.min(count, 5) do
+        local okSpec, specId = pcall(GetArenaOpponentSpec, index)
+        if okSpec and type(specId) == "number" and specId > 0 then
+            local okInfo, _, specName, _, _, _, classToken = pcall(GetSpecializationInfoByID, specId)
+            local token = ARENA_UNITS[index]
+            local guid = UnitExists(token) and UnitGUID(token)
+            if okInfo and guid then
+                A.SetSeat("them", guid, nil, classToken, nil, token, specName)
+            end
+        end
+    end
+end
+
+local function ArenaScanRoster()
+    if not A.Live() then return end
+    for i, token in ipairs(US_UNITS) do
+        local owner = ArenaSeatFromUnit("us", token)
+        local petToken = US_PETS[i]
+        if owner and UnitExists(petToken) then
+            local petGuid = UnitGUID(petToken)
+            if petGuid then A.SetOwner(petGuid, owner, UnitName(petToken)) end
+        end
+    end
+    for i, token in ipairs(ARENA_UNITS) do
+        local owner = ArenaSeatFromUnit("them", token)
+        local petToken = ARENA_PETS[i]
+        if owner and UnitExists(petToken) then
+            local petGuid = UnitGUID(petToken)
+            if petGuid then A.SetOwner(petGuid, owner, UnitName(petToken)) end
+        end
+    end
+    ArenaReadSpecs()
+end
+
+-- HP for every seat we can read, once a second (UNIT_HEALTH is also fed
+-- as it arrives; this pass covers units whose events we missed)
+local function ArenaSampleUnit(token, now)
+    if not UnitExists(token) then return end
+    local guid = UnitGUID(token)
+    if not guid then return end
+    A.SetHealth(guid, UnitHealth(token), UnitHealthMax(token), now)
+    if UnitPower and UnitPowerMax then
+        local ptype = UnitPowerType and UnitPowerType(token) or 0
+        A.SetPower(guid, UnitPower(token), UnitPowerMax(token), ptype, now)
+    end
+end
+
+local function ArenaSampleHealth(now)
+    local m = A.Live()
+    if not m then return end
+    for _, token in ipairs(US_UNITS) do ArenaSampleUnit(token, now) end
+    for _, token in ipairs(ARENA_UNITS) do ArenaSampleUnit(token, now) end
+end
+
+local function ArenaMapName()
+    local name = GetInstanceInfo and GetInstanceInfo()
+    if type(name) == "string" and name ~= "" then return name end
+    return GetRealZoneText and GetRealZoneText() or nil
+end
+
+-- The core meter reads a match as ONE fight (D28): the label its segment
+-- closes with names the match the way the replay does
+local function MatchLabel(m)
+    if not m then return nil end
+    local size = m.bracket > 0 and (m.bracket .. "v" .. m.bracket) or "Arena"
+    return size .. " " .. (m.map or "Arena")
+end
+
+local function ArenaBegin()
+    if not (db and db.EnableMeters and db.ArenaRecord) then return end
+    if A.Live() then return end
+    E.SetMatch(true)
+    A.Begin(time(), ArenaMapName())
+    ArenaScanRoster()
+    if arenaEvents then
+        pcall(arenaEvents.RegisterEvent, arenaEvents, "UNIT_HEALTH")
+        pcall(arenaEvents.RegisterEvent, arenaEvents, "UNIT_POWER_UPDATE")
+    end
+end
+
+-- The scoreboard, read into the engine's row shape. GetBattlefieldScore:
+-- name, killingBlows, honorableKills, deaths, honorGained, faction, rank,
+-- race, class, classToken, damageDone, healingDone, ratingChange,
+-- preMatchMMR (Blizzard's TBC WorldStateFrame order).
+local scoreRows = {}
+
+local function ArenaReadScoreboard()
+    if not (GetNumBattlefieldScores and GetBattlefieldScore) then return nil end
+    local ok, count = pcall(GetNumBattlefieldScores)
+    if not ok or (count or 0) <= 0 then return nil end
+    for i = #scoreRows, 1, -1 do scoreRows[i] = nil end
+    for index = 1, count do
+        local okRow, name, kb, hk, deaths, honor, faction, _, race, _, classToken, dmg, heal, ratingChange, mmr =
+            pcall(GetBattlefieldScore, index)
+        if okRow and name then
+            scoreRows[#scoreRows + 1] = { name = name, kb = kb, hk = hk, deaths = deaths, honor = honor,
+                faction = faction, race = race, classToken = classToken, dmg = dmg, heal = heal,
+                ratingChange = ratingChange, mmr = mmr }
+        end
+    end
+    return scoreRows
+end
+
+-- Team ratings: GetBattlefieldTeamInfo(index) -> teamName, oldTeamRating,
+-- newTeamRating, teamRating(MMR) in Blizzard's TBC scoreboard. Index 0/1
+-- are the arena factions (green/gold); ours comes from
+-- GetBattlefieldArenaFaction. Every value is type-checked; anything odd
+-- is simply not recorded.
+local function ArenaReadTeamInfo(m, ourFaction)
+    if not GetBattlefieldTeamInfo or type(ourFaction) ~= "number" then return end
+    for index = 0, 1 do
+        local ok, name, before, after, mmr = pcall(GetBattlefieldTeamInfo, index)
+        if ok then
+            A.SetTeamInfo(m, index == ourFaction and "us" or "them",
+                { name = name, before = before, after = after, mmr = mmr })
+        end
+    end
+end
+
+local function ArenaFinishIfDecided()
+    local m = A.Live()
+    if not m then return end
+    if not GetBattlefieldWinner then return end
+    local ok, winner = pcall(GetBattlefieldWinner)
+    if not ok or winner == nil then return end
+    local ourFaction
+    if GetBattlefieldArenaFaction then
+        local okF, f = pcall(GetBattlefieldArenaFaction)
+        if okF then ourFaction = f end
+    end
+    local result
+    if type(winner) == "number" and type(ourFaction) == "number" then
+        result = winner == ourFaction and "WIN" or "LOSS"
+    else
+        result = "DRAW"
+    end
+    local rows = ArenaReadScoreboard()
+    if rows then A.MergeScoreboard(m, rows, ourFaction) end
+    ArenaReadTeamInfo(m, ourFaction)
+    local runTime
+    if GetBattlefieldInstanceRunTime then
+        local okR, ms = pcall(GetBattlefieldInstanceRunTime)
+        if okR and type(ms) == "number" and ms > 0 then runTime = ms / 1000 end
+    end
+    if arenaEvents then
+        pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_HEALTH")
+        pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_POWER_UPDATE")
+    end
+    E.SetMatch(false, MatchLabel(m), result, time())
+    A.Finish(time(), result, runTime)
+end
+
+-- Battlegrounds get the same one-fight-per-match reading (no replay —
+-- forty players are beyond the log's reach — but DAMAGE, HEALING, deaths
+-- and the graph read per game, not per skirmish at a node)
+local bgActive = false
+local bgName = nil
+
+local function InBattlegroundNow()
+    local _, instanceType = IsInInstance()
+    return instanceType == "pvp"
+end
+
+local function BattlegroundResult()
+    if not GetBattlefieldWinner then return nil end
+    local ok, winner = pcall(GetBattlefieldWinner)
+    if not ok or type(winner) ~= "number" then return nil end
+    -- 0 = Horde, 1 = Alliance (the TBC WorldStateFrame convention)
+    local faction = UnitFactionGroup and UnitFactionGroup("player")
+    local mine = faction == "Alliance" and 1 or (faction == "Horde" and 0 or nil)
+    if mine == nil then return "DRAW" end
+    return winner == mine and "WIN" or "LOSS"
+end
+
+local function BattlegroundZoneCheck()
+    if not db then return end
+    local inBg = InBattlegroundNow()
+    if inBg and not bgActive then
+        bgActive = true
+        bgName = ArenaMapName()
+        E.SetMatch(true)
+    elseif not inBg and bgActive then
+        bgActive = false
+        E.SetMatch(false, bgName, nil, time())
+        bgName = nil
+    end
+end
+
+local function BattlegroundFinishIfDecided()
+    if not bgActive then return end
+    local result = BattlegroundResult()
+    if not result then return end
+    bgActive = false
+    E.SetMatch(false, bgName, result, time())
+    bgName = nil
+end
+
+local function ArenaZoneCheck()
+    if not db then return end
+    BattlegroundZoneCheck()
+    local inArena = InArenaNow()
+    if inArena then
+        ArenaBegin()
+    elseif A.Live() then
+        -- Left without a result: the engine archives it as LEFT if the
+        -- gates ever opened, discards it otherwise
+        if arenaEvents then
+            pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_HEALTH")
+            pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_POWER_UPDATE")
+        end
+        E.SetMatch(false, MatchLabel(A.Live()), nil, time())
+        A.Abort(time())
+    end
+end
+
+local function OnArenaMatchStart(m)
+    if CommanderMetersArena_OnMatchStart then CommanderMetersArena_OnMatchStart(m) end
+    repaintNow()
+end
+
+-- The report never opens itself at match end: the header's arena glyph,
+-- /cm arena, or a click on an ARENA row opens it. (An open report does
+-- switch to the finished match, see CommanderMetersArena_OnMatchEnd.)
+local function OnArenaMatchEnd(m)
+    if CommanderMetersArena_OnMatchEnd then CommanderMetersArena_OnMatchEnd(m) end
+    repaintNow()
+end
+
+-- Rule data for the arena engine, from the suite when installed: the DR
+-- table (Arena Frames or Diminish — same generated block), the cooldown
+-- book and the drink list (Arena Frames). Without them CC still counts by
+-- name and cooldowns are simply not tracked; the health command says so.
+local arenaDataNote = nil
+
+local function LoadArenaData()
+    local dr = (CommanderArenaFrames_Data and CommanderArenaFrames_Data.DR_BY_SPELL)
+        or (CommanderDiminish_Data and CommanderDiminish_Data.DR_BY_SPELL)
+    local extra = CommanderArenaFrames_Data and CommanderArenaFrames_Data.CONTROL_EXTRA
+    if dr then
+        A.SetDRTable(dr, extra)
+    else
+        arenaDataNote = "no DR table (install Commander_ArenaFrames or Commander_Diminish for CC brackets)"
+    end
+    if CommanderArenaFrames_Data then
+        A.SetBook(CommanderArenaFrames_Data.ENEMY_BOOK, CommanderArenaFrames_Data.RACIAL_BOOK)
+        A.SetDrinkIds(CommanderArenaFrames_Data.DRINK_IDS)
+        A.SetSpecMarkers(CommanderArenaFrames_Data.SPEC_MARKERS)
+    else
+        -- The drink auras alone are worth carrying: the classic TBC water
+        -- ids (the same list Arena Frames generated)
+        A.SetDrinkIds({ 430, 431, 432, 1133, 1135, 1137, 10250, 22734, 27089, 34291 })
+        arenaDataNote = (arenaDataNote and (arenaDataNote .. "; ") or "")
+            .. "no cooldown book (install Commander_ArenaFrames to log enemy cooldowns)"
+    end
+end
+
+function CommanderMetersArena_DataNote()
+    return arenaDataNote
+end
+
+function CommanderMeters_ArenaToggle()
+    if CommanderMetersArena_Toggle then CommanderMetersArena_Toggle() end
+end
+
+-- Injects a canned 3v3 (RMP vs warrior/druid/warlock) through the REAL
+-- arena engine, with HP snapshots, so the Arena Report can be read
+-- without queueing. The match closes as a WIN at once and joins the
+-- match list like any other.
+function CommanderMeters_ArenaTest()
+    if not (db and db.EnableMeters) then
+        print("|cff66ccffCommander Meters|r: meters are disabled — enable them in the settings first")
+        return
+    end
+    if A.Live() then
+        print("|cff66ccffCommander Meters|r: a real match is being recorded — the test waits")
+        return
+    end
+    local ME, R2, P3 = "Player-0-CMARENA01", "Player-0-CMARENA02", "Player-0-CMARENA03"
+    local W1, D2, L3 = "Player-1-CMARENA11", "Player-1-CMARENA12", "Player-1-CMARENA13"
+    local FEL = "Pet-0-CMARENA-FEL"
+    local FME, FPARTY, FENEMY, FEPET = 0x511, 0x512, 0x548, 0x1148
+    local now = time()
+    local t0 = now - 200
+    local m = A.Begin(t0, "Nagrand Arena")
+    A.SetSeat("us", ME, "Frostweaver", "MAGE", "Human", "player", "Frost")
+    A.SetSeat("us", R2, "Shiv", "ROGUE", "NightElf", "party1", "Sub")
+    A.SetSeat("us", P3, "Vespers", "PRIEST", "Dwarf", "party2", "Disc")
+    A.SetSeat("them", W1, "Gorehowl", "WARRIOR", "Orc", "arena1") -- spec revealed by Mortal Strike
+    A.SetSeat("them", D2, "Leafshade", "DRUID", "Tauren", "arena2", "Resto")
+    A.SetSeat("them", L3, "Nethra", "WARLOCK", "Undead", "arena3", "Affli")
+    A.SetOwner(FEL, L3, "Felhunter")
+    local hp = { [ME] = 8200, [R2] = 7600, [P3] = 8900, [W1] = 11800, [D2] = 9400, [L3] = 8100 }
+    local hpMax = { [ME] = 8200, [R2] = 7600, [P3] = 8900, [W1] = 11800, [D2] = 9400, [L3] = 8100 }
+    local ev -- the event queue's entry point, defined with the queue below
+    local pow = { [ME] = 1000, [R2] = 1000, [P3] = 1000, [W1] = 0, [D2] = 1000, [L3] = 1000 }
+    local powType = { [ME] = 0, [R2] = 3, [P3] = 0, [W1] = 1, [D2] = 0, [L3] = 0 }
+    local function snap(g, t)
+        A.SetHealth(g, math.max(hp[g], 0), hpMax[g], t0 + t)
+        A.SetPower(g, pow[g], 1000, powType[g], t0 + t)
+    end
+    for g in pairs(hp) do snap(g, 0) end
+    local function spend(g, t, amount)
+        pow[g] = math.max(0, math.min(1000, pow[g] - amount))
+        A.SetPower(g, pow[g], 1000, powType[g], t0 + t)
+    end
+    local function castStart(t, sg, sn, sf, id, name)
+        ev(t, "SPELL_CAST_START", nil, sg, sn, sf, 0, "", "", 0x80000000, 0, id, name, 16)
+    end
+    local function buff(t, sub, sg, sn, sf, dg, dn, df, id, name)
+        ev(t, sub, nil, sg, sn, sf, 0, dg, dn, df, 0, id, name, 1, "BUFF")
+    end
+    -- The script below is written by subject, not by clock; the engine
+    -- expects the combat log's chronological order, so events queue up
+    -- and are replayed sorted by time (emission order breaks ties)
+    local queue = {}
+    ev = function(t, ...)
+        queue[#queue + 1] = { t = t, n = #queue + 1, argn = select("#", ...), ... }
+    end
+    -- The script's numbers outrun the HP pools (it is a demonstration,
+    -- not a simulation): a non-fatal hit never reads below 5%, and the
+    -- scripted deaths set 0 themselves
+    local function dmg(t, sg, sn, sf, dg, dn, df, id, name, amount, crit)
+        ev(t, "SPELL_DAMAGE", nil, sg, sn, sf, 0, dg, dn, df, 0, id, name, 16, amount, 0, 16, 0, 0, 0, crit or false, false, false, false)
+        hp[dg] = math.max(hp[dg] - amount, hpMax[dg] * 0.05)
+        snap(dg, t)
+    end
+    local function swing(t, sg, sn, sf, dg, dn, df, amount, crit)
+        ev(t, "SWING_DAMAGE", nil, sg, sn, sf, 0, dg, dn, df, 0, amount, 0, 1, 0, 0, 0, crit or false, false, false, false)
+        hp[dg] = math.max(hp[dg] - amount, hpMax[dg] * 0.05)
+        snap(dg, t)
+    end
+    local function heal(t, sg, sn, sf, dg, dn, df, id, name, amount, over)
+        ev(t, "SPELL_HEAL", nil, sg, sn, sf, 0, dg, dn, df, 0, id, name, 2, amount, over or 0, 0, false)
+        hp[dg] = math.min(hp[dg] + amount - (over or 0), hpMax[dg])
+        snap(dg, t)
+    end
+    local function aura(t, sub, sg, sn, sf, dg, dn, df, id, name)
+        ev(t, sub, nil, sg, sn, sf, 0, dg, dn, df, 0, id, name, 1, "DEBUFF")
+    end
+    local function cast(t, sg, sn, sf, id, name, dg)
+        -- dg: the spell's target seat when it has one (who they are on)
+        ev(t, "SPELL_CAST_SUCCESS", nil, sg, sn, sf, 0, dg or "", "", dg and 0x548 or 0x80000000, 0, id, name, 1)
+    end
+    -- Gates at +60 (prep fades on us); pre-gate buffs on both sides
+    buff(30, "SPELL_AURA_APPLIED", ME, "Frostweaver", FME, ME, "Frostweaver", FME, 27134, "Ice Barrier")
+    buff(31, "SPELL_AURA_APPLIED", P3, "Vespers", FPARTY, ME, "Frostweaver", FME, 25389, "Prayer of Fortitude")
+    buff(31, "SPELL_AURA_APPLIED", P3, "Vespers", FPARTY, R2, "Shiv", FPARTY, 25389, "Prayer of Fortitude")
+    buff(32, "SPELL_AURA_APPLIED", D2, "Leafshade", FENEMY, W1, "Gorehowl", FENEMY, 26991, "Gift of the Wild")
+    buff(33, "SPELL_AURA_APPLIED", L3, "Nethra", FENEMY, L3, "Nethra", FENEMY, 27260, "Fel Armor")
+    aura(60, "SPELL_AURA_REMOVED", ME, "Frostweaver", FME, ME, "Frostweaver", FME, 32727, "Arena Preparation")
+    -- Opener: sap the druid, cheap shot the warlock, mage sheeps the warrior
+    aura(64, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 11297, "Sap")
+    cast(64, R2, "Shiv", FPARTY, 11297, "Sap")
+    aura(66, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 1833, "Cheap Shot")
+    cast(66, R2, "Shiv", FPARTY, 1833, "Cheap Shot")
+    aura(67, "SPELL_AURA_APPLIED", ME, "Frostweaver", FME, W1, "Gorehowl", FENEMY, 12826, "Polymorph")
+    cast(67, ME, "Frostweaver", FME, 12826, "Polymorph")
+    for i = 0, 3 do
+        swing(67 + i, R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 380 + i * 25, i == 1)
+        cast(67.5 + i, R2, "Shiv", FPARTY, 26862, "Sinister Strike", L3)
+        dmg(67.5 + i, R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 26862, "Sinister Strike", 640 + i * 30, i == 2)
+    end
+    aura(70, "SPELL_AURA_REMOVED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 1833, "Cheap Shot")
+    aura(70.2, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 408, "Kidney Shot")
+    cast(70.2, R2, "Shiv", FPARTY, 408, "Kidney Shot")
+    -- Warrior breaks out of sheep on trinket at +71
+    cast(71, W1, "Gorehowl", FENEMY, 42292, "PvP Trinket")
+    aura(71, "SPELL_AURA_REMOVED", ME, "Frostweaver", FME, W1, "Gorehowl", FENEMY, 12826, "Polymorph")
+    -- Warrior charges the rogue, breaks the druid's sap by mistake with a sweeping strike
+    aura(72, "SPELL_AURA_APPLIED", W1, "Gorehowl", FENEMY, R2, "Shiv", FPARTY, 11578, "Charge Stun")
+    cast(72, W1, "Gorehowl", FENEMY, 11578, "Charge")
+    -- The mage's Frostbolt breaks the rogue's Sap on the druid: the own-team
+    -- break the report counts as a mistake
+    cast(72.8, ME, "Frostweaver", FME, 27072, "Frostbolt")
+    dmg(72.8, ME, "Frostweaver", FME, D2, "Leafshade", FENEMY, 27072, "Frostbolt", 1380, false)
+    ev(72.8, "SPELL_AURA_BROKEN_SPELL", nil, ME, "Frostweaver", FME, 0, D2, "Leafshade", FENEMY, 0,
+        11297, "Sap", 1, 27072, "Frostbolt", 16, "DEBUFF")
+    aura(73, "SPELL_AURA_REMOVED", W1, "Gorehowl", FENEMY, R2, "Shiv", FPARTY, 11578, "Charge Stun")
+    -- Intercept eight seconds after the Charge stun faded: the same STUN
+    -- ladder, so it lands at half
+    aura(80, "SPELL_AURA_APPLIED", W1, "Gorehowl", FENEMY, R2, "Shiv", FPARTY, 20615, "Intercept Stun")
+    cast(80, W1, "Gorehowl", FENEMY, 20615, "Intercept")
+    aura(81.5, "SPELL_AURA_REMOVED", W1, "Gorehowl", FENEMY, R2, "Shiv", FPARTY, 20615, "Intercept Stun")
+    -- Mage damage on the warlock; warlock fears the priest; warrior hits the mage
+    for i = 0, 7 do
+        -- Hard casts: a start, then the success a cast time later; the
+        -- mage's mana and the warrior's rage move with them
+        castStart(73 + i * 2.5, ME, "Frostweaver", FME, 27072, "Frostbolt")
+        cast(75 + i * 2.5, ME, "Frostweaver", FME, 27072, "Frostbolt", L3)
+        spend(ME, 75 + i * 2.5, 45)
+        dmg(75 + i * 2.5, ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 27072, "Frostbolt", 1450 + i * 40, i % 3 == 0)
+        spend(W1, 74.5 + i * 2.5, -120)
+        swing(74.5 + i * 2.5, W1, "Gorehowl", FENEMY, ME, "Frostweaver", FME, 520 + i * 18, i % 4 == 1)
+        cast(75 + i * 2.5, W1, "Gorehowl", FENEMY, 30330, "Mortal Strike", ME)
+        dmg(75 + i * 2.5, W1, "Gorehowl", FENEMY, ME, "Frostweaver", FME, 30330, "Mortal Strike", 900 + i * 35, i % 3 == 2)
+        castStart(74 + i * 2.5, P3, "Vespers", FPARTY, 25235, "Flash Heal")
+        cast(75.5 + i * 2.5, P3, "Vespers", FPARTY, 25235, "Flash Heal", ME)
+        spend(P3, 75.5 + i * 2.5, 60)
+        heal(75.5 + i * 2.5, P3, "Vespers", FPARTY, ME, "Frostweaver", FME, 25235, "Flash Heal", 1800, i % 2 == 0 and 300 or 0)
+        cast(76 + i * 2.5, D2, "Leafshade", FENEMY, 33763, "Lifebloom", L3)
+        heal(76 + i * 2.5, D2, "Leafshade", FENEMY, L3, "Nethra", FENEMY, 33763, "Lifebloom", 600, 0)
+    end
+    aura(76, "SPELL_AURA_REMOVED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 408, "Kidney Shot")
+    aura(78, "SPELL_AURA_APPLIED", L3, "Nethra", FENEMY, P3, "Vespers", FPARTY, 6215, "Fear")
+    cast(78, L3, "Nethra", FENEMY, 6215, "Fear")
+    ev(80, "SPELL_DISPEL", nil, P3, "Vespers", FPARTY, 0, P3, "Vespers", FPARTY, 0, 527, "Dispel Magic", 2, 6215, "Fear", 32, "DEBUFF")
+    -- A Greater Heal that the kick below stops mid-cast; a shield on the mage
+    castStart(85.2, D2, "Leafshade", FENEMY, 26980, "Regrowth")
+    buff(84, "SPELL_AURA_APPLIED", P3, "Vespers", FPARTY, ME, "Frostweaver", FME, 25218, "Power Word: Shield")
+    buff(114, "SPELL_AURA_REMOVED", P3, "Vespers", FPARTY, ME, "Frostweaver", FME, 25218, "Power Word: Shield")
+    -- Felhunter spell-locks the priest; mage counterspells the druid
+    aura(82, "SPELL_AURA_APPLIED", FEL, "Felhunter", FEPET, P3, "Vespers", FPARTY, 24259, "Spell Lock")
+    cast(82, FEL, "Felhunter", FEPET, 19647, "Spell Lock")
+    aura(85, "SPELL_AURA_REMOVED", FEL, "Felhunter", FEPET, P3, "Vespers", FPARTY, 24259, "Spell Lock")
+    ev(86, "SPELL_INTERRUPT", nil, ME, "Frostweaver", FME, 0, D2, "Leafshade", FENEMY, 0, 2139, "Counterspell", 64, 26980, "Regrowth", 8)
+    cast(86, ME, "Frostweaver", FME, 2139, "Counterspell")
+    -- Priest purges lifebloom, mana burns the druid; druid drinks
+    ev(88, "SPELL_DISPEL", nil, P3, "Vespers", FPARTY, 0, L3, "Nethra", FENEMY, 0, 527, "Dispel Magic", 2, 33763, "Lifebloom", 8, "BUFF")
+    cast(88, P3, "Vespers", FPARTY, 527, "Dispel Magic")
+    for i = 0, 2 do
+        cast(90 + i * 3, P3, "Vespers", FPARTY, 25380, "Mana Burn")
+        ev(90 + i * 3, "SPELL_DRAIN", nil, P3, "Vespers", FPARTY, 0, D2, "Leafshade", FENEMY, 0, 25380, "Mana Burn", 32, 1100, 0, 0)
+    end
+    aura(100, "SPELL_AURA_APPLIED", D2, "Leafshade", FENEMY, D2, "Leafshade", FENEMY, 27089, "Drink")
+    aura(109, "SPELL_AURA_REMOVED", D2, "Leafshade", FENEMY, D2, "Leafshade", FENEMY, 27089, "Drink")
+    -- A wasted sheep into a trinket-immune? No: a Polymorph resisted
+    ev(96, "SPELL_MISSED", nil, ME, "Frostweaver", FME, 0, W1, "Gorehowl", FENEMY, 0, 12826, "Polymorph", 64, "RESIST", false, 0, false)
+    -- Enemy cooldowns: Shield Wall, Pain... a druid Barkskin, a warlock Death Coil (horror CC)
+    cast(97, W1, "Gorehowl", FENEMY, 871, "Shield Wall")
+    cast(98, D2, "Leafshade", FENEMY, 22812, "Barkskin")
+    aura(99, "SPELL_AURA_APPLIED", L3, "Nethra", FENEMY, ME, "Frostweaver", FME, 27223, "Death Coil")
+    cast(99, L3, "Nethra", FENEMY, 27223, "Death Coil")
+    aura(102, "SPELL_AURA_REMOVED", L3, "Nethra", FENEMY, ME, "Frostweaver", FME, 27223, "Death Coil")
+    -- Second stun ladder step on the warlock (half), then the kill
+    aura(104, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 1833, "Cheap Shot")
+    cast(104, R2, "Shiv", FPARTY, 1833, "Cheap Shot")
+    for i = 0, 3 do
+        swing(104.5 + i, R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 410 + i * 20, i == 0)
+        cast(105 + i, ME, "Frostweaver", FME, 27072, "Frostbolt")
+        dmg(105 + i, ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 27072, "Frostbolt", 1500 + i * 60, i == 3)
+    end
+    aura(108, "SPELL_AURA_REMOVED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 1833, "Cheap Shot")
+    cast(109, ME, "Frostweaver", FME, 27072, "Frostbolt")
+    dmg(109.5, ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 27072, "Frostbolt", 2200, true)
+    hp[L3] = 0
+    snap(L3, 109.5)
+    ev(110, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, L3, "Nethra", FENEMY, 0)
+    -- The warrior and druid fight on; the mage takes a beating, gets healed
+    for i = 0, 5 do
+        swing(111 + i * 2, W1, "Gorehowl", FENEMY, ME, "Frostweaver", FME, 560 + i * 20, i == 2)
+        cast(112 + i * 2, P3, "Vespers", FPARTY, 25235, "Flash Heal")
+        heal(112 + i * 2, P3, "Vespers", FPARTY, ME, "Frostweaver", FME, 25235, "Flash Heal", 1700, 200)
+        cast(111.5 + i * 2, R2, "Shiv", FPARTY, 26862, "Sinister Strike")
+        dmg(111.5 + i * 2, R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 26862, "Sinister Strike", 700 + i * 25, i == 4)
+    end
+    -- The healer is sheeped through the kill: the insight every arena
+    -- player looks for first ("was their healer controlled when we killed?")
+    aura(126, "SPELL_AURA_APPLIED", ME, "Frostweaver", FME, D2, "Leafshade", FENEMY, 12826, "Polymorph")
+    cast(126, ME, "Frostweaver", FME, 12826, "Polymorph")
+    aura(134, "SPELL_AURA_REMOVED", ME, "Frostweaver", FME, D2, "Leafshade", FENEMY, 12826, "Polymorph")
+    -- Warrior dies to the rogue's Eviscerate; druid dies to a Frostbolt
+    aura(124, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, W1, "Gorehowl", FENEMY, 8643, "Kidney Shot")
+    cast(124, R2, "Shiv", FPARTY, 8643, "Kidney Shot")
+    for i = 0, 2 do
+        cast(124.5 + i, ME, "Frostweaver", FME, 27072, "Frostbolt")
+        dmg(124.5 + i, ME, "Frostweaver", FME, W1, "Gorehowl", FENEMY, 27072, "Frostbolt", 1600, i == 1)
+        dmg(125 + i, R2, "Shiv", FPARTY, W1, "Gorehowl", FENEMY, 26865, "Eviscerate", 1900 + i * 200, i == 2)
+    end
+    aura(129, "SPELL_AURA_REMOVED", R2, "Shiv", FPARTY, W1, "Gorehowl", FENEMY, 8643, "Kidney Shot")
+    dmg(129.5, R2, "Shiv", FPARTY, W1, "Gorehowl", FENEMY, 26865, "Eviscerate", 2400, true)
+    hp[W1] = 0
+    snap(W1, 129.5)
+    ev(130, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, W1, "Gorehowl", FENEMY, 0)
+    for i = 0, 3 do
+        cast(131 + i * 2, ME, "Frostweaver", FME, 27072, "Frostbolt")
+        dmg(131 + i * 2, ME, "Frostweaver", FME, D2, "Leafshade", FENEMY, 27072, "Frostbolt", 1700, i == 3)
+        dmg(132 + i * 2, R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 26862, "Sinister Strike", 750, false)
+    end
+    hp[D2] = 0
+    snap(D2, 139.5)
+    ev(140, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, D2, "Leafshade", FENEMY, 0)
+    table.sort(queue, function(a, b)
+        if a.t ~= b.t then return a.t < b.t end
+        return a.n < b.n
+    end)
+    for _, q in ipairs(queue) do
+        A.OnCleu(t0 + q.t, unpack(q, 1, q.argn))
+    end
+    A.MergeScoreboard(m, {
+        { name = "Frostweaver", kb = 2, hk = 3, deaths = 0, dmg = 31200, heal = 0, ratingChange = 14, mmr = 1912, classToken = "MAGE" },
+        { name = "Shiv", kb = 1, hk = 3, deaths = 0, dmg = 18400, heal = 0, ratingChange = 14, mmr = 1904, classToken = "ROGUE" },
+        { name = "Vespers", kb = 0, hk = 3, deaths = 0, dmg = 200, heal = 26900, ratingChange = 14, mmr = 1898, classToken = "PRIEST" },
+        { name = "Gorehowl", kb = 0, hk = 0, deaths = 1, dmg = 17800, heal = 0, ratingChange = -13, mmr = 1876, classToken = "WARRIOR" },
+        { name = "Leafshade", kb = 0, hk = 0, deaths = 1, dmg = 100, heal = 8400, ratingChange = -13, mmr = 1881, classToken = "DRUID" },
+        { name = "Nethra", kb = 0, hk = 0, deaths = 1, dmg = 2100, heal = 0, ratingChange = -13, mmr = 1869, classToken = "WARLOCK" },
+    })
+    A.SetTeamInfo(m, "us", { name = "Frostbite Warrant", before = 1850, after = 1864, mmr = 1905 })
+    A.SetTeamInfo(m, "them", { name = "Leaf Me Alone", before = 1871, after = 1858, mmr = 1875 })
+    A.Finish(t0 + 141, "WIN", 81)
+    print("|cff66ccffCommander Meters|r: arena test match injected (3v3, WIN) — /cm arena opens the report; RESET › EVERYTHING clears meter data but the match list keeps it (Arena › Forget Matches removes it)")
+end
+
+function CommanderMeters_ArenaForget()
+    A.ResetAll()
+    CommanderMetersArenaLog = nil
+    if CommanderMetersArena_OnMatchEnd then CommanderMetersArena_OnMatchEnd(nil) end
+    print("|cff66ccffCommander Meters|r: arena match history forgotten")
+    repaintNow()
+end
+
 -- ---------------------------------------------------------------------------
 -- Events
 -- ---------------------------------------------------------------------------
@@ -2783,10 +3642,24 @@ local GetCLEU = (C_CombatLog and C_CombatLog.GetCurrentEventInfo)
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 
+-- One getter call feeds both engines: varargs ride the stack, no table
+local function DispatchCleu(...)
+    E.OnCleu(...)
+    if A.Live() then A.OnCleu(...) end
+end
+
 local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
         if db and db.EnableMeters then
-            E.OnCleu(GetCLEU())
+            DispatchCleu(GetCLEU())
+        end
+        return
+    end
+    if event == "UNIT_HEALTH" or event == "UNIT_POWER_UPDATE" then
+        local m = A.Live()
+        if m and arg1 then
+            local guid = UnitGUID(arg1)
+            if guid and m.seats[guid] then ArenaSampleUnit(arg1, time()) end
         end
         return
     end
@@ -2810,6 +3683,18 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
         BuildWindow()
         RefreshRoster()
         LoadCCNames()
+        LoadArenaData()
+        A.onMatchStart = OnArenaMatchStart
+        A.onMatchEnd = OnArenaMatchEnd
+        arenaEvents = events
+        if (tonumber(db.ArenaKeepMatches) or 0) > 0 and _G.CommanderMetersArenaLog then
+            local adopted = A.Import(_G.CommanderMetersArenaLog)
+            if adopted > 0 then
+                print(format("|cff66ccffCommander Meters|r: %d arena match%s restored — /cm arena", adopted, adopted == 1 and "" or "es"))
+            end
+        end
+        -- The Arena Report builds itself on first open (match end, /cm
+        -- arena, or an ARENA row) — a raider who never queues pays nothing
         -- CLEU: plain registration works today; the docs flag it like the
         -- callback-only MINIMAP_PING, so keep the callback path as a net —
         -- and if the getter itself is gone (deprecation shim disabled and
@@ -2832,9 +3717,24 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
         -- Naming/tagging refinement only; segmentation never depends on these
         pcall(events.RegisterEvent, events, "ENCOUNTER_START")
         pcall(events.RegisterEvent, events, "ENCOUNTER_END")
+        -- Arena: soft-registered, since the arena surface is where this
+        -- client's retail-era UI seam shows (UNIT_HEALTH joins only while
+        -- a match is on)
+        events:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+        pcall(events.RegisterEvent, events, "UPDATE_BATTLEFIELD_SCORE")
+        pcall(events.RegisterEvent, events, "ARENA_OPPONENT_UPDATE")
+        pcall(events.RegisterEvent, events, "ARENA_PREP_OPPONENT_SPECIALIZATIONS")
         C_Timer.NewTicker(1, function()
-            E.Tick(time())
+            local now = time()
+            E.Tick(now)
+            if A.Live() then
+                -- Cheap insurance against a missed roster event: ten unit
+                -- reads a second while a match is on
+                ArenaScanRoster()
+                ArenaSampleHealth(now)
+            end
         end)
+        ArenaZoneCheck()
         Commander.AddListener(COMMANDER_METERS_EVENTS.UPDATE, Apply)
         Apply()
         return
@@ -2846,6 +3746,29 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
         else
             CommanderMetersSession = nil
         end
+        -- Arena history: a live match at logout is archived as LEFT first
+        -- so a /reload mid-match keeps what was recorded
+        if A.Live() then A.Abort(time()) end
+        local keep = db and tonumber(db.ArenaKeepMatches) or 0
+        if keep > 0 then
+            CommanderMetersArenaLog = A.Export(keep)
+        else
+            CommanderMetersArenaLog = nil
+        end
+        return
+    end
+    if event == "UPDATE_BATTLEFIELD_SCORE" then
+        ArenaFinishIfDecided()
+        BattlegroundFinishIfDecided()
+        return
+    end
+    if event == "ARENA_OPPONENT_UPDATE" or event == "ARENA_PREP_OPPONENT_SPECIALIZATIONS" then
+        if not A.Live() then ArenaZoneCheck() end
+        ArenaScanRoster()
+        return
+    end
+    if event == "ZONE_CHANGED_NEW_AREA" then
+        ArenaZoneCheck()
         return
     end
     if event == "PLAYER_REGEN_DISABLED" then
@@ -2858,10 +3781,12 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
     end
     if event == "GROUP_ROSTER_UPDATE" then
         RefreshRoster()
+        ArenaScanRoster()
         return
     end
     if event == "UNIT_PET" then
         MapPetOf(arg1)
+        ArenaScanRoster()
         return
     end
     if event == "ENCOUNTER_START" then
@@ -2881,6 +3806,8 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
     end
     if event == "PLAYER_ENTERING_WORLD" then
         RefreshRoster()
+        ArenaZoneCheck()
+        ArenaScanRoster()
         local inInstance, instanceType = IsInInstance()
         local key = inInstance and (instanceType .. (select(8, GetInstanceInfo()) or "")) or nil
         -- The baseline lives in the DB, not on this frame: a /reload inside
@@ -2896,3 +3823,21 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
 end
 
 events:SetScript("OnEvent", OnEvent)
+
+-- ---------------------------------------------------------------------------
+-- Shared with CommanderMetersArenaUI.lua (loaded after this file): the
+-- theme and the drawing helpers, so the Arena Report is cut from the same
+-- cloth without a second theme table or a copied helper.
+-- ---------------------------------------------------------------------------
+
+CommanderMeters_UI = {
+    THEME = THEME, WHITE = WHITE, ESC = ESC,
+    MakeText = MakeText, MakeEdge = MakeEdge, MakeHeaderButton = MakeHeaderButton,
+    MakeGlyphButton = MakeGlyphButton, SetGlyphColor = SetGlyphColor, Quad = Quad,
+    OpenMenu = OpenMenu, AddMenuTitle = AddMenuTitle, ShareMenu = ShareMenu,
+    FmtNum = FmtNum, FmtTime = FmtTime, ShortName = ShortName, ClassColor = ClassColor,
+    IconTag = IconTag, IconOf = IconOf, HpColor = HpColor, EscOf = EscOf,
+    ArenaMatchLabel = ArenaMatchLabel, ArenaSeatTooltip = function(row, m) ArenaSeatTooltip(row, m) end,
+    Repaint = function() repaintNow() end,
+    DB = function() return db end,
+}
