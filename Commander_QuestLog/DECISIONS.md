@@ -77,13 +77,18 @@ stick on this client. The one Blizzard region deliberately kept is
 `Interface\QuestFrame\QuestBackground` behind the window — already vetted in
 this suite by Commander_Console — because it is the quest log's own parchment
 and is what makes this read as a quest log rather than as a generic browser.
+*(D26 adds the second and last exception: Questie's own quest-giver icons,
+on the world-map pins, drawn only while Questie is loaded.)*
 
 **D12 — The window never takes keyboard focus on open.** It is opened with a
 key, and an autofocused search box turns WASD into typing. This is the trap
 Commander_Vault paid for at the banker; the search box is reachable by click or
 by its own binding.
 
-**D13 — No quest database.** The module reports what the client knows and
+**D13 — No quest database.** *(Superseded by D19: the Log still reports only
+what the client knows, but the Zones tab and the world-map drawer read
+Questie's database — the one this decision pointed at — rather than shipping
+a second.)* The module reports what the client knows and
 nothing else: no turn-in locations, no chain lookups, no levels for quests you
 have not taken. Questie already does that, does it from a shipped database, and
 is a different piece of software. Everything here comes from the live log.
@@ -118,6 +123,19 @@ mid-tone tan to cream, and the panes' half-black wash (D14) became a thin wash
 of ink — paper is light, and the ink does the contrast. The alternative,
 keeping the bright literals and darkening the paper under them, is the dark
 skin, which already exists. Harness section O holds the two skins to it.
+*(2026-10-04.)* Fills too: a selection band, a rule, a tab or filter
+underline, a chevron, a chain's current-quest band. They took the console
+accent as it is, on the reasoning that a pale tint suits any background, and
+the default accent is white -- on cream, no mark at all. Everything drawn on
+the sheet now takes `InkAccent()` (the accent put on the paper; the accent
+itself off it). The toolbar's strip, which D14 made 45% black so light labels
+sat on dark, is a thin wash of ink on the paper like the panes: the labels
+on it have been ink since D16, and ink on that strip read at 1.2:1. Window
+harness Q2. *(Round 2.)* The pale strip made a HOVERED label vanish: the
+highlight font is white, and white over the wash reads at 1.6:1. On paper a
+tab or filter is inked while the pointer is on it too (`InkOnHover`: at once,
+and again a frame later, after the client's own swap); off the paper the
+white hover stays. No font object of our own, which would be a global name.
 
 **D17 — The sheet is dark stone by default; parchment is a choice.** D16
 made the paper legible, and the next report was that legible paper is still
@@ -130,7 +148,470 @@ choice now rather than a default: a log saved before `StyleGeneration`
 existed that is still on PARCHMENT is moved to STONE once at load, and the
 generation stamp means a parchment picked after that is never moved again.
 
+**D18 — Two clocks under the navigator, and the weekly one is checked
+against the calendar.** The daily reset is `GetQuestResetTime`, the era's own
+clock and the one Blizzard's TBC quest log hangs its daily count on. The
+weekly reset — arena points paid, raid lockouts cleared — has a modern API
+in this binary, `C_DateAndTime.GetSecondsUntilWeeklyReset`, which is
+documented on the `classic_anniversary` branch but has never been watched
+answer on this client. So it is believed only when its answer is plausible:
+in range, not before the next daily reset, and a whole number of days after
+it (to within the hour a DST shift can move it). Otherwise the weekly reset
+is **computed** as the next daily reset that lands on the region's reset day
+— a weekday in *server-local* time, derived from `GetGameTime` against
+`GetServerTime`, because KR and TW reset Thursday 07:00 local, which is
+Wednesday 22:00 UTC, and a weekday read off the UTC clock is a day late
+there. The tooltip says when the figure is worked out rather than read. The
+lockout list under the weekly clock carries each instance's own seconds
+rather than pointing at the big clock: an extended lock, or a heroic's daily
+lock, keeps its own date. The footer is a child of the window, so a closed
+window stops the clock for free; a one-second throttle on `OnUpdate` writes a
+string only when it changes. Section P of the harness.
+
+**D19 — Questie is the quest database, and this module reads it.**
+*(Supersedes D13.)* D13 said there would be no quest database here because
+Questie already ships one, and that is still why there is none. What changed
+is the question. "How much of this zone have I done, and what is left?" is
+about every quest a zone holds for this character, and only a database knows
+the quests you have never seen. So the Zones tab and the world-map drawer
+read Questie's — the same race-, class- and blacklist-filtered set Questie
+draws from, with its corrections applied — and the Log tab stays exactly what
+D13 described: the live log, with or without Questie. One file,
+`CommanderQuestLogQuestie.lua`, names Questie; the engine
+(`CommanderQuestLogCompletion.lua`) is pure Lua over plain tables, so every
+rule runs under bare luajit; the window and the drawer only draw what the
+engine decided, so they cannot disagree about a number. Questie is an
+OptionalDep. Without it the Zones tab says so in one line and the Log is
+untouched (harness R). QuestieDB loaded without Questie counts as absent, not
+as a degraded mode: it has no blacklist and no character state, so every
+percentage it produced would be wrong.
+
+**D20 — Questie's verdict first, then a completionist's reading of it.**
+Whether a quest is done, in the log, available, locked or gone is Questie's
+call: `IsDoableVerbose`, whose third return is a `DoableStates` number. The
+adapter turns the number back into a NAME through a map built from the live
+enum at ready time, so a renumbering in a Questie update cannot shift every
+row by one, and it always passes `returnText = true`, without which every
+answer is AVAILABLE. The engine maps all 33 names. But Questie answers ONE
+reason — the first check that fails, in its own order, level before
+prerequisites before reputation — and a completionist view that only
+repeated it would promise a quest at the next ding and then file it under a
+chain. So every locked quest is re-examined from its own fields for every
+reason that holds ("Needs level 64 and "Report to Nazgrel""), with Questie's
+reason leading. And **missing beats locking**: a permanent reason Questie's
+early return hid behind a temporary one — outlevelled, the breadcrumb's
+target already done, past this point in the chain, a one-way reputation
+gone past its limit — makes the quest missed now, not at the level-up, so a
+ding never shrinks a zone's denominator. A quest with no verdict, or one this
+file does not know, goes through a raw classifier that mirrors the same
+checks; another race's or class's quest is not listed at all, as in Questie's
+own Journey. Engine harness B–E.
+
+**D21 — What 100% means.** The denominator is every quest this character
+has done or can still do in the zone: done, in the log, available now, and
+locked — behind a level, an earlier quest, a reputation, a skill or a choice
+still to be made. Listed but never counted, each under its own heading and
+each for a reason: **missed** quests, gone for good and each with why;
+**the other Aldor or Scryer side** (D23); **dailies, repeatables and
+seasonal** quests, which come round again and so have no "done";
+**optional** quests, Questie's `HIDE_ON_MAP` set, mostly sets removed in
+later patches and several mutually exclusive, which would otherwise leave
+some zones unable to reach 100% at all; **ignored** quests, the player's own
+per-character list (`CommanderQuestLogChar.Ignored`, never Questie's hidden
+list — writing that is writing Questie's state, D28); and **also starting
+here**, the dungeon, class and profession quests whose giver stands in the
+zone but which Questie files under their own heading. Three toggles move
+quests back in (Count Optional, Count Both Aldor and Scryers, Count Dungeon
+and Class Quests), each off by default for the reason its tooltip gives. The
+percentage FLOORS: 199 of 200 is 99%, and 100% appears only when the zone is
+actually finished. The breakdown ("Done 62 · In log 4 · Open 9 · Locked 12")
+reads the counted tally, whose four figures always add up to the
+denominator; rows are dimmed by whether they count, not by their bucket,
+because an exclusive group's other members keep an ordinary bucket and do
+not count. Engine harness G, J.
+
+**D22 — An exclusive choice is one slot, wherever it was made; and
+`exclusiveTo` is one-way.** Questie's own Journey counts a quest whose rival
+was taken as COMPLETED, so picking one of three moves its percentage by two.
+Here a group of quests that exclude each other is ONE slot. Before the
+choice, one member counts — one you can take now before one that is locked,
+then the lowest required level, then the lowest id — and the others read
+"One of 3 choices; only one counts". With one in the log, the others are
+locked as a choice. Once one is done, it counts and the others are missed
+("You chose ..."). The denominator does not move when you choose, which is
+what keeps 100% reachable.
+
+*(Revised 2026-10-04.)* Which quests are rivals is read the way Questie reads
+it: **a quest is blocked only by its OWN `exclusiveTo` list**
+(`IsDoableVerbose`, and the preGroup substitution in
+`IsPreQuestGroupFulfilled`). The data leans on that — 192 one-way pairs in
+TBC, most of them a breadcrumb naming the quest it leads to — and reading the
+relation both ways, as this decision first did through the adapter's reverse
+index, called quests missed that Questie offers ("Plainstrider Menace" after
+"Journey to the Crossroads", "Ending Their World" after "Vindicator's Rest").
+So each entry is decided by its own list; a slot is built only from MUTUAL
+edges (A names B and B names A); and the reverse index only ever names a
+choice. Groups still cross zone borders — Area 52's seven, the Netherwing
+drakes — and a member's own list still reaches peers outside the zone: a
+choice made in another zone moves that slot out of this one ("You chose X",
+the total drops by one), deliberately, as before. **Tiered lines.** The
+Caverns of Time rings are four lines of four tiers, every later tier naming
+the other lines' first quest; union-find over every edge made all sixteen
+one slot, and the pledge then moved the zone from 92% to 82%. Now the four
+pledges are the slot, and a tier whose list names nothing but that slot's
+members, all but one, FOLLOWS the one it leaves out: it counts only while its
+line holds the slot ("Follows "Defender's Pledge", one of 4 choices; only one
+line counts"), so the denominator is one line's length before and after.
+Engine harness H, H1, H2; adapter harness O.
+
+*(Round 2.)* The follower rule also matches breadcrumbs into a choice:
+"Muren Stormpike" leads to "Vejrek" and names the other three level-10
+warrior quests, and it was uncounted -- in the log, or done -- while the slot
+kept counting "Bartleby the Drunk", a line the player was not on. A follower
+in the log or done is never uncounted now, and its head takes the slot: the
+line the player started is the one that counts. And an uncounted slot member
+(an ignored pledge, an optional one) is still one of the slot's CHOICES for
+the follower test, though never its holder: ignoring one ring pledge used to
+turn every later tier of all four lines into an ordinary quest (Caverns of
+Time 17 to 26). Lines of unequal length still move the denominator by the
+difference, and the class quests have them: a later quest that names no
+choice counts until the choice is made (the Warrior view: 37, 38 with Muren
+Stormpike taken, 36 once Vejrek is done). Engine harness H2.
+
+**D23 — The Aldor and the Scryers are a rival side, not a missed one.** In
+TBC the other side can be ground back up, so its quests are not gone; but a
+completion figure should not assume you will grind it. They get their own
+bucket, "Other faction", outside the 100% unless the player asks for both
+sides. It is decided by a pure standing comparison — both standings known,
+the rival's higher — with no quest ids written down, and it is applied to
+every locked quest, not only Questie's MISSING_REPUTATION, because Questie
+reports a rival quest above your level as level-locked first and it would
+otherwise drop out of the count at the ding. The rule is mirrored through
+`requiredMaxRep`: ten pre-pledge quests (10017, 10019, 11094, 11095, 11097
+on the Aldor; 10024, 10025, 11099, 11100, 11101 on the Scryers) are offered
+only while you stay below Neutral with the side you then join, and without
+the mirror Shattrath could never reach 100% on either side. A standing the
+client cannot read never locks anything. *(2026-10-04.)* One tie-break: a
+character of any race but the Blood Elves and the Draenei starts both at
+Neutral, and with the standings level both sides used to count, so the
+pledge pulled about forty quests out of Netherstorm, Shadowmoon and
+Shattrath at once. With them level, the lower faction id (the Aldor) is the
+side that counts and the Scryers' quests are its rivals — "until you side
+with the Aldor or the Scryers only one side's quests count". *(Round 2.)* The
+tie first covered only gates still UNMET at it; a {Scryers, Neutral} minimum
+is met at 0/0 (Firewing Signets, Synthesis of Power, Voren'thal the Seer, the
+Sunfury Signets) and so is a maximum on the Aldor (Strained Supplies, the
+Scryers' own pre-pledge quest), so they counted and the Aldor pledge still
+pulled six out (real Questie, an unpledged human: 534 before it, 528 after).
+At an exact tie those are the other side's too (`TieSide`), except an open
+one with both sides counted, which stays open; an Aldor pledge now moves
+nothing (528 and 528). A Scryer pledge swaps the sets, and they are not the
+same size: Shattrath 26 to 25, Shadowmoon 134 to 135, and Netherstorm by a
+whole chain (116 to 133) when the Aldor's Netherstorm chain is already gone
+because another Area 52 breadcrumb was taken (D33) -- the tie is static and
+does not ask which side's chain is still reachable. And a rival quest behind
+a prerequisite gone for good (the other side's pledge, "Assist Exarch
+Orelis") is missed, not the other side's (D33). Engine harness F, Q.
+
+**D24 — A zone is a quest-log heading, read from Questie's `zoneMap`.**
+Which quests "belong" to a zone is the question the quest log itself already
+answers: the zone heading a quest is filed under, which is Questie's
+`zoneOrSort`. The adapter reads `QuestieJourney.zoneMap[areaId]` — Questie's
+own index, built once at login and already race-, class- and
+blacklist-filtered — with every id checked against `QuestPointers`, because
+a Questie bug files NPC ids in it too. The orphan subzone 3535 is folded into
+Hellfire (3483); dungeon wings are folded into the quest-log group Questie
+files most of their quests under (Hellfire Citadel 3563, Auchindoun 3917,
+Tempest Keep 3845, Caverns of Time 1941), and a group's view reads its wings'
+keys as well, because Questie files a few quests under the wing. The Coilfang
+wings are the exception: Questie files their quests under each wing's own
+key, so each is a zone of its own. Where a quest STARTS is a different fact
+and is kept as one: a row whose giver stands elsewhere says "starts in
+Shattrath City", quests filed elsewhere whose giver stands here are the
+uncounted "Also starting here" layer, and map pins go where the givers
+stand. Questie's ids are AreaTable areaIds and the world map's are uiMapIDs
+(area 1941 is the Caverns of Time, map 1941 is Eversong); every variable says
+which it holds, and the adapter is the only bridge. Adapter harness C, D, E.
+
+**D25 — The map drawer is a plain child of `WorldMapFrame`, and never sets a
+strata.** The question gets asked with the map open, and the maximized map is
+FULLSCREEN over this HIGH-strata window, so the answer has to live on the map
+too. The drawer is parented to `WorldMapFrame`, so it rides the map's own
+FULLSCREEN/MEDIUM switch; a strata of its own would leave it behind the
+maximized map or floating over the windowed one. It is anchored inside the
+`ScrollContainer`'s right edge, (-8, -40) to (-8, 8), clear of Questie's map
+button row, and Blizzard re-points that container in both modes, so the
+drawer follows every layout without knowing a size: 250 wide maximized, 220
+windowed. Its frame level is the container's plus 2200 or ten over the map's
+topmost pin level (`GetPinFrameLevelsManager`), whichever is higher, capped at
+9000: the pins' levels are absolute, from 2000 up, and on TBC the player
+arrow, the party dots, the corpse and the battlefield flags sit at 2753-2757,
+over a container-relative 2200 *(2026-10-04)*. No field on `WorldMapFrame` is ever
+assigned — the hooks are `hooksecurefunc` and `HookScript`, and the one write
+is a key added under `pinPools`, as HereBeDragons does — and nothing secure
+goes near the map, which would pull Blizzard's own resizing into combat
+protection. "Open in the quest log" closes the map first with `HideUIPanel`
+(Questie avoids `:Hide()` there for taint) and then opens the Zones tab on
+that quest — out of combat only: in combat `HideUIPanel` from addon code is
+refused and reported as blocked, so the window opens with a line saying to
+close the map with M. The open drawer covers the map's east quarter, so a
+quest pulsed from a row or from Show on Map has its pins lifted over the
+drawer for the pulse (the pin's `ApplyFrameLevel`), rather than pulsing
+unseen underneath it. The header tooltip says what the five groups leave out,
+and Focus on a quest with no row answers not found. The drawer lists five groups only — In your log, Open, Locked,
+Missed, Done (folded) — and leaves the uncounted headings to the Zones tab;
+on a continent it lists the zones with their percentages, worked out in the
+background. No LibStub and no Krowi button, which would mean a global frame
+name, a TOOLTIP strata and a library dependency. Map harness A, B, E.
+
+**D26 — Pins come from our own data provider, and Questie's icons are the one
+borrowed art.** The pins mark the quest givers Questie does NOT draw — the
+locked ones, and on request the done and the missed — and never one it does:
+a quest in Questie's `AvailableQuests` set gets no pin of ours whatever its
+status, so two icons never stack. The provider is a
+`MapCanvasDataProviderMixin`, and since the suite ships no XML the pin pool
+is HereBeDragons' recipe *as HBD runs it on this client*:
+`CreateUnsecuredRegionPoolInstance`, then the creation and reset functions
+set under both their old and new names, registered under `pinPools`.
+*(Corrected 2026-10-04.)* The first build used `CreateFramePool`, which on
+2.5.6 is the SECURE pool — a proxy that ignores writes to its fields — so
+every pin was a bare frame, `AcquirePin`'s `OnLoad` errored, and the bare
+frame stayed active for Blizzard's every-frame pin passes to error on, with
+no pin of ours ever drawn. The SPEC had cited HBD's overwrite and missed the
+branch above it. Where the unsecured pool is missing, `CreateFramePool` gets
+the mixin through its sixth argument, `postCreate`, which both pool
+generations honour. The map harness's pools are now the real ones' shape. Pins carry HBD's no-op `SetPassThroughButtons` (its in-combat
+fix) and take mouse motion only, so a click still reaches the map. The art
+is Questie's own icon files — available, grey available, the checkmark —
+which is the one exception to D11 beside the quest log's parchment: a pin
+exists only while Questie is loaded, so the files it draws are always there,
+and a giver drawn in Questie's style reads as one at a glance. The focus ring,
+the continent labels and the drawer are quads and plain words. Map harness C,
+F, H, K, N.
+
+**D27 — Waypoints go to TomTom, then Commander Orders, then the chat
+frame.** TomTom is what a player who installed it expects to see; Commander
+Orders' arrow is the suite's own, there whenever Orders is; and with neither,
+the coordinates are printed, because a Waypoint button that does nothing is
+worse than one that tells you where to go. Orders answering false (a map
+with no world coordinates) falls through to the chat line. Every Waypoint
+tooltip says which of the three will run before it is pressed. A quest in the
+log and ready goes to its turn-in; otherwise to its giver in the viewed zone,
+else the first one anywhere. Adapter harness K.
+*Superseded by D35 (1.5.0, 2026-10-04): TomTom left the suite, and Commander
+Orders 3.0 is the one path; the chat line stays as the refusal.*
+
+**D28 — Questie is read through its internals, behind feature checks and
+pcall; never written, never kept.** Questie publishes a ready signal and an
+update callback and no data, so the data is read from its modules behind
+`QuestieLoader._modules` — internal, working, and without a contract. The
+discipline that makes that safe: modules are looked up, never imported
+(`ImportModule` silently creates an empty module for a name it does not
+know); the ready callback runs inside Questie's own init coroutine, so it
+only schedules the work a frame later; calls that look like reads and are
+not — `IsDoable` (writes the autoBlacklist), `IsComplete` (scans every bag),
+`HideQuest` (writes the hidden list and redraws), `GetZonesWithQuests`
+(mutates and yields), `IsLevelRequirementsFulfilled` (caches by quest id and
+would poison Questie's map filter) — are never called, and the fake Questie
+the harnesses run on raises on each; tables Questie reassigns at runtime
+(`complete`, `currentQuestlog`, `QuestPointers`, `hiddenQuests`) are read
+through their module every time and never held; the client's
+`GetQuestTagInfo`, which answers nil on first ask and makes Questie schedule
+a retry timer per quest, is never touched (dungeon and raid tags come from
+where Questie files the quest). Every Questie call is pcall'd, and every
+public entry point that walks Questie's answers runs under pcall too, so a
+Questie update that changes a shape costs a section of the Zones tab, never a
+Lua error in the window; `/cql status` says what went wrong. Adapter harness
+A, B, N, P.
+
+**D29 — One generation number, stepped once per burst.** Everything cached
+is cached against a generation. Questie's update callback, QUEST_ACCEPTED,
+QUEST_TURNED_IN, QUEST_REMOVED, UPDATE_FACTION, SKILL_LINES_CHANGED,
+PLAYER_LEVEL_UP, an Ignore, a settings change and the log's set of ready
+quests changing all Bump; bumps within 0.25 s become one step and one call to
+each listener. The delay also lets Questie's own QUEST_TURNED_IN handler
+update `complete` first. Full engine views are kept for the last three zones;
+the three numbers a percentage needs are kept for every zone ever computed,
+so the zone menu and the continent labels never blink. A zone is computed on
+demand, synchronously, one at a time — about 150 quests — and never all at
+once: continent percentages are worked out one zone per 0.05 s tick, and the
+reverse exclusive index reads 400 quests per frame after ready and steps the
+generation when it is done. The window redraws through its own one-pass-per-
+frame queue (D10), the drawer coalesces to one redraw a frame.
+*(2026-10-04.)* A generation step no longer rewinds the background summary
+jobs: a zone menu's job outlived its menu and, rewound by every reputation
+kill, rebuilt whole zones twenty times a second through a dungeon. A job now
+finishes its pass against whatever generation each zone meets, and the drawer
+re-asks for what is not current on its own redraw. Summaries are built from
+facts without their givers (half the cost on real data), and land in the
+drawer at most four times a second. A reputation or skill change is bumped
+again 2.2 s later, after Questie's own 2 s bucket has refreshed the caches its
+verdicts read. "Ready to hand in" is read off the client's log
+(`GetQuestLogIndexByID`), not only the window's scan, so the drawer knows it
+with the window shut. *(Round 2.)* That call cannot index a quest under a
+heading collapsed in the stock log, and the scan does not cover it either
+(it expands first, D3), so `IsQuestComplete(questID)` is asked then, and
+believed only when it says complete. The late look after a reputation or
+skill change is trailing-edge: a change that arrives while it is pending,
+later than it covers, gets one more look a bucket after itself, so a second
+kill's reputation 1.2 s after the first is not read before Questie's bucket
+for it has run. Tier crossings never needed it (Questie refreshes at once on
+"You are now Friendly with ..."); in-tier thresholds and skills do. And on a map show the pins are drawn once, in the map's
+own provider pass. Adapter harness G, H, I, J, Q; map harness D, G, M.
+
+**D30 — The Zones tab is its own file with its own widgets.** The Log's rows
+and briefing are closures written for the live log (right-click tracks,
+objectives come off the client's selection), and threading a second mode
+through each of them would make every Log code path a mode switch — the
+regression risk this tab is not worth — and would spend the 200-local and
+60-upvalue budgets of a file that is already large. So
+`CommanderQuestLogZones.lua` builds its own tabs, toolbar set, zone card,
+navigator rows, briefing pools and action buttons inside the same frame, and
+the window shows one tab's widgets and hides the other's. The two share ink
+through `Q._kit`, which `CommanderQuestLogUI.lua` exports, because a second
+`Paper()` that drifted from the first is exactly how D16 would quietly come
+undone. Folds are separate namespaces: `ZoneCollapsed` for the Zones tab,
+`MapCollapsed` for the drawer, never the Log's `Collapsed`; Restore Defaults
+keeps all three, and the per-character ignore list too. Group titles are fixed
+strings because they are the fold keys, and a chain whose title collides with
+another is given a distinct one. The LEVEL and NAME groupings are flat lists
+in the engine's ascending order with no heading at all, so a fold made in the
+Guide cannot hide their rows. The new globals are few and named:
+`CommanderQuestLogChar` (the per-character saved variable),
+`CommanderQuestLog_OpenToZone` (the way in from the map drawer and
+`/cql zone`), and three frames — `CommanderQuestLogZoneGroupDrop` and
+`CommanderQuestLogZoneMenu`, because `UIDropDownMenuTemplate` names its
+children after its parent and will not work without one, and
+`CommanderQuestLogMapDrawer`, so `/dump` can reach the drawer. Window
+harness Q.
+
+**D31 — On the Zones tab, nothing selected means the zone.** The briefing
+with no selection is the zone's overview — the completion bar, the
+breakdown, NEXT UP, the chains, the missed and why — so a selection a filter,
+a search or a fold takes off the list falls back to it rather than to the
+first row (D6, kept: the briefing never shows a quest the list does not).
+Clicking the briefed row again, Escape on an empty search, or a click on the
+zone card also go back to it. A quest asked for by name — the map drawer,
+`CommanderQuestLog_OpenToZone` — is different: the caller wants that quest,
+so its search is cleared, the filter opened and its group unfolded. Each tab
+keeps its own search text in the one shared box, swapped with `SetText` on a
+tab change, which `OnTextChanged` sees as not user input. The Zones tab never
+moves the client's quest-log selection (D2): it reads a quest in the log only
+through `Q.ReadDetail`, and puts back an EMPTY selection that call leaves
+moved. A quest link or a tracker click asks for a quest in the log, so it
+lands on the Log tab whichever tab was up. *(2026-10-04.)* The same holds the
+other way: Open in Log asks for a quest by name, so the Log's own fold,
+filter and search are opened for it (`Q.RevealInLog`) rather than its
+re-pick briefing the first row. The Zones search matches quest names only —
+its headings are status groups, and "pick" used to list the whole "Pick up
+now" group — and the box's tooltip says which search it is. Each tab opens at
+its own top, and the zone card's inset follows whatever decides the Zones tab
+draws. *(Round 2.)* A quest asked for from outside — Open in Log, a quest
+link (`CommanderQuestLog_OpenToQuest`), the map drawer
+(`CommanderQuestLog_OpenToZone`) — also has its row scrolled into view, a
+third of the pane below the top, when it is off screen; the tab switch had
+just put the list at its top, and the last quest of a long log was briefed
+with its row 250 px below the fold. Only for those: a refresh never moves
+the player's own scrolling. Window harness Q, Q2.
+
+**D32 — Show on Map refuses in combat, and steps aside only for a windowed
+map.** Opening a Blizzard panel from addon code is the one thing the Zones tab
+does outside its own window, so it is refused in combat with a line saying
+so. Out of combat it opens the map on the zone and hands the drawer the
+selected quest and its zone, so the drawer can move the map itself if the
+`SetMapID` did not land. A maximized map is FULLSCREEN and covers the window,
+which is still where it was when the map closes; a windowed map is MEDIUM and
+this window (HIGH) would sit on top of it, so the window closes. Window
+harness Q.
+
+**D33 — A quest whose only way in is gone is missed; Riding is a lock.**
+Questie answers a quest behind a lost prerequisite with
+`NO_PREQUESTSINGLE`, a temporary verdict, so it stayed counted and locked for
+ever: an Aldor who took any other Area 52 breadcrumb can never do "Assist
+Exarch Orelis", the only way into sixteen Netherstorm quests, and a
+completionist Alliance run stopped at 86%. So after classifying, the engine
+walks the prerequisites itself: a locked quest whose every preSingle, or any
+preGroup member, is gone for good is missed ("Needs "Assist Exarch Orelis"
+(Shattrath City), which you can no longer get."), repeated until nothing
+moves, so a chain falls with its first link. Gone means missed in this view,
+or — outside it — Questie's own verdict being final (`char.isGone`: exclusive
+done, past in chain, skipped breadcrumb, outlevelled, blacklisted, disabled,
+another race or class). A preGroup member that a quest in its own exclusive
+list could still stand in for is never called gone, and an outside quest's
+own prerequisites are not walked: both err towards counting. *(Round 2.)*
+The other Aldor or Scryer side is walked too: its standing can be ground
+back, a lost pledge cannot, so "A Cure for Zahlia" behind "Allegiance to the
+Aldor" is missed for a Scryer rather than "gated on the faction you did not
+side with" -- and with both sides counted, Netherstorm no longer sits at 88%
+for ever (horde70: 146 counted, 130 now). Riding is the
+mirror case: Questie keeps riding-gated quests in their zone, every character
+can train it, and "no Riding skill line yet" is a lock ("Needs 225 Riding and
+level 70."), not a quest missed — or the denominator grew when the player
+trained it. Glowcap Mushrooms, capped below Friendly with Sporeggar and left
+out of Questie's one-way list ("TO DO CHECK THIS"), is on the adapter's own.
+Engine harness Q; adapter harness Q.
+
+**D34 — The zone menu pages a long category.** The Classic dropdown never
+scrolls and is not clamped to the screen: a level-2 list grows 16 per row
+and, near the bottom, flips to grow upward — off the top. At the window's
+default spot on a 768-unit screen 24 rows fit, and the Dungeons list holds
+34 (with Serpentshrine and Magtheridon's Lair, which Questie files quests
+under but leaves off its own Journey list). So a category over 20 zones is
+cut into pages, each its own row, and a category row keeps the menu open
+when clicked rather than hovered. *(Round 2.)* The cuts fall where the
+initial changes, nearest the even split: an even cut of the real 34 fell
+inside the R's ("A-R" and "R-Z", Razorfen on the second page), and two rows
+claiming one letter tell the player nothing. Now "Dungeons  A-O" (16) and
+"Dungeons  R-Z" (18). An initial is a whole UTF-8 character (a byte of
+"Ödland" was an invalid string on a deDE client), and where one letter runs
+past a page the rows are numbered as well ("(1/2)"). Window harness Q2;
+adapter harness Q.
+
+**D35 — Waypoints and zone routes go to Commander Orders, owned, with every
+spawn.** (1.5.0.) Commander Orders 3.0 replaced TomTom across the suite, so
+the TomTom-first chain of D27 is gone and so is the legacy
+`CommanderOrders_IssueOrder` (one account-wide slot that every caller
+overwrote). A Waypoint press calls `CommanderOrders.Add` with source
+"QuestLog" and key "quest:<id>": the quest owns ONE waypoint, and pressing
+again -- the giver first, the turn-in once the quest is ready -- moves it
+rather than stacking a second. It carries every placed spawn of its giver as
+`alternatives` (the zone's facts keep eight, a turn-in reads up to 32), so
+Orders points at the spawn nearest the player and re-picks as they move;
+TomTom was handed whichever spawn Questie listed first, which for a patrol is
+often the far end. Session only, Orders' default for a consumer: a quest
+waypoint is an errand, not a place to keep. Orders refusing -- absent, turned
+off, a map with no world position -- prints the place and a `/way` line (D27's
+"never do nothing" survives), and the tooltips name the path before the
+press, telling "turned off" apart from "not loaded". **Route Zone** on the
+Zones tab's action bar, and a right-click on the map drawer's header strip,
+hand Orders ONE nearest-first route through the givers of the zone's OPEN
+quests: the AVAILABLE bucket, the drawer's "Open" group, so ignored, daily,
+seasonal, optional and rival quests stay off it; a giver with several open
+quests is one stop; a giver standing outside the zone is still a stop,
+because its quest counts here; item starters have nowhere to go. The route is
+owned as (QuestLog, "open:<areaId>"), so routing the zone again replaces it.
+The button is greyed out without Orders rather than printing a dozen lines.
+Finally the adapter answers Orders' "entrance" question for DUNGEON maps from
+Questie's own dungeon table (`ZoneDB:GetDungeonLocation`), so a giver inside
+a dungeon, or a ghost's corpse in one, is pointed at the way in; only dungeon
+maps are put through Questie's uiMap-to-area bridge, whose fallback is a name
+match over every area. Two corrections over Questie (2026-10-04 review): its
+override table answers uiMap 246, The Shattered Halls on this build, with
+3713, The Blood Furnace (`uiMapIdToAreaId.lua:15` beats its correct base
+row), so a small known-bad table answers 246 with 3714 first and the Halls
+get their own door; and the map ASKED about may be Orphan-typed (6), because
+this build types The Black Morass, Old Hillsbrad, Hyjal Summit, Zul'Aman,
+Zul'Farrak, Zul'Gurub, Dire Maul and the Ruins of Ahn'Qiraj that way and
+every one has an explicit Questie row with a dungeon location; the walk to
+parent maps stays on Dungeon maps. Adapter harness K and O, window harness Q, map harness
+D and F, and the contract harness (questlog_orders_contract.lua) A-E, which runs
+the adapter against the real Orders: the dungeon giver getting its entrance,
+the nearest spawn winning, the route taken.
+
 ## Assumptions worth re-checking in game
+
+The Zones tab, the Questie adapter and the map drawer keep theirs in
+`ASSUMPTIONS.md`, each with a `/cql status` or `/dump` line to settle it.
 
 - **`HideUIPanel` inside `QuestLogFrame`'s `OnShow`.** This is the standard
   frame-replacement gesture and the harness covers the logic, but the UIPanel
@@ -138,6 +619,14 @@ generation stamp means a parchment picked after that is never moved again.
   or leaves a gap in the panel layout, defer the hide by a frame instead.
 - **`MAX_QUESTS`.** Read from the global with a fallback of 25, which is the
   era's cap either way; the readout is the only thing that depends on it.
+- **`C_DateAndTime.GetSecondsUntilWeeklyReset` on this client.** Present in
+  the binary and in the generated API docs, never seen answer in the field.
+  D18 guards it; if the weekly tooltip keeps saying "worked out from the
+  daily reset" on a US or EU realm, the API is answering something the guard
+  rejects, and the rejected value is worth printing once to see why.
+- **`GetGameTime` is server-local.** The offset derivation (and so the
+  computed weekly reset's weekday) rests on it. If the weekly clock lands on
+  the wrong day, check the offset first: `/dump CommanderQuestLog.ReadResets()`.
 - **`GetQuestLogTitle`'s third return.** Vanilla answered a tag string, this
   client answers a suggested party size. Both are carried rather than one being
   assumed, so a client that changes its mind degrades to a missing facts entry

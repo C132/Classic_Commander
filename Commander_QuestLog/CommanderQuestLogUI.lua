@@ -17,6 +17,15 @@
 -- make this read as a quest log rather than as a generic browser. The sheet
 -- comes in two materials: dark stone (the default, and the rest of the suite's
 -- weight) and the parchment of the stock log.
+--
+-- The window has two tabs. The Log is this file. The Zones tab -- a zone's
+-- every quest from Questie, with its completion -- is CommanderQuestLogZones.lua,
+-- which builds its own widgets in the same frame and draws with this file's
+-- ink through Q._kit. This file only dispatches: Q.Refresh scans the log in
+-- either tab (the Zones tab and the Questie adapter both read the scan), then
+-- hands the frame to whichever tab is up and puts the other one's widgets
+-- away. The Log's code path is otherwise the one it always was, which is the
+-- point of keeping the Zones tab out of it.
 
 CommanderQuestLog = CommanderQuestLog or {}
 local Q = CommanderQuestLog
@@ -40,6 +49,11 @@ local frame, navScroll, navChild, detailScroll, detailChild
 local navRows, rewardButtons, detailBlocks = {}, {}, {}
 local entries, rows, numQuests = {}, {}, 0
 local selectedKey, selectedEntry, selectedDetail
+-- A quest asked for from outside (Open in Log, a quest link): its row is
+-- brought into view after the next layout, at selectedTop in the navigator
+local revealSelection, selectedTop, selectedHeight = false, nil, nil
+-- Where the briefed quest is handed in, when Questie knows (nil without it)
+local selectedFinisher
 local searchText = ""
 local pendingRefresh = false
 local ApplyFraming
@@ -156,10 +170,13 @@ local function PaperHex(hex)
 end
 
 -- The console accent is picked against a dark UI, and the default one is
--- STEEL -- pure white. As a fill that is fine on any background; as TEXT on
--- parchment it IS the paper. So text takes the accent put on the paper. Fills
--- and hairlines keep calling Accent() directly, where a pale tint is exactly
--- what is wanted.
+-- STEEL -- pure white. As TEXT on parchment it IS the paper, and so is a
+-- white fill: a selection band, a rule, an underline or a chevron in white
+-- over cream is no mark at all. So anything drawn ON the sheet takes the
+-- accent put on the paper -- text and fills alike. Off paper this is Accent()
+-- itself, and a coloured accent keeps its hue on paper. Accent() is left for
+-- what never sits on the sheet (the drawer on the map); the hairline under
+-- the toolbar is on the sheet and takes this one.
 local function InkAccent()
     return Paper(Accent())
 end
@@ -192,6 +209,9 @@ end
 
 -- A chevron drawn from two rotated bars: pointing right when shut, down when
 -- open. Drawn rather than a texture file or a glyph, per the suite's rule.
+-- SetRotation turns counter-clockwise, so +pi/4 is "/" and -pi/4 is "\":
+-- shut is "\" over "/", meeting on the right (">"); open is "\" beside "/"
+-- ("v").
 local function EnsureChevron(button)
     if button.chevron then return button.chevron end
     local chevron = { Quad(button, "OVERLAY"), Quad(button, "OVERLAY") }
@@ -213,9 +233,60 @@ local function PointChevron(button, open)
     else
         top:SetPoint("CENTER", button, "LEFT", 9, 2)
         bottom:SetPoint("CENTER", button, "LEFT", 9, -2)
-        top:SetRotation(math.pi / 4)
-        bottom:SetRotation(-math.pi / 4)
+        top:SetRotation(-math.pi / 4)
+        bottom:SetRotation(math.pi / 4)
     end
+end
+
+-- On the paper a hovered tab or filter wears the highlight font's own white,
+-- which over the pale toolbar wash reads at about 1.6:1: the word fades out
+-- under the pointer. So on paper the hovered label is inked as well -- at
+-- once, and again a frame later so it lands after the client's own swap to
+-- the highlight font whichever runs first (the OnLeave re-ink's reasoning).
+-- Off the paper the white is the right hover and is left alone.
+local function InkOnHover(button)
+    if not (button and button.HookScript) then return end
+    local function InkLabel()
+        if not OnPaper() then return end
+        local fs = button.GetFontString and button:GetFontString()
+        if fs then fs:SetTextColor(Ink("strong")) end
+    end
+    button:HookScript("OnEnter", function()
+        InkLabel()
+        if C_Timer and C_Timer.After then C_Timer.After(0, InkLabel) end
+    end)
+end
+
+-- Bring a navigator row (top and height in the scroll child's units) into
+-- view, for a quest asked for from outside: a selection band forty rows below
+-- the fold briefs the right quest and shows the player nothing. Only when the
+-- row is off screen, with a third of the pane above it for context. A scroll
+-- frame learns a new range only when it next lays out, and its scrollbar
+-- clamps an offset past the old one, so the range is also worked out from
+-- the child's height and the offset is set once more a frame later -- unless
+-- something scrolled it for another reason in between (the serial).
+local function ScrollIntoView(scroll, child, top, height)
+    if not (scroll and top and scroll.SetVerticalScroll and scroll.GetHeight) then return end
+    local serial = (scroll.cqlRevealSerial or 0) + 1
+    scroll.cqlRevealSerial = serial
+    local function Apply()
+        if scroll.cqlRevealSerial ~= serial then return end
+        local view = scroll:GetHeight() or 0
+        if view <= 0 then return end
+        local offset = scroll.GetVerticalScroll and scroll:GetVerticalScroll() or 0
+        if top >= offset and top + (height or 0) <= offset + view then return end
+        local range = scroll.GetVerticalScrollRange and scroll:GetVerticalScrollRange() or 0
+        local content = child and child.GetHeight and child:GetHeight() or 0
+        range = math.max(range or 0, content - view, 0)
+        scroll:SetVerticalScroll(math.max(0, math.min(top - math.floor(view / 3), range)))
+    end
+    Apply()
+    if C_Timer and C_Timer.After then C_Timer.After(0, Apply) end
+end
+
+-- A scroll reset (a tab change) cancels a reveal still waiting on its frame
+local function CancelReveal(scroll)
+    if scroll then scroll.cqlRevealSerial = (scroll.cqlRevealSerial or 0) + 1 end
 end
 
 -- ---------------------------------------------------------------------------
@@ -362,6 +433,78 @@ function Q.Abandon()
 end
 
 -- ---------------------------------------------------------------------------
+-- Questie, when it is there
+--
+-- The Log is the live log and works without Questie (D13 still holds for
+-- everything the client can answer). What the client cannot answer is where
+-- a quest is handed in, and Questie can: with it loaded and ready, the
+-- briefing gains a "Turn in:" line and the action bar a Waypoint button. All
+-- of it goes through the adapter (Q.Questie), which is the only file that
+-- names Questie, and every answer is optional.
+-- ---------------------------------------------------------------------------
+
+local function QuestieReady()
+    local adapter = Q.Questie
+    if not (adapter and adapter.State) then return false end
+    local ok, state = pcall(adapter.State)
+    return ok and state == "READY"
+end
+
+-- One lookup per quest per adapter generation. A refresh runs on every
+-- objective tick; the answer changes only when Questie's does.
+local finisherCache = { generation = -1 }
+
+local function LogFinisher(entry)
+    local adapter = Q.Questie
+    if not (entry and adapter and adapter.Finisher) then return nil end
+    local questID = entry.questID
+    if type(questID) ~= "number" or questID <= 0 or not QuestieReady() then return nil end
+    local generation = adapter.generation or 0
+    if finisherCache.generation ~= generation then finisherCache = { generation = generation } end
+    local found = finisherCache[questID]
+    if found == nil then
+        found = adapter.Finisher(questID) or false
+        finisherCache[questID] = found
+    end
+    return found or nil
+end
+
+-- "Turn in: Force Commander Danath — Hellfire Peninsula (56.6, 66.4)"
+local function FinisherLine(finisher)
+    local text = "Turn in: " .. (finisher.name or "the quest giver")
+    if finisher.zoneName then text = text .. " \226\128\148 " .. finisher.zoneName end
+    if finisher.x and finisher.y then
+        text = text .. string.format(" (%.1f, %.1f)", finisher.x, finisher.y)
+    end
+    return text
+end
+
+-- Which way a Waypoint press will go, for the tooltips: they say so rather
+-- than leaving the player to find out by pressing it
+local WAYPOINT_WORDS = {
+    ORDERS = "the Commander Orders arrow, which picks the nearest spawn when there are several",
+    ORDERS_OFF = "the chat frame, as coordinates and a /way line (Commander Orders is turned off)",
+    PRINT = "the chat frame, as coordinates and a /way line (Commander Orders is not loaded)",
+}
+
+local function WaypointWhere()
+    local adapter = Q.Questie
+    local path = adapter and adapter.WaypointPath and adapter.WaypointPath() or "PRINT"
+    return WAYPOINT_WORDS[path] or WAYPOINT_WORDS.PRINT
+end
+
+function Q.LogWaypoint()
+    local finisher = selectedFinisher
+    local adapter = Q.Questie
+    if not (selectedEntry and finisher and finisher.x and adapter and adapter.Waypoint) then return end
+    adapter.Waypoint({
+        title = string.format("%s (%s)", selectedEntry.title or "Quest", finisher.name or "turn in"),
+        areaId = finisher.areaId, uiMapId = finisher.uiMapId, zoneName = finisher.zoneName,
+        x = finisher.x, y = finisher.y, questId = selectedEntry.questID, spawns = finisher.spawns,
+    })
+end
+
+-- ---------------------------------------------------------------------------
 -- Navigator rows
 -- ---------------------------------------------------------------------------
 
@@ -393,6 +536,9 @@ local function AcquireNavRow(position)
     row.title = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     row.title:SetPoint("LEFT", row.level, "RIGHT", 5, 0)
     row.title:SetJustifyH("LEFT")
+    -- One line, ending in an ellipsis when long: a wrapped title fills the
+    -- row and runs into the next. The row's tooltip has the whole title.
+    if row.title.SetWordWrap then row.title:SetWordWrap(false) end
 
     row.state = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     row.state:SetPoint("RIGHT", row, "RIGHT", -8, 0)
@@ -469,8 +615,10 @@ local function LayoutNav()
     local showLevels = db.ShowLevels ~= false
     local showProgress = db.ShowProgress ~= false
     local showCounts = db.ShowZoneCounts ~= false
-    local ar, ag, ab = Accent()
+    -- Selection, heading wash, chevrons, pips and bars all sit on the sheet
+    local ar, ag, ab = InkAccent()
     local y = 4
+    selectedTop, selectedHeight = nil, nil
 
     for position, item in ipairs(rows) do
         local row = AcquireNavRow(position)
@@ -565,6 +713,7 @@ local function LayoutNav()
             if selectedKey and entry.key == selectedKey then
                 row.selection:SetVertexColor(ar, ag, ab, 0.22)
                 row.selection:Show()
+                selectedTop, selectedHeight = y, row:GetHeight()
             end
         end
 
@@ -715,9 +864,42 @@ local function DetailWidth()
     return FRAME_W - NAV_W - PAD * 3 - 30
 end
 
+-- ---------------------------------------------------------------------------
+-- The kit
+--
+-- The Zones tab (CommanderQuestLogZones.lua) and the world-map drawer draw
+-- with the same ink, the same quads and the same panes as this file, and get
+-- them here rather than each growing a copy: a second Paper() that drifted
+-- from this one is exactly how D16 would quietly come undone. They are
+-- separate files because threading a second mode through AcquireNavRow and
+-- LayoutDetail would have turned every Log code path into a mode switch --
+-- and because Lua 5.1 caps a function at 60 upvalues and a file's main chunk
+-- at 200 locals, a budget this file should not spend on another tab.
+--
+-- Frame pieces are handed over as accessors, not values: the window is built
+-- lazily on its first show, long after this table is made.
+-- ---------------------------------------------------------------------------
+
+Q._kit = {
+    QUAD = QUAD, PAD = PAD, NAV_W = NAV_W, TOOLBAR_H = TOOLBAR_H, ACTIONS_H = ACTIONS_H,
+    ROW_H = ROW_H, QUEST_ROW_H = QUEST_ROW_H, QUEST_ROW_H_BAR = QUEST_ROW_H_BAR,
+    REWARD_SIZE = REWARD_SIZE, FRAME_W = FRAME_W, FRAME_H = FRAME_H,
+    Accent = Accent, Paper = Paper, PaperHex = PaperHex, Ink = Ink, InkAccent = InkAccent,
+    InkSet = InkSet, OnPaper = OnPaper, Quad = Quad, EnsureChevron = EnsureChevron,
+    PointChevron = PointChevron, QualityColor = QualityColor, DB = DB,
+    AcquireRewardButton = AcquireRewardButton, DetailWidth = DetailWidth,
+    WaypointWhere = WaypointWhere, InkOnHover = InkOnHover,
+    ScrollIntoView = ScrollIntoView, CancelReveal = CancelReveal,
+    Frame = function() return frame end,
+    NavChild = function() return navChild end,
+    DetailChild = function() return detailChild end,
+    NavScroll = function() return navScroll end,
+    DetailScroll = function() return detailScroll end,
+}
+
 local function LayoutDetail()
     local width = DetailWidth()
-    local ar, ag, ab = Accent()
+    local ar, ag, ab = InkAccent()
     local y = 6
     local blocks, rules, rewards = 1, 1, 1
 
@@ -773,6 +955,11 @@ local function LayoutDetail()
     if entry.daily then facts[#facts + 1] = "Daily" end
     if entry.watched then facts[#facts + 1] = "Tracked" end
     Body(table.concat(facts, "  \194\183  "), "GameFontDisableSmall")
+    -- Where it is handed in, when Questie knows. The refresh looked it up;
+    -- this only draws it (D2).
+    if selectedFinisher then
+        Body(FinisherLine(selectedFinisher), "GameFontHighlightSmall", { Ink("secondary") })
+    end
 
     if detail.timeLeft then
         local minutes = math.floor(detail.timeLeft / 60)
@@ -889,10 +1076,13 @@ end
 
 local FILTER_ORDER = { "ALL", "ACTIVE", "COMPLETE", "TRACKED" }
 
-local function UpdateToolbar(shown)
+-- The Log's filter labels and underlines. Its own function because a hover
+-- swaps each label to the highlight font and back, and the swap puts the
+-- font's own colour back over the ink; the filters' OnLeave calls this again.
+local function StyleLogFilters()
     if not frame then return end
     local db = DB()
-    local ar, ag, ab = Accent()
+    local ar, ag, ab = InkAccent()
     for _, key in ipairs(FILTER_ORDER) do
         local button = frame.filters[key]
         local active = (db.Filter or "ALL") == key
@@ -914,6 +1104,12 @@ local function UpdateToolbar(shown)
         end
         button.underline:SetVertexColor(ar, ag, ab, active and 0.95 or 0)
     end
+end
+
+local function UpdateToolbar(shown)
+    if not frame then return end
+    local ar, ag, ab = InkAccent()
+    StyleLogFilters()
 
     local cap = Q.MAX_QUESTS or 25
     local color = "88cc88"
@@ -935,6 +1131,7 @@ local function UpdateToolbar(shown)
     frame.shareBtn:SetEnabled(hasSelection and (selectedDetail == nil or selectedDetail.pushable))
     frame.announceBtn:SetEnabled(hasSelection)
     frame.abandonBtn:SetEnabled(hasSelection)
+    frame.waypointBtn:SetEnabled(hasSelection and selectedFinisher ~= nil and selectedFinisher.x ~= nil)
     frame.trackBtn:SetText(hasSelection and selectedEntry.watched and "Untrack" or "Track")
 
     if frame.titleAccent then
@@ -943,14 +1140,199 @@ local function UpdateToolbar(shown)
 end
 
 -- ---------------------------------------------------------------------------
--- Refresh
+-- The reset footer
+--
+-- Two countdowns under the navigator: the daily reset, when the dailies come
+-- back, and the weekly reset, when arena points are paid and raid lockouts
+-- clear. The model reads the clocks (and decides which weekly figure to
+-- believe); this only draws them, once a second, and only writes a string
+-- when it has changed.
 -- ---------------------------------------------------------------------------
+
+local function ShowingResets()
+    return DB().ShowResetTimers ~= false
+end
+
+-- The navigator's bottom edge: down to the sheet when the footer is off,
+-- level with the briefing's when the footer sits under it
+local function AnchorNavPane()
+    if not (frame and frame.navPane) then return end
+    local pane = frame.navPane
+    -- On the Zones tab the zone card sits over the navigator column and the
+    -- pane moves down to make room for it; the Log has nothing there
+    local inset = (Q.Zones and Q.Zones.NavTopInset and Q.Zones.NavTopInset()) or 0
+    pane:ClearAllPoints()
+    pane:SetPoint("TOPLEFT", frame.toolbar, "BOTTOMLEFT", 0, -8 - inset)
+    pane:SetWidth(NAV_W)
+    if ShowingResets() then
+        pane:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, PAD + 4 + ACTIONS_H + 4)
+    else
+        pane:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, PAD + 4)
+    end
+    if frame.resets then frame.resets:SetShown(ShowingResets()) end
+end
+
+local function SetIfChanged(fs, text)
+    if fs._last ~= text then
+        fs._last = text
+        fs:SetText(text)
+    end
+end
+
+-- Under a quarter hour the value warms up: a daily you meant to do is about
+-- to be gone, a lockout you were waiting on is about to open
+local SOON = 15 * 60
+
+function Q.UpdateResets()
+    if not (frame and frame.resets and ShowingResets()) then return end
+    local resets = Q.ReadResets()
+    frame._resets = resets
+    local lr, lg, lb = InkAccent()
+    for _, segment in ipairs({ frame.resetDaily, frame.resetWeekly }) do
+        segment.label:SetTextColor(lr, lg, lb)
+    end
+
+    local function Paint(segment, seconds)
+        SetIfChanged(segment.value, Q.FormatCountdown(seconds))
+        if type(seconds) ~= "number" then
+            segment.value:SetTextColor(Ink("faint"))
+        elseif seconds <= SOON then
+            segment.value:SetTextColor(Paper(1, 0.62, 0.25))
+        else
+            segment.value:SetTextColor(Ink("primary"))
+        end
+    end
+    Paint(frame.resetDaily, resets.daily)
+    Paint(frame.resetWeekly, resets.weekly)
+end
+
+function Q.ResetTooltip(owner, which)
+    local resets = frame and frame._resets or Q.ReadResets()
+    GameTooltip:SetOwner(owner, "ANCHOR_TOP")
+    if which == "daily" then
+        GameTooltip:SetText("Daily reset", 1, 1, 1)
+        if resets.daily then
+            GameTooltip:AddLine(string.format("Daily quests reset in %s.", Q.FormatCountdown(resets.daily)),
+                0.85, 0.85, 0.85, true)
+            local moment = Q.FormatResetMoment(resets.daily, resets.now, resets.offset)
+            if moment then GameTooltip:AddLine(moment .. ", server time.", 0.7, 0.7, 0.75) end
+        else
+            GameTooltip:AddLine("The client has not said when the dailies reset.", 0.7, 0.7, 0.75, true)
+        end
+        if resets.dailyDone and resets.dailyMax and resets.dailyMax > 0 then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(string.format("%d of %d daily quests done today.", resets.dailyDone, resets.dailyMax),
+                0.4, 0.75, 1)
+        end
+    else
+        GameTooltip:SetText("Weekly reset", 1, 1, 1)
+        if resets.weekly then
+            GameTooltip:AddLine(string.format("Arena points are paid and raid lockouts clear in %s.",
+                Q.FormatCountdown(resets.weekly)), 0.85, 0.85, 0.85, true)
+            local moment = Q.FormatResetMoment(resets.weekly, resets.now, resets.offset)
+            if moment then GameTooltip:AddLine(moment .. ", server time.", 0.7, 0.7, 0.75) end
+            if resets.weeklySource == "computed" then
+                GameTooltip:AddLine("Worked out from the daily reset and your region's reset day.",
+                    0.55, 0.55, 0.6, true)
+            end
+        else
+            GameTooltip:AddLine("The client has not said when the week resets.", 0.7, 0.7, 0.75, true)
+        end
+        local lockouts = Q.ReadLockouts()
+        if #lockouts > 0 then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Your lockouts", 1, 0.82, 0.3)
+            for _, lock in ipairs(lockouts) do
+                local name = lock.name
+                if lock.extended then name = name .. " (extended)" end
+                GameTooltip:AddDoubleLine(name, Q.FormatCountdown(lock.reset),
+                    lock.isRaid and 0.9 or 0.7, lock.isRaid and 0.9 or 0.7, lock.isRaid and 0.9 or 0.75,
+                    0.85, 0.85, 0.85)
+            end
+        end
+    end
+    GameTooltip:Show()
+end
+
+Q.AnchorNavPane = AnchorNavPane
+
+-- ---------------------------------------------------------------------------
+-- Refresh
+--
+-- One scan either way, then one tab draws. The Zones tab is up only when it
+-- is switched on and its file is loaded; a ViewMode of "ZONE" left over from
+-- a session where it was, or a Zones tab turned off in the settings, is the
+-- Log, with nothing else to clean up.
+-- ---------------------------------------------------------------------------
+
+local function ZoneMode()
+    local db = DB()
+    return db.ViewMode == "ZONE" and db.ShowZoneTab ~= false
+        and Q.Zones ~= nil and Q.Zones.Refresh ~= nil
+end
+
+local LOG_ACTIONS = { "trackBtn", "shareBtn", "announceBtn", "waypointBtn", "abandonBtn" }
+
+-- The Log's toolbar set and action bar, shown on the Log and put away while
+-- the Zones tab draws in the same space. Navigator rows and briefing blocks
+-- only ever need hiding here: the next Log pass shows what it uses.
+local function SetLogWidgetsShown(shown)
+    if not frame then return end
+    for _, key in ipairs(FILTER_ORDER) do frame.filters[key]:SetShown(shown) end
+    frame.sortDrop:SetShown(shown)
+    frame.countHit:SetShown(shown)
+    for _, name in ipairs(LOG_ACTIONS) do
+        if frame[name] then frame[name]:SetShown(shown) end
+    end
+    if shown then return end
+    for _, row in ipairs(navRows) do row:Hide() end
+    for _, pool in pairs(detailBlocks) do
+        for _, block in ipairs(pool) do block:Hide() end
+    end
+    for _, button in ipairs(rewardButtons) do button:Hide() end
+    if navChild and navChild.emptyFS then navChild.emptyFS:Hide() end
+end
 
 function Q.Refresh()
     if not frame or not frame:IsShown() then return end
     local db = DB()
 
     entries, numQuests = Q.Scan()
+    -- The adapter reads "ready to turn in" off the live log for both tabs,
+    -- so it hears every scan whichever tab is up
+    if Q.Questie and Q.Questie.SetLogEntries then Q.Questie.SetLogEntries(entries) end
+
+    local mode = ZoneMode() and "ZONE" or "LOG"
+    if frame._mode ~= mode then
+        frame._mode = mode
+        AnchorNavPane()
+        -- Both tabs draw into the same two scroll frames, so the offset the
+        -- other tab left would otherwise open this one part-way down (clamped
+        -- to the new range): the top of the log off screen. Each tab starts
+        -- at its top.
+        if navScroll and navScroll.SetVerticalScroll then navScroll:SetVerticalScroll(0) end
+        if detailScroll and detailScroll.SetVerticalScroll then detailScroll:SetVerticalScroll(0) end
+        CancelReveal(navScroll)
+        -- Each tab keeps its own search. The box is shared, so a tab change
+        -- puts that tab's text in it; SetText arrives at OnTextChanged as NOT
+        -- user input, which is what keeps it out of the other tab's search.
+        if frame.searchBox then
+            local text = searchText
+            if mode == "ZONE" and Q.Zones.SearchText then text = Q.Zones.SearchText() or "" end
+            frame.searchBox:SetText(text)
+        end
+    end
+    -- A reveal asked for (RevealInLog, OpenToQuest) is this pass's to do
+    local reveal = revealSelection
+    revealSelection = false
+    if mode == "ZONE" then
+        SetLogWidgetsShown(false)
+        Q.Zones.Refresh(entries)
+        Q.UpdateResets()
+        return
+    end
+    if Q.Zones and Q.Zones.HideAll then Q.Zones.HideAll() end
+    SetLogWidgetsShown(true)
 
     -- Re-find the selection by key. The index it had is meaningless after any
     -- accept or turn-in; the key survives both.
@@ -993,6 +1375,7 @@ function Q.Refresh()
     end
 
     selectedDetail = selectedEntry and Q.ReadDetail(selectedEntry.index) or nil
+    selectedFinisher = LogFinisher(selectedEntry)
     -- The reward tooltips read from the SELECTED log entry, so it is left
     -- pointing at the briefed quest for as long as the window is up
     if selectedEntry and SelectQuestLogEntry then
@@ -1000,8 +1383,10 @@ function Q.Refresh()
     end
 
     LayoutNav()
+    if reveal then ScrollIntoView(navScroll, navChild, selectedTop, selectedHeight) end
     LayoutDetail()
     UpdateToolbar(shown)
+    Q.UpdateResets()
 end
 
 local function QueueRefresh()
@@ -1180,6 +1565,15 @@ function ApplyFraming(force)
             end
         end
     end
+    -- The toolbar strip follows the panes: the filter labels and the count on
+    -- it are ink on the paper (faint 3.3:1, secondary 5.7:1 against the wash)
+    if frame.toolbarBg then
+        if parchment then
+            frame.toolbarBg:SetVertexColor(0.30, 0.20, 0.08, 0.10)
+        else
+            frame.toolbarBg:SetVertexColor(0, 0, 0, 0.45)
+        end
+    end
 end
 
 Q.ApplyFraming = ApplyFraming
@@ -1224,11 +1618,11 @@ local function EnsureFrame()
     toolbar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -30)
     toolbar:SetHeight(TOOLBAR_H)
 
-    -- A dark strip under the toolbar, so every piece of text in this window
-    -- sits on dark. Both panes carry their own dark inset; without this the
-    -- filter labels and the count would be the only text on the PARCHMENT,
-    -- and Blizzard's disabled font is a mid-grey that all but disappears on
-    -- tan. (Commander_Oracle learned the same thing over grass.)
+    -- A strip under the toolbar, tinted by ApplyFraming like the two panes:
+    -- dark on the dark skins, a thin wash of ink on the paper. It was dark on
+    -- every skin once (D14), when the labels were light; since D16 they are
+    -- ink on the paper, and ink on a 45%-black strip over cream reads at about
+    -- 1.2:1 -- the filters all but vanished.
     frame.toolbarBg = Quad(frame, "BACKGROUND")
     frame.toolbarBg:SetPoint("TOPLEFT", toolbar, "TOPLEFT", -4, 3)
     frame.toolbarBg:SetPoint("BOTTOMRIGHT", toolbar, "BOTTOMRIGHT", 4, -3)
@@ -1261,6 +1655,12 @@ local function EnsureFrame()
             Q.Refresh()
         end)
         Commander.UI.AttachTooltip(button, spec.label, spec.tooltip, "ANCHOR_BOTTOM")
+        -- Re-ink after a hover, a frame later so it lands after the client's
+        -- own font swap whichever runs first; and on paper, during it
+        button:HookScript("OnLeave", function()
+            if C_Timer and C_Timer.After then C_Timer.After(0, StyleLogFilters) else StyleLogFilters() end
+        end)
+        InkOnHover(button)
         frame.filters[key] = button
         previous = button
     end
@@ -1270,14 +1670,18 @@ local function EnsureFrame()
     frame.searchBox:SetPoint("LEFT", previous, "RIGHT", 14, 0)
     frame.searchBox:SetAutoFocus(false)
     frame.searchBox:SetMaxLetters(60)
+    -- One box, two searches: the text typed here belongs to whichever tab is
+    -- up. A tab change swaps the box's text with SetText, which this handler
+    -- sees as not user input and leaves alone.
     frame.searchBox:SetScript("OnTextChanged", function(self, userInput)
         if not userInput then return end
-        searchText = self:GetText() or ""
+        local text = self:GetText() or ""
+        if ZoneMode() then Q.Zones.SetSearch(text) else searchText = text end
         Q.Refresh()
     end)
     frame.searchBox:SetScript("OnEscapePressed", function(self)
         self:SetText("")
-        searchText = ""
+        if ZoneMode() then Q.Zones.EscapeSearch() else searchText = "" end
         self:ClearFocus()
         Q.Refresh()
     end)
@@ -1288,8 +1692,12 @@ local function EnsureFrame()
     frame.searchBox:HookScript("OnTextChanged", function(self)
         ghost:SetShown((self:GetText() or "") == "")
     end)
-    Commander.UI.AttachTooltip(frame.searchBox, "Search the log",
-        "Matches a quest's name, its zone, and the text of its objectives.", "ANCHOR_BOTTOM")
+    -- One box, two searches, two answers: the Zones tab matches names only
+    -- (its headings are status groups, not zones)
+    Commander.UI.AttachTooltip(frame.searchBox, "Search", function()
+        if ZoneMode() then return "Matches a quest's name, in the zone on the card." end
+        return "Matches a quest's name, its zone, and the text of its objectives."
+    end, "ANCHOR_BOTTOM")
 
     frame.sortDrop = CreateFrame("Frame", "CommanderQuestLogSortDrop", toolbar, "UIDropDownMenuTemplate")
     frame.sortDrop:SetPoint("LEFT", frame.searchBox, "RIGHT", -6, -2)
@@ -1335,8 +1743,9 @@ local function EnsureFrame()
     local navPane = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.navPane = navPane
     navPane:SetPoint("TOPLEFT", toolbar, "BOTTOMLEFT", 0, -8)
-    navPane:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, PAD + 4)
     navPane:SetWidth(NAV_W)
+    -- Its bottom edge depends on whether the reset footer is under it, so it
+    -- is anchored by AnchorNavPane and re-anchored when the setting changes
     if navPane.SetBackdrop then
         navPane:SetBackdrop(INSET_BACKDROP)
         navPane:SetBackdropColor(0, 0, 0, 0.5)
@@ -1361,7 +1770,10 @@ local function EnsureFrame()
     -- The briefing
     local detailPane = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.detailPane = detailPane
-    detailPane:SetPoint("TOPLEFT", navPane, "TOPRIGHT", 8, 0)
+    -- Hung off the toolbar, not off the navigator's top right: on the Zones
+    -- tab the navigator moves down under the zone card, and the briefing
+    -- keeps its full height. On the Log the two anchors are the same place.
+    detailPane:SetPoint("TOPLEFT", toolbar, "BOTTOMLEFT", NAV_W + 8, -8)
     detailPane:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD, PAD + 4 + ACTIONS_H + 4)
     if detailPane.SetBackdrop then
         detailPane:SetBackdrop(INSET_BACKDROP)
@@ -1420,10 +1832,60 @@ local function EnsureFrame()
         function() Q.Announce() end)
     frame.announceBtn:SetPoint("LEFT", frame.shareBtn, "RIGHT", 4, 0)
 
+    ActionButton("waypointBtn", "Waypoint", 80,
+        function()
+            return "Set a waypoint to where this quest is handed in. Needs Questie, which knows where the quest giver stands; greyed out without it. Goes to "
+                .. WaypointWhere() .. "."
+        end,
+        function() Q.LogWaypoint() end)
+    frame.waypointBtn:SetPoint("LEFT", frame.announceBtn, "RIGHT", 4, 0)
+
     ActionButton("abandonBtn", "Abandon", 82,
         "Drop this quest. Asks first unless you have turned the confirmation off.",
         function() Q.Abandon() end)
     frame.abandonBtn:SetPoint("RIGHT", actions, "RIGHT", 0, 0)
+
+    -- The reset footer, under the navigator and level with the action bar:
+    -- the daily clock on the left, the weekly clock on the right. Two mouse
+    -- frames because a FontString cannot carry a tooltip, and two rather
+    -- than one because each clock says something different on hover.
+    local resets = CreateFrame("Frame", nil, frame)
+    frame.resets = resets
+    resets:SetPoint("TOPLEFT", navPane, "BOTTOMLEFT", 0, -4)
+    resets:SetPoint("TOPRIGHT", navPane, "BOTTOMRIGHT", 0, -4)
+    resets:SetHeight(ACTIONS_H)
+
+    local function ResetSegment(name, side, label)
+        local hit = CreateFrame("Frame", nil, resets)
+        hit:SetHeight(ACTIONS_H)
+        hit:SetWidth(math.floor(NAV_W / 2))
+        hit:SetPoint(side, resets, side, 0, 0)
+        hit:EnableMouse(true)
+        hit.label = hit:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        hit.label:SetPoint("LEFT", hit, "LEFT", side == "LEFT" and 4 or 8, 0)
+        hit.label:SetText(label)
+        hit.value = hit:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        hit.value:SetPoint("LEFT", hit.label, "RIGHT", 5, 0)
+        hit.value:SetJustifyH("LEFT")
+        hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        frame[name] = hit
+        return hit
+    end
+    ResetSegment("resetDaily", "LEFT", "Dailies")
+    ResetSegment("resetWeekly", "RIGHT", "Weekly")
+    frame.resetDaily:SetScript("OnEnter", function(self) Q.ResetTooltip(self, "daily") end)
+    frame.resetWeekly:SetScript("OnEnter", function(self) Q.ResetTooltip(self, "weekly") end)
+
+    -- One tick a second while the window is up. The footer is a child of the
+    -- window, so a hidden window stops the clock for free.
+    resets._elapsed = 0
+    resets:SetScript("OnUpdate", function(self, elapsed)
+        self._elapsed = self._elapsed + (elapsed or 0)
+        if self._elapsed < 1 then return end
+        self._elapsed = 0
+        Q.UpdateResets()
+    end)
+    AnchorNavPane()
 
     -- Scale grip, matching the shared window chrome's
     local grip = CreateFrame("Button", nil, frame)
@@ -1454,9 +1916,19 @@ local function EnsureFrame()
     end)
     Commander.UI.AttachTooltip(grip, "Resize", "Drag to resize the window.", "ANCHOR_LEFT")
 
+    -- The Log / Zones tabs, in the title band's free top left. Zones builds
+    -- them (and everything else of its own) so this file need not know them.
+    if Q.Zones and Q.Zones.EnsureTabs then Q.Zones.EnsureTabs(frame) end
+
     frame:SetScript("OnShow", function()
         ApplyFraming(true)
         Q.ApplyPosition()
+        -- A Restore Defaults made while the window was shut may have put the
+        -- reset footer back; the navigator's anchors follow it here
+        AnchorNavPane()
+        -- The lockout list is what the client last heard; ask for it fresh so
+        -- the weekly tooltip is not a login-old answer
+        if RequestRaidInfo then RequestRaidInfo() end
         if UIDropDownMenu_SetSelectedValue then
             local sort = DB().Sort or "LOG"
             UIDropDownMenu_SetSelectedValue(frame.sortDrop, sort)
@@ -1549,14 +2021,94 @@ function Q.Select(titleOrKey)
 end
 
 -- Open the window with a named quest selected, for other modules and for the
--- takeover path (a quest link, an objective tracker click)
+-- takeover path (a quest link, an objective tracker click). A quest in the
+-- log is a Log question, so it lands on the Log whichever tab was up.
+--
+-- It refreshes whatever the index turns out to be. Show() on a window that is
+-- already up fires no OnShow, so a header or a stale index used to leave the
+-- Zones tab's widgets drawn under a Log ViewMode until the next event.
 function CommanderQuestLog_OpenToQuest(index)
+    if DB().ViewMode == "ZONE" then DB().ViewMode = "LOG" end
     CommanderQuestLog_Show()
-    if not (index and GetQuestLogTitle) then return end
-    local title, _, _, isHeader, _, _, _, questID = GetQuestLogTitle(index)
-    if title and not isHeader then
-        selectedKey = Q.KeyFor({ questID = questID, title = title })
+    if index and GetQuestLogTitle then
+        local title, _, _, isHeader, _, _, _, questID = GetQuestLogTitle(index)
+        if title and not isHeader then
+            selectedKey = Q.KeyFor({ questID = questID, title = title })
+            -- ...and its row in view, not wherever the list was scrolled
+            revealSelection = true
+        end
+    end
+    Q.Refresh()
+end
+
+-- ---------------------------------------------------------------------------
+-- The two tabs
+-- ---------------------------------------------------------------------------
+
+-- "LOG" or "ZONE". Only the setting moves here; the next refresh re-anchors
+-- the navigator and swaps the search box's text (see Q.Refresh).
+local function SwitchMode(mode)
+    local db = DB()
+    if mode == "ZONE" and not (Q.Zones and db.ShowZoneTab ~= false) then mode = "LOG" end
+    db.ViewMode = mode
+end
+
+function Q.SetViewMode(mode)
+    SwitchMode(mode)
+    Q.Refresh()
+end
+
+-- The Log on a quest asked for by name (the Zones tab's Open in Log), whatever
+-- the Log's own fold, filter or search was hiding: the search is cleared, the
+-- filter opened when it would hide the quest, and its zone unfolded, so the
+-- re-pick in Q.Refresh (D6) finds it on screen instead of briefing the first
+-- row, or nothing. The Log's side of D31.
+function Q.RevealInLog(key)
+    local db = DB()
+    if #entries == 0 then entries, numQuests = Q.Scan() end
+    for _, entry in ipairs(entries) do
+        if not entry.isHeader and entry.key == key then
+            searchText = ""
+            if frame and frame.searchBox then frame.searchBox:SetText("") end
+            if type(db.Collapsed) == "table" and entry.header then db.Collapsed[entry.header] = nil end
+            local filter = db.Filter or "ALL"
+            if (filter == "ACTIVE" and entry.isComplete) or (filter == "COMPLETE" and not entry.isComplete)
+                or (filter == "TRACKED" and not entry.watched) then
+                db.Filter = "ALL"
+            end
+            break
+        end
+    end
+    SwitchMode("LOG")
+    -- The row brought into view too: the quest may sit far below the fold
+    revealSelection = true
+    local found = Q.Select(key)
+    if not found then revealSelection = false end
+    return found
+end
+
+function Q.ViewMode()
+    return ZoneMode() and "ZONE" or "LOG"
+end
+
+-- The Zones tab on a zone, for the map drawer and /cql zone. areaId is
+-- Questie's AREA id (not a uiMapID); nil follows the zone the player stands
+-- in. questId, when given, is selected and brought into view.
+function CommanderQuestLog_OpenToZone(areaId, questId)
+    if not Enabled() then
+        print("Commander Quest Log: the module is switched off in its settings.")
+        return
+    end
+    local zones = Q.Zones
+    if not (zones and zones.PrepareOpen and zones.PrepareOpen(areaId, questId)) then
+        CommanderQuestLog_Show()
+        return
+    end
+    SwitchMode("ZONE")
+    if frame and frame:IsShown() then
         Q.Refresh()
+    else
+        CommanderQuestLog_Show()
     end
 end
 
@@ -1616,10 +2168,16 @@ events:RegisterEvent("PLAYER_LEVEL_UP")
 events:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
         InstallTakeover()
+        -- The adapter also starts itself at login; asking twice is harmless
+        if Q.Questie and Q.Questie.Init then Q.Questie.Init() end
         Commander.AddListener(COMMANDER_QUESTLOG_EVENTS.UPDATE, function()
             if frame and frame:IsShown() then
                 ApplyFraming(true)
                 Q.ApplyPosition()
+                -- Restore Defaults rewrites ShowResetTimers without going
+                -- through the checkbox's setter, so the footer and the
+                -- navigator's bottom edge are put right here too
+                AnchorNavPane()
                 Q.Refresh()
             end
         end)
