@@ -97,10 +97,15 @@ option's tooltip says so.
 Both are how Commander_Bags reads bags on this client. The module carries the pre-`C_Container`
 names as fallbacks anyway.
 
-## A9 — TomTom's `AddWaypoint(uiMapID, x, y, opts)` takes fractions and the uiMapIDs in `D.ZONES` are this build's
+## A9 — The uiMapIDs in `D.ZONES` are this build's, and Commander Orders takes them with 0..1 coordinates
 
-The zone ids came from this build's `UiMap` table (Ashenvale 1440 … Shattrath 1955). Without TomTom
-the Go button prints the coordinates to chat, which is the same information.
+The zone ids came from this build's `UiMap` table (Ashenvale 1440 … Shattrath 1955); the Go buttons
+and Route This Trip hand them to `CommanderOrders.Add` / `AddRoute` with the coordinates divided by
+100 (Orders' convention, which was TomTom's). A wrong id is not silent: Orders refuses a map with no
+world position, and the button then prints the place and its `/way` line instead. Without Commander
+Orders, or with Set Waypoints off, the same line is printed, which is the same information. Check
+by pressing Go on Kulwia (Horde, Stonetalon) or Dalria (Alliance, Ashenvale): the arrow should
+point at Sun Rock Retreat or Astranaar.
 
 ## A10 — `GetFactionInfoByID` returns the standing index as its third value
 

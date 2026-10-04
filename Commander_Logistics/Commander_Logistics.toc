@@ -2,11 +2,12 @@
 ## Category: Commander
 ## Title: Commander Logistics
 ## Author: Devin
-## Version: 2.1.0
-## Notes: Automated supply lines: sells junk and repairs your gear at any vendor, with a quartermaster's report.
+## Version: 2.2.0
+## Notes: Automated supply lines: sells junk and repairs your gear at any vendor, with a quartermaster's report. Remembers every repair vendor you open, so Nearest Repair (and Commander Adjutant's low-durability alert) can point the Commander Orders arrow at the closest one.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderLogisticsDB
 ## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Orders
 
 CommanderLogisticsDB.lua
 CommanderLogistics.lua

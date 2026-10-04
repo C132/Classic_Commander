@@ -25,6 +25,15 @@
 -- FADING under an expiring Hand, plain REFRESH once it clears) and the
 -- one-blessing-per-target rule. Plus the Hand strip on the same machinery the
 -- hots ride, and the aura/seal/known-only-cooldown banner.
+-- 5.41.0 adds "Arrow to them" (Commander Orders follows an ally): every run
+-- drives /cpf arrow, the refusals, the no-Orders /way line and the roster
+-- tracking (a reshuffle re-points the follow at the same GUID without taking
+-- the arrow back, someone who left is unfollowed, a follow Orders dropped is
+-- not resurrected); the clickcast run binds Shift+Right to it and dispatches
+-- the row's custom action type the way SecureTemplates.lua does, in combat,
+-- and as a PHYSICAL click too: both registered phases through
+-- SecureUnitButton_OnClick's ungated dispatch, one follow and one chat line
+-- per click, on the phase ActionButtonUseKeyDown names.
 
 local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
@@ -807,6 +816,180 @@ Fire("BAG_UPDATE_DELAYED")
 CHECK(#caughtErrors == 0, "login runs clean", caughtErrors[1])
 
 -- ===========================================================================
+-- "Arrow to them" (5.41.0): Commander Orders follows an ally
+-- ===========================================================================
+-- Shared by both runs: the sorted run drives /cpf arrow and the roster
+-- tracking, the click-cast run drives the binding through the row's custom
+-- secure action type. Commander Orders is a stub that records what it is
+-- handed and answers Get the way the real API does (a copy with kind and
+-- unit); the real Orders accepting the same spec is checked in
+-- Commander_Logistics/Harness/logistics_orders_smoke.lua section G.
+local groupBase       -- the mock's own unit functions, under any nesting
+local function WithGroup(members, raid, body)
+    -- members: { token = { name, guid } }; restored afterwards. A nested
+    -- group REPLACES the outer one (its fallbacks are the mock's own
+    -- functions, never the outer scenario's members)
+    local sE, sG, sN, sU, sR, sI, sC = UnitExists, UnitGUID, UnitName, UnitIsUnit, IsInRaid, IsInGroup,
+        GetNumGroupMembers
+    local outermost = groupBase == nil
+    if outermost then groupBase = { sE, sG, sN } end
+    local bE, bG, bN = groupBase[1], groupBase[2], groupBase[3]
+    UnitExists = function(u)
+        if members[u] then return true end
+        if u == "target" and members.__target then return true end
+        return bE(u)
+    end
+    UnitGUID = function(u)
+        if members[u] then return members[u][2] end
+        if u == "target" and members.__target then return members[members.__target][2] end
+        return bG(u)
+    end
+    UnitName = function(u)
+        if members[u] then return members[u][1] end
+        if u == "target" and members.__target then return members[members.__target][1] end
+        return bN(u)
+    end
+    UnitIsUnit = function(a, b)
+        if a == "target" and members.__target then a = members.__target end
+        if b == "target" and members.__target then b = members.__target end
+        return a == b
+    end
+    IsInRaid = function() return raid end
+    IsInGroup = function() return true end
+    GetNumGroupMembers = function() local n = 1 for k in pairs(members) do if k ~= "__target" then n = n + 1 end end return n end
+    local ok, err = pcall(body)
+    UnitExists, UnitGUID, UnitName, UnitIsUnit, IsInRaid, IsInGroup, GetNumGroupMembers = sE, sG, sN, sU, sR, sI, sC
+    if outermost then groupBase = nil end
+    if not ok then CHECK(false, "arrow: the scenario ran", err) end
+end
+
+local function ArrowStub()
+    local log = { adds = {}, removes = {}, answer = { "w9" } }
+    local live = {}
+    CommanderOrders = {
+        Add = function(spec)
+            log.adds[#log.adds + 1] = spec
+            local uid = log.answer[1]
+            if uid then live[uid] = { uid = uid, kind = spec.kind, unit = spec.unit, title = spec.title } end
+            return unpack(log.answer)
+        end,
+        Get = function(uid)
+            local wp = live[uid]
+            if not wp then return nil end
+            return { uid = wp.uid, kind = wp.kind, unit = wp.unit, title = wp.title }
+        end,
+        Remove = function(uid) log.removes[#log.removes + 1] = uid; live[uid] = nil; return true end,
+    }
+    log.live = live
+    return log
+end
+
+local function LastPrintLine() return printLog[#printLog] or "" end
+
+-- The sorted run: /cpf arrow, refusals, the fallback line, the roster
+local function CheckArrowSorted()
+    local icon, label = CommanderPartyFrames_BindDisplay("ARROW")
+    CHECK(icon ~= nil and label == "Arrow to them (Commander Orders)",
+        "arrow: the binding menu offers Arrow to them, with an icon", tostring(label))
+    local offered = false
+    for _, a in ipairs(CommanderPartyFrames_GetClickActions()) do
+        if a.value == "ARROW" then offered = true end
+    end
+    CHECK(offered, "arrow: ...as one of the non-spell click actions")
+
+    local errs0 = #caughtErrors
+    local log = ArrowStub()
+    WithGroup({ party1 = { "Alice", "g-alice" }, party2 = { "Bob", "g-bob" }, __target = "party2" }, false, function()
+        -- /cpf arrow follows the target, by its group token
+        local slash = SlashCmdList["COMMANDERUI_PARTYFRAMES"]
+        CHECK(type(slash) == "function", "arrow: /cpf is registered")
+        if slash then slash("arrow") end
+        local s = log.adds[#log.adds]
+        CHECK(s ~= nil, "arrow: /cpf arrow hands Orders a follow")
+        if s then
+            CHECK(s.kind == "unit" and s.unit == "party2", "arrow: kind unit on the target's group token",
+                tostring(s.kind) .. " " .. tostring(s.unit))
+            CHECK(s.title == "Bob", "arrow: titled with their name", tostring(s.title))
+            CHECK(s.source == "PartyFrames" and s.key == "follow", "arrow: one follow, owned by the board")
+            CHECK(s.setArrow == true, "arrow: asking takes the arrow")
+        end
+        CHECK(LastPrintLine():find("the arrow follows Bob", 1, true), "arrow: one line says so", LastPrintLine())
+
+        -- The roster reshuffles: Bob is party1 now. The follow moves with
+        -- him, without taking the arrow back
+        local n = #log.adds
+        WithGroup({ party1 = { "Bob", "g-bob" }, party2 = { "Alice", "g-alice" } }, false, function()
+            Fire("GROUP_ROSTER_UPDATE")
+        end)
+        s = log.adds[#log.adds]
+        CHECK(#log.adds == n + 1 and s.unit == "party1" and s.key == "follow" and s.setArrow == false,
+            "arrow: a reshuffle re-points the follow at the same person, never re-taking the arrow",
+            s and tostring(s.unit) .. " " .. tostring(s.setArrow))
+        -- A roster update that changes nothing about him adds nothing
+        n = #log.adds
+        WithGroup({ party1 = { "Bob", "g-bob" }, party2 = { "Alice", "g-alice" } }, false, function()
+            Fire("GROUP_ROSTER_UPDATE")
+        end)
+        CHECK(#log.adds == n, "arrow: an unrelated roster update leaves the follow alone")
+        -- He leaves: the follow is removed, once
+        WithGroup({ party1 = { "Alice", "g-alice" } }, false, function()
+            Fire("GROUP_ROSTER_UPDATE")
+            Fire("GROUP_ROSTER_UPDATE")
+        end)
+        CHECK(#log.removes == 1 and log.removes[1] == "w9", "arrow: someone who left is not followed any more",
+            #log.removes)
+        CHECK(#log.adds == n, "arrow: ...and nobody else is followed in his place")
+
+        -- Removed in Orders (manager, arrival): the board forgets it quietly
+        slash("arrow")
+        log.live.w9 = nil
+        n = #log.adds
+        WithGroup({ party1 = { "Bob", "g-bob" } }, false, function() Fire("GROUP_ROSTER_UPDATE") end)
+        CHECK(#log.adds == n and #log.removes == 1, "arrow: a follow Orders dropped is not resurrected")
+
+        -- Refusals
+        local ok, why = CommanderPartyFrames_ArrowTo("player")
+        CHECK(ok == false and why == "self", "arrow: you cannot follow yourself", tostring(why))
+        CHECK(LastPrintLine():find("that is you", 1, true), "arrow: ...and it says so", LastPrintLine())
+        ok, why = CommanderPartyFrames_ArrowTo("mouseover")
+        CHECK(ok == false and why == "notgroup", "arrow: a unit outside the group is refused", tostring(why))
+        log.answer = { nil, "disabled" }
+        ok, why = CommanderPartyFrames_ArrowTo("party1")
+        CHECK(ok == false and why == "disabled", "arrow: Orders switched off is a refusal", tostring(why))
+        CHECK(LastPrintLine():find("Commander Orders is switched off", 1, true), "arrow: ...in words", LastPrintLine())
+        CommanderOrders.Add = function() error("orders blew up") end
+        ok, why = CommanderPartyFrames_ArrowTo("party1")
+        CHECK(ok == false and why == "error", "arrow: a throwing Add is caught", tostring(why))
+
+        -- Orders absent: where they are now, when the client can say
+        CommanderOrders = nil
+        local sMap = C_Map
+        C_Map = {
+            GetBestMapForUnit = function(u) return u == "party1" and 1429 or nil end,
+            GetPlayerMapPosition = function(map, u)
+                if u ~= "party1" then return nil end
+                return { x = 0.42, y = 0.655, GetXY = function(v) return v.x, v.y end }
+            end,
+        }
+        ok, why = CommanderPartyFrames_ArrowTo("party1")
+        CHECK(ok == false and why == "absent", "arrow: no Orders, no follow", tostring(why))
+        CHECK(LastPrintLine():find("/way #1429 42.00 65.50 Alice", 1, true),
+            "arrow: ...but where they are now, as a /way line", LastPrintLine())
+        C_Map = sMap
+    end)
+
+    -- A raid follows raid tokens
+    log = ArrowStub()
+    WithGroup({ raid1 = { "Tank", "g-tank" }, raid3 = { "Healer", "g-heal" }, __target = "raid3" }, true, function()
+        CommanderPartyFrames_ArrowTo("target")
+        local s = log.adds[#log.adds]
+        CHECK(s and s.unit == "raid3", "arrow: in a raid the follow is on the raid token", s and tostring(s.unit))
+    end)
+    CommanderOrders = nil
+    CHECK(#caughtErrors == errs0, "arrow: no errors", caughtErrors[#caughtErrors])
+end
+
+-- ===========================================================================
 -- The CLICK-CAST board (second mode: `clickcast`)
 -- ===========================================================================
 -- Whether a row is a secure unit button is decided once, at login, from the
@@ -1066,6 +1249,112 @@ if SECURE then
     UnitExists, UnitGUID, UnitName, UnitClass = cE, cG, cN, cC
     UnitPosition = nil
     Fire("GROUP_ROSTER_UPDATE")
+
+    -- --- Arrow to them, as a click binding ----------------------------------
+    -- The row runs it as a custom action type: the secure template finds the
+    -- type in the attribute, then the method of that name on the button, and
+    -- calls it with the row's unit. Emulated here exactly that way.
+    do
+        local log = ArrowStub()
+        local keepBinds = CommanderPartyFramesDB.ClickBinds
+        CommanderPartyFramesDB.ClickBinds = {}
+        CommanderPartyFrames_SetBind("shift-2", "ARROW")
+        WithGroup({ party1 = { "Alice", "g-alice" }, party2 = { "Bob", "g-bob" } }, false, function()
+            Fire("GROUP_ROSTER_UPDATE")
+            local bobRow, selfRowA
+            for i = 1, 8 do
+                local r = _G["CommanderPartyFramesRow" .. i]
+                if r and r:GetAttribute("unit") == "party2" then bobRow = r end
+                if r and r:GetAttribute("unit") == "player" then selfRowA = r end
+            end
+            CHECK(bobRow ~= nil, "arrow: a secure row is bound to the ally")
+            if not bobRow then return end
+            local actionType = bobRow:GetAttribute("shift-type2")
+            CHECK(actionType == "cpfarrow", "arrow: Shift+Right is written as the custom action type",
+                tostring(actionType))
+            CHECK(bobRow:GetAttribute("shift-spell2") == nil and bobRow:GetAttribute("shift-unit2") == nil,
+                "arrow: ...with no spell and no unit override, so it follows the row's own unit")
+            local handler = actionType and rawget(bobRow, actionType)
+            CHECK(type(handler) == "function", "arrow: the row carries the method the secure template calls")
+            if not handler then return end
+            -- Secure dispatch: handler(self, unit, button, isKeyPress, down), in combat too
+            inCombat = true
+            blockedCalls = {}
+            handler(bobRow, bobRow:GetAttribute("unit"), "RightButton", false, false)
+            inCombat = false
+            local s = log.adds[#log.adds]
+            CHECK(s and s.kind == "unit" and s.unit == "party2" and s.title == "Bob",
+                "arrow: the click follows the row's ally, mid-fight", s and tostring(s.unit))
+            CHECK(#blockedCalls == 0, "arrow: ...with no protected call", blockedCalls[1])
+            if selfRowA then
+                local n = #log.adds
+                rawget(selfRowA, "cpfarrow")(selfRowA, "player", "RightButton", false, false)
+                CHECK(#log.adds == n, "arrow: the binding on your own row follows nobody")
+            end
+            -- A throwing Orders never escapes the click
+            local errs = #caughtErrors
+            CommanderOrders.Add = function() error("orders blew up") end
+            handler(bobRow, "party2", "RightButton", false, false)
+            CHECK(#caughtErrors == errs, "arrow: a throwing Orders is caught inside the click")
+            -- Anything else that throws is reported, never raised through
+            -- the secure template's dispatch
+            local keepName = UnitName
+            UnitName = function() error("client hiccup") end
+            local raised = not pcall(handler, bobRow, "party2", "RightButton", false, false)
+            UnitName = keepName
+            CHECK(not raised, "arrow: an error inside the click never escapes the secure handler")
+            CHECK(#caughtErrors == errs + 1 and tostring(caughtErrors[#caughtErrors]):find("client hiccup", 1, true),
+                "arrow: ...it goes to the error handler instead", caughtErrors[#caughtErrors])
+            if #caughtErrors == errs + 1 then table.remove(caughtErrors) end
+
+            -- One PHYSICAL click, the way the 2.5.6 client delivers it to a
+            -- SecureUnitButtonTemplate row: the engine calls OnClick once per
+            -- registered phase (the rows register AnyDown AND AnyUp), and
+            -- SecureUnitButton_OnClick hands each to OnActionButtonClick with
+            -- NO down/up gate (Blizzard SecureTemplates.lua 838-881; only
+            -- SecureActionButton_OnClick, 799-822, weighs
+            -- ActionButtonUseKeyDown), which ends in PerformAction:
+            -- handler(self, unit, button, isKeyPress = false, down)
+            log = ArrowStub()
+            -- returns the phase ("AnyDown" | "AnyUp") the follow was asked in
+            local function PhysicalClick(row, button, mod)
+                local n = (button == "RightButton") and 2 or 1
+                local askedIn
+                for _, phase in ipairs(row.__clicks or { "AnyUp" }) do
+                    local down = (phase == "AnyDown")
+                    local kind = row:GetAttribute((mod and (mod .. "-") or "") .. "type" .. n)
+                    local fn = kind and rawget(row, kind)
+                    local before = #log.adds
+                    if type(fn) == "function" then fn(row, row:GetAttribute("unit"), button, false, down) end
+                    if #log.adds > before then askedIn = askedIn or phase end
+                end
+                return askedIn
+            end
+            local keepCVar = GetCVarBool
+            for _, keyDown in ipairs({ false, true }) do
+                GetCVarBool = function(name)
+                    if name == "ActionButtonUseKeyDown" then return keyDown end
+                    return keepCVar and keepCVar(name) or nil
+                end
+                local adds, lines = #log.adds, #printLog
+                local askedIn = PhysicalClick(bobRow, "RightButton", "shift")
+                local tag = keyDown and "key-down on" or "key-down off"
+                CHECK(#log.adds == adds + 1, "arrow: one physical click is ONE follow (" .. tag .. ")",
+                    (#log.adds - adds) .. " adds")
+                CHECK(askedIn == (keyDown and "AnyDown" or "AnyUp"),
+                    "arrow: ...on the phase ActionButtonUseKeyDown names (" .. tag .. ")", askedIn)
+                local said = 0
+                for i = lines + 1, #printLog do
+                    if tostring(printLog[i]):find("the arrow follows", 1, true) then said = said + 1 end
+                end
+                CHECK(said == 1, "arrow: ...and ONE chat line (" .. tag .. ")", said)
+            end
+            GetCVarBool = keepCVar
+        end)
+        CommanderPartyFramesDB.ClickBinds = keepBinds or {}
+        CommanderOrders = nil
+        Fire("GROUP_ROSTER_UPDATE")
+    end
 
     CHECK(#caughtErrors == 0, "no errors on the click-cast board", caughtErrors[1])
     io.write(string.format("[%s clickcast] %d checks, %d failures\n", CLASS, checks, fails))
@@ -5913,6 +6202,7 @@ if CLASS ~= "MAGE" then
     end
     CheckHeaderStyle()
     CheckProductionEmbed()
+    CheckArrowSorted()
     CHECK(#caughtErrors == 0, "no errors on the non-mage banner", caughtErrors[1])
     io.write(string.format("[%s] %d checks, %d failures\n", CLASS, checks, fails))
     os.exit(fails == 0 and 0 or 1)
@@ -6867,6 +7157,7 @@ local function CheckBlueprint()
 end
 CheckBlueprint()
 CheckProductionEmbed()
+CheckArrowSorted()
 
 CHECK(#caughtErrors == 0, "no errors across the run", caughtErrors[1])
 

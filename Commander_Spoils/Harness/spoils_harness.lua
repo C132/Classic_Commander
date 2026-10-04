@@ -1823,6 +1823,128 @@ eq(#E.Data.events, 0, "wipe: history cleared")
 eq(DB.MinQuality, 2, "wipe: settings untouched")
 
 -- ===========================================================================
+-- 15. Back to the farm (3.1.0, D23)
+--
+-- The farm remembers where it started and "Back to the farm" hands that spot
+-- to Commander Orders, here a stub that records the spec (the real Orders
+-- runtime accepting the same shape is Commander_Logistics/Harness/
+-- logistics_orders_smoke.lua section G). Last section: the reload check at
+-- the end re-runs E.Init.
+-- ===========================================================================
+do
+    local playerPos = nil          -- what GetPlayerMapPosition answers
+    C_Map.GetPlayerMapPosition = function(map, unit)
+        if unit ~= "player" or not playerPos then return nil end
+        local v = { x = playerPos[1], y = playerPos[2] }
+        v.GetXY = function(self) return self.x, self.y end
+        return v
+    end
+    local adds = {}
+    local addAnswer = { "w3" }
+    local function StubOrders()
+        CommanderOrders = { Add = function(spec) adds[#adds + 1] = spec; return unpack(addAnswer) end }
+    end
+    local function LastPrint() return printLog[#printLog] or "" end
+    local errs0 = #errors
+    if E.FarmActive() then E.StopFarm() end
+
+    -- No farm, then a farm with no position (an instance): honest refusals
+    CommanderOrders = nil
+    local ok, why = CommanderSpoils_BackToFarm()
+    eq(why, "nofarm", "farm-back: with no farm running there is nothing to go back to")
+    CHECK(LastPrint():find("no farm is running", 1, true), "farm-back: ...and it says so", LastPrint())
+    CommanderSpoils_ToggleFarm()
+    CHECK(E.FarmActive(), "farm-back: a farm started with no map position")
+    eq(DB.Farm.x, nil, "farm-back: ...stores no position")
+    CHECK(not LastPrint():find("/cspoils back", 1, true), "farm-back: ...and promises no way back", LastPrint())
+    ok, why = CommanderSpoils_BackToFarm()
+    eq(why, "noposition", "farm-back: a farm without a position refuses")
+    CommanderSpoils_ToggleFarm()
+
+    -- The client's (0, 0) "nowhere" is not a position
+    playerPos = { 0, 0 }
+    E.StartFarm("Nowhere")
+    eq(select(2, E.FarmHome()), "noposition", "farm-back: (0, 0) is not a farm spot")
+    E.StopFarm()
+
+    -- A real start: the spot is kept on the farm's map, in the saved block too
+    playerPos = { 0.42, 0.31 }
+    CommanderSpoils_ToggleFarm()
+    CHECK(LastPrint():find("/cspoils back", 1, true), "farm-back: the start line tells you the way back", LastPrint())
+    local home = E.FarmHome()
+    CHECK(home and home.map == 1951 and home.x == 0.42 and home.y == 0.31, "farm-back: the farm's home is where it started")
+    CHECK(DB.Farm and DB.Farm.x == 0.42 and DB.Farm.y == 0.31 and DB.Farm.mapID == 1951,
+        "farm-back: ...and is in the block that survives a restart")
+
+    -- Orders absent: the /way line
+    playerPos = { 0.9, 0.9 }       -- walked off to vendor; the home does not move
+    ok, why = CommanderSpoils_BackToFarm()
+    eq(why, "absent", "farm-back: without Orders, no waypoint")
+    CHECK(LastPrint():find("/way #1951 42.00 31.00 Farm: " .. home.label, 1, true),
+        "farm-back: ...but the /way line to paste", LastPrint())
+
+    -- Orders present: one keyed waypoint that takes the arrow
+    StubOrders()
+    ok, why = CommanderSpoils_BackToFarm()
+    eq(ok, true, "farm-back: Orders took it")
+    eq(why, "w3", "farm-back: ...and the uid comes back")
+    local s = adds[#adds]
+    CHECK(s and s.map == 1951 and s.x == 0.42 and s.y == 0.31, "farm-back: the spec is the farm's start")
+    eq(s and s.source, "Spoils", "farm-back: source Spoils")
+    eq(s and s.key, "farm", "farm-back: one key, so a second press moves it")
+    eq(s and s.setArrow, true, "farm-back: a press takes the arrow")
+    eq(s and s.title, "Farm: " .. home.label, "farm-back: titled after the farm")
+    CHECK(LastPrint():find("points back to the farm", 1, true), "farm-back: one line of confirmation", LastPrint())
+
+    -- The header glyph: left toggles, right is the way back
+    local farmGlyph
+    for _, f in ipairs(allWidgets) do
+        if rawget(f, "glyphName") == "farm" then farmGlyph = f end
+    end
+    CHECK(farmGlyph ~= nil, "farm-back: the header's farm glyph exists")
+    if farmGlyph then
+        local n = #adds
+        local click = farmGlyph.__scripts.OnClick
+        click(farmGlyph, "RightButton")
+        eq(#adds, n + 1, "farm-back: right-clicking Farm sets the waypoint")
+        CHECK(E.FarmActive(), "farm-back: ...without ending the farm")
+        click(farmGlyph, "LeftButton")
+        CHECK(not E.FarmActive(), "farm-back: left-click still ends it")
+        eq(#adds, n + 1, "farm-back: ...without a waypoint")
+        CommanderSpoils_ToggleFarm()
+    end
+
+    -- The slash word
+    local n = #adds
+    SlashCmdList["COMMANDERUI_SPOILS"]("back")
+    eq(#adds, n + 1, "farm-back: /cspoils back sets it")
+
+    -- Refusals in words, and an Add that throws is caught
+    addAnswer = { nil, "disabled" }
+    ok, why = CommanderSpoils_BackToFarm()
+    eq(why, "disabled", "farm-back: Orders switched off is a refusal")
+    CHECK(LastPrint():find("Commander Orders is switched off", 1, true) and LastPrint():find("/way #1951", 1, true),
+        "farm-back: ...said in words, with the line", LastPrint())
+    CommanderOrders.Add = function() error("orders blew up") end
+    ok, why = CommanderSpoils_BackToFarm()
+    eq(why, "error", "farm-back: a throwing Add is caught")
+    eq(#errors, errs0, "farm-back: ...with no error escaping", errors[#errors])
+    addAnswer = { "w3" }
+
+    -- A restart: the saved block brings the way back with it
+    local saved = DB.Farm
+    E.Segments.FARM = nil
+    eq(E.FarmHome(), nil, "farm-back: (the live farm dropped, as a restart does)")
+    E.Init()
+    home = E.FarmHome()
+    CHECK(home and home.x == saved.x and home.y == saved.y and home.map == saved.mapID,
+        "farm-back: a restarted farm still knows where it started")
+    E.StopFarm()
+    CommanderOrders = nil
+    C_Map.GetPlayerMapPosition = nil
+end
+
+-- ===========================================================================
 eq(#errors, 0, "no unhandled errors across the run", errors[1])
 if #errors > 0 then
     local seen = {}

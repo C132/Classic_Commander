@@ -4,7 +4,9 @@
 -- plus all three Commander_Notebook files under the suite's permissive widget
 -- mock, then drives the whole lifecycle without a client: login, the settings
 -- panel, building the window, writing a note, the auto-save debounce, search,
--- the sidebar, the trash, quick capture, and the shift-click link path.
+-- the sidebar, the trash, quick capture, the shift-click link path, and
+-- (1.1.0) a stamp as a way back: Go and "Waypoint To This Note" through
+-- Commander Orders, for new stamps by map id and for old ones by zone name.
 --
 -- It exists to catch what the store harness cannot: nil-global calls, wrong
 -- widget signatures, and the wiring between the three files. The one check it
@@ -646,9 +648,10 @@ CommanderNotebookDB = {
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
-Load(ADDONS .. "/Commander_Notebook/CommanderNotebookStore.lua")
+-- Mutation hooks: NOTEBOOK_STORE / NOTEBOOK_UI = /path of a copy to load instead
+Load(os.getenv("NOTEBOOK_STORE") or (ADDONS .. "/Commander_Notebook/CommanderNotebookStore.lua"))
 Load(ADDONS .. "/Commander_Notebook/CommanderNotebookDB.lua")
-Load(ADDONS .. "/Commander_Notebook/CommanderNotebookUI.lua")
+Load(os.getenv("NOTEBOOK_UI") or (ADDONS .. "/Commander_Notebook/CommanderNotebookUI.lua"))
 
 local S = CommanderNotebookStore
 local N = CommanderNotebook
@@ -1059,6 +1062,152 @@ local stamped = S.Note(made.id).body
 CHECK(stamped:find("Nagrand Arena", 1, true) ~= nil, "J2 the stamp names the zone")
 CHECK(stamped:find("Halaa", 1, true) ~= nil, "J2 and the subzone")
 CHECK(stamped:find("43.5", 1, true) ~= nil, "J2 and the coordinates")
+
+-- ===========================================================================
+-- L. A stamp is a way back (Commander Orders, 1.1.0)
+-- ===========================================================================
+
+do
+    -- The stamp above kept where it was written
+    local context = S.Note(made.id).context
+    CHECK(context ~= nil, "L1 the stamp kept a context")
+    EQ(context and context.map, 1, "L1 with the map the coordinates are on")
+    EQ(context and context.x, 0.435, "L1 and the exact x, not the rounded one in the text")
+    EQ(context and context.zone, "Nagrand Arena", "L1 and the zone name")
+
+    -- Commander Orders, as far as Notebook reaches into it
+    local adds, imports = {}, {}
+    local orders
+    orders = {
+        Add = function(spec)
+            adds[#adds + 1] = spec
+            if orders.refuse then return nil, orders.refuse end
+            return "w1"
+        end,
+        Import = function(text, opts)
+            imports[#imports + 1] = { text = text, opts = opts }
+            if orders.ambiguous then
+                return 0, { { line = 1, text = text, message = "\"" .. "Alterac" .. "\" is more than one zone",
+                    candidates = { { line = "/way #1416 42.50 61.20 x" }, { line = "/way #1459 42.50 61.20 x" } } } }
+            end
+            return 1, {}
+        end,
+    }
+    CommanderOrders = orders
+
+    local function ActionButton(label)
+        local found
+        for _, widget in ipairs(frames) do
+            if widget.__text == label and widget.__shown and widget.__template == "UIPanelButtonTemplate" then
+                found = widget
+            end
+        end
+        return found
+    end
+
+    N.OpenToNote(made.id)
+    local go = ActionButton("Go")
+    CHECK(go ~= nil, "L2 a stamped note offers Go")
+    printLog = {}
+    Click(go)
+    NoErrors("L2 Go raised nothing")
+    EQ(#adds, 1, "L2 one waypoint asked for")
+    local spec = adds[1] or {}
+    EQ(spec.map, 1, "L2 on the stamp's own map")
+    EQ(spec.x, 0.435, "L2 at its exact x")
+    EQ(spec.y, 0.612, "L2 and y")
+    EQ(spec.title, "Arena comp", "L2 titled with the note")
+    EQ(spec.source, "Notebook", "L2 source Notebook")
+    EQ(spec.key, "note:" .. made.id, "L2 keyed by the note, so Go twice is one waypoint")
+    EQ(spec.setArrow, true, "L2 and the arrow goes there")
+    CHECK(PrintedMatching("waypoint to Arena comp %(Halaa, Nagrand Arena 43%.5, 61%.2%)"),
+        "L2 a one-line confirmation", printLog[#printLog])
+
+    -- Go sits right after Stamp, and the row still fits the page
+    local widths, used, shown = {}, 0, 0
+    for _, label in ipairs({ "Pin", "Unpin", "Stamp", "Go", "Duplicate", "Move To...", "Delete" }) do
+        local button = ActionButton(label)
+        if button then rawset(button, "SetWidth", function(b, w) widths[b] = w end) end
+    end
+    N.OpenToNote(made.id)
+    for button, w in pairs(widths) do
+        if button.__shown then used, shown = used + w, shown + 1 end
+    end
+    used = used + 5 * (shown - 1)
+    EQ(shown, 6, "L3 six verbs on a stamped note")
+    CHECK(used <= 456, "L3 and they fit the 456 px action row", used)
+
+    -- The note's menu has it too
+    menuCaptured = {}
+    Click(ActionButton("Move To..."))
+    local entry
+    for _, info in ipairs(menuCaptured) do
+        if info.text == "Waypoint To This Note" then entry = info end
+    end
+    CHECK(entry ~= nil, "L4 the note menu offers Waypoint To This Note")
+    if entry then entry.func() end
+    EQ(#adds, 2, "L4 and it asks for the same waypoint")
+
+    -- An old stamp: no map, the zone by name through Orders' /way resolver
+    local oldNote = S.CreateNote({ title = "Rare spawn",
+        body = "-- Devinp (70) | Halaa, Nagrand 42.5, 61.2 | 04 Oct 2026, 13:50" })
+    N.OpenToNote(oldNote.id)
+    go = ActionButton("Go")
+    CHECK(go ~= nil, "L5 an old stamp still offers Go")
+    adds, imports = {}, {}
+    Click(go)
+    EQ(#adds, 0, "L5 nothing added by map id: it has none")
+    EQ(#imports, 1, "L5 the line goes through Orders' /way resolver")
+    EQ(imports[1] and imports[1].text, "/way Nagrand 42.5 61.2 Rare spawn", "L5 as a /way line by zone name")
+    EQ(imports[1] and imports[1].opts and imports[1].opts.source, "Notebook", "L5 under source Notebook")
+    orders.ambiguous = true
+    printLog = {}
+    Click(go)
+    CHECK(PrintedMatching("more than one zone"), "L5 a name that is not one zone says so", printLog[1])
+    CHECK(PrintedMatching("/way #1416"), "L5 and lists the candidates with their /way #id forms")
+    orders.ambiguous = nil
+
+    -- No stamp, no Go, no menu entry
+    local plain = S.CreateNote({ title = "Plain", body = "just words" })
+    N.OpenToNote(plain.id)
+    CHECK(ActionButton("Go") == nil, "L6 a note with no place has no Go")
+    menuCaptured = {}
+    Click(ActionButton("Move To..."))
+    local offered = false
+    for _, info in ipairs(menuCaptured) do
+        if info.text == "Waypoint To This Note" then offered = true end
+    end
+    CHECK(not offered, "L6 and no menu entry")
+
+    -- Orders switched off
+    orders.refuse = "disabled"
+    N.OpenToNote(made.id)
+    printLog = {}
+    Click(ActionButton("Go"))
+    CHECK(PrintedMatching("turned off"), "L7 Orders off: it says so", printLog[1])
+    orders.refuse = nil
+
+    -- Orders not loaded: the spot as a /way line, so the button never does nothing
+    CommanderOrders = nil
+    printLog = {}
+    Click(ActionButton("Go"))
+    CHECK(PrintedMatching("/way #1 43%.50 61%.20 Arena comp"), "L8 no Orders: the /way line", printLog[1])
+    N.OpenToNote(oldNote.id)
+    printLog = {}
+    Click(ActionButton("Go"))
+    CHECK(PrintedMatching("/way Nagrand 42%.5 61%.2 Rare spawn"), "L8 for an old stamp too, by name", printLog[1])
+    NoErrors("L8 no Orders raised nothing")
+
+    -- A note stamped as it is made keeps its place as well
+    CommanderNotebookDB.StampNewNotes = true
+    local fresh = N.NewNote()
+    EQ(S.Note(fresh.id).context and S.Note(fresh.id).context.map, 1, "L9 Stamp New Notes keeps the place too")
+    CommanderNotebookDB.StampNewNotes = false
+    S.Trash(fresh.id)
+    S.Trash(plain.id)
+    S.Trash(oldNote.id)
+    NoErrors("L9 raised nothing")
+end
 
 -- ===========================================================================
 -- K. Notebooks through their dialogs

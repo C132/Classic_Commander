@@ -7,8 +7,10 @@
 --
 -- It covers the normalising Attach contract (including tables damaged the way
 -- a hand edit or an older build damages them), the notebook and tag models,
--- every mutator's no-op guard, the two-stage trash, the search grammar, and
--- the ordering rules the note list depends on.
+-- every mutator's no-op guard, the two-stage trash, the search grammar, the
+-- ordering rules the note list depends on, and (1.1.0) where a note was
+-- written: the located context a stamp keeps, and the old text-only stamp
+-- lines S.Location falls back to reading.
 --
 --   /opt/homebrew/bin/luajit notebook_harness.lua
 
@@ -32,7 +34,8 @@ local function EQ(got, want, label)
     CHECK(got == want, label, string.format("got %s want %s", tostring(got), tostring(want)))
 end
 
-assert(loadfile(ADDONS .. "/Commander_Notebook/CommanderNotebookStore.lua"))()
+-- Mutation hook: NOTEBOOK_STORE=/path of a copy of the store to load instead
+assert(loadfile(os.getenv("NOTEBOOK_STORE") or (ADDONS .. "/Commander_Notebook/CommanderNotebookStore.lua")))()
 local S = CommanderNotebookStore
 
 -- A frozen, advanceable clock. Real time() would make every "updated changed"
@@ -568,6 +571,96 @@ do
     EQ(#S.Links(S.CreateNote({ body = "no links here" })), 0, "J4 plain text has no attachments")
     EQ(#S.Links(nil), 0, "J4 a nil note has no attachments, and does not error")
     EQ(S.LinkCount(note), 3, "J5 link count")
+end
+
+-- ===========================================================================
+-- K. Where a note was written (1.1.0)
+-- ===========================================================================
+
+do
+    local function NEAR(got, want, label)
+        CHECK(type(got) == "number" and math.abs(got - want) < 1e-9, label,
+            string.format("got %s want %s", tostring(got), tostring(want)))
+    end
+    Fresh()
+    local note = S.CreateNote({ title = "Halaa" })
+    local updated = note.updated
+    TICK(5)
+
+    CHECK(not S.SetContext(note.id, { zone = "Nagrand", x = 0.4, y = 0.6 }),
+        "K1 a context with no map is not kept: it could not lead anywhere")
+    EQ(note.context, nil, "K1 nothing stored")
+    CHECK(S.SetContext(note.id, { zone = "Nagrand", subzone = "Halaa", map = 1951, x = 0.42, y = 0.61,
+        who = "Devinp", junk = "x" }), "K1 a located context is kept")
+    EQ(note.context.map, 1951, "K1 with its map")
+    NEAR(note.context.x, 0.42, "K1 and its x")
+    EQ(note.context.subzone, "Halaa", "K1 and the names")
+    EQ(note.context.junk, nil, "K1 only the known fields")
+    EQ(note.updated, updated, "K1 SetContext alone does not count as an edit (the stamp line does)")
+    local passed = { map = 1951, x = 0.42, y = 0.61 }
+    S.SetContext(note.id, passed)
+    passed.x = 0.99
+    NEAR(note.context.x, 0.42, "K1 copied, not aliased")
+    CHECK(not S.SetContext("n-nope", passed), "K1 an unknown note is refused")
+    CHECK(not S.SetContext(note.id, { zone = "Karazhan" }),
+        "K1 a stamp where the map has no position (an instance) is not kept")
+    EQ(note.context.map, 1951, "K1 and does not erase the last place")
+    CHECK(not S.SetContext(note.id, { map = 1951, x = 1.5, y = 0.2 }), "K1 a coordinate outside 0..1 is refused")
+    CHECK(not S.SetContext(note.id, { map = 19.5, x = 0.5, y = 0.2 }), "K1 a map id that is not whole is refused")
+
+    local loc = S.Location(note)
+    EQ(loc and loc.from, "context", "K2 Location reads the context")
+    EQ(loc and loc.map, 1951, "K2 with the map")
+    NEAR(loc and loc.y, 0.61, "K2 and the coordinates")
+
+    -- Old stamps: text only
+    local stamp = "-- Devinp (70) | Halaa, Nagrand 42.5, 61.2 | target: Warmaul Ogre | 04 Oct 2026, 13:50"
+    local old = S.CreateNote({ body = "first line\n" .. stamp .. "\nmore text" })
+    loc = S.Location(old)
+    EQ(loc and loc.from, "stamp", "K3 an old note falls back to its stamp line")
+    EQ(loc and loc.zone, "Nagrand", "K3 the zone is the part after the last comma")
+    EQ(loc and loc.subzone, "Halaa", "K3 the subzone before it")
+    NEAR(loc and loc.x, 0.425, "K3 x back to 0..1")
+    NEAR(loc and loc.y, 0.612, "K3 y back to 0..1")
+    EQ(loc and loc.map, nil, "K3 no map: the name is all there is")
+
+    loc = S.StampLocation("-- Devinp (70) | Shattrath City 55.0, 40.1 | 04 Oct 2026, 13:50")
+    EQ(loc and loc.zone, "Shattrath City", "K4 no subzone: the whole place is the zone")
+    EQ(loc and loc.subzone, nil, "K4 and there is no subzone")
+    loc = S.StampLocation("-- A | Nagrand 10.0, 10.0 | d\n-- B | Zangarmarsh 20.0, 30.0 | d\n-- C | Karazhan | d")
+    EQ(loc and loc.zone, "Zangarmarsh", "K4 the newest stamp WITH a place wins; one without is skipped")
+    EQ(S.StampLocation("-- Devinp (70) | 04 Oct 2026, 13:50"), nil, "K4 the date is not a place")
+    EQ(S.StampLocation("-- Devinp (70) | target: Dummy 45, 12 | 04 Oct 2026, 13:50"), nil,
+        "K4 a target named like coordinates is not a place")
+    EQ(S.StampLocation("-- X | Nagrand 142.0, 10.0 | d"), nil, "K4 a coordinate over 100 is not one")
+    EQ(S.StampLocation("Nagrand 42.5, 61.2"), nil, "K4 only stamp lines count")
+    EQ(S.StampLocation(nil), nil, "K4 nil text is nothing, not an error")
+    EQ(S.Location(S.CreateNote({ body = "nothing here" })), nil, "K4 a note with no stamp has no location")
+    EQ(S.Location(nil), nil, "K4 nil note")
+
+    S.SetContext(old.id, { zone = "Nagrand", map = 1951, x = 0.1, y = 0.2 })
+    EQ(S.Location(old).from, "context", "K5 a located context beats the old text")
+
+    -- Duplicate carries the map, detached
+    local copy = S.Duplicate(note.id)
+    EQ(copy.context and copy.context.map, 1951, "K6 a duplicate keeps where the note was written")
+    CHECK(copy.context ~= note.context, "K6 as its own table")
+
+    -- Attach cleans a context damaged by a hand edit or an older build
+    local db = { Notes = {
+        n1 = { id = "n1", title = "t", body = "", context = { map = "1951", x = 2, y = 0.5, zone = "Z" } },
+        n2 = { id = "n2", title = "t", body = "", context = { map = 1951.5, x = 0.1, y = 0.2 } },
+        n3 = { id = "n3", title = "t", body = "", context = { map = 1951, x = 0.1, y = 0.2 } },
+    } }
+    S.Attach(db)
+    EQ(db.Notes.n1.context.map, nil, "K7 a map that is not a number goes")
+    EQ(db.Notes.n1.context.x, nil, "K7 so do coordinates outside 0..1")
+    EQ(db.Notes.n1.context.zone, "Z", "K7 the rest stays")
+    EQ(db.Notes.n2.context.map, nil, "K7 a map id that is not whole goes")
+    NEAR(db.Notes.n2.context.x, 0.1, "K7 good coordinates stay")
+    EQ(db.Notes.n3.context.map, 1951, "K7 a good context is untouched")
+    EQ(S.Location(db.Notes.n2), nil, "K7 a context left without a map is not a location")
+    Fresh()
 end
 
 -- ===========================================================================

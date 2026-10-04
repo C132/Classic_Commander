@@ -11,7 +11,7 @@ change ships.
     /opt/homebrew/bin/luajit oracle_ui_smoke.lua       # the live half under a
                                                        # client mock, loading the
                                                        # REAL Commander_Events
-                                                       # framework (266 checks)
+                                                       # framework (301 checks)
 
 `oracle_roster_smoke.lua` needs no mock either, for the same reason as the
 engine: `CommanderOracleRoster.lua` is rows in, ranking out. It checks that the
@@ -103,6 +103,29 @@ nine-class table, so a warrior is never turned away for having no brown marker
 and two mages still get two different icons. Ties break by slot then icon, so
 the same team always resolves the same way — an assignment that wobbled would
 re-mark the party for nothing.
+
+`W` is the flag waypoint (1.8.0, Commander Orders). Clicking a pip asks Orders
+for ONE waypoint (source `Oracle`, key `node`, so another flag moves it) at
+the position the map's own area POI reports for that flag
+(`C_AreaPoiInfo.GetAreaPOIInfo` on 1461), temporary and session-only, and
+pins it with `SetArrow` because a click is a request for the arrow (a
+temporary add would otherwise yield to any pinned waypoint of yours and the
+click would look dead). Leaving the basin removes it and, if a flag click took
+the arrow from a waypoint of yours, hands the arrow back to the LAST one taken,
+unless you have moved the arrow yourself since. That includes a flag you
+REACHED: the stub's `ArriveAtFlag` does what the real Orders does on arrival
+(the flag spec has no clearOnArrive, so the consumer default clears the record
+and unpins it), and the arrow still goes back unless a pin or a route took it
+after; a flag still standing that has lost the arrow (a Clear) is left alone.
+Right-clicks are not
+waypoints, combat changes nothing, and outside the basin, with no POI
+position, with Orders off or with Orders missing (a `/way` line), the click
+says what happened instead of doing nothing. Orders is a stub here that
+records the calls; the real Orders is exercised by its own harnesses. Mutation
+hook: `ORACLE_RUNTIME=/path/copy.lua`; seventeen hand-made mutants of the
+flag code (key, flags, pinning, the clean-up and the restore rules, the
+reached-flag restore and its pin/route guard, the button, the axis order, the
+basin gate, the fallback) are all killed.
 
 The UI smoke's `P` and `Q` sections cover the tabs and the scoreboard reader:
 the BATTLE tab is offered in Arathi and *gone* in a Warsong Gulch (an Arathi

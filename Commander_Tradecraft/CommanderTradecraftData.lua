@@ -209,7 +209,8 @@ D.ITEMS = {
 -- ---------------------------------------------------------------------------
 
 -- uiMapIDs for the zone maps the vendors and trainers stand on (UiMap table,
--- this build), so a waypoint can be handed to TomTom without a name lookup.
+-- this build), so a waypoint can be handed to Commander Orders without a name
+-- lookup. A zone missing here gets a /way line by name instead (D17).
 D.ZONES = {
     ["Arathi Highlands"] = 1417,
     ["Ashenvale"] = 1440,

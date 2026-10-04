@@ -4,7 +4,7 @@ Three luajit checks plus the data generator. Run **all three** before any change
 
 ```bash
 /opt/homebrew/bin/luajit formulary_model_smoke.lua   # data + model — 2766 checks
-/opt/homebrew/bin/luajit formulary_ui_harness.lua    # UI + host    — 116 checks
+/opt/homebrew/bin/luajit formulary_ui_harness.lua    # UI + host    — 150 checks
 /opt/homebrew/bin/luajit globals_lint.lua            # 5 files, 0 undeclared globals
 ```
 
@@ -52,10 +52,16 @@ Commander_Tradecraft mock, extended with `HideUIPanel`, spell links, embedded to
 string heights). Drives login, the window, the navigator's headers and rows, the header readout,
 the briefing for a known recipe (reagents with bank share, craftable count, embedded tooltip,
 trainer source), the craft macro with and without "on my gear", an unknown recipe with its formula
-in the bags and both vendors (one marked other-faction), a boss drop, a reputation gate, Outland
+in the bags and both vendors (one marked other-faction) and their Go buttons sending one owned
+Commander Orders waypoint each, a boss drop, a reputation gate, Outland
 trainers by faction, the four filters, search, collapse, the craft window being read and put away
 (and left alone with the option off, and ignored for Beast Training), status, memory reset, the
-combat rule, and Restore Defaults. **G** is First Aid: `/cfm firstaid`, the readout and its tooltip,
+combat rule, and Restore Defaults. **C8** is the Trips view walked through Commander Orders (D14): a
+one-vendor zone's right-click is a waypoint owned by the vendor, a zone of several vendors (Shattrath)
+is one NEAREST route of that zone's stops, Route All Trips is offered on the Trips view only and buys
+every listed recipe a placed vendor sells exactly once (the oracle is read off the list itself, so
+the reprinted formula items and the vendors inside instances are both accounted for), and without
+Orders both print `/way` lines and send nothing. **G** is First Aid: `/cfm firstaid`, the readout and its tooltip,
 the Read Recipes button re-aimed, a bandage's bare `/cast`, the trade skill window taking the
 profession on screen and being put away, Cooking left alone, and a manual's tooltip verdict judged
 against First Aid's skill while Enchanting is on screen.

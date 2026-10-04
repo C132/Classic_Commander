@@ -500,8 +500,20 @@ function StaticPopup_Hide(which) if popup == which then popup = nil end end
 function ReplaceEnchant() replaced = replaced + 1; error("ADDON_ACTION_FORBIDDEN: ReplaceEnchant()") end
 
 -- Neighbours
-local waypoints = {}
-TomTom = { AddWaypoint = function(self, map, x, y, opts) waypoints[#waypoints + 1] = { map = map, x = x, y = y, title = opts.title } end }
+-- Commander Orders 3.0: a recording stand-in for its public table (Add
+-- answers a uid, AddRoute a route id). TomTom is gone from the suite.
+local waypoints, tripRoutes = {}, {}
+CommanderOrders = {
+    IsAvailable = function() return true end,
+    Add = function(spec)
+        waypoints[#waypoints + 1] = { map = spec.map, x = spec.x, y = spec.y, title = spec.title, spec = spec }
+        return "w" .. #waypoints
+    end,
+    AddRoute = function(spec)
+        tripRoutes[#tripRoutes + 1] = spec
+        return "r" .. #tripRoutes
+    end,
+}
 local aucLists = {}
 local PRICES = { [11083] = 300, [11137] = 400, [22445] = 2000, [22446] = 15000, [16204] = 5000, [11176] = 800,
     [22522] = 8000, [20747] = 1200, [11288] = 4000, [10939] = 1500, [11128] = 2000, [5500] = 3000, [11082] = 9000 }
@@ -868,7 +880,70 @@ CHECK(Has("Stonetalon Mountains"), "C2 zone painted")
 b = Buttons()
 CHECK(b["Go"] ~= nil, "C3 waypoint button")
 b["Go"].__scripts.OnClick(b["Go"])
-CHECK(#waypoints == 1 and waypoints[1].map == 1442 and math.abs(waypoints[1].x - 0.454) < 0.001, "C3 TomTom waypoint on Stonetalon", waypoints[1] and waypoints[1].map)
+CHECK(#waypoints == 1 and waypoints[1].map == 1442 and math.abs(waypoints[1].x - 0.454) < 0.001, "C3 Commander Orders waypoint on Stonetalon", waypoints[1] and waypoints[1].map)
+do
+    local spec = waypoints[1] and waypoints[1].spec
+    CHECK(spec and spec.source == "Tradecraft" and spec.key == "place:Kulwia@Stonetalon Mountains" and spec.setArrow == true
+        and spec.icon == "VENDOR" and spec.title == "Formula: Enchant Bracer - Lesser Strength",
+        "C3 the vendor owns one waypoint, titled with the formula, and it takes the arrow", spec and spec.key)
+    CHECK(printLog[#printLog]:find("Waypoint set: Kulwia", 1, true), "C3 and says so", printLog[#printLog])
+    b["Go"].__scripts.OnClick(b["Go"])
+    CHECK(#waypoints == 2 and waypoints[2].spec.key == spec.key, "C3 Go again is the same key: Orders moves it, nothing stacks")
+    GameTooltip.__lines = {}
+    b["Go"].__scripts.OnEnter(b["Go"])
+    CHECK(table.concat(GameTooltip.__lines, " | "):find("Points the Commander Orders arrow there.", 1, true),
+        "C3 the Go tooltip says where the press goes", table.concat(GameTooltip.__lines, " | "))
+
+    -- Route this trip: the bracket's formula vendors as one Orders route
+    local trip = b["Trip"]
+    CHECK(trip ~= nil, "C3 the footer offers Trip while the bracket has a vendor to visit")
+    if trip then
+        GameTooltip.__lines = {}
+        trip.__scripts.OnEnter(trip)
+        CHECK(table.concat(GameTooltip.__lines, " | "):find("Commander Orders route through the", 1, true),
+            "C3 Trip's tooltip says what it does")
+        printLog = {}
+        trip.__scripts.OnClick(trip)
+        local route = tripRoutes[#tripRoutes]
+        CHECK(#tripRoutes == 1 and route.source == "Tradecraft" and route.key == "trip:ENCHANTING:3"
+            and route.mode == "NEAREST" and route.start == true and #route.stops >= 1,
+            "C3 Trip hands Orders one owned NEAREST route for the Expert trip", route and route.key)
+        local kulwia
+        for _, st in ipairs(route and route.stops or {}) do
+            if st.title:find("Kulwia: ", 1, true) and st.title:find("Lesser Strength", 1, true) then kulwia = st end
+        end
+        CHECK(kulwia and kulwia.map == 1442 and math.abs(kulwia.x - 0.454) < 1e-9 and math.abs(kulwia.y - 0.594) < 1e-9
+            and kulwia.icon == "VENDOR", "C3 ...with a stop at Kulwia for the formula", kulwia and kulwia.title)
+        local dalria = false
+        for _, st in ipairs(route and route.stops or {}) do
+            if st.title:find("Dalria", 1, true) then dalria = true end
+            for _, alt in ipairs(st.alternatives or {}) do if alt.map == 1440 then dalria = true end end
+        end
+        CHECK(not dalria, "C3 ...and no Alliance vendor on a Horde trip")
+        CHECK(printLog[#printLog]:find("follow the Commander Orders arrow", 1, true), "C3 Trip says so", printLog[#printLog])
+
+        -- Without Orders: each stop's /way line, nothing sent
+        local saved = CommanderOrders
+        CommanderOrders = nil
+        printLog = {}
+        trip.__scripts.OnClick(trip)
+        CHECK(#tripRoutes == 1 and table.concat(printLog, "\n"):find("/way #1442 45.40 59.40 Kulwia: ", 1, true),
+            "C3 without Orders the trip prints its /way lines", table.concat(printLog, " | "))
+        b["Go"].__scripts.OnClick(b["Go"])
+        CHECK(#waypoints == 2 and printLog[#printLog]:find("/way #1442 45.40 59.40 Formula: Enchant Bracer - Lesser Strength", 1, true),
+            "C3 ...and Go prints the place with its /way line", printLog[#printLog])
+        GameTooltip.__lines = {}
+        b["Go"].__scripts.OnEnter(b["Go"])
+        CHECK(table.concat(GameTooltip.__lines, " | "):find("Commander Orders is not loaded", 1, true),
+            "C3 ...as its tooltip said it would")
+        CommanderOrders = saved
+    end
+    -- Set Waypoints off: printed, never sent
+    CommanderTradecraftDB.UseWaypoints = false
+    b["Go"].__scripts.OnClick(b["Go"])
+    CHECK(#waypoints == 2 and printLog[#printLog]:find("/way #1442", 1, true), "C3 Set Waypoints off: printed, not sent")
+    CommanderTradecraftDB.UseWaypoints = true
+end
 -- The two ways are rows under the step: two option rows, the chosen one lit
 CHECK(Has("TWO WAYS THROUGH 156 – 185"), "C3 options header on a two-way segment")
 local opts = GuideOptions()
@@ -1056,6 +1131,7 @@ Settle()
 ledger = _G.CommanderTradecraftLedger
 CHECK(ledger and ledger.__shown, "E1 ledger opens")
 CHECK(ledger.routeScroll.__shown and ledger.shopScroll.__shown == false, "E1 route list shown, text hidden")
+CHECK(ledger.tripButton and ledger.tripButton.__shown == false, "E1 no Route This Trip on the route list")
 -- Rows: bracket headers, option rows, steps
 local rows = {}
 for _, r in ipairs(ledger.rows) do if r.__shown ~= false then rows[#rows + 1] = r end end
@@ -1100,6 +1176,24 @@ CHECK(ledger.text:find("ARTISAN 225 – 300", 1, true) and ledger.text:find("you
 CHECK(ledger.text:find("EVERYTHING LEFT", 1, true), "E2 whole-route totals close the list")
 CHECK(not ledger.text:find("APPRENTICE 1 – 75", 1, true), "E2 done brackets omitted")
 CHECK(ledger.aucButton.__shown and ledger.aucAllButton.__shown, "E3 auctionator buttons shown")
+do
+    -- Route This Trip sits in the title strip in shopping mode, and only
+    -- while the bracket has a vendor to visit
+    local p = CommanderTradecraft_Plan()
+    local pending = 0
+    for _, step in ipairs(p.bracket and p.bracket.steps or {}) do
+        if step.kind == "buy" and (step.status == "current" or step.status == "pending") and not step.holding
+            and step.vendors[1] then pending = pending + 1 end
+    end
+    CHECK(ledger.tripButton and ledger.tripButton.__shown == (pending > 0),
+        "E3 Route This Trip shown exactly when the bracket has a formula to buy", pending)
+    if pending > 0 then
+        local before = #tripRoutes
+        ledger.tripButton.__scripts.OnClick(ledger.tripButton)
+        CHECK(#tripRoutes == before + 1 and tripRoutes[#tripRoutes].key == "trip:ENCHANTING:" .. p.bracket.index,
+            "E3 ...and routes that bracket's trip", tripRoutes[#tripRoutes] and tripRoutes[#tripRoutes].key)
+    end
+end
 -- Default hand-off is the current bracket (225-300: Dream and Illusion dust, pearls, rods);
 -- "all" is the whole route
 CommanderTradecraft_AuctionatorList()

@@ -13,6 +13,16 @@
 -- real hyperlink, the attachment strip under the page is built from those
 -- links, and a note can stamp where you were standing when you wrote it.
 --
+-- A stamp is also a way back (1.1.0). Since this version a stamp written
+-- where the map has a position keeps the map id with it (note.context, see
+-- the store), and a note that has one offers Go and "Waypoint To This Note":
+-- Commander Orders' arrow to that exact spot. Stamps written before 1.1.0
+-- are text only, "Subzone, Zone 45.2, 63.1", and carry no map id; those go
+-- through Orders' /way zone resolver by name (CommanderOrders.Import), the
+-- same one /way uses, so an ambiguous name is listed rather than guessed.
+-- Without Commander Orders the spot is printed as a /way line, so the button
+-- never silently does nothing.
+--
 -- Chrome is drawn, not borrowed: selection bars, chevrons, rules and the pin
 -- are quads cut from WHITE8X8 and tinted, for the reasons Quest Log and Bags
 -- document -- ARIALN renders shape glyphs as missing-glyph boxes and icon
@@ -312,7 +322,9 @@ local function CurrentContext()
         if position and position.GetXY then
             local x, y = position:GetXY()
             if x and y and x > 0 and y > 0 then
-                context.x, context.y = x, y
+                -- the map the coordinates are on: what makes a stamp a
+                -- place you can be led back to
+                context.x, context.y, context.map = x, y, map
             end
         end
     end
@@ -338,6 +350,91 @@ local function StampLine(context)
     pieces[#pieces + 1] = date("%d %b %Y, %H:%M")
     return "-- " .. table.concat(pieces, " | ")
 end
+
+-- Stamp a note: the line in the body, and where it was in the note's context
+local function Stamp(id)
+    local context = CurrentContext()
+    S.AppendBody(id, StampLine(context))
+    S.SetContext(id, context)
+end
+
+-- ---------------------------------------------------------------------------
+-- Waypoint to this note (Commander Orders)
+-- ---------------------------------------------------------------------------
+
+local function Orders()
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.Add) == "function" then return api end
+    return nil
+end
+
+local ORDERS_REASONS = {
+    disabled = "Commander Orders is turned off (/corder to turn it on)",
+    loading = "Commander Orders is still loading",
+}
+
+local function Place(loc)
+    local place = loc.zone or "?"
+    if loc.subzone and loc.subzone ~= loc.zone then place = loc.subzone .. ", " .. place end
+    return string.format("%s %.1f, %.1f", place, loc.x * 100, loc.y * 100)
+end
+
+-- The /way line a note's location stands for: by map id when the stamp kept
+-- one, by zone name for an old stamp
+local function WayLine(loc, title)
+    title = tostring(title or ""):gsub("[%c]+", " ")
+    if loc.map then
+        return string.format("/way #%d %.2f %.2f %s", loc.map, loc.x * 100, loc.y * 100, title)
+    end
+    return string.format("/way %s %.1f %.1f %s", loc.zone or "", loc.x * 100, loc.y * 100, title)
+end
+
+local function NoteWaypoint(note)
+    local loc = note and S.Location(note)
+    if not loc then
+        print("Commander Notebook: this note has no stamp with a place in it")
+        return false
+    end
+    local title = S.TitleFor(note)
+    local line = WayLine(loc, title)
+    local api = Orders()
+    if not api then
+        print("Commander Notebook: Commander Orders is not loaded; the spot is " .. line)
+        return false
+    end
+    if loc.map then
+        local uid, why = api.Add({
+            map = loc.map, x = loc.x, y = loc.y, title = title,
+            source = "Notebook", key = "note:" .. note.id, setArrow = true,
+        })
+        if not uid then
+            print("Commander Notebook: no waypoint: " .. (ORDERS_REASONS[why] or tostring(why)))
+            return false
+        end
+    else
+        -- An old stamp knows its zone only by name: Orders' /way resolver
+        -- reads it, and lists the candidates when the name is not one zone
+        if not api.Import then
+            print("Commander Notebook: no waypoint; the spot is " .. line)
+            return false
+        end
+        local added, errors = api.Import(line, { source = "Notebook" })
+        if not (added and added > 0) then
+            local err = type(errors) == "table" and errors[1] or {}
+            print("Commander Notebook: no waypoint for \"" .. (loc.zone or "?") .. "\": "
+                .. (ORDERS_REASONS[err.message] or tostring(err.message or "the zone was not recognised")))
+            for i, candidate in ipairs(type(err.candidates) == "table" and err.candidates or {}) do
+                if i > 6 then break end
+                print("  " .. tostring(candidate.line))
+            end
+            return false
+        end
+    end
+    print("Commander Notebook: waypoint to " .. title .. " (" .. Place(loc) .. ")")
+    return true
+end
+
+N.NoteWaypoint = NoteWaypoint
 
 -- ---------------------------------------------------------------------------
 -- Context menus
@@ -694,12 +791,18 @@ local function NoteMenu(note)
             S.TogglePin(note.id)
             RefreshAll()
         end },
+    }
+    if S.Location(note) then
+        entries[#entries + 1] = { text = "Waypoint To This Note", func = function() NoteWaypoint(note) end }
+    end
+    local more = {
         { text = "Duplicate", func = function()
             local copy = S.Duplicate(note.id)
             RefreshAll()
             if copy then SelectNote(copy.id) end
         end },
     }
+    for _, entry in ipairs(more) do entries[#entries + 1] = entry end
     if #books > 0 then
         entries[#entries + 1] = { text = "Move To Notebook", isTitle = true }
         for _, book in ipairs(books) do entries[#entries + 1] = book end
@@ -1121,7 +1224,7 @@ function RefreshEditor(keepText)
                 "Add a line saying who you are, where you are standing and what time it is.",
                 onClick = function()
                     Flush()
-                    S.AppendBody(note.id, StampLine())
+                    Stamp(note.id)
                     LoadNote(note.id)
                     RefreshList()
                 end },
@@ -1141,6 +1244,19 @@ function RefreshEditor(keepText)
                 SelectSource(state.scope, state.key)
             end },
         }
+        -- Only for a note that has somewhere to go, right after Stamp. The
+        -- row has room for one short verb (456 px less 400 used), and Go is
+        -- the suite's word for a waypoint button.
+        local loc = S.Location(note)
+        if loc then
+            table.insert(specs, 3, { label = "Go", width = 44, tooltip =
+                "Waypoint to where this note was stamped: " .. Place(loc)
+                .. ". The arrow is Commander Orders'; without it the spot is printed as a /way line.",
+                onClick = function()
+                    Flush()
+                    NoteWaypoint(S.Note(note.id) or note)
+                end })
+        end
     end
 
     for index, spec in ipairs(specs) do
@@ -1888,7 +2004,7 @@ function N.NewNote(notebookID)
         S.AddTag(note.id, state.key)
     end
     if DB().StampNewNotes then
-        S.AppendBody(note.id, StampLine())
+        Stamp(note.id)
     end
 
     if state.scope == "trash" or (state.scope == "notebook" and state.key ~= target) then
@@ -1995,7 +2111,7 @@ local WELCOME = table.concat({
     "",
     "The search box takes more than words: tag:raid, notebook:keys, is:pinned, is:untagged, or \"an exact phrase\" in quotes. Two words means both.",
     "",
-    "Stamp writes down who you are, where you are standing and what time it is.",
+    "Stamp writes down who you are, where you are standing and what time it is. With Commander Orders installed, a stamped note gets a Go button that points the arrow back to that spot.",
     "",
     "/cnb <text> writes a line into today's notes without opening anything. It works mid-fight.",
     "",

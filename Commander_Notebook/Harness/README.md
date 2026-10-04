@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit notebook_harness.lua      # store fixture — 192 checks
-/opt/homebrew/bin/luajit notebook_ui_harness.lua   # UI + host      — 130 checks
+/opt/homebrew/bin/luajit notebook_harness.lua      # store fixture — 235 checks
+/opt/homebrew/bin/luajit notebook_ui_harness.lua   # UI + host      — 177 checks
 /opt/homebrew/bin/luajit globals_lint.lua          # 3 files, 0 undeclared globals
 ```
 
@@ -37,6 +37,11 @@ Sections worth knowing about:
 - **F2** is the trash invariant: a trashed note appears in the trash scope and in no other view.
 - **H6** creates eight notes in the same frozen second and lists them five times. `table.sort` is not
   stable, so without the id tiebreaker this is where the flicker would show up.
+- **K1–K7** are where a note was written (1.1.0, DECISIONS D10): a context is kept only with a map
+  and coordinates in range, as a copy, without counting as an edit, and a stamp with no position
+  never erases the last place; `S.Location` prefers the context and otherwise reads the newest old
+  stamp line that names a place (never the date, never a target named like coordinates); duplicates
+  keep the map; `Attach` cleans a damaged context.
 
 ## `notebook_ui_harness.lua` — the UI and the host
 
@@ -68,6 +73,15 @@ The checks worth naming:
   through to the real chat path when it does not. The fall-through is proved by counting calls into
   the original, not assumed.
 - **K2** — deleting a notebook does not delete its notes.
+- **L1–L9** — a stamp is a way back (1.1.0). The stamp keeps its exact map and coordinates; Go sits
+  after Stamp and the six verbs still fit the 456 px row; Go and the menu entry ask Commander Orders
+  (a recording stub here) for one waypoint keyed by the note; an old stamp goes through
+  `CommanderOrders.Import` as a `/way <zone> x y title` line, and an ambiguous zone lists its
+  candidates; a note with no place offers neither; Orders off says so; Orders missing prints the
+  `/way` line; Stamp New Notes keeps the place too.
+
+Mutation hooks: `NOTEBOOK_STORE=/path` (both harnesses) and `NOTEBOOK_UI=/path` load a copy in place of
+the real file. Twenty-two hand-made mutants of the 1.1.0 code are all killed.
 
 ## `globals_lint.lua` — scoping
 

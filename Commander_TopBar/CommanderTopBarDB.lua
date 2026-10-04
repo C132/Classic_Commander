@@ -15,6 +15,7 @@ local DefaultSettings = {
     ShowDurability = true,
     ShowXP = true,
     ShowCoords = false,
+    ShowNav = false,
     ShowClock = true,
     ShowPerformance = true,
 }
@@ -40,7 +41,7 @@ local function CreateOptionsPanel()
         key = "TopBar",
         title = "Top Bar",
         addonName = "Commander_TopBar",
-        description = "A command readout along the top of the screen, SC2-style: floating icons and numbers with no backdrop, right-aligned to the screen edge — gold, income, supply, ammo, condition, XP, and more at a glance.",
+        description = "A command readout along the top of the screen, SC2-style: floating icons and numbers with no backdrop, right-aligned to the screen edge — gold, income, supply, ammo, condition, XP, and more at a glance. With Commander Orders loaded, the coordinates take a click: a waypoint where you stand, or Shift-click to share where you stand with your group.",
         event = COMMANDER_TOPBAR_EVENTS.UPDATE,
         slash = { "/ctopbar", "/ctb" },
         slashHandlers = {
@@ -97,11 +98,25 @@ local function CreateOptionsPanel()
         Toggle("ShowDurability", "Durability", "Lowest equipment durability; red when repairs loom."),
         Toggle("ShowXP", "XP Rate", "XP per hour and estimated time to level. Hidden at max level."))
     panel:AddCheckboxPair(
-        Toggle("ShowCoords", "Coordinates", "Your current map coordinates. Hidden where the map has no position data."),
+        Toggle("ShowCoords", "Coordinates", "Your current map coordinates. Hidden where the map has no position data.\n\nWith Commander Orders loaded you can click them: click for a waypoint where you stand (the same as /wayb), Shift-click to share where you stand with your group without adding a waypoint of your own, right-click for the waypoint manager. Without it, a click prints the spot as a /way line."),
         Toggle("ShowClock", "Clock", "Local time."))
     panel:AddCheckboxPair(
         Toggle("ShowPerformance", "Performance", "Framerate and home latency."),
-        nil)
+        {
+            label = "Waypoint (Commander Orders)",
+            tooltip = function()
+                local text = "The waypoint Commander Orders' arrow is following, with its distance and arrival time, in the arrow's own words and units. Hidden when there is no waypoint. Click it for the waypoint manager."
+                if not (CommanderOrders and CommanderOrders.Status) then
+                    text = text .. "\n\nNeeds Commander Orders, which is not loaded."
+                end
+                return text
+            end,
+            get = function() return CommanderTopBarDB.ShowNav end,
+            set = function(value) CommanderTopBarDB.ShowNav = value end,
+            isEnabled = function()
+                return CommanderTopBarDB.EnableTopBar and CommanderOrders ~= nil and CommanderOrders.Status ~= nil
+            end,
+        })
 
     panel:Finalize({ onDefaults = Reset })
 end

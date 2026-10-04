@@ -515,23 +515,155 @@ function ScheduleRefresh()
 end
 
 -- ---------------------------------------------------------------------------
--- Waypoints
+-- Waypoints: the Commander Orders arrow, else the place and its /way line
+--
+-- Commander Orders 3.0 is the suite's navigation; TomTom is gone (and this
+-- window never tried Orders before, so the Go buttons would have dropped to
+-- printing the day it went). A Go press is the player asking for the arrow,
+-- so the waypoint takes it; each place owns ONE waypoint (source
+-- "Formulary", key "place:<name>@<map>"), so a second press moves nothing and
+-- stacks nothing; it is session only, Orders' default for a consumer. With
+-- Orders absent, turned off or refusing, the place is printed with its /way
+-- line, and every Go tooltip says which it will be. The Trips view routes:
+-- a right-click on a zone walks its vendors, Route All Trips walks every
+-- zone (DECISIONS D16).
 -- ---------------------------------------------------------------------------
 
-local function SetWaypoint(place, title)
-    if place.map and place.x and TomTom and TomTom.AddWaypoint then
-        local ok = pcall(TomTom.AddWaypoint, TomTom, place.map, place.x / 100, place.y / 100,
-            { title = title or place.name, persistent = false, minimap = true, world = true, crazy = true })
-        if ok then
+local function OrdersApi()
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.Add) == "function" then return api end
+    return nil
+end
+
+-- "ORDERS" | "OFF" (Orders turned off) | "ABSENT"
+local function WaypointPath()
+    local api = OrdersApi()
+    if not api then return "ABSENT" end
+    if type(api.IsAvailable) == "function" then
+        local ok, available = pcall(api.IsAvailable)
+        if ok and not available then return "OFF" end
+    end
+    return "ORDERS"
+end
+
+local WAYPOINT_WORDS = {
+    ORDERS = "Points the Commander Orders arrow there.",
+    OFF = "Prints the coordinates and a /way line to chat (Commander Orders is turned off).",
+    ABSENT = "Prints the coordinates and a /way line to chat (Commander Orders is not loaded).",
+}
+
+local function WaypointWords()
+    return WAYPOINT_WORDS[WaypointPath()]
+end
+
+local function PlaceKey(place)
+    return "place:" .. tostring(place.name) .. "@" .. tostring(place.map or place.zone)
+end
+
+-- The command that puts a place on anybody's arrow, x and y in 0..100
+local function WayLine(place, title)
+    return ("/way #%d %.2f %.2f %s"):format(place.map, place.x, place.y, title or place.name)
+end
+
+local function Placed(place)
+    return type(place) == "table" and type(place.map) == "number" and type(place.x) == "number"
+        and type(place.y) == "number"
+end
+
+local function SetWaypoint(place, title, icon)
+    title = title or place.name
+    if Placed(place) and WaypointPath() == "ORDERS" then
+        -- Orders answers nil and a reason rather than raising
+        local ok, uid = pcall(OrdersApi().Add, {
+            map = place.map, x = place.x / 100, y = place.y / 100, title = title, icon = icon,
+            source = "Formulary", key = PlaceKey(place), setArrow = true,
+        })
+        if ok and uid then
             Announce(("Waypoint set: %s — %s (%.1f, %.1f)"):format(place.name, place.zone, place.x, place.y))
-            return
+            return true
         end
     end
-    if place.x then
+    if Placed(place) then
+        Announce(("%s — %s (%.1f, %.1f)   %s"):format(place.name, place.zone, place.x, place.y, WayLine(place, title)))
+    elseif place.x then
         Announce(("%s — %s (%.1f, %.1f)"):format(place.name, place.zone, place.x, place.y))
     else
         Announce(("%s — %s"):format(place.name, place.zone or "?"))
     end
+    return false
+end
+
+-- A Trips stop's title: the vendor and what to buy there
+local function StopTitle(stop, formulas)
+    local first = formulas[1] and formulas[1].entry and formulas[1].entry.name or "formulas"
+    local more = #formulas - 1
+    return ("%s: %s%s"):format(stop.name, first, more > 0 and (" (+%d)"):format(more) or "")
+end
+
+-- Route specs from Trips zones. With `once`, a RECIPE already covered by an
+-- earlier stop is not bought again, and a stop left with nothing new is
+-- dropped: Trips lists a formula under every zone that sells it, several TBC
+-- recipes are taught by two or three formula items (the reprints), and a
+-- route through every zone must not send you to buy a recipe twice. Zones
+-- come in Trips' own order (most formulas first), so the cover is greedy in
+-- that order. A vendor with no place on the map (inside an instance) has no
+-- stop: no arrow can go there.
+local function TripSpecs(zones, once)
+    local specs, covered = {}, {}
+    for _, z in ipairs(zones) do
+        for _, stop in ipairs(z.stops) do
+            local fresh = {}
+            for _, f in ipairs(stop.formulas) do
+                if not (once and covered[f.entry]) then fresh[#fresh + 1] = f end
+            end
+            if #fresh > 0 and Placed(stop) then
+                for _, f in ipairs(fresh) do covered[f.entry] = true end
+                specs[#specs + 1] = { map = stop.map, x = stop.x / 100, y = stop.y / 100,
+                    title = StopTitle(stop, fresh), icon = "VENDOR", place = stop }
+            end
+        end
+    end
+    return specs
+end
+
+-- Hand Orders one nearest-first route (one stop is just a waypoint), owned
+-- by key so asking again replaces it; without Orders, the /way lines
+local function RouteSpecs(specs, title, key)
+    if #specs == 0 then
+        Announce("nothing to route: no vendor stop there")
+        return false
+    end
+    if #specs == 1 then return SetWaypoint(specs[1].place, specs[1].title, "VENDOR") end
+    local api = OrdersApi()
+    if WaypointPath() == "ORDERS" and type(api.AddRoute) == "function" then
+        local stops = {}
+        for i, spec in ipairs(specs) do
+            stops[i] = { map = spec.map, x = spec.x, y = spec.y, title = spec.title, icon = spec.icon }
+        end
+        local ok, id = pcall(api.AddRoute, { title = title, source = "Formulary", key = key, mode = "NEAREST",
+            stops = stops, start = true })
+        if ok and id then
+            Announce(("%s: %d vendor stops, nearest first — follow the Commander Orders arrow"):format(title, #specs))
+            return true
+        end
+    end
+    Announce(title .. ": " .. WaypointWords())
+    for _, spec in ipairs(specs) do Announce("  " .. WayLine(spec.place, spec.title)) end
+    return false
+end
+
+local function RouteZone(z)
+    return RouteSpecs(TripSpecs({ z }, false), ("Formulary: %s in %s"):format(Data().name, z.zone),
+        ("trip:%s:%s"):format(Data().key, z.zone))
+end
+
+-- Every trip at once, each formula bought once
+function CommanderFormulary_RouteTrips()
+    if not loaded then return false end
+    if not view then Rebuild() end
+    if not view then return false end
+    return RouteSpecs(TripSpecs(M.Trips(view, world) or {}, true), ("Formulary: every %s trip"):format(Data().name),
+        "trips:" .. Data().key)
 end
 
 -- ---------------------------------------------------------------------------
@@ -865,13 +997,16 @@ local function PaintNav()
             local key = "zone:" .. z.zone
             row:SetScript("OnClick", function(_, button)
                 if button == "RightButton" and z.stops[1] then
-                    SetWaypoint(z.stops[1], z.stops[1].name)
+                    RouteZone(z)
                 else
                     ToggleCategory(key)
                 end
             end)
-            AttachTooltip(row, z.zone, ("%d formula%s you do not know, %s in all, %d at your skill. Click to fold; right-click for a waypoint to %s."):format(
-                z.count, z.count == 1 and "" or "s", M.FormatMoney(z.cost), z.atSkill, z.stops[1] and z.stops[1].name or "the vendor"), "ANCHOR_RIGHT")
+            local routeHint = #z.stops > 1
+                and ("right-click to route its %d vendors, nearest first"):format(#z.stops)
+                or ("right-click for a waypoint to %s"):format(z.stops[1] and z.stops[1].name or "the vendor")
+            AttachTooltip(row, z.zone, ("%d formula%s you do not know, %s in all, %d at your skill. Click to fold; %s. %s"):format(
+                z.count, z.count == 1 and "" or "s", M.FormatMoney(z.cost), z.atSkill, routeHint, WaypointWords()), "ANCHOR_RIGHT")
         elseif r.kind == "trainers" then
             row:SetHeight(HEAD_H)
             SetChevron(row, not r.collapsed, tr, tg, tb)
@@ -1209,10 +1344,9 @@ local function PaintReagents(entry)
         or (Hex(fr, fg, fb) .. "You are short of a reagent.|r"), { indent = 2, gap = 2 })
 end
 
-local function GoButton(place, title, rowY)
+local function GoButton(place, title, rowY, icon)
     if not place.x then return end
-    local b = DButton("Go", 40, function() SetWaypoint(place, title) end, "Waypoint",
-        TomTom and "Sets a TomTom waypoint." or "Prints the coordinates to chat (TomTom is not installed).")
+    local b = DButton("Go", 40, function() SetWaypoint(place, title, icon) end, "Waypoint", WaypointWords)
     b:SetPoint("TOPRIGHT", detailChild, "TOPRIGHT", -2, rowY + 1)
 end
 
@@ -1284,7 +1418,7 @@ local function PaintHowToLearn(entry)
                     if t.outland and (not t.faction or not world.faction or t.faction == world.faction) then
                         local ty = dy
                         Line(("%s — %s (%.1f, %.1f)"):format(t.name, t.zone, t.x, t.y), { indent = 14, ink = "secondary", rightPad = 46 })
-                        GoButton(t, t.name, ty)
+                        GoButton(t, t.name, ty, "TRAINER")
                     end
                 end
             end
@@ -1314,7 +1448,7 @@ local function PaintHowToLearn(entry)
         elseif l.kind == "vendor" then
             local colour = (not l.usable) and { sr * 0.8, sg * 0.8, sb * 0.8 } or nil
             Line(("Sold by %s%s"):format(l.text, l.usable and "" or (" — " .. (l.why or "not for you"))), { indent = 24, color = colour, rightPad = 46 })
-            GoButton(l.place, l.place.name, rowY)
+            GoButton(l.place, l.place.name, rowY, "VENDOR")
         elseif l.kind == "drop" then
             Line("Drops from " .. l.text, { indent = 24, rightPad = 46 })
             GoButton(l.place, l.place.name, rowY)
@@ -1548,6 +1682,15 @@ local function PaintActions()
     else
         frame.refreshButton:Hide()
     end
+    -- The Trips view's own action: every trip as one route
+    if (db.Filter or "ALL") == "TRIPS" and #(M.Trips(view, world) or {}) > 0 then
+        frame.routeAllButton:ClearAllPoints()
+        frame.routeAllButton:SetPoint("RIGHT", actions, "RIGHT", rx, 0)
+        frame.routeAllButton:Show()
+        rx = rx - 124
+    else
+        frame.routeAllButton:Hide()
+    end
     if not InCombat() and not WindowOpen() and not char.scanned[Data().key] then
         local oh = EnsureOpenButton(actions)
         if oh and SetOpenSpell() then
@@ -1632,7 +1775,7 @@ local FILTERS = {
     { key = "PROFITABLE", label = "Profit", width = 48, tooltip = "The ones you know that make money at today's auction prices: what a cast makes is worth more than its reagents. Needs Auctionator's scan data." },
     { key = "UNKNOWN", label = "Unknown", width = 62, tooltip = "The ones you cannot yet, with where they come from." },
     { key = "LEARNABLE", label = "Learnable", width = 68, tooltip = "The ones you could learn right now: a trainer at your skill, a formula in your bags or bank, or a vendor you can use." },
-    { key = "TRIPS", label = "Trips", width = 44, tooltip = "The formulas you do not know that a vendor you can use sells, grouped by zone: one trip each, with the vendor, the coordinates and the gold. Click a zone for a waypoint to its vendor." },
+    { key = "TRIPS", label = "Trips", width = 44, tooltip = "The formulas you do not know that a vendor you can use sells, grouped by zone: one trip each, with the vendor, the coordinates and the gold. Right-click a zone to route its vendors with Commander Orders; Route All Trips walks every one." },
 }
 
 local function SavePosition()
@@ -1891,6 +2034,16 @@ local function EnsureFrame()
         local entry = view and selectedSpell and view.entries[selectedSpell]
         RefreshPrices((IsShiftKeyDown and IsShiftKeyDown()) and entry or nil)
     end)
+    -- Shown on the Trips view only (PaintActions)
+    frame.routeAllButton = CreateFrame("Button", nil, actions, "UIPanelButtonTemplate")
+    frame.routeAllButton:SetSize(118, 22)
+    frame.routeAllButton:SetText("Route All Trips")
+    frame.routeAllButton:SetScript("OnClick", function() CommanderFormulary_RouteTrips() end)
+    AttachTooltip(frame.routeAllButton, "Route all trips", function()
+        return "Every vendor the Trips list names, as one Commander Orders route, nearest first: arriving at one points the arrow at the next, and a formula sold in several zones is bought at the first stop that has it. Asking again replaces the route. "
+            .. WaypointWords()
+    end, "ANCHOR_TOP")
+    frame.routeAllButton:Hide()
     AttachTooltip(frame.refreshButton, "Refresh prices",
         "Have Auctionator search every item that moves a number in this window — reagents, crafted goods, disenchant results and formulas that trade hands — and rebuild it when the search ends. Takes a minute or two. Shift-click to search only the selected recipe's reagents, product and formula. Auctionator's own Full Scan does the whole realm at once, but only every fifteen minutes.", "ANCHOR_TOP")
     frame.refreshButton:Hide()

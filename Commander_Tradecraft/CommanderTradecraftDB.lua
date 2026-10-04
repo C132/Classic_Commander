@@ -82,6 +82,7 @@ local function CreateOptionsPanel()
             show = function() Call("CommanderTradecraft_Show") end,
             hide = function() Call("CommanderTradecraft_Hide") end,
             route = function() Call("CommanderTradecraft_Route") end,
+            trip = function() Call("CommanderTradecraft_RouteTrip") end,
             shop = function() Call("CommanderTradecraft_Shopping") end,
             ah = function(arg) Call("CommanderTradecraft_AuctionatorList", arg) end,
             refresh = function() Call("CommanderTradecraft_RefreshPrices") end,
@@ -205,8 +206,8 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
     })
     panel:AddCheckbox({
-        label = "Set Waypoints Through TomTom",
-        tooltip = "When TomTom is installed, the Waypoint button on a formula step hands it the vendor's coordinates. Without TomTom the button prints the coordinates to chat instead.",
+        label = "Set Waypoints",
+        tooltip = "The Go buttons by a vendor, a trainer or a quest giver point the Commander Orders arrow at them, and Trip routes it through every vendor the current bracket still needs, nearest first. Off, or without Commander Orders, they print the coordinates and a /way line to chat instead.",
         get = function() return CommanderTradecraftDB.UseWaypoints end,
         set = function(value) CommanderTradecraftDB.UseWaypoints = value end,
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,

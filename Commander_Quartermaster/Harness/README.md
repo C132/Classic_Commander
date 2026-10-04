@@ -121,3 +121,30 @@ read nil unless the template mock provides them; `HookScript` CHAINS handlers
 (the search box hooks a placeholder onto its own OnTextChanged); and
 `C_Timer.After` feeds an executable queue because every scan and browser
 refresh coalesces through it.
+
+## Follow-up: waypoints to sources (Commander Orders 3.0) — not done, on purpose
+
+Commander Orders 3.0 wired every Commander module that holds a map position
+into its arrow. Quartermaster was assessed (2026-10-04) and deliberately left
+out, because neither its data nor its generator yields a map position today:
+
+- `CommanderQuartermasterEnhanceData.lua` source records carry an npc id and a
+  zone NAME, never coordinates (2,021 `npc =` references, zero `x =`).
+- `qm_worlddb.py` reads every spawn's world position, but only to pick the
+  zone name (`_spawn_zones`: the smallest UiMapAssignment box containing the
+  spawn wins, then the box's uiMap NAME is counted). The position and the
+  uiMap id are thrown away; nothing converts world to map x, y.
+
+Doing it means: in `_spawn_zones`, keep the winning box's UiMapID and turn the
+spawn into 0..1 on it (Region_0..2 and Region_3..5 are the zone's world box
+with x = north and y = west, mapped through UiMin/UiMax; map x grows as world
+west falls and map y as world north falls, the pairing Commander Orders' D1
+got wrong once), emit
+`map, x, y` (or a short list per npc, for Orders' nearest-of-N
+`alternatives`) on VENDOR, TRAINER, DROP and QUEST source records, regenerate
+the 900 KB data file, re-run `crosscheck_enhancements.py` and
+`crosscheck_atlasloot.py`, and add a Go affordance on the detail pane's
+Sources lines calling `CommanderOrders.Add{ map, x, y, title, source =
+"Quartermaster", key = "src:<npc>" }` with the `/way` line as the fallback.
+The spec said not to regenerate large data blindly, so that is its own change,
+with the cross-checks run and the diff reviewed.

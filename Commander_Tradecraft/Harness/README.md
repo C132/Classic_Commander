@@ -4,7 +4,7 @@ Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 1039 checks
-/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 191 checks
+/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 209 checks
 /opt/homebrew/bin/luajit globals_lint.lua              # 4 files, 0 undeclared globals
 ```
 
@@ -43,14 +43,14 @@ characters through `Build`. A failure here is a real logic or data bug, never a 
 Loads the **real** shared framework (`CommanderSettingsUI.lua`, `CommanderEvents.lua`) plus all four
 addon files under the suite's permissive widget mock, extended with a skill list (header first, the
 way the client shows it), a craft window and a trade skill window each with a list to scan and a `DoCraft` that raises the
-targeting cursor for enchants, equipped slots and bags, the replace-enchant popup, TomTom and
-Auctionator stubs, and a combat flag.
+targeting cursor for enchants, equipped slots and bags, the replace-enchant popup, a recording
+Commander Orders and an Auctionator stub, and a combat flag.
 
 It drives login on a fixtured Horde enchanter at 146 with a saved path choice; the craft window
 opening (scan, auto-open, Craft enabled); the Craft button through `DoCraft`, the bracers, the bag
 bracers, the no-target refusal and the replace answer including its three-second rule; a skill-up
 with its chat line and sound; the alternatives from the slash command and the button; the buy step
-with faction-filtered vendors, price, zone and the TomTom waypoint; skip and un-skip; reset; the
+with faction-filtered vendors, price, zone and the Commander Orders waypoint; skip and un-skip; reset; the
 trainer banner capped and uncapped and the Master trainers by faction; the ledger in both modes and
 the Auctionator hand-off; disable/enable; the combat rule on the secure button; finished; Restore
 Defaults; status.
@@ -73,6 +73,14 @@ Checks worth naming:
 - **C1/C3** — a one-way step has no option rows; a two-way segment shows two radio rows under the
   step, clicking one chooses it; `/ctc alt <range>` decides a later segment.
 - **C5** — there is no skip entry point.
+- **C3 waypoints (D17)** — Go hands Commander Orders the vendor as source "Tradecraft", key
+  "place:<name>@<zone>", titled with the formula, taking the arrow; Go again is the same key (Orders
+  moves it, nothing stacks); the tooltip names the path. Trip routes the Expert bracket's vendors
+  as one owned NEAREST route ("trip:ENCHANTING:3") with a Kulwia stop and no Alliance vendor on a
+  Horde trip. Without Orders the trip prints its `/way` lines and Go prints the place with its
+  `/way` line, as its tooltip said; Set Waypoints off prints and sends nothing.
+- **E1/E3** — Route This Trip is absent from the route list, shown in the shopping list exactly
+  when the bracket has a formula to buy, and routes that bracket's trip.
 - **E1** — the Route window is rows: five bracket headers each once, the finished two-way segment
   without its options, the upcoming one with both and clickable, exactly one row highlighted.
 - **F2** — in combat the Open button is neither offered nor touched; after combat it is back.

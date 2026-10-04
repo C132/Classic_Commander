@@ -24,7 +24,11 @@
 -- a drain on any group member's mana told to the group with what is left
 -- (the mana-only and group-only gates, the share-of-the-bar threshold that
 -- adds small ticks up, the per-victim window that turns a chain of burns
--- into one line, the deferred read of the bar, and the battleground rule).
+-- into one line, the deferred read of the bar, and the battleground rule),
+-- and the 2.10.0 Rally on Me call: the chat line with the zone and
+-- coordinates, the spot shared through CommanderOrders.SharePoint (never a
+-- waypoint of your own), its setting, Orders missing, no map position, the
+-- binding and slash, and the centre button clear of the ring of calls.
 -- Mock modeled on Commander_Chat/Harness.
 
 local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
@@ -86,6 +90,9 @@ WidgetMT.__index = function(self, key)
         local fn = function(s)
             local t = NewWidget(key == "CreateTexture" and "Texture" or "FontString")
             t.__parent = s
+            local regions = rawget(s, "__regions")
+            if not regions then regions = {} rawset(s, "__regions", regions) end
+            regions[#regions + 1] = t
             return t
         end
         rawset(self, key, fn); return fn
@@ -96,6 +103,15 @@ WidgetMT.__index = function(self, key)
     end
     if key == "GetScript" then
         local fn = function(s, name) return s.__scripts[name] end
+        rawset(self, key, fn); return fn
+    end
+    -- Anchors and sizes are remembered so the wheel's layout can be checked
+    if key == "SetPoint" then
+        local fn = function(s, ...) s.__point = { ... } end
+        rawset(self, key, fn); return fn
+    end
+    if key == "SetSize" then
+        local fn = function(s, w, h) s.__w, s.__h = w, h end
         rawset(self, key, fn); return fn
     end
     if key == "RegisterEvent" or key == "RegisterUnitEvent" then
@@ -118,6 +134,12 @@ function CreateFrame(frameType, name, parent, template)
     local f = NewWidget(frameType, name)
     f.__template = template
     f.__parent = parent
+    if parent then
+        -- rawget: the mock answers any unknown key with a no-op function
+        local kids = rawget(parent, "__kids")
+        if not kids then kids = {} rawset(parent, "__kids", kids) end
+        kids[#kids + 1] = f
+    end
     if name then _G[name] = f end
     return f
 end
@@ -353,7 +375,8 @@ _G.CommanderCommsDB = {
 }
 COMMANDER_COMMS_EVENTS = { UPDATE = "COMMANDER_COMMS_UPDATE" }
 
-assert(loadfile(ADDONS .. "/Commander_Comms/CommanderComms.lua"))()
+-- Mutation hook: COMMS_RUNTIME=/path of a copy of CommanderComms.lua
+assert(loadfile(os.getenv("COMMS_RUNTIME") or (ADDONS .. "/Commander_Comms/CommanderComms.lua")))()
 Fire("PLAYER_LOGIN")
 
 local function StartChannel(unit, spellID, duration)
@@ -1537,6 +1560,181 @@ CommanderCommsDB.ManaBurnCallouts = true
 -- user has not been through the settings yet
 CHECK(dbSource:find("ManaBurnCallouts = true", 1, true) ~= nil,
     "burn: it ships switched on")
+
+-- ===========================================================================
+-- 2.10.0 Rally on Me: the call that carries a place
+-- ===========================================================================
+
+-- Where the player stands, and the map names the line reads
+local rallySpot = { map = 1429, x = 0.421376, y = 0.655 }
+local subZone = "Goldshire"
+C_Map = {
+    GetBestMapForUnit = function() return rallySpot.map end,
+    GetPlayerMapPosition = function()
+        if not rallySpot.map then return nil end
+        return { x = rallySpot.x, y = rallySpot.y }
+    end,
+    GetMapInfo = function(id)
+        if id == 1429 then return { mapID = 1429, name = "Elwynn Forest", mapType = 3 } end
+        return nil
+    end,
+}
+function GetSubZoneText() return subZone end
+
+-- Commander Orders, as far as Comms reaches into it
+local shares = {}
+local function OrdersStub()
+    return {
+        Add = function() error("Rally on Me must never add a waypoint of your own") end,
+        SharePoint = function(spec, channel)
+            shares[#shares + 1] = { spec = spec, channel = channel }
+            return true
+        end,
+    }
+end
+CommanderOrders = OrdersStub()
+
+local wheelFrame = _G.CommanderCommsWheel
+local rally
+for _, kid in ipairs(rawget(wheelFrame, "__kids") or {}) do
+    if rawget(kid, "__text") == "Rally on Me" then rally = kid end
+end
+CHECK(rally ~= nil, "rally: a Rally on Me button sits on the wheel")
+
+local function ClickRally()
+    ClearMessages()
+    shares = {}
+    wheelFrame.__shown = true
+    rally.__scripts.OnClick(rally, "LeftButton")
+end
+
+-- In a party: the line names the place, the spot goes to Orders
+inGroup, inRaid, inInstanceGroup, instanceType = true, false, false, "none"
+ClickRally()
+CHECK(#sent == 1, "rally: one chat line", #sent)
+CHECK(sent[1] and sent[1].msg == "Rally on me! Goldshire, Elwynn Forest 42.1, 65.5",
+    "rally: it says where, readable without any addon", sent[1] and sent[1].msg)
+CHECK(sent[1] and sent[1].channel == "PARTY", "rally: to the party", sent[1] and sent[1].channel)
+CHECK(#shares == 1, "rally: and the spot is shared through Commander Orders", #shares)
+local share = shares[1] or { spec = {} }
+CHECK(share.spec.map == 1429 and share.spec.x == 0.421376 and share.spec.y == 0.655,
+    "rally: the exact spot, not the rounded one in the chat line")
+CHECK(share.spec.title == "Rally on Kicker", "rally: titled with your name", share.spec.title)
+CHECK(share.spec.silent == true, "rally: silently (the chat line already says it)")
+CHECK(share.channel == nil, "rally: to your group, Orders picks the channel", share.channel)
+CHECK(not wheelFrame.__shown, "rally: the wheel closes, like every call")
+
+-- The subzone is the zone itself: not said twice
+subZone = "Elwynn Forest"
+ClickRally()
+CHECK(sent[1] and sent[1].msg == "Rally on me! Elwynn Forest 42.1, 65.5",
+    "rally: a subzone that is the zone is not repeated", sent[1] and sent[1].msg)
+subZone = ""
+ClickRally()
+CHECK(sent[1] and sent[1].msg == "Rally on me! Elwynn Forest 42.1, 65.5",
+    "rally: no subzone, just the zone", sent[1] and sent[1].msg)
+subZone = "Goldshire"
+
+-- The setting: the chat line goes, the waypoint does not
+CommanderCommsDB.RallyWaypoint = false
+ClickRally()
+CHECK(#sent == 1 and #shares == 0, "rally: switched off, words only", #shares)
+CommanderCommsDB.RallyWaypoint = nil
+ClickRally()
+CHECK(#shares == 1, "rally: an unset setting counts as on (it ships on)", #shares)
+
+-- Orders not loaded: the words still go out, and nothing errors
+CommanderOrders = nil
+ClickRally()
+CHECK(#sent == 1 and sent[1].msg:find("Elwynn Forest 42.1, 65.5", 1, true) ~= nil,
+    "rally: without Orders the call is the chat line", sent[1] and sent[1].msg)
+CommanderOrders = { Add = function() end }       -- an Orders too old to share
+ClickRally()
+CHECK(#sent == 1, "rally: an Orders without SharePoint is treated as absent")
+CommanderOrders = OrdersStub()
+
+-- No map position (inside an instance): words only, nothing shared
+rallySpot.map = nil
+ClickRally()
+CHECK(sent[1] and sent[1].msg == "Rally on me!", "rally: no position, just the call", sent[1] and sent[1].msg)
+CHECK(#shares == 0, "rally: and nothing to share")
+rallySpot.map = 1429
+
+-- Battleground: the instance chat, like the rest of the wheel
+inInstanceGroup, instanceType = true, "pvp"
+ClickRally()
+CHECK(sent[1] and sent[1].channel == "INSTANCE_CHAT", "rally: in a battleground, to the instance chat",
+    sent[1] and sent[1].channel)
+inInstanceGroup, instanceType = false, "none"
+
+-- The preview says what will happen, like every call's
+local function WheelTexts()
+    local out = {}
+    for _, region in ipairs(rawget(wheelFrame, "__regions") or {}) do
+        local text = rawget(region, "__text")
+        if type(text) == "string" then out[#out + 1] = text end
+    end
+    return table.concat(out, "\n")
+end
+rally.__scripts.OnEnter(rally)
+local preview = WheelTexts()
+CHECK(preview:find('"Rally on me! Goldshire, Elwynn Forest 42.1, 65.5"', 1, true) ~= nil,
+    "rally: hovering previews the exact line", preview)
+CHECK(preview:find("to party, and a waypoint for the group", 1, true) ~= nil,
+    "rally: and says where it goes", preview)
+rally.__scripts.OnLeave(rally)
+CHECK(WheelTexts():find("COMMS", 1, true) ~= nil, "rally: leaving restores the wheel's centre")
+inGroup = false
+rally.__scripts.OnEnter(rally)
+CHECK(WheelTexts():find("to say", 1, true) ~= nil and not WheelTexts():find("waypoint for the group", 1, true),
+    "rally: solo, it goes to say and promises no waypoint", WheelTexts())
+rally.__scripts.OnLeave(rally)
+inGroup = true
+
+-- The binding and /ccomms rally reach the same call, and respect the switch
+ClearMessages(); shares = {}
+CommanderComms_Rally()
+CHECK(#sent == 1 and #shares == 1, "rally: CommanderComms_Rally makes the call")
+CommanderCommsDB.EnableComms = false
+ClearMessages(); shares = {}
+CommanderComms_Rally()
+CHECK(#sent == 0 and #shares == 0, "rally: and nothing while Comms is off")
+CommanderCommsDB.EnableComms = true
+CHECK(BINDING_NAME_COMMANDERCOMMS_RALLY == "Rally on Me", "rally: the binding has a name")
+local bindingsFile = assert(io.open(ADDONS .. "/Commander_Comms/Bindings.xml"))
+local bindings = bindingsFile:read("*a")
+bindingsFile:close()
+CHECK(bindings:find('name="COMMANDERCOMMS_RALLY"', 1, true) and bindings:find("CommanderComms_Rally()", 1, true),
+    "rally: Bindings.xml binds it")
+CHECK(not bindings:find("<!%-%-.-%-%-.-%-%->"), "rally: no '--' inside an XML comment")
+CHECK(dbSource:find("RallyWaypoint = true", 1, true) ~= nil, "rally: the waypoint ships on")
+CHECK(dbSource:find("rally = function()", 1, true) ~= nil, "rally: /ccomms rally exists")
+
+-- The centre button stays clear of the ring: the ten calls already fill the
+-- ellipse, which is why Rally on Me is not an eleventh slot on it
+local function Rect(button)
+    local p = rawget(button, "__point") or {}
+    local x, y = p[4] or 0, p[5] or 0
+    local w, h = rawget(button, "__w") or 0, rawget(button, "__h") or 0
+    return x - w / 2, x + w / 2, y - h / 2, y + h / 2
+end
+local function Overlap(a, b)
+    local al, ar, ab, at = Rect(a)
+    local bl, br, bb, bt = Rect(b)
+    return al < br and bl < ar and ab < bt and bb < at
+end
+local ringButtons, clash = 0, nil
+for _, kid in ipairs(rawget(wheelFrame, "__kids") or {}) do
+    if kid ~= rally and rawget(kid, "__template") == "UIPanelButtonTemplate" then
+        ringButtons = ringButtons + 1
+        if Overlap(kid, rally) then clash = rawget(kid, "__text") end
+    end
+end
+CHECK(ringButtons == 10, "rally: the ring still holds its ten calls", ringButtons)
+CHECK(clash == nil, "rally: and the centre button overlaps none of them", clash)
+local rallyPoint = rawget(rally, "__point")
+CHECK(rallyPoint and rallyPoint[4] == 0 and rallyPoint[5] < -24,
+    "rally: centred, below the preview line", rallyPoint and rallyPoint[5])
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

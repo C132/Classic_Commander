@@ -1,3 +1,17 @@
+-- Commander Recovery: settings, the settings page, and the one migration.
+--
+-- The corpse arrow belongs to Commander Orders since Orders 3.0 (Recovery
+-- 2.3.0). Recovery's old "Corpse Run Order" option (CorpseOrder) is gone from
+-- the defaults; the checkbox in its place reads and writes Orders' own
+-- CorpseArrow setting through Orders' public API, so the two pages can never
+-- disagree, and it is greyed out without Orders. A player who had switched
+-- the old option OFF keeps the corpse run off: at login the "off" is handed
+-- to Orders once and the old key dropped. If Orders is not loaded at that
+-- login the key is kept until a login where it is, rather than the choice
+-- being lost. IssuedOrder -- the account-wide handle of the order Recovery
+-- used to issue -- is dropped outright. Nothing else in Orders' saved
+-- variables is read or written from here.
+
 CommanderRecoveryDB = _G.CommanderRecoveryDB or {}
 
 COMMANDER_RECOVERY_EVENTS = {
@@ -7,7 +21,6 @@ COMMANDER_RECOVERY_EVENTS = {
 local DefaultSettings = {
     EnableRecovery = true,
     DeathReport = true,
-    CorpseOrder = true,
     RecoverySound = true,
     AutoRelease = true,
     AutoReleaseArena = false,
@@ -17,6 +30,35 @@ local DefaultSettings = {
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
+
+-- Commander Orders' public table, when loaded (its functions never raise)
+local function Orders()
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.CorpseArrow) == "function" and type(api.SetCorpseArrow) == "function" then
+        return api
+    end
+    return nil
+end
+
+local function OrdersCorpseArrow()
+    local api = Orders()
+    if not api then return false end
+    local ok, on = pcall(api.CorpseArrow)
+    return ok and on and true or false
+end
+
+-- 2.2 -> 2.3 (see the header). Idempotent: run at every login.
+local function MigrateCorpseOrder()
+    local db = CommanderRecoveryDB
+    db.IssuedOrder = nil
+    if db.CorpseOrder == nil then return end
+    if db.CorpseOrder == false then
+        local api = Orders()
+        if not api then return end
+        pcall(api.SetCorpseArrow, false)
+    end
+    db.CorpseOrder = nil
+end
 
 local function Reset()
     Commander.UI.ResetToDefaults(CommanderRecoveryDB, DefaultSettings)
@@ -29,7 +71,7 @@ local function CreateOptionsPanel()
         key = "Recovery",
         title = "Recovery",
         addonName = "Commander_Recovery",
-        description = "Casualty response, RTS style. When your unit falls, Recovery logs where and when, keeps a session casualty count, and — with Commander Orders installed — issues an automatic move order pointing your ghost back at its corpse. In a battleground, where no one walks back to a corpse, it releases your spirit for you instead.",
+        description = "Casualty response, RTS style. When your unit falls, Recovery logs where and when, keeps a session casualty count, and confirms the recovery when you are back on your feet. The run back is Commander Orders' corpse arrow, which points your ghost at the corpse itself (or the dungeon's entrance) and hands the arrow back to whatever you were following once you live. In a battleground, where no one walks back to a corpse, Recovery releases your spirit for you instead.",
         event = COMMANDER_RECOVERY_EVENTS.UPDATE,
         slash = { "/crec" },
         slashHandlers = {
@@ -57,13 +99,14 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderRecoveryDB.EnableRecovery end,
     })
     panel:AddCheckbox({
-        label = "Corpse Run Order",
-        tooltip = "When you release your spirit, automatically issue a Commander Orders move order at your corpse. Requires the Commander Orders addon.",
-        get = function() return CommanderRecoveryDB.CorpseOrder end,
-        set = function(value) CommanderRecoveryDB.CorpseOrder = value end,
-        isEnabled = function()
-            return CommanderRecoveryDB.EnableRecovery and CommanderOrders_IssueOrder ~= nil
+        label = "Corpse Arrow (Commander Orders)",
+        tooltip = "After you release your spirit, point the Commander Orders arrow at your corpse, or at the entrance after a death inside a dungeon, and give the arrow back to what you were following once you live. Battlegrounds and arenas are left alone. This is Commander Orders' own Corpse Arrow setting, shown here too; greyed out without Commander Orders.",
+        get = OrdersCorpseArrow,
+        set = function(value)
+            local api = Orders()
+            if api then pcall(api.SetCorpseArrow, value and true or false) end
         end,
+        isEnabled = function() return Orders() ~= nil end,
     })
     panel:AddCheckbox({
         label = "Recovery Sound",
@@ -117,7 +160,7 @@ local function CreateOptionsPanel()
         {
             label = "Test Casualty",
             width = 130,
-            tooltip = "Preview the casualty flow: the death report line for your current position, whether auto-release would fire where you are standing, and the recovery sound. No session numbers change, no order is issued (also: /crec test).",
+            tooltip = "Preview the casualty flow: the death report line for your current position, whether the Commander Orders corpse arrow would follow a release, whether auto-release would fire where you are standing, and the recovery sound. No session numbers change (also: /crec test).",
             onClick = function()
                 if CommanderRecovery_Test then CommanderRecovery_Test() end
             end,
@@ -132,6 +175,8 @@ local function OnEvent(self, event, addonName)
         Commander.UI.ApplyDefaults(CommanderRecoveryDB, DefaultSettings)
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
+        -- Orders (an OptionalDep) has loaded its saved variables by now
+        MigrateCorpseOrder()
         CreateOptionsPanel()
     end
 end

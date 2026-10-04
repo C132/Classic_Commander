@@ -1,13 +1,32 @@
 -- Commander Recovery: casualty response. On death, capture the map position
 -- where the unit fell and log a short report; when the spirit is released,
--- issue a Commander Orders move order pointing back at the corpse (the arrow
--- tracks the death spot — close enough to the corpse for a run-back); when
--- the player lives again, clear our order and confirm recovery.
+-- say so if the Commander Orders arrow has the corpse; when the player lives
+-- again, confirm recovery.
 --
 -- Event flow on 2.5.x: PLAYER_DEAD (died) -> PLAYER_ALIVE (released, now a
 -- ghost — or resurrected in place without releasing) -> PLAYER_UNGHOST
 -- (back to life after being a ghost). UnitIsGhost distinguishes the two
 -- PLAYER_ALIVE cases.
+--
+-- The corpse arrow is Commander Orders' own since Orders 3.0 (2.3.0 here).
+-- Recovery used to issue an ordinary move order at the death spot and clear
+-- it again on resurrection, and every part of that was a workaround:
+--   * Orders had ONE account-wide slot, so the corpse order wiped out the
+--     player's own waypoint and the clean-up left them with nothing.
+--   * The clean-up matched the slot by float equality against an
+--     account-wide IssuedOrder, so a second character could inherit (and
+--     then delete) the first one's corpse run.
+--   * The death spot stood in for the corpse, was a file local that a
+--     /reload while dead lost, and an instance death gave no arrow at all.
+-- Orders now finds the real corpse (C_DeathInfo.GetCorpseMapPosition, asked
+-- on the map you are on and each parent), remembers the death per character
+-- through a /reload, points a dungeon death at the entrance, leaves
+-- battlegrounds and arenas alone, and gives the arrow back to whatever you
+-- were following once you live. So Recovery issues nothing: its old
+-- "Corpse Run Order" option is now Orders' CorpseArrow setting, shown on this
+-- page through CommanderOrders.CorpseArrow / SetCorpseArrow (the DB file
+-- migrates a player's "off" across), and the release line below only
+-- speaks when Orders really has the corpse.
 --
 -- In a battleground the whole corpse-run apparatus is beside the point, so
 -- Recovery also presses release for you there -- see the auto-release block
@@ -15,13 +34,31 @@
 
 local sessionDeaths = 0
 local lastDeath = nil        -- { mapID, x, y, zone, when }
--- The corpse order we issued lives in CommanderRecoveryDB.IssuedOrder (a
--- SavedVariable, so it survives /reload while dead) and is only ever
--- cleared when the active Orders waypoint still matches it — never a
--- waypoint the player set themselves during the ghost run.
 
 local function IsOn()
     return CommanderRecoveryDB and CommanderRecoveryDB.EnableRecovery
+end
+
+-- Commander Orders' public table when it is loaded (looked up each time: it
+-- is an optional dependency, and its functions answer rather than raise)
+local function Orders()
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.CorpseArrow) == "function" then return api end
+    return nil
+end
+
+-- Whether a release will get the Orders corpse arrow, and if not, why:
+-- true | false, "absent" | "off" | "disabled"
+local function CorpseArrowReady()
+    local api = Orders()
+    if not api then return false, "absent" end
+    local ok, on = pcall(api.CorpseArrow)
+    if not (ok and on) then return false, "off" end
+    if type(api.IsAvailable) == "function" then
+        local okAvail, available = pcall(api.IsAvailable)
+        if okAvail and not available then return false, "disabled" end
+    end
+    return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -163,12 +200,22 @@ function CommanderRecovery_Test()
         return
     end
     local here = CaptureDeathPosition()
+    local ready, why = CorpseArrowReady()
+    local corpse
+    if ready then
+        corpse = "releasing would point the Commander Orders arrow at your corpse"
+    elseif why == "off" then
+        corpse = "no corpse arrow: it is off (Corpse Arrow, Commander Orders)"
+    elseif why == "disabled" then
+        corpse = "no corpse arrow: Commander Orders is turned off"
+    end
     if here.x then
         print(string.format(
-            "Commander Recovery: TEST — unit lost in %s (%.0f, %.0f); releasing would issue a corpse run order back to this spot",
-            here.zone, here.x * 100, here.y * 100))
+            "Commander Recovery: TEST — unit lost in %s (%.0f, %.0f)%s",
+            here.zone, here.x * 100, here.y * 100, corpse and ("; " .. corpse) or ""))
     else
-        print(string.format("Commander Recovery: TEST — unit lost in %s", here.zone))
+        print(string.format("Commander Recovery: TEST — unit lost in %s%s", here.zone,
+            corpse and ("; " .. corpse) or ""))
     end
     local hold = AutoReleaseHold()
     if hold then
@@ -188,6 +235,11 @@ local session   -- reload-resilient casualty count
 
 local function OnDeath()
     if not IsOn() then return end
+    -- A hunter's Feign Death fires PLAYER_DEAD too. Counting it logged a
+    -- casualty, armed the re-fire guard below on the fake, and so swallowed
+    -- the hunter's next real death (and a bogus "recovered" followed)
+    if UnitIsFeignDeath and UnitIsFeignDeath("player") then return end
+    if UnitIsDeadOrGhost and not UnitIsDeadOrGhost("player") then return end
     -- PLAYER_DEAD can re-fire in odd resurrection flows; only count a death
     -- when we are not already tracking one
     if lastDeath then return end
@@ -199,37 +251,32 @@ local function OnDeath()
     end
 end
 
-local function OnReleased()
-    if not IsOn() then return end
-    if not (CommanderRecoveryDB.CorpseOrder and CommanderOrders_IssueOrder) then return end
-    if not (lastDeath and lastDeath.x) then return end
-    -- With Orders disabled the order would be silently accepted but no
-    -- arrow would ever show — skip instead of pretending to help
-    if CommanderOrdersDB and CommanderOrdersDB.EnableOrders == false then return end
-    if CommanderOrders_IssueOrder(lastDeath.mapID, lastDeath.x, lastDeath.y) then
-        CommanderRecoveryDB.IssuedOrder = { mapID = lastDeath.mapID, x = lastDeath.x, y = lastDeath.y }
-        print("Commander Recovery: corpse run order issued — follow the arrow, soldier")
+-- Orders adds the corpse waypoint from its own handler for the same event,
+-- and the order two handlers run in is not ours to know: look a frame later.
+-- Nothing is said when Orders has no corpse (a battleground, the setting
+-- off, a corpse the client cannot place yet) -- the line never promises an
+-- arrow that is not there.
+local function SayIfCorpseArrow()
+    if not (IsOn() and UnitIsGhost and UnitIsGhost("player")) then return end
+    local api = Orders()
+    if not (api and type(api.List) == "function") then return end
+    local ok, corpses = pcall(api.List, { kind = "corpse" })
+    if ok and type(corpses) == "table" and corpses[1] then
+        print("Commander Recovery: corpse located -- follow the Commander Orders arrow, soldier")
     end
 end
 
--- Clear the corpse order if and only if it is still the active waypoint:
--- an order the player issued themselves mid-ghost-run (map click, rally)
--- or one that already self-cleared on arrival is left alone
-local function ClearOwnOrder()
-    local issued = CommanderRecoveryDB.IssuedOrder
-    CommanderRecoveryDB.IssuedOrder = nil
-    if not (issued and CommanderOrders_ClearOrder) then return end
-    local waypoint = CommanderOrdersDB and CommanderOrdersDB.Waypoint
-    if waypoint and waypoint.mapID == issued.mapID
-        and waypoint.x == issued.x and waypoint.y == issued.y then
-        CommanderOrders_ClearOrder(false)
+local function OnReleased()
+    if not IsOn() then return end
+    if not CorpseArrowReady() then return end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, SayIfCorpseArrow)
+    else
+        SayIfCorpseArrow()
     end
 end
 
 local function OnRecovered()
-    -- Even with the module disabled mid-run, an order we issued is ours
-    -- to clean up
-    ClearOwnOrder()
     if not IsOn() then
         lastDeath = nil
         return

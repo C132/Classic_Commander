@@ -2,11 +2,12 @@
 ## Category: Commander
 ## Title: Commander Ping
 ## Author: Devin
-## Version: 2.1.0
-## Notes: RTS-style minimap ping alerts: sound, an expanding flash, and a callout whenever a group member pings the map.
+## Version: 2.2.0
+## Notes: RTS-style minimap ping alerts: sound, an expanding flash, and a callout whenever a group member pings the map. With Commander Orders, the callout's [Waypoint] link points the arrow at the pinged spot, or every ping can become a waypoint by itself.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderPingDB
 ## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Orders
 
 CommanderPingDB.lua
 CommanderPing.lua

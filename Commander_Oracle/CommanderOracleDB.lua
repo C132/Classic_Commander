@@ -132,7 +132,7 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderOracleDB.EnableOracle end,
     }, {
         label = "Node Board",
-        tooltip = "The five flags, who holds each, and a live countdown on any that is ticking.",
+        tooltip = "The five flags, who holds each, and a live countdown on any that is ticking. With Commander Orders loaded, click a flag and the arrow points at it; the waypoint goes away when the match does.",
         get = function() return CommanderOracleDB.ShowNodes end,
         set = function(value) CommanderOracleDB.ShowNodes = value end,
         isEnabled = function() return CommanderOracleDB.EnableOracle end,

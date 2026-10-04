@@ -48,7 +48,7 @@ CommanderFormularyDB CommanderFormularyChar COMMANDER_FORMULARY_EVENTS
 CommanderFormulary_Data CommanderFormulary_Model CommanderFormulary_Defaults CommanderFormulary
 CommanderFormulary_Show CommanderFormulary_Hide CommanderFormulary_Toggle CommanderFormulary_Search CommanderFormulary_RefreshPrices
 CommanderFormulary_Select CommanderFormulary_ResetChar CommanderFormulary_Status CommanderFormulary_View
-CommanderFormulary_Profession
+CommanderFormulary_Profession CommanderFormulary_RouteTrips
 CommanderFormulary_OnLogin
 BINDING_HEADER_COMMANDERFORMULARY BINDING_NAME_COMMANDERFORMULARY_TOGGLE BINDING_NAME_COMMANDERFORMULARY_SEARCH
 ]]
@@ -82,9 +82,10 @@ allow [[
 UnitClass UnitFactionGroup GetFactionInfoByID RAID_CLASS_COLORS
 ]]
 
--- Optional neighbours, read only when present
+-- Optional neighbours, read only when present (CommanderOrders: the Go
+-- buttons and the trip routes, CommanderFormularyUI.lua's Waypoints section)
 allow [[
-TomTom CommanderTradecraft_Plan Auctionator AuctionFrame AuctionHouseFrame
+CommanderOrders CommanderTradecraft_Plan Auctionator AuctionFrame AuctionHouseFrame
 ]]
 
 local problems, scanned = 0, 0

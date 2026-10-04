@@ -490,8 +490,20 @@ function StaticPopup_Hide(which) if popup == which then popup = nil end end
 function ReplaceEnchant() replaced = replaced + 1; error("ADDON_ACTION_FORBIDDEN: ReplaceEnchant()") end
 
 -- Neighbours
-local waypoints = {}
-TomTom = { AddWaypoint = function(self, map, x, y, opts) waypoints[#waypoints + 1] = { map = map, x = x, y = y, title = opts.title } end }
+-- Commander Orders 3.0: a recording stand-in for its public table (Add
+-- answers a uid, AddRoute a route id). TomTom is gone from the suite.
+local waypoints, routes = {}, {}
+CommanderOrders = {
+    IsAvailable = function() return true end,
+    Add = function(spec)
+        waypoints[#waypoints + 1] = { map = spec.map, x = spec.x, y = spec.y, title = spec.title, spec = spec }
+        return "w" .. #waypoints
+    end,
+    AddRoute = function(spec)
+        routes[#routes + 1] = spec
+        return "r" .. #routes
+    end,
+}
 local aucLists = {}
 Auctionator = { API = { v1 = {
     ConvertToSearchString = function(caller, term) return '"' .. term.searchString .. '"' end,
@@ -743,6 +755,22 @@ CHECK(detail:find("not known", 1, true) and detail:find("HOW TO LEARN IT", 1, tr
 CHECK(detail:find("IN YOUR BAGS", 1, true) and detail:find("Right-click it", 1, true), "B3 formula held")
 CHECK(detail:find("Sold by Dalria", 1, true) and detail:find("Sold by Kulwia", 1, true), "B3 both vendors listed")
 CHECK(detail:find("other faction", 1, true), "B3 the other faction's vendor marked")
+do
+    -- Every Go in the briefing points the Commander Orders arrow at its place
+    local before = #waypoints
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.__text == "Go" and f.__shown ~= false and Under(frame.detailPane, f) then
+            f.__scripts.OnClick(f)
+        end
+    end
+    local kulwia
+    for i = before + 1, #waypoints do
+        if waypoints[i].spec.key == "place:Kulwia@1442" then kulwia = waypoints[i] end
+    end
+    CHECK(kulwia and kulwia.map == 1442 and math.abs(kulwia.x - 0.454) < 0.001 and kulwia.spec.source == "Formulary"
+        and kulwia.spec.setArrow == true and kulwia.spec.icon == "VENDOR",
+        "B3 Go on a vendor: one owned Commander Orders waypoint, taking the arrow", kulwia and kulwia.spec.key)
+end
 CHECK(craftBtn.__parent.__shown == false, "B3 no craft button for an unknown recipe")
 
 CommanderFormulary_Select(27984)
@@ -925,7 +953,7 @@ CHECK(NavRecipeCount() == 1 and TextUnder(frame.navPane):find("Greater Magic Wan
 frame.filters.ALL.__scripts.OnClick(frame.filters.ALL)
 Settle()
 
--- C8 the Trips view: zones with vendors, right-click for a waypoint
+-- C8 the Trips view: zones with vendors, right-click routes a zone
 frame.filters.TRIPS.__scripts.OnClick(frame.filters.TRIPS)
 Settle()
 nav = TextUnder(frame.navPane)
@@ -938,7 +966,79 @@ for _, f in ipairs(frames) do
 end
 CHECK(zoneRow ~= nil, "C8 zone header row")
 zoneRow.__scripts.OnClick(zoneRow, "RightButton")
-CHECK(waypoints[#waypoints] and waypoints[#waypoints].map == 1450, "C8 right-click sets a Moonglade waypoint", waypoints[#waypoints] and waypoints[#waypoints].map)
+CHECK(waypoints[#waypoints] and waypoints[#waypoints].map == 1450, "C8 right-click on a one-vendor zone sets a Moonglade waypoint", waypoints[#waypoints] and waypoints[#waypoints].map)
+CHECK(waypoints[#waypoints] and waypoints[#waypoints].spec.key == "place:Lorelae Wintersong@1450"
+    and waypoints[#waypoints].spec.source == "Formulary"
+    and waypoints[#waypoints].spec.title:find("^Lorelae Wintersong: ") ~= nil,
+    "C8 ...owned by the vendor and titled with what to buy there", waypoints[#waypoints] and waypoints[#waypoints].spec.title)
+do
+    -- Route All Trips: on the Trips view only, every formula bought once
+    CHECK(frame.routeAllButton.__shown ~= false, "C8 Route All Trips is offered on the Trips view")
+    local before = #routes
+    frame.routeAllButton.__scripts.OnClick(frame.routeAllButton)
+    local route = routes[#routes]
+    CHECK(#routes == before + 1 and route.source == "Formulary" and route.key == "trips:ENCHANTING"
+        and route.mode == "NEAREST" and route.start == true, "C8 one owned NEAREST route for every trip",
+        route and route.key)
+    local stopsCovered = 0
+    for _, st in ipairs(route and route.stops or {}) do
+        local more = tonumber(st.title:match("%(%+(%d+)%)$")) or 0
+        stopsCovered = stopsCovered + 1 + more
+        CHECK(type(st.map) == "number" and st.x >= 0 and st.x <= 1 and st.icon == "VENDOR",
+            "C8 a stop is a uiMap position in 0..1: " .. st.title)
+    end
+    -- The oracle, read off the Trips list itself: every formula it names
+    -- under a zone whose vendor has a place on the map (Lokhtos in Blackrock
+    -- Depths and the wizard in Old Hillsbrad have none: no arrow goes there)
+    local placedByName = {}
+    for _, rec in pairs(CommanderFormulary_Data.ENCHANTING.npcs) do
+        if rec.map then placedByName[rec.name] = true end
+    end
+    local routable, listed, zonePlaced = {}, 0, false
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.__shown ~= false and Under(frame.navPane, f) and f.name and f.name.__text then
+            local text = f.name.__text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            local vendor = text:match("^.-  (.+)$")
+            if vendor and (not f.cost or (f.cost.__text or "") == "") then
+                zonePlaced = placedByName[vendor] == true
+            elseif zonePlaced and not routable[text] then
+                routable[text] = true
+                listed = listed + 1
+            end
+        end
+    end
+    CHECK(listed > 0 and stopsCovered == listed,
+        "C8 the route buys every listed formula a vendor on the map sells, each exactly once",
+        stopsCovered .. " vs " .. listed)
+    -- A zone with several vendors is routed, not just its first vendor
+    local shatt
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.__shown ~= false and Under(frame.navPane, f) and f.name and f.name.__text
+            and f.name.__text:find("^Shattrath City  ") then shatt = f end
+    end
+    CHECK(shatt ~= nil, "C8 the Shattrath trip is listed")
+    if shatt then
+        local n = #routes
+        shatt.__scripts.OnClick(shatt, "RightButton")
+        local zr = routes[#routes]
+        CHECK(#routes == n + 1 and zr.key == "trip:ENCHANTING:Shattrath City" and zr.mode == "NEAREST" and #zr.stops >= 2,
+            "C8 right-click on a zone of several vendors routes them all, nearest first", zr and #zr.stops)
+        local inZone = true
+        for _, st in ipairs(zr and zr.stops or {}) do if st.map ~= 1955 then inZone = false end end
+        CHECK(inZone, "C8 ...and only that zone's vendors")
+        before = #routes
+    end
+    printLog = {}
+    local saved = CommanderOrders
+    CommanderOrders = nil
+    zoneRow.__scripts.OnClick(zoneRow, "RightButton")
+    CHECK(printLog[#printLog] and printLog[#printLog]:find("/way #1450 48.20 40.10 Lorelae Wintersong: ", 1, true),
+        "C8 without Commander Orders the right-click prints the place with its /way line", printLog[#printLog])
+    frame.routeAllButton.__scripts.OnClick(frame.routeAllButton)
+    CHECK(#routes == before and table.concat(printLog, "\n"):find("/way #1450", 1, true),
+        "C8 ...and Route All Trips prints the stops' /way lines, sending nothing")
+    CommanderOrders = saved
+end
 zoneRow.__scripts.OnClick(zoneRow, "LeftButton")
 Settle()
 CHECK(CommanderFormularyChar.collapsed["zone:Moonglade"] == true, "C8 left-click folds the zone")
@@ -946,6 +1046,7 @@ zoneRow.__scripts.OnClick(zoneRow, "LeftButton")
 Settle()
 frame.filters.ALL.__scripts.OnClick(frame.filters.ALL)
 Settle()
+CHECK(frame.routeAllButton.__shown == false, "C8 Route All Trips leaves with the Trips view")
 
 -- ===========================================================================
 -- D. The stock craft window is read and put away

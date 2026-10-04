@@ -3,10 +3,11 @@
 Run with the compile-gate luajit:
 
     /opt/homebrew/bin/luajit adjutant_queue_smoke.lua   # the 2.2.0 deployment
-                                                        # countdown under a WoW
+                                                        # countdown and the 2.3.0
+                                                        # repair offer under a WoW
                                                         # mock, loading the REAL
                                                         # Commander_Events
-                                                        # framework (54 checks)
+                                                        # framework (86 checks)
 
 Covers the battleground invite countdown end to end: the pop banner, the bar
 anchored under whichever invite window is up (PVPReadyDialog on this client,
@@ -20,6 +21,15 @@ pop banner, master switch), and the `/cadj timer` demo.
 The queue mock is the honest part of this: `GetBattlefieldStatus` and
 `GetBattlefieldPortExpiration` are driven per queue slot, so the timer is
 tested against the same shape the client hands it.
+
+Section O (2.3.0) is the repair alert's offer, against a stub Commander
+Logistics: the banner names the nearest repair vendor and its distance, one
+temporary, quiet offer per alert, never placed in combat (it lands on
+PLAYER_REGEN_ENABLED, and not at all if the gear was mended first),
+withdrawn once mended, and every switch (Mark the Nearest Repair, the repair
+alert itself) plus a throwing Logistics. The same flow against the REAL
+Logistics and Commander Orders is
+`Commander_Logistics/Harness/logistics_orders_smoke.lua` section E.
 
 The AddOns path is absolute at the top of the file — adjust if the install
 moves. Must exit 0 before any Adjutant change ships.

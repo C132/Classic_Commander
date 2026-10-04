@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Recovery
 ## Author: Devin
-## Version: 2.2.0
-## Notes: Casualty response: reports where you fell, counts session deaths, issues an automatic corpse-run move order — and in battlegrounds, releases your spirit for you.
+## Version: 2.3.0
+## Notes: Casualty response: reports where you fell, counts session deaths and confirms the recovery, hands the corpse run to the Commander Orders arrow (which finds the corpse itself) — and in battlegrounds, releases your spirit for you.
 ## IconTexture: Interface\Icons\Spell_Holy_Resurrection
 ## SavedVariables: CommanderRecoveryDB
 ## RequiredDeps: Commander_Events

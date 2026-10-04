@@ -49,7 +49,7 @@ CommanderTradecraft_Show CommanderTradecraft_Hide CommanderTradecraft_Toggle
 CommanderTradecraft_Route CommanderTradecraft_Shopping
 CommanderTradecraft_Alternative CommanderTradecraft_Craft
 CommanderTradecraft_ResetProgress CommanderTradecraft_Status CommanderTradecraft_AuctionatorList CommanderTradecraft_RefreshPrices
-CommanderTradecraft_Guide
+CommanderTradecraft_Guide CommanderTradecraft_RouteTrip
 CommanderTradecraft_Plan CommanderTradecraft_OnLogin
 BINDING_HEADER_COMMANDERTRADECRAFT BINDING_NAME_COMMANDERTRADECRAFT_TOGGLE
 BINDING_NAME_COMMANDERTRADECRAFT_SHOP
@@ -81,9 +81,10 @@ allow [[
 UnitFactionGroup GetFactionInfoByID
 ]]
 
--- Optional neighbours, read only when present
+-- Optional neighbours, read only when present (CommanderOrders: the Go
+-- buttons and Route This Trip, CommanderTradecraft.lua's Waypoints section)
 allow [[
-TomTom Auctionator AuctionFrame AuctionHouseFrame CommanderQuartermaster_CountsFor
+CommanderOrders Auctionator AuctionFrame AuctionHouseFrame CommanderQuartermaster_CountsFor
 ]]
 
 local problems, scanned = 0, 0

@@ -68,8 +68,9 @@ local DefaultSettings = {
     ClickCast = false,          -- rows become secure mouseover/click unit buttons
     -- Click bindings: the full modifier x button matrix, per talent build.
     -- ClickBinds[profileKey][modPrefix .. button] = spellID | "TARGET" |
-    -- "TARGETTARGET" | false (deliberately cleared). Absent = the layer
-    -- default, until the profile is first edited.
+    -- "TARGETTARGET" | "ARROW" (Commander Orders follows them, 5.41.0) |
+    -- false (deliberately cleared). Absent = the layer default, until the
+    -- profile is first edited.
     ClickBinds = {},
     ClickBindsMigrated = false, -- one-time seed from the old flat keys
     ClickProfileMode = "TALENT",-- TALENT (follow the build) | FIXED
@@ -2012,7 +2013,7 @@ end
 -- that has already put three settings on some pages and not others (see the
 -- note at the top of Harness/settings_reach.py).
 local function AddClickSection(panel)
-    panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Enabling needs a /reload and fixes the roster order.")
+    panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Besides spells, a cell can target the ally, assist them, or point the Commander Orders arrow at them (Arrow to them: it follows them as they move; /cpf arrow does the same for your target on any board). Enabling needs a /reload and fixes the roster order.")
     panel:AddCheckbox({
         label = "Enable Row Clicks",
         tooltip = "Make each row a secure unit button bound to a fixed roster slot: hovering it targets that ally for your @mouseover cast macros, and each bound click casts its spell. Because secure frames cannot change in combat, the board uses a fixed roster order (no urgency sort) while this is on. Takes effect after a /reload.",
@@ -2829,6 +2830,10 @@ local function CreateCorePanel()
             -- is also the only place that says whether the distances behind it
             -- are real yards or interact-distance bands
             near = function() if CommanderPartyFrames_Near then CommanderPartyFrames_Near() end end,
+            -- Commander Orders' arrow follows your current target, when they
+            -- are in your group; the click-cast board's twin is the "Arrow to
+            -- them" binding below
+            arrow = function() if CommanderPartyFrames_ArrowTo then CommanderPartyFrames_ArrowTo("target") end end,
             -- Always-available twin of the header button: the board is
             -- Priest/Mage/Druid/Paladin only, and it can hide itself
             blizzard = function()

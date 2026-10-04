@@ -32,6 +32,7 @@ local DefaultSettings = {
     PowerCallouts = false,
     ControlCallouts = false,
     SupportWhisper = true,
+    RallyWaypoint = true,
 }
 
 local frame = CreateFrame("FRAME");
@@ -55,6 +56,9 @@ local function CreateOptionsPanel()
         slashHandlers = {
             toggle = function()
                 if CommanderComms_Toggle then CommanderComms_Toggle() end
+            end,
+            rally = function()
+                if CommanderComms_Rally then CommanderComms_Rally() end
             end,
         },
     })
@@ -91,6 +95,21 @@ local function CreateOptionsPanel()
         get = function() return CommanderCommsDB.CommsSound end,
         set = function(value) CommanderCommsDB.CommsSound = value end,
         isEnabled = function() return CommanderCommsDB.EnableComms end,
+    })
+    panel:AddCheckbox({
+        label = "Rally Shares a Waypoint",
+        tooltip = function()
+            local text = "Rally on Me (the button in the middle of the wheel, its own key binding, or /ccomms rally) says where you are in chat: the zone and your coordinates. With this on and Commander Orders loaded, it also sends your spot to the group as a waypoint; anyone running Commander Orders is asked whether to add it and follow the arrow. Nothing is added on your side: you are the rally point."
+            if not (CommanderOrders and CommanderOrders.SharePoint) then
+                text = text .. "\n\nThe waypoint needs Commander Orders, which is not loaded; the chat line still goes out."
+            end
+            return text
+        end,
+        get = function() return CommanderCommsDB.RallyWaypoint end,
+        set = function(value) CommanderCommsDB.RallyWaypoint = value end,
+        isEnabled = function()
+            return CommanderCommsDB.EnableComms and CommanderOrders ~= nil and CommanderOrders.SharePoint ~= nil
+        end,
     })
     panel:AddButtonRow({
         {

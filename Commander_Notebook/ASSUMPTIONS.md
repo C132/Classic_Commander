@@ -101,3 +101,19 @@ quick-capture path in particular is meant to be usable mid-fight.
 
 Test: `/cnb mid fight note` while in combat, then open the notebook afterwards and confirm the line
 landed.
+
+## A9 — The map `GetBestMapForUnit` names is the one a waypoint should go on
+
+**Costs a waypoint's accuracy, never a note.** The context keeps the uiMapID `GetBestMapForUnit`
+returned alongside the coordinates `GetPlayerMapPosition` gave on that same map, and Go hands
+exactly that pair to Commander Orders. If the client ever answered with a map whose coordinates do
+not match (a micro map inside a zone, say), the arrow would point at the wrong spot on the right
+map. Old text-only stamps are resolved by zone NAME through Orders' `/way` resolver, which assumes
+`GetRealZoneText()` (what the stamp line says) is a zone name Orders knows; a subzone-level map
+whose real zone name differs would resolve to the wrong zone or to none, and the note says so in
+chat rather than guessing.
+
+Test: stamp a note in Goldshire and another in Stormwind City, walk away from each, press Go, and
+check the arrow's distance closes to zero at the spot. For an old stamp, write a line by hand such
+as `-- Me | Goldshire, Elwynn Forest 42.0, 65.5 | today` and press Go.
+

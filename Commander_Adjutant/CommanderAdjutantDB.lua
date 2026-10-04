@@ -10,6 +10,7 @@ local DefaultSettings = {
     AlertUnderAttack = true,
     AlertLowHealth = true,
     AlertRepair = true,
+    RepairWaypoint = true,      -- the repair alert marks the nearest known vendor (Logistics + Orders)
     AlertBagsFull = true,
     AlertLevelUp = true,
     AlertReinforcements = true,
@@ -91,6 +92,13 @@ local function CreateOptionsPanel()
         Alert("AlertReinforcements", "Reinforcements", "When players join your party or raid."))
     panel:AddCheckboxPair(
         Alert("AlertQueuePop", "Transport Ready", "When a battleground or arena invite arrives. No sound of its own: the client already plays one for the invite."))
+    panel:AddCheckbox({
+        label = "Mark the Nearest Repair",
+        tooltip = "With Commander Logistics remembering the repair vendors you open, the repair alert names the nearest one on your continent and marks it with a Commander Orders waypoint. The mark never takes the arrow from a waypoint or route you are following, or after you cleared the arrow: the arrow points at it only when Commander Orders' Follow the Closest has nothing of yours left on this continent. It waits for combat to end, and is taken down once your gear is mended.",
+        get = function() return CommanderAdjutantDB.RepairWaypoint end,
+        set = function(value) CommanderAdjutantDB.RepairWaypoint = value end,
+        isEnabled = function() return CommanderAdjutantDB.EnableAdjutant and CommanderAdjutantDB.AlertRepair end,
+    })
 
     panel:AddSection("Deployment Countdown",
         "The battleground invite never says how long the port stays open. This puts the clock on it. Use /cadj timer for a 20-second demo.")

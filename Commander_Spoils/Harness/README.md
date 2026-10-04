@@ -6,7 +6,7 @@ three Commander_Spoils files under a permissive WoW mock. It must exit 0 before
 any change ships.
 
 ```
-/opt/homebrew/bin/luajit spoils_harness.lua      # 245 checks
+/opt/homebrew/bin/luajit spoils_harness.lua      # 314 checks
 /opt/homebrew/bin/luajit globals_lint.lua        # 0 undeclared globals
 ```
 
@@ -46,6 +46,17 @@ index rebasing; sparse master-loot probe indices; loot slots including the
 uncached case; a UI smoke over every pane, scope and filter; one regression check per defect
 the peer review found, and the Try It buttons (each one drives the real
 painting code, so a broken band fails here rather than in a raid).
+
+Section 15 (3.1.0, D23) is the farm's way back: a farm started with no map
+position (or the client's `(0, 0)`) stores none and refuses honestly; a real
+start keeps the spot on the farm's map and in the `Farm` block, and a
+restart (`E.Init` over that block) brings it back; Back to the Farm hands a
+recording Commander Orders stub one keyed, arrow-taking spec, prints the
+`/way` line with Orders absent, puts "disabled" into words and catches a
+throwing Add; the header glyph's right-click sets it without ending the farm
+while left-click still ends it; `/cspoils back` reaches it. The real Orders
+runtime accepting the same spec shape is checked in
+`Commander_Logistics/Harness/logistics_orders_smoke.lua` section G.
 
 The frame names the harness addresses are the shipped ones:
 `CommanderSpoilsFrame` and its bands `CommanderSpoilsPickups`,

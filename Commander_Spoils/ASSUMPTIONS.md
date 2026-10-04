@@ -51,3 +51,12 @@ written to fail safe, and each says how to check it.
 9. **`Data.drops` / `Data.kills` are worth persisting** before anything renders
    them. They are capped and pruned, and the per-source drop-rate view that
    consumes them is in BACKLOG. If that view is cut, delete the tables.
+
+10. **`C_Map.GetPlayerMapPosition(GetBestMapForUnit("player"), "player")`
+    places the player in the open world** and answers nil (or `0, 0`) inside
+    instances (D23). The farm's way back is captured from it at the moment the
+    farm starts. If wrong: a farm started outdoors says "this farm started
+    somewhere with no map position" and Back to the Farm refuses; nothing is
+    ever marked in the wrong place. **Check:** start a farm in any zone,
+    `/cspoils back`, and the arrow (or the printed `/way` line) is where you
+    stood.

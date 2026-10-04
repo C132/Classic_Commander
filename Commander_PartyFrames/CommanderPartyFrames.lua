@@ -549,13 +549,18 @@ SDATA.CLICK_BUTTONS = {
     { key = "5", label = "Button 5" },
 }
 
--- The two bindings that are not spells. Both resolve live off the row's unit
--- token, so neither can go stale as the roster shuffles.
+-- The bindings that are not spells. All three resolve live off the row's
+-- unit token, so none can go stale as the roster shuffles. ARROW hands the
+-- ally to Commander Orders as a follow target (util.ArrowTo): it is not a
+-- secure action, so the row runs it as a custom action type, the documented
+-- way a secure button calls addon code (see BindClick).
 SDATA.CLICK_ACTIONS = {
     { value = "TARGET", label = "Target them",
       icon = "Interface\\Icons\\Ability_Hunter_SniperShot" },
     { value = "TARGETTARGET", label = "Assist (target their target)",
       icon = "Interface\\Icons\\Ability_Hunter_MasterMarksman" },
+    { value = "ARROW", label = "Arrow to them (Commander Orders)",
+      icon = "Interface\\Icons\\INV_Misc_Map_01" },
 }
 
 -- What a cell may be bound to, per layer: the spells this class actually
@@ -7908,6 +7913,11 @@ local function AcquireRow(index)
         row = CreateFrame("Button", "CommanderPartyFramesRow" .. index, root, "SecureUnitButtonTemplate")
         -- Both phases so the click fires whatever ActionButtonUseKeyDown is set to
         row:RegisterForClicks("AnyDown", "AnyUp")
+        -- The custom action type BindClick writes for "Arrow to them": the
+        -- secure template looks the type up as a method on the button and
+        -- runs it insecurely with the row's unit (SecureTemplates.lua,
+        -- PerformAction). Plain addon code from there on, legal in combat.
+        row[util.ARROW_ACTION] = util.ArrowClick
         row:SetScript("OnEnter", BuildRowTooltip)
         row:SetScript("OnLeave", function() GameTooltip:Hide() end)
     else
@@ -9866,6 +9876,165 @@ local function BuildSecureTokens(out)
     util.OrderSecureTokens(out)
 end
 
+-- ---------------------------------------------------------------------------
+-- "Arrow to them": Commander Orders follows an ally (5.41.0)
+--
+-- Orders has a target kind that IS a group member (kind "unit"): the arrow
+-- points at wherever they are now, every frame, and says "Party member not
+-- visible" rather than guessing when the client cannot place them. This board
+-- already knows who everyone is, so it is the natural place to ask for one.
+-- Two ways in: a click binding on the click-cast board (CLICK_ACTIONS ARROW,
+-- any modifier and button, the binding grid's own menu), and /cpf arrow for
+-- your current target, which also works on the sorted board where rows take
+-- no clicks.
+--
+-- One follow at a time, owned by this board: (source "PartyFrames", key
+-- "follow"), so asking for someone else MOVES the one waypoint instead of
+-- stacking a second. Orders only accepts party1-4 and raid1-40, so the follow
+-- is always on a group token, and a token is only an index into the roster:
+-- after a roster change "party2" may be someone else. So the GUID is kept and
+-- the token re-resolved on every roster update; someone who has left the
+-- group is not followed any more (the waypoint is removed). Re-pointing a
+-- moved follow never re-takes the arrow (setArrow false): if you have since
+-- pinned something else, that stays yours.
+--
+-- Orders is optional and looked up at the click. Absent, the click prints the
+-- ally's current /way line when the client can place them, so it is never a
+-- dead button. Everything is pcall'd: a click handler that errors would hand
+-- a secure button's click to the error frame mid-fight.
+-- ---------------------------------------------------------------------------
+util.ARROW_ACTION = "cpfarrow"
+util.ARROW_SOURCE, util.ARROW_KEY = "PartyFrames", "follow"
+
+-- The group token Orders can follow for any unit that is in your group
+-- ("target", "mouseover", a pet's owner is not resolved): token, or nil and
+-- a reason ("self" | "notgroup")
+function util.ArrowToken(unit)
+    if type(unit) ~= "string" or not UnitExists or not UnitExists(unit) then return nil, "notgroup" end
+    if UnitIsUnit and UnitIsUnit(unit, "player") then return nil, "self" end
+    if unit:match("^party[1-4]$") or unit:match("^raid%d+$") then return unit end
+    local raid = IsInRaid and IsInRaid()
+    local n = raid and math.min((GetNumGroupMembers and GetNumGroupMembers()) or 40, 40) or 4
+    for i = 1, n do
+        local token = (raid and "raid" or "party") .. i
+        if UnitExists(token) and UnitIsUnit and UnitIsUnit(unit, token) then return token end
+    end
+    return nil, "notgroup"
+end
+
+-- The group token a GUID sits on right now, or nil
+function util.ArrowTokenFor(guid)
+    if not guid or not UnitGUID then return nil end
+    local raid = IsInRaid and IsInRaid()
+    local n = raid and 40 or 4
+    for i = 1, n do
+        local token = (raid and "raid" or "party") .. i
+        if UnitGUID(token) == guid then return token end
+    end
+    return nil
+end
+
+-- (on util, not a chunk local: this file lives near the 200-local cap)
+function util.ArrowSay(msg) print("|cff66ccffCommander Party Frames|r: " .. msg) end
+
+-- Ask Commander Orders to follow `unit`. Returns true, uid; or false, reason
+-- ("self" | "notgroup" | "absent" | Orders' own refusal | "error").
+function util.ArrowTo(unit)
+    local token, why = util.ArrowToken(unit)
+    if not token then
+        if why == "self" then
+            util.ArrowSay("that is you: the arrow follows other people")
+        else
+            util.ArrowSay("Arrow to them follows a party or raid member: target one first")
+        end
+        return false, why
+    end
+    local name = UnitName and UnitName(token) or token
+    local O = CommanderOrders
+    if type(O) ~= "table" or type(O.Add) ~= "function" then
+        -- No Orders: where they are now, as a line to paste, when the client says
+        local line
+        if C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+            local okMap, map = pcall(C_Map.GetBestMapForUnit, token)
+            local okPos, pos = false, nil
+            if okMap and type(map) == "number" then okPos, pos = pcall(C_Map.GetPlayerMapPosition, map, token) end
+            local x, y
+            if okPos and pos then
+                x, y = pos.x, pos.y
+                if (x == nil or y == nil) and pos.GetXY then x, y = pos:GetXY() end
+            end
+            if type(x) == "number" and type(y) == "number" and x > 0 and y > 0 and x <= 1 and y <= 1 then
+                line = string.format("/way #%d %.2f %.2f %s", map, x * 100, y * 100, tostring(name))
+            end
+        end
+        util.ArrowSay("Commander Orders is not loaded" .. (line and (", so here is where " .. tostring(name) .. " is now: " .. line) or ""))
+        return false, "absent"
+    end
+    local ok, uid, refused = pcall(O.Add, {
+        kind = "unit", unit = token, title = name,
+        source = util.ARROW_SOURCE, key = util.ARROW_KEY, setArrow = true,
+    })
+    if ok and uid then
+        util.arrowFollow = { uid = uid, guid = UnitGUID and UnitGUID(token), unit = token, name = name }
+        util.ArrowSay("the arrow follows " .. tostring(name))
+        return true, uid
+    end
+    refused = ok and refused or "error"
+    util.ArrowSay(refused == "disabled" and "Commander Orders is switched off"
+        or ("Commander Orders refused it (" .. tostring(refused) .. ")"))
+    return false, refused
+end
+
+-- The row's custom action (rawget(row, "cpfarrow") in the secure template):
+-- (self, unit, button, isKeyPress, down). ONE phase per click. The rows
+-- register both click phases, and on 2.5.6 SecureUnitButton_OnClick hands
+-- every OnClick to OnActionButtonClick with no down/up gate (only
+-- SecureActionButton_OnClick weighs ActionButtonUseKeyDown; Blizzard
+-- SecureTemplates.lua 799-822 against 838-881), so this ran twice per click:
+-- two "the arrow follows" lines and two SET cues. It acts on the phase the
+-- CVar names, as an action button would; a call with no `down` is the up.
+function util.ArrowClick(_, unit, _, _, down)
+    local onDown = (GetCVarBool and GetCVarBool("ActionButtonUseKeyDown")) and true or false
+    if (down and true or false) ~= onDown then return end
+    local ok, err = pcall(util.ArrowTo, unit)
+    if not ok and geterrorhandler then geterrorhandler()(err) end
+end
+
+-- After a roster change: keep following the same PERSON, never the token
+function util.ArrowRoster()
+    local f = util.arrowFollow
+    if not f then return end
+    local O = CommanderOrders
+    if type(O) ~= "table" or type(O.Get) ~= "function" then util.arrowFollow = nil return end
+    local ok, wp = pcall(O.Get, f.uid)
+    -- Gone (removed, arrived, replaced by a new follow under another uid) or
+    -- no longer a follow: nothing of ours to keep up to date
+    if not ok or type(wp) ~= "table" or wp.kind ~= "unit" then util.arrowFollow = nil return end
+    if f.guid and UnitGUID and UnitGUID(wp.unit) == f.guid then f.unit = wp.unit return end
+    local token = util.ArrowTokenFor(f.guid)
+    if not token then
+        pcall(O.Remove, f.uid)
+        util.arrowFollow = nil
+        util.ArrowSay(tostring(f.name) .. " left the group: the arrow stops following")
+        return
+    end
+    f.unit = token
+    pcall(O.Add, {
+        kind = "unit", unit = token, title = f.name,
+        source = util.ARROW_SOURCE, key = util.ARROW_KEY, setArrow = false,
+    })
+end
+
+-- Public: /cpf arrow, and any module that wants the board's follow
+function CommanderPartyFrames_ArrowTo(unit)
+    local ok, a, b = pcall(util.ArrowTo, unit or "target")
+    if not ok then
+        if geterrorhandler then geterrorhandler()(a) end
+        return false, "error"
+    end
+    return a, b
+end
+
 -- Bind one mouse button (optionally with a modifier prefix like "shift-") on a
 -- secure row to a spell cast, a plain target, or nothing. dbval is a spell ID,
 -- "TARGET", or "NONE". The name resolves from the ID so it stays locale-safe and
@@ -9883,6 +10052,12 @@ local function BindClick(row, prefix, button, dbval, token)
         row:SetAttribute(typeAttr, "target")
         row:SetAttribute(spellAttr, nil)
         row:SetAttribute(unitAttr, token and (token .. "target") or nil)
+    elseif dbval == "ARROW" then
+        -- Arrow to them: a custom type, run by the row's own method (set in
+        -- AcquireRow) with the row's unit, so it follows whoever the row is
+        row:SetAttribute(typeAttr, util.ARROW_ACTION)
+        row:SetAttribute(spellAttr, nil)
+        row:SetAttribute(unitAttr, nil)
     elseif dbval and dbval ~= "NONE" then
         local id = tonumber(dbval)
         local name = id and GetSpellInfo and GetSpellInfo(id)
@@ -12186,6 +12361,8 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
         -- nobody's old slot means anything in a battleground you just zoned
         -- into, so those go too and the next pick sorts from scratch.
         near.Invalidate()
+        -- A follow is a person, the token only where they sit today
+        util.ArrowRoster()
         if event == "PLAYER_ENTERING_WORLD" then
             wipe(near.slots)
             wipe(near.held)

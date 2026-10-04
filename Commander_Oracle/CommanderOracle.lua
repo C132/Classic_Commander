@@ -153,6 +153,8 @@ local function ReadBoard()
                 state = entry.state,
                 owner = entry.owner,
                 assaulter = entry.assaulter,
+                -- the live POI, which also knows where on the map the flag is
+                poi = poiID,
             }
         end
     end
@@ -783,6 +785,144 @@ Commander.UI.AttachTooltip(ladderSection, "Win-condition ladder", function()
         .. " prices the worst case."
 end, "ANCHOR_LEFT")
 
+-- ---------------------------------------------------------------------------
+-- A flag you can walk to (Commander Orders)
+--
+-- Click a flag's pip and Commander Orders' arrow points at that flag. Where
+-- the flag stands is the map's own answer, the position of its live area POI
+-- on the Arathi Basin map (C_AreaPoiInfo.GetAreaPOIInfo), so nothing is
+-- guessed and nothing is stored here. It is ONE waypoint (source "Oracle",
+-- key "node"): clicking another flag moves it rather than piling marks up. It
+-- is temporary and session-only in Orders' terms, and it is pinned outright
+-- (SetArrow) because a click is a request for the arrow; a temporary waypoint
+-- added with setArrow would otherwise yield to any pinned waypoint of yours,
+-- and the click would seem to do nothing. When the match is over (the same
+-- moment the board forgets it) the Oracle waypoint is removed, and if it had
+-- taken the arrow from a waypoint of yours, the arrow goes back to it. That
+-- holds when you REACHED the flag too, the common case: Orders clears a
+-- reached waypoint (clearOnArrive is a consumer default) and unpins it, so
+-- by the match's end the flag no longer holds the arrow. Gone flag means
+-- reached, and the arrow still goes back unless you have since pinned
+-- something or started a route. A flag that is still there but has lost the
+-- arrow means you moved it yourself (a pin, a route, a Clear): left alone.
+--
+-- The pips take the left button only: a right-click passes through to the
+-- board, so the HUD chrome's right-click handling still works over them.
+-- Nothing here changes a frame's shape or visibility, so a click works the
+-- same in combat as out of it.
+-- ---------------------------------------------------------------------------
+local nodeArrow = {
+    displaced = nil,   -- the pin of yours a flag click took over
+    uid = nil,         -- the flag waypoint's uid, to tell "reached" from "you moved the arrow"
+}
+
+local function Orders()
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.Add) == "function" then return api end
+    return nil
+end
+
+local ORDERS_REASONS = {
+    disabled = "Commander Orders is turned off (/corder to turn it on)",
+    loading = "Commander Orders is still loading",
+}
+
+-- Where a flag stands on the battle map: x, y (0..1), or nil
+local function NodePosition(index)
+    local node = board[index]
+    if not (node and node.poi and C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo) then return nil end
+    local ok, info = pcall(C_AreaPoiInfo.GetAreaPOIInfo, AB.uiMapID, node.poi)
+    if not ok or type(info) ~= "table" or not info.position then return nil end
+    local pos = info.position
+    local x, y = pos.x, pos.y
+    if (x == nil or y == nil) and pos.GetXY then x, y = pos:GetXY() end
+    if type(x) ~= "number" or type(y) ~= "number" or x < 0 or x > 1 or y < 0 or y > 1 then return nil end
+    return x, y
+end
+
+local function NodeWaypoint(index)
+    local canon = AB.nodes[index]
+    if not canon then return end
+    if not inBasin then
+        print("Commander Oracle: flag waypoints work inside Arathi Basin")
+        return
+    end
+    local x, y = NodePosition(index)
+    if not x then
+        print("Commander Oracle: the map has not placed the " .. canon.name .. " yet")
+        return
+    end
+    local api = Orders()
+    if not api then
+        print(string.format("Commander Oracle: the %s is /way #%d %.2f %.2f", canon.name, AB.uiMapID, x * 100, y * 100))
+        return
+    end
+    -- A pinned waypoint of yours gets the arrow back when the match is over:
+    -- the LAST one a flag click took over, so a waypoint you pinned mid-match
+    -- wins over the one you came in with
+    if api.Active then
+        local active = api.Active()
+        if active and active.why == "PINNED" and active.source ~= "Oracle" then
+            nodeArrow.displaced = active.uid
+        end
+    end
+    local uid, why = api.Add({
+        map = AB.uiMapID, x = x, y = y, title = canon.name,
+        source = "Oracle", key = "node", temporary = true, persistent = false, setArrow = false,
+    })
+    if not uid then
+        print("Commander Oracle: no waypoint: " .. (ORDERS_REASONS[why] or tostring(why)))
+        return
+    end
+    nodeArrow.uid = uid
+    if api.SetArrow then api.SetArrow(uid) end
+end
+
+-- The match is over: the flag waypoint goes, and the arrow goes back to a
+-- waypoint of yours if a flag click took it, unless you have moved it since.
+-- held: the flag still has the arrow. reached: the flag is gone (Orders
+-- cleared it on arrival) and nothing has been pinned or routed since.
+local function ClearNodeWaypoint()
+    local displaced, flag = nodeArrow.displaced, nodeArrow.uid
+    nodeArrow.displaced, nodeArrow.uid = nil, nil
+    local api = Orders()
+    if not (api and api.RemoveBy) then return end
+    local active = api.Active and api.Active()
+    local held = active ~= nil and active.source == "Oracle"
+    local reached = flag ~= nil and type(api.Get) == "function" and api.Get(flag) == nil
+        and not (active and (active.why == "PINNED" or active.why == "ROUTE"))
+    api.RemoveBy("Oracle")
+    if displaced and (held or reached) and api.Get and api.Get(displaced) and api.SetArrow then
+        api.SetArrow(displaced)
+    end
+end
+
+local function NodeTooltip(pip)
+    local canon = AB.nodes[pip.index]
+    if not (canon and GameTooltip) then return end
+    GameTooltip:SetOwner(pip, "ANCHOR_TOP")
+    GameTooltip:SetText(canon.name, 1, 1, 1)
+    local node = inBasin and board[pip.index]
+    if node and node.state == "OWNED" then
+        GameTooltip:AddLine("Held by the " .. FactionName(node.owner), 0.8, 0.8, 0.8)
+    elseif node and node.state == "CONTESTED" then
+        local remaining, exact = CaptureRemaining(canon.key)
+        local line = FactionName(node.assaulter) .. " assaulting"
+        if remaining and remaining > 0.5 then
+            line = line .. string.format(", %s%ds left", exact and "" or "about ", math.ceil(remaining))
+        end
+        GameTooltip:AddLine(line, 1, 0.85, 0.4)
+    elseif node then
+        GameTooltip:AddLine("Uncontrolled", 0.8, 0.8, 0.8)
+    end
+    if Orders() then
+        GameTooltip:AddLine("Click: point the arrow at the " .. canon.name .. " (Commander Orders)", 0.6, 0.8, 1, true)
+    else
+        GameTooltip:AddLine("Click: print where it is as a /way line", 0.6, 0.8, 1, true)
+    end
+    GameTooltip:Show()
+end
+
 -- The five flags
 local nodeSection = NewSection(DENSITY.COMPACT.nodes)
 nodeSection.pips = {}
@@ -791,6 +931,14 @@ for index = 1, 5 do
     local pip = CreateFrame("Frame", nil, nodeSection)
     pip:SetSize(PIP_WIDTH, 30)
     pip:SetPoint("TOPLEFT", nodeSection, "TOPLEFT", (index - 1) * (PIP_WIDTH + 3), 0)
+    pip.index = index
+    pip:EnableMouse(true)
+    if pip.SetPassThroughButtons then pcall(pip.SetPassThroughButtons, pip, "RightButton") end
+    pip:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" then NodeWaypoint(self.index) end
+    end)
+    pip:SetScript("OnEnter", NodeTooltip)
+    pip:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
     pip.name = NewText(pip, "GameFontHighlight", "CENTER")
     pip.name:SetPoint("TOP", pip, "TOP", 0, 0)
@@ -2540,6 +2688,7 @@ local function RefreshZone()
     if inBasin and not basin and (elsewhere or (now - basinSeenAt) >= EXIT_GRACE) then
         inBasin = false
         ResetMatch()
+        ClearNodeWaypoint()
     end
     if inBattleground and not battleground and (now - battlegroundSeenAt) >= EXIT_GRACE then
         inBattleground = false

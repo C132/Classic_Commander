@@ -637,12 +637,20 @@ end
 function E.StartFarm(label)
     if segments.FARM then CloseSegment(segments.FARM) end
     segments.FARM = NewSegment("farm", label or "Farm", E.MapID())
+    -- Where the farm started, so "Back to the farm" has somewhere to point
+    -- (DECISIONS D23). Kept only when it is a position on the farm's own map:
+    -- a capture inside an instance has none, and that farm simply has no way
+    -- back rather than a wrong one.
+    local map, x, y = E.MapPosition()
+    if map and map == segments.FARM.mapID then
+        segments.FARM.x, segments.FARM.y = x, y
+    end
     -- The farm block lives outside db.Session on purpose: a farm can span a
     -- client restart and must not die to the 600s session resume window.
     CommanderSpoilsDB.Farm = {
         id = segments.FARM.id, startEpoch = segments.FARM.startEpoch,
         fromIdx = segments.FARM.fromIdx, label = segments.FARM.label,
-        mapID = segments.FARM.mapID,
+        mapID = segments.FARM.mapID, x = segments.FARM.x, y = segments.FARM.y,
     }
     Commander.Notify(EV.UPDATE)
 end
@@ -662,6 +670,34 @@ function E.MapID()
         if ok then return id end
     end
     return nil
+end
+
+-- map, x, y (0..1) of the player, or nil: no map (loading, some instances),
+-- no position on it (dungeons and raids answer nil), or the (0, 0) the client
+-- hands back for "nowhere". GetPlayerMapPosition allocates a Vector2D, so
+-- this is called on a press, never on a clock.
+function E.MapPosition()
+    local map = E.MapID()
+    if type(map) ~= "number" or not (C_Map and C_Map.GetPlayerMapPosition) then return nil end
+    local ok, pos = pcall(C_Map.GetPlayerMapPosition, map, "player")
+    if not ok or (type(pos) ~= "table" and type(pos) ~= "userdata") then return nil end
+    local x, y = pos.x, pos.y
+    if (x == nil or y == nil) and pos.GetXY then x, y = pos:GetXY() end
+    if type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y then return nil end
+    if x < 0 or x > 1 or y < 0 or y > 1 or (x == 0 and y == 0) then return nil end
+    return map, x, y
+end
+
+-- Where the running farm started: { map, x, y, label } or nil, reason
+-- ("nofarm" when none is running, "noposition" when it began somewhere the
+-- client gave no position). Read by "Back to the farm" (DECISIONS D23).
+function E.FarmHome()
+    local farm = segments.FARM
+    if not farm then return nil, "nofarm" end
+    if type(farm.mapID) ~= "number" or type(farm.x) ~= "number" or type(farm.y) ~= "number" then
+        return nil, "noposition"
+    end
+    return { map = farm.mapID, x = farm.x, y = farm.y, label = farm.label or "Farm" }
 end
 
 local function ZoneName()
@@ -2329,6 +2365,7 @@ function E.Init()
         segments.FARM = {
             id = farm.id, kind = "farm", label = farm.label or "Farm",
             startEpoch = farm.startEpoch, fromIdx = farm.fromIdx, mapID = farm.mapID,
+            x = farm.x, y = farm.y,     -- the way back (D23); absent before 3.1.0
         }
     end
 

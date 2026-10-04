@@ -559,3 +559,29 @@ documented loudly at the definition.
 
 Spoils publishes its loot-money subtotal; Economy keeps the master earned/spent
 pair off `PLAYER_MONEY`. Two ledgers, one owner each.
+
+## D23 — A farm remembers where it started, and Commander Orders points back
+
+A farm is the one segment with a place attached: you start it where the mobs
+are, then leave for a vendor run and have to find the spot again. So
+`E.StartFarm` keeps the player's map position (`map`, `x`, `y`, 0..1 on the
+farm's own map) beside the segment and in the `Farm` block that survives a
+restart, and "Back to the farm" hands it to Commander Orders as one waypoint
+under (source `Spoils`, key `farm`): a second press moves that waypoint, it
+never stacks a twin, and it clears itself on arrival like any consumer mark.
+Three ways in, none of them a preference (D20's ceiling counts preferences,
+and this adds none): right-click the header's Farm glyph (left still starts
+and stops the farm), `/cspoils back`, and a new Farm section on the settings
+page whose two buttons finally give the farm segment a home there. Orders is
+optional and looked up at the press, never captured at load: absent, the
+`/way #1951 42.00 31.00 Farm: Nagrand` line is printed so the press is never a
+dead end; switched off, it says so and prints the same line. A farm started
+where the client gives no map position (inside an instance, or the `(0, 0)`
+the client hands back for nowhere) stores none and says there is no way back,
+rather than marking a wrong spot.
+
+Rejected: an automatic waypoint on `MERCHANT_CLOSED` during a farm. It is the
+natural next step and consumers.md proposes it, but it would be a twenty-sixth
+preference (it cannot be on by default: an arrow appearing because a vendor
+window closed is exactly the kind of uninvited layout change the suite
+avoids), and D20 says that is a decision to make on purpose, not in passing.

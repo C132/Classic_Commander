@@ -200,7 +200,7 @@ local function CreateOptionsPanel()
         "/cnb <text> writes a line without opening anything, from anywhere, including mid-fight.")
     panel:AddCheckboxPair({
         label = "Stamp New Notes",
-        tooltip = "Put a line at the top of every new note saying who you were, where you were standing and when. You can always add one by hand with the Stamp button.",
+        tooltip = "Put a line at the top of every new note saying who you were, where you were standing and when. You can always add one by hand with the Stamp button. A stamped note remembers the spot, and with Commander Orders loaded its Go button points the arrow back there.",
         get = function() return CommanderNotebookDB.StampNewNotes end,
         set = function(value) CommanderNotebookDB.StampNewNotes = value end,
         isEnabled = function() return CommanderNotebookDB.EnableNotebook end,

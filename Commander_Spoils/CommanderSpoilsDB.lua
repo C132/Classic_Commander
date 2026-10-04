@@ -535,6 +535,9 @@ local function CreateOptionsPanel()
             farm = function()
                 if CommanderSpoils_ToggleFarm then CommanderSpoils_ToggleFarm() end
             end,
+            back = function()
+                if CommanderSpoils_BackToFarm then CommanderSpoils_BackToFarm() end
+            end,
             test = function() if CommanderSpoils_Test then CommanderSpoils_Test("pickup") end end,
             ["test pickup"] = function() CommanderSpoils_Test("pickup") end,
             ["test roll"]   = function() CommanderSpoils_Test("roll") end,
@@ -885,6 +888,35 @@ local function CreateOptionsPanel()
             tooltip = "Clears the ledger. Settings are untouched (also: /cspoils wipe).",
             onClick = function()
                 if CommanderSpoils_Wipe then CommanderSpoils_Wipe() end
+            end,
+        },
+    })
+
+    -- ---- Farm ---------------------------------------------------------------
+    -- Actions, not preferences (D20 counts preferences): the farm segment and
+    -- the way back to it (D23) had no home on this page until now.
+    panel:AddSection("Farm",
+        "A farm is a named segment of the ledger that survives a client restart: start it where you farm and the FARM scope shows only what it earned. It remembers where it started, so after a vendor run Back to the Farm points the Commander Orders arrow there (without Commander Orders it prints the /way line). The Farm button in the window's header does both: click to start or stop, right-click for the way back.")
+    panel:AddButtonRow({
+        {
+            label = "Start or Stop Farm",
+            width = 150,
+            tooltip = "Start a farm segment where you stand, or end the running one (also: /cspoils farm).",
+            onClick = function()
+                if CommanderSpoils_ToggleFarm then CommanderSpoils_ToggleFarm() end
+            end,
+            isEnabled = Enabled,
+        },
+        {
+            label = "Back to the Farm",
+            width = 150,
+            tooltip = "A waypoint back to where the running farm started (also: /cspoils back).",
+            onClick = function()
+                if CommanderSpoils_BackToFarm then CommanderSpoils_BackToFarm() end
+            end,
+            isEnabled = function()
+                return Enabled() and CommanderSpoilsEngine ~= nil and CommanderSpoilsEngine.FarmHome ~= nil
+                    and CommanderSpoilsEngine.FarmHome() ~= nil
             end,
         },
     })

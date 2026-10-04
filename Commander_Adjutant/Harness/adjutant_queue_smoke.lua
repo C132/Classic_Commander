@@ -677,6 +677,106 @@ Fire("PLAYER_REGEN_ENABLED")
 Advance(0.2)
 CHECK(not FloatBar():IsShown() and FloatBar():GetAlpha() == 1, "N: after combat the timer is really hidden, alpha restored")
 
+-- ---------------------------------------------------------------------------
+-- O: the repair alert names and marks the nearest repair (2.3.0). Commander
+-- Logistics is a stub here (its own learning and the real Orders waypoint are
+-- Commander_Logistics/Harness/logistics_orders_smoke.lua); what is checked is
+-- Adjutant's half: the words on the banner, one offer per alert, never in
+-- combat, withdrawn when mended, every switch, and nothing escaping.
+-- ---------------------------------------------------------------------------
+do
+    db.EnableAdjutant, db.AlertRepair = true, true
+    CHECK(db.RepairWaypoint == true, "O: Mark the Nearest Repair defaults on")
+    local dura = 1
+    GetInventoryItemDurability = function(slot)
+        if slot == 5 then return math.floor(dura * 100), 100 end
+        return nil
+    end
+    local function Wear(ratio) dura = ratio; Fire("UPDATE_INVENTORY_DURABILITY") end
+    local offers, clears = {}, 0
+    local vendor = { name = "Smith Argus", map = 1429, x = 0.416, y = 0.655, yards = 340 }
+    local function StubLogistics()
+        CommanderLogistics_NearestRepair = function() return vendor end
+        CommanderLogistics_RepairWaypoint = function(opts) offers[#offers + 1] = opts; return true, "w4", vendor end
+        CommanderLogistics_ClearRepairWaypoint = function() clears = clears + 1; return 1 end
+        CommanderLogistics_FormatYards = function(y) return string.format("%d yd", y) end
+    end
+    local errs0 = #harnessFailedErrors
+
+    -- Without Logistics: the alert as it always was
+    Wear(1)
+    Wear(0.1)
+    CHECK(BannerText() == "Units require repair", "O: no Logistics, the plain alert", BannerText())
+    Wear(1)
+
+    -- With a known vendor: named on the banner, marked once, as an offer
+    StubLogistics()
+    Wear(0.1)
+    CHECK(BannerText() == "Units require repair: Smith Argus, 340 yd", "O: the banner names the nearest repair", BannerText())
+    CHECK(#offers == 1, "O: ...and marks it once", #offers)
+    CHECK(offers[1] and offers[1].temporary == true and offers[1].quiet == true,
+        "O: ...as a temporary, quiet offer that never takes a chosen arrow")
+    Wear(0.05)
+    CHECK(#offers == 1, "O: more wear does not offer again", #offers)
+    -- Mended: the offer is withdrawn, once
+    Wear(1)
+    CHECK(clears == 1, "O: mended gear takes the mark down", clears)
+    Wear(1)
+    CHECK(clears == 1, "O: ...once", clears)
+
+    -- In combat: the banner, but no mark until the fight is over
+    inCombatNow = true
+    Wear(0.1)
+    CHECK(BannerText() == "Units require repair: Smith Argus, 340 yd", "O: in combat the banner still names it", BannerText())
+    CHECK(#offers == 1, "O: ...but nothing is marked mid-fight", #offers)
+    inCombatNow = false
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(#offers == 2, "O: the mark lands when combat ends", #offers)
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(#offers == 2, "O: ...once", #offers)
+    Wear(1)
+    -- Mended before the fight ended: nothing left to offer afterwards
+    inCombatNow = true
+    Wear(0.1)
+    Wear(1)
+    inCombatNow = false
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(#offers == 2, "O: gear mended mid-fight is not marked afterwards", #offers)
+
+    -- The switches
+    db.RepairWaypoint = false
+    Wear(0.1)
+    CHECK(BannerText() == "Units require repair: Smith Argus, 340 yd" and #offers == 2,
+        "O: Mark the Nearest Repair off: named, not marked", #offers)
+    Wear(1)
+    db.RepairWaypoint = true
+    db.AlertRepair = false
+    Wear(0.1)
+    CHECK(#offers == 2, "O: the repair alert off: no mark either", #offers)
+    Wear(1)
+    db.AlertRepair = true
+
+    -- Nothing learned: the plain alert, no mark
+    CommanderLogistics_NearestRepair = function() return nil, "none" end
+    Wear(0.1)
+    CHECK(BannerText() == "Units require repair" and #offers == 2, "O: no vendor known: plain alert, no mark", BannerText())
+    Wear(1)
+
+    -- A Logistics that throws never takes the alert down with it
+    CommanderLogistics_NearestRepair = function() error("logistics blew up") end
+    Wear(0.1)
+    CHECK(BannerText() == "Units require repair", "O: a throwing Logistics still gets the plain alert", BannerText())
+    Wear(1)
+    StubLogistics()
+    CommanderLogistics_RepairWaypoint = function() error("waypoint blew up") end
+    Wear(0.1)
+    CHECK(BannerText() == "Units require repair: Smith Argus, 340 yd", "O: a throwing mark still names the vendor")
+    Wear(1)
+    CHECK(#harnessFailedErrors == errs0, "O: nothing escaped", harnessFailedErrors[#harnessFailedErrors])
+    CommanderLogistics_NearestRepair, CommanderLogistics_RepairWaypoint = nil, nil
+    CommanderLogistics_ClearRepairWaypoint, CommanderLogistics_FormatYards = nil, nil
+end
+
 CHECK(#harnessFailedErrors == 0, "no errors across the run", harnessFailedErrors[1])
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))

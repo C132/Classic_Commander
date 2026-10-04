@@ -77,6 +77,7 @@ local function CreateOptionsPanel()
             status = function() Call("CommanderFormulary_Status") end,
             refresh = function(arg) Call("CommanderFormulary_RefreshPrices", arg) end,
             reset = function() Call("CommanderFormulary_ResetChar") end,
+            trips = function() Call("CommanderFormulary_RouteTrips") end,
             profession = function(arg) Call("CommanderFormulary_Profession", arg) end,
             enchanting = function() Call("CommanderFormulary_Profession", "ENCHANTING") end,
             firstaid = function() Call("CommanderFormulary_Profession", "FIRSTAID") end,

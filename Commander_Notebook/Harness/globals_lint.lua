@@ -54,6 +54,11 @@ SLASH_COMMANDERNOTEBOOKCAPTURE1 SLASH_COMMANDERNOTEBOOKCAPTURE2
 ]]
 
 -- WoW client API this module deliberately touches.
+-- Commander Orders, for "Waypoint To This Note" (optional: every use is guarded)
+allow[[
+CommanderOrders
+]]
+
 allow[[
 CreateFrame UIParent GameTooltip UISpecialFrames SlashCmdList
 StaticPopupDialogs StaticPopup_Show SetItemRef ChatEdit_InsertLink

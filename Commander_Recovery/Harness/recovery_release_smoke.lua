@@ -1,11 +1,19 @@
 -- Commander Recovery smoke (luajit) -- the 2.2.0 battleground auto-release:
 -- where it fires, everything that holds it back, the retry loop, and the
--- existing casualty/corpse-order flow it had to leave intact. Mock lifted
--- from Commander_Adjutant/Harness.
+-- casualty flow it had to leave intact; and (2.3.0) the corpse arrow handed
+-- to Commander Orders: no order issued, the old option migrated, the release
+-- line only when Orders has the corpse, Feign Death not a casualty, and the
+-- settings checkbox driving Orders' own setting. Mock lifted from
+-- Commander_Adjutant/Harness; Commander Orders is a recording stand-in here
+-- (recovery_orders_smoke.lua runs the real one).
 --
 --   luajit Commander_Recovery/Harness/recovery_release_smoke.lua
 
-local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
+-- The AddOns root from this file's own path (works in a worktree too)
+local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]+$")) or "."
+if HERE:sub(1, 1) ~= "/" then HERE = (os.getenv("PWD") or ".") .. "/" .. HERE end
+HERE = HERE:gsub("/%./", "/"):gsub("/%.$", "")
+local ADDONS = HERE:match("^(.*)/[^/]+/Harness$") or "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
 local checks, fails = 0, 0
 local function CHECK(cond, label, detail)
@@ -290,15 +298,37 @@ C_Map = {
     GetPlayerMapPosition = function() return { x = 0.42, y = 0.58 } end,
 }
 
--- Commander Orders, present and enabled, so the corpse-run path is exercised
-local issuedOrders = {}
-CommanderOrdersDB = { EnableOrders = true }
-function CommanderOrders_IssueOrder(mapID, x, y)
-    issuedOrders[#issuedOrders + 1] = { mapID = mapID, x = x, y = y }
-    CommanderOrdersDB.Waypoint = { mapID = mapID, x = x, y = y }
-    return true
+-- Commander Orders 3.0, present and on: a recording stand-in for its public
+-- table. The legacy single-slot globals are still there (Orders keeps them
+-- as wrappers) and must never be called by Recovery again.
+local ordersLog = { setCorpse = {}, lists = 0 }
+local orders = { corpseArrow = true, available = true, corpses = {} }
+local function NewOrders()
+    return {
+        CorpseArrow = function() return orders.corpseArrow end,
+        SetCorpseArrow = function(on)
+            ordersLog.setCorpse[#ordersLog.setCorpse + 1] = on
+            orders.corpseArrow = on and true or false
+            return orders.corpseArrow
+        end,
+        IsAvailable = function()
+            if orders.available then return true end
+            return false, "disabled"
+        end,
+        List = function(filter)
+            ordersLog.lists = ordersLog.lists + 1
+            if type(filter) == "table" and filter.kind == "corpse" then return orders.corpses end
+            return {}
+        end,
+    }
 end
-function CommanderOrders_ClearOrder() CommanderOrdersDB.Waypoint = nil end
+CommanderOrders = NewOrders()
+local legacyOrders = 0
+function CommanderOrders_IssueOrder() legacyOrders = legacyOrders + 1 return true end
+function CommanderOrders_ClearOrder() legacyOrders = legacyOrders + 1 end
+
+-- A 2.2 player who had switched "Corpse Run Order" off, logged out mid run
+CommanderRecoveryDB = { CorpseOrder = false, IssuedOrder = { mapID = 1461, x = 0.42, y = 0.58 } }
 -- ===========================================================================
 -- Load the framework and the module
 -- ===========================================================================
@@ -380,8 +410,14 @@ local function Logged(pattern)
 end
 
 -- ---------------------------------------------------------------------------
--- Defaults
+-- Defaults, and the 2.2 -> 2.3 migration that ran at login
 -- ---------------------------------------------------------------------------
+CHECK(#ordersLog.setCorpse == 1 and ordersLog.setCorpse[1] == false and orders.corpseArrow == false,
+    "migration: an old Corpse Run Order switched off is handed to Orders' CorpseArrow once",
+    #ordersLog.setCorpse)
+CHECK(db.CorpseOrder == nil, "migration: ...and the old key is dropped", tostring(db.CorpseOrder))
+CHECK(db.IssuedOrder == nil, "migration: the account-wide IssuedOrder is dropped")
+orders.corpseArrow = true
 CHECK(db.AutoRelease == true, "defaults: auto-release on")
 CHECK(db.AutoReleaseArena == false, "defaults: arenas excluded")
 CHECK(db.AutoReleaseDelay == 1, "defaults: one-second delay", tostring(db.AutoReleaseDelay))
@@ -393,7 +429,7 @@ Scene("none")
 Kill()
 Advance(20)
 CHECK(#repops == 0, "A: no auto-release in the open world", #repops)
-CHECK(#issuedOrders == 0, "A: and no corpse order until the spirit is released")
+CHECK(legacyOrders == 0, "A: and no corpse order (Orders owns the corpse arrow)")
 
 -- ---------------------------------------------------------------------------
 -- B: a battleground death releases -- after the delay, not before
@@ -423,7 +459,9 @@ CHECK(hiddenPopups[1] == "DEATH", "C: popup taken down once the release lands", 
 local pressed = #repops
 Advance(10)
 CHECK(#repops == pressed, "C: the loop ends when the release lands", #repops - pressed)
-CHECK(#issuedOrders == 1, "C: the corpse-run order still goes out on release", #issuedOrders)
+CHECK(legacyOrders == 0, "C: no corpse order is issued on release: the corpse arrow is Orders' own", legacyOrders)
+CHECK(Logged("follow the Commander Orders arrow") == nil,
+    "C: and no 'follow the arrow' line in a battleground, where Orders draws no corpse arrow")
 
 -- ---------------------------------------------------------------------------
 -- D: the retry window closes instead of pressing forever
@@ -546,6 +584,103 @@ Scene("pvp")
 selfResurrects[1] = { id = 1, name = "Soulstone Resurrection", canUse = true }
 CommanderRecovery_Test()
 CHECK(Logged("self-resurrect is ready") ~= nil, "H: test sees the soulstone", printLog[#printLog])
+
+-- ---------------------------------------------------------------------------
+-- I: the corpse arrow is Commander Orders' (2.3.0)
+-- ---------------------------------------------------------------------------
+-- Orders adds its corpse waypoint from its own PLAYER_ALIVE handler, so the
+-- release line looks a frame later and speaks only when the corpse is there
+Scene("none")
+orders.corpses = { { uid = "w9", kind = "corpse", title = "Your corpse" } }
+Kill()
+ServerReleases()
+CHECK(Logged("follow the Commander Orders arrow") == nil, "I: nothing said inside the release event itself")
+Advance(0.2)
+CHECK(Logged("corpse located -- follow the Commander Orders arrow, soldier") ~= nil,
+    "I: a frame later, with Orders holding the corpse, the line says follow the arrow", printLog[#printLog])
+CHECK(legacyOrders == 0, "I: and Recovery issued nothing", legacyOrders)
+local said = 0
+for _, line in ipairs(printLog) do if line:find("follow the Commander Orders arrow", 1, true) then said = said + 1 end end
+CHECK(said == 1, "I: once", said)
+Fire("PLAYER_UNGHOST")
+CHECK(Logged("unit recovered") ~= nil, "I: back to life: recovery confirmed")
+CHECK(legacyOrders == 0, "I: ...with no order to clear (the old float-equality clean-up is gone)")
+
+Scene("none")
+orders.corpses = {}
+Kill()
+ServerReleases()
+Advance(0.2)
+CHECK(Logged("follow the Commander Orders arrow") == nil, "I: no corpse in Orders (not placed yet): no promise made")
+
+Scene("none")
+orders.corpses = { { uid = "w9", kind = "corpse" } }
+orders.corpseArrow = false
+local lists = ordersLog.lists
+Kill()
+ServerReleases()
+Advance(0.2)
+CHECK(Logged("follow the Commander Orders arrow") == nil and ordersLog.lists == lists,
+    "I: Orders' corpse arrow off: nothing asked, nothing said")
+orders.corpseArrow = true
+
+Scene("none")
+orders.available = false
+Kill()
+ServerReleases()
+Advance(0.2)
+CHECK(Logged("follow the Commander Orders arrow") == nil, "I: Orders turned off: nothing said")
+orders.available = true
+
+Scene("none")
+local saved = CommanderOrders
+CommanderOrders = nil
+Kill()
+ServerReleases()
+Advance(0.2)
+CHECK(Logged("follow the Commander Orders arrow") == nil and #harnessFailedErrors == 0,
+    "I: Orders not loaded: nothing said, nothing raised", harnessFailedErrors[1])
+CommanderOrders = saved
+
+-- Feign Death is not a casualty (it used to arm the re-fire guard on the fake
+-- and swallow the hunter's next real death)
+Scene("none")
+Fire("PLAYER_DEAD")
+CHECK(Logged("casualt") == nil, "I: Feign Death logs no casualty", printLog[1])
+Fire("PLAYER_ALIVE")
+CHECK(Logged("unit recovered") == nil, "I: ...and getting up from it is no recovery")
+Kill()
+CHECK(Logged("last unit lost in") ~= nil, "I: the real death after it is reported, not swallowed", printLog[#printLog])
+
+-- The settings checkbox is Orders' own CorpseArrow
+local corpseBox, oldBox
+for _, f in ipairs(allFrames) do
+    if f.__kind == "CheckButton" and f.Text and f.Text.__text == "Corpse Arrow (Commander Orders)" then corpseBox = f end
+    if f.__kind == "CheckButton" and f.Text and f.Text.__text == "Corpse Run Order" then oldBox = f end
+end
+CHECK(corpseBox ~= nil and oldBox == nil, "I: the page offers Corpse Arrow (Commander Orders), not Corpse Run Order")
+if corpseBox then
+    local before = #ordersLog.setCorpse
+    corpseBox.GetChecked = function() return false end
+    corpseBox.__scripts.OnClick(corpseBox)
+    CHECK(#ordersLog.setCorpse == before + 1 and ordersLog.setCorpse[before + 1] == false and orders.corpseArrow == false,
+        "I: unticking it turns Orders' corpse arrow off through the API")
+    corpseBox.GetChecked = function() return true end
+    corpseBox.__scripts.OnClick(corpseBox)
+    CHECK(orders.corpseArrow == true, "I: ticking it turns it back on")
+    CHECK(db.CorpseOrder == nil, "I: and Recovery keeps no copy of it")
+end
+
+-- The tester says what a release would do about the corpse
+Scene("none")
+CommanderRecovery_Test()
+CHECK(Logged("releasing would point the Commander Orders arrow at your corpse") ~= nil,
+    "I: the tester promises the arrow when it will come", printLog[1])
+Scene("none")
+orders.corpseArrow = false
+CommanderRecovery_Test()
+CHECK(Logged("no corpse arrow: it is off") ~= nil, "I: ...and says when it will not", printLog[1])
+orders.corpseArrow = true
 
 CHECK(#harnessFailedErrors == 0, "no errors across the run", harnessFailedErrors[1])
 

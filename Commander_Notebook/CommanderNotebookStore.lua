@@ -22,8 +22,15 @@
 --     created, updated,         -- epoch seconds
 --     pinned   = true|nil,
 --     trashed  = <epoch>|nil,   -- set means "in the trash since"
---     context  = { who, class, level, zone, subzone, x, y, target },
+--     context  = { who, class, level, zone, subzone, map, x, y, target },
 --   }
+--
+-- context is where the note was last stamped WITH a position (1.1.0): map
+-- is the uiMapID the coordinates are on, x and y are 0..1. A stamp written
+-- where the map has no position (inside an instance) leaves it alone, so it
+-- always names the latest place the note can lead back to. Stamps written
+-- before 1.1.0 are text only; S.Location reads the newest of those lines
+-- instead, and its zone NAME is all there is to go on.
 --
 -- Notes are a map rather than an array because a note id has to survive the
 -- disappearance of every note around it: the UI holds a selection across a
@@ -88,6 +95,85 @@ local function NormaliseTagList(tags)
     return out
 end
 
+-- ---------------------------------------------------------------------------
+-- Where a note was written
+-- ---------------------------------------------------------------------------
+
+local CONTEXT_KEYS = { "who", "class", "level", "zone", "subzone", "map", "x", "y", "target" }
+
+local function Fraction(v)
+    return type(v) == "number" and v == v and v >= 0 and v <= 1
+end
+
+-- A context table made safe in place: a position is a whole positive map id
+-- with both coordinates in 0..1, or it is not there at all
+function S.CleanContext(context)
+    if type(context) ~= "table" then return nil end
+    local map = context.map
+    if type(map) ~= "number" or map <= 0 or map ~= math.floor(map) then context.map = nil end
+    if not (Fraction(context.x) and Fraction(context.y)) then
+        context.x, context.y, context.map = nil, nil, nil
+    end
+    return context
+end
+
+-- A detached copy of the known fields
+function S.CopyContext(context)
+    if type(context) ~= "table" then return nil end
+    local copy = {}
+    for _, key in ipairs(CONTEXT_KEYS) do copy[key] = context[key] end
+    return S.CleanContext(copy)
+end
+
+-- The newest pre-1.1.0 stamp line that carries a place and coordinates:
+-- "-- Name (70) | Subzone, Zone 45.2, 63.1 | target: X | 04 Oct 2026, 13:50"
+-- -> { zone, subzone, x, y } with x, y in 0..1, or nil.
+function S.StampLocation(text)
+    local found
+    for line in tostring(text or ""):gmatch("[^\r\n]+") do
+        if line:sub(1, 3) == "-- " then
+            for piece in (line:sub(4) .. " | "):gmatch("(.-) | ") do
+                if piece:sub(1, 8) ~= "target: " then
+                    local place, xs, ys = piece:match("^(.-) (%d+%.?%d*), (%d+%.?%d*)$")
+                    local x, y = tonumber(xs), tonumber(ys)
+                    if place and place ~= "" and x and y and x <= 100 and y <= 100 then
+                        local subzone, zone = place:match("^(.*), ([^,]+)$")
+                        found = { zone = TrimString(zone or place), subzone = subzone and TrimString(subzone) or nil,
+                                  x = x / 100, y = y / 100 }
+                    end
+                end
+            end
+        end
+    end
+    return found
+end
+
+-- Where "Waypoint to this note" goes: the stored context when it has a map
+-- (from = "context"), else the newest old-style stamp line (from = "stamp",
+-- zone name only). nil when the note has neither.
+function S.Location(note)
+    if not note then return nil end
+    local c = note.context
+    if type(c) == "table" and c.map and Fraction(c.x) and Fraction(c.y) then
+        return { map = c.map, x = c.x, y = c.y, zone = c.zone, subzone = c.subzone, from = "context" }
+    end
+    local stamp = S.StampLocation(note.body)
+    if stamp then stamp.from = "stamp" end
+    return stamp
+end
+
+-- Remember where a stamp was written. Only a context with a position is
+-- kept (see the schema note at the top); the stamp's own text is written by
+-- AppendBody, which is what marks the note updated.
+function S.SetContext(id, context)
+    local note = db.Notes[id]
+    if not note then return false end
+    local copy = S.CopyContext(context)
+    if not (copy and copy.map) then return false end
+    note.context = copy
+    return true
+end
+
 function S.Attach(target)
     db = target or {}
     db.Notes = type(db.Notes) == "table" and db.Notes or {}
@@ -128,6 +214,7 @@ function S.Attach(target)
             note.trashed = tonumber(note.trashed) or nil
             note.pinned = note.pinned and true or nil
             if type(note.context) ~= "table" then note.context = nil end
+            if note.context then S.CleanContext(note.context) end
             -- A note whose notebook was deleted out from under it lands back
             -- in the default rather than vanishing from every view at once.
             if type(note.notebook) ~= "string" or not db.Notebooks[note.notebook] then
@@ -536,12 +623,7 @@ function S.Duplicate(id)
         body = note.body,
         notebook = note.notebook,
         tags = note.tags,
-        context = note.context and {
-            who = note.context.who, class = note.context.class,
-            level = note.context.level, zone = note.context.zone,
-            subzone = note.context.subzone, x = note.context.x,
-            y = note.context.y, target = note.context.target,
-        } or nil,
+        context = S.CopyContext(note.context),
     })
     return copy
 end

@@ -2,12 +2,12 @@
 ## Category: Commander
 ## Title: Commander Spoils
 ## Author: Devin
-## Version: 3.0.0
-## Notes: One window for every piece of loot: replaces the loot frame, the roll pop-ups and the chat loot lines with a feed, a haul ledger, a roll log, a bag census and party income.
+## Version: 3.1.0
+## Notes: One window for every piece of loot: replaces the loot frame, the roll pop-ups and the chat loot lines with a feed, a haul ledger, a roll log, a bag census and party income. A farm segment remembers where it started, so after a vendor run the Commander Orders arrow can point you back.
 ## IconTexture: Interface\Icons\INV_Box_01
 ## SavedVariables: CommanderSpoilsDB, CommanderSpoilsData
 ## RequiredDeps: Commander_Events
-## OptionalDeps: Commander_Console, Commander_Bags, Commander_Logistics, Commander_Quartermaster, Auctionator
+## OptionalDeps: Commander_Console, Commander_Bags, Commander_Logistics, Commander_Quartermaster, Commander_Orders, Auctionator
 
 CommanderSpoilsDB.lua
 CommanderSpoilsEngine.lua

@@ -2,4 +2,7 @@
     <Binding name="COMMANDERCOMMS_TOGGLE" category="ADDONS" header="COMMANDERCOMMS">
         CommanderComms_Toggle()
     </Binding>
+    <Binding name="COMMANDERCOMMS_RALLY" category="ADDONS">
+        CommanderComms_Rally()
+    </Binding>
 </Bindings>

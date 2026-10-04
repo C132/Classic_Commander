@@ -759,23 +759,182 @@ local function ButtonRow(defs)
 end
 
 -- ---------------------------------------------------------------------------
--- Waypoints
+-- Waypoints: the Commander Orders arrow, else the place and its /way line
+--
+-- Commander Orders 3.0 is the suite's navigation; TomTom is gone. A Go
+-- button is the player asking for the arrow, so the waypoint takes it, and
+-- each place owns ONE waypoint (source "Tradecraft", key "place:<name>@<zone>"),
+-- so pressing Go again moves nothing and stacks nothing. It is session only,
+-- Orders' default for a consumer: an errand, not a place to keep. With Set
+-- Waypoints off, Orders absent, turned off or refusing, or a zone missing
+-- from D.ZONES, the place is printed with a /way line (the zone by name when
+-- there is no map id: /way reads names too) -- a Go button never does
+-- nothing, and the tooltip says which it will be before it is pressed.
+--
+-- "Route this trip" hands Orders the vendors of every formula the current
+-- trainer bracket still has to buy as ONE nearest-first route (see TripStops).
 -- ---------------------------------------------------------------------------
 
-local function SetWaypoint(place, title)
-    local zone = place.zone
-    local mapID = D.ZONES[zone]
-    if db.UseWaypoints and TomTom and TomTom.AddWaypoint and mapID then
-        local ok = pcall(TomTom.AddWaypoint, TomTom, mapID, place.x / 100, place.y / 100, {
-            title = title or place.name,
-            persistent = false, minimap = true, world = true, crazy = true,
+local function OrdersApi()
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.Add) == "function" then return api end
+    return nil
+end
+
+-- "ORDERS" | "OPTION" (Set Waypoints off) | "OFF" (Orders turned off) | "ABSENT"
+local function WaypointPath()
+    if not db.UseWaypoints then return "OPTION" end
+    local api = OrdersApi()
+    if not api then return "ABSENT" end
+    if type(api.IsAvailable) == "function" then
+        local ok, available = pcall(api.IsAvailable)
+        if ok and not available then return "OFF" end
+    end
+    return "ORDERS"
+end
+
+local WAYPOINT_WORDS = {
+    ORDERS = "Points the Commander Orders arrow there.",
+    OPTION = "Prints the coordinates and a /way line to chat (Set Waypoints is off).",
+    OFF = "Prints the coordinates and a /way line to chat (Commander Orders is turned off).",
+    ABSENT = "Prints the coordinates and a /way line to chat (Commander Orders is not loaded).",
+}
+
+local function WaypointWords()
+    return WAYPOINT_WORDS[WaypointPath()]
+end
+
+local function PlaceKey(place)
+    return "place:" .. tostring(place.name) .. "@" .. tostring(place.zone)
+end
+
+-- The command that puts a place on anybody's arrow (Orders' /way and
+-- TomTom's both read it), x and y in 0..100
+local function WayLine(place, title)
+    local mapID = D.ZONES[place.zone]
+    return ("/way %s %.2f %.2f %s"):format(mapID and ("#" .. mapID) or tostring(place.zone),
+        place.x, place.y, title or place.name)
+end
+
+-- Orders' position for a place: uiMap and 0..1, or nil without a map id
+local function PlacePosition(place)
+    local mapID = D.ZONES[place.zone]
+    if not (mapID and type(place.x) == "number" and type(place.y) == "number") then return nil end
+    return { map = mapID, x = place.x / 100, y = place.y / 100 }
+end
+
+local function SetWaypoint(place, title, icon)
+    title = title or place.name
+    local pos = PlacePosition(place)
+    if pos and WaypointPath() == "ORDERS" then
+        -- Orders answers nil and a reason rather than raising; the pcall is
+        -- for a stranger's table
+        local ok, uid = pcall(OrdersApi().Add, {
+            map = pos.map, x = pos.x, y = pos.y, title = title, icon = icon,
+            source = "Tradecraft", key = PlaceKey(place), setArrow = true,
         })
-        if ok then
-            Announce(("Waypoint set: %s — %s (%.1f, %.1f)"):format(place.name, zone, place.x, place.y))
-            return
+        if ok and uid then
+            Announce(("Waypoint set: %s — %s (%.1f, %.1f)"):format(place.name, place.zone, place.x, place.y))
+            return true
         end
     end
-    Announce(("%s — %s, %s (%.1f, %.1f)"):format(place.name, place.where or "", zone, place.x, place.y))
+    Announce(("%s — %s, %s (%.1f, %.1f)   %s"):format(place.name, place.where or "", place.zone, place.x, place.y,
+        WayLine(place, title)))
+    return false
+end
+
+-- The trip: the vendors of every formula the current trainer bracket still
+-- has to buy (pending or current, not held, not skipped), one stop per set
+-- of vendors. A formula sold in two places (the engine has already dropped
+-- the other faction's) is ONE stop with the second place as an alternative,
+-- so the arrow takes the nearer; formulas with exactly the same vendors share
+-- a stop. Each stop: { places = { place, ... }, items = { name, ... } }.
+local function TripStops(p)
+    local stops, bySet = {}, {}
+    local bracket = p and p.bracket
+    if not bracket then return stops end
+    for _, step in ipairs(bracket.steps or {}) do
+        if step.kind == "buy" and (step.status == "current" or step.status == "pending") and not step.holding then
+            local places, keys = {}, {}
+            for _, v in ipairs(step.vendors or {}) do
+                if PlacePosition(v) then
+                    places[#places + 1] = v
+                    keys[#keys + 1] = PlaceKey(v)
+                end
+            end
+            if #places > 0 then
+                table.sort(keys)
+                local set = table.concat(keys, "|")
+                local stop = bySet[set]
+                if not stop then
+                    stop = { places = places, items = {} }
+                    bySet[set] = stop
+                    stops[#stops + 1] = stop
+                end
+                stop.items[#stop.items + 1] = ItemName(step.item)
+            end
+        end
+    end
+    return stops
+end
+
+local function TripTitle(stop)
+    local more = #stop.items - 1
+    local what = stop.items[1] .. (more > 0 and (" (+%d)"):format(more) or "")
+    if #stop.places == 1 then return stop.places[1].name .. ": " .. what end
+    return what .. " (nearest vendor)"
+end
+
+-- "Route this trip": ONE Commander Orders route through the trip's vendors,
+-- nearest first, owned as (Tradecraft, "trip:<guide>:<bracket>") so asking
+-- again replaces it. Without Orders (or with Set Waypoints off) each stop's
+-- /way line is printed instead. Returns true when Orders took the route.
+function CommanderTradecraft_RouteTrip()
+    if not loaded then return false end
+    if not plan then Rebuild() end
+    local p = plan
+    local bracket = p and p.bracket
+    local stops = TripStops(p)
+    if #stops == 0 then
+        Announce("nothing on this trip is bought from a vendor — no route to set")
+        return false
+    end
+    local api = OrdersApi()
+    if WaypointPath() == "ORDERS" and type(api.AddRoute) == "function" then
+        local specs = {}
+        for i, stop in ipairs(stops) do
+            local first = PlacePosition(stop.places[1])
+            local alternatives
+            if #stop.places > 1 then
+                alternatives = {}
+                for j, v in ipairs(stop.places) do alternatives[j] = PlacePosition(v) end
+            end
+            specs[i] = { map = first.map, x = first.x, y = first.y, title = TripTitle(stop),
+                         alternatives = alternatives, icon = "VENDOR" }
+        end
+        local ok, id = pcall(api.AddRoute, {
+            title = ("Tradecraft: %s %s trip"):format(Profession().name, bracket.name),
+            source = "Tradecraft", key = ("trip:%s:%d"):format(tostring(Guide().key), bracket.index or 0),
+            mode = "NEAREST", stops = specs, start = true,
+        })
+        if ok and id then
+            Announce(("%d vendor stop%s on the %s trip, nearest first — follow the Commander Orders arrow"):format(
+                #stops, #stops == 1 and "" or "s", bracket.name))
+            return true
+        end
+    end
+    Announce(("the %s trip: %s"):format(bracket.name, WaypointWords()))
+    for _, stop in ipairs(stops) do
+        for _, v in ipairs(stop.places) do Announce("  " .. WayLine(v, TripTitle(stop))) end
+    end
+    return false
+end
+
+local function TripTooltip(tip, count)
+    tip:AddLine("Route this trip")
+    tip:AddLine(("A Commander Orders route through the %d vendor%s whose formulas this trainer bracket still needs, nearest first: arriving at one points the arrow at the next. Asking again replaces the route."):format(
+        count, count == 1 and "" or "s"), 1, 1, 1, true)
+    if WaypointPath() ~= "ORDERS" then tip:AddLine(WaypointWords(), 1, 0.6, 0.2, true) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -994,12 +1153,15 @@ local function PaintTrainBanner(p)
             text = ("%sTrainer:|r %s %s is available (needs %d, cap %d)."):format(HEX.title, rankName, prof.name, t.rank.at, t.rank.cap)
         end
         local faction = Faction()
-        local function PlaceRow(place)
+        local function PlaceRow(place, icon)
             local rowY = y
             Line(("%s — %s (%.1f, %.1f)"):format(place.name, place.where, place.x, place.y),
                 { indent = 10, color = C.dim, rightPad = 50 })
-            local b = NewButton("Go", 44, function() SetWaypoint(place, place.name) end,
-                function(tip) tip:AddLine("Waypoint to " .. place.name) end)
+            local b = NewButton("Go", 44, function() SetWaypoint(place, place.name, icon) end,
+                function(tip)
+                    tip:AddLine("Waypoint to " .. place.name)
+                    tip:AddLine(WaypointWords(), 1, 1, 1, true)
+                end)
             b:SetPoint("TOPRIGHT", guide, "TOPRIGHT", 0, rowY + 2)
             b:SetHeight(18)
         end
@@ -1016,7 +1178,7 @@ local function PaintTrainBanner(p)
             end
             for _, npc in ipairs(book.vendors or {}) do
                 local v = D.VENDORS[npc]
-                if v and (not v.faction or not faction or v.faction == faction) then PlaceRow(v) end
+                if v and (not v.faction or not faction or v.faction == faction) then PlaceRow(v, "VENDOR") end
             end
         elseif t.rank.quest then
             local q = t.rank.quest
@@ -1025,13 +1187,13 @@ local function PaintTrainBanner(p)
                 or ("%sQuest:|r %s %s is the reward of %s (needs %d, cap %d)."):format(HEX.title, rankName, prof.name, q.name, t.rank.at, t.rank.cap)
             Line(text, { color = C.text })
             for _, giver in ipairs(q.givers or {}) do
-                if not giver.faction or not faction or giver.faction == faction then PlaceRow(giver) end
+                if not giver.faction or not faction or giver.faction == faction then PlaceRow(giver, "QUEST") end
             end
         else
             Line(text, { color = C.text })
             if t.rank.outland and prof.masterTrainers then
                 for _, trainer in ipairs(prof.masterTrainers) do
-                    if not trainer.faction or not faction or trainer.faction == faction then PlaceRow(trainer) end
+                    if not trainer.faction or not faction or trainer.faction == faction then PlaceRow(trainer, "TRAINER") end
                 end
             else
                 Line("Any " .. prof.name .. " trainer in a capital city.", { indent = 10, color = C.dim })
@@ -1175,10 +1337,10 @@ local function PaintBuyStep(step, p)
     for _, v in ipairs(step.vendors) do
         local rowY = y
         Line(("%s%s|r — %s, %s (%.1f, %.1f)"):format(HEX.white, v.name, v.where or "", v.zone, v.x, v.y), { indent = 8, color = C.text, rightPad = 50 })
-        local b = NewButton("Go", 44, function() SetWaypoint(v, name) end,
+        local b = NewButton("Go", 44, function() SetWaypoint(v, name, "VENDOR") end,
             function(tip)
                 tip:AddLine("Waypoint to " .. v.name)
-                tip:AddLine(TomTom and "Sets a TomTom waypoint." or "Prints the coordinates to chat (TomTom is not installed).", 1, 1, 1, true)
+                tip:AddLine(WaypointWords(), 1, 1, 1, true)
             end)
         b:SetPoint("TOPRIGHT", guide, "TOPRIGHT", 0, rowY + 2)
         b:SetHeight(18)
@@ -1239,6 +1401,12 @@ local function PaintFooter(p)
         tooltip = function(tip) tip:AddLine("The whole route"); tip:AddLine("Every step, every alternative, and where you are.", 1, 1, 1, true) end }
     buttons[#buttons + 1] = { text = "Shopping", width = 76, onClick = function() CommanderTradecraft_Shopping() end,
         tooltip = function(tip) tip:AddLine("Shopping list"); tip:AddLine("Everything the rest of the route needs, less what you hold.", 1, 1, 1, true) end }
+    -- Only when this bracket still has a vendor to visit
+    local tripStops = #TripStops(p)
+    if tripStops > 0 then
+        buttons[#buttons + 1] = { text = "Trip", width = 44, onClick = function() CommanderTradecraft_RouteTrip() end,
+            tooltip = function(tip) TripTooltip(tip, tripStops) end }
+    end
     ButtonRow(buttons)
 end
 
@@ -1681,6 +1849,22 @@ local function EnsureLedger()
         self:SetVerticalScroll(target)
     end)
 
+    -- Shopping mode only, in the title strip (the button row along the foot
+    -- is already full when Auctionator is loaded)
+    local trip = CreateFrame("Button", nil, ledger, "UIPanelButtonTemplate")
+    trip:SetSize(116, 20)
+    trip:SetPoint("TOPRIGHT", ledger, "TOPRIGHT", -12, -7)
+    trip:SetText("Route This Trip")
+    trip:SetScript("OnClick", function() CommanderTradecraft_RouteTrip() end)
+    trip:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        TripTooltip(GameTooltip, #TripStops(plan))
+        GameTooltip:Show()
+    end)
+    trip:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    trip:Hide()
+    ledger.tripButton = trip
+
     local close = CreateFrame("Button", nil, ledger, "UIPanelButtonTemplate")
     close:SetSize(70, 22)
     close:SetPoint("BOTTOMRIGHT", ledger, "BOTTOMRIGHT", -10, 10)
@@ -1949,6 +2133,7 @@ PaintLedger = function()
     end
     ledger.routeButton:SetEnabled(ledgerMode ~= "route")
     ledger.shopButton:SetEnabled(ledgerMode ~= "shop")
+    ledger.tripButton:SetShown(ledgerMode == "shop" and #TripStops(plan) > 0)
     local haveAuc = ledgerMode == "shop" and Auctionator and Auctionator.API and Auctionator.API.v1
         and Auctionator.API.v1.CreateShoppingList and true or false
     ledger.aucButton:SetShown(haveAuc)

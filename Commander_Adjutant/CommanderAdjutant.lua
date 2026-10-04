@@ -3,6 +3,20 @@
 -- alert is throttled so the adjutant informs rather than nags: attacks only
 -- after a stretch of peace, critical damage once per fight, repair/storage
 -- once per threshold crossing.
+--
+-- Since 2.3.0 the repair alert also says WHERE to go. Commander Logistics
+-- remembers every repair vendor the player opens; when gear drops under the
+-- threshold the banner names the nearest one on this continent ("Units
+-- require repair: Smith Argus, 340 yd") and, with Mark the Nearest Repair on,
+-- has Logistics put a Commander Orders waypoint there. The mark is an OFFER:
+-- it is temporary and never asks for the arrow, so it cannot take the arrow
+-- from a waypoint the player follows, a running route or a Clear (Orders'
+-- Follow the Closest points at it only when nothing of the player's is left
+-- on that landmass), and it is taken down again once the gear is mended. It
+-- is never placed in combat (the arrow appearing mid-fight is a combat
+-- layout change); an alert that fires in combat marks the vendor when combat
+-- ends. Both Logistics and Orders are optional and looked up when the alert
+-- fires.
 
 local BANNER_HOLD = 3.0
 local BANNER_FADE_STEP = 0.06
@@ -125,6 +139,41 @@ local function CheckLowHealth()
     end
 end
 
+-- The nearest repair vendor Commander Logistics knows on this continent, or
+-- nil (Logistics absent, nothing learned, no position here)
+local function NearestRepair()
+    local fn = CommanderLogistics_NearestRepair
+    if type(fn) ~= "function" then return nil end
+    local ok, vendor = pcall(fn)
+    if ok and type(vendor) == "table" and type(vendor.name) == "string" then return vendor end
+    return nil
+end
+
+-- The repair offer: a temporary Commander Orders waypoint, through Logistics.
+-- Never in combat: parked until PLAYER_REGEN_ENABLED.
+local repairOfferPending, repairOffered = false, false
+
+local function OfferRepair()
+    repairOfferPending = false
+    if not (CommanderAdjutantDB.EnableAdjutant and CommanderAdjutantDB.RepairWaypoint) then return end
+    if InCombatLockdown and InCombatLockdown() then
+        repairOfferPending = true
+        return
+    end
+    local fn = CommanderLogistics_RepairWaypoint
+    if type(fn) ~= "function" then return end
+    local ok, placed = pcall(fn, { temporary = true, quiet = true })
+    if ok and placed then repairOffered = true end
+end
+
+local function WithdrawRepairOffer()
+    repairOfferPending = false
+    if not repairOffered then return end
+    repairOffered = false
+    local fn = CommanderLogistics_ClearRepairWaypoint
+    if type(fn) == "function" then pcall(fn) end
+end
+
 local function CheckDurability()
     if not CommanderAdjutantDB.AlertRepair then return end
     local lowest = 1
@@ -138,9 +187,19 @@ local function CheckDurability()
     if lowest < 0.2 then
         if not repairAnnounced then
             repairAnnounced = true
-            Announce("REPAIR", "Units require repair", 1, 0.85, 0.2)
+            local text = "Units require repair"
+            local vendor = NearestRepair()
+            if vendor then
+                local yards = type(CommanderLogistics_FormatYards) == "function"
+                    and CommanderLogistics_FormatYards(vendor.yards)
+                text = text .. ": " .. vendor.name .. (yards and (", " .. yards) or "")
+            end
+            Announce("REPAIR", text, 1, 0.85, 0.2)
+            if vendor then OfferRepair() end
         end
     else
+        -- Mended (however it happened): the offer has done its job
+        if repairAnnounced then WithdrawRepairOffer() end
         repairAnnounced = false
     end
 end
@@ -191,6 +250,8 @@ events:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         lastCombatEnd = GetTime()
+        -- A repair alert that fired mid-fight marks its vendor now
+        if repairOfferPending and repairAnnounced then OfferRepair() end
         -- lowHealthAnnounced deliberately NOT cleared here; CheckLowHealth's
         -- hysteresis re-arms it once health recovers above 35%
     elseif event == "UNIT_HEALTH" then

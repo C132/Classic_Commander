@@ -54,7 +54,12 @@ GetNumBattlefieldStats GetBattlefieldStatInfo GetBattlefieldStatData
 GetBattlefieldInstanceRunTime InCombatLockdown
 UnitName UnitExists UnitIsUnit UnitClass UnitPosition CheckInteractDistance
 SetRaidTarget GetRaidTargetIndex CanBeRaidTarget
-UnitIsGroupLeader UnitIsGroupAssistant
+UnitIsGroupLeader UnitIsGroupAssistant GameTooltip
+]]
+
+-- Commander Orders, for the flag waypoints (optional: every use is guarded)
+allow[[
+CommanderOrders
 ]]
 
 local problems, scanned = 0, 0

@@ -12,9 +12,15 @@
 -- the other way: a cooldown you spend ON somebody, whispered to them with
 -- what it is for. The mana burn callout watches the whole group: a drain
 -- landing on any teammate's mana is announced with how much is left.
+--
+-- Rally on Me is the one call that carries a place rather than words. It
+-- sits in the middle of the wheel, under the preview (the ten calls already
+-- fill the ellipse: an eleventh on the ring would land on top of the first),
+-- and has its own key binding and /ccomms rally.
 
 BINDING_HEADER_COMMANDERCOMMS = "Commander Comms"
 BINDING_NAME_COMMANDERCOMMS_TOGGLE = "Open Comms Wheel"
+BINDING_NAME_COMMANDERCOMMS_RALLY = "Rally on Me"
 
 local RADIUS = 110      -- vertical radius of the wheel ellipse
 local RADIUS_X = 180    -- horizontal radius: wide ring for wide screens
@@ -320,6 +326,94 @@ for i, call in ipairs(CALLS) do
     button:SetScript("OnClick", function() SendCall(call) end)
     button:SetScript("OnEnter", function() PreviewCall(call) end)
     button:SetScript("OnLeave", ClearPreview)
+end
+
+-- ---------------------------------------------------------------------------
+-- Rally on me: the call that carries a place
+--
+-- It goes out twice. The chat line names the zone and coordinates, so the
+-- call reads the same for everybody, addon or not. With Commander Orders the
+-- spot also goes to the group as a shared waypoint, and group members running
+-- Orders are asked whether to add it and follow the arrow (Orders' sharing
+-- never takes anybody's arrow without asking). CommanderOrders.SharePoint
+-- sends the spot WITHOUT adding a waypoint on your side: you are the rally
+-- point, and an arrow to your own feet would only be noise. Silent, because
+-- the chat line already says it. Inside an instance there is no map position,
+-- so the call is the words alone and nothing is shared.
+-- ---------------------------------------------------------------------------
+local RALLY = { label = "Rally on Me", msg = "Rally on me!" }
+local RALLY_Y = -58           -- under the centre preview, inside the inner ring
+
+-- Where you stand: map, x, y (0..1), or nil where the map has no position
+local function RallySpot()
+    if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition) then return nil end
+    local ok, mapID = pcall(C_Map.GetBestMapForUnit, "player")
+    if not ok or type(mapID) ~= "number" then return nil end
+    local okPos, position = pcall(C_Map.GetPlayerMapPosition, mapID, "player")
+    if not okPos or not position then return nil end
+    local x, y = position.x, position.y
+    if (x == nil or y == nil) and position.GetXY then x, y = position:GetXY() end
+    if type(x) ~= "number" or type(y) ~= "number" or x <= 0 or x > 1 or y < 0 or y > 1 then return nil end
+    return mapID, x, y
+end
+
+local function RallyMessage(mapID, x, y)
+    if not mapID then return RALLY.msg end
+    local info = C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
+    local zone = info and info.name
+    if not zone then return RALLY.msg end
+    local where = string.format("%s %.1f, %.1f", zone, x * 100, y * 100)
+    local sub = GetSubZoneText and GetSubZoneText() or ""
+    if sub ~= "" and sub ~= zone then where = sub .. ", " .. where end
+    return RALLY.msg .. " " .. where
+end
+
+-- The Orders API when it can share a spot, else nil
+local function OrdersShare()
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.SharePoint) == "function" then return api end
+    return nil
+end
+
+local function SendRally()
+    local mapID, x, y = RallySpot()
+    SendChatMessage(RallyMessage(mapID, x, y), PickChannel())
+    local api = OrdersShare()
+    if mapID and api and CommanderCommsDB.RallyWaypoint ~= false then
+        local name = UnitName("player")
+        api.SharePoint({ map = mapID, x = x, y = y, title = "Rally on " .. (name or "me"), silent = true })
+    end
+    ClickSound()
+    wheel:Hide()
+end
+
+local function PreviewRally()
+    local mapID, x, y = RallySpot()
+    center:SetText("\"" .. RallyMessage(mapID, x, y) .. "\"")
+    center:SetTextColor(1, 1, 1)
+    local route = "to " .. PickChannel():lower():gsub("_", " ")
+    if mapID and OrdersShare() and CommanderCommsDB.RallyWaypoint ~= false and InAnyGroup() then
+        route = route .. ", and a waypoint for the group"
+    end
+    centerSub:SetText(route)
+    centerSub:SetTextColor(0.7, 0.7, 0.7)
+end
+
+local rallyButton = CreateFrame("Button", nil, wheel, "UIPanelButtonTemplate")
+rallyButton:SetSize(110, 24)
+rallyButton:SetText(RALLY.label)
+rallyButton:SetPoint("CENTER", wheel, "CENTER", 0, RALLY_Y)
+rallyButton:SetScript("OnClick", function() SendRally() end)
+rallyButton:SetScript("OnEnter", PreviewRally)
+rallyButton:SetScript("OnLeave", ClearPreview)
+
+-- The key binding and /ccomms rally: the same call without the wheel
+function CommanderComms_Rally()
+    if not (CommanderCommsDB and CommanderCommsDB.EnableComms) then
+        print("Commander Comms: module is disabled (enable it in settings or /ccomms)")
+        return
+    end
+    SendRally()
 end
 
 function CommanderComms_Toggle()

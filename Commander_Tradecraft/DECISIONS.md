@@ -238,3 +238,27 @@ current at its own skill (D5).
 against a model of 46; D3 makes the guide's figure the floor, so the shopping list never asks for
 less cloth than the published list (190 linen, 165 wool, 150 silk, 115 mageweave, 240 runecloth,
 90 netherweave) and the model is never more than twenty percent over it (harness B3c, C17).
+
+## D17 — Go buttons and Route This Trip go to Commander Orders
+
+1.2.0, 2026-10-04. TomTom left the suite; Commander Orders 3.0 is its navigation, and `SetWaypoint`
+never tried Orders before, so the day TomTom went the Go buttons would have dropped to printing
+coordinates. A Go press calls `CommanderOrders.Add` with source "Tradecraft" and key
+"place:<name>@<zone>": a place owns ONE waypoint, so pressing Go again moves it rather than stacking
+a second, and the waypoint takes the arrow (the player asked for it). It is session only, Orders'
+default for a consumer: an errand. With Set Waypoints off (the option keeps its key, `UseWaypoints`,
+and lost "Through TomTom" from its label), Orders absent or turned off, Orders refusing the place,
+or a zone missing from `D.ZONES`, the place is printed with a `/way` line -- the zone by name when
+there is no map id, since `/way` reads names -- and every Go tooltip says which it will be.
+
+**Route This Trip** (the guide's Trip button, the shopping list's title strip, `/ctc trip`) is the
+shopping trip D11 already defines -- the current trainer bracket -- walked: every formula that
+bracket still has to buy (pending, not held, not skipped) becomes a stop at its vendor, one
+Commander Orders route, nearest first, so arriving at one points the arrow at the next. A formula
+sold in two places your faction can use is ONE stop with the second as an alternative (the arrow
+takes the nearer); formulas with exactly the same vendors share a stop, titled with the vendor and
+the first formula. The route is owned as (Tradecraft, "trip:<guide>:<bracket>"), so asking again
+replaces it. The button only appears while the bracket has a vendor to visit. Without Orders the
+trip prints each stop's `/way` line rather than nothing. The shopping list's button sits in the
+title strip because the foot of that window is already full when Auctionator is loaded. UI harness
+C3 and E1/E3.

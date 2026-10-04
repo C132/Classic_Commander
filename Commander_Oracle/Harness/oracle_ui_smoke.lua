@@ -520,7 +520,8 @@ Load(ADDONS .. "/Commander_Oracle/CommanderOracleData.lua")
 Load(ADDONS .. "/Commander_Oracle/CommanderOracleEngine.lua")
 Load(ADDONS .. "/Commander_Oracle/CommanderOracleRoster.lua")
 Load(ADDONS .. "/Commander_Oracle/CommanderOracleDB.lua")
-Load(ADDONS .. "/Commander_Oracle/CommanderOracle.lua")
+-- Mutation hook: ORACLE_RUNTIME=/path of a copy of CommanderOracle.lua
+Load(os.getenv("ORACLE_RUNTIME") or (ADDONS .. "/Commander_Oracle/CommanderOracle.lua"))
 Fire("ADDON_LOADED", "Commander_Oracle")
 Fire("PLAYER_LOGIN")
 
@@ -1888,6 +1889,254 @@ if wheel then
     at = 390
     wheel(pageScroll, -1)
     CHECK(at == 400, "S: and at the bottom", at)
+end
+
+-- ---------------------------------------------------------------------------
+-- W: a flag you can walk to (Commander Orders)
+--
+-- Clicking a pip asks Orders for ONE waypoint at that flag, placed where the
+-- map's own area POI says the flag stands, pinned because it was asked for,
+-- temporary and session-only, and gone with the match -- handing the arrow
+-- back to a waypoint of yours if the click took it.
+-- ---------------------------------------------------------------------------
+do
+    -- Where the map puts each flag (fractions of the Arathi Basin map)
+    local FLAG_AT = { { 0.373, 0.291 }, { 0.404, 0.558 }, { 0.464, 0.452 }, { 0.575, 0.309 }, { 0.560, 0.599 } }
+    local realPOIInfo = C_AreaPoiInfo.GetAreaPOIInfo
+    local placed = true
+    C_AreaPoiInfo.GetAreaPOIInfo = function(uiMapID, poiID)
+        local entry = CommanderOracle_POI[poiID]
+        if uiMapID ~= 1461 or not entry or not placed then return nil end
+        local at = FLAG_AT[entry.node.index]
+        return { areaPoiID = poiID, position = { x = at[1], y = at[2] } }
+    end
+
+    -- The tooltip, recorded
+    local tipLines = {}
+    rawset(GameTooltip, "SetOwner", function() tipLines = {} end)
+    rawset(GameTooltip, "SetText", function(_, text) tipLines[#tipLines + 1] = tostring(text) end)
+    rawset(GameTooltip, "AddLine", function(_, text) tipLines[#tipLines + 1] = tostring(text) end)
+
+    -- Commander Orders, as far as Oracle reaches into it
+    local calls, active, records
+    local function Reset(pinned)
+        calls = { add = {}, arrow = {}, removeBy = {} }
+        active = pinned
+        records = { w1 = true, w5 = true }
+    end
+    local orders
+    orders = {
+        Add = function(spec)
+            calls.add[#calls.add + 1] = spec
+            if orders.refuse then return nil, orders.refuse end
+            records.w9 = true
+            return "w9"
+        end,
+        SetArrow = function(uid)
+            calls.arrow[#calls.arrow + 1] = uid
+            active = { uid = uid, why = "PINNED", source = uid == "w9" and "Oracle" or "user" }
+            return true
+        end,
+        RemoveBy = function(source)
+            calls.removeBy[#calls.removeBy + 1] = source
+            records.w9 = nil
+            if active and active.source == source then active = nil end
+            return 1
+        end,
+        Active = function() return active end,
+        Get = function(uid) return records[uid] and { uid = uid } or nil end,
+    }
+    -- Reaching the flag, as the real Orders does it: the flag spec has no
+    -- clearOnArrive, so BuildRecord's consumer default (true) applies, and
+    -- FinishArrival -> Unlink removes the record and unpins it
+    -- (CommanderOrdersStore.lua FinishArrival, Unlink). The arrow then falls
+    -- to whatever Follow the Closest picks: `after`, or nothing.
+    local function ArriveAtFlag(after)
+        records.w9 = nil
+        if active and active.uid == "w9" then active = after end
+    end
+    CommanderOrders = orders
+    combat = false
+
+    zone.inBasin = true
+    SetBoard({ "A", "H", "a", "o", "h" })
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+    local pips = UIx.nodes.pips
+    local function ClickPip(index, button)
+        pips[index].__scripts.OnMouseUp(pips[index], button or "LeftButton")
+    end
+    CHECK(pips[3].__scripts.OnMouseUp ~= nil, "W: the pips take a click")
+
+    -- A pinned waypoint of yours, then a click on the Blacksmith
+    Reset({ uid = "w1", why = "PINNED", source = "user" })
+    ClickPip(3)
+    CHECK(#calls.add == 1, "W: one waypoint asked for", #calls.add)
+    local spec = calls.add[1] or {}
+    CHECK(spec.map == 1461, "W: on the Arathi Basin map", spec.map)
+    CHECK(spec.x == 0.464 and spec.y == 0.452, "W: where the map's own POI puts the Blacksmith",
+        tostring(spec.x) .. "," .. tostring(spec.y))
+    CHECK(spec.title == "Blacksmith", "W: titled with the flag", spec.title)
+    CHECK(spec.source == "Oracle" and spec.key == "node", "W: one Oracle waypoint (source Oracle, key node)")
+    CHECK(spec.temporary == true and spec.persistent == false, "W: temporary and session-only")
+    CHECK(spec.setArrow == false and calls.arrow[1] == "w9",
+        "W: and pinned outright, so a pinned waypoint of yours cannot swallow the click", calls.arrow[1])
+
+    -- Another flag moves the same waypoint; the arrow it took is remembered once
+    ClickPip(1)
+    CHECK(#calls.add == 2 and calls.add[2].title == "Stables" and calls.add[2].key == "node",
+        "W: clicking another flag asks again under the same key (Orders moves it)")
+    CHECK(calls.add[2].x == 0.373 and calls.add[2].y == 0.291, "W: to the Stables")
+
+    -- Right-click is not a waypoint
+    ClickPip(2, "RightButton")
+    CHECK(#calls.add == 2, "W: a right-click asks for nothing")
+
+    -- Combat: the click is not a frame change, so it works mid-fight
+    combat = true
+    ClickPip(5)
+    CHECK(#calls.add == 3 and calls.add[3].title == "Farm", "W: in combat, a click still sets the waypoint")
+    combat = false
+
+    -- The tooltip says what the flag is doing and what a click does
+    pips[3].__scripts.OnEnter(pips[3])
+    local tip = table.concat(tipLines, "\n")
+    CHECK(tip:find("Blacksmith", 1, true) ~= nil, "W: the tooltip names the flag", tip)
+    CHECK(tip:find("Alliance assaulting", 1, true) ~= nil, "W: and that it is being assaulted", tip)
+    CHECK(tip:find("Click: point the arrow at the Blacksmith (Commander Orders)", 1, true) ~= nil,
+        "W: and what a click does", tip)
+    pips[2].__scripts.OnEnter(pips[2])
+    CHECK(table.concat(tipLines, "\n"):find("Held by the Horde", 1, true) ~= nil, "W: a held flag says who holds it")
+
+    -- The match ends: the waypoint goes and the arrow goes back to yours
+    LeaveBasin()
+    CHECK(#calls.removeBy == 1 and calls.removeBy[1] == "Oracle", "W: leaving the basin removes the Oracle waypoint",
+        calls.removeBy[1])
+    CHECK(calls.arrow[#calls.arrow] == "w1", "W: and hands the arrow back to the waypoint it took",
+        calls.arrow[#calls.arrow])
+
+    -- ...unless you had moved the arrow yourself in the meantime
+    zone.inBasin = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+    Reset({ uid = "w1", why = "PINNED", source = "user" })
+    ClickPip(4)
+    active = { uid = "w5", why = "PINNED", source = "user" }
+    LeaveBasin()
+    CHECK(#calls.removeBy == 1, "W: the Oracle waypoint still goes")
+    CHECK(#calls.arrow == 1, "W: but your newer choice of arrow is left alone", calls.arrow[#calls.arrow])
+
+    -- You pin something else mid-match and a later flag click takes it: the
+    -- arrow goes back to that newer choice, not the one you came in with
+    zone.inBasin = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+    Reset({ uid = "w1", why = "PINNED", source = "user" })
+    ClickPip(3)
+    active = { uid = "w5", why = "PINNED", source = "user" }
+    ClickPip(1)
+    LeaveBasin()
+    CHECK(calls.arrow[#calls.arrow] == "w5", "W: the arrow goes back to the waypoint the LAST click took",
+        calls.arrow[#calls.arrow])
+
+    -- You REACHED the flag (the common case): Orders cleared and unpinned it,
+    -- the arrow fell to another mark as the closest. The match ends: the
+    -- arrow still goes back to the waypoint the click took
+    zone.inBasin = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+    Reset({ uid = "w1", why = "PINNED", source = "user" })
+    ClickPip(3)
+    ArriveAtFlag({ uid = "w5", why = "CLOSEST", source = "user" })
+    LeaveBasin()
+    CHECK(#calls.removeBy == 1, "W: reached flag: the Oracle cleanup still runs")
+    CHECK(#calls.arrow == 2 and calls.arrow[2] == "w1",
+        "W: reached flag: the arrow goes back to the waypoint the click took", calls.arrow[#calls.arrow])
+    -- ...and with nothing else to follow after reaching it
+    zone.inBasin = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+    Reset({ uid = "w1", why = "PINNED", source = "user" })
+    ClickPip(3)
+    ArriveAtFlag(nil)
+    LeaveBasin()
+    CHECK(calls.arrow[#calls.arrow] == "w1", "W: reached flag, nothing else: the arrow goes back",
+        calls.arrow[#calls.arrow])
+    -- Reached, then you pinned something else: your newer choice stands
+    zone.inBasin = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+    Reset({ uid = "w1", why = "PINNED", source = "user" })
+    ClickPip(3)
+    ArriveAtFlag(nil)
+    active = { uid = "w5", why = "PINNED", source = "user" }
+    LeaveBasin()
+    CHECK(#calls.arrow == 1, "W: reached, then pinned elsewhere: left alone", calls.arrow[#calls.arrow])
+    -- Reached, then you started a route: the route keeps the arrow
+    zone.inBasin = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+    Reset({ uid = "w1", why = "PINNED", source = "user" })
+    ClickPip(3)
+    ArriveAtFlag(nil)
+    active = { uid = "w5", why = "ROUTE", source = "QuestLog" }
+    LeaveBasin()
+    CHECK(#calls.arrow == 1, "W: reached, then a route: left alone", calls.arrow[#calls.arrow])
+    -- NOT reached, but you cleared the arrow (the flag still stands, holding
+    -- nothing): the Clear stands
+    zone.inBasin = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+    Reset({ uid = "w1", why = "PINNED", source = "user" })
+    ClickPip(3)
+    active = nil
+    LeaveBasin()
+    CHECK(#calls.arrow == 1, "W: a Clear mid-match is not undone at the match's end", calls.arrow[#calls.arrow])
+
+    -- Outside Arathi Basin a flag means nothing to walk to
+    Reset(nil)
+    printLog = {}
+    ClickPip(3)
+    CHECK(#calls.add == 0, "W: outside the basin, no waypoint")
+    CHECK(printLog[#printLog] and printLog[#printLog]:find("inside Arathi Basin", 1, true) ~= nil,
+        "W: and it says so", printLog[#printLog])
+
+    zone.inBasin = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Advance(1)
+
+    -- The map has not placed the flag: nothing guessed
+    placed = false
+    Reset(nil)
+    ClickPip(3)
+    CHECK(#calls.add == 0, "W: no POI position, no waypoint")
+    CHECK(printLog[#printLog] and printLog[#printLog]:find("has not placed the Blacksmith", 1, true) ~= nil,
+        "W: and it says so", printLog[#printLog])
+    placed = true
+
+    -- Orders switched off: says so, pins nothing
+    orders.refuse = "disabled"
+    Reset(nil)
+    ClickPip(3)
+    CHECK(#calls.arrow == 0, "W: Orders off: nothing pinned")
+    CHECK(printLog[#printLog] and printLog[#printLog]:find("turned off", 1, true) ~= nil,
+        "W: and it says Orders is off", printLog[#printLog])
+    orders.refuse = nil
+
+    -- Orders not loaded: the place as a /way line, so a click is never nothing
+    CommanderOrders = nil
+    ClickPip(3)
+    CHECK(printLog[#printLog] and printLog[#printLog]:find("/way #1461 46.40 45.20", 1, true) ~= nil,
+        "W: no Orders: the flag as a /way line", printLog[#printLog])
+    pips[3].__scripts.OnEnter(pips[3])
+    CHECK(table.concat(tipLines, "\n"):find("/way line", 1, true) ~= nil, "W: and the tooltip says so")
+    LeaveBasin()
+
+    C_AreaPoiInfo.GetAreaPOIInfo = realPOIInfo
+    CommanderOrders = nil
+    rawset(GameTooltip, "SetOwner", nil)
+    rawset(GameTooltip, "SetText", nil)
+    rawset(GameTooltip, "AddLine", nil)
 end
 
 CHECK(#harnessErrors == 0, "no errors across the whole run", harnessErrors[1])

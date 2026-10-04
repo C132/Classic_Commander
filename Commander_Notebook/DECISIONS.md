@@ -123,3 +123,28 @@ and icon *files* move between client patches.
 
 The one Blizzard region kept on purpose is the quest parchment behind the page, which is what makes
 the parchment style work at all.
+
+## D10 — A stamp is a way back, and the map id is kept beside the text, not inside it
+
+Since 1.1.0 a stamp written where the map has a position also stores that position as structured
+data, `note.context = { ..., map, x, y }` (the field the store's schema always had and no UI path
+used to fill), and a note that has one offers **Go** on the page and **Waypoint To This Note** in
+its menu: Commander Orders' arrow to the spot, keyed `note:<id>` so pressing it twice is one
+waypoint.
+
+The map id stays out of the stamp *text*. Folding it into the line (`#1951`) or turning the place
+into an `addon:` hyperlink would have made each stamp carry its own position, but it changes what
+the user reads and edits, and a link inside an `EditBox` is one stray keystroke from broken. The
+context is where the note was last stamped **with a position**; a stamp inside an instance writes
+its line and leaves the context alone, so it always names the latest place the note can lead back
+to. Deleting the stamp's text does not delete the context: the note still remembers where it was
+written, which is what the module promised from the start.
+
+Stamps written before 1.1.0 are text only. `S.Location` falls back to the newest stamp line that
+names a place with coordinates, and that zone is known only by its **name**, so it goes through
+Commander Orders' own `/way` zone resolver (`CommanderOrders.Import` of a `/way <zone> x y title`
+line) rather than a lookup table here: the same resolver `/way` uses, aliases and all, and an
+ambiguous name is listed with its `/way #id` forms instead of guessed. Without Commander Orders the
+spot is printed as a `/way` line, so the button never does nothing. Rejected: a zone-name table in
+this module (a second copy of data Orders already has, and it would drift).
+

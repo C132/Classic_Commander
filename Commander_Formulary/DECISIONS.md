@@ -112,8 +112,8 @@ the client's fonts draw arrow glyphs as boxes (the same screenshot).
 The **Trips** filter regroups the unknown formulas a vendor of your faction sells by zone — a
 reputation you have not earned yet is listed and marked "needs Honored", because that is a trip you
 can plan for; the other faction's vendors are no trip at all — one row per zone with its vendor, how many formulas, how many at your skill and
-the gold for the lot; right-click for a waypoint to the vendor. One Moonglade trip, one Silithus
-trip, one Shattrath sweep — the completionist's errand list.
+the gold for the lot; right-click to walk it (D14). One Moonglade trip, one Silithus trip, one
+Shattrath sweep — the completionist's errand list.
 
 ## D12 — The navigator's columns, and Refresh Prices
 
@@ -170,3 +170,26 @@ Disenchant advice stays Enchanting's and appears only for a character who has En
 profession the window is showing. A formula or manual tooltip is judged against the profession it
 belongs to — a Netherweave manual says "at 330 (you are 200)" against First Aid's 200 even while
 Enchanting at 146 is on screen.
+
+## D14 — Go buttons and trips go to Commander Orders
+
+1.1.0, 2026-10-04. TomTom left the suite and Commander Orders 3.0 is its navigation; `SetWaypoint`
+never tried Orders, so the day TomTom went every Go button would have dropped to printing. A Go press
+(a vendor, a trainer, a dropper) calls `CommanderOrders.Add` with source "Formulary" and key
+"place:<name>@<map>": a place owns ONE waypoint, a second press moves nothing and stacks nothing, and
+the waypoint takes the arrow because the player asked for it. Session only, Orders' default for a
+consumer. Orders absent, turned off or refusing: the place is printed with its `/way` line, and the
+Go tooltip says which it will be when hovered.
+
+The Trips view walks, rather than pointing at a zone's first vendor only. A right-click on a zone
+routes every vendor stop listed under it as one Commander Orders route, nearest first (a zone with
+one vendor is simply a waypoint to it), owned as (Formulary, "trip:<profession>:<zone>").
+**Route All Trips** (the action bar, on the Trips view only; `/cfm trips`) routes every zone at once
+as (Formulary, "trips:<profession>"), and buys each RECIPE once: Trips lists a formula under every
+zone that sells it, several TBC recipes are taught by two or three formula items (the reprints), and
+a route through everything must not send you to buy a recipe twice. The cover is greedy in Trips'
+own order, most formulas first. A vendor with no place on the map (Lokhtos inside Blackrock Depths,
+the wizard in Old Hillsbrad) gets no stop: no arrow can go there. Each stop is titled with the vendor
+and the first recipe bought there ("Lorelae Wintersong: Enchant Cloak - Superior Defense (+1)").
+Asking again replaces the route. Without Orders, the stops' `/way` lines are printed. UI harness B3
+and C8.
