@@ -475,6 +475,178 @@ local before2 = sp._content:GetHeight()
 sp:GrowRow(grown, 200)
 CHECK(sp._content:GetHeight() > before2, "growing a row outside a refresh re-flows the page", before2 .. " -> " .. sp._content:GetHeight())
 
+-- ===========================================================================
+-- HUD chrome: the Solid Dark plate
+-- ===========================================================================
+-- A style is a row in a table and a line in a dropdown, and the two can drift:
+-- an option whose key the table does not know draws nothing at all, with no
+-- error, on a frame the player has just asked to be given a backing.
+do
+    local function Corner(backdrop, point)
+        for i = #(backdrop.__points or {}), 1, -1 do
+            local p = backdrop.__points[i]
+            if p.point == point then return p.x, p.y end
+        end
+    end
+    local hud = CreateFrame("Frame", nil, UIParent)
+    local db = { HudStyle = "SOLID", HudScale = 1, HudLocked = true, HudPos = false }
+    local opts = { defaultPoint = { point = "CENTER", x = 0, y = 0 } }
+    local ok, err = pcall(UI.ApplyHudChrome, hud, db, "Hud", opts)
+    CHECK(ok, "Solid Dark applies without raising", err)
+    local plate = hud._hudBackdrop
+    CHECK(plate and plate:IsShown(), "and puts a plate behind the frame")
+    local x, y = Corner(plate, "TOPLEFT")
+    CHECK(x == -4 and y == 4, "four pixels of margin, half the Dark Panel's", tostring(x) .. "," .. tostring(y))
+
+    db.HudStyle = "DARK"
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    x, y = Corner(plate, "BOTTOMRIGHT")
+    CHECK(x == 8 and y == -8, "switching style re-anchors the plate to the new margin",
+        tostring(x) .. "," .. tostring(y))
+
+    db.HudStyle = "NONE"
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    CHECK(not plate:IsShown(), "and None takes the plate away")
+end
+
+-- ===========================================================================
+-- HUD chrome: a solid fill, and a corner to scale the frame by
+-- ===========================================================================
+-- Both are opt-in. Seventy-odd frames share this chrome; a frame that did not
+-- ask keeps the fill its style names and grows no grip.
+do
+    local function LastPoint(w) return w.__points and w.__points[#w.__points] end
+    local function Near(a, b) return a and b and math.abs(a - b) < 0.001 end
+    local cursor = { 0, 0 }
+    function GetCursorPosition() return cursor[1], cursor[2] end
+    rawset(UIParent, "GetHeight", function() return 768 end)
+
+    -- A frame as the client reports one: 200 x 100, its top-left held at
+    -- (300, 500) on a 768-high screen. GetLeft/GetTop are in the frame's own
+    -- scaled units, which is the whole reason the anchor has to be re-derived
+    -- at every scale.
+    local function NewHud()
+        local hud = CreateFrame("Frame", nil, UIParent)
+        hud:SetSize(200, 100)
+        rawset(hud, "SetScale", function(self, v) self.__scale = v end)
+        rawset(hud, "GetScale", function(self) return self.__scale or 1 end)
+        rawset(hud, "GetEffectiveScale", function(self) return self.__scale or 1 end)
+        rawset(hud, "GetLeft", function(self) return 300 / (self.__scale or 1) end)
+        rawset(hud, "GetTop", function(self) return 500 / (self.__scale or 1) end)
+        return hud
+    end
+    local function Recording(plate)
+        rawset(plate, "SetBackdropColor", function(self, r, g, b, a) self.__fill = { r, g, b, a } end)
+    end
+
+    -- Nobody asked: Dark Panel is the 60% tint it always was, and no grip
+    local plain = NewHud()
+    local pdb = { HudStyle = "DARK", HudScale = 1, HudLocked = true, HudPos = false }
+    local popts = { defaultPoint = { point = "CENTER", x = 0, y = 0 } }
+    UI.ApplyHudChrome(plain, pdb, "Hud", popts)
+    Recording(plain._hudBackdrop)
+    UI.ApplyHudChrome(plain, pdb, "Hud", popts)
+    CHECK(plain._hudBackdrop.__fill[4] == 0.6, "without the option, Dark Panel stays a tint", plain._hudBackdrop.__fill[4])
+    CHECK(plain._hudScaleGrip == nil, "and a frame that did not ask grows no grip")
+
+    -- Asked: every style's fill is solid, and the grip is in the plate's corner
+    local hud = NewHud()
+    local db = { HudStyle = "DARK", HudScale = 1, HudLocked = true, HudPos = false }
+    local opts = { defaultPoint = { point = "CENTER", x = 0, y = 0 }, opaque = true, scaleGrip = true }
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    local plate = hud._hudBackdrop
+    Recording(plate)
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    CHECK(plate.__fill[4] == 1 and plate.__fill[1] == 0, "opaque: Dark Panel is drawn solid", plate.__fill[4])
+    db.HudStyle = "SOLID"
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    CHECK(plate.__fill[4] == 1, "opaque: so is Solid Dark, whose own fill is 96%", plate.__fill[4])
+    db.HudStyle = "DARK"
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+
+    local grip = hud._hudScaleGrip
+    local at = grip and LastPoint(grip)
+    CHECK(grip and grip:IsShown() and at.point == "BOTTOMRIGHT" and at.rel == plate and at.x == -3 and at.y == 3,
+        "grip: in the bottom-right corner of the plate")
+    db.HudStyle = "NONE"
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    at = LastPoint(grip)
+    CHECK(grip:IsShown() and at.rel == hud, "grip: with no plate it sits in the frame's own corner")
+    db.HudStyle = "WINDOW"
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    CHECK(not grip:IsShown(), "grip: the Window style brings its own, so this one stands down")
+    db.HudStyle = "DARK"
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    CHECK(grip:IsShown() and LastPoint(grip).rel == plate, "grip: and comes back to the plate")
+
+    -- Take hold two pixels inside the corner (500, 400) and pull it out to
+    -- (600, 350): half as big again, the top-left where it was
+    cursor[1], cursor[2] = 498, 402
+    grip.__scripts.OnMouseDown(grip)
+    CHECK(hud._hudDragging == true, "drag: re-anchoring is frozen while the grip is held")
+    local tick = grip.__scripts.OnUpdate
+    tick(grip, 0.016)
+    CHECK(hud:GetScale() == 1, "drag: taking hold moves nothing", hud:GetScale())
+    cursor[1], cursor[2] = 598, 352
+    tick(grip, 0.016)
+    CHECK(hud:GetScale() == 1.5 and db.HudScale == 1.5, "drag: the corner follows the cursor, and the scale is saved as it goes",
+        tostring(hud:GetScale()))
+    at = LastPoint(hud)
+    CHECK(at.point == "TOPLEFT" and at.rel == UIParent and at.relPoint == "TOPLEFT"
+        and Near(at.x, 300 / 1.5) and Near(at.y, (500 - 768) / 1.5),
+        "drag: the top-left corner stays where it was on screen", tostring(at.x) .. "," .. tostring(at.y))
+    -- A settings notify mid-drag re-applies the chrome; it must not snap the
+    -- frame back to its saved position
+    UI.ApplyHudChrome(hud, db, "Hud", opts)
+    CHECK(LastPoint(hud) == at, "drag: a re-apply mid-drag leaves the anchor alone")
+    -- Along one edge only: it still tracks, by the nearest point on the diagonal
+    cursor[1], cursor[2] = 598, 402
+    tick(grip, 0.016)
+    CHECK(hud:GetScale() == 1.4, "drag: a pull along one edge scales by the diagonal's share of it", hud:GetScale())
+    cursor[1], cursor[2] = 3000, -2000
+    tick(grip, 0.016)
+    CHECK(hud:GetScale() == 1.6, "drag: clamped at the Frame Scale slider's ceiling", hud:GetScale())
+    cursor[1], cursor[2] = 310, 490
+    tick(grip, 0.016)
+    CHECK(hud:GetScale() == 0.6 and db.HudScale == 0.6, "drag: and at its floor", hud:GetScale())
+
+    grip.__scripts.OnMouseUp(grip)
+    CHECK(grip.__scripts.OnUpdate == nil and hud._hudDragging == false, "release: the drag ends")
+    CHECK(db.HudPos and db.HudPos.point == "TOPLEFT" and Near(db.HudPos.x, 300) and Near(db.HudPos.y, 500 - 768),
+        "release: the position is saved in screen space, by the corner that was held",
+        db.HudPos and (tostring(db.HudPos.x) .. "," .. tostring(db.HudPos.y)))
+    at = LastPoint(hud)
+    CHECK(at.point == "TOPLEFT" and Near(at.x, 300 / 0.6) and Near(at.y, (500 - 768) / 0.6),
+        "release: and the chrome re-anchors the frame from it, in place")
+
+    -- A window closed with the grip still held must not wake up following the mouse
+    grip.__scripts.OnMouseDown(grip)
+    CHECK(grip.__scripts.OnUpdate ~= nil, "hide: a second drag begins")
+    grip.__scripts.OnHide(grip)
+    CHECK(grip.__scripts.OnUpdate == nil and hud._hudDragging == false, "hide: hiding the grip ends it")
+
+    -- On its own, for a window that keeps no HUD chrome
+    local win = NewHud()
+    local saved
+    local own = UI.AttachScaleGrip(win, { min = 0.8, max = 1.2, set = function(v) saved = v end })
+    at = LastPoint(own)
+    CHECK(at.point == "BOTTOMRIGHT" and at.rel == win, "standalone: the grip is in the frame's own corner")
+    cursor[1], cursor[2] = 500, 400
+    own.__scripts.OnMouseDown(own)
+    cursor[1], cursor[2] = 3000, -2000
+    own.__scripts.OnUpdate(own, 0.016)
+    CHECK(win:GetScale() == 1.2 and saved == 1.2, "standalone: its own limits, and its own place to save", tostring(saved))
+    own.__scripts.OnMouseUp(own)
+    CHECK(own.__scripts.OnUpdate == nil, "standalone: released")
+
+    -- A frame with no rect yet (never shown) has no corner to hold
+    local blank = CreateFrame("Frame", nil, UIParent)
+    blank:SetSize(0, 0)
+    local none = UI.AttachScaleGrip(blank, {})
+    none.__scripts.OnMouseDown(none)
+    CHECK(none.__scripts.OnUpdate == nil, "a frame with no size starts no drag")
+end
+
 CHECK(#caughtErrors == 0, "no refresher raised across the whole run", caughtErrors[1])
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))

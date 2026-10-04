@@ -1101,7 +1101,7 @@ end
 -- ---------------------------------------------------------------------------
 
 -- Keys used in the module's SavedVariables, derived from the prefix:
---   <prefix>Style ("NONE" | "CLASSIC" | "DARK"), <prefix>Scale,
+--   <prefix>Style ("NONE" | "CLASSIC" | "DARK" | "SOLID" | "WINDOW"), <prefix>Scale,
 --   <prefix>Locked (bool), <prefix>Pos ({point, x, y} or nil = default)
 function UI.HudChromeDefaults(prefix, styleDefault)
     return {
@@ -1150,6 +1150,25 @@ local HUD_STYLES = {
         bg = { 0, 0, 0, 0.6 },
         border = { 0.6, 0.6, 0.6, 1 },
         pad = 8,
+    },
+    -- The dark-mode plate. Dark Panel is a tint: the world shows through it,
+    -- which is the point of it and also why a white number over a snowfield
+    -- still reads as a number over a snowfield. This one is a FLOOR --
+    -- near-black and all but opaque, so everything drawn on it has the same
+    -- contrast wherever the camera is pointing -- with a one-pixel hairline
+    -- for an edge instead of the tooltip border's rounded rope, and half the
+    -- pad, because a frame that exists to be compact should not spend eight
+    -- pixels a side on its own margin.
+    SOLID = {
+        backdrop = {
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            tile = false, edgeSize = 1,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 },
+        },
+        bg = { 0.045, 0.05, 0.06, 0.96 },
+        border = { 0.22, 0.24, 0.28, 1 },
+        pad = 4,
     },
     -- Commander_Inventory's framing: a real little window
     -- (BasicFrameTemplateWithInset) with title, lock, close, and a
@@ -1238,7 +1257,10 @@ function UI.SlimScrollBar(scrollFrameName, insetTop, insetBottom)
     return bar
 end
 
-function UI.ApplyStyleBackdrop(frame, styleKey)
+-- `opaque` draws the style's fill solid whatever its own alpha is: a window
+-- of text to be read wants a floor under it, not a tint the world shows
+-- through.
+function UI.ApplyStyleBackdrop(frame, styleKey, opaque)
     local style = HUD_STYLES[styleKey]
     if style and style.window then
         style = nil
@@ -1257,13 +1279,102 @@ function UI.ApplyStyleBackdrop(frame, styleKey)
             backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
             backdrop:SetBackdrop(style.backdrop)
         end
-        backdrop:SetBackdropColor(unpack(style.bg))
+        local r, g, b, a = unpack(style.bg)
+        backdrop:SetBackdropColor(r, g, b, opaque and 1 or a)
         backdrop:SetBackdropBorderColor(unpack(style.border))
         backdrop:Show()
     else
         frame._styleBackdropKey = nil
         backdrop:Hide()
     end
+end
+
+-- ---------------------------------------------------------------------------
+-- A corner to scale a window by.
+--
+-- A grip at the bottom right of `frame` (or of opts.corner, when the edge the
+-- eye takes for the window's is a backdrop drawn outside it). Dragging it
+-- scales the WHOLE frame -- SetScale, so everything in it grows together --
+-- about its top-left corner: that corner stays where it is on screen and the
+-- one under the cursor is the one that moves, which is what dragging a corner
+-- means everywhere else.
+--
+-- The scale chosen is the one that brings the bottom-right corner nearest the
+-- cursor along the frame's own diagonal, so a drag in any direction tracks
+-- and one along a single edge cannot make it jitter.
+--
+-- opts: min, max (0.6 / 1.6), corner, inset (3),
+--       set(scale)           the scale changed (save it)
+--       onStart()            a drag has begun
+--       onStop(point, x, y)  it has ended: the frame is anchored by `point` to
+--                            the same point of UIParent, x and y in UIParent's
+--                            own units -- screen space, the form HUD chrome
+--                            saves a position in
+--
+-- The frame must not be protected: SetScale and SetPoint on a secure frame,
+-- or on anything one is parented or anchored to, are refused in combat.
+-- ---------------------------------------------------------------------------
+function UI.AttachScaleGrip(frame, opts)
+    opts = opts or {}
+    local grip = CreateFrame("Button", nil, frame)
+    grip:SetSize(16, 16)
+    local inset = opts.inset or 3
+    grip:SetPoint("BOTTOMRIGHT", opts.corner or frame, "BOTTOMRIGHT", -inset, inset)
+    grip:SetFrameLevel((frame:GetFrameLevel() or 1) + 25)
+    grip.tex = grip:CreateTexture(nil, "ARTWORK")
+    grip.tex:SetAllPoints()
+    grip.tex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    if grip.SetHighlightTexture then
+        grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    end
+    local lo, hi = opts.min or 0.6, opts.max or 1.6
+
+    local function Stop()
+        if not grip._dragging then return end
+        grip._dragging = nil
+        grip:SetScript("OnUpdate", nil)
+        if opts.onStop then opts.onStop("TOPLEFT", grip._x, grip._y) end
+    end
+
+    grip:SetScript("OnMouseDown", function()
+        local eff = frame:GetEffectiveScale() or 1
+        local scale = frame:GetScale() or 1
+        local outer = eff / scale       -- the scale of whatever the frame sits in
+        local ui = (UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+        local w, h = frame:GetWidth() or 0, frame:GetHeight() or 0
+        local left, top = frame:GetLeft(), frame:GetTop()
+        if not (left and top) or w <= 0 or h <= 0 then return end
+        -- Screen pixels from here on. The pinned corner; the top of the
+        -- screen it is measured down from; and how far off the frame's own
+        -- corner the cursor took hold, so the first move does not jump.
+        left, top = left * eff, top * eff
+        local screenTop = (UIParent:GetHeight() or 0) * ui
+        local cx, cy = GetCursorPosition()
+        local grabX, grabY = cx - (left + w * eff), cy - (top - h * eff)
+        grip._x, grip._y = left / ui, (top - screenTop) / ui
+        grip._dragging = true
+        if opts.onStart then opts.onStart() end
+        grip:SetScript("OnUpdate", function()
+            local x, y = GetCursorPosition()
+            local dx, dy = (x - grabX - left) / outer, (top - (y - grabY)) / outer
+            local wanted = (dx * w + dy * h) / (w * w + h * h)
+            wanted = math.floor(math.max(lo, math.min(hi, wanted)) * 100 + 0.5) / 100
+            if wanted == frame:GetScale() then return end
+            -- Offsets are in the frame's own units, so the same corner is a
+            -- different number at every scale. Anchor first, scale second:
+            -- whatever follows the scale then reads the rect it ends up with.
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT",
+                left / (outer * wanted), (top - screenTop) / (outer * wanted))
+            frame:SetScale(wanted)
+            if opts.set then opts.set(wanted) end
+        end)
+    end)
+    grip:SetScript("OnMouseUp", Stop)
+    -- A window closed mid-drag must not come back still following the mouse
+    grip:SetScript("OnHide", Stop)
+    AttachTooltip(grip, "Resize", "Drag to scale the whole window.")
+    return grip
 end
 
 -- Build the window dressing lazily on first use. All template children
@@ -1354,6 +1465,9 @@ end
 
 -- Re-appliable: call from the module's settings listener. opts:
 --   defaultPoint = {point=, x=, y=} (required) — position when no saved drag
+--   opaque = true — the style's fill is drawn solid (see ApplyStyleBackdrop)
+--   scaleGrip = true — a grip in the bottom-right corner scales the frame,
+--     driving <prefix>Scale, in every style (the Window style has its own)
 function UI.ApplyHudChrome(frame, db, prefix, opts)
     frame._hudOpts = opts
     if not frame._hudChromeInit then
@@ -1485,7 +1599,8 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
             backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", style.pad, -style.pad)
             backdrop:SetBackdrop(style.backdrop)
         end
-        backdrop:SetBackdropColor(unpack(style.bg))
+        local r, g, b, a = unpack(style.bg)
+        backdrop:SetBackdropColor(r, g, b, opts.opaque and 1 or a)
         backdrop:SetBackdropBorderColor(unpack(style.border))
         backdrop:Show()
     else
@@ -1494,6 +1609,34 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
         if frame._hudWindow then
             frame._hudWindow:Hide()
         end
+    end
+
+    -- The scale grip sits in the corner of whatever is drawn as the frame's
+    -- edge: the plate when there is one, the frame itself under None. The
+    -- Window style carries a grip of its own.
+    if opts.scaleGrip and not (style and style.window) then
+        local grip = frame._hudScaleGrip
+        if not grip then
+            grip = UI.AttachScaleGrip(frame, {
+                set = function(value) db[prefix .. "Scale"] = value end,
+                -- freezes re-anchoring while sizing, as a drag does
+                onStart = function() frame._hudDragging = true end,
+                onStop = function(point, x, y)
+                    frame._hudDragging = false
+                    db[prefix .. "Pos"] = { point = point, x = x, y = y }
+                    UI.ApplyHudChrome(frame, db, prefix, frame._hudOpts)
+                end,
+            })
+            frame._hudScaleGrip = grip
+        end
+        if grip._corner ~= (style and styleKey or "NONE") then
+            grip._corner = style and styleKey or "NONE"
+            grip:ClearAllPoints()
+            grip:SetPoint("BOTTOMRIGHT", style and backdrop or frame, "BOTTOMRIGHT", -3, 3)
+        end
+        grip:Show()
+    elseif frame._hudScaleGrip then
+        frame._hudScaleGrip:Hide()
     end
 
     local locked = db[prefix .. "Locked"]
@@ -1531,11 +1674,13 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
     local chromeRow = panel:AddRow(52, 8)
     BuildDropdown(panel, chromeRow, {
         label = "Frame Style",
-        tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing; Window turns it into a little window with a title bar, lock and close buttons, and a resize grip.",
+        tooltip = "Backing panel drawn behind the frame. Classic Panel matches the command card's dialog framing; Dark Panel is a translucent tint the world shows through; Solid Dark is a near-black plate with a hairline edge and a tight margin -- the same contrast behind every number wherever the camera points, and the most compact of them; Window turns it into a little window with a title bar, lock and close buttons, and a resize grip."
+            .. (opts.opaque and "\n\nOn this frame every panel is drawn solid: none of them lets the world show through." or ""),
         options = {
             { text = "None", value = "NONE" },
             { text = "Classic Panel", value = "CLASSIC" },
             { text = "Dark Panel", value = "DARK" },
+            { text = "Solid Dark", value = "SOLID" },
             { text = "Window", value = "WINDOW" },
         },
         get = function() return db[prefix .. "Style"] or "NONE" end,
@@ -1544,7 +1689,8 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
     }, 0, 120)
     BuildSlider(panel, chromeRow, {
         label = "Frame Scale",
-        tooltip = "Overall size of the frame.",
+        tooltip = "Overall size of the frame."
+            .. (opts.scaleGrip and " Dragging the grip in the frame's bottom-right corner sets the same number." or ""),
         min = 0.6, max = 1.6, step = 0.05,
         format = UI.FormatPercent,
         get = function() return db[prefix .. "Scale"] or 1 end,
