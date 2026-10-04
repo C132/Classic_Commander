@@ -356,6 +356,80 @@ explorationPin:RefreshOverlays(true)
 CHECK(#Drawn() == 0, "no map id draws nothing")
 
 -- ===========================================================================
+-- GetMinimapShape (Commander Orders 3.0): once the square mask is on, the
+-- ecosystem's shape function answers SQUARE, so minimap pins (Orders',
+-- Questie's and RXP's HereBeDragons) clamp to the square rim. The real
+-- CommanderMinimap.lua runs in a sandbox of its own, so its frames, hooks
+-- and events never touch the mock above.
+-- ===========================================================================
+do
+    local function Stub(methods)
+        return setmetatable(methods or {}, { __index = function(t, k)
+            local fn = function() end
+            rawset(t, k, fn)
+            return fn
+        end })
+    end
+
+    local function Sandbox(preset)
+        local frames, masks = {}, {}
+        local minimap = Stub({
+            SetMaskTexture = function(_, path) masks[#masks + 1] = path end,
+            CreateFontString = function() return Stub() end,
+            GetChildren = function() return end,
+            GetFrameLevel = function() return 2 end,
+        })
+        local env = {
+            CreateFrame = function()
+                local f = Stub({ __events = {}, __scripts = {} })
+                f.RegisterEvent = function(self, e) self.__events[e] = true end
+                f.SetScript = function(self, s, fn) self.__scripts[s] = fn end
+                frames[#frames + 1] = f
+                return f
+            end,
+            Minimap = minimap,
+            MinimapCluster = { BorderTop = Stub() },
+            MinimapZoomOut = Stub(), MinimapZoomIn = Stub(), MinimapToggleButton = Stub(),
+            MinimapNorthTag = Stub(), MinimapBorder = Stub(), GameTimeFrame = Stub(),
+            MinimapZoneTextButton = Stub(), GameFontNormal = Stub(),
+            GetMinimapZoneText = function() return "" end,
+            Commander = { AddListener = function() end, UI = { ApplyStyleBackdrop = function() end } },
+            COMMANDER_MINIMAP_EVENTS = { COMMANDER_MINIMAP = "COMMANDER_MINIMAP" },
+            CommanderMinimapDB = { BoardStyle = "NONE", TidyAddonButtons = false, MinimapScale = 1.37 },
+            C_Timer = { After = function() end, NewTicker = function() return Stub() end },
+            GetMinimapShape = preset,
+        }
+        setmetatable(env, { __index = { type = type, ipairs = ipairs, pairs = pairs, math = math,
+                                        string = string, table = table, print = function() end } })
+        local chunk = assert(loadfile(ADDON .. "/CommanderMinimap.lua"))
+        setfenv(chunk, env)
+        chunk()
+        local function FireIn(event, ...)
+            for _, f in ipairs(frames) do
+                if f.__events[event] and f.__scripts.OnEvent then f.__scripts.OnEvent(f, event, ...) end
+            end
+        end
+        return env, FireIn, masks
+    end
+
+    local env, FireIn, masks = Sandbox(nil)
+    CHECK(env.GetMinimapShape == nil, "shape: loading the file alone defines no GetMinimapShape")
+    FireIn("ADDON_LOADED", "SomeOtherAddon")
+    CHECK(env.GetMinimapShape == nil, "shape: another addon's ADDON_LOADED defines nothing")
+    FireIn("ADDON_LOADED", "Commander_Minimap")
+    CHECK(masks[1] == "Interface\\BUTTONS\\WHITE8X8", "shape: the square mask goes on", masks[1])
+    CHECK(type(env.GetMinimapShape) == "function", "shape: GetMinimapShape is defined with the mask")
+    CHECK(type(env.GetMinimapShape) == "function" and env.GetMinimapShape() == "SQUARE",
+        "shape: it answers SQUARE")
+
+    -- Another addon's own answer is never overwritten
+    local theirs = function() return "ROUND" end
+    local env2, FireIn2 = Sandbox(theirs)
+    FireIn2("ADDON_LOADED", "Commander_Minimap")
+    CHECK(env2.GetMinimapShape == theirs, "shape: an existing GetMinimapShape is left alone")
+end
+
+-- ===========================================================================
 
 io.write(("\n%d checks, %d failed\n"):format(checks, fails))
 os.exit(fails == 0 and 0 or 1)

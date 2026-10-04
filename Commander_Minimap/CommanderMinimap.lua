@@ -70,6 +70,16 @@ end
 frame:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Minimap" then
         Minimap:SetMaskTexture("Interface\\BUTTONS\\WHITE8X8")
+        -- The mask is square from here on, so say so the way the addon
+        -- ecosystem asks: the global GetMinimapShape() (HereBeDragons-Pins in
+        -- Questie and RXP, LibDBIcon, Commander Orders' pins). Without it
+        -- every one of them assumes ROUND and clamps its pins to a circle
+        -- inside the square, so an off-map pin sits short of the corner the
+        -- square map still shows. Defined only here, where the square mask
+        -- goes on, and never over another addon's own answer.
+        if type(GetMinimapShape) ~= "function" then
+            function GetMinimapShape() return "SQUARE" end
+        end
         -- CommanderMinimapDB.lua loads first and merges defaults in its own
         -- ADDON_LOADED handler, so the saved scale is available here
         ApplyMinimapScale()

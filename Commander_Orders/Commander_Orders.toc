@@ -2,11 +2,18 @@
 ## Category: Commander
 ## Title: Commander Orders
 ## Author: Devin
-## Version: 2.1.0
-## Notes: RTS move orders: Ctrl+Right-click the world map to issue a move order and follow the on-screen arrow to it.
+## Version: 3.0.0
+## Notes: The suite's own navigation, in place of TomTom. A smooth arrow with distance and arrival time that lets clicks through until you hold Shift, and says plainly when it cannot point (another continent, inside an instance, on a taxi). Pins on the minimap and the world map, Ctrl+Right-click on the map to drop a waypoint, /way, routes, named places, a manager window with a paste box for /way lists, group sharing that never takes your arrow, the corpse run, and Questie's TomTom requests answered. Waypoints are kept per character and belong to whoever set them, so a quest button or a corpse never wipes out your own.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderOrdersDB
+## SavedVariablesPerCharacter: CommanderOrdersChar
 ## RequiredDeps: Commander_Events
+## OptionalDeps: TomTom, Commander_Console
 
+CommanderOrdersData.lua
+CommanderOrdersGeo.lua
+CommanderOrdersStore.lua
 CommanderOrdersDB.lua
 CommanderOrders.lua
+CommanderOrdersPins.lua
+CommanderOrdersUI.lua

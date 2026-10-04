@@ -1,0 +1,29 @@
+<Bindings>
+    <!-- Commander Orders. Each binding calls one entry of CommanderOrders.Binding;
+         the names shown in the key binding window are the BINDING_NAME_ strings
+         set at the top of CommanderOrders.lua. -->
+    <Binding name="COMMANDERORDERS_MANAGER" header="COMMANDERORDERS" runOnUp="false">
+        CommanderOrders.Binding("MANAGER")
+    </Binding>
+    <Binding name="COMMANDERORDERS_CLEAR" runOnUp="false">
+        CommanderOrders.Binding("CLEAR")
+    </Binding>
+    <Binding name="COMMANDERORDERS_HERE" runOnUp="false">
+        CommanderOrders.Binding("HERE")
+    </Binding>
+    <Binding name="COMMANDERORDERS_NEXT" runOnUp="false">
+        CommanderOrders.Binding("NEXT")
+    </Binding>
+    <Binding name="COMMANDERORDERS_PREV" runOnUp="false">
+        CommanderOrders.Binding("PREV")
+    </Binding>
+    <Binding name="COMMANDERORDERS_CLOSEST" runOnUp="false">
+        CommanderOrders.Binding("CLOSEST")
+    </Binding>
+    <Binding name="COMMANDERORDERS_SHARE" runOnUp="false">
+        CommanderOrders.Binding("SHARE")
+    </Binding>
+    <Binding name="COMMANDERORDERS_ARROW" runOnUp="false">
+        CommanderOrders.Binding("ARROW")
+    </Binding>
+</Bindings>
