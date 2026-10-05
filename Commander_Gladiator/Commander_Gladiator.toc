@@ -1,0 +1,14 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Gladiator
+## Author: Devin
+## Version: 0.2.0
+## Notes: A little 3v3 arena that plays itself while you sit in queue: six round gladiators on a diorama floor, each with a health ring, a filler and two signature spells, and a match that is over in about thirty seconds. It is deliberately not an arena simulation -- no mana, no cast bars, no line of sight -- only the part you can read at a glance: who is hitting whom, who is a sheep, who is about to die. /cglad opens it: your Subtlety Rogue, Frost Mage and Discipline Priest fight an Arms Warrior, Affliction Warlock and Restoration Druid, and the record is kept between sessions. Leave it alone and it plays itself; or click an enemy to set your team's kill target, and tap a glowing spell to fire it now.
+## IconTexture: Interface\Icons\Ability_DualWield
+## SavedVariables: CommanderGladiatorDB
+## RequiredDeps: Commander_Events
+
+CommanderGladiatorData.lua
+CommanderGladiatorEngine.lua
+CommanderGladiatorDB.lua
+CommanderGladiator.lua
