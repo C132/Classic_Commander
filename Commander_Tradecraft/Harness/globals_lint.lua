@@ -58,7 +58,7 @@ BINDING_NAME_COMMANDERTRADECRAFT_SHOP
 -- Client framework
 allow [[
 CreateFrame UIParent GameTooltip GameFontNormal GameFontHighlightSmall GameFontDisableSmall
-C_Timer GetTime PlaySound SOUNDKIT UISpecialFrames InCombatLockdown
+C_Timer GetTime PlaySound SOUNDKIT UISpecialFrames InCombatLockdown hooksecurefunc
 ]]
 
 -- The skill line, the craft window and the spellbook

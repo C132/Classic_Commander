@@ -567,14 +567,27 @@ end
 -- ADDON_ACTION_FORBIDDEN the first time it was pressed), and so is casting
 -- by name, so both the Open button and the Craft button are
 -- SecureActionButtons, each inside a holder frame the layout shows, hides
--- and anchors. The holder is NOT an ordinary frame, though: the parent of a
--- protected frame is protected too (hiding it would hide the secure child),
--- and the client blocked holder:Hide() in combat 29 times in one session
--- (2026-09-23). So holders are only ever shown, hidden or moved OUT of
--- combat: they are put away as combat starts (PLAYER_REGEN_DISABLED runs
--- before the lockdown does), a combat paint never touches them, and the
--- paint that follows PLAYER_REGEN_ENABLED lays them out again. Attributes
--- are only ever written out of combat.
+-- and anchors. The holder is NOT an ordinary frame, though: every ANCESTOR
+-- of a protected frame is protected too (hiding one would hide the secure
+-- child), and the client blocked holder:Hide() in combat 29 times in one
+-- session (2026-09-23) — then, with the holders left under the guide, the
+-- guide's own SetSize from a combat rebuild. So two rules:
+--
+--   * A holder is a SIBLING of the guide, parented to UIParent, and it is
+--     pinned to the SCREEN — never anchored to the guide. Protection walks
+--     up the parent chain AND across anchors: the frame a secure button (or
+--     its holder) is anchored to joins the protected family and is locked in
+--     combat like a parent (field-verified in Commander_Buffs 2026-09-24).
+--     So a holder is placed at the guide's corner plus its row offset, in
+--     absolute coordinates, out of combat (PlaceHolder), and re-placed when
+--     the guide moves or rescales (SyncHolders, from the paint, the SetScale
+--     hook and a 10 Hz drift watch). Nothing is inherited either: strata
+--     and level are mirrored by hand, and hiding the guide hides the holders.
+--   * Holders are only ever shown, hidden or moved OUT of combat: they are
+--     put away as combat starts (PLAYER_REGEN_DISABLED runs before the
+--     lockdown does), a combat paint never touches them, and the paint that
+--     follows PLAYER_REGEN_ENABLED lays them out again. Attributes are only
+--     ever written out of combat.
 --
 -- The Craft button runs the macro enchanters have typed by hand since
 -- vanilla: "/cast <recipe>" and then "/use <slot>" to land it on your own
@@ -585,8 +598,9 @@ local secure = {}   -- key -> { holder, button }
 local function EnsureSecure(key, width, text, tooltipFn)
     if secure[key] then return secure[key] end
     if InCombat() then return nil end
-    local holder = CreateFrame("Frame", nil, guide)
+    local holder = CreateFrame("Frame", nil, UIParent)
     holder:SetSize(width, 20)
+    holder:SetFrameStrata(guide:GetFrameStrata() or "MEDIUM")
     local button = CreateFrame("Button", "CommanderTradecraft" .. key, holder,
         "SecureActionButtonTemplate, UIPanelButtonTemplate")
     button:SetAllPoints(holder)
@@ -602,6 +616,73 @@ local function EnsureSecure(key, width, text, tooltipFn)
     secure[key] = { holder = holder, button = button }
     return secure[key]
 end
+
+-- Pin a holder to where its row sits on screen: the guide's top-left corner
+-- plus the row's offset, in the guide's own coordinates. The holder is scaled
+-- to the guide's effective scale first, so those coordinates apply to it
+-- unchanged. Skipped until the guide has a rect (its first paint anchors it
+-- through the HUD chrome, and SyncHolders runs right after that).
+local function PlaceHolder(entry)
+    local left, top = guide:GetLeft(), guide:GetTop()
+    if not (left and top and entry.x) then return end
+    local uiScale = (UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+    local scale = (guide:GetEffectiveScale() or 1) / uiScale
+    local p = entry.placed
+    if p and p[1] == left and p[2] == top and p[3] == entry.x and p[4] == entry.y and p[5] == scale then
+        return
+    end
+    entry.placed = { left, top, entry.x, entry.y, scale }
+    local holder = entry.holder
+    holder:SetScale(scale)
+    holder:ClearAllPoints()
+    holder:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left + entry.x, top + entry.y)
+end
+
+-- What a child would have inherited from the guide, plus its place. Out of
+-- combat only, like every other holder call.
+local function SyncHolders()
+    if InCombat() then return end
+    local strata = guide:GetFrameStrata()
+    local level = (guide:GetFrameLevel() or 1) + 2
+    for _, entry in pairs(secure) do
+        local holder = entry.holder
+        if strata and holder:GetFrameStrata() ~= strata then holder:SetFrameStrata(strata) end
+        if holder:GetFrameLevel() ~= level then holder:SetFrameLevel(level) end
+        if holder:IsShown() then PlaceHolder(entry) end
+    end
+end
+
+-- The holders are pinned to the screen, not to the guide, so a drag of the
+-- window (the HUD chrome moves the guide with StartMoving: no SetPoint to
+-- hook) would leave them behind. Watch the guide's corner while it is shown;
+-- one GetLeft ten times a second.
+local holderWatch = CreateFrame("Frame")
+local holderWatchElapsed = 0
+holderWatch:SetScript("OnUpdate", function(_, elapsed)
+    holderWatchElapsed = holderWatchElapsed + elapsed
+    if holderWatchElapsed < 0.1 then return end
+    holderWatchElapsed = 0
+    if not guide:IsShown() or InCombat() then return end
+    for _, entry in pairs(secure) do
+        if entry.holder:IsShown() and entry.placed then
+            if guide:GetLeft() ~= entry.placed[1] or guide:GetTop() ~= entry.placed[2] then
+                SyncHolders()
+            end
+            return
+        end
+    end
+end)
+
+local function HideHolders()
+    if InCombat() then return end
+    for _, entry in pairs(secure) do
+        if entry.holder:IsShown() then entry.holder:Hide() end
+    end
+end
+
+-- The HUD chrome's resize grip writes the guide's scale live while it is
+-- dragged, with no repaint until the mouse lets go: follow it as it moves
+pcall(hooksecurefunc, guide, "SetScale", function() SyncHolders() end)
 
 local function EnsureOpenButton()
     local s = EnsureSecure("Open", OPEN_WIDTH, "Open " .. Profession().name, function(tip)
@@ -741,6 +822,8 @@ local function ButtonRow(defs)
         local b
         if def.secure then
             b = def.secure == "Craft" and EnsureCraftButton() or EnsureOpenButton()
+            -- Never in combat: the holder is protected (see EnsureSecure)
+            if b and InCombat() then b = nil end
             if b then
                 b:ClearAllPoints()
                 b:Show()
@@ -750,7 +833,18 @@ local function ButtonRow(defs)
             if def.disabled then b:SetEnabled(false) end
         end
         if b then
-            b:SetPoint("TOPLEFT", guide, "TOPLEFT", x, y)
+            if def.secure then
+                -- A holder is never anchored to the guide (see EnsureSecure):
+                -- its row offset is kept and it is pinned to the screen
+                for _, entry in pairs(secure) do
+                    if entry.holder == b then
+                        entry.x, entry.y = x, y
+                        PlaceHolder(entry)
+                    end
+                end
+            else
+                b:SetPoint("TOPLEFT", guide, "TOPLEFT", x, y)
+            end
             x = x + def.width + 4
             h = 20
         end
@@ -1429,9 +1523,7 @@ Repaint = function()
     ReleaseAll()
     -- Holders are protected (see the secure buttons above): out of combat
     -- only. In combat they are already away, put there at combat's start.
-    if not InCombat() then
-        for _, entry in pairs(secure) do entry.holder:Hide() end
-    end
+    HideHolders()
     local p = plan
     if not p then guide:Hide() return end
 
@@ -1508,12 +1600,20 @@ Repaint = function()
     end
 
     guide:SetSize(WIDTH, -y + 2)
+    -- A window of text to read: whichever panel is chosen is drawn solid, and
+    -- the corner grip scales the whole guide in every style (the holders
+    -- follow through the SetScale hook, like the Window style's own grip)
     Commander.UI.ApplyHudChrome(guide, db, "Guide", {
         title = "Tradecraft",
         defaultPoint = { point = "RIGHT", x = -40, y = -160 },
+        opaque = true,
+        scaleGrip = true,
     })
     local wasShown = guide:IsShown()
     guide:SetShown(GuideWanted())
+    -- Siblings inherit nothing: re-mirror the chrome's scale and level, and
+    -- a hidden guide takes its holders with it
+    if guide:IsShown() then SyncHolders() else HideHolders() end
     if heightMissing and guide:IsShown() and not wasShown and not guide._repaintQueued then
         guide._repaintQueued = true
         C_Timer.After(0, function()
@@ -1785,7 +1885,13 @@ local function EnsureLedger()
     ledger:SetMovable(true)
     ledger:SetClampedToScreen(true)
     ledger:Hide()
-    Commander.UI.ApplyStyleBackdrop(ledger, "DARK")
+    Commander.UI.ApplyStyleBackdrop(ledger, "DARK", true)
+    ledger:SetScale(db.LedgerScale or 1)
+    -- The corner scales the whole window, top-left held where it is; the
+    -- number is the Route & Shopping Scale setting
+    ledger.grip = Commander.UI.AttachScaleGrip(ledger, {
+        set = function(value) db.LedgerScale = value end,
+    })
     if UISpecialFrames then
         table.insert(UISpecialFrames, "CommanderTradecraftLedger")
     end
@@ -1867,7 +1973,8 @@ local function EnsureLedger()
 
     local close = CreateFrame("Button", nil, ledger, "UIPanelButtonTemplate")
     close:SetSize(70, 22)
-    close:SetPoint("BOTTOMRIGHT", ledger, "BOTTOMRIGHT", -10, 10)
+    -- Clear of the scale grip in the corner
+    close:SetPoint("BOTTOMRIGHT", ledger, "BOTTOMRIGHT", -24, 10)
     close:SetText("Close")
     close:SetScript("OnClick", function() ledger:Hide() end)
 
@@ -2110,6 +2217,10 @@ end
 
 PaintLedger = function()
     if not (ledger and ledger:IsShown() and plan) then return end
+    -- The grip has already applied what it saved; this is how the settings
+    -- page's slider and Restore Defaults reach the window
+    local scale = db.LedgerScale or 1
+    if ledger:GetScale() ~= scale then ledger:SetScale(scale) end
     if ledgerMode == "shop" then
         ledger.title:SetText(("Tradecraft — Shopping List  %s"):format(RankText(plan)))
         local text = BuildShoppingText(plan)
@@ -2162,6 +2273,7 @@ function CommanderTradecraft_Hide()
     if not loaded then return end
     db.ShowGuide = false
     guide:Hide()
+    HideHolders()
 end
 
 function CommanderTradecraft_Toggle()
@@ -2411,6 +2523,7 @@ function CommanderTradecraft_OnLogin()
     Commander.AddListener(Events.UPDATE, function()
         if not db.EnableTradecraft then
             guide:Hide()
+            HideHolders()
             return
         end
         ScheduleRebuild()

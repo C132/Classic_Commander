@@ -40,6 +40,9 @@ local DefaultSettings = {
     AnnounceSteps = true,
     StepSound = true,
     UseWaypoints = true,
+
+    -- The route and shopping window (the guide's own scale is GuideScale)
+    LedgerScale = 1.0,
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Guide", "DARK")) do
     DefaultSettings[key] = value
@@ -217,6 +220,17 @@ local function CreateOptionsPanel()
     Commander.UI.AddHudChromeOptions(panel, CommanderTradecraftDB, "Guide", {
         isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
         onChanged = function() Commander.Notify(COMMANDER_TRADECRAFT_EVENTS.UPDATE) end,
+        opaque = true,
+        scaleGrip = true,
+    })
+    panel:AddSlider({
+        label = "Route & Shopping Scale",
+        tooltip = "Overall size of the route and shopping window. Dragging the grip in that window's bottom-right corner sets the same number.",
+        min = 0.6, max = 1.6, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return CommanderTradecraftDB.LedgerScale end,
+        set = function(value) CommanderTradecraftDB.LedgerScale = value end,
+        isEnabled = function() return CommanderTradecraftDB.EnableTradecraft end,
     })
 
     panel:AddButtonRow({

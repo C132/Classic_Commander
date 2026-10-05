@@ -137,3 +137,32 @@ on screen.
 Nothing depends on it: a book or quest rank is done when the max rank rises past its cap, which
 `GetSkillLineInfo` reports (A1). Listed only because the banner's "You have it — right-click it to
 read it" line reads the book from the bags with `GetItemCount`, which is A7.
+
+## A14 — The guide's rect answers right after the HUD chrome anchors it
+
+The holders are pinned to the screen off `guide:GetLeft()`/`GetTop()` at the end of each paint
+(anchoring them to the guide would lock the guide in combat: anchor targets join the protected
+family, field-verified in Commander_Buffs 2026-09-24). A nil rect is skipped and caught by the
+drift watch a tenth of a second later; a stale one would leave the Craft and Open buttons beside
+their row. *Test:* drag the guide and rescale it with the grip: the buttons must follow within a
+blink and sit on their row. If `CommanderTradecraftGuide` ever shows up again in an
+`ADDON_ACTION_BLOCKED`, something secure is anchored to it after all.
+
+## A15 — The scale grips' arithmetic matches the client's coordinate spaces
+
+`AttachScaleGrip` (Commander_Events) takes `GetCursorPosition()` as screen pixels, a frame's
+`GetLeft()`/`GetTop()` times its `GetEffectiveScale()` as the same pixels, and a `SetPoint` offset as
+being in the frame's own scaled units — the three facts the suite's Window-style grip and drag code
+already lean on, but never before all at once. It also sets the anchor and then the scale inside one
+`OnUpdate`. *Test:* drag the corner of the guide and of the route window, slowly, in every direction:
+the top-left corner must not move at all, the grabbed corner must stay under the cursor along the
+diagonal, and letting go must not make either window jump. Then `/reload`: both come back the size
+and place they were left. If the top-left drifts, the offset division is wrong; if the window jumps on
+release, the saved `GuidePos` (TOPLEFT, screen units, measured down from the top) is.
+
+## A16 — Dark Panel's tooltip border looks right over a solid fill
+
+The guide and the route window keep Dark Panel's rounded tooltip edge, now over opaque black instead
+of a 60% tint. *Test:* look at the corners: the edge art has transparent notches outside its curve,
+and a solid fill that reaches under them shows as four dark squares. The fill is inset three pixels
+for exactly this, as it always was; if squares show, Solid Dark's hairline edge is the fix.

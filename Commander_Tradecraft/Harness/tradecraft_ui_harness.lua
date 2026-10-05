@@ -58,7 +58,7 @@ local frames = {}
 local eventRegistry = {} -- event -> { frame, ... }
 
 local NUMERIC_GETTERS = {
-    GetWidth = 0, GetHeight = 0, GetScale = 1, GetEffectiveScale = 1,
+    GetWidth = 0, GetHeight = 0, GetEffectiveScale = 1,
     GetFrameLevel = 2, GetLeft = 0, GetBottom = 0, GetTop = 0, GetRight = 0,
     GetVerticalScroll = 0, GetVerticalScrollRange = 0, GetStringWidth = 10,
     GetID = 1, GetNumPoints = 1,
@@ -159,7 +159,53 @@ WidgetMT.__index = function(self, key)
         return fn
     end
     if key == "SetSize" then
-        local fn = function(s, w, h) s.__w, s.__h = w, h end
+        -- Resizing an ancestor of a secure button is a protected call too
+        -- (CommanderTradecraftGuide:SetSize() was blocked in the field,
+        -- 2026-09-23, from a combat rebuild)
+        local fn = function(s, w, h)
+            if Blocked(s, "SetSize") then return end
+            s.__w, s.__h = w, h
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    -- Anchoring a protected frame to a frame puts THAT frame in the
+    -- protected anchor family: locked in combat like a parent (field-verified
+    -- in Commander_Buffs 2026-09-24: an icon a secure button was anchored to
+    -- was refused its SetSize)
+    if key == "SetPoint" then
+        local fn = function(s, point, rel, relPoint, x, y)
+            if Blocked(s, "SetPoint") then return end
+            s.__point = { point, rel, relPoint, x, y }
+            if rawget(s, "__protected") and type(rel) == "table" then rel.__protected = true end
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetAllPoints" then
+        local fn = function(s, target)
+            if Blocked(s, "SetAllPoints") then return end
+            s.__anchor = target
+            if rawget(s, "__protected") and type(target) == "table" then target.__protected = true end
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetScale" then
+        local fn = function(s, scale)
+            if Blocked(s, "SetScale") then return end
+            s.__scale = scale
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetScale" then
+        local fn = function(s) return s.__scale or 1 end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetBackdropColor" then
+        local fn = function(s, r, g, b, a) s.__fill = { r, g, b, a } end
         rawset(self, key, fn)
         return fn
     end
@@ -250,11 +296,19 @@ end
 function CreateFrame(frameType, name, parent, template)
     local f = NewWidget(frameType, name)
     f.__template = template
-    -- A secure frame and its PARENT are protected (the field report was the
-    -- parent -- the holder -- being refused a Hide in combat)
+    -- __owner, not __parent: the harness below patches CreateFrame to record
+    -- __parent for the frames IT creates, and its text helpers count on the
+    -- load-time frames having none
+    f.__owner = parent
+    -- A secure frame and its whole parent CHAIN are protected (the field
+    -- reports were the holder refused a Hide, then the guide above the
+    -- holder refused a SetSize, both in combat)
     if template and template:find("Secure") then
-        f.__protected = true
-        if parent then parent.__protected = true end
+        local p = f
+        while type(p) == "table" do
+            p.__protected = true
+            p = rawget(p, "__owner")
+        end
     end
     if frameType == "CheckButton" or (template and template:find("CheckButton")) then
         f.Text = NewWidget("FontString")
@@ -526,7 +580,16 @@ Auctionator = { API = { v1 = {
 local altStock = { [11083] = 25 }
 function CommanderQuartermaster_CountsFor(item) return 0, 0, 0, altStock[item] or 0, altStock[item] or 0 end
 
-function hooksecurefunc(tbl, name, fn) end
+-- Runs the hook after the original, as the client does (the guide's SetScale
+-- hook is how the secure buttons' holders follow a resize)
+function hooksecurefunc(tbl, name, fn)
+    if type(tbl) ~= "table" then return end
+    local original = tbl[name]
+    tbl[name] = function(...)
+        original(...)
+        fn(...)
+    end
+end
 -- Events this client actually has, from Blizzard_APIDocumentationGenerated
 -- (classic_anniversary, 2026-09-17). The real client throws on an unknown
 -- name and the throw took every later registration down with it once; the
@@ -644,12 +707,16 @@ local function GuideText()
     return table.concat(out, "\n")
 end
 local function Has(text) return GuideText():find(text, 1, true) ~= nil end
--- Buttons on the guide (or in a holder on the guide) that are visible
+-- Buttons on the guide that are visible -- including the secure buttons,
+-- whose holders are SIBLINGS of the guide (parented to UIParent, anchored
+-- to the guide) so that the guide itself is never protected
 local function Buttons()
     local out = {}
     for _, f in ipairs(frames) do
         local parent = f.__parent
-        local onGuide = parent == guide or (type(parent) == "table" and parent.__parent == guide)
+        local holderOnGuide = type(parent) == "table" and (parent.__parent == guide
+            or (parent.__owner == UIParent and f.__template and f.__template:find("Secure")))
+        local onGuide = parent == guide or holderOnGuide
         local visible = f.__shown ~= false and (parent == guide or (type(parent) == "table" and parent.__shown ~= false))
         if f.__kind == "Button" and onGuide and visible and f.__text and f.__text ~= "" then
             out[f.__text] = f
@@ -1271,6 +1338,15 @@ Settle()
 Fire("UNIT_INVENTORY_CHANGED", "player")
 Settle()
 CHECK(#blockedCalls == 0, "F2 a combat repaint touches no protected frame", blockedCalls[1])
+-- The guide itself must never be protected: it is resized and re-shown on
+-- every combat repaint, so the secure buttons' holders are its SIBLINGS
+CHECK(not rawget(guide, "__protected"), "F2 the guide is not protected (holders are siblings)")
+do
+    local craft = _G.CommanderTradecraftCraft
+    local holder = craft and craft.__owner
+    CHECK(holder and holder.__owner == UIParent, "F2 a holder is parented to UIParent",
+        holder and tostring(holder.__owner and holder.__owner.__name))
+end
 b = Buttons()
 CHECK(b["Open Enchanting"] == nil, "F2 no secure button in combat")
 CHECK(b["Craft"] and b["Craft"].__attr == nil and b["Craft"].__enabled == false, "F2 craft is a disabled plain button in combat (no attribute writes)")
@@ -1291,6 +1367,16 @@ Fire("PLAYER_REGEN_ENABLED")
 Settle()
 b = Buttons()
 CHECK(b["Open Enchanting"] ~= nil, "F2 back after combat", (function() local t = {} for k in pairs(b) do t[#t+1] = k end return table.concat(t, ",") end)())
+-- Siblings do not hide with the guide on their own: /ctc must take them along
+CommanderTradecraft_Hide()
+CHECK(not guide.__shown, "F2c /ctc hides the guide")
+b = Buttons()
+CHECK(b["Open Enchanting"] == nil and b["Craft"] == nil, "F2c and its sibling holders go with it")
+CommanderTradecraft_Show()
+Settle()
+b = Buttons()
+CHECK(guide.__shown and b["Open Enchanting"] ~= nil, "F2c shown again with the holders back",
+    (function() local t = {} for k in pairs(b) do t[#t+1] = k end return table.concat(t, ",") end)())
 -- The tome in the off-hand slot is not a shield: cast only. A shield is.
 CHECK(b["Craft"] and b["Craft"].__attr and b["Craft"].__attr.macrotext == "/cast Enchant Shield - Greater Stamina", "F2 a tome in the off-hand is not targeted", b["Craft"] and b["Craft"].__attr and b["Craft"].__attr.macrotext)
 me.equipped[17] = 2143
@@ -1440,6 +1526,153 @@ Settle()
 me.rank, me.maxRank = 200, 225
 Fire("SKILL_LINES_CHANGED")
 Settle()
+
+-- ===========================================================================
+-- H. Solid backdrops, and a corner to scale each window by
+-- ===========================================================================
+do
+    local db = CommanderTradecraftDB
+    local function Near(a, b) return a and b and math.abs(a - b) < 0.001 end
+    local function Refresh()
+        Commander.Notify(COMMANDER_TRADECRAFT_EVENTS.UPDATE)
+        Settle()
+    end
+    local cursor = { 0, 0 }
+    function GetCursorPosition() return cursor[1], cursor[2] end
+    rawset(UIParent, "GetHeight", function() return 768 end)
+    -- A window as the client reports one, its top-left held at (left, top) in
+    -- screen pixels. GetLeft/GetTop come back in the frame's own scaled units.
+    local function GiveRect(frame, left, top, w, h)
+        rawset(frame, "GetWidth", function(f) return w or f.__w end)
+        rawset(frame, "GetHeight", function(f) return h or f.__h end)
+        rawset(frame, "GetEffectiveScale", function(f) return f.__scale or 1 end)
+        rawset(frame, "GetLeft", function(f) return left / (f.__scale or 1) end)
+        rawset(frame, "GetTop", function(f) return top / (f.__scale or 1) end)
+    end
+    -- Pull a grip's corner out to `scale`, having taken hold exactly on it
+    local function Drag(grip, frame, left, top, scale)
+        local w, h = frame:GetWidth(), frame:GetHeight()
+        local s = frame:GetScale()
+        cursor[1], cursor[2] = left + w * s, top - h * s
+        grip.__scripts.OnMouseDown(grip)
+        cursor[1], cursor[2] = left + w * scale, top - h * scale
+        grip.__scripts.OnUpdate(grip, 0.016)
+    end
+
+    -- H1 the guide's panel is solid in the style it was saved with: Dark
+    -- Panel, whose own fill is a 60% tint
+    db.GuideStyle, db.GuideScale, db.GuidePos = "DARK", 1, false
+    Refresh()
+    local plate = guide._hudBackdrop
+    CHECK(guide.__shown and plate and plate.__shown and plate.__fill and plate.__fill[4] == 1,
+        "H1 the guide's backdrop is solid", plate and plate.__fill and plate.__fill[4])
+    db.GuideStyle = "CLASSIC"
+    Refresh()
+    CHECK(plate.__fill[4] == 1, "H1 ...in every style", plate.__fill[4])
+    db.GuideStyle = "DARK"
+    Refresh()
+
+    -- H2 the route and shopping window's too
+    CommanderTradecraft_Route()
+    Settle()
+    local ledger = _G.CommanderTradecraftLedger
+    local sheet = ledger._styleBackdrop
+    CHECK(ledger.__shown and sheet and sheet.__shown and sheet.__fill and sheet.__fill[4] == 1,
+        "H2 the route window's backdrop is solid", sheet and sheet.__fill and sheet.__fill[4])
+
+    -- H3 the guide: a grip in the corner of its panel scales the whole window
+    local grip = guide._hudScaleGrip
+    CHECK(grip and grip.__shown and grip.__point[1] == "BOTTOMRIGHT" and grip.__point[2] == plate,
+        "H3 a grip sits in the bottom-right corner of the guide's panel")
+    GiveRect(guide, 700, 600)
+    Refresh()
+    -- Whichever secure button this step has on screen
+    local holder
+    for _, name in ipairs({ "CommanderTradecraftCraft", "CommanderTradecraftOpen" }) do
+        local h = _G[name] and _G[name].__owner
+        if h and h.__shown then holder = h end
+    end
+    CHECK(holder and holder.__scale == 1, "H3 a secure button's holder starts at the guide's scale",
+        holder and tostring(holder.__scale))
+    Drag(grip, guide, 700, 600, 1.3)
+    CHECK(guide.__scale == 1.3 and db.GuideScale == 1.3, "H3 dragging it scales the guide and saves Frame Scale",
+        tostring(guide.__scale))
+    CHECK(guide.__point[1] == "TOPLEFT" and guide.__point[2] == UIParent
+        and Near(guide.__point[4], 700 / 1.3) and Near(guide.__point[5], (600 - 768) / 1.3),
+        "H3 the top-left corner stays put", tostring(guide.__point[4]) .. "," .. tostring(guide.__point[5]))
+    CHECK(holder.__scale == 1.3, "H3 the secure buttons' holders follow the scale as it moves", tostring(holder.__scale))
+    -- The bags change mid-drag and the guide repaints: it must not jump back
+    local held = guide.__point
+    Fire("BAG_UPDATE_DELAYED")
+    Settle()
+    CHECK(guide.__point == held and guide.__scale == 1.3, "H3 a repaint mid-drag leaves the window in the hand")
+    grip.__scripts.OnMouseUp(grip)
+    CHECK(db.GuidePos and db.GuidePos.point == "TOPLEFT" and Near(db.GuidePos.x, 700) and Near(db.GuidePos.y, 600 - 768),
+        "H3 letting go saves where it ended up", db.GuidePos and tostring(db.GuidePos.x))
+    Settle()
+    CHECK(guide.__point[1] == "TOPLEFT" and Near(guide.__point[4], 700 / 1.3) and guide.__scale == 1.3,
+        "H3 ...and the next paint puts it exactly there")
+
+    -- H4 mid-fight: the guide is a plain frame and still scales; nothing
+    -- protected is touched, and the holders come back at the new scale
+    Fire("PLAYER_REGEN_DISABLED")
+    me.combat = true
+    blockedCalls = {}
+    Settle()
+    Drag(grip, guide, 700, 600, 0.8)
+    grip.__scripts.OnMouseUp(grip)
+    Settle()
+    CHECK(guide.__scale == 0.8 and db.GuideScale == 0.8, "H4 the grip works in combat", tostring(guide.__scale))
+    CHECK(#blockedCalls == 0, "H4 ...without touching a protected frame", blockedCalls[1])
+    me.combat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Settle()
+    CHECK(holder.__shown and holder.__scale == 0.8, "H4 after combat the holders are back, at the new scale",
+        tostring(holder.__scale))
+
+    -- H5 the Window style scales by its own grip; this one stands down
+    db.GuideStyle = "WINDOW"
+    Refresh()
+    CHECK(grip.__shown == false, "H5 no second grip under the Window style")
+    db.GuideStyle, db.GuideScale = "DARK", 1
+    Refresh()
+    CHECK(grip.__shown == true, "H5 back with the panel")
+
+    -- H6 the route window: the same corner, its own saved scale
+    local lgrip = ledger.grip
+    CHECK(lgrip and lgrip.__point[1] == "BOTTOMRIGHT" and lgrip.__point[2] == ledger,
+        "H6 a grip sits in the bottom-right corner of the route window")
+    CHECK(CommanderTradecraft_Defaults.LedgerScale == 1 and ledger:GetScale() == 1, "H6 it opens at 100%")
+    GiveRect(ledger, 200, 700, 620, 460)
+    Drag(lgrip, ledger, 200, 700, 1.25)
+    CHECK(ledger.__scale == 1.25 and db.LedgerScale == 1.25, "H6 dragging it scales the window and saves the scale",
+        tostring(ledger.__scale))
+    CHECK(ledger.__point[1] == "TOPLEFT" and Near(ledger.__point[4], 200 / 1.25)
+        and Near(ledger.__point[5], (700 - 768) / 1.25), "H6 its top-left corner stays put")
+    lgrip.__scripts.OnMouseUp(lgrip)
+    CHECK(lgrip.__scripts.OnUpdate == nil, "H6 released")
+    -- Shopping is the same window in another mode: same scale, same grip
+    CommanderTradecraft_Shopping()
+    Settle()
+    CHECK(ledger.__scale == 1.25 and ledger.grip == lgrip, "H6 the shopping list is the same window at the same size")
+    -- The settings slider's road in, and Restore Defaults'
+    db.LedgerScale = 0.8
+    Refresh()
+    CHECK(ledger.__scale == 0.8, "H7 the Route & Shopping Scale setting reaches the open window", tostring(ledger.__scale))
+    Commander.UI.ResetToDefaults(db, CommanderTradecraft_Defaults)
+    Refresh()
+    CHECK(ledger.__scale == 1 and guide.__scale == 1, "H7 Restore Defaults puts both windows back to 100%",
+        tostring(ledger.__scale) .. "/" .. tostring(guide.__scale))
+    -- Closed and reopened, it comes back at the saved size
+    db.LedgerScale = 1.4
+    ledger:Hide()
+    CommanderTradecraft_Route()
+    Settle()
+    CHECK(ledger.__scale == 1.4, "H7 reopened, the window is the size it was left", tostring(ledger.__scale))
+    db.LedgerScale = 1
+    Refresh()
+    ledger:Hide()
+end
 
 CHECK(#harnessFailedErrors == 0, "Z no errors were swallowed", harnessFailedErrors[1])
 -- The headers were expanded exactly once: for the no-profession case in

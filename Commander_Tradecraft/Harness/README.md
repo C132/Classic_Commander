@@ -4,7 +4,7 @@ Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 1039 checks
-/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 209 checks
+/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 239 checks
 /opt/homebrew/bin/luajit globals_lint.lua              # 4 files, 0 undeclared globals
 ```
 

@@ -239,6 +239,37 @@ against a model of 46; D3 makes the guide's figure the floor, so the shopping li
 less cloth than the published list (190 linen, 165 wool, 150 silk, 115 mageweave, 240 runecloth,
 90 netherweave) and the model is never more than twenty percent over it (harness B3c, C17).
 
+**The secure buttons' holders are siblings of the guide, not children.** Protection walks up the
+whole parent chain: after the holders were taught to stay put in combat, the guide above them was
+still refused its `SetSize` from a combat rebuild (2026-09-23). A holder is therefore parented to
+UIParent and pinned to the SCREEN at the guide's corner plus its row offset — not anchored to the
+guide, because the frame a secure button is anchored to joins its protected family and is locked
+in combat exactly like a parent (Commander_Buffs proved that the same day). The guide is then a
+plain frame again that resizes and re-shows mid-fight. Nothing is inherited, so `SyncHolders`
+mirrors the guide's strata and level and re-places the holders after the HUD chrome has applied
+its own scale and position, a hook on `SetScale` follows the resize grip live, a 10 Hz watch on the
+guide's corner follows a drag, and every path that hides the guide hides the holders with it. The
+harness models parent-chain and anchor-family protection and reproduces the field message on both
+earlier layouts (F2).
+
+## D16 — Both windows are solid, and each scales by its bottom-right corner
+
+Asked for 2026-10-03: the guide's backdrop was Dark Panel's 60% tint and the route window's the same,
+and a page of small text over a snowfield is a page of small text over a snowfield. Neither window
+gained a new style. The shared chrome grew two opt-in options instead (`opaque`, `scaleGrip`, and
+`ApplyStyleBackdrop`'s third argument), so the guide keeps its Frame Style choice — Classic, Dark,
+Solid, Window — and whichever is chosen is simply drawn solid; None is still none. Everyone else's
+frames are untouched.
+
+The grip is `Commander.UI.AttachScaleGrip`: the whole frame is scaled (SetScale), about its TOP-LEFT
+corner, so the corner under the cursor is the one that moves; the scale is the cursor's projection
+on the frame's own diagonal, clamped to the Frame Scale slider's 60–160%. The guide's grip drives
+`GuideScale` and saves the position by that held corner; the secure buttons' holders follow through
+the existing `SetScale` hook. The Window style already has a grip, so the new one stands down there.
+The route and shopping window (one frame, two modes) has its own `LedgerScale`, with a slider on the
+settings page that sets the same number; its Close button moved fourteen pixels left to clear the
+corner. The guide is a plain frame (see the holders, above), so the grip works mid-fight.
+
 ## D17 — Go buttons and Route This Trip go to Commander Orders
 
 1.2.0, 2026-10-04. TomTom left the suite; Commander Orders 3.0 is its navigation, and `SetWaypoint`
