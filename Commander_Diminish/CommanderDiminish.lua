@@ -49,6 +49,7 @@ end
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local ARENA_UNITS = { "arena1", "arena2", "arena3", "arena4", "arena5" }
+local PARTY_UNITS = { "party1", "party2", "party3", "party4" }
 local DRAW_THROTTLE = 0.1     -- 10Hz. Nothing here is a cast bar; a reset
                               -- clock reading a tenth of a second late has
                               -- never cost anybody a kill.
@@ -324,6 +325,14 @@ local function NewCell(parent)
     cell.badge = cell:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     cell.badge:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -1, 1)
 
+    -- Both are written on a spell icon, which is as often pale as dark: a
+    -- hard black shadow under the outline is what holds their edges on a
+    -- white Polymorph
+    for _, fs in ipairs({ cell.timer, cell.badge }) do
+        fs:SetShadowColor(0, 0, 0, 1)
+        fs:SetShadowOffset(1, -1)
+    end
+
     return cell
 end
 
@@ -352,7 +361,8 @@ end
 -- ---------------------------------------------------------------------------
 
 local function IconFor(row)
-    local id = row.last or DATA.CAT_ICON[row.cat]
+    local id = DATA.CAT_ICON[row.cat]
+    if DB("IconSource", "CATEGORY") == "SPELL" or not id then id = row.last or id end
     if id and GetSpellTexture then
         local ok, texture = pcall(GetSpellTexture, id)
         if ok and texture then return texture end
@@ -459,12 +469,14 @@ end
 local slots = {}
 local stripRows = {}
 
-local function AddSlot(guid, label, class, lens)
+local function AddSlot(guid, label, class, lens, unit)
     if not guid then return end
     for _, existing in ipairs(slots) do
         if existing.guid == guid then return end
     end
-    slots[#slots + 1] = { guid = guid, label = label, class = class, lens = lens }
+    -- `unit` is the token the slot was found through, when there was one: it
+    -- is how an embedded strip finds a unit frame to sit on
+    slots[#slots + 1] = { guid = guid, label = label, class = class, lens = lens, unit = unit }
 end
 
 local function UnitSlot(unit, fallbackLabel)
@@ -489,7 +501,7 @@ local function UnitSlot(unit, fallbackLabel)
     -- Hostile: the question is what I can land. Friendly: the question is what
     -- is landing on them.
     local hostile = UnitCanAttack("player", unit)
-    AddSlot(guid, name or fallbackLabel, class, hostile and "OUT" or "IN")
+    AddSlot(guid, name or fallbackLabel, class, hostile and "OUT" or "IN", unit)
 end
 
 local function BuildSlots(now)
@@ -501,15 +513,23 @@ local function BuildSlots(now)
             AddSlot("Player-TEST-" .. i, fake and fake.name or ("Test " .. i),
                     fake and fake.class or nil, "OUT")
         end
-        if DB("ShowSelf", true) then AddSlot(playerGUID, "YOU", select(2, UnitClass("player")), "IN") end
+        if DB("ShowSelf", true) then
+            AddSlot(playerGUID, "YOU", select(2, UnitClass("player")), "IN", "player")
+        end
         return
     end
 
     if DB("ShowSelf", true) then
-        AddSlot(playerGUID, "YOU", select(2, UnitClass("player")), "IN")
+        AddSlot(playerGUID, "YOU", select(2, UnitClass("player")), "IN", "player")
     end
     if DB("ShowTarget", true) then UnitSlot("target", "Target") end
     if DB("ShowFocus", true) then UnitSlot("focus", "Focus") end
+    -- Your party: what is being run on the people you are standing next to.
+    -- Your healer's fear ladder is the one a team plays around, and it is the
+    -- one nothing else on screen shows.
+    if DB("ShowParty", true) then
+        for _, unit in ipairs(PARTY_UNITS) do UnitSlot(unit, unit) end
+    end
     if DB("ShowArena", true) then
         for _, unit in ipairs(ARENA_UNITS) do UnitSlot(unit, unit) end
     end
@@ -572,17 +592,100 @@ local function ClassColor(class)
     return 0.9, 0.9, 0.9
 end
 
+-- ---------------------------------------------------------------------------
+-- Where a strip lives.
+--
+-- This module was born as a window: a board of its own, floating wherever it
+-- was dragged, with a name over each strip so you could tell whose it was.
+-- That is the right answer to "who have I got ladders on" and the wrong one
+-- to "what can I land on HIM" -- the question is about a person, and the
+-- person already has a frame. A ladder drawn beside the frame it is about
+-- needs no name over it and no second place to look.
+--
+-- So, by default, a strip is EMBEDDED: it sits on the frame of the person it
+-- describes, parented to it, so it shows, hides, moves and scales with it.
+--
+--   an ally (you included)   on their Commander Party Frames row, past the
+--                            end of that board's own dispel strip
+--   an arena enemy           nowhere -- Commander Arena Frames draws that
+--                            enemy's ladders on their row already, and a
+--                            second copy beside it is the loose object this
+--                            exists to get rid of
+--   anyone else you can name on their unit frame (target, focus, yourself,
+--                            Blizzard's party frames), which is the
+--                            battleground case: there is no arena row for a
+--                            warlock in Alterac Valley
+--
+-- A slot with no frame to sit on is not drawn. The window is still there for
+-- whoever wants a board (Placement: Its Own Window), and it is where the test
+-- strips land when there is no frame up to put them on.
+-- ---------------------------------------------------------------------------
+-- `inset` is where the frame's name bar starts from its left edge: the art
+-- is a portrait and a bar, and a strip lines up with the bar, not with the
+-- box the art is drawn in. A party member's frame is too small to have
+-- sides worth choosing between, so it is `fixed`.
+local UNIT_HOSTS = {
+    player = { frame = "PlayerFrame", inset = 106 },
+    target = { frame = "TargetFrame", inset = 7 },
+    focus  = { frame = "FocusFrame", inset = 7 },
+}
+for index, unit in ipairs(PARTY_UNITS) do
+    UNIT_HOSTS[unit] = { frame = "PartyMemberFrame" .. index,
+        fixed = { point = "LEFT", rel = "RIGHT", x = 2, y = 4 } }
+end
+
+-- Which side of a unit frame the strip sits on. ABOVE is the clear band
+-- Blizzard's frames keep over the name bar; BELOW hangs it from the frame's
+-- bottom edge, under the bars; LEFT and RIGHT stand it beside the frame at
+-- the bars' height. The nudge sliders move it from wherever this puts it.
+local UNIT_SIDES = {
+    ABOVE = function(inset) return "BOTTOMLEFT", "TOPLEFT", inset, -22 end,
+    BELOW = function(inset) return "TOPLEFT", "BOTTOMLEFT", inset, 0 end,
+    LEFT  = function() return "RIGHT", "LEFT", -2, 6 end,
+    RIGHT = function() return "LEFT", "RIGHT", 2, 6 end,
+}
+
+local function HostFor(slot)
+    if CommanderArenaFrames_ShowsDR and CommanderArenaFrames_ShowsDR(slot.guid) then
+        return nil
+    end
+    if CommanderPartyFrames_RowFor then
+        local row, reach = CommanderPartyFrames_RowFor(slot.guid)
+        if row then return row, "LEFT", "RIGHT", reach or 4, 0 end
+    end
+    local spec = slot.unit and UNIT_HOSTS[slot.unit]
+    local frame = spec and _G[spec.frame]
+    if frame and frame.IsVisible and frame:IsVisible() then
+        local point, rel, x, y
+        if spec.fixed then
+            point, rel, x, y = spec.fixed.point, spec.fixed.rel, spec.fixed.x, spec.fixed.y
+        else
+            local side = UNIT_SIDES[DB("EmbedSide", "ABOVE")] or UNIT_SIDES.ABOVE
+            point, rel, x, y = side(spec.inset)
+        end
+        return frame, point, rel, x + DB("EmbedOffsetX", 0), y + DB("EmbedOffsetY", 0)
+    end
+    return nil
+end
+
+-- Everything off. Embedded strips are parented to other people's frames, so
+-- hiding this module's own root no longer hides them.
+local function HideAll()
+    for index = 1, #strips do strips[index]:Hide() end
+    root:Hide()
+end
+
 local function Draw()
     if not Enabled() then
-        root:Hide()
+        HideAll()
         return
     end
 
     local testing = GetTime() < testUntil
     if not testing then
-        if not zoneOK then root:Hide() return end
+        if not zoneOK then HideAll() return end
         if DB("CombatOnly", false) and not (InCombatLockdown and InCombatLockdown()) then
-            root:Hide()
+            HideAll()
             return
         end
     end
@@ -590,14 +693,15 @@ local function Draw()
     local now = GetTime()
     BuildSlots(now)
 
-    local size = DB("IconSize", 30)
+    local embedded = DB("Placement", "EMBEDDED") == "EMBEDDED"
+    local size = embedded and DB("EmbedIconSize", 20) or DB("IconSize", 30)
     local iconGap = DB("IconSpacing", 3)
     local labelHeight = DB("ShowName", true) and (DB("NameSize", 11) + 3) or 0
     local step = size + labelHeight + DB("RowSpacing", 6)
     local growUp = DB("Grow", "DOWN") == "UP"
     local showFull = DB("ShowFull", true)
 
-    local drawn, widest = 0, 0
+    local drawn, windowed, widest = 0, 0, 0
     for _, slot in ipairs(slots) do
         -- The lens. OUT is filtered to what this character can open and drawn
         -- in full; IN is unfiltered and drawn only where something is actually
@@ -607,32 +711,60 @@ local function Draw()
         local includeFull = (slot.lens == "OUT") and showFull or false
         local rows = dr:Strip(slot.guid, now, cats, includeFull, stripRows)
 
-        if #rows > 0 then
+        local host, point, rel, x, y
+        if embedded then host, point, rel, x, y = HostFor(slot) end
+        -- The window takes a strip when the window is what was asked for --
+        -- and, on the test board only, when there is no frame up to put it on
+        local inWindow = not embedded or (testing and not host)
+
+        if #rows > 0 and (host or inWindow) then
             drawn = drawn + 1
             local strip = AcquireStrip(drawn)
             local width = #rows * size + (#rows - 1) * iconGap
-            -- Geometry is re-applied only when it actually changed. The draw
-            -- loop runs ten times a second and the shape of a strip changes
-            -- when a setting does, which is to say almost never.
-            -- Every value the anchor below is computed from has to be in
-            -- this test. Packing them into one number is how a cache quietly
-            -- stops noticing that the row spacing changed.
-            if strip._w ~= width or strip._h ~= size or strip._step ~= step
-                or strip._label ~= labelHeight or strip._up ~= growUp then
-                strip._w, strip._h, strip._step = width, size, step
-                strip._label, strip._up = labelHeight, growUp
-                strip:SetSize(width, size)
-                strip:ClearAllPoints()
-                if growUp then
-                    strip:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (drawn - 1) * step)
-                else
-                    strip:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -((drawn - 1) * step + labelHeight))
+            local parent = inWindow and root or host
+            if strip._parent ~= parent then
+                strip._parent = parent
+                strip:SetParent(parent)
+                strip:SetFrameLevel((parent:GetFrameLevel() or 1) + 5)
+                strip._w = nil      -- a new parent is a new anchor
+            end
+            if inWindow then
+                windowed = windowed + 1
+                -- Geometry is re-applied only when it actually changed. The
+                -- draw loop runs ten times a second and the shape of a strip
+                -- changes when a setting does, which is to say almost never.
+                -- Every value the anchor below is computed from has to be in
+                -- this test. Packing them into one number is how a cache
+                -- quietly stops noticing that the row spacing changed.
+                if strip._w ~= width or strip._h ~= size or strip._step ~= step
+                    or strip._label ~= labelHeight or strip._up ~= growUp
+                    or strip._index ~= windowed or strip._embed then
+                    strip._w, strip._h, strip._step = width, size, step
+                    strip._label, strip._up, strip._index = labelHeight, growUp, windowed
+                    strip._embed = nil
+                    strip:SetSize(width, size)
+                    strip:ClearAllPoints()
+                    if growUp then
+                        strip:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (windowed - 1) * step)
+                    else
+                        strip:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -((windowed - 1) * step + labelHeight))
+                    end
+                end
+                if width > widest then widest = width end
+            else
+                if strip._w ~= width or strip._h ~= size or strip._embed ~= point
+                    or strip._rel ~= rel or strip._x ~= x or strip._y ~= y then
+                    strip._w, strip._h, strip._embed, strip._x, strip._y = width, size, point, x, y
+                    strip._rel = rel
+                    strip:SetSize(width, size)
+                    strip:ClearAllPoints()
+                    strip:SetPoint(point, host, rel, x, y)
                 end
             end
             strip:Show()
-            if width > widest then widest = width end
 
-            if DB("ShowName", true) then
+            -- The frame a strip sits on already says whose it is
+            if inWindow and DB("ShowName", true) then
                 strip.label:SetText(Truncate(slot.label))
                 strip.label:SetTextColor(ClassColor(slot.class))
                 local nameSize = DB("NameSize", 11)
@@ -657,8 +789,13 @@ local function Draw()
                 -- OUTLINE unconditionally: this text sits on top of a spell
                 -- icon, and the inherited flags from GameFontHighlightSmall
                 -- are empty, which is unreadable over half the art in the
-                -- game. Re-set only when the size actually changes.
+                -- game. Re-set only when the size actually changes. A strip
+                -- on somebody's frame is smaller than a board's, so there its
+                -- clock is never written bigger than half its own icon.
                 local timerSize = DB("TimerSize", 12)
+                if not inWindow then
+                    timerSize = math.min(timerSize, math.max(8, math.floor(size * 0.55)))
+                end
                 if cell._fontSize ~= timerSize then
                     cell._fontSize = timerSize
                     local font = cell.timer:GetFont()
@@ -680,11 +817,11 @@ local function Draw()
         strips[index]:Hide()
     end
 
-    if drawn == 0 then
+    if windowed == 0 then
         root:Hide()
         return
     end
-    root:SetSize(math.max(widest, 1), math.max(drawn * step - DB("RowSpacing", 6), 1))
+    root:SetSize(math.max(widest, 1), math.max(windowed * step - DB("RowSpacing", 6), 1))
     root:Show()
 end
 
@@ -794,16 +931,26 @@ end
 -- against them. Everyone else is inference only.
 local WATCHED = { player = true, target = true, focus = true }
 for _, unit in ipairs(ARENA_UNITS) do WATCHED[unit] = true end
+for _, unit in ipairs(PARTY_UNITS) do WATCHED[unit] = true end
 
 local function Apply()
     if not Enabled() then
-        root:Hide()
+        HideAll()
         return
     end
-    Commander.UI.ApplyHudChrome(root, CommanderDiminishDB, "Hud", {
-        title = "Diminish",
-        defaultPoint = { point = "CENTER", x = 0, y = -160 },
-    })
+    -- The chrome is the WINDOW's: its backing, its drag handle, its place on
+    -- screen. Embedded there is no window to dress -- and an unlocked HUD
+    -- forces its frame visible, which is exactly the loose object this mode
+    -- does away with. The position is still applied once, so the test strips
+    -- have somewhere sensible to land.
+    if DB("Placement", "EMBEDDED") ~= "EMBEDDED" or not root._placed then
+        root._placed = true
+        Commander.UI.ApplyHudChrome(root, CommanderDiminishDB, "Hud", {
+            title = "Diminish",
+            defaultPoint = { point = "CENTER", x = 0, y = -160 },
+        })
+    end
+    if DB("Placement", "EMBEDDED") == "EMBEDDED" then root:Hide() end
     RefreshZone()
     RefreshProfile()
     Draw()
@@ -886,6 +1033,13 @@ function CommanderDiminish_Brackets(guid, spellId, now)
     local nextBracket = dr:Bracket(guid, cat, now)
     local current = math.max(1, math.min(nextBracket - 1, DATA.DR_MAX))
     return current, nextBracket, cat
+end
+
+-- The picture a category wears under this module's own Icons setting, for a
+-- module that draws these rows somewhere else (Commander Plates, round a
+-- nameplate) -- so the same ladder is the same icon wherever it is drawn.
+function CommanderDiminish_Icon(cat, last)
+    return IconFor({ cat = cat, last = last })
 end
 
 -- Every category OPEN on a unit right now -- held, or counting down to reset

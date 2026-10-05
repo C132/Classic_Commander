@@ -1,13 +1,26 @@
 # Commander Diminish — harness
 
-Three checks and no generator. Nothing here runs in the game; everything here
+Four checks and no generator. Nothing here runs in the game; everything here
 runs without it, which is the point.
 
 ```
 luajit  Harness/diminish_engine_smoke.lua      the rules
+luajit  Harness/diminish_board_smoke.lua       where a strip sits, and what it wears
 python3 Harness/order_lint.py                  use-before-declaration
 python3 Harness/settings_reach.py              every setting has a control
 ```
+
+`diminish_board_smoke.lua` loads all four files over a small WoW mock and
+covers the two decisions the engine cannot see. The **icons**: a ladder wears
+its category's own picture (Hammer of Justice for a stun, Polymorph for the
+polymorph ladder) rather than whichever spell last opened it, unless the Icons
+setting asks for the other. And the **placement**: by default a strip is
+embedded on the frame of the person it is about -- an ally's Commander Party
+Frames row (through `CommanderPartyFrames_RowFor`), a unit frame for the
+target and focus -- is not drawn at all for an arena enemy Commander Arena
+Frames already carries (`CommanderArenaFrames_ShowsDR`), and comes down with
+the module when it is switched off even though it is parented to somebody
+else's frame.
 
 ## Where the spell table comes from
 

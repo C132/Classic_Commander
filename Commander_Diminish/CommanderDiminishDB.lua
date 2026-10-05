@@ -31,6 +31,7 @@ local DefaultSettings = {
     ShowTarget = true,
     ShowFocus = true,
     ShowArena = true,
+    ShowParty = true,            -- the people in your party: what is being run on THEM
     ShowRecent = false,          -- everyone you have CC'd lately; a BG mode
     RecentMax = 3,
 
@@ -42,7 +43,19 @@ local DefaultSettings = {
     Scope = "MINE",              -- MINE | ALL | CUSTOM
     ShowFull = true,             -- draw the profile greyed before anything opens
 
-    -- Layout
+    -- Where a strip sits. EMBEDDED puts each one on the frame of the person
+    -- it is about -- an ally's Commander Party Frames row, your target's and
+    -- focus's unit frames -- and draws nothing for an arena enemy, whose
+    -- ladders Commander Arena Frames already carries on their row. WINDOW is
+    -- the board this module was born as: one floating frame, a named strip
+    -- per person.
+    Placement = "EMBEDDED",      -- EMBEDDED | WINDOW
+    EmbedIconSize = 20,          -- an embedded strip's icons, in pixels
+    EmbedSide = "ABOVE",         -- which side of a UNIT frame: ABOVE | BELOW | LEFT | RIGHT
+    EmbedOffsetX = 0,            -- nudge for strips on a UNIT frame (target, focus, ...)
+    EmbedOffsetY = 0,
+
+    -- Layout (the window's)
     Grow = "DOWN",               -- DOWN | UP
     IconSize = 30,
     IconSpacing = 3,
@@ -58,6 +71,9 @@ local DefaultSettings = {
     TimerSize = 12,
     DesaturateFull = true,       -- grey a category nothing has opened yet
     HeldGlow = true,             -- mark a category that is up RIGHT NOW
+    -- CATEGORY: the ladder's own picture (Hammer of Justice for stun,
+    -- Polymorph for poly...). SPELL: whichever spell last opened it.
+    IconSource = "CATEGORY",
 }
 
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "DARK")) do
@@ -234,6 +250,14 @@ local function AddWhoSection(panel)
     })
 
     panel:AddCheckbox({
+        label = "Your party",
+        tooltip = "What is being run on the people you are grouped with. Your healer's fear ladder is the one a team plays around, and nothing else on screen shows it. Like your own row, these ignore the category filter and draw only what has actually been opened on them.",
+        get = function() return CommanderDiminishDB.ShowParty end,
+        set = function(value) CommanderDiminishDB.ShowParty = value end,
+        isEnabled = Enabled,
+    })
+
+    panel:AddCheckbox({
         label = "Anyone you have CC'd recently",
         tooltip = "The battleground problem, solved the only way it can be: you sap someone, swap target, and their ladder is still the thing you need. This adds a strip for whoever you have most recently landed control on, whether or not they are targeted -- and drops them again once every ladder on them has reset.",
         get = function() return CommanderDiminishDB.ShowRecent end,
@@ -293,6 +317,62 @@ local function AddCategorySection(panel)
 end
 
 local function AddLayoutSection(panel)
+    panel:AddSection("Where It Sits",
+        "On The Frames puts each strip on the frame of the person it is about, so there is nothing floating on its own: an ally's ladders sit beside their row on Commander Party Frames (yours included), and your target's and focus's sit on their unit frames. An arena enemy's are not drawn here at all -- Commander Arena Frames already carries them on that enemy's row. A person with no frame on screen gets no strip. Its Own Window is the original board: one movable frame with a named strip per person.")
+
+    panel:AddDropdown({
+        label = "Placement",
+        tooltip = "On The Frames: each strip is attached to the frame of the person it describes, and shows, hides, moves and scales with it. Its Own Window: one floating board, placed with Unlock & Move.\n\nRecently-CC'd strips have no frame to sit on, so they only draw in the window.",
+        options = {
+            { text = "On the frames", value = "EMBEDDED" },
+            { text = "Its own window", value = "WINDOW" },
+        },
+        width = 180,
+        get = function() return CommanderDiminishDB.Placement end,
+        set = function(value) CommanderDiminishDB.Placement = value end,
+        isEnabled = Enabled,
+    })
+
+    panel:AddSlider({
+        label = "Icon size on a frame",
+        tooltip = "How big an embedded strip's icons are. A party row is 22 pixels tall, so 20 sits inside it.",
+        min = 12, max = 36, step = 1, format = "%dpx",
+        get = function() return CommanderDiminishDB.EmbedIconSize end,
+        set = function(value) CommanderDiminishDB.EmbedIconSize = value end,
+        isEnabled = function() return Enabled() and CommanderDiminishDB.Placement == "EMBEDDED" end,
+    })
+
+    panel:AddDropdown({
+        label = "Side of a unit frame",
+        tooltip = "Where the strip sits on your target's, your focus's and your own unit frame. Above is the clear band over the name bar. Below hangs it from the frame's bottom edge, under the bars -- which is also where the game puts the unit's buffs and debuffs, so use the nudge sliders under this to clear them. Left and Right stand it beside the frame.\n\nStrips on Commander Party Frames rows are placed by that board and are not moved by this.",
+        options = {
+            { text = "Above", value = "ABOVE" },
+            { text = "Below", value = "BELOW" },
+            { text = "Left", value = "LEFT" },
+            { text = "Right", value = "RIGHT" },
+        },
+        width = 180,
+        get = function() return CommanderDiminishDB.EmbedSide end,
+        set = function(value) CommanderDiminishDB.EmbedSide = value end,
+        isEnabled = function() return Enabled() and CommanderDiminishDB.Placement == "EMBEDDED" end,
+    })
+
+    panel:AddSliderPair({
+        label = "Unit frame nudge, across",
+        tooltip = "Moves the strips that sit on a unit frame -- your target, your focus, yourself and Blizzard's party frames -- left or right from where they are put by default (just above the name bar). Strips on Commander Party Frames rows are placed by that board and do not move with this.",
+        min = -120, max = 120, step = 1, format = "%d",
+        get = function() return CommanderDiminishDB.EmbedOffsetX end,
+        set = function(value) CommanderDiminishDB.EmbedOffsetX = value end,
+        isEnabled = function() return Enabled() and CommanderDiminishDB.Placement == "EMBEDDED" end,
+    }, {
+        label = "Unit frame nudge, up",
+        tooltip = "The same, up or down.",
+        min = -120, max = 120, step = 1, format = "%d",
+        get = function() return CommanderDiminishDB.EmbedOffsetY end,
+        set = function(value) CommanderDiminishDB.EmbedOffsetY = value end,
+        isEnabled = function() return Enabled() and CommanderDiminishDB.Placement == "EMBEDDED" end,
+    })
+
     panel:AddSection("Layout",
         "A HUD, not a window. The strip is meant to be read at the edge of your attention while you are doing something else, which is an argument for fewer, larger icons rather than more.")
 
@@ -384,6 +464,19 @@ local function AddCellSection(panel)
         tooltip = "A bright rim on a category that has something active in it. This is the frozen-clock case: nothing is counting down, and a strip that only showed numbers would show nothing at all at the exact moment the most is happening.",
         get = function() return CommanderDiminishDB.HeldGlow end,
         set = function(value) CommanderDiminishDB.HeldGlow = value end,
+        isEnabled = Enabled,
+    })
+
+    panel:AddDropdown({
+        label = "Icons",
+        tooltip = "The picture each ladder wears. Category is the classic set every DR tracker has taught -- Hammer of Justice for a stun, Polymorph for the polymorph ladder, Fear for fear, Kidney Shot, Blind, Frost Nova for a root -- always the same picture for the same ladder. Last Spell draws an opened ladder with whichever spell opened it: a stun wearing a Hammer of Justice was a paladin, at the price of a different icon every time. Commander Plates draws its DR icons the same way.",
+        options = {
+            { text = "Category (classic)", value = "CATEGORY" },
+            { text = "Last spell", value = "SPELL" },
+        },
+        width = 180,
+        get = function() return CommanderDiminishDB.IconSource end,
+        set = function(value) CommanderDiminishDB.IconSource = value end,
         isEnabled = Enabled,
     })
 

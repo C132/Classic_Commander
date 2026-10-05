@@ -333,12 +333,13 @@ DATA.DR_BY_SPELL = {
 -- the same colour on both boards, and a player who has learned that teal means
 -- root on one of them should not have to learn it twice.
 --
--- CAT_ICON is only a FALLBACK. A category that has actually been opened is
--- drawn with the icon of the spell that opened it -- which is strictly more
--- information (a stun bracket wearing a Hammer of Justice tells you a paladin
--- opened it), and matters most in a battleground where you cannot see who is
--- on the other end. The fallback is what a category shows before anything has
--- landed in it, in the modes that draw a category at full.
+-- CAT_ICON is the picture a category wears, and by default the ONLY one it
+-- wears: Hammer of Justice for a stun, Polymorph for the polymorph ladder,
+-- Fear for fear -- the set every DR tracker since Gladius has taught. A
+-- category that always looks the same is one you read without reading. The
+-- alternative (Icons: Last Spell) draws an opened category with the spell
+-- that opened it, which says a little more -- a stun wearing a Hammer of
+-- Justice was a paladin -- at the price of a different icon every time.
 -- ---------------------------------------------------------------------------
 DATA.CAT_TINT = {
     STUN      = { 0.98, 0.86, 0.35 },
