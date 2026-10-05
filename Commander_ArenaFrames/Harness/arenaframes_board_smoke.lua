@@ -32,6 +32,11 @@
 --      on the last frame of the game that just ended.
 --   G  names. `#name` counts BYTES, so a ten-byte cut through an accented
 --      name lands mid-sequence and draws a replacement glyph.
+--   K  the stealthed opener. A rogue in stealth at the gates has a seat and
+--      has never been seen; the board skipped the seat, every row below slid
+--      up one, and with click-cast on each row is bound to the token of its
+--      POSITION -- so the row drawing arena2 targeted arena1, the row drawing
+--      arena3 targeted arena2, and a click on the last one did nothing.
 -- ===========================================================================
 
 local checks, fails = 0, 0
@@ -154,13 +159,17 @@ WidgetMT.__index = function(self, key)
     end
     if key == "SetPoint" then
         local fn = function(s, point, rel, relPoint, x, y)
+            if Blocked(s, "SetPoint") then return end
             s.__points = s.__points or {}
             s.__points[#s.__points + 1] = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
         end
         rawset(self, key, fn); return fn
     end
     if key == "ClearAllPoints" then
-        local fn = function(s) s.__points = {}; s.__allPoints = nil end
+        local fn = function(s)
+            if Blocked(s, "ClearAllPoints") then return end
+            s.__points = {}; s.__allPoints = nil
+        end
         rawset(self, key, fn); return fn
     end
     -- Recorded for the renderer: a region that fills its parent (or another
@@ -192,11 +201,17 @@ WidgetMT.__index = function(self, key)
     -- test see how wide a fill actually came out — the difference between a
     -- healthy bar and one drawn across the whole screen.
     if key == "SetWidth" then
-        local fn = function(s, w) s.__w = w end
+        local fn = function(s, w)
+            if Blocked(s, "SetWidth") then return end
+            s.__w = w
+        end
         rawset(self, key, fn); return fn
     end
     if key == "SetHeight" then
-        local fn = function(s, h) s.__h = h end
+        local fn = function(s, h)
+            if Blocked(s, "SetHeight") then return end
+            s.__h = h
+        end
         rawset(self, key, fn); return fn
     end
     if key == "SetAttribute" then
@@ -597,8 +612,25 @@ end
 GetNumArenaOpponentSpecs = nil          -- this client does not ship the prep API
 function IsActiveBattlefieldArena() return inInstanceType == "arena" end
 function IsInInstance() return inInstanceType ~= nil, inInstanceType end
-function InCombatLockdown() return false end
+function InCombatLockdown() return inCombat == true end
 function IsInGroup() return true end
+-- Our own team and the bracket. Both absent by default, which is the client
+-- that answers neither -- every section before K runs on the enemies alone.
+local teamSize, bracketSize, instanceId
+function GetNumGroupMembers() return teamSize or 0 end
+function GetBattlefieldStatus(index)
+    if index == 1 and bracketSize then
+        -- The classic shape: the third return is an INSTANCE id
+        return "active", "Nagrand Arena", instanceId or 0, 70, 70, bracketSize, true
+    end
+    return "none"
+end
+-- The show-only driver. Recorded, and RunSeenDrivers below does what the
+-- client would: a row whose unit exists is shown, protected or not.
+function RegisterStateDriver(frame, id, condition)
+    frame.__drivers = frame.__drivers or {}
+    frame.__drivers[id] = condition
+end
 function IsInRaid() return false end
 LE_PARTY_CATEGORY_INSTANCE = 2
 function SendChatMessage() end
@@ -1228,6 +1260,248 @@ end
 CHECK(#caughtErrors == sweepErrors, "J: every setting lays out and paints")
 CHECK(Board():IsShown(), "J: and the board survives the whole sweep")
 CHECK(Row(1).state:IsShown(), "J: with the crowd-control strip still up")
+
+-- ===========================================================================
+-- K: the stealthed opener, and a board that is whole before the gates open
+-- ===========================================================================
+
+local function RunSeenDrivers()
+    for index = 1, 5 do
+        local r = Row(index)
+        local condition = r and r.__drivers and r.__drivers.seen
+        local token = condition and condition:match("%[@(arena%d),exists%]")
+        local snippet = r and r:GetAttribute("_onstate-seen")
+        if token and snippet and snippet:find("self:Show()", 1, true) and UnitExists(token) then
+            r.__shown = true
+        end
+    end
+end
+
+local function TopOf(r)
+    local point = r.__points and r.__points[1]
+    return point and point.y or nil
+end
+
+-- Leave, and walk into a fresh 3v3. Nobody on the other side has been seen.
+inInstanceType = nil
+enemies = {}
+Fire("PLAYER_ENTERING_WORLD")
+Tick()
+inInstanceType = "arena"
+teamSize = 3
+Fire("PLAYER_ENTERING_WORLD")
+Tick()
+
+CHECK(Board():IsShown(), "K: the board is up in the prep room, before anyone is seen")
+for index = 1, 3 do
+    CHECK(Row(index):IsShown(), "K: seat " .. index .. " has its row before the gates open")
+    EQ(Row(index):GetAttribute("unit"), "arena" .. index,
+       "K: and row " .. index .. " is bound to its own token")
+end
+CHECK(not Row(4):IsShown(), "K: a 3v3 gets three rows, not five")
+EQ(Row(2).name:GetText(), "Enemy 2", "K: a seat nobody has seen is a placeholder")
+CHECK(Row(2):GetAlpha() < 1, "K: drawn quiet, so it does not read as an enemy", Row(2):GetAlpha())
+CHECK(TopOf(Row(1)) and TopOf(Row(2)) and TopOf(Row(3))
+      and TopOf(Row(1)) > TopOf(Row(2)) and TopOf(Row(2)) > TopOf(Row(3)),
+      "K: stacked top to bottom in token order")
+
+-- A partner still on their loading screen: the team is two until they land,
+-- and the roster event is what corrects it while that is still allowed.
+teamSize = 2
+Fire("GROUP_ROSTER_UPDATE")
+Tick()
+CHECK(not Row(3):IsShown(), "K: a team of two is a 2v2 board")
+teamSize = 3
+Fire("GROUP_ROSTER_UPDATE")
+Tick()
+CHECK(Row(3):IsShown(), "K: and the third row arrives with the third player")
+
+-- The bracket outranks the team: two of us in a 3v3 is still three of them.
+teamSize, bracketSize = 2, 3
+Fire("UPDATE_BATTLEFIELD_STATUS")
+Tick()
+CHECK(Row(3):IsShown(), "K: the bracket, not our head count, sizes the board")
+-- A skirmish that reports no team size, in arena instance number four: the
+-- instance id sits where the modern shape keeps the team size, and reading it
+-- as one would put four rows on a 2v2.
+teamSize, bracketSize, instanceId = 2, 0, 4
+Fire("UPDATE_BATTLEFIELD_STATUS")
+Tick()
+CHECK(not Row(3):IsShown(), "K: an instance id is never mistaken for a bracket")
+teamSize, bracketSize, instanceId = 3, nil, nil
+Fire("UPDATE_BATTLEFIELD_STATUS")
+Tick()
+
+-- The gates open and the fight starts. arena1 is a rogue in stealth: the
+-- client announces the seat as unseen and answers nothing for it. arena2 and
+-- arena3 are in plain sight.
+local rowHeight = Row(1):GetHeight()
+inCombat = true
+blockedCalls = {}
+Fire("PLAYER_REGEN_DISABLED")
+Fire("ARENA_OPPONENT_UPDATE", "arena1", "unseen")
+Spawn(2, { class = "PRIEST", name = "Mendicant" })
+Fire("ARENA_OPPONENT_UPDATE", "arena2", "seen")
+Spawn(3, { class = "MAGE", name = "Frostspite" })
+Fire("ARENA_OPPONENT_UPDATE", "arena3", "seen")
+RunSeenDrivers()
+Tick()
+
+EQ(Row(2).name:GetText(), "Mendicant",
+   "K: the row bound to arena2 draws arena2 -- it used to slide up onto row 1, "
+   .. "where a click targeted the rogue nobody could see")
+EQ(Row(3).name:GetText(), "Frostspite", "K: and the row bound to arena3 draws arena3")
+EQ(Row(2)._entry and Row(2)._entry.unit, Row(2):GetAttribute("unit"),
+   "K: what row 2 paints and what row 2 targets are the same unit")
+EQ(Row(3)._entry and Row(3)._entry.unit, Row(3):GetAttribute("unit"),
+   "K: and the same for row 3")
+CHECK(Row(1):IsShown(), "K: the stealthed opener keeps the top row")
+CHECK(Row(1).state:IsShown() and Row(1).state.label:GetText() == "STEALTHED",
+      "K: and it says why there is nobody on it", Row(1).state.label:GetText())
+EQ(#blockedCalls, 0, "K: none of that asked the client for anything protected")
+if #blockedCalls > 0 then io.write("      blocked: ", table.concat(blockedCalls, ", "), "\n") end
+
+-- A class learned mid-fight gets its cooldown book now, not when the fight
+-- ends: only the row's OWN size has to wait.
+local shownCds = 0
+for _, slot in ipairs(Row(3).cdSlots) do if slot:IsShown() then shownCds = shownCds + 1 end end
+CHECK(shownCds > 0, "K: a mage first seen in combat has a cooldown strip", shownCds)
+EQ(Row(3):GetHeight(), rowHeight, "K: on a row whose own height has not moved")
+CHECK(not Row(3).pet.bar.bg:IsShown(),
+      "K: and no pet band, which the row has no room for until it can be resized")
+
+-- The rogue opens.
+Spawn(1, { class = "ROGUE", name = "Nightfall", health = 9000 })
+Fire("ARENA_OPPONENT_UPDATE", "arena1", "seen")
+RunSeenDrivers()
+Tick()
+EQ(Row(1).name:GetText(), "Nightfall", "K: the opener lands on the row that was held for them")
+EQ(Row(1):GetAlpha(), 1, "K: at full strength now there is somebody on it")
+CHECK(not Row(1).state:IsShown(), "K: and the stealth strip comes down")
+EQ(Row(2).name:GetText(), "Mendicant", "K: nobody below them moved")
+
+-- ...and vanishes. No aura scan can see this one: the unit has stopped
+-- answering, which is exactly what the event says.
+Enemy(1).present = false
+Fire("ARENA_OPPONENT_UPDATE", "arena1", "unseen")
+Tick()
+CHECK(Row(1).state:IsShown() and Row(1).state.label:GetText() == "STEALTHED",
+      "K: a vanish is named from the unseen event", Row(1).state.label:GetText())
+EQ(Row(1).healthText:GetText(), "90%", "K: over their last known health")
+Enemy(1).present = true
+Fire("ARENA_OPPONENT_UPDATE", "arena1", "seen")
+Tick()
+EQ(#blockedCalls, 0, "K: still nothing protected, a whole opener later")
+
+-- The fight ends, and what was owed is paid: the mage's row grows its pet band.
+inCombat = false
+Fire("PLAYER_REGEN_ENABLED")
+Tick()
+CHECK(Row(3).pet.bar.bg:IsShown(), "K: out of combat the mage's row gets its pet band")
+CHECK(Row(3):GetHeight() > rowHeight, "K: and the height to hold it",
+      Row(3):GetHeight() .. " vs " .. rowHeight)
+
+-- The net under an under-reported bracket: the board believes 2v2, the fight
+-- is on, and a third enemy walks into view. Insecure code cannot show the row;
+-- the driver can, and the row is already anchored where it belongs.
+inInstanceType = nil
+enemies = {}
+Fire("PLAYER_ENTERING_WORLD")
+Tick()
+inInstanceType = "arena"
+teamSize = 2
+Fire("PLAYER_ENTERING_WORLD")
+Tick()
+CHECK(not Row(3):IsShown(), "K: two rows for a board that believes it is a 2v2")
+local spareTop = TopOf(Row(3))
+CHECK(spareTop and spareTop < TopOf(Row(2)), "K: the spare row is parked under them", spareTop)
+inCombat = true
+blockedCalls = {}
+Spawn(3, { class = "WARRIOR", name = "Bladefall" })
+Fire("ARENA_OPPONENT_UPDATE", "arena3", "seen")
+RunSeenDrivers()
+Tick()
+CHECK(Row(3):IsShown(), "K: the third enemy gets a row mid-fight")
+EQ(Row(3).name:GetText(), "Bladefall", "K: with their name on it")
+EQ(TopOf(Row(3)), spareTop, "K: exactly where it was parked")
+EQ(#blockedCalls, 0, "K: and nothing protected was asked for")
+inCombat = false
+teamSize = nil
+Fire("PLAYER_REGEN_ENABLED")
+Tick()
+
+-- ===========================================================================
+-- L: a bracket wears its category's picture
+-- ===========================================================================
+-- A bracket used to wear whichever spell last opened it, washed in the
+-- category's tint: "stun" was a Cheap Shot one moment and a Bash the next,
+-- and a tinted icon is nobody's icon. It wears the picture every DR tracker
+-- has taught -- Hammer of Justice for a stun, Polymorph for the polymorph
+-- ladder -- in its own colours, and is the same picture on this board, on
+-- Commander Diminish's strips and round a nameplate.
+do
+    local function Slot(index)
+        local slot = Row(3).drSlots[index]
+        return slot:IsShown() and slot or nil
+    end
+    CLEU("SPELL_AURA_APPLIED", "Player-Me", "Enemy-3", 1833)      -- Cheap Shot
+    Tick()
+    local slot = Slot(1)
+    CHECK(slot ~= nil, "L: a stunned enemy gets a bracket")
+    if slot then
+        EQ(slot.icon:GetTexture(), "Interface\\Icons\\Spell_853",
+           "L: the stun bracket wears Hammer of Justice, not the Cheap Shot that opened it")
+        local c = slot.icon.__color
+        CHECK(c and c[3] == 1 and c[1] == c[2], "L: in the icon's own colours, not a category wash",
+              c and (c[1] .. "," .. c[2] .. "," .. c[3]))
+    end
+    CLEU("SPELL_AURA_REMOVED", "Player-Me", "Enemy-3", 1833)
+    CLEU("SPELL_AURA_APPLIED", "Player-Me", "Enemy-3", 118)       -- Polymorph
+    Tick()
+    local seen = {}
+    for index = 1, 5 do
+        local s = Slot(index)
+        if s then seen[s.icon:GetTexture()] = true end
+    end
+    CHECK(seen["Interface\\Icons\\Spell_853"] and seen["Interface\\Icons\\Spell_118"],
+          "L: two ladders open, two pictures: Hammer of Justice and Polymorph")
+    local counting, held
+    for index = 1, 5 do
+        local s = Slot(index)
+        if s and s.icon:GetTexture() == "Interface\\Icons\\Spell_853" then counting = s end
+        if s and s.icon:GetTexture() == "Interface\\Icons\\Spell_118" then held = s end
+    end
+    local c = counting and counting.icon.__color
+    CHECK(c and c[1] == 1 and c[2] == 1 and c[3] == 1,
+          "L: a ladder counting down to reset is the picture, untinted",
+          c and (c[1] .. "," .. c[2] .. "," .. c[3]))
+    c = held and held.icon.__color
+    CHECK(c and c[1] < 1 and c[3] == 1,
+          "L: and one still ON them keeps the held wash that says its clock has not started",
+          c and (c[1] .. "," .. c[2] .. "," .. c[3]))
+
+    CommanderArenaFramesDB.DRIcons = "SPELL"
+    Tick()
+    seen = {}
+    for index = 1, 5 do
+        local s = Slot(index)
+        if s then seen[s.icon:GetTexture()] = true end
+    end
+    CHECK(seen["Interface\\Icons\\Spell_1833"] == true,
+          "L: Last Spell is still there to be asked for")
+    CommanderArenaFramesDB.DRIcons = "CATEGORY"
+    Tick()
+
+    -- Commander Diminish asks this before drawing anybody's ladders itself
+    CHECK(CommanderArenaFrames_ShowsDR("Enemy-3") == true,
+          "L: the board answers for an enemy whose ladders it is drawing")
+    CHECK(CommanderArenaFrames_ShowsDR("Player-Somebody-Else") == false,
+          "L: and not for anybody it has no row for")
+    CommanderArenaFramesDB.DR = false
+    CHECK(CommanderArenaFrames_ShowsDR("Enemy-3") == false,
+          "L: nor for anyone at all with its own DR switched off")
+    CommanderArenaFramesDB.DR = true
+end
 
 CHECK(#caughtErrors == 0, "the whole run paints without throwing",
       caughtErrors[1])

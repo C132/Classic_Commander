@@ -393,6 +393,7 @@ local function ReadSeat(unit, index)
             -- person's, and their crowd control as this person's clock.
             entry.lastHealth, entry.lastMax = nil, nil
             entry.control, entry.immunity, entry.drinking, entry.stealth = nil, nil, nil, nil
+            entry.unseen = nil
         end
         entry.guid = guid
         guidSeat[guid] = entry
@@ -414,6 +415,48 @@ local function ReadSeat(unit, index)
     return entry
 end
 
+-- How many seats this match has, asked BEFORE any of them has been seen.
+--
+-- The board used to learn its size from the enemies themselves, one sighting
+-- at a time, and that is exactly wrong for the enemy an arena frame is most
+-- needed for: a rogue who is stealthed when the gates open has a seat (arena1,
+-- as often as not) and has never been seen. The board skipped that seat, every
+-- row below slid up one -- and with click-cast on, each row is bound for good
+-- to the token of its POSITION, so the row drawing arena2 targeted arena1
+-- (nobody), the row drawing arena3 targeted arena2, and it all came right the
+-- moment the rogue opened. A seat is a place, not a sighting: the bracket says
+-- how many there are, and each one owns its row from the prep room on.
+--
+-- Battlefield status carries the bracket in one of two shapes on this client
+-- (classic: status, map, instance, min, max, teamSize; modern: status, map,
+-- teamSize) and reports 0 for some skirmishes, so the size of our own team is
+-- the floor under it -- a team is never bigger than its bracket.
+local function BracketSize()
+    local size = 0
+    if GetBattlefieldStatus then
+        for index = 1, (GetMaxBattlefieldID and GetMaxBattlefieldID() or 3) do
+            local ok, status, _, a3, _, _, a6 = pcall(GetBattlefieldStatus, index)
+            if ok and status == "active" then
+                -- The sixth return being a number at all is what says this
+                -- is the classic shape -- and there the third is an instance
+                -- id, which must never be read as a team size however much
+                -- a small one looks like it.
+                local teamSize = a3
+                if type(a6) == "number" then teamSize = a6 end
+                if type(teamSize) == "number" and teamSize >= 2 and teamSize <= MAX_ENEMIES then
+                    size = teamSize
+                end
+                break
+            end
+        end
+    end
+    if GetNumGroupMembers then
+        local ok, team = pcall(GetNumGroupMembers)
+        if ok and type(team) == "number" then size = math.max(size, team) end
+    end
+    return math.min(math.max(size, 1), MAX_ENEMIES)
+end
+
 local function ScanRoster()
     liveCount = 0
     if not inArena then
@@ -423,13 +466,13 @@ local function ScanRoster()
         end
         return
     end
-    local count = 0
+    local count = BracketSize()
     if GetNumArenaOpponents then
         local ok, value = pcall(GetNumArenaOpponents)
-        if ok and value then count = value end
+        if ok and value then count = math.max(count, value) end
     end
     -- GetNumArenaOpponents can lag a unit appearing, so the tokens are the
-    -- authority and the count is only a floor.
+    -- authority and the counts are only a floor.
     for index, unit in ipairs(ARENA_UNITS) do
         local entry = ReadSeat(unit, index)
         if entry.exists then
@@ -901,8 +944,10 @@ local function NewRow(index)
     if securePool then
         -- Bound once, out of combat, to a RAW token. Nothing secure ever
         -- changes mid-fight; only the insecure art on top of it does.
+        -- The state template is for one thing only: SetupSecureRows hangs a
+        -- driver on it that can SHOW the row from inside a fight.
         frame = CreateFrame("Button", "CommanderArenaFramesRow" .. index, root,
-            "SecureUnitButtonTemplate")
+            "SecureUnitButtonTemplate,SecureHandlerStateTemplate")
         -- Attributes are NOT set here. SetupSecureRows owns the whole matrix
         -- and rewrites it on every pass, so there is exactly one place that
         -- decides what a click does -- and one place that has to be careful
@@ -1126,7 +1171,10 @@ local function Px(value, scale, floorAt)
     return out < low and low or out
 end
 
-local function LayoutRow(frame, entry, scale)
+-- `locked` is a secure row mid-fight: its own width and height are protected
+-- and stay as they are, and everything inside it is laid out regardless. The
+-- caller owes the row a second pass once combat ends.
+local function LayoutRow(frame, entry, scale, locked)
     scale = scale or 1
     local W = DB("FrameWidth", 200)
     local pad = Pad()
@@ -1157,7 +1205,7 @@ local function LayoutRow(frame, entry, scale)
     local barRight = W - (trinkOn and (trinkSize + edgeGap) or 0)
     local barW = math.max(20, barRight - barLeft)
 
-    frame:SetWidth(W)
+    if not locked then frame:SetWidth(W) end
 
     if iconOn then
         frame.classIcon:Show()
@@ -1436,6 +1484,12 @@ local function LayoutRow(frame, entry, scale)
     end
     if cdCount > 0 then
         y = y - pad - math.ceil(cdCount / perRow) * (cdSize + pad)
+    elseif cdOn and not (entry and entry.class) then
+        -- A seat nobody has seen yet has no class and so no book -- and it is
+        -- the one row most likely to learn its class mid-fight, when its own
+        -- height can no longer follow. One line is held for the strip now, so
+        -- the cooldowns have somewhere to land that is not the row below.
+        y = y - pad - (cdSize + pad)
     end
 
     -- Auras
@@ -1458,6 +1512,9 @@ local function LayoutRow(frame, entry, scale)
     -- The pet band, last: it is a second unit, and the row's own instruments
     -- come first.
     local petOn = DB("PetBars", true) and entry and PET_CLASSES[entry.class] or false
+    -- A locked row that was not shaped with the band has no room for one, and
+    -- a band drawn anyway lands on the row below. It waits for the resize.
+    if locked and not frame._petOn then petOn = false end
     frame._petOn = petOn
     if petOn then
         local petH = Px(DB("PetBarHeight", 8), scale, 5)
@@ -1494,7 +1551,7 @@ local function LayoutRow(frame, entry, scale)
     ShadeSlots({ frame.trinket, frame.ccBox })
 
     local height = -y
-    frame:SetHeight(height)
+    if not locked then frame:SetHeight(height) end
     -- The plate under the row, sized to whatever the row turned out to be.
     -- One pixel out on every side, so the black lines around the top block
     -- sit ON the plate rather than on its edge -- and no further, so two
@@ -1955,6 +2012,7 @@ local BRACKET_RIM = {
 }
 
 local drScratch = {}
+local NO_TINT = { 1, 1, 1 }
 
 local function PaintDR(frame, entry, now)
     if not DB("DR", true) then return end
@@ -1964,6 +2022,11 @@ local function PaintDR(frame, entry, now)
     local showText = DB("DRText", true)
     local showTimer = DB("DRTimer", true)
     local holdColor = DB("DRHoldColor", true)
+    -- CATEGORY: the ladder's own picture, in its own colours (see
+    -- DATA.DR_ICON). SPELL: whichever spell last opened it, washed in the
+    -- category's tint -- which is the only thing that says "stun" when the
+    -- picture is a Cheap Shot one time and a Bash the next.
+    local byCategory = DB("DRIcons", "CATEGORY") == "CATEGORY"
 
     for _, info in ipairs(rows_) do
         if slotIndex >= maxSlots then break end
@@ -1972,10 +2035,12 @@ local function PaintDR(frame, entry, now)
             local slot = frame.drSlots[slotIndex]
             slot:Show()
 
-            local icon = info.last and GetSpellTexture and GetSpellTexture(info.last)
+            local id = byCategory and DATA.DR_ICON[info.cat] or info.last
+            local icon = id and GetSpellTexture and GetSpellTexture(id)
+            if not icon and info.last and GetSpellTexture then icon = GetSpellTexture(info.last) end
             slot.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
 
-            local tint = CommanderArenaFrames_DRTint[info.cat] or { 1, 1, 1 }
+            local tint = byCategory and NO_TINT or CommanderArenaFrames_DRTint[info.cat] or NO_TINT
             slot.icon:SetVertexColor(tint[1], tint[2], tint[3])
 
             local rim = BRACKET_RIM[info.bracket] or BRACKET_RIM[1]
@@ -2239,7 +2304,11 @@ local function PaintState(frame, entry, now)
         kind, label, icon = "DRINK", "DRINKING", drinking.icon
         expires = drinking.expires
         tint = STATE_TINT.DRINK
-    elseif entry.stealth and DB("StealthBanner", true) then
+    elseif (entry.stealth or (entry.unseen and not UnitExists(entry.unit)))
+        and DB("StealthBanner", true) then
+        -- Either the aura was read while they could still be seen, or the
+        -- client has said it cannot see them -- which is the common case, and
+        -- the only one a vanish or a stealthed opener ever produces.
         kind, label = "STEALTH", "STEALTHED"
         icon = type(entry.stealth) == "table" and entry.stealth.icon or nil
         tint = STATE_TINT.STEALTH
@@ -2429,6 +2498,11 @@ local function PaintRow(frame, entry, now)
         alpha = entry.test.alpha or 1
     elseif DB("DeadFade", true) and UnitIsDeadOrGhost(entry.unit) then
         alpha = 0.35
+    elseif not entry.guid then
+        -- A seat nobody has been seen in yet. Present, because the row has to
+        -- be there to click the moment they are; quiet, because until then it
+        -- has nothing to say.
+        alpha = 0.6
     end
     -- Range fade used to live here, over CheckInteractDistance. That function
     -- is PROTECTED on this client (2.5.6): the call is blocked and returns
@@ -2668,9 +2742,13 @@ local function ActiveSeats(now)
         end
         return order
     end
+    -- Every seat up to the bracket, seen or not. A seat nobody has laid eyes
+    -- on yet is drawn as a placeholder IN ITS OWN SLOT -- leaving it out is
+    -- what slid every row below it onto the wrong unit token (see
+    -- BracketSize).
     for index = 1, math.min(liveCount, MAX_ENEMIES) do
         local entry = seat[ARENA_UNITS[index]]
-        if entry and (entry.exists or entry.prep) then order[#order + 1] = entry end
+        if entry then order[#order + 1] = entry end
     end
 
     -- A live sort and click-cast are incompatible, and the failure is the bad
@@ -2720,9 +2798,36 @@ local function Draw()
         SafeSetShown(root, false)
         return
     end
-    if DB("CombatOnly", false) and now >= testUntil and not InCombat() then
+
+    -- Two settings ask for the board to stay out of sight for now: Combat
+    -- Only, until the fight starts, and Show During the Gates switched off,
+    -- until the first enemy has actually been seen.
+    --
+    -- Without click-cast that is a Hide. WITH it the rows are protected, and
+    -- a protected frame that is hidden when the fight starts cannot be shown
+    -- until it ends -- which is the whole game. So the secure board is laid
+    -- out, anchored and shown regardless, in the prep room where all of that
+    -- is still allowed, and kept out of sight with alpha, which is never
+    -- protected.
+    local hush = false
+    if now >= testUntil then
+        if DB("CombatOnly", false) and not InCombat() then
+            hush = true
+        elseif not DB("ShowInPrep", true) then
+            hush = true
+            for _, entry in ipairs(list) do
+                if entry.exists or entry.prep then hush = false break end
+            end
+        end
+    end
+    if hush and not securePool then
         SafeSetShown(root, false)
         return
+    end
+    local rootAlpha = hush and 0 or 1
+    if root._alpha ~= rootAlpha then
+        root._alpha = rootAlpha
+        root:SetAlpha(rootAlpha)
     end
 
     local down = DB("Grow", "DOWN") == "DOWN"
@@ -2738,20 +2843,21 @@ local function Draw()
     local spacing = math.floor(DB("RowSpacing", 6) * (DENSITY_SPACING[mode] or 1) + 0.5)
     local offset, width = 0, DB("FrameWidth", 200)
     local reshape = CanReshape()
-    local deferred = false
 
     for slot, entry in ipairs(list) do
-        local frame = rows[slot]
+        -- A secure row is bound for good to the token of its own index, so
+        -- the seat picks the row and never the position in the list. The two
+        -- agree today (the order is pinned while click-cast is on); written
+        -- this way they cannot be made to disagree by a later change to the
+        -- list.
+        local rowIndex = securePool and entry.index or slot
+        local frame = rows[rowIndex]
         if not frame then
             -- Only reachable in insecure mode: the secure pool is built whole
             -- at login, precisely so this can never happen mid-fight.
-            if securePool and InCombat() then
-                -- Cannot build a secure row mid-fight. Leave the layout dirty
-                -- so the next draw after combat finishes the job.
-                return
-            end
-            frame = NewRow(slot)
-            rows[slot] = frame
+            if securePool and InCombat() then return end
+            frame = NewRow(rowIndex)
+            rows[rowIndex] = frame
         end
         -- Shape is recomputed when a setting changed, or when this slot is
         -- showing a different enemy KIND than it was. Class and race both
@@ -2760,14 +2866,18 @@ local function Draw()
         -- The density is part of the shape key: going from a 3v3 to a 5v5
         -- changes every dimension on the row, and a cached layout would carry
         -- the roomy one into the tight board.
+        --
+        -- Mid-fight with click-cast on, only the row's OWN size is out of
+        -- reach. Everything inside it is textures and plain child frames, so
+        -- the inside is laid out right away -- an enemy first seen in combat
+        -- (the stealthed opener, again) gets their cooldown book the moment
+        -- their class is known rather than when the fight ends -- and the
+        -- outer size follows on the first draw after combat.
         local kind = (entry.class or "?") .. "/" .. (entry.race or "?") .. "/" .. mode
-        if layoutDirty or frame._kind ~= kind then
-            if reshape then
-                frame._kind = kind
-                LayoutRow(frame, entry, scale)
-            else
-                deferred = true
-            end
+        if layoutDirty or frame._kind ~= kind or (reshape and frame._unsized) then
+            frame._kind = kind
+            LayoutRow(frame, entry, scale, not reshape)
+            frame._unsized = (not reshape) or nil
         end
         -- UNIT_AURA is the mechanism and it is reliable, but it says nothing
         -- about auras that were already up when the board first saw this
@@ -2778,20 +2888,17 @@ local function Draw()
             ScanAuras(entry)
         end
         -- Re-anchored only when the position actually changed. Under the
-        -- default fixed order that is once, at the start of a game -- which
-        -- is what keeps a protected row from needing a forbidden SetPoint on
-        -- every frame of a fight.
-        if frame._offset ~= offset or frame._grow ~= down then
-            if reshape then
-                frame._offset, frame._grow = offset, down
-                frame:ClearAllPoints()
-                if down then
-                    frame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -offset)
-                else
-                    frame:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, offset)
-                end
+        -- default fixed order that is once, in the prep room -- which is what
+        -- keeps a protected row from needing a forbidden SetPoint on every
+        -- frame of a fight. One that does have to wait is simply tried again
+        -- on the next draw: the comparison below stays true until it lands.
+        if (frame._offset ~= offset or frame._grow ~= down) and reshape then
+            frame._offset, frame._grow = offset, down
+            frame:ClearAllPoints()
+            if down then
+                frame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -offset)
             else
-                deferred = true
+                frame:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, offset)
             end
         end
         offset = offset + (frame:GetHeight() or 0) + spacing
@@ -2799,15 +2906,37 @@ local function Draw()
         PaintRow(frame, entry, now)
         SafeSetShown(frame, true)
     end
+    local boardHeight = math.max(1, offset - spacing)
     for slot = #list + 1, #rows do
-        SafeSetShown(rows[slot], false)
+        local frame = rows[slot]
+        SafeSetShown(frame, false)
+        -- A spare secure row is kept anchored where it WOULD go. Hidden, that
+        -- costs nothing; and if the state driver has to show it mid-fight (see
+        -- SetupSecureRows) it appears under the board rather than wherever it
+        -- was last left.
+        if securePool and reshape then
+            if frame._offset ~= offset or frame._grow ~= down then
+                frame._offset, frame._grow = offset, down
+                frame:ClearAllPoints()
+                if down then
+                    frame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -offset)
+                else
+                    frame:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, offset)
+                end
+            end
+            offset = offset + (frame:GetHeight() or 0) + spacing
+        end
     end
 
-    -- Anything that had to wait keeps the board dirty, so the first draw
-    -- after combat picks it up rather than the change being lost.
-    layoutDirty = deferred
+    -- Cleared unconditionally. It used to stay raised while anything was
+    -- waiting on combat, which was free when a waiting row did nothing at all;
+    -- now that the inside of a row is laid out mid-fight, a flag that never
+    -- drops would re-lay every row twenty times a second for the whole game.
+    -- What is still owed -- a row's outer size, its anchor -- is tracked per
+    -- row above.
+    layoutDirty = false
     if reshape then
-        root:SetSize(width, math.max(1, offset - spacing))
+        root:SetSize(width, boardHeight)
     end
     SafeSetShown(root, true)
 end
@@ -2977,6 +3106,15 @@ local function ClearTest()
     wipe(trinket)
     liveCount = 0
     layoutDirty = true
+end
+
+-- Is this person's diminishing returns already drawn on this board? Asked by
+-- Commander Diminish, which draws the same ladders for everybody ELSE and
+-- must not draw an arena enemy's a second time beside the row that already
+-- carries them.
+function CommanderArenaFrames_ShowsDR(guid)
+    if not (guid and Enabled() and DB("DR", true)) then return false end
+    return guidSeat[guid] ~= nil and root:IsShown() and true or false
 end
 
 -- What the board has learned this game, in text. The one place that says out
@@ -3200,6 +3338,21 @@ local function SetupSecureRows()
             -- ActionButtonUseKeyDown CVar is set.
             if row.RegisterForClicks then row:RegisterForClicks("AnyDown", "AnyUp") end
             row:SetAttribute("unit", token)
+            -- The net under BracketSize. Every seat the bracket promises is
+            -- shown in the prep room -- but a bracket the client under-reports
+            -- (a skirmish that answers 0, with a partner who never zoned in)
+            -- leaves a row hidden, and an enemy first seen mid-fight would
+            -- then have no row until the fight ended. Insecure code cannot
+            -- show a protected frame in combat; the client's own state driver
+            -- can. It only ever shows: hiding stays with Draw, out of combat,
+            -- so an enemy who vanishes keeps the row this just gave them.
+            if RegisterStateDriver and not row._seenDriver then
+                row._seenDriver = true
+                row:SetAttribute("_onstate-seen",
+                    [[ if newstate == "show" then self:Show() end ]])
+                pcall(RegisterStateDriver, row, "seen",
+                    "[@" .. token .. ",exists] show; hide")
+            end
             -- EVERY cell is written on every pass, including the empty ones: a
             -- binding cleared in the settings has to actually clear the
             -- attribute, or the old spell keeps firing until the next reload.
@@ -3281,6 +3434,11 @@ events:RegisterEvent("PLAYER_FOCUS_CHANGED")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:RegisterEvent("SPELLS_CHANGED")
+-- The two that can change the answer to "how big is this bracket" while the
+-- team is still standing in the prep room: a partner finishing their loading
+-- screen, and the battlefield status settling.
+events:RegisterEvent("GROUP_ROSTER_UPDATE")
+events:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
 -- Every arena event is soft-registered: this client runs a retail-era UI over
 -- TBC content, and the arena surface is exactly where that seam shows. A
 -- client missing one of these must lose that instrument, not the board.
@@ -3332,12 +3490,44 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
         ScanRoster()
         layoutDirty = true
 
+    elseif event == "GROUP_ROSTER_UPDATE" or event == "UPDATE_BATTLEFIELD_STATUS" then
+        if inArena then
+            ScanRoster()
+            layoutDirty = true
+        end
+
     elseif event == "ARENA_OPPONENT_UPDATE" then
-        -- "cleared" is the one reason that really retires a seat; "unseen" is
-        -- a rogue in stealth and must leave the row exactly where it is.
-        if arg2 == "cleared" and arg1 and seat[arg1] then
-            local entry = seat[arg1]
-            entry.exists, entry.prep = false, nil
+        -- "cleared" is the one reason that really retires an occupant; the
+        -- seat itself keeps its row, because every row below it is bound to
+        -- its own token and must not move.
+        --
+        -- "unseen" is the client saying it can no longer see them, and inside
+        -- an arena that means stealth or invisibility -- nothing else takes a
+        -- unit out of sight on maps this small. It is the ONLY way the board
+        -- ever learns of a stealth: the aura that would say so sits on a unit
+        -- that has, by definition, just stopped answering, so the scan that
+        -- reads auras never gets to see it. That is also what names the
+        -- stealthed opener, who goes unseen at the gates without ever having
+        -- been seen at all. Kept as its own flag rather than written into
+        -- `stealth`, which belongs to the aura scan and is wiped by it.
+        -- The event is itself proof of an arena, and can beat the zone
+        -- events that normally say so -- in which case no seat exists yet to
+        -- hang the reason on, and "unseen" for the stealthed opener is
+        -- exactly the one that must not be dropped.
+        if not inArena then inArena = InArenaNow() end
+        local entry = arg1 and seat[arg1]
+        if not entry and inArena then
+            ScanRoster()
+            entry = arg1 and seat[arg1]
+        end
+        if entry then
+            if arg2 == "cleared" then
+                entry.exists, entry.prep, entry.unseen = false, nil, nil
+            elseif arg2 == "unseen" then
+                entry.unseen = true
+            elseif arg2 == "seen" then
+                entry.unseen = nil
+            end
         end
         ScanRoster()
         layoutDirty = true

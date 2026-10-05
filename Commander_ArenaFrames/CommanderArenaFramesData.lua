@@ -44,6 +44,34 @@ DATA.BUILD = "2.5.6.69546"
 -- The 10s cap is separate from the ladder and applies to a first, undiminished
 -- cast: a 20s Polymorph on a player is 10s, then 5s, then 2.5s.
 -- ---------------------------------------------------------------------------
+-- The picture each category wears. HAND-WRITTEN, unlike the two tables below
+-- it: which spell stands for "stun" is a convention, not a fact in any
+-- database -- the one every DR tracker since Gladius has taught, Hammer of
+-- Justice for a stun, Polymorph for the polymorph ladder, Fear for fear. A
+-- category that always wears the same picture is a category you read without
+-- reading; one that wears whichever spell last opened it is a different icon
+-- every time, and the question the slot answers ("which ladder") never was
+-- "which spell". The same ids Commander Diminish uses, so a category is the
+-- same picture on both.
+DATA.DR_ICON = {
+    STUN      = 853,      -- Hammer of Justice
+    STUN_PROC = 20170,    -- Seal of Justice's stun
+    KIDNEY    = 408,      -- Kidney Shot
+    BLIND     = 2094,     -- Blind
+    POLY      = 118,      -- Polymorph
+    FEAR      = 5782,     -- Fear
+    ROOT      = 122,      -- Frost Nova
+    ROOT_PROC = 12494,    -- Frostbite
+    FREEZE    = 3355,     -- Freezing Trap Effect
+    SLEEP     = 2637,     -- Hibernate
+    BANISH    = 710,      -- Banish
+    HORROR    = 6789,     -- Death Coil
+    DISARM    = 676,      -- Disarm
+    CHARM     = 605,      -- Mind Control
+    DRAGONS   = 31661,    -- Dragon's Breath
+    LIMIT     = 1715,     -- Hamstring
+}
+
 DATA.DR_RESET = 15          -- seconds after the aura FADES, not after it lands
 DATA.DR_LADDER = { 1.0, 0.5, 0.25, 0 }
 DATA.DR_PVP_CAP = 10        -- seconds; the 2.2.0 cap on controlled CC in PvP
@@ -357,6 +385,7 @@ DATA.ENEMY_BOOK = {
         { id = 23989, name = "Readiness", role = "DEF", cd = 300 },
         { id = 19574, name = "Bestial Wrath", role = "OFF", cd = 120, dur = 18 },
         { id = 3045, name = "Rapid Fire", role = "OFF", cd = 300, dur = 15 },
+        { id = 27018, name = "Viper Sting", role = "OFF", cd = 15, dur = 8 },
         { id = 19577, name = "Intimidation", role = "CC", cd = 60, dur = 15 },
         { id = 19503, name = "Scatter Shot", role = "CC", cd = 30, dur = 4 },
         { id = 27068, name = "Wyvern Sting", role = "CC", cd = 120, dur = 12 },

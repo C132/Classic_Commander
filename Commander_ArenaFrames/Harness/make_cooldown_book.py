@@ -113,6 +113,10 @@ BOOK = {
         ("Readiness",        "DEF",  None),
         ("Bestial Wrath",    "OFF",  None),
         ("Rapid Fire",       "OFF",  None),
+        # OFF, not UTIL, and on by default despite its 15 seconds: the drain is
+        # how a hunter team kills a healer, and whether the next one is ready
+        # decides if the cleanse (or the drink) is worth its global.
+        ("Viper Sting",      "OFF",  None),
         ("Intimidation",     "CC",   None),
         ("Scatter Shot",     "CC",   None),
         ("Wyvern Sting",     "CC",   None),

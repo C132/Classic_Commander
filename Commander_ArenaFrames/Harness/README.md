@@ -120,6 +120,16 @@ and each one has been checked by breaking the fix and watching it go red:
 * **H** the board coming down. Leaving an arena flipped a flag and wiped the
   state, but nothing called `Draw` — so the board stayed on screen, frozen on
   the last frame of the game that had just ended.
+* **K** the stealthed opener. A rogue in stealth at the gates has a seat and
+  has never been seen. The board used to skip that seat, every row below slid
+  up one — and with click-cast on each row is bound to the unit token of its
+  *position*, so the row drawing arena2 targeted arena1 and the row drawing
+  arena3 targeted arena2. The section walks a 3v3 from the prep room through a
+  fight with the mock refusing every protected call the client would: every
+  seat has its row before the gates, a row paints the unit it targets, a
+  vanish is named from the `unseen` event (no aura scan can see it), and a
+  class learned mid-fight gets its cooldown book without the row being
+  resized.
 
 ## The renderer
 

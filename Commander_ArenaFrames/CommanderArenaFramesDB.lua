@@ -21,7 +21,7 @@ local DefaultSettings = {
     -- TEST is not a setting -- it is /caf test, and it draws over anything.
     HideBlizzardArena = true,   -- Blizzard's own arena frames, hidden while ours is up
     CombatOnly = false,         -- only draw once the gates are open
-    ShowInPrep = true,          -- draw during the gates, from ARENA_PREP_OPPONENT_SPECIALIZATIONS
+    ShowInPrep = true,          -- draw during the gates: a placeholder per seat until each enemy is seen
 
     -- Layout
     Grow = "DOWN",              -- DOWN | UP
@@ -106,6 +106,7 @@ local DefaultSettings = {
     DRText = true,              -- the fraction (1/2, 1/4) on the icon
     DRTimer = true,             -- seconds until the category resets
     DRHoldColor = true,         -- a distinct tint while the clock is frozen by an active aura
+    DRIcons = "CATEGORY",       -- CATEGORY (Hammer of Justice for stun, Polymorph for poly...) | SPELL (whichever last opened it)
     DRCategories = {},          -- per-category overrides; absent = the default below
     DRDefaultOff = {            -- categories off out of the box: real, rarely decisive
         DISARM = true, CHARM = true, BANISH = true, LIMIT = true,
@@ -356,7 +357,7 @@ local function AddBoardSection(panel)
         isEnabled = Enabled,
     }, {
         label = "Show During the Gates",
-        tooltip = "Draw the board in the preparation phase, before the gates open, from the comp the client announces. This is where a game is planned -- knowing it is RMP rather than a double-melee changes the opener -- so it is on.",
+        tooltip = "Draw the board in the preparation phase, before the gates open: one row per seat in the bracket, each a placeholder until that enemy has been seen, so a rogue who opens from stealth already has the row you will click. Off keeps the board out of sight until the first enemy is spotted. Either way the rows themselves are put in place before the gates -- with Click-Casting on that is the only moment the client allows it.",
         get = function() return CommanderArenaFramesDB.ShowInPrep end,
         set = function(value) CommanderArenaFramesDB.ShowInPrep = value end,
         isEnabled = Enabled,
@@ -797,6 +798,19 @@ local function AddDRSection(panel)
         tooltip = "Tint a bracket differently while something in that category is still ON them -- because the reset clock is not running yet, and a bracket showing no timer for that reason means something quite different from one that has finished counting.",
         get = function() return CommanderArenaFramesDB.DRHoldColor end,
         set = function(value) CommanderArenaFramesDB.DRHoldColor = value end,
+        isEnabled = function() return Enabled() and CommanderArenaFramesDB.DR end,
+    })
+
+    panel:AddDropdown({
+        label = "Bracket Icons",
+        tooltip = "The picture each bracket wears. Category is the classic set every DR tracker has taught -- Hammer of Justice for a stun, Polymorph for the polymorph ladder, Fear for fear, Kidney Shot, Blind, Frost Nova for a root -- always the same picture for the same ladder, in its own colours. Last Spell is whichever spell most recently opened the ladder, washed in the category's tint: more to read, and a different icon every time.",
+        options = {
+            { text = "Category (classic)", value = "CATEGORY" },
+            { text = "Last spell", value = "SPELL" },
+        },
+        width = 180,
+        get = function() return CommanderArenaFramesDB.DRIcons end,
+        set = function(value) CommanderArenaFramesDB.DRIcons = value end,
         isEnabled = function() return Enabled() and CommanderArenaFramesDB.DR end,
     })
 

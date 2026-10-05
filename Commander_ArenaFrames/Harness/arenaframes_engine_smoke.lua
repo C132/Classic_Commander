@@ -220,6 +220,18 @@ local druid  = E.BookEntry("DRUID",  nil, nil, "Nature's Swiftness")
 CHECK(shaman and druid and shaman.id ~= druid.id,
       "E: the shaman's and the druid's Nature's Swiftness are different spells")
 
+-- Viper Sting: tracked by default and filed as OFFENSIVE, because the Utility
+-- role ships off and the drain is how a hunter team kills a healer. Every rank
+-- a hunter might press finds the one entry; nobody else's "Viper Sting" does.
+local viper = E.BookEntry("HUNTER", nil, 27018, "Viper Sting")
+CHECK(viper and viper.role == "OFF" and not viper.off and viper.cd == 15 and viper.dur == 8,
+      "E: Viper Sting is on the hunter's strip by default, as an offensive cooldown")
+EQ(E.BookEntry("HUNTER", nil, 3034, "Viper Sting"), viper, "E: a lower rank resolves by name")
+EQ(E.BookEntry("WARRIOR", nil, 39413, "Viper Sting"), nil, "E: ...and only for a hunter")
+local stung = E.NewBook()
+stung:Used("Player-Enemy-4", "HUNTER", nil, 14280, "Viper Sting", 500)
+NEAR((stung:Remaining("Player-Enemy-4", "Viper Sting", 506)), 9, "E: a cast stamps its 15 seconds")
+
 -- A racial is scoped by race, not class.
 CHECK(E.BookEntry("MAGE", "Gnome", nil, "Escape Artist"), "E: gnome racial resolves")
 EQ(E.BookEntry("MAGE", "Orc", nil, "Escape Artist"), nil, "E: an orc has no Escape Artist")
