@@ -75,6 +75,13 @@ LAYER_SCOPED = {
     "SelfShieldRows": {"INT"},
     "TrackManaShield": {"INT"},
     "TrackWards": {"INT"},
+    # How the personal block is drawn. Only the mage layer has one: every
+    # personal row is a self-shield or the Water Elemental.
+    "PersonalStyle": {"INT"},
+    "DialSize": {"INT"},
+    "DialTexture": {"INT"},
+    "DialTextShade": {"INT"},
+    "DialTextSize": {"INT"},
     "MageUtilityButtons": {"INT"},
     "ShowGemButton": {"INT"},
     "ShowPortalButton": {"INT"},
@@ -93,7 +100,6 @@ LAYER_SCOPED = {
     "LBAlert": {"HOT"},
     "LBAlertSound": {"HOT"},
     # Paladin
-    "BlessReadyAt": {"BLESS"},
     "BlessRefreshAt": {"BLESS"},
     "BlessBannerCooldowns": {"BLESS"},
     # ...and the blessing assignment, which is the one family with a slot per

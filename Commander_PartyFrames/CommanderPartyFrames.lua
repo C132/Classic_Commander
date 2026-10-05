@@ -170,37 +170,21 @@ SDATA.DRUID_HOTS = {
 }
 for _, def in ipairs(SDATA.DRUID_HOTS) do def.dbKey = "HOT:" .. def.key end
 
--- Paladin Hands, in the order they ride a row's strip. They answer the same
--- question the druid's hots do — "what have I got on this ally right now" —
--- but a paladin's are EMERGENCY spells rather than upkeep. Ten seconds of
--- Freedom is the difference between a healer kiting and a healer dead, and
--- the reason the slot has to read at a glance is that you get one of these
--- every twenty-five seconds at best: the strip is not asking you to top
--- something up, it is telling you what you have already spent.
+-- There is no paladin strip book, and there used to be one: Freedom,
+-- Protection and Sacrifice as a three-slot "Hands" strip beside the blessing
+-- slot. That was the WotLK model on a TBC client. "Hand of" is a 3.0 rename,
+-- and it came with the rule change that let those three coexist with Kings;
+-- on this client (2.5.x) they are BLESSINGS in every sense that matters. A
+-- paladin holds exactly ONE blessing per target, so casting Protection on an
+-- ally carrying your Kings takes the Kings off — and a board drawing a lit
+-- Kings slot next to a lit Protection slot was drawing two things where the
+-- game only has one. The three now ride the same family the upkeep blessings
+-- do (SDATA.CLASS_BUFFS.BLESS, `emergency = true`), and the ONE slot per ally
+-- shows whichever blessing of yours is actually on them (SDATA.BLESS_SLOT).
 --
--- Blessing of Protection is the one that costs something. It stamps
--- Forbearance on the target for a minute, which locks out the next BoP and
--- their own Divine Shield with it — so Forbearance is this layer's drain bar,
--- exactly as Weakened Soul is the priest board's. Lay on Hands and a friendly
--- Divine Shield stamp it too, which is why the row reads the debuff itself
--- rather than remembering what it cast.
---
--- `cooldown` is the spell's own recharge. It is not the strip's clock (the
--- aura's is), but it is what turns an empty slot from an invitation into a
--- fact: a dark Freedom slot on a snared healer means something very different
--- when Freedom has eighteen seconds left on it.
-SDATA.PALADIN_HANDS = {
-    { key = "FREEDOM", label = "Freedom", baseId = 1044, duration = 10,
-      cooldown = 25, default = true,
-      icon = "Interface\\Icons\\Spell_Holy_SealOfValor" },
-    { key = "BOP", label = "Protection", baseId = 1022, duration = 10,
-      cooldown = 300, forbears = true, default = true,
-      icon = "Interface\\Icons\\Spell_Holy_SealOfProtection" },
-    { key = "SACRIFICE", label = "Sacrifice", baseId = 6940, duration = 30,
-      cooldown = 120, default = true,
-      icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice" },
-}
-for _, def in ipairs(SDATA.PALADIN_HANDS) do def.dbKey = "HAND:" .. def.key end
+-- Forbearance is still read off the target (Protection, Lay on Hands and
+-- their own Divine Shield all stamp it) and still draws the drain under the
+-- bar: a target who cannot be Protected is a target you plan around.
 
 -- The priest's own hots. Renew is the one every priest has and the one this
 -- board used to show as a lone icon bolted to the right edge of the row, with
@@ -235,19 +219,24 @@ for _, def in ipairs(SDATA.PRIEST_HOTS) do def.dbKey = "PWS:" .. def.key end
 
 -- The own-aura strip is CHASSIS, not druid code. A layer names a book of
 -- auras it puts on allies and watches ours-only; the strip renders that book
--- in fixed slots with radial sweeps and stack counts. Two layers fill it so
--- far, and the shape of the entries is identical (key, label, baseId,
--- duration, default, dbKey) precisely so a third costs nothing but its data.
+-- in fixed slots with radial sweeps and stack counts. Two layers fill it, and
+-- the shape of the entries is identical (key, label, baseId, duration,
+-- default, dbKey) precisely so a third costs nothing but its data. The
+-- paladin is deliberately NOT one of them any more (see the note above
+-- SDATA.CLASS_BUFFS.BLESS): their auras on an ally are blessings, and the
+-- blessing slot already shows those.
 SDATA.STRIP_BOOKS = {
     PWS   = SDATA.PRIEST_HOTS,
     HOT   = SDATA.DRUID_HOTS,
-    BLESS = SDATA.PALADIN_HANDS,
 }
 -- ...and the layers whose ROW STATE is read off that strip. Having a strip and
 -- being driven by one are different questions: the priest board shows its
 -- hots and still ranks every row by the absorb and the Weakened Soul lockout,
 -- because that is what a priest is deciding between.
-SDATA.STRIP_STATE_LAYERS = { HOT = true, BLESS = true }
+SDATA.STRIP_STATE_LAYERS = { HOT = true }
+-- ...and the layer whose ROW STATE is read off its ONE ally-buff slot instead:
+-- the paladin's, where that slot is the whole board (ResolveBlessState).
+SDATA.SLOT_STATE_LAYERS = { BLESS = true }
 SDATA.MAX_STRIP_ICONS = 3
 -- Pip lights along a strip icon's bottom edge. Three was Lifebloom's
 -- number; Prayer of Mending needs five, and a slot only ever lights as
@@ -348,7 +337,7 @@ SDATA.BG_TEXCOORD = { 0.08, 0.92, 0.08, 0.92 }
 -- The pool's ceiling, not a budget: a priest can now track five ally buffs at
 -- once if they want to, and the row simply gets wider. Slots past what the
 -- settings ask for are never laid out, so this costs nothing when unused.
-SDATA.MAX_BUFF_SLOTS = 6
+SDATA.MAX_BUFF_SLOTS = 9    -- the paladin family expanded: nine blessings
 SDATA.CLASS_BUFFS = {
     PWS = {
         { key = "FORT", label = "Fortitude", id = 1243, groupId = 21562,
@@ -437,6 +426,15 @@ SDATA.CLASS_BUFFS = {
     -- make once rather than upkeep you watch — but in combined mode every
     -- trained blessing is offered as an assignment regardless, because a line
     -- in a dropdown costs no width (see util.BlessOptions).
+    --
+    -- Freedom, Protection and Sacrifice are in this list and not on a strip
+    -- of their own because on THIS client they are blessings: same family,
+    -- same one-per-target slot, so a Protection on an ally carrying your
+    -- Kings REPLACES the Kings, and for those ten seconds the Protection is
+    -- the blessing on them. `emergency` marks the three: never offered as an
+    -- assignment (nobody's standing order is "Freedom"), never advised, and
+    -- with their own expiring window (BlessRefreshAt, seconds, not the
+    -- five-minute rebuff window a Kings gets).
     BLESS = {
         { key = "KINGS", label = "Kings", id = 20217, groupId = 25898,
           duration = 600, targets = "ALL", default = true, advise = "ALWAYS",
@@ -461,19 +459,37 @@ SDATA.CLASS_BUFFS = {
         { key = "LIGHT", label = "Light", id = 19977, groupId = 25890,
           duration = 600, targets = "ALL", default = false,
           oneOf = "BLESSING", mine = true, icon = "Interface\\Icons\\Spell_Holy_PrayerOfHealing02" },
+        -- The emergency three (see the note above). `forbears` on Protection
+        -- is the tooltip's business: it is the one of these that stamps the
+        -- target with Forbearance.
+        { key = "FREEDOM", label = "Freedom", id = 1044, duration = 10, targets = "ALL",
+          default = false, oneOf = "BLESSING", mine = true, emergency = true,
+          icon = "Interface\\Icons\\Spell_Holy_SealOfValor" },
+        { key = "BOP", label = "Protection", id = 1022, duration = 10, targets = "ALL",
+          default = false, oneOf = "BLESSING", mine = true, emergency = true, forbears = true,
+          icon = "Interface\\Icons\\Spell_Holy_SealOfProtection" },
+        { key = "SACRIFICE", label = "Sacrifice", id = 6940, duration = 30, targets = "ALL",
+          default = false, oneOf = "BLESSING", mine = true, emergency = true,
+          icon = "Interface\\Icons\\Spell_Holy_SealOfSacrifice" },
     },
 }
 
 -- ---------------------------------------------------------------------------
 -- The combined blessing slot: Pally Power's answer, in this board's grammar.
 --
--- Six blessings sharing one exclusive slot on the target is six icons asking a
--- question that only ever has ONE answer, and five of them are always dark. So
--- the family collapses into a single slot per ally that shows the blessing you
--- decided that ally should be carrying, and reads lit / amber / dark against
--- THAT — the same three states every other upkeep slot on this board uses.
+-- Nine blessings sharing one exclusive slot on the target is nine icons asking
+-- a question that only ever has ONE answer, and eight of them are always dark.
+-- So the family collapses into a single slot per ally, and that slot shows
+-- WHAT IS ACTUALLY THERE: whichever blessing of yours is on them right now,
+-- with its own remaining time on the sweep — Kings for the next twenty-five
+-- minutes, or the Protection you just spent on them for the next ten seconds.
+-- When none of yours is on them it shows the blessing you decided they should
+-- be carrying, ghosted, and reads lit / amber / dark the way every other
+-- upkeep slot on this board does: amber is "rebless" — inside the window, OR
+-- carrying the wrong upkeep blessing of yours — and dark red is the advisor
+-- saying the absence is costing you. See util.ResolveBuffs.
 --
--- What the slot shows is an ASSIGNMENT, resolved per row in this order:
+-- The GHOST is an ASSIGNMENT, resolved per row in this order:
 --
 --   1. a per-player override    (BlessAssign, keyed by name — "Grimtusk")
 --   2. a per-class default      (BlessClass,  keyed by class token)
@@ -688,10 +704,10 @@ SDATA.PALADIN_SEALS = {
     { key = "WISDOM",       ids = { 20166 } },
 }
 -- The paladin banner's cooldown segments, in banner order — the ones that
--- decide a game, then the Hands, whose cooldowns are the other half of what
--- the row strip shows (the strip says where a Hand IS, this says whether you
--- have one to give). Filtered at login to what this paladin actually trained,
--- so a holy paladin never sees a Repentance slot.
+-- decide a game, then Protection / Freedom / Sacrifice, whose cooldowns are
+-- the other half of what the blessing slot shows (the slot says where one IS,
+-- this says whether you have one to give). Filtered at login to what this
+-- paladin actually trained, so a holy paladin never sees a Repentance slot.
 SDATA.PALADIN_BANNER_CDS = {
     { key = "LOH",       id = 633,   cd = 1200, icon = "Interface\\Icons\\Spell_Holy_LayOnHands" },
     { key = "BUBBLE",    id = 642,   cd = 300,  icon = "Interface\\Icons\\Spell_Holy_DivineIntervention" },
@@ -945,13 +961,26 @@ SDATA.POM_REASONS = {
 SDATA.STRIP_REFRESH_KEY = {
     PWS   = "RenewRefreshAt",
     HOT   = "HotRefreshAt",
-    BLESS = "BlessRefreshAt",
 }
 SDATA.BANNER_CD_KEY = {
     PWS   = "PriestBannerCooldowns",
     INT   = "MageBannerCooldowns",
     HOT   = "HotBannerCooldowns",
     BLESS = "BlessBannerCooldowns",
+}
+-- The bar's left span is the ally's name unless the row has a WORD to put
+-- there, and every resolver that sets one says what KIND of word it is
+-- (r.mainKind) so the player can decide, kind by kind, which of them are
+-- worth taking the name off the bar for. A state word is the board's
+-- opinion; the name is the one thing always true of the row, and some
+-- people read a board by names. See util.BarText.
+SDATA.BAR_TEXT_KEY = {
+    DEAD   = "BarTextDead",     -- DEAD / OFFLINE
+    DISPEL = "BarTextDispel",   -- MAGIC / CURSED / POISON / DISEASE
+    CC     = "BarTextCC",       -- the crowd control's own name
+    ASK    = "BarTextAsk",      -- BLESS / HOT: what to cast on them
+    LOCK   = "BarTextLock",     -- EXPOSED / SHIELDED*: why you cannot, or need not
+    NUMBER = "BarTextNumber",   -- seconds or minutes left, absorb amounts, UP
 }
 -- Inner Fire, the priest's answer to the mage's armor: one permanent-ish self
 -- buff that is always meant to be up and is the easiest thing on the board to
@@ -1719,7 +1748,18 @@ local CC_SPELL_IDS = {
 -- HEAL = cuts healing received (absorbs are NOT reduced, so these argue for a
 -- shield over a heal), CC = undispellable crowd control / stuns, SILENCE = the
 -- ally cannot cast. Anything tagged CC also joins the glow set below.
+--
+-- IMMUNE is the one category that is not a debuff at all: Ice Block and
+-- Divine Shield are BUFFS, so they live in the HELPFUL list the strip never
+-- walked, and never showed. They belong on the strip anyway, and at its
+-- front, because they answer the healer's first question about a row --
+-- whether to heal it at all. A Blocked mage takes no heals and needs none;
+-- a bubbled paladin needs none. Both sit in this same table so the one
+-- Important Debuffs switch and the one rim/sort grammar cover them.
 local IMPORTANT_IDS = {
+    -- Immunities (read off the buff list, see ScanUnit)
+    [45438] = "IMMUNE", -- Ice Block
+    [642]   = "IMMUNE", -- Divine Shield
     -- Healing reduction
     [12294] = "HEAL",   -- Mortal Strike
     [19434] = "HEAL",   -- Aimed Shot
@@ -1753,7 +1793,20 @@ local IMPORTANT_COLORS = {
     HEAL    = { 0.95, 0.25, 0.25 },
     CC      = { 1.00, 0.55, 0.15 },
     SILENCE = { 0.85, 0.55, 0.30 },
+    IMMUNE  = { 0.60, 0.88, 1.00 },
 }
+-- Burst: an ally's own damage cooldown, worn by the whole row rather than an
+-- icon. The question it answers is not "what do I cast" but "whose fifteen
+-- seconds is this" -- the mage who just popped Arcane Power is about to
+-- Presence-of-Mind a Pyroblast, and the healer who sees it lands the follow-
+-- up (a shield on them, a heal held for the retaliation) instead of finding
+-- out from the kill. A violet edge and a faint wash, pulsing, draining with
+-- the buff; no icon, because the buff is short and the point is peripheral
+-- vision. Any caster: nobody puts these on anybody else.
+SDATA.BURST_IDS = {
+    [12042] = { key = "AP", label = "Arcane Power", color = { 0.72, 0.42, 1.00 } },
+}
+SDATA.BURST_EDGE_W = 2
 -- Debuffs that never earn an icon, whatever the strip is set to show. The
 -- ten minutes after a Bloodlust or Heroism sit on every row at once and tell
 -- a healer nothing they can act on; with Show All Debuffs on they would take
@@ -1767,7 +1820,10 @@ local MAX_DISPEL_ICONS = 16
 
 local myDispelTypes = {}   -- dispel types OUR class can remove (resolved at login)
 local ccNames = {}          -- localized CC spell names -> true (resolved at login)
-local importantNames = {}   -- localized name -> category (HEAL / CC / SILENCE)
+local importantNames = {}   -- localized name -> category (HEAL / CC / SILENCE); debuff list
+local immuneNames = {}      -- localized name -> "IMMUNE"; the buff-list half of the same set
+local burstNames = {}       -- localized name -> SDATA.BURST_IDS def (resolved at login)
+local burstState = {}       -- guid -> { expire, duration, def } the ally's live damage cooldown
 local mutedNames = {}       -- localized names the strip never shows (resolved at login)
 
 -- CommanderPartyFramesDB accessor with a fallback, so every read is nil-safe even
@@ -2205,7 +2261,7 @@ function util.BlessOptions(r, out)
     out = out or {}
     wipe(out)
     for _, def in ipairs(SDATA.CLASS_BUFFS.BLESS) do
-        if def.known and (not r or util.BuffApplies(def, r)) then
+        if def.known and not def.emergency and (not r or util.BuffApplies(def, r)) then
             out[#out + 1] = def
         end
     end
@@ -2264,10 +2320,24 @@ function bless.DefFor(key, r)
     if not key or key == SDATA.BLESS_NONE then return nil end
     for _, def in ipairs(SDATA.CLASS_BUFFS.BLESS) do
         if def.key == key then
-            if not def.known then return nil end
+            if not def.known or def.emergency then return nil end
             if r and not util.BuffApplies(def, r) then return nil end
             return def
         end
+    end
+    return nil
+end
+
+-- Which blessing of yours is on this ally RIGHT NOW, if any. At most one can
+-- be (the game's rule, not the board's), so the first live record wins. Read
+-- off the whole family rather than the tracked subset: whether Freedom has
+-- a cell lit in the settings grid is a display choice, and it must not decide
+-- whether the slot can tell you the Freedom you just cast is on them.
+function util.BlessOn(rec, now)
+    if not rec then return nil end
+    for _, b in ipairs(SDATA.CLASS_BUFFS.BLESS) do
+        local e = rec[b.key]
+        if e and not (e.expire and e.expire > 0 and e.expire <= now) then return b end
     end
     return nil
 end
@@ -2294,9 +2364,10 @@ function util.BlessFor(r)
     if def then return def, "default" end
 
     -- Last resort: anything at all this paladin can put on them. A level-20
-    -- paladin with only Might trained still gets a working board.
+    -- paladin with only Might trained still gets a working board. Never one
+    -- of the emergency three: a standing order of "Freedom" is not an order.
     for _, d in ipairs(SDATA.CLASS_BUFFS.BLESS) do
-        if d.known and util.BuffApplies(d, r) then return d, "any" end
+        if d.known and not d.emergency and util.BuffApplies(d, r) then return d, "any" end
     end
     return nil, "none"
 end
@@ -2419,11 +2490,18 @@ function util.BlessSlotTooltip(self)
     GameTooltip:AddLine(" ")
     if have and want and have.key == want.key then
         GameTooltip:AddLine("Yours is up.", 0.4, 0.9, 0.4)
+    elseif have and have.emergency then
+        -- The slot is showing the Protection / Freedom / Sacrifice you spent
+        -- on them, because on this client that IS their blessing right now.
+        GameTooltip:AddLine("Carrying your " .. have.label .. ".", 0.4, 0.9, 0.4)
+        GameTooltip:AddLine(want
+            and ("It took the blessing slot — " .. want.label .. " goes back on once it drops.")
+            or "It took the blessing slot.", 0.6, 0.6, 0.6, true)
     elseif have then
-        -- The case this whole rework exists for: covered, but not with what
-        -- you decided, so the slot is dark and this says exactly why.
+        -- Covered, but not with what you decided: the slot shows what is on
+        -- them and reads amber, and this says exactly why.
         GameTooltip:AddLine("They are carrying your " .. have.label .. " instead.", 1, 0.65, 0.3, true)
-        GameTooltip:AddLine("The slot reads dark because that is not the assignment.",
+        GameTooltip:AddLine("The slot reads amber because that is not the assignment — rebless.",
             0.6, 0.6, 0.6, true)
     else
         GameTooltip:AddLine("None of your blessings are on them.", 1, 0.4, 0.4)
@@ -2470,7 +2548,7 @@ function util.RefreshBuffs()
         table.insert(sig, 1, SDATA.BLESS_SLOT.key)
     end
     -- The own-aura strip answers to exactly the same two questions, whichever
-    -- book the active layer put in it (druid hots, paladin Hands)
+    -- book the active layer put in it (druid hots, priest hots)
     wipe(SDATA.STRIP_ACTIVE)
     local book = SDATA.STRIP_BOOKS[layer or ""]
     if book then
@@ -2679,6 +2757,99 @@ SDATA.SPEC_ICONS = {
 local specMarkerNames = {}  -- localized marker spell name -> spec token
 local specState = {}        -- guid -> spec token (session cache, never pruned)
 local groupGuids = {}       -- guid -> classToken for the current roster (CLEU filter)
+
+-- ---------------------------------------------------------------------------
+-- What a spec label can and cannot be trusted for.
+--
+-- "Their last signature spell names their tree, and the tree names their
+-- cooldowns" is two inferences, and the second is only true of a build that
+-- lives in one tree. A PoM-Pyro mage is 31 in Arcane and 30 in Fire: a Blast
+-- Wave made them FIRE, the strip then drew Combustion and Dragon's Breath --
+-- neither of which they have -- and hid Presence of Mind and Arcane Power,
+-- which are the two cooldowns the build exists for. The next Presence of
+-- Mind flipped all of it the other way.
+--
+-- So three things are kept apart (all on `util`: see the 200-local note):
+--
+--   YOUR OWN build is not inferred at all. The label is the tree with the
+--   most points in it, read off the talent frame, and the strip is whatever
+--   your spellbook actually holds -- which is exact, and follows a respec.
+--
+--   WHICH trees somebody else has shown (specSeen). One tree: the old
+--   inference stands, because for a build in one tree it is right. Two: they
+--   are a hybrid, the label proves nothing about any particular talent, and
+--   a gated cooldown is drawn only once it has been...
+--
+--   ...SEEN CAST by them (talentSeen), which is proof whatever the label.
+-- ---------------------------------------------------------------------------
+util.specSeen = {}          -- guid -> { [spec token] = true }
+util.talentSeen = {}        -- guid -> { [ability key] = true }
+-- Talent tabs in the client's own order, which is the only thing a tab has
+-- that is not a localized string
+SDATA.SPEC_TABS = {
+    MAGE = { "ARCANE", "FIRE", "FROST" },
+    PRIEST = { "DISC", "HOLY", "SHADOW" },
+    WARLOCK = { "AFFLICTION", "DEMONOLOGY", "DESTRUCTION" },
+    DRUID = { "BALANCE", "FERAL", "RESTORATION" },
+    ROGUE = { "ASSASSINATION", "COMBAT", "SUBTLETY" },
+    WARRIOR = { "ARMS", "FURY", "PROTECTION" },
+    PALADIN = { "HOLY", "PROTECTION", "RETRIBUTION" },
+    HUNTER = { "BEASTMASTERY", "MARKSMANSHIP", "SURVIVAL" },
+    SHAMAN = { "ELEMENTAL", "ENHANCEMENT", "RESTORATION" },
+}
+
+-- Somebody showed a signature spell. Never applied to the player once their
+-- own talents have answered: a cast is evidence, and that is knowledge.
+function util.NoteSpec(guid, spec)
+    if not guid or not spec then return end
+    if guid == playerGUID and util.selfSpec then return end
+    specState[guid] = spec
+    local seen = util.specSeen[guid]
+    if not seen then seen = {}; util.specSeen[guid] = seen end
+    seen[spec] = true
+end
+
+-- More than one tree shown: a hybrid, about whom the label implies nothing
+function util.IsHybrid(guid)
+    local seen = util.specSeen[guid]
+    if not seen then return false end
+    local first = next(seen)
+    return first ~= nil and next(seen, first) ~= nil
+end
+
+-- Points spent in a talent tab. The call has two shapes on the clients this
+-- runs on -- (name, icon, points, ...) and (id, name, description, icon,
+-- points, ...) -- and reading the third return off the second shape gets a
+-- paragraph of description where the number should be.
+function util.TalentPoints(tab)
+    if not GetTalentTabInfo then return nil end
+    local ok, a, _, c, _, e = pcall(GetTalentTabInfo, tab)
+    if not ok then return nil end
+    local points = c
+    if type(a) == "number" then points = e end
+    return type(points) == "number" and points or nil
+end
+
+-- The player's own tree: whichever has the most points in it. A tie, or a
+-- client that will not say, leaves it to the casts like anybody else's.
+function util.ReadSelfSpec()
+    util.selfSpec = nil
+    local tabs = playerClass and SDATA.SPEC_TABS[playerClass]
+    if not (tabs and playerGUID) then return end
+    local best, bestPoints, tied = nil, 0, false
+    for index, token in ipairs(tabs) do
+        local points = util.TalentPoints(index)
+        if points and points > bestPoints then
+            best, bestPoints, tied = token, points, false
+        elseif points and points == bestPoints and points > 0 then
+            tied = true
+        end
+    end
+    if best and not tied then
+        util.selfSpec = best
+        specState[playerGUID] = best
+    end
+end
 function util.EnemyHas(kind)
     -- Shadow has a second, better witness than anybody's class: damage of that
     -- school actually landing. It catches the shadow priest a class read
@@ -2933,6 +3104,10 @@ SDATA.ABILITY_BOOK = {
           cd = 120, tier = 2, kind = "UTIL", off = true },
         { key = "FLARE", id = 1543, name = "Flare", icon = "Interface\\Icons\\Spell_Fire_Flare",
           cd = 20, tier = 2, kind = "UTIL", off = true },
+        -- The drain. Tier 1 so that, once opted into, it holds one cell (lit
+        -- = ready) instead of popping in and out of the strip every 15s
+        { key = "VIPER", id = 3034, name = "Viper Sting", icon = "Interface\\Icons\\Ability_Hunter_AimedShot",
+          cd = 15, tier = 1, kind = "OFF", off = true },
     },
     SHAMAN = {
         { key = "GROUNDING", id = 8177, name = "Grounding Totem", icon = "Interface\\Icons\\Spell_Nature_GroundingTotem",
@@ -3062,7 +3237,12 @@ local function NoteAbilityCast(guid, class, spellName, now)
     st[entry.key] = now + entry.cd
     -- A spec-gated ability's own cast IS proof of the spec (Cold Snap,
     -- Scatter Shot… aren't all in the marker table)
-    if entry.spec then specState[guid] = entry.spec end
+    if entry.spec then
+        util.NoteSpec(guid, entry.spec)
+        local seen = util.talentSeen[guid]
+        if not seen then seen = {}; util.talentSeen[guid] = seen end
+        seen[entry.key] = true
+    end
     -- The reset link is literal: Cold Snap/Preparation REFUND the linked CDs
     if entry.resets then
         for _, tk in ipairs(entry.resets) do st[tk] = nil end
@@ -4082,6 +4262,12 @@ function util.BindSwitcher(sw)
 end
 
 function util.BindSwitchers()
+    -- Every button here is a secure one, and SPELLS_CHANGED -- which is what
+    -- calls this -- fires freely mid-fight (a shapeshift, a pet, a proc that
+    -- swaps a spell). Binding then is thirty blocked SetAttribute calls a
+    -- game and no binding; the fight's end does it once and does it legally.
+    if InCombat() then util.switchersDirty = true; return end
+    util.switchersDirty = nil
     for _, sw in ipairs(util.switchers) do util.BindSwitcher(sw) end
 end
 
@@ -5266,6 +5452,8 @@ local function ScanUnit(unit, reliable)
     if not guid then return end
 
     local pwsExpire, pwsSpellId, pwsMine, pwsIndex
+    local immuneAura   -- Ice Block / Divine Shield: a buff bound for the debuff strip
+    local burstAura, burstDef   -- Arcane Power: the row's burst edge
     -- Every supported layer gets the removable-debuff and CC escalation now:
     -- what a row is FOR differs per class, but "there is something on them I
     -- can take off" and "a teammate is in crowd control" are the same two
@@ -5391,7 +5579,7 @@ local function ScanUnit(unit, reliable)
         -- Self-sourced only: party-wide/target-castable markers (Trueshot
         -- Aura, Power Infusion) would stamp their CARRIER otherwise
         if specMarkerNames[aura.name] and aura.sourceUnit and UnitIsUnit(aura.sourceUnit, unit) then
-            specState[guid] = specMarkerNames[aura.name]
+            util.NoteSpec(guid, specMarkerNames[aura.name])
         end
         -- Aggregate shielding: catch every named absorb aura, whoever cast it
         -- (PW:S lands in the branch above, so this is a separate check).
@@ -5400,6 +5588,27 @@ local function ScanUnit(unit, reliable)
             scanAbsorbs[aura.name] = { expire = aura.expirationTime, duration = aura.duration,
                 icon = aura.icon, spellId = aura.spellId, index = i }
         end
+        -- Immunity (Ice Block / Divine Shield): the only buff the debuff strip
+        -- shows. Noted here, placed there below, once the strip's list exists.
+        -- No early break, and any caster: nobody else can put these on you.
+        if not immuneAura and immuneNames[aura.name] then
+            immuneAura = aura
+        end
+        -- Burst (SDATA.BURST_IDS): the row wears it. No early break.
+        if not burstAura and burstNames[aura.name] then
+            burstAura, burstDef = aura, burstNames[aura.name]
+        end
+    end
+
+    -- Burst commits under the reliable contract like everything else: an
+    -- out-of-range ally's empty scan does not strip their Arcane Power, and
+    -- the entry carries its own expiry, so it ends on time regardless.
+    if burstAura then
+        local b = burstState[guid]
+        if not b then b = {}; burstState[guid] = b end
+        b.expire, b.duration, b.def = burstAura.expirationTime or 0, burstAura.duration, burstDef
+    elseif reliable then
+        burstState[guid] = nil
     end
 
     -- Our armor / our form (upkeep banners); the player's own scan is always
@@ -5542,6 +5751,23 @@ local function ScanUnit(unit, reliable)
     if dispelOn then
         list = dispelState[guid]
         if not list then list = { n = 0 }; dispelState[guid] = list end
+        -- The immunity found on the buff pass takes slot one before a single
+        -- debuff is looked at, so a full strip (the cap below) can never
+        -- push it off: it is the one icon that says "look elsewhere".
+        if immuneAura and showImportant then
+            local e = list[1]
+            if not e then e = {}; list[1] = e end
+            e.icon = immuneAura.icon
+            e.name = immuneAura.name
+            e.dispelName = nil
+            e.expire = immuneAura.expirationTime
+            e.duration = immuneAura.duration
+            e.cc = false
+            e.canDispel = false
+            e.important = "IMMUNE"
+            e.prio = 0
+            dispelCount = 1
+        end
     end
     for i = 1, 40 do
         local aura = C_UnitAuras.GetDebuffDataByIndex(unit, i, "HARMFUL")
@@ -5602,8 +5828,9 @@ local function ScanUnit(unit, reliable)
                 e.cc = ccNames[aura.name] or false
                 e.canDispel = canDispel
                 e.important = important
-                -- Healing reduction first, then CC, then what we can actually
-                -- dispel, then the rest — so a short strip shows what matters
+                -- Immunity (prio 0, seeded above) first, then healing
+                -- reduction, then CC, then what we can actually dispel, then
+                -- the rest — so a short strip shows what matters
                 e.prio = (important == "HEAL" and 1) or (e.cc and 2)
                     or (canDispel and 3) or (important and 4) or 5
                 dispelCount = slot
@@ -5758,8 +5985,7 @@ local function OnCombatLog()
         -- double-stamping the same cast is harmless (same cd, same second).
         local class = sourceGUID and groupGuids[sourceGUID]
         if class and a2 then
-            local spec = specMarkerNames[a2]
-            if spec then specState[sourceGUID] = spec end
+            util.NoteSpec(sourceGUID, specMarkerNames[a2])
             NoteAbilityCast(sourceGUID, class, a2, GetTime())
         end
         if subevent == "SPELL_CAST_SUCCESS" then return end
@@ -5903,7 +6129,7 @@ local function ResolveShieldState(r, now)
 
     if r.dead then
         r.state = "DEAD"
-        r.mainText = r.deadText or "DEAD"
+        r.mainText, r.mainKind = r.deadText or "DEAD", "DEAD"
         return r
     end
 
@@ -5929,7 +6155,7 @@ local function ResolveShieldState(r, now)
 
     if not st then
         if r.wsLeft > 0 then
-            r.state, r.mainText = "EXPOSED", "EXPOSED"
+            r.state, r.mainText, r.mainKind = "EXPOSED", "EXPOSED", "LOCK"
             r.rightText = string.format("%ds", math.ceil(r.wsLeft))
         else
             -- READY carries no WORD on this board. The state still does all
@@ -5938,7 +6164,7 @@ local function ResolveShieldState(r, now)
             -- text what the ghosted shield icon beside it already says by
             -- being ghosted, in the one slot wide enough to hold a number
             -- that means something.
-            r.state, r.mainText = "READY", ""
+            r.state, r.mainText, r.mainKind = "READY", "", nil
         end
         return r
     end
@@ -5950,7 +6176,7 @@ local function ResolveShieldState(r, now)
     r.mine = st.mine and true or false
 
     if not st.mine then
-        r.state, r.mainText = "OTHER", "SHIELDED*"
+        r.state, r.mainText, r.mainKind = "OTHER", "SHIELDED*", "LOCK"
         if r.selfSpell then r.ratio = 1 end
         return r
     end
@@ -5963,6 +6189,7 @@ local function ResolveShieldState(r, now)
     if r.selfSpell then r.ratio = strengthRatio end
     r.remaining = remaining
     r.mainText = capacity > 0 and tostring(math.floor(remaining + 0.5)) or "UP"
+    r.mainKind = "NUMBER"
 
     local low = (capacity > 0 and strengthRatio <= lowPct) or (tLeft <= lowTime)
     if low then
@@ -5976,6 +6203,27 @@ local function ResolveShieldState(r, now)
         r.state = "SHIELDED"
     end
     return r
+end
+
+-- The word the bar's left span actually gets, once the Bar Text settings
+-- have had their say. nil means "nothing to say here", and the painter puts
+-- the ally's name there instead. Self-spell rows are never gated: their
+-- text IS the row (a number over your own Ice Barrier), and their name is
+-- the spell, so there is no name to fall back to.
+--
+-- Always The Name is the master: it hands the span to the name whatever the
+-- row is doing, for the player who reads a board by names and has the
+-- stripe, the icons and the sort telling them the rest. Under it, each KIND
+-- of word has a switch of its own, because "I want to see MAGIC, I never
+-- need to see 24m" is a real preference and not a contradiction.
+function util.BarText(r)
+    local t = r.mainText
+    if not t or t == "" then return nil end
+    if r.selfSpell then return t end
+    if DB("BarTextAlwaysName", false) then return nil end
+    local key = r.mainKind and SDATA.BAR_TEXT_KEY[r.mainKind]
+    if key and not DB(key, true) then return nil end
+    return t
 end
 
 -- Absorb totals: compact thousands
@@ -6011,7 +6259,7 @@ local function ApplyAlertStates(r, now)
         local kind = DISPEL_STATE_BY_SCHOOL[c.dispelName or ""]
             or DISPEL_STATE_BY_SCHOOL.Curse
         r.state = kind.state
-        r.mainText = kind.word
+        r.mainText, r.mainKind = kind.word, "DISPEL"
         if c.expire and c.expire > now then
             r.wsLeft = c.expire - now
             if c.duration and c.duration > 0 then r.lockMax = c.duration end
@@ -6030,6 +6278,7 @@ local function ApplyAlertStates(r, now)
             r.state = "CCED"
             local nm = cc.name
             r.mainText = (nm and #nm > 10) and nm:sub(1, 10) or nm or "CC"
+            r.mainKind = "CC"
             if cc.expire and cc.expire > now then
                 r.wsLeft = cc.expire - now
                 if cc.duration and cc.duration > 0 then r.lockMax = cc.duration end
@@ -6212,41 +6461,44 @@ function util.ResolveBuffs(r, now)
     local shown = 0
     for i = 1, n do
         local def = SDATA.BUFF_ACTIVE[i]
-        -- The combined blessing slot resolves per ROW, not per registry entry:
-        -- which blessing it watches is this ally's assignment, so the answer
-        -- differs down the board while the layout stays one slot wide.
+        -- The combined blessing slot resolves per ROW, not per registry entry,
+        -- and it resolves to WHAT IS ON THEM: `have` is whichever blessing of
+        -- yours the ally is carrying right now (at most one — the game's
+        -- rule), and the slot wears its icon and its clock. Only when there is
+        -- none does the ASSIGNMENT (`want`) decide what the ghost shows.
         --
-        -- An ally carrying a DIFFERENT blessing of yours reads as missing, on
-        -- purpose. The alternative — "covered, near enough" — is how you end a
-        -- match having never noticed the healer took Might off a stray cast.
-        -- What they are actually carrying is kept in r.blessHave so the
-        -- tooltip can say so in words instead of the slot lying with colour.
-        local want, wantWhy
+        -- So a Protection you just spent on them shows as a Protection with
+        -- ten seconds on it, not as a dark Kings — on this client the
+        -- Protection took the Kings off, and the slot saying "Kings missing"
+        -- while you are still choosing where to stand would be noise. The
+        -- moment it drops the slot goes back to asking for Kings.
+        --
+        -- The wrong UPKEEP blessing of yours (Might where Kings is assigned)
+        -- shows too — lit, since it is up — but reads amber, because amber is
+        -- "rebless" and that is exactly what the slot wants: it is how you
+        -- notice the healer took Might off a stray cast without the slot
+        -- lying with a dark icon about an ally who is, in fact, blessed.
+        local want, wantWhy, have
         if def.combined then
             want, wantWhy = util.BlessFor(r)
-            r.blessWant, r.blessWantWhy = want, wantWhy
-            if rec then
-                for _, b in ipairs(SDATA.CLASS_BUFFS.BLESS) do
-                    local e = rec[b.key]
-                    if e and not (e.expire and e.expire > 0 and e.expire <= now) then
-                        r.blessHave = b
-                        break
-                    end
-                end
-            end
+            have = util.BlessOn(rec, now)
+            r.blessWant, r.blessWantWhy, r.blessHave = want, wantWhy, have
         end
         -- A buff nobody would cast here earns no slot at all: Intellect and
         -- Spirit are for mana users, Blessing of Might is for people who swing
         -- things, and a rogue's row should not carry a permanent dark reminder
         -- of a spell that does nothing for them. The combined slot answers the
         -- same question through its assignment: NONE, or nothing trained that
-        -- suits them, and it spends no slot either. The width stays reserved
-        -- by the layout, so the row keeps its shape with nothing to say here.
-        if (not def.combined or want) and util.BuffApplies(def, r) then
+        -- suits them, and it spends no slot either — unless one of yours IS on
+        -- them, because a Freedom you cast on an ally you never bless is still
+        -- a Freedom you want to see run out. The width stays reserved by the
+        -- layout, so the row keeps its shape with nothing to say here.
+        if (not def.combined or want or have) and util.BuffApplies(def, r) then
             shown = shown + 1
             local slot = r.buffs[shown]
             if not slot then slot = {}; r.buffs[shown] = slot end
-            local key = want and want.key or def.key
+            local shows = have or want or def
+            local key = shows.key
             local e = rec and rec[key]
             local left
             if e and e.expire and e.expire > 0 then
@@ -6255,13 +6507,19 @@ function util.ResolveBuffs(r, now)
             end
             slot.def = def
             slot.want = want
-            slot.icon = want and want.icon or def.icon
+            slot.have = have
+            slot.icon = shows.icon
             slot.up = e and true or false
             -- expire 0 is a permanent aura (no readable clock): up, no sweep
             slot.expire = e and e.expire or nil
             slot.duration = (e and e.duration and e.duration > 0) and e.duration
-                or (want or def).duration
-            slot.due = (left and left <= rebuffAt) or false
+                or shows.duration
+            -- An emergency blessing runs ten seconds, so "due" for it is a
+            -- window of seconds (BlessRefreshAt), not the five-minute rebuff
+            -- window; and the wrong upkeep blessing is due the whole time.
+            local window = (have and have.emergency) and DB("BlessRefreshAt", 3) or rebuffAt
+            slot.due = (left and left <= window) or false
+            if have and want and have ~= want and not have.emergency then slot.due = true end
             if not slot.up then
                 r.buffMissing = true
                 if util.BuffAdvised(def) then
@@ -6285,8 +6543,8 @@ end
 -- how long the soonest has left — the two facts a layer needs whether or not
 -- it lets them drive the row's state.
 --
--- Each entry owns a FIXED slot — Rejuvenation, Regrowth, Lifebloom; Freedom,
--- Protection, Sacrifice; Renew, Prayer of Mending — always in that order, so a
+-- Each entry owns a FIXED slot — Rejuvenation, Regrowth, Lifebloom; Renew,
+-- Prayer of Mending — always in that order, so a
 -- missing one leaves a dark placeholder of itself rather than a hole and the
 -- strip never reshuffles as things tick off. Position alone then tells you
 -- what you are looking at, which is what makes it readable at a glance
@@ -7063,7 +7321,7 @@ end
 local function ResolveIntState(r, now)
     if r.dead then
         r.state = "DEAD"
-        r.mainText = r.deadText or "DEAD"
+        r.mainText, r.mainKind = r.deadText or "DEAD", "DEAD"
         return r
     end
 
@@ -7085,6 +7343,7 @@ local function ResolveIntState(r, now)
     ApplyHealthEmbed(r)
     r.tLeft = (r.health or 1) * 1000
     r.mainText = r.shieldTotal and FormatAmount(r.shieldTotal) or ""
+    r.mainKind = "NUMBER"
     if r.health and r.health < 1 then
         r.rightText = string.format("%d%%", math.floor(r.health * 100 + 0.5))
     end
@@ -7093,11 +7352,11 @@ local function ResolveIntState(r, now)
     return r
 end
 
--- The strip layers (Druid ally rows, Paladin ally rows). Same chassis as INT
--- — health is the bar, mana rides the strip under it, the ally-buff slots
--- carry the class's upkeep — and the same alert ladder tops it. What differs
--- is the middle: the row's managed thing is YOUR auras on that ally, and the
--- states are the priest board's reshield grammar read for them.
+-- The strip layer (Druid ally rows). Same chassis as INT — health is the bar,
+-- mana rides the strip under it, the ally-buff slots carry the class's upkeep
+-- — and the same alert ladder tops it. What differs is the middle: the row's
+-- managed thing is YOUR auras on that ally, and the states are the priest
+-- board's reshield grammar read for them.
 --
 -- HOT (Druid): READY means a hurt ally is carrying none of yours (cast one
 -- now); REFRESH means one is inside the refresh window, which is also exactly
@@ -7105,20 +7364,13 @@ end
 -- look elsewhere. A full-health ally with no hots is not a decision, so it
 -- stays quiet at OTHER rather than lighting the board up yellow.
 --
--- BLESS (Paladin): the same ladder, but the Hands are emergency spells rather
--- than upkeep, so READY is deliberately much stingier — an ally has to be in
--- actual trouble before an empty Freedom slot is a decision. What the paladin
--- board adds is the LOCKOUT half of the priest's grammar, which no other
--- strip layer has: Forbearance. A target carrying it cannot be given
--- Protection and cannot bubble themselves, so a row with nothing up AND
--- Forbearance ticking is EXPOSED (red, drain = the minute running down), and
--- one whose Hand is falling off while locked is FADING. That is the exact
--- Weakened Soul reading the PWS board does, and it is worth just as much
--- here: knowing you cannot BoP is what makes you peel instead.
+-- The paladin board used to share this resolver, reading a Hands strip. It
+-- has no strip now (see SDATA.CLASS_BUFFS.BLESS) and reads its one blessing
+-- slot instead: ResolveBlessState, below.
 local function ResolveStripState(r, now)
     if r.dead then
         r.state = "DEAD"
-        r.mainText = r.deadText or "DEAD"
+        r.mainText, r.mainKind = r.deadText or "DEAD", "DEAD"
         return r
     end
 
@@ -7142,61 +7394,29 @@ local function ResolveStripState(r, now)
 
     local n, soonest = util.ResolveStrip(r, now)
 
-    -- The paladin's lockout. Forbearance is read off the target rather than
-    -- remembered from what we cast, because three different spells stamp it
-    -- (Protection, Lay on Hands, their own Divine Shield) and only two of
-    -- them are ours. The chassis already scans it for the ability bar, so
-    -- this is a lookup, not a second pass.
-    local lockLeft = 0
-    if layer == "BLESS" then
-        local l = lockState[r.guid]
-        local forb = l and l.forb
-        if forb and forb > now then lockLeft = forb - now end
-    end
-
-    -- Is an empty strip a decision on this layer? On HOT, yes for anyone
-    -- taking damage: a hot is upkeep and there is always room for another.
-    -- On BLESS the Hands are a cooldown you get once a fight, so the bar is
-    -- much higher — genuinely hurt, or being chewed on by a melee, which is
-    -- the case Protection and Freedom actually answer.
-    local wants
-    if layer == "BLESS" then
-        local hp = r.health or 1
-        wants = hp <= (DB("BlessReadyAt", 50) / 100)
-            or (r.meleeOnMe and hp <= 0.85)
-    else
-        wants = (r.health or 1) <= (DB("HotReadyAt", 90) / 100)
-    end
+    -- Is an empty strip a decision? For anyone taking damage, yes: a hot is
+    -- upkeep and there is always room for another.
+    local wants = (r.health or 1) <= (DB("HotReadyAt", 90) / 100)
     -- No refresh threshold read here any more: which slots count as due is
     -- ResolveStrip's answer now (util.StripDue), because each entry can have
     -- a window of its own and the roll does.
-    local emptyWord = layer == "BLESS" and "HAND" or "HOT"
 
     if n == 0 then
         -- Nothing of ours here. Only an ally who wants something is a
         -- decision; everyone else is quiet, and among the quiet rows the
         -- sort's time key floats the lowest health to the top.
-        if lockLeft > 0 then
-            -- Forbearance with nothing up: the priest board's EXPOSED, and it
-            -- means the same thing — the answer you would reach for is locked
-            -- out, so plan around it rather than pressing it.
-            r.state, r.mainText = "EXPOSED", "FORB"
-            r.wsLeft, r.lockMax = lockLeft, SDATA.FORBEARANCE_MAX
-            r.rightText = string.format("%ds", math.ceil(lockLeft))
-            r.tLeft = lockLeft
-        elseif wants then
-            r.state, r.mainText = "READY", emptyWord
+        if wants then
+            r.state, r.mainText, r.mainKind = "READY", "HOT", "ASK"
             r.tLeft = (r.health or 1) * 1000
         else
-            r.state, r.mainText = "OTHER", ""
+            r.state, r.mainText, r.mainKind = "OTHER", "", nil
             r.tLeft = (r.health or 1) * 1000
         end
     elseif util.StripDue(r) then
         -- Urgent rows sort by how long is actually left, not by health.
-        -- Expiring while locked out is FADING rather than REFRESH: you can
-        -- see it going and you cannot replace it.
-        r.state = (lockLeft > 0) and "FADING" or "REFRESH"
+        r.state = "REFRESH"
         r.tLeft = soonest
+        r.mainKind = "NUMBER"
         -- Tenths when the roll is the thing running out and it is inside the
         -- last three seconds: the row's big number is the most-read thing on
         -- the board, and rounding 2.4 up to "3s" there while the slot's own
@@ -7210,22 +7430,16 @@ local function ResolveStripState(r, now)
         r.state = "SHIELDED"
         r.tLeft = (r.health or 1) * 1000
         r.mainText = soonest and string.format("%ds", math.ceil(soonest)) or ""
-    end
-    -- A locked-out row still shows the lockout on its drain even when the
-    -- state above it came from something up: the minute is the fact.
-    if lockLeft > 0 and not r.wsLeft then
-        r.wsLeft, r.lockMax = lockLeft, SDATA.FORBEARANCE_MAX
+        r.mainKind = "NUMBER"
     end
 
     -- The ROLL BAR. The druid board's drain strip has always been empty —
-    -- there is no Weakened Soul and no Forbearance on a hot board — and it is
-    -- exactly the instrument a rolling Lifebloom wants: a bar you read with
-    -- the corner of your eye while looking somewhere else, rather than a
-    -- radial sweep you have to focus on. It drains over the roll's own seven
-    -- seconds and changes colour as the window opens, so "still fine",
-    -- "refresh now" and "you are late" are three different things at a
-    -- glance. Never claimed from a lockout: on the paladin board Forbearance
-    -- is a harder fact than any hot, and this layer has no roll anyway.
+    -- there is no Weakened Soul on a hot board — and it is exactly the
+    -- instrument a rolling Lifebloom wants: a bar you read with the corner of
+    -- your eye while looking somewhere else, rather than a radial sweep you
+    -- have to focus on. It drains over the roll's own seven seconds and
+    -- changes colour as the window opens, so "still fine", "refresh now" and
+    -- "you are late" are three different things at a glance.
     local rollBar = SDATA.LB_DISPLAY_BAR[DB("LBDisplay", "BOTH")]
     if rollBar and r.roll and r.roll.left and not r.wsLeft then
         r.wsLeft = math.max(0, r.roll.left)
@@ -7247,6 +7461,98 @@ local function ResolveStripState(r, now)
     return r
 end
 
+-- The blessing layer (Paladin ally rows). Same chassis again, and the row's
+-- managed thing is the ONE blessing slot (SDATA.BLESS_SLOT), because on this
+-- client one blessing per ally is all a paladin gets. The ladder is the hot
+-- board's read for that slot:
+--
+--   READY     none of yours on them, and the assignment names one to give.
+--             A naked ally is ALWAYS a global on a blessing board — there is
+--             no health bar on this, the way there is for a hot — so the
+--             word is BLESS and the quiet rows sort lowest-health first.
+--   REFRESH   yours is up and due: inside the rebuff window (minutes, for
+--             an upkeep blessing; BlessRefreshAt seconds for a Freedom /
+--             Protection / Sacrifice), or the wrong upkeep blessing of
+--             yours is on them (see util.ResolveBuffs).
+--   SHIELDED  yours is up and healthy; the number is what is left of it.
+--   OTHER     assigned nothing, or nothing you have suits them: quiet.
+--
+-- No EXPOSED and no FADING here any more, and that is the point of the
+-- rework rather than a loss: those were the Hands strip's lockout reading,
+-- and on this client the thing the slot asks you for — a blessing — is
+-- never locked out. Forbearance still matters (you cannot Protect them,
+-- they cannot bubble), so it still draws the drain under the bar, read off
+-- the target because three different spells stamp it and only two are
+-- yours. It is a fact under the row, not the row's state.
+local function ResolveBlessState(r, now)
+    if r.dead then
+        r.state = "DEAD"
+        r.mainText, r.mainKind = r.deadText or "DEAD", "DEAD"
+        return r
+    end
+
+    -- The slot itself: resolved by the registry pass like every other ally
+    -- buff, which is what sets r.blessHave / r.blessWant for this row.
+    util.ResolveBuffs(r, now)
+
+    ResolveAbsorbSegs(r, now)
+    if r.inShield then r.shieldUp, r.mine = true, true end
+    ApplyHealthEmbed(r)
+    if r.health and r.health < 1 then
+        r.rightText = string.format("%d%%", math.floor(r.health * 100 + 0.5))
+    end
+    -- No strip on this layer. Zeroed rather than left alone because rowData
+    -- tables are recycled between passes and the painter reads these.
+    r.stripCount, r.stripSlots = 0, 0
+
+    -- The combined slot is always FIRST in the active list when it is there
+    -- at all (util.RefreshBuffs puts it there), and it is the only slot that
+    -- carries `have`.
+    local slot = (r.buffCount or 0) > 0 and r.buffs[1] or nil
+    if slot and not (slot.def and slot.def.combined) then slot = nil end
+    local have = slot and slot.up and r.blessHave or nil
+    local left = (slot and slot.expire and slot.expire > 0) and (slot.expire - now) or nil
+
+    if have then
+        if slot.due then
+            -- Sorted by how long is actually left. The wrong-blessing case
+            -- has plenty left, so it sorts under the genuinely expiring ones
+            -- — it is a rebless you want, not one you need this second.
+            r.state = "REFRESH"
+            r.tLeft = left or (r.health or 1) * 1000
+        else
+            r.state = "SHIELDED"
+            r.tLeft = (r.health or 1) * 1000
+        end
+        -- Minutes once it is minutes: a Greater blessing has thirty of them,
+        -- and "1499s" is a number nobody reads.
+        r.mainKind = "NUMBER"
+        if left and left >= 60 then
+            r.mainText = string.format("%dm", math.floor(left / 60))
+        elseif left then
+            r.mainText = string.format("%ds", math.max(0, math.ceil(left)))
+        else
+            r.mainText = ""
+        end
+    elseif r.blessWant then
+        r.state, r.mainText, r.mainKind = "READY", "BLESS", "ASK"
+        r.tLeft = (r.health or 1) * 1000
+    else
+        r.state, r.mainText, r.mainKind = "OTHER", "", nil
+        r.tLeft = (r.health or 1) * 1000
+    end
+
+    -- Forbearance: the drain, whatever the state above it says.
+    local l = lockState[r.guid]
+    local forb = l and l.forb
+    if forb and forb > now then
+        r.wsLeft, r.lockMax = forb - now, SDATA.FORBEARANCE_MAX
+    end
+
+    ApplyAlertStates(r, now)
+    return r
+end
+
 local function ResolveState(r, now)
     -- The forecast is chassis: pending dot damage, rolling hot healing and an
     -- inbound cast heal mean the same thing on every board, so it is resolved
@@ -7261,6 +7567,7 @@ local function ResolveState(r, now)
     -- their bar IS an absorb and their lockout IS a cooldown
     if not r.selfSpell then
         if layer == "INT" then return ResolveIntState(r, now) end
+        if SDATA.SLOT_STATE_LAYERS[layer or ""] then return ResolveBlessState(r, now) end
         if SDATA.STRIP_STATE_LAYERS[layer or ""] then return ResolveStripState(r, now) end
         -- PWS ally rows: the shield grammar, and then the same alert ladder
         -- every other board tops itself with. The priest board went without
@@ -7881,6 +8188,37 @@ local function BuildRowWidgets(row)
     row.flash:SetAllPoints(row)
     row.flash:SetVertexColor(1, 0.2, 0.2, 1)
     row.flash:Hide()
+    -- Burst (SDATA.BURST_IDS): a wash over the row and a two-pixel edge round
+    -- it. Pinned to the row's own edges once, so a re-layout costs nothing.
+    row.burstWash = row:CreateTexture(nil, "OVERLAY")
+    row.burstWash:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.burstWash:SetAllPoints(row)
+    row.burstWash:Hide()
+    row.burstEdge = {}
+    local bw = SDATA.BURST_EDGE_W
+    for n = 1, 4 do
+        local t = row:CreateTexture(nil, "OVERLAY")
+        t:SetTexture("Interface\\Buttons\\WHITE8X8")
+        if n == 1 then      -- top
+            t:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+            t:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+            t:SetHeight(bw)
+        elseif n == 2 then  -- bottom
+            t:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+            t:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+            t:SetHeight(bw)
+        elseif n == 3 then  -- left
+            t:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+            t:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+            t:SetWidth(bw)
+        else                -- right
+            t:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+            t:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+            t:SetWidth(bw)
+        end
+        t:Hide()
+        row.burstEdge[n] = t
+    end
 
     -- Dispellable-debuff strip, hanging off the row's right edge. Each slot is
     -- a CC glow (behind), a dispel-type rim, the icon, and a duration sweep.
@@ -8497,10 +8835,48 @@ function CommanderPartyFrames_RowBlueprint()
     return ok and previewRow._blueprint or nil
 end
 
--- Player rows stride taller when each carries an ability strip beneath it
-local function RowStride()
+-- Does this row HOLD a cooldown band under it?
+--
+-- The board used to answer that once, for everybody: the strip was on, so
+-- every row strode seventeen pixels taller -- including a pet's, which has no
+-- cooldown book and can never have a strip, and including everyone else's
+-- under Only My Row, where the strips are switched off by name. The band was
+-- drawn empty and the space was kept anyway.
+--
+-- So the band belongs to the row. It is held by exactly the rows that can
+-- ever draw a strip, and deliberately NOT by whether one is drawn this
+-- instant: a strip fills and empties as cooldowns come and go, and a row
+-- that moved every time would be a row you have to find again -- and on the
+-- click-cast board, a row the client will not let move at all.
+--
+-- (On `util` rather than a chunk local: see the 200-local note at the top.)
+function util.HoldsStrip(isPet, isSelf, class)
+    if isPet or not DB("ShowAbilityBar", true) then return false end
+    if isSelf then
+        if not DB("AbilityBarSelf", true) then return false end
+    elseif DB("AbilityBarOnlySelf", false) then
+        return false
+    end
+    -- A class with its whole book untracked has nothing to hold a band for.
+    -- An unknown class is given the benefit of the doubt.
+    local track = CommanderPartyFramesDB and CommanderPartyFramesDB.AbilityTrack
+    local list = class and SDATA.ABILITY_BOOK[class]
+    if class and not list then return false end
+    for pass = 1, 2 do
+        local entries = (pass == 1) and list or SDATA.ABILITY_SHARED
+        for _, entry in ipairs(entries or SDATA.NO_ENTRIES) do
+            local ov = track and entry.tok and track[entry.tok]
+            if ov == true or (ov == nil and not entry.off) then return true end
+        end
+    end
+    return false
+end
+SDATA.NO_ENTRIES = {}
+
+-- One row's stride: the row, the gap under it, and the band when it holds one.
+local function RowStride(held)
     local s = SDATA.ROW_H + SDATA.ROW_GAP
-    if DB("ShowAbilityBar", true) then s = s + SDATA.ABILITY_H + 1 end
+    if held then s = s + SDATA.ABILITY_H + 1 end
     return s
 end
 
@@ -8527,24 +8903,71 @@ local function PersonalReserve()
     return n
 end
 
-local function PositionRow(row, index, topOffset, grow, base)
+-- The personal block has two shapes. ROWS is the one it was born with: a
+-- half-height row per tracker, stacked, so four shields is four rows. DIALS
+-- is the radial plate's language applied to the same facts (see
+-- CommanderPartyFramesDials.lua): one disc per tracker, side by side, so the
+-- block is ONE line tall however many trackers there are.
+--
+-- (All of this lives on `util`: see the 200-local note at the top.)
+SDATA.DIAL_GAP = 4
+function util.DialsOn()
+    return DB("PersonalStyle", "DIALS") == "DIALS" and CommanderPartyFrames_Dial ~= nil
+end
+
+-- The art a dial's band is drawn with. MATCH follows the board's own Bar
+-- Texture, so a board set to Blizzard bars gets Blizzard bands without being
+-- told twice; anything else is the dials' own answer.
+function util.DialBand()
+    local style = DB("DialTexture", "MATCH")
+    if style == "MATCH" then style = DB("BarTexture", "FLAT") end
+    return style
+end
+
+-- A dial's diameter: what the setting asks for, or less when that many of
+-- them would not fit across the frame. Never below the size a spell icon
+-- stops being a picture of anything.
+function util.DialSize(width, count)
+    local want = DB("DialSize", 28)
+    if count and count > 0 then
+        local fit = math.floor((width - SDATA.STRIPE_W - 3 + SDATA.DIAL_GAP) / count) - SDATA.DIAL_GAP
+        if fit < want then want = fit end
+    end
+    if want < 16 then want = 16 end
+    return want
+end
+
+-- Height the personal block holds above the ally board. `live` is how many
+-- personal rows are actually up, for the boards that are free to grow past
+-- the reserve (the sorted one, and the test board).
+function util.PersonalBlockH(live)
+    local count = math.max(PersonalReserve(), live or 0)
+    if count == 0 then return 0 end
+    if util.DialsOn() then
+        return util.DialSize(FrameWidth(), count) + SDATA.ROW_GAP + 2
+    end
+    return count * PersonalStride()
+end
+
+-- `off` is where this row starts in the ally block: the summed strides of
+-- the rows before it, which is no longer a multiple of anything.
+local function PositionRow(row, off, held, topOffset, grow, base)
     row:ClearAllPoints()
     if grow == "UP" then
-        local lift = DB("ShowAbilityBar", true) and (SDATA.ABILITY_H + 1) or 0
-        row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * RowStride() + lift)
+        local lift = held and (SDATA.ABILITY_H + 1) or 0
+        row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, off + lift)
     else
-        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0,
-            -topOffset - (base or 0) - (index - 1) * RowStride())
+        row:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -topOffset - (base or 0) - off)
     end
 end
 
-local function PositionAbilityRow(row, index, topOffset, grow, base)
+local function PositionAbilityRow(row, off, topOffset, grow, base)
     row:ClearAllPoints()
     if grow == "UP" then
-        row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, (index - 1) * RowStride())
+        row:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", 0, off)
     else
         row:SetPoint("TOPLEFT", root, "TOPLEFT", 0,
-            -topOffset - (base or 0) - (index - 1) * RowStride() - SDATA.ROW_H - 1)
+            -topOffset - (base or 0) - off - SDATA.ROW_H - 1)
     end
 end
 
@@ -8617,7 +9040,8 @@ local function PaintRow(row, r, now, index)
             for k = 1, SDATA.MAX_PIPS do h.pips[k]:Hide() end
         end
         row.left:SetText(""); row.right:SetText(""); row.glow:Hide(); row.flash:Hide()
-        for i = 1, 4 do row.ohGlow[i]:Hide(); row.needGlow[i]:Hide() end
+        row.burstWash:Hide()
+        for i = 1, 4 do row.ohGlow[i]:Hide(); row.needGlow[i]:Hide(); row.burstEdge[i]:Hide() end
         row.tgtCount:Hide()
         row.stripe:SetAlpha(0)
         if row.blessBtn then row.blessBtn:Hide() end
@@ -8698,11 +9122,13 @@ local function PaintRow(row, r, now, index)
             row.spellIcon:Hide()
             row.swipe:Hide()
             util.HideOutline(row.lockRing)
-        elseif SDATA.STRIP_STATE_LAYERS[layer or ""] and not r.selfSpell then
+        elseif (SDATA.STRIP_STATE_LAYERS[layer or ""] or SDATA.SLOT_STATE_LAYERS[layer or ""])
+            and not r.selfSpell then
             -- The druid and paladin boards have nothing to put here: their
-            -- upkeep all lives on the strips. The priest board is NOT in this
-            -- branch even though it has a strip — its own status slot is the
-            -- Power Word: Shield tracker, which is the whole board.
+            -- upkeep all lives on the strip and the blessing slot. The priest
+            -- board is NOT in this branch even though it has a strip — its
+            -- own status slot is the Power Word: Shield tracker, which is the
+            -- whole board.
             row.spellIcon:Hide(); row.swipe:Hide()
             util.HideOutline(row.lockRing)
             row.inShield:Hide(); row.inShieldCd:Hide()
@@ -9499,9 +9925,14 @@ local function PaintRow(row, r, now, index)
     -- always true of the row. Nothing else changes -- the percent on the right,
     -- the strip, the name slot all stay exactly as they were. Self-spell rows
     -- are left out: their r.name is the spell, not a person.
-    if (r.mainText and r.mainText ~= "") or r.selfSpell then
+    --
+    -- Which words get to take the name off the bar at all is the player's
+    -- call, kind by kind (util.BarText): a word the settings have turned off
+    -- is a row with nothing to say there, and the name comes back.
+    local word = util.BarText(r)
+    if word or r.selfSpell then
         row.left:SetTextColor(1, 1, 1)
-        row.left:SetText(r.mainText or "")
+        row.left:SetText(word or r.mainText or "")
     else
         local cc = r.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[r.class]
         row.left:SetTextColor(cc and cc.r or 0.9, cc and cc.g or 0.9, cc and cc.b or 0.9)
@@ -9595,6 +10026,38 @@ local function PaintRow(row, r, now, index)
         rowFlash[index] = nil
         util.rowFlashTint[index] = nil
         row.flash:Hide()
+    end
+
+    -- Burst edge (Arcane Power). Three readings in one: a bright flare for
+    -- the first half second, so the POP itself registers in the corner of
+    -- the eye; a slow pulse on the edge for as long as it runs; and a wash
+    -- that thins with the time left, so the row is loudest when the big
+    -- casts are still to come and quiet by the time it is over. Dead rows
+    -- wear nothing -- a burst on a corpse is not information.
+    local burst = not r.dead and DB("BurstGlow", true) and burstState[r.guid] or nil
+    if burst and (burst.expire == 0 or burst.expire > now) then
+        local c = burst.def and burst.def.color or { 0.72, 0.42, 1.00 }
+        local dur = burst.duration or 0
+        local frac = (burst.expire > 0 and dur > 0) and (burst.expire - now) / dur or 1
+        if frac > 1 then frac = 1 end
+        local age = (burst.expire > 0 and dur > 0) and (dur - (burst.expire - now)) or 1
+        local flare = (age >= 0 and age < 0.5) and (1 - age / 0.5) or 0
+        local pulse = 0.5 + 0.5 * math.abs(math.sin(now * 3))
+        local edgeA = 0.55 + 0.35 * pulse + 0.1 * flare
+        if edgeA > 1 then edgeA = 1 end
+        for i = 1, 4 do
+            local t = row.burstEdge[i]
+            t:SetVertexColor(c[1], c[2], c[3], 1)
+            t:SetAlpha(edgeA)
+            t:Show()
+        end
+        row.burstWash:SetVertexColor(c[1], c[2], c[3], 1)
+        row.burstWash:SetAlpha(0.05 + 0.09 * pulse * frac + 0.30 * flare)
+        row.burstWash:Show()
+    else
+        if burst then burstState[r.guid] = nil end
+        row.burstWash:Hide()
+        for i = 1, 4 do row.burstEdge[i]:Hide() end
     end
 
     -- Overheal ring. Brightness rides the share that was wasted, so a heal
@@ -10081,6 +10544,28 @@ end
 -- SetupSecureRows exists and filled in just after.
 function CommanderPartyFrames_RebindRows() end
 
+-- The row an ally is on right now, for a module that hangs something of its
+-- own beside it (Commander Diminish puts the ladders being run on a teammate
+-- next to that teammate). Returns the row and how far past its right edge
+-- this board's own furniture reaches -- the dispel strip marches out that way
+-- -- so a guest starts clear of it. nil when that person has no row on
+-- screen. On the sorted board a person's row changes as the board re-sorts,
+-- so this is asked per draw, never kept.
+function CommanderPartyFrames_RowFor(guid)
+    if not guid or not root:IsShown() then return nil end
+    for i = 1, #rowPool do
+        local row = rowPool[i]
+        if row._guid == guid and row:IsShown() then
+            local reach = 4
+            if DB("ShowDispels", false) then
+                reach = 5 + DB("DispelMaxIcons", 3) * (DB("DispelIconSize", 16) + 4) + 2
+            end
+            return row, reach
+        end
+    end
+    return nil
+end
+
 local function SetupSecureRows()
     if InCombat() then secureDirty = true; return end
     secureDirty = false
@@ -10090,14 +10575,28 @@ local function SetupSecureRows()
     local showHeader = DB("ShowHeader", true)
     local topOffset = showHeader and util.HeaderH() or 0
     local grow = DB("Grow", "DOWN")
-    local personalBase = PersonalReserve() * PersonalStride()
+    local personalBase = util.PersonalBlockH()
     -- Resolved once per pass, not per row: the talent scan is cheap but there
     -- is no reason for forty rows to each ask which spec we are
     local profile = util.TalentProfile()
+    -- Where each bound row starts and whether it holds a cooldown band,
+    -- decided here -- out of combat, with the tokens -- and then only READ by
+    -- the draw: the strips are insecure and could move mid-fight, the rows
+    -- they sit under cannot, and the two have to agree.
+    local off = 0
+    util.secureOff, util.secureHeld = util.secureOff or {}, util.secureHeld or {}
+    wipe(util.secureOff)
+    wipe(util.secureHeld)
     for i, token in ipairs(secureTokens) do
         local row = AcquireRow(i)
         if row._sig ~= sig then LayoutRow(row, width, sig) end
-        PositionRow(row, i, topOffset, grow, personalBase)
+        local owner = SDATA.PET_OWNER[token]
+        local held = util.HoldsStrip(owner ~= nil,
+            (not owner) and UnitIsUnit(token, "player") or false,
+            select(2, UnitClass(owner or token)))
+        util.secureOff[i], util.secureHeld[i] = off, held
+        PositionRow(row, off, held, topOffset, grow, personalBase)
+        off = off + RowStride(held)
         if row.SetAttribute then
             -- Raw token drives mouseover for @mouseover macros; each mouse button
             -- (and the modifier+left combo) casts its bound spell or targets. Both
@@ -10124,9 +10623,13 @@ local function SetupSecureRows()
     for i = #secureTokens + 1, #rowPool do
         rowPool[i]:Hide()
     end
+    util.secureBody = off
+    -- A fixed-height board holds slots nobody is in yet, charged at what an
+    -- ordinary ally's row would stride.
     local slots = DB("FixedHeight", false) and near.Max() or math.max(#secureTokens, 1)
+    local body = off + math.max(slots - #secureTokens, 0) * RowStride(util.HoldsStrip(false, false))
     root:SetSize(width, topOffset + personalBase
-        + math.max(slots * RowStride() - SDATA.ROW_GAP, SDATA.ROW_H))
+        + math.max(body - SDATA.ROW_GAP, SDATA.ROW_H))
 end
 
 function CommanderPartyFrames_RebindRows()
@@ -10180,11 +10683,12 @@ local function SampleUptime(now)
     end
     wipe(sampleUnits)
     if layer == "BLESS" then
-        -- The paladin's version is the BLESSINGS, not the Hands. Hand uptime
-        -- would be a number near zero that means nothing — they are
-        -- emergencies, and spending them constantly is not the goal. Blessing
-        -- coverage is the thing a paladin is actually judged on, and it is
-        -- the one upkeep number on this board worth a percentage.
+        -- The paladin's version is blessing coverage: the share of the
+        -- living team carrying ANY blessing of yours, the emergency three
+        -- included — for the ten seconds a Protection is on them, they are
+        -- blessed, because on this client that is what a Protection is. It
+        -- is the thing a paladin is actually judged on, and the one upkeep
+        -- number on this board worth a percentage.
         if IsInRaid and IsInRaid() then
             for i = 1, 40 do if UnitExists("raid" .. i) then sampleUnits[#sampleUnits + 1] = "raid" .. i end end
         elseif IsInGroup and IsInGroup() then
@@ -10945,15 +11449,190 @@ local function AppendLivePersonalRows(now)
     end
 end
 
+-- ---------------------------------------------------------------------------
+-- The personal block as dials. The brush is in CommanderPartyFramesDials.lua
+-- and knows nothing about shields; this is the half that does -- it turns a
+-- resolved personal row into the model the brush paints.
+--
+-- The states map onto the disc the way they would onto a radial nameplate:
+--
+--   up            the face is lit, the band is how much absorb is left in
+--                 the spell's own colour, the thin outer arc is how long,
+--                 and the number on the face is the absorb remaining
+--   low           the same, with the band and the rim in the state's colour
+--   on cooldown   the face is dark and wiped like a clock, with the seconds
+--                 until it is back written across it and a red rim
+--   ready         a dark face in an empty track, and nothing else: on this
+--                 board a tracker that is not up is never absent, only dark
+-- ---------------------------------------------------------------------------
+util.dialPool, util.dialList, util.dialDefs, util.dialModel = {}, {}, {}, {}
+SDATA.DIAL_HEALTH = { 0.35, 0.85, 0.40 }
+SDATA.DIAL_GOLD = { 1.00, 0.82, 0.20 }
+SDATA.DIAL_FROST = { 0.55, 0.85, 1.00 }
+
+function util.HideDials()
+    for i = 1, #util.dialPool do util.dialPool[i]:Hide() end
+end
+
+-- `r` is the resolved row, or nil for a tracker with nothing behind it right
+-- now (the elemental while it is not summoned, a shield while you are dead):
+-- it keeps its seat, dark, so nothing beside it ever shuffles.
+function util.DialModel(r, def, index, now)
+    local m = util.dialModel
+    wipe(m)
+    if not r then
+        m.ghost = true
+        m.icon = (def == "ELE") and eleIcon or (type(def) == "table" and def.icon) or nil
+        return m
+    end
+
+    if r.eleRow then
+        -- The elemental: its face, its health round the band, its lifespan
+        -- on the clock with the seconds left across the face, and Freeze on
+        -- the rim. The planner mark rides the clock exactly as it rode the
+        -- drain strip: gold for the last moment a Freeze still leaves room
+        -- for a second, frost for when a spent one comes back.
+        if r.unit and UnitExists(r.unit) then m.portrait = r.unit end
+        m.icon = r.icon
+        m.absorb = r.health or 1
+        m.absorbColor = SDATA.DIAL_HEALTH
+        local left = r.wsLeft
+        if left and left > 0 then
+            m.timeStop, m.timeDur = now + left, r.lockMax or left
+            m.text = tostring(math.ceil(left))
+        end
+        if r.state == "REFRESH" then m.rim = STATES.REFRESH.color end
+        m.mark = r.freezeMark
+        m.markColor = r.freezeMarkNext and SDATA.DIAL_FROST or SDATA.DIAL_GOLD
+        m.badgeIcon = freezeIcon
+        if r.freezeCd and r.freezeCd > 0 and r.freezeStart and r.freezeDur then
+            m.badgeStop, m.badgeDur = r.freezeStart + r.freezeDur, r.freezeDur
+        end
+    else
+        m.icon = r.icon
+        local state = r.state
+        local cooling = r.wsLeft and r.wsLeft > 0 and r.lockMax and r.lockMax > 0
+        if cooling then m.wipeStop, m.wipeDur = now + r.wsLeft, r.lockMax end
+        if r.shieldUp then
+            local low = state == "REFRESH" or state == "FADING"
+            m.absorb = r.ratio or 1
+            m.absorbColor = (low and STATES[state].color)
+                or (type(def) == "table" and def.name and SDATA.SHIELD_COLORS[def.name])
+                or STATES.REFRESH.color
+            if r.tLeft and r.tLeft > 0 then
+                m.timeStop = now + r.tLeft
+                m.timeDur = math.max(r.duration or r.tLeft, r.tLeft)
+            end
+            m.text = r.remaining and FormatAmount(r.remaining) or ""
+            if low then m.rim = STATES[state].color end
+        else
+            m.ghost = true
+            if state == "EXPOSED" and cooling then
+                m.text = tostring(math.ceil(r.wsLeft))
+                m.rim = STATES.EXPOSED.color
+            end
+        end
+    end
+
+    m.shade = DB("DialTextShade", 0.45)
+
+    local flashEnd = rowFlash[index]
+    if flashEnd and flashEnd > now then
+        m.flash = (flashEnd - now) / 0.9
+        m.flashColor = util.rowFlashTint[index]
+    elseif flashEnd then
+        rowFlash[index] = nil
+        util.rowFlashTint[index] = nil
+    end
+    return m
+end
+
+function util.PaintDials(now, shownPlayers, topOffset, grow, width, allyBody)
+    local Dial = CommanderPartyFrames_Dial
+    local list, defs = util.dialList, util.dialDefs
+    wipe(list)
+    wipe(defs)
+    if testUntil > 0 then
+        -- The test board builds its own personal rows; each is a dial
+        for i, r in ipairs(personalRows) do list[i], defs[i] = r, false end
+    else
+        -- Live, the SEATS are the trackers that are switched on, in a fixed
+        -- order, whether or not each has anything to show -- a dial that
+        -- appeared and vanished would move every dial after it.
+        local n = 0
+        local ele
+        for _, r in ipairs(personalRows) do if r.eleRow then ele = r end end
+        if eleKnown or ele then
+            n = n + 1
+            list[n], defs[n] = ele or false, "ELE"
+        end
+        if DB("SelfShieldRows", true) then
+            local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
+            for _, def in ipairs(trackedSpells) do
+                if SelfTrackEnabled(def) then
+                    n = n + 1
+                    -- Resolved here rather than taken from the row list:
+                    -- Alerts Only strips healthy rows out of that, and a
+                    -- shield that is UP must not be drawn as a dark face
+                    list[n], defs[n] = (not dead) and SelfRow(def, now) or false, def
+                end
+            end
+        end
+    end
+
+    local count = #list
+    local pool = util.dialPool
+    if count == 0 then util.HideDials() return end
+    local size = util.DialSize(width, math.max(count, PersonalReserve()))
+    local band = util.DialBand()
+    for i = 1, count do
+        local w = pool[i]
+        if not w then
+            w = Dial.New(root)
+            pool[i] = w
+        end
+        Dial.Layout(w, size, DB("DialTextSize", 0))
+        Dial.SetBand(w, band)
+        local x = SDATA.STRIPE_W + 3 + (i - 1) * (size + SDATA.DIAL_GAP)
+        local y = (grow == "UP") and ((allyBody or 0) + 1) or (-topOffset - 1)
+        if w._x ~= x or w._y ~= y or w._grow ~= grow then
+            w._x, w._y, w._grow = x, y, grow
+            w:ClearAllPoints()
+            if grow == "UP" then
+                w:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", x, y)
+            else
+                w:SetPoint("TOPLEFT", root, "TOPLEFT", x, y)
+            end
+        end
+        local r = list[i] or nil
+        local index = shownPlayers + i
+        if r then
+            CheckExposeAlert(r, index, now)
+            util.CheckRollAlert(r, index, now)
+            util.CheckPoMAlert(r, index, now)
+        end
+        w._row = r
+        Dial.Paint(w, util.DialModel(r, defs[i], index, now), now)
+        w:Show()
+    end
+    for i = count + 1, #pool do pool[i]:Hide() end
+end
+
 -- Personal rows lead the board: your own upkeep on top, at half an ally
 -- row's height, with the party rows below it.
-local function PaintPersonalRows(now, shownPlayers, topOffset, grow, width, sig)
+local function PaintPersonalRows(now, shownPlayers, topOffset, grow, width, sig, allyBody)
+    if util.DialsOn() then
+        for i = 1, #personalPool do personalPool[i]:Hide() end
+        util.PaintDials(now, shownPlayers, topOffset, grow, width, allyBody)
+        return
+    end
+    util.HideDials()
     -- Their own layout signature: the compact metrics must not be cached
     -- against (or clobber) the ally rows' full-height layout
     local psig = sig .. "|P"
     -- Growing UP the ally board rises from the bottom, so the personal block
     -- stacks above it; growing DOWN it leads from under the header.
-    local base = (grow == "UP") and (shownPlayers * RowStride()) or 0
+    local base = (grow == "UP") and (allyBody or 0) or 0
     for i = 1, #personalRows do
         local row = AcquirePersonalRow(i)
         -- The elemental row reserves a second status slot for Freeze; the
@@ -10992,7 +11671,24 @@ end
 -- slots): stripSpec/stripSt/stripLs/stripN carry the current row's context
 local stripSpec, stripSt, stripLs, stripN, stripTrack
 local function StripConsider(entry, now)
-    if entry.spec and entry.spec ~= stripSpec then return end
+    if util.stripSelf then
+        -- Your own row is not a guess. A class ability is on it if your
+        -- spellbook holds it and off it if it does not, whatever tree it
+        -- belongs to -- so a hybrid sees exactly the cooldowns it has, and a
+        -- character still levelling is not shown an Ice Block it cannot
+        -- cast. (Shared entries -- the trinket, racials -- are items and
+        -- passives the book does not list; they pass.)
+        if entry.id and util.stripBook and entry.tok and entry.tok:sub(1, 1) ~= "*" then
+            if not (knownSpells[entry.dispName] or (IsSpellKnown and IsSpellKnown(entry.id))) then
+                return
+            end
+        end
+    elseif entry.spec then
+        -- Somebody else's talent: proven by having seen it cast, or implied
+        -- by a build that has only ever shown the one tree
+        local seen = util.stripSeen and util.stripSeen[entry.key]
+        if not seen and (entry.spec ~= stripSpec or util.stripHybrid) then return end
+    end
     -- Tracked filter: explicit AbilityTrack override wins, else book default
     local ov = stripTrack and stripTrack[entry.tok]
     if ov == false or (ov == nil and entry.off) then return end
@@ -11026,6 +11722,12 @@ local function PaintAbilityStrip(arow, r, now)
         and (r.isSelf or not DB("AbilityBarOnlySelf", false)) then
         local spec = specState[guid]
         stripSpec, stripSt, stripLs, stripN = spec, abilityState[guid], lockState[guid], 0
+        -- A test row is nobody's spellbook, and a book that has not loaded
+        -- yet (an empty scan at login) must not blank your own strip
+        util.stripSelf = r.isSelf and guid == playerGUID
+        util.stripBook = next(knownSpells) ~= nil
+        util.stripSeen = util.talentSeen[guid]
+        util.stripHybrid = util.IsHybrid(guid)
         stripTrack = CommanderPartyFramesDB.AbilityTrack
         local list = SDATA.ABILITY_BOOK[class]
         if list then for _, e in ipairs(list) do StripConsider(e, now) end end
@@ -11118,7 +11820,7 @@ local function Draw()
     local width = FrameWidth()
     local sig = LayoutSig(width)
     -- Height held for the personal block that now leads the board
-    local personalBase = PersonalReserve() * PersonalStride()
+    local personalBase = util.PersonalBlockH()
 
     -- Combat-only visibility applies to both modes. With the secure buttons
     -- moved off root this is a legal call again in either direction — the
@@ -11151,12 +11853,20 @@ local function Draw()
                     util.CheckPoMAlert(r, i, now)
                 end
                 PaintRow(row, r, now, i)
+                row._guid = r.guid
                 if barsOn then
-                    -- Ability strips are insecure: positionable mid-combat
+                    -- Ability strips are insecure: positionable mid-combat.
+                    -- Drawn only under a row that was BOUND holding a band
+                    -- (see SetupSecureRows): a strip under any other row
+                    -- would land on top of the row below it.
                     local ar = AcquireAbilityRow(i)
-                    PositionAbilityRow(ar, i, topOffset, grow, personalBase)
-                    PaintAbilityStrip(ar, r, now)
-                    ar:Show()
+                    if util.secureHeld and util.secureHeld[i] then
+                        PositionAbilityRow(ar, util.secureOff[i], topOffset, grow, personalBase)
+                        PaintAbilityStrip(ar, r, now)
+                        ar:Show()
+                    else
+                        ar:Hide()
+                    end
                 end
             end
         end
@@ -11165,7 +11875,7 @@ local function Draw()
         -- Click-Cast must not cost the mage their own rows
         wipe(personalRows)
         AppendLivePersonalRows(now)
-        PaintPersonalRows(now, #secureTokens, topOffset, grow, width, sig)
+        PaintPersonalRows(now, #secureTokens, topOffset, grow, width, sig, util.secureBody)
         -- The banner rides the board's visibility, not just the header
         -- setting: its container is no longer root's child to hide with it
         local boardOn = not combatHidden and (#secureTokens > 0 or #personalRows > 0
@@ -11178,7 +11888,9 @@ local function Draw()
         if not InCombat() then
             local mainSlots = DB("FixedHeight", false) and near.Max()
                 or math.max(#secureTokens, 1)
-            local bodyH = mainSlots * RowStride() + personalBase - SDATA.ROW_GAP
+            local bodyH = (util.secureBody or 0)
+                + math.max(mainSlots - #secureTokens, 0) * RowStride(util.HoldsStrip(false, false))
+                + personalBase - SDATA.ROW_GAP
             root:SetSize(width, topOffset + math.max(bodyH, SDATA.ROW_H))
         end
         SafeSetShown(root, boardOn)
@@ -11272,27 +11984,36 @@ local function Draw()
     -- These rows are insecure, so the block can be sized to whichever is
     -- larger — the reserve, or what is actually up. The test board builds
     -- personal rows the reserve knows nothing about.
-    local base = math.max(personalBase, #personalRows * PersonalStride())
+    local base = util.PersonalBlockH(#personalRows)
+    -- Each row strides by what it holds, so the block is a running sum
+    local off = 0
     for i = 1, shown do
         local row = AcquireRow(i)
         if row._sig ~= sig then LayoutRow(row, width, sig) end
-        PositionRow(row, i, topOffset, grow, base)
         local r = rowData[i]
+        local held = util.HoldsStrip(r.isPet, r.isSelf, r.class)
+        PositionRow(row, off, held, topOffset, grow, base)
         CheckExposeAlert(r, i, now)
         util.CheckRollAlert(r, i, now)
         util.CheckPoMAlert(r, i, now)
         PaintRow(row, r, now, i)
+        row._guid = r.guid
         row:Show()
         if barsOn then
             local ar = AcquireAbilityRow(i)
-            PositionAbilityRow(ar, i, topOffset, grow, base)
-            PaintAbilityStrip(ar, r, now)
-            ar:Show()
+            if held then
+                PositionAbilityRow(ar, off, topOffset, grow, base)
+                PaintAbilityStrip(ar, r, now)
+                ar:Show()
+            else
+                ar:Hide()
+            end
         end
+        off = off + RowStride(held)
     end
     for i = shown + 1, #rowPool do rowPool[i]:Hide() end
     for i = (barsOn and shown or 0) + 1, #abilityRowPool do abilityRowPool[i]:Hide() end
-    PaintPersonalRows(now, shown, topOffset, grow, width, sig)
+    PaintPersonalRows(now, shown, topOffset, grow, width, sig, off)
 
     local boardOn = not combatHidden and (shown + #personalRows > 0 or DB("AlwaysShow", false)
         or Commander.UI.HudUnlocked(CommanderPartyFramesDB, "Hud"))
@@ -11304,7 +12025,8 @@ local function Draw()
     -- secure rows back under it, and there the token set only changes out of
     -- combat, so the frozen size is always the right one anyway.
     local mainSlots = DB("FixedHeight", false) and math.max(maxRows, shown) or shown
-    local bodyH = mainSlots * RowStride() + base - SDATA.ROW_GAP
+    local bodyH = off + (mainSlots - shown) * RowStride(util.HoldsStrip(false, false))
+        + base - SDATA.ROW_GAP
     if not (InCombat() and root.IsProtected and root:IsProtected()) then
         root:SetSize(width, topOffset + math.max(bodyH, SDATA.ROW_H))
     end
@@ -11550,41 +12272,23 @@ function CommanderPartyFrames_Test()
         return
     end
 
-    -- BLESS layer (Paladin): the whole grammar at once, and specifically the
-    -- half no other board has — Forbearance. Row 3 is EXPOSED (locked with
-    -- nothing up), row 5 is FADING (a Hand running out while locked), and the
-    -- pair sitting next to each other is the point: red and orange have to be
-    -- tellable apart at a glance the same way purple and green do on the hot
-    -- board. The blessing slots run the full range too, including the case
-    -- that ONLY this layer has: an ally carrying Kings whose Might slot must
-    -- stay quiet, because the game will not give them both.
+    -- BLESS layer (Paladin): the one slot, in every state it has. Row 1 is
+    -- covered and quiet (Kings, twenty-five minutes on the sweep); row 2 is
+    -- inside the rebuff window (amber, REFRESH); row 3 is carrying a
+    -- Protection with two seconds left — the slot shows the PROTECTION, not
+    -- a dark Kings, because on this client the Protection is the blessing on
+    -- them — and Forbearance draws the minute under the bar; row 4 has none
+    -- of yours at all (READY, the slot dark red with the advisor on, because
+    -- a naked ally is never correct); row 5 is carrying Might where Kings is
+    -- assigned, which is lit, amber and REFRESH at once.
     if layer == "BLESS" then
-        local defs = {}
-        for _, d in ipairs(SDATA.PALADIN_HANDS) do defs[d.key] = d end
-        -- Blessings: healthy, inside the rebuff window (amber), one-per-target
-        -- suppression, and outright missing (the dark RED slot with the
-        -- advisor on, because a naked ally is never correct)
         intState["cshieldtest1"] = { KINGS = { expire = now + 1500, duration = 1800 } }
-        intState["cshieldtest2"] = { MIGHT = { expire = now + 150, duration = 600 } }
-        intState["cshieldtest3"] = { WISDOM = { expire = now + 900, duration = 1800 } }
-        intState["cshieldtest5"] = { KINGS = { expire = now + 240, duration = 600 } }
-        -- Hands. Row 1 is covered and quiet; row 2 has a Freedom about to run
-        -- out (REFRESH); row 5 has one running out while Forbearance-locked,
-        -- which is FADING.
-        strip.state["cshieldtest1"] = {
-            SACRIFICE = { expire = now + 22, duration = 30, icon = defs.SACRIFICE.icon, stacks = 0 },
-        }
-        strip.state["cshieldtest2"] = {
-            FREEDOM = { expire = now + 2, duration = 10, icon = defs.FREEDOM.icon, stacks = 0 },
-        }
-        strip.state["cshieldtest5"] = {
-            BOP = { expire = now + 2, duration = 10, icon = defs.BOP.icon, stacks = 0 },
-        }
-        -- The lockout itself. Row 3 carries it with nothing up (EXPOSED);
-        -- row 5 carries it under a Hand that is falling off (FADING). The
-        -- ability bar reads the same record, so both rows also show its rim.
+        intState["cshieldtest2"] = { KINGS = { expire = now + 150, duration = 600 } }
+        intState["cshieldtest3"] = { BOP = { expire = now + 2, duration = 10 } }
+        intState["cshieldtest5"] = { MIGHT = { expire = now + 400, duration = 600 } }
+        -- The lockout under row 3's Protection. The ability bar reads the
+        -- same record, so the row also shows its rim.
         lockState["cshieldtest3"] = { forb = now + 41 }
-        lockState["cshieldtest5"] = { forb = now + 27 }
         -- Two of the three schools a paladin cleanses, so both row colors show
         curseState["cshieldtest4"] = { expire = now + 11, duration = 20, dispelName = "Poison" }
         dispelState["cshieldtest4"] = { n = 1,
@@ -11719,6 +12423,11 @@ function CommanderPartyFrames_Test()
         { icon = "Interface\\Icons\\Spell_Shadow_Possession", name = "Test Fear",
           dispelName = "Magic", expire = now + 7, duration = 15, cc = true, canDispel = true },
     }
+    burstState["cshieldtest3"] = { expire = now + 12, duration = 15, def = SDATA.BURST_IDS[12042] }
+    dispelState["cshieldtest3"] = { n = 1,   -- immunity: a buff on the strip (ice rim)
+        { icon = "Interface\\Icons\\Spell_Frost_Frost", name = "Test Ice Block",
+          expire = now + 7, duration = 10, cc = false, canDispel = false, important = "IMMUNE" },
+    }
     dispelState["cshieldtest5"] = { n = 1,   -- undispellable CC (orange rim, glows)
         { icon = "Interface\\Icons\\Spell_Shadow_MindSteal", name = "Test Blind",
           expire = now + 6, duration = 10, cc = true, canDispel = false, important = "CC" },
@@ -11801,14 +12510,15 @@ function CommanderPartyFrames_Buffs()
                 else
                     state = "|cff999999missing|r"
                 end
-                -- On the combined slot the label is the ASSIGNED blessing, and
-                -- "missing" is worth qualifying: they may well be carrying a
-                -- different one of yours, which is the whole reason the slot
-                -- is dark rather than a mystery.
-                local label = (slot.want and slot.want.label) or slot.def.label
+                -- On the combined slot the label is what is ON them when
+                -- something is, and the ASSIGNED blessing when nothing is;
+                -- REBUFF on a blessing with plenty left means it is the wrong
+                -- one, which is worth saying in words.
+                local label = (slot.have and slot.have.label) or (slot.want and slot.want.label)
+                    or slot.def.label
                 local note = (not slot.up and slot.why) and ("  (" .. slot.why .. ")") or ""
-                if slot.want and not slot.up and r.blessHave then
-                    note = "  (carrying your " .. r.blessHave.label .. ")"
+                if slot.have and slot.want and slot.have ~= slot.want then
+                    note = "  (assigned " .. slot.want.label .. ")"
                 end
                 print(string.format("    %-10s %-13s %s%s", r.name or "?",
                     label, state, note))
@@ -11869,7 +12579,7 @@ function CommanderPartyFrames_Debug()
         print(string.format("  barrier=%s  elemental=%s  armor=%s",
             tostring(barrierDef and barrierDef.name or "unknown"),
             tostring(eleKnown), tostring(selfArmor and "up" or "none/unseen")))
-    elseif SDATA.STRIP_BOOKS[layer or ""] then
+    elseif SDATA.STRIP_BOOKS[layer or ""] or layer == "BLESS" then
         local names, cds, units = 0, #strip.cds, 0
         for _ in pairs(strip.names) do names = names + 1 end
         for _ in pairs(strip.state) do units = units + 1 end
@@ -12119,6 +12829,7 @@ local function Apply()
         wipe(shieldState)
         wipe(wsState)
         wipe(dispelState)
+        wipe(burstState)
         wipe(intState)
         wipe(util.bgState)
         wipe(curseState)
@@ -12187,6 +12898,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
         -- Order matters: every `known` flag below is read off knownSpells,
         -- so the spellbook has to be scanned before anything asks it
         RefreshKnownSpells()
+        util.ReadSelfSpec()
         util.ResolveBuffBook()
         -- Class-independent and read once: nothing here is ever learned or
         -- untrained, so it does not ride SPELLS_CHANGED with the book above
@@ -12263,13 +12975,22 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
             for id, category in pairs(IMPORTANT_IDS) do
                 local n = GetSpellInfo(id)
                 if n then
-                    importantNames[n] = category
-                    if category == "CC" then ccNames[n] = true end
+                    if category == "IMMUNE" then
+                        -- Buffs: matched on the HELPFUL pass, never the debuff one
+                        immuneNames[n] = category
+                    else
+                        importantNames[n] = category
+                        if category == "CC" then ccNames[n] = true end
+                    end
                 end
             end
             for _, id in ipairs(MUTED_IDS) do
                 local n = GetSpellInfo(id)
                 if n then mutedNames[n] = true end
+            end
+            for id, def in pairs(SDATA.BURST_IDS) do
+                local n = GetSpellInfo(id)
+                if n then burstNames[n] = def end
             end
             util.ResolveForecast()
         end
@@ -12380,6 +13101,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
         if securePool and (secureDirty or util.SecureOrderStale()) then SetupSecureRows() end
         if near.pending then near.pending = false; near.PaintButton() end
         if mageBtnsDirty then BindMageUtilityButtons() end
+        if util.switchersDirty then util.BindSwitchers() end
         if testUntil == 0 then Draw() end
     elseif event == "PLAYER_REGEN_DISABLED" then
         -- Entering combat: wake a board that Combat Only kept hidden
@@ -12405,12 +13127,14 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
         BindMageUtilityButtons()
         if mageBtnsDirty then util.RefreshCounts() end
     elseif event == "CHARACTER_POINTS_CHANGED" or event == "PLAYER_TALENT_UPDATE" then
+        util.ReadSelfSpec()
         -- Respec: a different profile is live now. Out of combat this rebinds
         -- immediately; in combat SetupSecureRows defers it, which is correct —
         -- you cannot respec mid-fight anyway.
         if securePool then SetupSecureRows() end
     elseif event == "SPELLS_CHANGED" then
         RefreshKnownSpells()
+        util.ReadSelfSpec()
         UpdateMyShieldValue()
         -- Training a buff (or its group version) adds its slot; the registry
         -- re-reads the book rather than waiting for a reload

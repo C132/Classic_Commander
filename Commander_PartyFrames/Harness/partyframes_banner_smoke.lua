@@ -20,11 +20,14 @@
 -- 4.3.0 adds the druid HOT layer: the per-row hot strip (own sweeps,
 -- Lifebloom stacks, ours-only sourcing), the state ladder including the two
 -- removal schools, and the upkeep banner (form, known-only cooldowns).
--- 5.4.0 adds the paladin BLESS layer, and specifically the two things no
--- other layer can exercise: the Forbearance lockout (EXPOSED with nothing up,
--- FADING under an expiring Hand, plain REFRESH once it clears) and the
--- one-blessing-per-target rule. Plus the Hand strip on the same machinery the
--- hots ride, and the aura/seal/known-only-cooldown banner.
+-- 5.4.0 adds the paladin BLESS layer. 5.30.0 rebuilt it around what this
+-- client actually is: Freedom, Protection and Sacrifice are BLESSINGS here
+-- (the "Hand of" rename is 3.0), so the Hands strip is gone and the ONE
+-- blessing slot per ally shows whichever blessing of yours is on them — a
+-- Protection with its ten seconds, then the ghosted Kings asking to go back
+-- on. What no other layer exercises: that replacement, the one-blessing-per-
+-- target rule, Forbearance as a drain, and the aura/seal/known-only-cooldown
+-- banner.
 -- 5.41.0 adds "Arrow to them" (Commander Orders follows an ally): every run
 -- drives /cpf arrow, the refusals, the no-Orders /way line and the roster
 -- tracking (a reshuffle re-points the follow at the same GUID without taking
@@ -186,7 +189,11 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn); return fn
     end
     if key == "SetAttribute" then
-        local fn = function(s, k, v) s.__attr = s.__attr or {}; s.__attr[k] = v end
+        local fn = function(s, k, v)
+            -- Refused in combat on a secure frame, exactly like the client
+            if s.__secureTemplate and Blocked(s, "SetAttribute") then return end
+            s.__attr = s.__attr or {}; s.__attr[k] = v
+        end
         rawset(self, key, fn); return fn
     end
     if key == "GetAttribute" then
@@ -222,7 +229,12 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn); return fn
     end
     if key == "SetCooldown" then
-        local fn = function(s, start, dur) s.__cdStart, s.__cdDur = start, dur end
+        local fn = function(s, start, dur)
+            s.__cdStart, s.__cdDur = start, dur
+            -- Counted: SetCooldown restarts the animation, so "was it called
+            -- again" is a question a start time alone cannot answer
+            s.__cdSets = (s.__cdSets or 0) + 1
+        end
         rawset(self, key, fn); return fn
     end
     -- Recorded rather than left to the generic no-op: which sweeps wear the
@@ -262,6 +274,16 @@ WidgetMT.__index = function(self, key)
     end
     if key == "GetText" then
         local fn = function(s) return s.__text end
+        rawset(self, key, fn); return fn
+    end
+    -- Recorded: a number written over a picture is only readable for its dark
+    -- edge, and "does this text have one" is a question a no-op cannot answer
+    if key == "SetShadowOffset" then
+        local fn = function(s, x, y) s.__shadow = { x, y } end
+        rawset(self, key, fn); return fn
+    end
+    if key == "SetShadowColor" then
+        local fn = function(s, r, g, b, a) s.__shadowColor = { r, g, b, a } end
         rawset(self, key, fn); return fn
     end
     if key == "SetAlpha" then
@@ -478,6 +500,41 @@ function ToggleDropDownMenu() end
 SlashCmdList = {}
 
 -- --- Units -----------------------------------------------------------------
+-- The settings page FOLDS: every section a foldout, a search box above
+-- them, and nothing but the master switches left permanently on the page.
+-- Run on every class's page (the non-mage layouts exit early).
+function CheckSettingsFolds()
+    local page
+    for _, cat in ipairs(categories) do
+        if cat.__panel and cat.__panel._key == "PartyFrames" then page = cat.__panel end
+    end
+    CHECK(page ~= nil, "the Party Frames page was built")
+    if not page then return end
+    CHECK(page._folds and #page._folds >= 8, "its sections are foldouts", page._folds and #page._folds)
+    CHECK(page._searchBox ~= nil, "a page this long gets the search box")
+    local loose, titles, firstFold = 0, {}, nil
+    local searchRow = page._searchBox and page._searchBox:GetParent()
+    for i, e in ipairs(page._rows) do
+        if e.header then
+            firstFold = firstFold or i
+            titles[#titles + 1] = e.header.title
+        elseif not e.fold and not firstFold and e.row ~= searchRow then
+            loose = loose + 1
+        end
+    end
+    CHECK(loose <= 1, "only the Enable / Show Header pair sits above the first foldout", loose)
+    local seen = {}
+    for _, t in ipairs(titles) do seen[t] = true end
+    CHECK(seen.Board and seen.Banner, "the board's shape and the banner's cooldowns have sections of their own", table.concat(titles, ", "))
+    for _, e in ipairs(page._rows) do
+        -- The label leads a row's search keywords; a tooltip that merely
+        -- mentions the rebuff window is some other control
+        if e.row._keywords and e.row._keywords:find("^%s*rebuff window") then
+            CHECK(e.fold and e.fold.title == "Board", "Rebuff Window sits in Board", e.fold and e.fold.title)
+        end
+    end
+end
+
 local CLASS = (arg and arg[1]) or "MAGE"
 local SECURE = (arg and arg[2]) == "clickcast"
 local playerClass = CLASS
@@ -596,8 +653,9 @@ local SPELLS = {
     [783] = "Travel Form", [1066] = "Aquatic Form", [33943] = "Flight Form",
     [40120] = "Swift Flight Form", [24858] = "Moonkin Form",
     [33891] = "Tree of Life",
-    -- Paladin layer: the blessings (single and Greater), the three Hands,
-    -- the banner cooldowns, and one aura and one seal. Repentance is
+    -- Paladin layer: the blessings (single and Greater, and the three that
+    -- are blessings here rather than Hands), the banner cooldowns, and one
+    -- aura and one seal. Repentance is
     -- deliberately left UNTRAINED below so the banner's known-only filter has
     -- something to filter out, exactly as Rebirth does for the druid.
     [20217] = "Blessing of Kings", [25898] = "Greater Blessing of Kings",
@@ -657,8 +715,8 @@ Learn(774, 8936, 33763, 1126, 21849, 467,
     5487, 768, 33891)
 -- Paladin book: every blessing single, the Greater versions of Kings and
 -- Might only (so the "Greater satisfies the slot" path and the single-only
--- path are both exercised), all three Hands, one aura, one seal, and the
--- banner cooldowns bar Repentance (see the SPELLS note above).
+-- path are both exercised), Freedom / Protection / Sacrifice, one aura, one
+-- seal, and the banner cooldowns bar Repentance (see the SPELLS note above).
 Learn(20217, 25898, 19740, 25782, 19742, 1038, 19977,
     1044, 1022, 6940,
     633, 642, 498, 20216, 31884, 853, 31842,
@@ -755,6 +813,7 @@ Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 _G.CommanderPartyFramesDB = {}
 Load(ADDONS .. "/Commander_PartyFrames/CommanderPartyFramesDB.lua")
 Fire("ADDON_LOADED", "Commander_PartyFrames")
+Load(ADDONS .. "/Commander_PartyFrames/CommanderPartyFramesDials.lua")
 Load(ADDONS .. "/Commander_PartyFrames/CommanderPartyFrames.lua")
 
 -- The engine's shield-capacity read is live from the first UNIT_AURA, and
@@ -1214,6 +1273,68 @@ if SECURE then
     Fire("GROUP_ROSTER_UPDATE")
     CHECK(Tokens() == "player party1 party2 party3 party4 partypet4",
         "Urgency leaves the secure rows in roster order, the pet after its owner", Tokens())
+
+    -- --- The cooldown band belongs to the row that can use it --------------
+    -- Every row used to stride seventeen pixels taller because the strip was
+    -- on -- a pet's included, which has no cooldown book and can never draw
+    -- one, and everybody else's under Only My Row. The band was empty and
+    -- the space was kept anyway. On this board the rows are bound where they
+    -- stand, so the stride has to be right when they are bound.
+    do
+        local board = _G.CommanderPartyFramesFrame
+        local function Top(i)
+            local r = _G["CommanderPartyFramesRow" .. i]
+            local p = r and r.__points and r.__points[#r.__points]
+            return p and -p.y or nil
+        end
+        local function StripUnder(i)
+            local want = Top(i) + 22 + 1
+            for _, f in ipairs(allFrames) do
+                if f.cells and f.__shown and f.__points then
+                    local p = f.__points[#f.__points]
+                    if p and -p.y == want then return true end
+                end
+            end
+            return false
+        end
+        local BARE, BANDED = 22 + 2, 22 + 2 + 16 + 1
+        local keepBar, keepOnly = db.ShowAbilityBar, db.AbilityBarOnlySelf
+        db.ShowAbilityBar, db.AbilityBarOnlySelf = true, false
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+        CHECK(Top(2) - Top(1) == BANDED and Top(5) - Top(4) == BANDED,
+            "a player's row strides by its row and its cooldown band",
+            (Top(2) - Top(1)) .. " / " .. (Top(5) - Top(4)))
+        CHECK(Top(6) - Top(5) == BANDED, "the hunter keeps theirs, so the pet starts under it",
+            Top(6) - Top(5))
+        CHECK(StripUnder(5) and not StripUnder(6),
+            "a strip is drawn under the hunter and none under the pet")
+        CHECK(board.__h == Top(6) + 22,
+            "and the board ends at the pet's row -- no band is held for a pet",
+            board.__h .. " vs " .. (Top(6) + 22))
+
+        db.AbilityBarOnlySelf = true
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+        CHECK(Top(2) - Top(1) == BANDED, "Only My Row: your own row still holds its band",
+            Top(2) - Top(1))
+        CHECK(Top(3) - Top(2) == BARE and Top(5) - Top(4) == BARE and Top(6) - Top(5) == BARE,
+            "and nobody else's does -- their rows close up",
+            (Top(3) - Top(2)) .. " / " .. (Top(5) - Top(4)) .. " / " .. (Top(6) - Top(5)))
+        CHECK(StripUnder(1) and not StripUnder(2), "one strip, under your own row")
+        CHECK(board.__h == Top(6) + 22, "and the board is exactly as tall as what is on it",
+            board.__h .. " vs " .. (Top(6) + 22))
+
+        db.ShowAbilityBar = false
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+        CHECK(Top(2) - Top(1) == BARE and Top(6) - Top(5) == BARE,
+            "with the strip off, every row is a bare row", Top(2) - Top(1))
+
+        db.ShowAbilityBar, db.AbilityBarOnlySelf = keepBar, keepOnly
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
     db.RowOrder = "CLASS_NAME"
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     CHECK(Tokens() == "party2 party4 partypet4 party1 party3 player",
@@ -1985,6 +2106,82 @@ if CLASS == "DRUID" then
         CommanderPartyFramesDB.ShowDispels, CommanderPartyFramesDB.DispelShowAll = wasShow, wasAll
     end
 
+    -- Immunities on the strip: Ice Block is a BUFF, so it lives in the list
+    -- the strip never walked. It shows anyway, first, with the ice rim, and
+    -- only under the Important Debuffs switch that owns the rest of the
+    -- undispellable set.
+    do
+        local wasShow, wasImp = CommanderPartyFramesDB.ShowDispels, CommanderPartyFramesDB.DispelShowImportant
+        CommanderPartyFramesDB.ShowDispels = true
+        CommanderPartyFramesDB.DispelShowImportant = true
+        playerBuffs = { { name = "Ice Block", expirationTime = now + 8, duration = 10,
+            icon = "Interface\\Icons\\Spell_45438", sourceUnit = "player" } }
+        unitDebuffs.player = {
+            { name = "Test Curse", dispelName = "Curse", expirationTime = now + 18, duration = 30,
+              icon = "Interface\\Icons\\Curse" },
+        }
+        Refresh()
+        local shown = {}
+        for n = 1, #row.dispels do
+            if row.dispels[n].icon.__shown then shown[#shown + 1] = row.dispels[n].icon.__texture end
+        end
+        CHECK(#shown == 2, "Ice Block joins the strip beside the curse", table.concat(shown, ","))
+        CHECK(shown[1] == "Interface\\Icons\\Spell_45438", "and takes the first slot", shown[1])
+        local rim = row.dispels[1].rim.__color
+        CHECK(rim and rim[1] == 0.60 and rim[3] == 1.00, "with the ice-blue immune rim",
+            rim and table.concat(rim, ",") or "nil")
+        CHECK(row.dispels[1].glow.__shown ~= true, "and no glow: nothing to press")
+        CommanderPartyFramesDB.DispelShowImportant = false
+        Refresh()
+        shown = {}
+        for n = 1, #row.dispels do
+            if row.dispels[n].icon.__shown then shown[#shown + 1] = row.dispels[n].icon.__texture end
+        end
+        CHECK(#shown == 1 and shown[1] == "Interface\\Icons\\Curse",
+            "Important Debuffs off takes the immunity with it", table.concat(shown, ","))
+        playerBuffs = {}
+        unitDebuffs.player = {}
+        Refresh()
+        CommanderPartyFramesDB.ShowDispels, CommanderPartyFramesDB.DispelShowImportant = wasShow, wasImp
+    end
+
+    -- Burst: Arcane Power on an ally puts a violet edge and wash on their
+    -- whole row, for exactly as long as the buff runs, under its own switch.
+    do
+        local was = CommanderPartyFramesDB.BurstGlow
+        CommanderPartyFramesDB.BurstGlow = true
+        local function EdgeOn()
+            local n = 0
+            for i = 1, 4 do if row.burstEdge[i].__shown then n = n + 1 end end
+            return n
+        end
+        CHECK(EdgeOn() == 0 and row.burstWash.__shown ~= true, "a quiet row wears no burst edge")
+        playerBuffs = { { name = "Arcane Power", expirationTime = now + 15, duration = 15,
+            icon = "Interface\\Icons\\Spell_12042", sourceUnit = "player" } }
+        Refresh()
+        CHECK(EdgeOn() == 4, "Arcane Power closes all four edges round the row", tostring(EdgeOn()))
+        CHECK(row.burstWash.__shown == true, "and washes the row")
+        local ec = row.burstEdge[1].__color
+        CHECK(ec and ec[3] == 1.00 and ec[1] < ec[3], "in violet", ec and table.concat(ec, ",") or "nil")
+        CHECK((row.burstWash.__alpha or 1) < 0.5, "the wash stays faint: an edge, not a slab",
+            tostring(row.burstWash.__alpha))
+        -- The buff expiring takes the edge with it, even without a fresh scan
+        -- (the entry carries its own clock)
+        now = now + 20
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+        CHECK(EdgeOn() == 0 and row.burstWash.__shown ~= true, "and it ends with the buff",
+            tostring(EdgeOn()))
+        -- The switch
+        playerBuffs = { { name = "Arcane Power", expirationTime = now + 15, duration = 15,
+            icon = "Interface\\Icons\\Spell_12042", sourceUnit = "player" } }
+        CommanderPartyFramesDB.BurstGlow = false
+        Refresh()
+        CHECK(EdgeOn() == 0, "the Burst switch off leaves the row plain", tostring(EdgeOn()))
+        playerBuffs = {}
+        CommanderPartyFramesDB.BurstGlow = was
+        Refresh()
+    end
+
     -- --- The two upkeep slots ----------------------------------------------
     -- Mark of the Wild and Thorns are PERMANENT slots, read the way the hots
     -- beside them are: the icon never leaves, and while the buff is up its
@@ -2182,10 +2379,10 @@ end
 -- ===========================================================================
 -- Same shape as the druid block above and for the same reason: the group mock
 -- has no party, so the board is the player's own row, and that is enough —
--- Hands are read off a unit's auras with sourceUnit == player, and the player
--- is a unit like any other. What is unique here is the lockout half of the
--- grammar (Forbearance) and the one-blessing-per-target rule, neither of
--- which any other layer exercises.
+-- blessings are read off a unit's auras with sourceUnit == player, and the
+-- player is a unit like any other. What is unique here: the ONE blessing slot
+-- showing what is on them (a Protection replaces a Kings on this client), the
+-- one-blessing-per-target rule, and Forbearance as a drain.
 if CLASS == "PALADIN" then
     local segs = _G.CommanderPartyFramesFrame.hdrSegs
     CHECK(segs ~= nil, "the paladin banner built the shared segment pool")
@@ -2224,82 +2421,115 @@ if CLASS == "PALADIN" then
     unitDebuffs.player = {}
     Refresh()
     local row = HandRow()
-    CHECK(row ~= nil, "the board draws an ally row with a Hand strip")
+    CHECK(row ~= nil, "the board draws an ally row for the paladin")
 
-    -- --- The Hand strip ----------------------------------------------------
-    -- All three of ours: every slot lit, each sweep scaled to its OWN aura
-    -- duration rather than a shared constant.
-    playerBuffs = {
-        { name = "Blessing of Kings", expirationTime = now + 1500, duration = 1800,
-          icon = "Interface\\Icons\\Spell_20217", sourceUnit = "player" },
-        { name = "Blessing of Freedom", expirationTime = now + 8, duration = 10,
-          icon = "Interface\\Icons\\Spell_1044", sourceUnit = "player" },
-        { name = "Blessing of Protection", expirationTime = now + 9, duration = 10,
-          icon = "Interface\\Icons\\Spell_1022", sourceUnit = "player" },
-        { name = "Blessing of Sacrifice", expirationTime = now + 25, duration = 30,
-          icon = "Interface\\Icons\\Spell_6940", sourceUnit = "player" },
-    }
-    Refresh()
-    local lit = 0
-    for i = 1, 3 do
-        local h = row.strip[i]
-        if h.icon.__shown and h.icon.__desat == false then lit = lit + 1 end
-    end
-    CHECK(lit == 3, "all three Hands light their own slot", lit)
-    CHECK(row.strip[1].cd.__cdDur == 10, "Freedom's sweep runs 10s", row.strip[1].cd.__cdDur)
-    CHECK(row.strip[3].cd.__cdDur == 30, "...and Sacrifice's 30s", row.strip[3].cd.__cdDur)
-
-    -- Ours-only: another paladin's Freedom does not spend our cooldown, so it
-    -- must not fill our slot either
-    playerBuffs = {
-        { name = "Blessing of Freedom", expirationTime = now + 8, duration = 10,
-          icon = "Interface\\Icons\\Spell_1044", sourceUnit = "party1" },
-    }
-    Refresh()
-    CHECK(row.strip[1].icon.__desat == true,
-        "another paladin's Freedom leaves our slot dark")
-
-    -- --- Forbearance: the lockout half of the grammar -----------------------
-    -- Nothing of ours up and Forbearance ticking is EXPOSED, with the minute
-    -- as the drain. The stripe carries the state colour, so it is what the
-    -- assertion reads.
-    local EXPOSED = { 0.95, 0.25, 0.25 }
-    local FADING  = { 1.00, 0.55, 0.15 }
-    local function StripeIs(want)
-        local c = row.stripe.__color
+    local SHIELDED = { 0.35, 0.85, 0.40 }
+    local REFRESH  = { 0.35, 0.85, 1.00 }
+    local READY    = { 1.00, 0.90, 0.25 }
+    local OTHER    = { 0.55, 0.60, 0.78 }
+    local AMBER    = { 1.00, 0.65, 0.30 }
+    local WHITE    = { 1.00, 1.00, 1.00 }
+    local function ColorIs(c, want)
         if not c then return false end
         for i = 1, 3 do
             if math.abs((c[i] or 0) - want[i]) > 0.01 then return false end
         end
         return true
     end
-    playerHealth = 40
-    playerBuffs = {}
-    unitDebuffs.player = { { name = "Forbearance", expirationTime = now + 41, duration = 60 } }
-    Refresh()
-    CHECK(StripeIs(EXPOSED), "locked out with nothing up reads EXPOSED")
-    CHECK(row.wsBar.__shown == true, "...and the Forbearance minute draws the drain")
+    local function StripeIs(want) return ColorIs(row.stripe.__color, want) end
+    local function Slot() return row.buffs[1] end
+    local function SlotIs(tex) return Slot().icon.__shown == true and Slot().icon.__texture == tex end
 
-    -- A Hand falling off while locked is FADING, not REFRESH: you can see it
-    -- going and you cannot replace it.
+    -- --- No Hands strip -----------------------------------------------------
+    -- The paladin used to have Freedom / Protection / Sacrifice on a strip of
+    -- their own. On this client they are blessings and take the one blessing
+    -- slot, so the strip is gone: every strip slot on a paladin row stays
+    -- unshown whatever of yours is on the target.
     playerBuffs = {
-        { name = "Blessing of Protection", expirationTime = now + 2, duration = 10,
-          icon = "Interface\\Icons\\Spell_1022", sourceUnit = "player" },
+        { name = "Blessing of Freedom", expirationTime = now + 8, duration = 10,
+          icon = "Interface\\Icons\\Spell_1044", sourceUnit = "player" },
     }
     Refresh()
-    CHECK(StripeIs(FADING), "a Hand expiring under Forbearance reads FADING")
+    local stripLit = 0
+    for i = 1, 3 do if row.strip[i].icon.__shown then stripLit = stripLit + 1 end end
+    CHECK(stripLit == 0, "a paladin row draws no own-aura strip — there are no Hands here", stripLit)
 
-    -- The same Hand expiring with the lockout GONE is the ordinary REFRESH
+    -- --- The slot shows what is ON them -------------------------------------
+    CHECK(SlotIs("Interface\\Icons\\Spell_1044"),
+        "...the Freedom you cast is in the BLESSING slot instead", tostring(Slot().icon.__texture))
+    CHECK(Slot().icon.__desat == false, "lit, because it is up")
+    CHECK(Slot().cd.__cdDur == 10, "with Freedom's own ten seconds on the sweep", Slot().cd.__cdDur)
+    CHECK(StripeIs(SHIELDED), "a healthy Freedom reads SHIELDED: it is a blessing, and it is up")
+    CHECK(row.left.__text == "7s", "the row's number is what is left of it, in seconds",
+        tostring(row.left.__text))
+
+    -- Inside its own window it is REFRESH — a window of SECONDS
+    -- (BlessRefreshAt), not the five-minute rebuff window an upkeep blessing
+    -- gets. Refresh() advances the clock a second past the scan, so 3 is 2.
+    playerBuffs[1].expirationTime = now + 3
+    Refresh()
+    CHECK(StripeIs(REFRESH), "an expiring Freedom reads REFRESH by its own seconds window")
+    CHECK(ColorIs(Slot().icon.__color, AMBER), "...and the slot goes amber")
+
+    -- Protection REPLACES Kings on this client. The slot shows the
+    -- Protection, not a dark Kings, and Forbearance draws the minute under
+    -- the bar — a fact under the row, not the row's state.
+    playerBuffs = {
+        { name = "Blessing of Protection", expirationTime = now + 9, duration = 10,
+          icon = "Interface\\Icons\\Spell_1022", sourceUnit = "player" },
+    }
+    unitDebuffs.player = { { name = "Forbearance", expirationTime = now + 41, duration = 60 } }
+    Refresh()
+    CHECK(SlotIs("Interface\\Icons\\Spell_1022"), "a Protection takes the blessing slot",
+        tostring(Slot().icon.__texture))
+    CHECK(StripeIs(SHIELDED), "...and reads as a blessing that is UP, not a Kings that is missing")
+    CHECK(row.wsBar.__shown == true, "Forbearance draws the drain under the bar")
+
+    -- Ours-only: another paladin's Protection is not yours. With nothing of
+    -- yours on them the slot falls back to the ASSIGNMENT (Kings, the default),
+    -- ghosted, and the row is READY: a naked ally is always a global here.
+    playerBuffs[1].sourceUnit = "party1"
     unitDebuffs.player = {}
     Refresh()
-    CHECK(not StripeIs(FADING), "...and plain REFRESH once the lockout is gone")
+    CHECK(SlotIs("Interface\\Icons\\Spell_20217"),
+        "another paladin's Protection leaves the slot on your assignment", tostring(Slot().icon.__texture))
+    CHECK(Slot().icon.__desat == true, "...ghosted")
+    CHECK(StripeIs(READY), "...and the row is READY: a naked ally is a global on this board")
+    CHECK(row.left.__text == "BLESS", "...wearing the word", tostring(row.left.__text))
+    CHECK(row.wsBar.__shown ~= true, "with the Forbearance gone, no drain")
+    -- ...unless the player would rather read names: What To Cast off keeps
+    -- the READY state and hands the span back
+    CommanderPartyFramesDB.BarTextAsk = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    CHECK(StripeIs(READY) and row.left.__text == "Tester",
+        "What To Cast off: still READY, but the span is their name", tostring(row.left.__text))
+    CommanderPartyFramesDB.BarTextAsk = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+
+    -- An upkeep blessing shows its minutes, not "1499s"
+    playerBuffs = {
+        { name = "Blessing of Kings", expirationTime = now + 1500, duration = 1800,
+          icon = "Interface\\Icons\\Spell_20217", sourceUnit = "player" },
+    }
+    Refresh()
+    CHECK(StripeIs(SHIELDED) and row.left.__text == "24m",
+        "a Kings with twenty-five minutes left reads in minutes", tostring(row.left.__text))
 
     -- --- Blessings: one per target -----------------------------------------
     -- The registry's `oneOf`: an ally carrying Kings is not MISSING Might, so
     -- the advisor must not redden the Might slot.
     local book = CommanderPartyFrames_GetBuffBook("BLESS")
-    CHECK(book ~= nil and #book == 6, "the blessing registry has six entries",
+    CHECK(book ~= nil and #book == 9,
+        "the blessing registry has nine entries: six upkeep, plus the three that used to be Hands",
         book and #book)
+    local emergencyOffered = false
+    for _, d in ipairs(CommanderPartyFrames_BlessOptions("PALADIN")) do
+        if d.emergency then emergencyOffered = true end
+    end
+    CHECK(emergencyOffered == false,
+        "Freedom, Protection and Sacrifice are never offered as an assignment")
     local byKey = {}
     if book then for _, d in ipairs(book) do byKey[d.key] = d end end
     CHECK(byKey.KINGS and byKey.KINGS.known == true, "Kings resolved from the book")
@@ -2320,13 +2550,14 @@ if CLASS == "PALADIN" then
         "Greater Blessing of Kings fills the Kings slot")
 
     -- --- The combined blessing slot ----------------------------------------
-    -- The board's default shape: six mutually exclusive blessings collapse
-    -- into ONE slot per ally, carrying whatever that ally is assigned. Three
-    -- things have to hold, and none of them is testable on any other layer:
+    -- The board's default shape: nine mutually exclusive blessings collapse
+    -- into ONE slot per ally, showing what is on them and, failing that, what
+    -- that ally is assigned. Three things have to hold, and none of them is
+    -- testable on any other layer:
     --
-    --   1. one slot, not six, whatever is tracked in the buff grid
-    --   2. the slot follows the ASSIGNMENT, and a different blessing of yours
-    --      reads as missing rather than as cover
+    --   1. one slot, not nine, whatever is tracked in the buff grid
+    --   2. the slot shows what is ON them; a different upkeep blessing of
+    --      yours is shown lit but AMBER — rebless — rather than as cover
     --   3. another paladin's blessing is not yours and never counts
     CHECK(CommanderPartyFramesDB.BlessCombine ~= false,
         "the blessing family is combined out of the box")
@@ -2351,26 +2582,31 @@ if CLASS == "PALADIN" then
           icon = "Interface\\Icons\\Spell_20217", sourceUnit = "player" },
     }
     Refresh()
-    CHECK(BuffSlots() == 1, "six blessings collapse into one slot", BuffSlots())
+    CHECK(BuffSlots() == 1, "nine blessings collapse into one slot", BuffSlots())
     CHECK(row.buffs[1].icon.__desat == false,
         "the assigned blessing being up lights the slot")
 
     -- Assign Wisdom (the mock paladin is a mana user, so it applies) and the
-    -- SAME Kings aura must now read as missing: covered is not the question,
-    -- covered with what you decided is.
+    -- SAME Kings aura is still shown — it IS on them — but amber: covered is
+    -- not the question, covered with what you decided is, and amber is the
+    -- slot's word for "rebless".
     CommanderPartyFramesDB.BlessClass = { PALADIN = "WISDOM" }
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Refresh()
     CHECK(BuffSlots() == 1, "reassigning does not change the strip's width", BuffSlots())
-    CHECK(row.buffs[1].icon.__desat == true,
-        "a different blessing of yours reads as MISSING against the assignment")
+    CHECK(SlotIs("Interface\\Icons\\Spell_20217") and Slot().icon.__desat == false,
+        "a different blessing of yours still shows, lit — it is on them", tostring(Slot().icon.__texture))
+    CHECK(ColorIs(Slot().icon.__color, AMBER),
+        "...but AMBER against the assignment: rebless")
+    CHECK(StripeIs(REFRESH), "...and the row reads REFRESH for it")
 
     playerBuffs = {
         { name = "Blessing of Wisdom", expirationTime = now + 500, duration = 600,
           icon = "Interface\\Icons\\Spell_19742", sourceUnit = "player" },
     }
     Refresh()
-    CHECK(row.buffs[1].icon.__desat == false, "...and the assigned one lights it")
+    CHECK(ColorIs(Slot().icon.__color, WHITE) and StripeIs(SHIELDED),
+        "...and the assigned one lights it plain white, SHIELDED")
 
     -- A per-player override beats the class default. The mock's player is
     -- "Tester", which is the name the row resolves and the key an override is
@@ -2382,19 +2618,26 @@ if CLASS == "PALADIN" then
           icon = "Interface\\Icons\\Spell_20217", sourceUnit = "player" },
     }
     Refresh()
-    CHECK(row.buffs[1].icon.__desat == true,
-        "with the class on Wisdom, a Kings aura leaves the slot dark")
+    CHECK(ColorIs(Slot().icon.__color, AMBER),
+        "with the class on Wisdom, a Kings aura reads amber")
     CommanderPartyFramesDB.BlessAssign = { Tester = "KINGS" }
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Refresh()
-    CHECK(row.buffs[1].icon.__desat == false,
+    CHECK(ColorIs(Slot().icon.__color, WHITE),
         "a per-player override outranks the class default")
 
-    -- ...and NONE means the slot has nothing to say at all
+    -- ...and NONE means the slot has nothing to ASK for. What is on them is
+    -- still shown — a blessing you cast is a blessing you want to see run
+    -- out — and only once nothing of yours is there does the slot go away.
     CommanderPartyFramesDB.BlessAssign = { Tester = "NONE" }
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Refresh()
-    CHECK(BuffSlots() == 0, "an ally assigned NONE spends no slot", BuffSlots())
+    CHECK(BuffSlots() == 1 and ColorIs(Slot().icon.__color, WHITE),
+        "an ally assigned NONE still shows the Kings you put on them, plain", BuffSlots())
+    playerBuffs = {}
+    Refresh()
+    CHECK(BuffSlots() == 0, "...and spends no slot once nothing of yours is on them", BuffSlots())
+    CHECK(StripeIs(OTHER), "...with the row quiet rather than READY: you chose not to bless them")
 
     -- --- Only mine ---------------------------------------------------------
     -- The reason this rework exists. Two paladins may each hold a DIFFERENT
@@ -2538,6 +2781,20 @@ if CLASS == "PALADIN" then
         CHECK(casts[1] == "Devotion Aura",
             "a switcher button casts by NAME, so it takes your best rank",
             tostring(casts[1]))
+        -- SPELLS_CHANGED fires freely mid-fight, and every one of these is a
+        -- secure button: rebinding then was thirty blocked SetAttribute calls
+        -- a game (the field log has them) and no binding at the end of it.
+        inCombat = true
+        blockedCalls = {}
+        Fire("SPELLS_CHANGED")
+        CHECK(#blockedCalls == 0, "a spellbook change mid-fight binds nothing protected",
+            blockedCalls[1])
+        inCombat = false
+        sw[1].buttons[1].__attr.spell = nil
+        Fire("PLAYER_REGEN_ENABLED")
+        CHECK(sw[1].buttons[1].__attr.spell == "Devotion Aura",
+            "and the binding it owed lands when the fight ends",
+            tostring(sw[1].buttons[1].__attr.spell))
         -- Each popout sits under the segment it belongs to, not on top of the
         -- other one
         CHECK(sw[1]._x and sw[2]._x and sw[2]._x > sw[1]._x,
@@ -2846,6 +3103,43 @@ if CLASS == "PRIEST" then
     Tick()
     CHECK(row.left.__text == "EXPOSED", "a Weakened Soul ally still reads EXPOSED",
         tostring(row.left.__text))
+
+    -- =====================================================================
+    -- Bar Text: which words may take the name off the bar is the player's
+    -- call, kind by kind. The state itself is untouched either way.
+    -- =====================================================================
+    CommanderPartyFramesDB.BarTextLock = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Tick()
+    CHECK(row.left.__text == "Tester", "Lockouts off: EXPOSED gives the span back to the name",
+        tostring(row.left.__text))
+    local c = row.stripe.__color or {}
+    CHECK(math.abs((c[1] or 0) - 0.95) < 0.01 and math.abs((c[2] or 0) - 0.25) < 0.01,
+        "...and the row is still EXPOSED red — only the word went")
+    CommanderPartyFramesDB.BarTextLock = true
+    CommanderPartyFramesDB.BarTextAlwaysName = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Tick()
+    CHECK(row.left.__text == "Tester", "Always the Name overrides every word",
+        tostring(row.left.__text))
+    -- A removable debuff is the loudest word the board has, and the master
+    -- still wins over it
+    unitDebuffs["player"] = { { name = "Test Magic", expirationTime = now + 9, duration = 12,
+        icon = "Interface\\Icons\\Spell_Shadow_ShadowWordPain", dispelName = "Magic" } }
+    Tick()
+    CHECK(row.left.__text == "Tester", "...MAGIC included", tostring(row.left.__text))
+    CommanderPartyFramesDB.BarTextAlwaysName = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Tick()
+    CHECK(row.left.__text == "MAGIC", "...and the word is back the moment the master is off",
+        tostring(row.left.__text))
+    CommanderPartyFramesDB.BarTextDispel = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Tick()
+    CHECK(row.left.__text == "Tester", "Removable Debuffs off: MAGIC alone gives way",
+        tostring(row.left.__text))
+    CommanderPartyFramesDB.BarTextDispel = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     unitDebuffs["player"] = {}
     Tick()
 
@@ -3699,11 +3993,17 @@ local function CheckAbilityScope()
     Fire("GROUP_ROSTER_UPDATE"); Pump()
     local both = Strips()
     CHECK(both >= 2, "with two rows on the board, two strips are drawn", both)
+    local bothTall = _G.CommanderPartyFramesFrame.__h
 
     CommanderPartyFramesDB.AbilityBarOnlySelf = true
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Fire("GROUP_ROSTER_UPDATE"); Pump()
     CHECK(Strips() == 1, "Mine Only leaves exactly one — your own", Strips())
+    -- The band goes with the strip. It used to stay: every row strode as if
+    -- it still had one, so Mine Only left an empty line under everybody else.
+    CHECK(bothTall - _G.CommanderPartyFramesFrame.__h == 16 + 1,
+        "...and the other row gives its band back to the board",
+        bothTall .. " -> " .. tostring(_G.CommanderPartyFramesFrame.__h))
 
     -- ...and it is genuinely YOUR row that survived, not just the first one
     CommanderPartyFramesDB.IncludeSelf = false
@@ -3878,7 +4178,7 @@ local function CheckBuffGrid()
             "the mage grid carries every buff the class puts on somebody else")
     elseif CLASS == "PALADIN" then
         CHECK(byKey.KINGS and byKey.MIGHT and byKey.WISDOM and byKey.FREEDOM and byKey.BOP,
-            "the paladin grid carries the blessings AND the Hands — one place for everything")
+            "the paladin grid carries all nine blessings, Freedom and Protection included — one place for everything")
     else
         CHECK(byKey.FORT and byKey.SPIRIT and byKey.SHADOWPROT,
             "the priest grid carries every buff the class puts on somebody else")
@@ -3908,10 +4208,11 @@ local function CheckBuffGrid()
         local after = CommanderPartyFramesDB.BuffTrack
             and CommanderPartyFramesDB.BuffTrack["BLESS:KINGS"]
         CHECK(before == after, "...and refuses the click rather than writing a dead setting")
-        -- A Hand is not a blessing and never shared that slot, so its switch
-        -- has to keep working right beside them
-        CHECK(byKey.FREEDOM and byKey.FREEDOM.icon.__desat ~= nil,
-            "the Hands beside them are untouched by any of this")
+        -- Freedom is a blessing on this client and shares that slot, so its
+        -- switch is exactly as moot as Kings' while the family is combined
+        CHECK(byKey.FREEDOM and byKey.FREEDOM.icon.__desat == true
+            and byKey.FREEDOM.slash.__shown ~= true,
+            "...and so is Freedom's: a blessing here, not a Hand")
         -- Expanded, the same cell goes live again: the toggles below are the
         -- generic grid machinery, and the paladin has to reach it too.
         CommanderPartyFramesDB.BlessCombine = false
@@ -4124,8 +4425,7 @@ local function CheckBuffTargets()
     local keepTrack = CommanderPartyFramesDB.BuffTrack
     CommanderPartyFramesDB.BuffTrack = {}
     for _, def in ipairs(book) do CommanderPartyFramesDB.BuffTrack[def.dbKey] = false end
-    for _, def in ipairs({ "HOT:REJUV", "HOT:REGROWTH", "HOT:LIFEBLOOM",
-                           "HAND:FREEDOM", "HAND:BOP", "HAND:SACRIFICE" }) do
+    for _, def in ipairs({ "HOT:REJUV", "HOT:REGROWTH", "HOT:LIFEBLOOM" }) do
         CommanderPartyFramesDB.BuffTrack[def] = false
     end
     if manaOnly then CommanderPartyFramesDB.BuffTrack[manaOnly.dbKey] = true end
@@ -6204,6 +6504,7 @@ if CLASS ~= "MAGE" then
     CheckProductionEmbed()
     CheckArrowSorted()
     CHECK(#caughtErrors == 0, "no errors on the non-mage banner", caughtErrors[1])
+    CheckSettingsFolds()
     io.write(string.format("[%s] %d checks, %d failures\n", CLASS, checks, fails))
     os.exit(fails == 0 and 0 or 1)
 end
@@ -6505,6 +6806,11 @@ CHECK(tint[1] == 1 and tint[2] and tint[2] < 0.4, "and red", tostring(tint[2]))
 -- The tick answers whichever question is still open. Freeze ready: the gold
 -- spend-by deadline, at 25s of life left, past which a cast leaves no room
 -- for a second. Freeze spent: the frost-blue moment it comes back up.
+--
+-- This section is the ROWS shape of the personal block, which is no longer
+-- the default: the same planner on the dial is in the section after it.
+CommanderPartyFramesDB.PersonalStyle = "ROWS"
+Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
 petOut = true
 clogEvent = { now, "SPELL_SUMMON", false, "player-guid", "Tester", 0, 0,
     "pet-guid", "Elemental", 0, 0, 31687 }
@@ -6567,7 +6873,268 @@ freezeStart, freezeDur = now, 25
 DrawOnce()
 CHECK(Tick() == nil, "no second Freeze coming — the tick clears")
 petOut = false
+freezeStart, freezeDur = 0, 0
 DrawOnce()
+CommanderPartyFramesDB.PersonalStyle = "DIALS"
+Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+
+-- ===========================================================================
+-- The personal block as dials
+-- ===========================================================================
+-- Four shields used to be four rows -- a name, a bar, a number and a clock
+-- each, most of them an empty bar for most of a fight -- and the block stood
+-- taller than the party under it. The same facts in the radial plate's
+-- language are a disc each on ONE line: the spell is the face, the absorb is
+-- the band round it, the time left is the thin arc outside that, and a
+-- cooldown is a clock wipe across the face with its seconds written on it.
+do
+    local db = CommanderPartyFramesDB
+    local board = _G.CommanderPartyFramesFrame
+    local keep = { db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize }
+    db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize = true, true, true, 28
+    local baseCd = GetSpellCooldown
+    playerBuffs = {}
+    Fire("UNIT_AURA", "player")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+
+    local function Dials()
+        local out = {}
+        for _, f in ipairs(allFrames) do
+            if f.dial and f.__shown then out[#out + 1] = f end
+        end
+        table.sort(out, function(a, b) return a._x < b._x end)
+        return out
+    end
+    local function PersonalRows()
+        local n = 0
+        for _, f in ipairs(allFrames) do
+            if f.personal and f.__shown then n = n + 1 end
+        end
+        return n
+    end
+    local function Face(d) return d.core.__texture end
+
+    local dials = Dials()
+    -- This mage knows Ice Barrier and Mana Shield (the mock's spellbook)
+    CHECK(#dials == 2, "one dial per tracked shield this mage knows", #dials)
+    CHECK(PersonalRows() == 0, "and no rows: the block is dials or rows, never both", PersonalRows())
+    local barrier, mana = dials[1], dials[2]
+    CHECK(barrier and Face(barrier) == "Interface\\Icons\\Spell_Ice_Lament",
+        "the face is the spell's own icon", barrier and tostring(Face(barrier)))
+    CHECK(barrier.ghost == true and mana.ghost == true,
+        "a shield that is not up is a dark face -- present, never absent")
+    CHECK((barrier.text.__text or "") == "", "with nothing written on it", barrier.text.__text)
+    CHECK(not barrier.absorb.cd.__shown and not barrier.absorb.full.__shown,
+        "and an empty band")
+    CHECK(barrier.__w == 28 and barrier.__h == 28, "drawn at the size the setting asks for",
+        tostring(barrier.__w))
+    local py = barrier.__points[#barrier.__points].y
+    CHECK(py == mana.__points[#mana.__points].y and mana._x - barrier._x == 28 + 4,
+        "side by side on one line", tostring(mana._x - barrier._x))
+
+    -- The whole point: the block is one line tall however many trackers it has
+    local twoTall = board.__h
+    db.TrackManaShield = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(#Dials() == 1, "switching a tracker off takes its dial", #Dials())
+    CHECK(board.__h == twoTall, "and the board does not change height: one line is one line",
+        board.__h .. " vs " .. twoTall)
+    db.PersonalStyle = "ROWS"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    local oneRow = board.__h
+    db.TrackManaShield = true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    CHECK(board.__h == oneRow + 13 and PersonalRows() == 2 and #Dials() == 0,
+        "the rows are still there to be chosen, and still stack a row per tracker",
+        board.__h .. " vs " .. oneRow)
+    db.PersonalStyle = "DIALS"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+
+    -- Ice Barrier goes up: 1075 of absorb, 55 of its 60 seconds left
+    playerBuffs = { { name = "Ice Barrier", spellId = 33405, expirationTime = now + 55,
+        duration = 60, icon = "Interface\\Icons\\Spell_Ice_Lament", sourceUnit = "player" } }
+    Fire("UNIT_AURA", "player")
+    DrawOnce()
+    barrier = Dials()[1]
+    CHECK(barrier.ghost == false, "up: the face lights")
+    CHECK(barrier.text.__text == "1.1k", "with the absorb left written on it", barrier.text.__text)
+    CHECK(barrier.absorb.full.__shown == true, "and a full band round it")
+    local tint = barrier.absorb.full.__color
+    CHECK(tint and tint[3] == 1 and tint[1] < 0.5, "in Ice Barrier's own blue",
+        tint and (tint[1] .. "," .. tint[2] .. "," .. tint[3]))
+    CHECK(barrier.time.cd.__shown and barrier.time.cd.__cdDur == 60,
+        "the outer arc is the shield's clock, a real cooldown the client animates",
+        tostring(barrier.time.cd.__cdDur))
+    CHECK(math.abs((barrier.time.cd.__cdStart + 60) - (now + 54)) < 0.6,
+        "ending when the shield does", tostring(barrier.time.cd.__cdStart))
+    CHECK(Dials()[2].ghost == true, "and the shield beside it is still dark")
+
+    -- The number has to be readable on a LIT face, which is the spell's own
+    -- icon and as often pale as not: white on white had an outline nobody
+    -- could find and nothing inside it. So the text carries a hard black
+    -- shadow, and the face darkens under it while it is there.
+    CHECK(barrier.text.__shadow and barrier.text.__shadow[1] == 1 and barrier.text.__shadow[2] == -1
+        and barrier.text.__shadowColor and barrier.text.__shadowColor[1] == 0
+        and barrier.text.__shadowColor[4] == 1,
+        "the number carries a black shadow under its outline")
+    CHECK(barrier.shade.__shown == true and barrier.shade.__color[4] == 0.45,
+        "and the lit face is shaded under it", tostring(barrier.shade.__color and barrier.shade.__color[4]))
+    CHECK(barrier.shade.__w == barrier.radii.core * 2,
+        "over the face only: it stops short of the band", tostring(barrier.shade.__w))
+    CHECK(Dials()[2].shade.__shown == false, "a face with nothing written on it is left alone")
+    db.DialTextShade = 0
+    DrawOnce()
+    CHECK(barrier.shade.__shown == false and barrier.text.__text == "1.1k",
+        "at 0 the icon is untouched and the number stays")
+    db.DialTextShade = 0.45
+    DrawOnce()
+    -- ...and how big it is written is the player's to say
+    CHECK(barrier.text.__font and barrier.text.__font[2] == 10,
+        "Auto sizes the number off the dial", barrier.text.__font and barrier.text.__font[2])
+    db.DialTextSize = 14
+    DrawOnce()
+    CHECK(barrier.text.__font[2] == 14 and barrier.__w == 28,
+        "a set size is that size, and the dial itself does not move", barrier.text.__font[2])
+    db.DialTextSize = 0
+    DrawOnce()
+    CHECK(barrier.text.__font[2] == 10, "back to Auto, back to the dial's size", barrier.text.__font[2])
+
+    -- The band is drawn in a bar style, not only as a flat block of colour.
+    -- By default it is whatever the rows' own bars are, so the two match.
+    do
+        local keepBar, keepDial = db.BarTexture, db.DialTexture
+        local function Band() return Dials()[1].absorb.full.__texture or "" end
+        db.BarTexture, db.DialTexture = "FLAT", "MATCH"
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        DrawOnce()
+        CHECK(Band():find("DialRing%.png$") ~= nil, "flat bars, flat band", Band())
+        db.BarTexture = "BLIZZARD"
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        DrawOnce()
+        CHECK(Band():find("DialRingBlizzard%.png$") ~= nil,
+            "Blizzard bars: the band follows them without being told twice", Band())
+        CHECK(Dials()[1].absorb.full.__shown == true, "and the standing band is redrawn in it")
+        local track = Dials()[1].absorb.track.__texture or ""
+        CHECK(track:find("DialRing%.png$") ~= nil,
+            "the empty track stays plain: a groove is not lit like a bar", track)
+        db.DialTexture = "GLOSS"
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        DrawOnce()
+        CHECK(Band():find("DialRingGloss%.png$") ~= nil,
+            "and the dials' own setting outranks the bars'", Band())
+        -- Every style the page offers has art behind it
+        for _, style in ipairs({ "FLAT", "BLIZZARD", "GLOSS", "BEVEL", "RIDGE", "GLASS" }) do
+            local file = CommanderPartyFrames_Dial.BANDS[style]
+            local name = file and file:match("([^\\]+)$")
+            local handle = name and io.open(ADDONS .. "/Commander_PartyFrames/Textures/" .. name, "rb")
+            CHECK(handle ~= nil, "the " .. style .. " band has its texture on disk", tostring(name))
+            if handle then handle:close() end
+        end
+        db.BarTexture, db.DialTexture = keepBar, keepDial
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        DrawOnce()
+    end
+
+    -- The clock is started once, not on every paint: SetCooldown restarts
+    -- the animation, so a sweep re-set ten times a second never moves
+    local sets = barrier.time.cd.__cdSets
+    DrawOnce()
+    CHECK(barrier.time.cd.__cdSets == sets, "the clock is not restarted by a repaint",
+        tostring(barrier.time.cd.__cdSets) .. " vs " .. tostring(sets))
+
+    -- Spent, and on its thirty-second cooldown
+    playerBuffs = {}
+    GetSpellCooldown = function(name)
+        if name == "Ice Barrier" then return now - 10, 30, 1 end
+        return 0, 0, 1
+    end
+    Fire("UNIT_AURA", "player")
+    DrawOnce()
+    barrier = Dials()[1]
+    CHECK(barrier.ghost == true, "down: the face goes dark")
+    CHECK(barrier.wipe.__shown and barrier.wipe.__cdDur == 30,
+        "wiped like a clock by its cooldown", tostring(barrier.wipe.__cdDur))
+    CHECK(barrier.wipe.__reverse == false,
+        "a cooldown, not a duration: the dark wedge retreats as it comes back")
+    CHECK(tonumber(barrier.text.__text) and math.abs(tonumber(barrier.text.__text) - 19) <= 1,
+        "with the seconds until it is back across the face", barrier.text.__text)
+    CHECK(barrier.rimColor and barrier.rimColor[1] > 0.9 and barrier.rimColor[2] < 0.3,
+        "and a red rim: you are exposed and cannot fix it yet")
+    CHECK(barrier.shade.__shown == false,
+        "a dark face needs no shade under its seconds: it is already dark")
+    CHECK(not barrier.absorb.cd.__shown and not barrier.absorb.full.__shown,
+        "the band empties with the shield")
+    GetSpellCooldown = baseCd
+    Fire("UNIT_AURA", "player")
+    DrawOnce()
+    CHECK(Dials()[1].wipe.__shown == false and Dials()[1].rimColor == nil,
+        "ready again: a dark face in an empty track, and nothing shouting")
+
+    -- The elemental takes the first seat, and keeps the planner it had as a row
+    petOut = true
+    clogEvent = { now, "SPELL_SUMMON", false, "player-guid", "Tester", 0, 0,
+        "pet-guid", "Elemental", 0, 0, 31687 }
+    Fire("COMBAT_LOG_EVENT_UNFILTERED")
+    local born = now
+    DrawOnce()
+    dials = Dials()
+    local ele = dials[1]
+    CHECK(#dials == 3 and ele.badge.__shown == true,
+        "the elemental is the first dial, with Freeze on its rim", #dials)
+    CHECK(ele.time.cd.__shown and ele.time.cd.__cdDur == 45, "its lifespan is the clock",
+        tostring(ele.time.cd.__cdDur))
+    CHECK(ele.absorb.full.__shown or ele.absorb.cd.__shown, "and its health is the band")
+    CHECK(ele.markAt and math.abs(ele.markAt - 25 / 45) < 0.02,
+        "Freeze ready: the mark sits at the 25s spend-by deadline", tostring(ele.markAt))
+    local mc = ele.mark.__color
+    CHECK(mc and mc[1] == 1 and mc[2] > 0.8 and mc[3] < 0.5, "in gold")
+    -- The mark rides the clock's own ring, at the place the clock's edge
+    -- will be: (1 - f) of a turn clockwise from twelve
+    local mp = ele.mark.__points[#ele.mark.__points]
+    local angle = (1 - ele.markAt) * 2 * math.pi
+    local radius = ele.radii.outer - ele.radii.timeBand / 2
+    CHECK(math.abs(mp.x - radius * math.sin(angle)) < 0.01
+        and math.abs(mp.y - radius * math.cos(angle)) < 0.01,
+        "on the clock's ring, where the clock's edge will be then")
+
+    now = born + 5
+    freezeStart, freezeDur = now, 25
+    DrawOnce()
+    ele = Dials()[1]
+    CHECK(ele.markAt and math.abs(ele.markAt - 15 / 45) < 0.03,
+        "Freeze spent: the mark moves to when it is back", tostring(ele.markAt))
+    mc = ele.mark.__color
+    CHECK(mc and mc[1] < 0.6 and mc[3] == 1, "in frost blue")
+    CHECK(ele.badge.cd.__shown and ele.badge.cd.__cdDur == 25, "and the badge is wiped by its cooldown",
+        tostring(ele.badge.cd.__cdDur))
+    freezeStart, freezeDur = 0, 0
+    petOut = false
+    DrawOnce()
+    dials = Dials()
+    CHECK(#dials == 2, "the elemental gone, its dial goes with it (this mage has not the talent)",
+        #dials)
+
+    -- Too many to fit at the asked size: they shrink to the frame, not past it
+    db.DialSize = 44
+    db.FrameWidth = 80
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+    dials = Dials()
+    local last = dials[#dials]
+    CHECK(last._x + last.__w <= 80, "dials shrink to fit the frame", last._x + last.__w)
+    CHECK(last.__w >= 16, "but never below the size an icon is still a picture", last.__w)
+
+    db.FrameWidth = 214
+    db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize =
+        keep[1], keep[2], keep[3], keep[4]
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+end
 
 -- ===========================================================================
 -- Layout: turning a button off closes the gap
@@ -6658,6 +7225,13 @@ CHECK(chromeAnchor.point == "TOPRIGHT", "Commander chrome stays right-aligned",
 CHECK((rootFrame._segX or 0) > STRIPE_W_TEST,
     "the banner readout starts after the cluster, not at the frame edge",
     tostring(rootFrame._segX))
+
+-- The checks from here on are about the personal block's ROWS shape -- the
+-- compact height, the label slot, the Freeze slot on the elemental's row --
+-- so they ask for it. The dial shape has its own section above.
+CommanderPartyFramesDB.PersonalStyle = "ROWS"
+Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+DrawOnce()
 
 -- Rows carry both a bar and a spell icon; height tells the two pools apart.
 -- Only rows SHOWN this pass count — pooled leftovers keep stale anchors.
@@ -7094,10 +7668,257 @@ do
     Fire("GROUP_ROSTER_UPDATE"); DrawOnce()
 end
 
+-- ===========================================================================
+-- Whose cooldowns: a spec label is not a spellbook
+-- ===========================================================================
+-- The board kept ONE spec per player -- whichever tree their last signature
+-- spell came from -- and drew every cooldown in that tree. A PoM-Pyro mage is
+-- 31 Arcane / 30 Fire: a Blast Wave made them FIRE, the strip drew Combustion
+-- and Dragon's Breath (which they do not have) and hid Presence of Mind and
+-- Arcane Power (which are the build), and the next Presence of Mind flipped
+-- all of it the other way.
+local function CheckSpecGating()
+    local db = CommanderPartyFramesDB
+    local keep = { db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf,
+        db.UnitDisplay, db.AbilityMaxIcons }
+    local baseExists, baseGUID, baseClass, baseTabs, baseTab =
+        UnitExists, UnitGUID, UnitClass, GetNumTalentTabs, GetTalentTabInfo
+    local baseInGroup = IsInGroup
+    -- A party member's casts are only read off the log for somebody the
+    -- roster scan has registered, and that scan asks whether we are grouped
+    IsInGroup = function() return true end
+    local keptKnown = {}
+    for id in pairs(knownIds) do keptKnown[id] = true end
+    SPELLS[11113], SPELLS[31661], SPELLS[1953] = "Blast Wave", "Dragon's Breath", "Blink"
+
+    -- The build: Presence of Mind, Arcane Power and Blast Wave; no Combustion,
+    -- no Dragon's Breath, no Cold Snap. 31 / 30 / 0.
+    knownIds[11958] = nil
+    Learn(12043, 12042, 11113, 1953)
+    GetNumTalentTabs = function() return 3 end
+    -- The newer shape of the call: an id first, the points FIFTH
+    GetTalentTabInfo = function(tab)
+        return 80 + tab, "Tab " .. tab, "A paragraph about the tree.", "icon", ({ 31, 30, 0 })[tab]
+    end
+    partyUp = { party1 = true }
+    UnitExists = function(unit)
+        if unit and unit:find("^party") then return partyUp[unit] == true end
+        return baseExists(unit)
+    end
+    UnitGUID = function(unit)
+        if unit and unit:find("^party") then return unit .. "-guid" end
+        return baseGUID(unit)
+    end
+    db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf = true, true, false, true
+    db.UnitDisplay, db.AbilityMaxIcons = "SPEC", 8
+    Fire("SPELLS_CHANGED")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); DrawOnce()
+
+    -- The strip under a given row, as a set of icon textures
+    local function RowOf(name)
+        for _, f in ipairs(allFrames) do
+            if f.bar and f.stripe and f.__shown and not f.personal and not f.scratch
+                and f._guid == name then
+                return f
+            end
+        end
+    end
+    local function StripUnder(row)
+        local want = row.__points[#row.__points].y - 22 - 1
+        local out, n = {}, 0
+        for _, f in ipairs(allFrames) do
+            if f.cells and f.__shown and f.__points and f.__points[#f.__points].y == want then
+                for _, cell in ipairs(f.cells) do
+                    if cell.frame.__shown then
+                        out[cell.icon.__texture or "?"] = true
+                        n = n + 1
+                    end
+                end
+            end
+        end
+        return out, n
+    end
+    local function Icon(id) return "Interface\\Icons\\Spell_" .. id end
+    local function Cast(guid, id)
+        clogEvent = { now, "SPELL_CAST_SUCCESS", false, guid, "Caster", 0, 0,
+            "target-guid", "Somebody", 0, 0, id, SPELLS[id] }
+        Fire("COMBAT_LOG_EVENT_UNFILTERED")
+        DrawOnce()
+    end
+
+    -- --- your own row: the spellbook, not a guess ---------------------------
+    local me = RowOf("player-guid")
+    CHECK(me ~= nil, "spec: your own row is on the board")
+    if me then
+        -- A Fire signature in the log under your name. (Combustion, because
+        -- the signature names are resolved at login and this is the Fire one
+        -- the mock's client can name; what matters is that the log says FIRE.)
+        Cast("player-guid", 11129)
+        local strip = StripUnder(me)
+        CHECK(strip[Icon(12043)] and strip[Icon(12042)],
+            "your strip shows Presence of Mind and Arcane Power -- the build's own cooldowns, "
+            .. "which a Fire label used to hide")
+        CHECK(not strip[Icon(11129)] and not strip[Icon(31661)],
+            "and neither Combustion nor Dragon's Breath, which a Fire label used to draw "
+            .. "and this mage does not have")
+        CHECK(not strip[Icon(11958)], "nor Cold Snap, which is not in the book either")
+        CHECK(strip[Icon(45438)] == true, "what every mage has is still there")
+        CHECK(me.unitIcon.__texture == "Interface\\Icons\\Spell_Holy_MagicalSentry",
+            "the label is the tree with the most points in it -- Arcane, at 31/30 -- "
+            .. "and a Fire spell in the log does not change it", tostring(me.unitIcon.__texture))
+        Cast("player-guid", 12043)      -- and a Presence of Mind does not either
+        CHECK(me.unitIcon.__texture == "Interface\\Icons\\Spell_Holy_MagicalSentry",
+            "nor does anything else you cast")
+
+        -- A respec is followed without being told
+        knownIds[12043], knownIds[12042], knownIds[11113] = nil, nil, nil
+        Learn(11958)
+        GetTalentTabInfo = function(tab)
+            return 80 + tab, "Tab " .. tab, "A paragraph.", "icon", ({ 0, 10, 51 })[tab]
+        end
+        Fire("SPELLS_CHANGED"); Fire("PLAYER_TALENT_UPDATE"); DrawOnce()
+        strip = StripUnder(me)
+        CHECK(strip[Icon(11958)] and not strip[Icon(12043)],
+            "a respec to Frost: Cold Snap arrives and Presence of Mind goes, with the book")
+        CHECK(me.unitIcon.__texture ~= "Interface\\Icons\\Spell_Holy_MagicalSentry",
+            "and the label follows the points", tostring(me.unitIcon.__texture))
+
+        -- The older shape of the call (name, icon, points) reads the same
+        GetTalentTabInfo = function(tab) return "Tab " .. tab, "icon", ({ 40, 21, 0 })[tab] end
+        Fire("PLAYER_TALENT_UPDATE"); DrawOnce()
+        CHECK(me.unitIcon.__texture == "Interface\\Icons\\Spell_Holy_MagicalSentry",
+            "the other shape of the talent call is read correctly too", tostring(me.unitIcon.__texture))
+    end
+
+    -- --- somebody else's row: evidence, and no more than the evidence -------
+    local mate = RowOf("party1-guid")
+    CHECK(mate ~= nil, "spec: a party member's row is on the board")
+    if mate then
+        local strip = StripUnder(mate)
+        CHECK(not strip[Icon(11129)] and not strip[Icon(12043)],
+            "before they have shown anything, no talent is drawn for them")
+        -- Dragon's Breath has no name in the mock's client, so it wears the
+        -- book's own literal icon
+        local BREATH = "Interface\\Icons\\INV_Misc_Head_Dragon_01"
+        Cast("party1-guid", 11129)      -- Combustion: one tree shown
+        strip = StripUnder(mate)
+        CHECK(strip[Icon(11129)] == true and strip[BREATH] == true,
+            "one tree shown: its cooldowns are drawn, as they always were -- for a build "
+            .. "that lives in one tree the inference is right")
+        Cast("party1-guid", 12043)      -- Presence of Mind: a second tree
+        strip = StripUnder(mate)
+        CHECK(strip[Icon(12043)] == true, "a talent seen cast is drawn, whatever the label says")
+        CHECK(strip[Icon(11129)] == true, "and so is the Combustion they were seen to press")
+        CHECK(not strip[BREATH],
+            "two trees shown: a hybrid, so Dragon's Breath is no longer assumed from a "
+            .. "label that never proved it")
+        CHECK(not strip[Icon(12042)], "and Arcane Power waits to be seen, like the rest")
+        Cast("party1-guid", 12042)
+        CHECK(StripUnder(mate)[Icon(12042)] == true, "seen, it is drawn")
+    end
+
+    -- put everything back
+    for id in pairs(knownIds) do knownIds[id] = nil end
+    for id in pairs(keptKnown) do knownIds[id] = true end
+    UnitExists, UnitGUID, UnitClass, GetNumTalentTabs, GetTalentTabInfo =
+        baseExists, baseGUID, baseClass, baseTabs, baseTab
+    IsInGroup = baseInGroup
+    partyUp = {}
+    db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf,
+        db.UnitDisplay, db.AbilityMaxIcons = keep[1], keep[2], keep[3], keep[4], keep[5], keep[6]
+    Fire("SPELLS_CHANGED"); Fire("PLAYER_TALENT_UPDATE")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); DrawOnce()
+end
+
+-- Viper Sting on a hunter's strip is an OPTION: in the book, one tick away in
+-- the Tracked Abilities window, and not on anybody's strip until it is ticked.
+-- Once it is, it holds a cell -- lit while ready, swept for its 15 seconds --
+-- and the rank a level-70 hunter casts finds the entry by name.
+local function CheckViperOption()
+    local db = CommanderPartyFramesDB
+    local keep = { db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf }
+    local baseExists, baseGUID, baseClass, baseInGroup = UnitExists, UnitGUID, UnitClass, IsInGroup
+    IsInGroup = function() return true end
+    partyUp = { party1 = true }
+    UnitExists = function(unit)
+        if unit and unit:find("^party") then return partyUp[unit] == true end
+        return baseExists(unit)
+    end
+    UnitGUID = function(unit)
+        if unit and unit:find("^party") then return unit .. "-guid" end
+        return baseGUID(unit)
+    end
+    UnitClass = function(unit)
+        if unit == "party1" then return "Hunter", "HUNTER" end
+        return baseClass(unit)
+    end
+    db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf = true, true, false, true
+    db.AbilityTrack = db.AbilityTrack or {}
+    local function Redraw()
+        Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+        Fire("GROUP_ROSTER_UPDATE"); DrawOnce()
+    end
+    -- The live cell carrying a hunter entry, by the tooltip payload it rides
+    local function HunterCell(key)
+        for _, f in ipairs(allFrames) do
+            if f.cells and f.__shown then
+                for _, cell in ipairs(f.cells) do
+                    local e = cell.frame.__shown and cell.frame._e
+                    if e and e.tok == "HUNTER:" .. key then return cell end
+                end
+            end
+        end
+    end
+    Redraw()
+
+    local entry
+    for _, e in ipairs(CommanderPartyFrames_GetAbilityBook().HUNTER) do
+        if e.key == "VIPER" then entry = e end
+    end
+    CHECK(entry ~= nil and entry.off == true and entry.cd == 15 and entry.tok == "HUNTER:VIPER",
+        "viper: in the hunter's book as an option, shipped unticked")
+    CHECK(HunterCell("TRAP") ~= nil, "viper: the hunter's strip is on the board")
+    CHECK(HunterCell("VIPER") == nil, "viper: not on it until it is ticked")
+
+    db.AbilityTrack["HUNTER:VIPER"] = true
+    Redraw()
+    local cell = HunterCell("VIPER")
+    CHECK(cell ~= nil and cell.cd.__shown == false, "viper: ticked, it holds a cell, lit while ready")
+
+    local castAt = now                  -- drawing moves the clock on
+    clogEvent = { now, "SPELL_CAST_SUCCESS", false, "party1-guid", "Hunter", 0, 0,
+        "target-guid", "Somebody", 0, 0, 27018, "Viper Sting" }
+    Fire("COMBAT_LOG_EVENT_UNFILTERED"); DrawOnce()
+    cell = HunterCell("VIPER")
+    CHECK(cell ~= nil and cell.cd.__shown == true and cell.cd.__cdDur == 15
+        and math.abs(cell.cd.__cdStart - castAt) < 0.01,
+        "viper: rank 4 cast, the rank-1 entry sweeps its 15 seconds",
+        cell and (tostring(cell.cd.__cdStart) .. "/" .. tostring(cell.cd.__cdDur)))
+
+    now = now + 16
+    DrawOnce()
+    cell = HunterCell("VIPER")
+    CHECK(cell ~= nil and cell.cd.__shown == false, "viper: ...and is lit again once it is back")
+
+    db.AbilityTrack["HUNTER:VIPER"] = nil
+    Redraw()
+    CHECK(HunterCell("VIPER") == nil, "viper: unticked, it leaves the strip")
+
+    UnitExists, UnitGUID, UnitClass, IsInGroup = baseExists, baseGUID, baseClass, baseInGroup
+    partyUp = {}
+    db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf =
+        keep[1], keep[2], keep[3], keep[4]
+    Redraw()
+end
+
 CheckSectionSizing()
 CheckRowFit()
 CheckBuffStrip()
 CheckAbilityScope()
+if CLASS == "MAGE" then CheckSpecGating() end
+CheckViperOption()
 CheckClickMatrix()
 CheckBuffGrid()
 CheckBlessAssign()
@@ -7161,5 +7982,6 @@ CheckArrowSorted()
 
 CHECK(#caughtErrors == 0, "no errors across the run", caughtErrors[1])
 
+CheckSettingsFolds()
 io.write(string.format("[%s] %d checks, %d failures\n", CLASS, checks, fails))
 os.exit(fails == 0 and 0 or 1)

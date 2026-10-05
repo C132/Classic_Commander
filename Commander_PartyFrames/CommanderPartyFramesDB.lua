@@ -58,6 +58,17 @@ local DefaultSettings = {
     IconRecess = "SOFT",        -- icon shading: OFF | SOFT | DEEP | CARVED
     SweepEdge = false,          -- leading-edge spark on the aura duration sweeps
     NameMaxChars = 6,
+    -- The bar's left span: the ally's name, unless the row has a state word
+    -- to put there. Which words are allowed to is the player's call, kind by
+    -- kind; the master hands the span to the name outright. All on, so the
+    -- board reads exactly as it always has.
+    BarTextAlwaysName = false,  -- never a word: the span is always the name
+    BarTextDead = true,         -- DEAD / OFFLINE
+    BarTextDispel = true,       -- MAGIC / CURSED / POISON / DISEASE
+    BarTextCC = true,           -- the crowd control's name
+    BarTextAsk = true,          -- BLESS / HOT: what to cast on them
+    BarTextLock = true,         -- EXPOSED / SHIELDED*: why you cannot, or need not
+    BarTextNumber = true,       -- seconds or minutes left, absorb amounts, UP
     ShowTargeters = true,       -- enemy-NPCs-targeting count over the class icon
     ShowTargetMarks = true,     -- raid mark of the unit each ally is targeting
     ShowCombat = true,          -- crossed blades on every ally who is in combat
@@ -179,7 +190,17 @@ local DefaultSettings = {
     MageClickRight = 475,       -- mage row right-click  = Remove Curse
     MageClickMiddle = "TARGET", -- mage row middle-click = target the ally
     MageClickModLeft = 1008,    -- mage row mod+left     = Amplify Magic
-    SelfShieldRows = true,      -- append your own shields under the ally rows
+    SelfShieldRows = true,      -- your own shields, leading the ally rows
+    -- How the personal block (My Shields, the Water Elemental) is drawn.
+    --   DIALS  the radial plate's language: one disc per tracker on ONE line
+    --   ROWS   the original: a half-height bar row per tracker, stacked
+    PersonalStyle = "DIALS",
+    DialSize = 28,              -- a dial's diameter in pixels (shrinks to fit the frame)
+    -- What a dial's absorb band is drawn with: MATCH (whatever Bar Texture
+    -- is) | FLAT | BLIZZARD | GLOSS | BEVEL | RIDGE | GLASS
+    DialTexture = "MATCH",
+    DialTextSize = 0,           -- the number's font size in points (0 = sized off the dial)
+    DialTextShade = 0.45,       -- how far a lit dial's face darkens under its number (0 = not at all)
     MageBannerCooldowns = true, -- Ice Block + Cold Snap segments on the banner
 
     -- Druid layer: the hot board. Its own click keys for the same reason the
@@ -215,15 +236,15 @@ local DefaultSettings = {
 
     -- Paladin layer: the blessing board. Its own click keys for the same
     -- reason every other layer's are separate — the DB is account-wide.
-    -- The Hands are emergency cooldowns rather than upkeep, so the READY bar
-    -- sits far lower than the druid's: an ally at 89% does not want a BoP.
-    BlessRefreshAt = 3,         -- seconds left at/under which a Hand counts as expiring
-    BlessReadyAt = 50,          -- health % at/under which an unhanded ally goes READY
+    -- (No BlessReadyAt any more: that was the Hands strip's health bar, and
+    -- the slot it read no longer exists. A naked ally is always READY.)
+    BlessRefreshAt = 3,         -- seconds left at/under which a Freedom / Protection / Sacrifice counts as expiring
     BlessBannerCooldowns = true,-- Lay on Hands / bubble / wings segments on the banner
-    -- The blessing family as ONE assigned slot per ally (Pally Power's shape).
-    -- On by default: six mutually exclusive slots is six icons answering a
-    -- question that only ever has one answer, five of them always dark.
-    BlessCombine = true,        -- collapse the blessings into one assigned slot
+    -- The blessing family as ONE slot per ally (Pally Power's shape), showing
+    -- whichever blessing of yours is on them. On by default: nine mutually
+    -- exclusive slots is nine icons answering a question that only ever has
+    -- one answer, eight of them always dark.
+    BlessCombine = true,        -- collapse the blessings into one slot
     BlessMineOnly = true,       -- only blessings YOU cast count as cover
     BlessRowMenu = true,        -- click an ally's blessing slot to reassign (out of combat)
     BlessAssign = {},           -- per-player override   ("Grimtusk" -> "KINGS" / "NONE")
@@ -245,7 +266,7 @@ local DefaultSettings = {
     ShowBandageButton = true,   -- First Aid: bandage, lockout, open the window
 
     -- Party Ability Bar (engine lands in phases; keys reserved now)
-    ShowAbilityBar = true,      -- cooldown strip under every player row
+    ShowAbilityBar = true,      -- cooldown strip under every player row (a row that cannot have one holds no band)
     AbilityMaxIcons = 6,        -- most ability icons per strip (3-8)
     AbilityBarSelf = true,      -- include your own row's strip
     AbilityBarOnlySelf = false, -- ...and ONLY your own row's
@@ -259,6 +280,7 @@ local DefaultSettings = {
     ShowDispels = false,        -- master switch for the strip
     DispelShowAll = false,      -- show every debuff, not just ones you can dispel
     DispelShowImportant = true, -- include healer-relevant undispellables (Mortal Strike, Blind...)
+    BurstGlow = true,           -- violet edge + wash on a row whose ally popped Arcane Power
     DispelCCGlow = true,        -- pulse a glow on crowd-control debuffs
     DispelHealGlow = true,      -- red pulse on healing-reduction debuffs
     DispelSweep = true,         -- radial duration sweep on each debuff icon
@@ -453,6 +475,9 @@ local function BuffCellTooltip(self)
     end
     if def.isHot then
         GameTooltip:AddLine("Your own, on that ally — the slot carries its remaining time as a sweep.",
+            0.7, 0.7, 0.7, true)
+    elseif def.emergency then
+        GameTooltip:AddLine("A blessing on this client, not a Hand: it takes the ally's one blessing slot, and the slot shows it while it is on them.",
             0.7, 0.7, 0.7, true)
     elseif def.mine and CommanderPartyFramesDB.BlessMineOnly then
         GameTooltip:AddLine("Only yours counts; the Greater version fills the same slot.",
@@ -1096,10 +1121,10 @@ end
 
 local function AddBlessingSection(panel)
     panel:AddSection("Blessings",
-        "One slot per ally carrying the blessing you decided they should have, rather than six slots where five are always dark. Set the answer per class below, override it per player, or just click an ally's blessing slot on the board.")
+        "One slot per ally showing whichever blessing of yours is on them right now — a Kings with its minutes, or the Protection you just spent on them with its seconds — and, when none is, the blessing you decided they should have, ghosted. Set that answer per class below, override it per player, or just click an ally's blessing slot on the board.")
     panel:AddCheckboxPair({
         label = "One Blessing Slot",
-        tooltip = "Collapse Kings, Might, Wisdom, Salvation, Sanctuary and Light into a single slot on each ally's row, showing the one blessing you assigned them. The game only lets you hold ONE blessing on a target, so six slots were six icons answering a question with one answer. Off gives you back a slot per tracked blessing, chosen in the Ally Buffs grid above.",
+        tooltip = "Collapse all nine blessings — Kings, Might, Wisdom, Salvation, Sanctuary and Light, plus Freedom, Protection and Sacrifice, which are blessings on this client and take the same slot — into a single slot on each ally's row. It shows whichever of yours is on them with its own remaining time; when none is, it shows the one you assigned, ghosted. The game only lets you hold ONE blessing on a target, so nine slots were nine icons answering a question with one answer. Off gives you back a slot per tracked blessing, chosen in the Ally Buffs grid above — and the row's colour stops reading the blessing, because the READY / REFRESH / SHIELDED ladder is the one slot's.",
         get = function() return CommanderPartyFramesDB.BlessCombine end,
         set = function(value) CommanderPartyFramesDB.BlessCombine = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
@@ -1531,7 +1556,7 @@ local function AddAlertSoundsSection(panel, layerKey)
 end
 
 local function AddAbilityBarSection(panel)
-    panel:AddSection("Party Ability Bar", "A curated cooldown strip under every player: match-deciders always visible (lit = ready, swept = cooling), trinkets/racials surfacing only once spent, a red rim for lockouts (Hypothermia, Forbearance), and a gold pip when Cold Snap or Preparation can refund a cooldown. Learned from the combat log; spec-gated abilities appear once the spec is known.")
+    panel:AddSection("Party Ability Bar", "A curated cooldown strip under every player: match-deciders always visible (lit = ready, swept = cooling), trinkets/racials surfacing only once spent, a red rim for lockouts (Hypothermia, Forbearance), and a gold pip when Cold Snap or Preparation can refund a cooldown. Your own strip is read off your spellbook, so it is exactly the cooldowns you have -- a hybrid build included -- and follows a respec. Everyone else's is learned from the combat log: a talent appears once it has been seen cast, or once their build has shown one tree and only one, and a build that has shown two is not guessed at. The strip's line belongs to the row that can use it: a pet has no cooldown book and holds no line, and neither does anyone whose strip you have switched off — their rows close up rather than keeping an empty band.")
     panel:AddCheckboxPair({
         label = "Show Ability Bar",
         tooltip = "Master switch for the per-player cooldown strips.",
@@ -1547,7 +1572,7 @@ local function AddAbilityBarSection(panel)
     })
     panel:AddCheckbox({
         label = "Mine Only",
-        tooltip = "Show the strip under YOUR row and nobody else's. The narrowest the ability bar goes without switching it off — the reminder of your own cooldowns, without a wall of everyone else's. Needs Include Your Row on, or there would be nothing left to draw.",
+        tooltip = "Show the strip under YOUR row and nobody else's. The narrowest the ability bar goes without switching it off — the reminder of your own cooldowns, without a wall of everyone else's, and without the line each of theirs took: every other row closes up to a bare row. Needs Include Your Row on, or there would be nothing left to draw.",
         get = function() return CommanderPartyFramesDB.AbilityBarOnlySelf end,
         set = function(value) CommanderPartyFramesDB.AbilityBarOnlySelf = value end,
         isEnabled = function()
@@ -1654,24 +1679,24 @@ local LAYER_UI = {
         dispelHealGlow = "Red pulse on debuffs that cut healing received (Mortal Strike, Wound Poison). On a hot board that is the cue to stop topping and start pre-hotting through it.",
     },
     BLESS = {
-        headerTooltip = "Show your upkeep banner at the top: the aura you are running and the seal you are holding (both red when you have none — a paladin is always meant to be running both, and both are click-to-switch), your Lay on Hands / bubble / Hands / wings cooldowns, session blessing uptime when tracked, team alerts (what you can cleanse, who is in CC), and the bandage/settings buttons.",
-        selfTooltip = "Add your own row to the board — the Hands you have on yourself, your own Forbearance, and anything on you that you can cleanse.",
+        headerTooltip = "Show your upkeep banner at the top: the aura you are running and the seal you are holding (both red when you have none — a paladin is always meant to be running both, and both are click-to-switch), your Lay on Hands / bubble / Protection / Freedom / Sacrifice / wings cooldowns, session blessing uptime when tracked, team alerts (what you can cleanse, who is in CC), and the bandage/settings buttons.",
+        selfTooltip = "Add your own row to the board — the blessing you have on yourself, your own Forbearance, and anything on you that you can cleanse.",
         petsTooltip = "Give your allies' pets their own rows — a warlock's demon, a hunter's pet — with the same health bar, embedded absorbs, magic and poison colors, dispel strip and click-casting every ally row gets, so a Freedom or a blessing lands on them like anyone else. Blessing of Might applies to anything that swings, so a pet keeps that slot even without a mana strip. A pet's portrait stands in for the class icon, and its name is tinted with its owner's class color. Pets carry no ability strip (the book is a class's cooldowns, and a pet has none) and give way to an equally urgent player in the sort — but a poisoned pet still outranks a quiet teammate. They count against Max Rows.",
-        alertsTooltip = "Hide the quiet rows and keep only the ones that want a global — Hands about to fall off, allies in real trouble with none, anyone Forbearance-locked, and anyone with something you can cleanse or in CC (you always stay visible). No effect in Click-Cast mode (fixed roster order).",
+        alertsTooltip = "Hide the quiet rows and keep only the ones that want a global — allies with none of your blessings, blessings about to fall off, and anyone with something you can cleanse or in CC (you always stay visible). No effect in Click-Cast mode (fixed roster order).",
         backdropTooltip = "Dark panel behind the banner across the top of the board, so the icons and text read against it instead of against the world. Independent of the frame's own styled backdrop.",
         maxRowsTooltip = "Most ally rows shown at once (most urgent first).",
-        widthTooltip = "Overall width of the board — widen until the blessing slot, the Hand strip, names and numbers sit comfortably.",
-        rebuffTooltip = "Treat an ally's blessing as due when this much time or less remains — its slot turns amber so you can rebless before it drops. Greater blessings run thirty minutes and singles ten, so this is the one number that decides how often the strip asks you for anything.",
+        widthTooltip = "Overall width of the board — widen until the blessing slot, names and numbers sit comfortably.",
+        rebuffTooltip = "Treat an ally's upkeep blessing as due when this much time or less remains — its slot turns amber so you can rebless before it drops. Greater blessings run thirty minutes and singles ten, so this is the one number that decides how often the slot asks you for anything. Freedom, Protection and Sacrifice have their own window in seconds, under Emergency Blessings below.",
         rangeTooltip = "Dim allies who are out of range, so you only act on the ones you can actually reach.",
         glowLabel = "Action Glow",
-        glowTooltip = "Softly glow any row with an open action — something to cleanse, a Hand to give or refresh, or a missing blessing — so the next global jumps out.",
-        uptimeTooltip = "Track your BLESSING uptime — the share of the session your living teammates were carrying at least one blessing of yours. Hands are deliberately not counted: they are emergencies, and a number near zero would mean nothing. Shown in the banner; detailed by /cpf report.",
+        glowTooltip = "Softly glow any row with an open action — something to cleanse, a blessing to give or rebless — so the next global jumps out.",
+        uptimeTooltip = "Track your BLESSING uptime — the share of the session your living teammates were carrying a blessing of yours, Freedom, Protection and Sacrifice included (for the ten seconds a Protection is on them, they are blessed — that is what a Protection is on this client). Shown in the banner; detailed by /cpf report.",
         breakLabel = "Shield Broke Flash",
-        breakTooltip = "Flash a row red the moment a teammate's LAST absorb breaks — that is exactly when the enemy team commits, and on this board it is the cue to have a Hand ready before the damage lands.",
+        breakTooltip = "Flash a row red the moment a teammate's LAST absorb breaks — that is exactly when the enemy team commits, and on this board it is the cue to have a Protection ready before the damage lands.",
         breakSoundLabel = "Break Sound",
         breakSoundTooltip = "Also play an alert sound with the flash.",
         iconLabel = "Status Icons",
-        iconTooltip = "Show the blessing slot and the Hand strip beside it. Each ally gets ONE blessing slot carrying the blessing you assigned them (set it under Blessings below, or click the slot itself out of combat): lit with its remaining time while yours is up, amber inside the rebuff window, ghosted when it is gone, dark-red when the advisor says that absence is costing you. Only blessings YOU cast count, so another paladin's Kings never makes a naked ally look handled.",
+        iconTooltip = "Show the blessing slot. Each ally gets ONE, and it shows whichever blessing of yours is on them right now with its remaining time on the sweep — Kings with its minutes, or the Protection you just spent on them with its seconds, because on this client Protection, Freedom and Sacrifice are blessings and take the same slot. Amber means rebless: inside the rebuff window, or carrying a different upkeep blessing of yours than the one you assigned them. When none of yours is on them the slot shows the assigned blessing ghosted (set it under Blessings below, or click the slot itself out of combat), dark-red when the advisor says that absence is costing you. Only blessings YOU cast count, so another paladin's Kings never makes a naked ally look handled.",
         shieldTypesTooltip = "Tint each absorb embedded in an ally's health bar by what it is — cream Power Word: Shield, vibrant blue Ice Barrier, blue-grey Mana Shield, ember/ice wards, dark grey Sacrifice. Off shows every shield as one classic cream overlay for a quieter bar.",
         dispelIntro = "A strip of icons to the right of each row showing debuffs you can remove — a paladin cleanses Magic, Poison and Disease, which is more schools than anyone else on this board — and a glow on crowd control. A removable debuff also colors the whole row, whatever is shown here.",
         dispelShow = "Show, to the right of each ally's row, the Magic, Poison and Disease debuffs you can cleanse (rim colored by school, countdown sweep). The row states work even with this strip off; the strip tells you WHICH debuff it is.",
@@ -1731,7 +1756,7 @@ local function AddDispelSection(panel, ui)
     })
     panel:AddCheckboxPair({
         label = "Important Debuffs",
-        tooltip = "Also show debuffs that matter to a healer even though you cannot dispel them: healing reductions (Mortal Strike, Aimed Shot, Wound Poison), undispellable crowd control and stuns (Blind, Sap, Gouge, Kidney Shot, Cyclone, Intimidating Shout...), and silences. These get a category-colored rim — red for healing reduction, orange for crowd control — and are sorted to the front of the strip.",
+        tooltip = "Also show debuffs that matter to a healer even though you cannot dispel them: healing reductions (Mortal Strike, Aimed Shot, Wound Poison), undispellable crowd control and stuns (Blind, Sap, Gouge, Kidney Shot, Cyclone, Intimidating Shout...), and silences. These get a category-colored rim — red for healing reduction, orange for crowd control — and are sorted to the front of the strip. Immunities ride along too: Ice Block and Divine Shield are buffs, not debuffs, but they answer whether to heal the row at all, so they take the first slot with an ice-blue rim.",
         get = function() return CommanderPartyFramesDB.DispelShowImportant end,
         set = function(value) CommanderPartyFramesDB.DispelShowImportant = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ShowDispels end,
@@ -1779,6 +1804,65 @@ end
 -- Identity, icons and bar art. The same section on every page — only the
 -- status-slot wording changes with what the class actually keeps there,
 -- and only the priest board has a second toggle to pair with it.
+-- The bar's left span. It is the ally's name until the row has a state word
+-- to put there — MAGIC, BLESS, a CC's name, the seconds left on a hot — and
+-- for most of the board's life every word simply won. Some people read a
+-- board by names and want the span to stay theirs; more people want SOME of
+-- the words (a MAGIC you can cleanse is worth the name; "24m" is not), so
+-- each kind has a switch of its own under the master. One section on every
+-- page: the kinds are chassis, and which of them a given board can produce is
+-- said in each tooltip rather than by hiding the switch.
+local function AddBarTextSection(panel)
+    panel:AddSection("Bar Text", "What the left of each ally's health bar says. It is their name in class colour whenever the row has nothing else to say there, and a state word — MAGIC, BLESS, a crowd control's name, the seconds left on your hot — when it does. Pick which kinds of word are allowed to take the name's place, or keep the name always: the stripe colour, the icons and the sort keep saying everything the words did.")
+    panel:AddCheckbox({
+        label = "Always the Name",
+        tooltip = "The span is always the ally's name, whatever the row is doing. Every switch below goes quiet while this is on. The row still changes colour, still sorts up, still ghosts and reddens its icons — this only decides what the text says. Your own self-spell rows are not affected: their text is the row.",
+        get = function() return CommanderPartyFramesDB.BarTextAlwaysName end,
+        set = function(value) CommanderPartyFramesDB.BarTextAlwaysName = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    })
+    local function live() return CommanderPartyFramesDB.EnableShield and not CommanderPartyFramesDB.BarTextAlwaysName end
+    panel:AddCheckboxPair({
+        label = "Removable Debuffs",
+        tooltip = "MAGIC, CURSED, POISON or DISEASE — something on them YOU can take off. The loudest word the board has, on every layer. Off, the row still turns that school's colour; only the word goes.",
+        get = function() return CommanderPartyFramesDB.BarTextDispel end,
+        set = function(value) CommanderPartyFramesDB.BarTextDispel = value end,
+        isEnabled = live,
+    }, {
+        label = "Crowd Control",
+        tooltip = "The name of the crowd control an ally is sitting in (Polymorph, Fear, Sap...), trimmed to ten letters. Every layer. Off, the row still goes orange and the dispel strip still glows; only the word goes.",
+        get = function() return CommanderPartyFramesDB.BarTextCC end,
+        set = function(value) CommanderPartyFramesDB.BarTextCC = value end,
+        isEnabled = live,
+    })
+    panel:AddCheckboxPair({
+        label = "What To Cast",
+        tooltip = "BLESS on the paladin board (an ally with none of your blessings) and HOT on the druid board (a hurt ally with none of your hots). The priest and mage boards have no word of this kind — a shieldless ally already says so by their ghosted icon. Off, the row still pulses yellow and sorts up; only the word goes.",
+        get = function() return CommanderPartyFramesDB.BarTextAsk end,
+        set = function(value) CommanderPartyFramesDB.BarTextAsk = value end,
+        isEnabled = live,
+    }, {
+        label = "Lockouts",
+        tooltip = "EXPOSED (a Weakened Soul you cannot shield through) and SHIELDED* (another priest's shield on them) on the priest board. The other boards have no word of this kind. Off, the row keeps its red stripe and the drain under the bar; only the word goes.",
+        get = function() return CommanderPartyFramesDB.BarTextLock end,
+        set = function(value) CommanderPartyFramesDB.BarTextLock = value end,
+        isEnabled = live,
+    })
+    panel:AddCheckboxPair({
+        label = "Numbers",
+        tooltip = "Every number the span can carry: what is left of your shield on the priest board and UP when it has no readable size, an ally's total absorbs on the mage board, the seconds left on your soonest hot on the druid board, the minutes or seconds left on your blessing on the paladin board. The sweeps on the icons carry the same clocks, which is why this is the one most people turn off.",
+        get = function() return CommanderPartyFramesDB.BarTextNumber end,
+        set = function(value) CommanderPartyFramesDB.BarTextNumber = value end,
+        isEnabled = live,
+    }, {
+        label = "Dead & Offline",
+        tooltip = "DEAD and OFFLINE, on every layer. Off, the row still greys out; only the word goes.",
+        get = function() return CommanderPartyFramesDB.BarTextDead end,
+        set = function(value) CommanderPartyFramesDB.BarTextDead = value end,
+        isEnabled = live,
+    })
+end
+
 local function AddIdentitySection(panel, ui)
     panel:AddSection("Identity & Icons")
     panel:AddDropdownPair({
@@ -1914,6 +1998,15 @@ local function AddIdentitySection(panel, ui)
             return CommanderPartyFramesDB.EnableShield
                 and (CommanderPartyFramesDB.UnitDisplay == "NAME" or CommanderPartyFramesDB.UnitDisplay == "ICON_NAME")
         end,
+    })
+    AddBarTextSection(panel)
+    panel:AddSection("Burst", "An ally's damage cooldown, worn by their whole row. When a mage pops Arcane Power the row takes a violet edge and a faint violet wash: a flare on the pop, a slow pulse while it runs, and a wash that thins as the seconds run out. No icon and no word — it is meant for the corner of your eye, so you know whose fifteen seconds this is before the Pyroblast lands.")
+    panel:AddCheckbox({
+        label = "Arcane Power Edge",
+        tooltip = "Violet outline and wash on a row for as long as that ally's Arcane Power runs. Every layer. Off, the row looks the same as any other while they burst.",
+        get = function() return CommanderPartyFramesDB.BurstGlow end,
+        set = function(value) CommanderPartyFramesDB.BurstGlow = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
     })
 end
 
@@ -2055,7 +2148,7 @@ end
 
 -- Decision aids. Every layer offers the same five, and every layer means
 -- something different by them — a mage's action glow is a curse to remove,
--- a paladin's is a Hand to give — so this is the section where LAYER_UI
+-- a paladin's is a blessing to give — so this is the section where LAYER_UI
 -- carries the most wording. Its shape is now identical on all four boards:
 -- the one control that used to differ, the mana strip, became the power
 -- strip and moved up to Identity & Icons where the rest of the bar art is.
@@ -2541,6 +2634,10 @@ local function AddPageHead(panel, ui)
             set = function(value) CommanderPartyFramesDB.ShowHeader = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
+        -- Everything above the first heading stays on the page whatever is
+        -- folded, so it is only the master switches; the board's own shape
+        -- is a section like the rest
+        panel:AddSection("Board", "Who is on the board, in what order, how many rows and how wide, and when it shows at all.")
         panel:AddCheckboxPair({
             label = "Include Self",
             tooltip = ui.selfTooltip,
@@ -2675,6 +2772,16 @@ local function AddPageHead(panel, ui)
             },
         })
 
+        panel:AddSlider({
+            label = "Rebuff Window",
+            tooltip = ui.rebuffTooltip,
+            min = 60, max = 900, step = 30,
+            format = function(value) return string.format("%dm", math.floor((value or 0) / 60 + 0.5)) end,
+            get = function() return CommanderPartyFramesDB.IntRefreshAt end,
+            set = function(value) CommanderPartyFramesDB.IntRefreshAt = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+
         AddHeaderSection(panel, ui)
 
         -- Nearby Raid. Every control here is gated on the flag above it, so a
@@ -2775,15 +2882,6 @@ local function AddPageHead(panel, ui)
             },
         })
 
-        panel:AddSlider({
-            label = "Rebuff Window",
-            tooltip = ui.rebuffTooltip,
-            min = 60, max = 900, step = 30,
-            format = function(value) return string.format("%dm", math.floor((value or 0) / 60 + 0.5)) end,
-            get = function() return CommanderPartyFramesDB.IntRefreshAt end,
-            set = function(value) CommanderPartyFramesDB.IntRefreshAt = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
 
 end
 
@@ -2800,10 +2898,10 @@ local function CreateCorePanel()
     if unsupported then
         local localizedClass = UnitClass("player")
         description = string.format(
-            "Swiss-army-knife party frames with a class layer. Priests get the reshield board (Power Word: Shield, Weakened Soul, dispels); Mages get buff-upkeep frames (Arcane Intellect, decursing, an optional self-shield strip); Druids get the hot board (Rejuvenation, Regrowth, Lifebloom stacks, curses and poisons); Paladins get the blessing board (blessings, the Hands, Forbearance). %s has no layer yet, so the module stays dormant on this character. Settings here are shared account-wide — boards on your Priest, Mage, Druid or Paladin characters are unaffected.",
+            "Swiss-army-knife party frames with a class layer. Priests get the reshield board (Power Word: Shield, Weakened Soul, dispels); Mages get buff-upkeep frames (Arcane Intellect, decursing, an optional self-shield strip); Druids get the hot board (Rejuvenation, Regrowth, Lifebloom stacks, curses and poisons); Paladins get the blessing board (one blessing slot per ally, Forbearance). %s has no layer yet, so the module stays dormant on this character. Settings here are shared account-wide — boards on your Priest, Mage, Druid or Paladin characters are unaffected.",
             localizedClass or "This class")
     elseif palaMode then
-        description = "Arena party frames with a paladin's brain. Health and mana per ally, absorbs embedded in the bar, and — leading each row — the one blessing you decided that ally should be carrying, plus the Hands you have spent there: Freedom, Protection and Sacrifice, each in a fixed slot timed by a radial sweep. Blessings are counted only when YOU cast them, so a second paladin never makes a naked teammate look handled. Forbearance draws the red drain under the bar, because a target who cannot be Protected is a target you plan around. A removable debuff turns the row purple or green, crowd control orange. The banner on top is your own upkeep: aura, seal, cooldowns, blessing uptime, team alerts. Allies' pets get full rows too."
+        description = "Arena party frames with a paladin's brain. Health and mana per ally, absorbs embedded in the bar, and — leading each row — ONE blessing slot showing whichever blessing of yours is on that ally right now, timed by a radial sweep: Kings with its minutes, or the Protection, Freedom or Sacrifice you just spent on them with its seconds, because on this client those are blessings and take the same slot (a Protection takes your Kings off, and the slot says so). When none of yours is on them it shows the blessing you decided they should carry, ghosted. Blessings are counted only when YOU cast them, so a second paladin never makes a naked teammate look handled. Forbearance draws the red drain under the bar, because a target who cannot be Protected is a target you plan around. A removable debuff turns the row purple or green, crowd control orange. The banner on top is your own upkeep: aura, seal, cooldowns, blessing uptime, team alerts. Allies' pets get full rows too."
     elseif druidMode then
         description = "Arena party frames with a resto druid's brain. Health and mana per ally, absorbs embedded in the bar, and — leading each row — your ally buffs and the hots you have rolling there, each in a fixed slot timed by a radial sweep. A removable Curse turns the row purple, a Poison green, crowd control orange. The banner on top is your own upkeep: form, cooldowns, hot uptime, team alerts. Allies' pets get full rows too."
     elseif mageMode then
@@ -2863,6 +2961,7 @@ local function CreateCorePanel()
 
         AddDecisionAids(panel, LAYER_UI.INT)
 
+        panel:AddSection("Banner", "The strip across the top of the board: which of your cooldowns it carries beside your upkeep.")
         panel:AddCheckbox({
             label = "Banner Cooldowns",
             tooltip = "Show Ice Block and Cold Snap on the banner — lit when ready, dimmed with the time left when not. Only these two: they are the pair you check when there is no time to look anywhere, and Cold Snap only means anything next to Block and Barrier. Your other cooldowns are not here on purpose — each already wears a swipe on your action bar, three times this size, exactly where you look to press it again. Ice Barrier and the Water Elemental have their own rows below the board, saying more than a segment could.",
@@ -2910,10 +3009,80 @@ local function CreateCorePanel()
 
         AddDispelSection(panel, LAYER_UI.INT)
 
-        panel:AddSection("My Shields", "Your own Ice Barrier, Mana Shield, and wards as rows under the ally board — absorb remaining as the bar, each spell's cooldown as the red drain. Works on both the sorted and the Click-Cast boards; the Water Elemental's row appears just above these whenever it is in play.")
+        panel:AddSection("My Shields", "Your own Ice Barrier, Mana Shield and wards, and the Water Elemental, in the block that leads the board — the one between the banner and the first ally. Drawn as a line of dials in the radial nameplates' language: the spell is the face, the absorb left is the band round it, the time left is the thin arc outside that, and a cooldown is a clock wipe across the face with its seconds written on it. A shield that is not up is a dark face, so nothing ever moves. Works on both the sorted and the Click-Cast boards.")
+        panel:AddDropdown({
+            label = "Draw As",
+            tooltip = "Dials puts every tracker on ONE line as a disc: icon, absorb band, clock, and the number on the face. The block is the same height whether you track one shield or five.\n\nRows is the original: a half-height bar per tracker with its name beside it, stacked, so four shields is four rows.",
+            options = {
+                { text = "Dials (one line)", value = "DIALS" },
+                { text = "Rows (a bar each)", value = "ROWS" },
+            },
+            width = 180,
+            get = function() return CommanderPartyFramesDB.PersonalStyle end,
+            set = function(value) CommanderPartyFramesDB.PersonalStyle = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddDropdown({
+            label = "Band Style",
+            tooltip = "What the band round each dial is drawn with. Flat is a solid block of the shield's colour. The others are the board's bar styles bent round the face and lit from the outer edge -- Blizzard is the stock status bar's bright lip and darker foot, Gloss a soft tube, Bevel a flat block with a lit edge, Ridge brushed metal, Glass a hard cut across the middle.\n\nSame As The Bars follows whatever Bar Texture is set to, so the dials and the rows under them always match.",
+            options = {
+                { text = "Same as the bars", value = "MATCH" },
+                { text = "Flat", value = "FLAT" },
+                { text = "Blizzard", value = "BLIZZARD" },
+                { text = "Gloss", value = "GLOSS" },
+                { text = "Bevel", value = "BEVEL" },
+                { text = "Ridge", value = "RIDGE" },
+                { text = "Glass", value = "GLASS" },
+            },
+            width = 180,
+            get = function() return CommanderPartyFramesDB.DialTexture end,
+            set = function(value) CommanderPartyFramesDB.DialTexture = value end,
+            isEnabled = function()
+                return CommanderPartyFramesDB.EnableShield
+                    and CommanderPartyFramesDB.PersonalStyle == "DIALS"
+            end,
+        })
+        panel:AddSlider({
+            label = "Number Size",
+            tooltip = "The font size of the number on each dial's face. Auto sizes it off the dial, so it follows Dial Size; a fixed size stays put whatever the dial does.",
+            min = 0, max = 18, step = 1,
+            format = function(v) return v == 0 and "Auto" or string.format("%dpt", v) end,
+            get = function() return CommanderPartyFramesDB.DialTextSize end,
+            set = function(value)
+                CommanderPartyFramesDB.DialTextSize = (value > 0 and value < 7) and 7 or value
+            end,
+            isEnabled = function()
+                return CommanderPartyFramesDB.EnableShield
+                    and CommanderPartyFramesDB.PersonalStyle == "DIALS"
+            end,
+        })
+        panel:AddSlider({
+            label = "Darken Face Under Text",
+            tooltip = "How far a lit dial's face darkens while a number is written across it. The number also carries a black shadow, which holds its edges; this is what holds its middle -- a white 1.1k over Ice Barrier's pale icon has an outline and nothing inside it to tell from the picture. Only a face with a number on it is darkened. 0 leaves the icon untouched.",
+            min = 0, max = 0.8, step = 0.05,
+            format = function(v) return v == 0 and "Off" or string.format("%d%%", v * 100 + 0.5) end,
+            get = function() return CommanderPartyFramesDB.DialTextShade end,
+            set = function(value) CommanderPartyFramesDB.DialTextShade = value end,
+            isEnabled = function()
+                return CommanderPartyFramesDB.EnableShield
+                    and CommanderPartyFramesDB.PersonalStyle == "DIALS"
+            end,
+        })
+        panel:AddSlider({
+            label = "Dial Size",
+            tooltip = "A dial's diameter in pixels. The block is this tall plus a few pixels of air. If the dials you track would not fit across the frame at this size they shrink until they do.",
+            min = 20, max = 44, step = 1,
+            format = "%.0f",
+            get = function() return CommanderPartyFramesDB.DialSize end,
+            set = function(value) CommanderPartyFramesDB.DialSize = value end,
+            isEnabled = function()
+                return CommanderPartyFramesDB.EnableShield
+                    and CommanderPartyFramesDB.PersonalStyle == "DIALS"
+            end,
+        })
         panel:AddCheckboxPair({
             label = "Show My Shields",
-            tooltip = "Append a row for each self-shield you know beneath the ally rows: READY to cast, on cooldown (EXPOSED, drain shows time left), running low (REFRESH), or holding (with absorb remaining).",
+            tooltip = "A tracker for each self-shield you know: ready to cast (dark), on cooldown (dark, wiped, with the seconds left and a red rim), running low (the band and rim change colour), or holding (lit, with the absorb remaining). Switch this off and only the Water Elemental is left in the block.",
             get = function() return CommanderPartyFramesDB.SelfShieldRows end,
             set = function(value) CommanderPartyFramesDB.SelfShieldRows = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
@@ -2964,6 +3133,7 @@ local function CreateCorePanel()
             set = function(value) CommanderPartyFramesDB.HotReadyAt = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
+        panel:AddSection("Banner", "The strip across the top of the board: which of your cooldowns it carries beside your upkeep.")
         panel:AddCheckbox({
             label = "Banner Cooldowns",
             tooltip = "Show Innervate, Nature's Swiftness, Rebirth and Barkskin on the banner — lit when ready, dimmed with the time left when not. Only the ones you have actually trained appear, so a feral never sees a Nature's Swiftness slot.",
@@ -3081,34 +3251,26 @@ local function CreateCorePanel()
         return
     end
 
-    -- ---- Paladin party frames: blessings, the Hands, and Forbearance ----
+    -- ---- Paladin party frames: the blessing slot and Forbearance ----
     if palaMode then
         AddPageHead(panel, LAYER_UI.BLESS)
         AddBuffSection(panel, "BLESS")
         AddBlessingSection(panel)
 
-        panel:AddSection("Hands", "Your own Blessing of Freedom, Protection and Sacrifice on each ally, one fixed slot each, timed by a radial sweep. The row's number is whichever falls off first — and when a target is carrying Forbearance, the red drain under the bar is the minute you cannot Protect them for.")
+        panel:AddSection("Emergency Blessings", "Freedom, Protection and Sacrifice. On this client they are blessings, not Hands: each takes the ally's ONE blessing slot, so a Protection on an ally carrying your Kings takes the Kings off. The slot shows whichever is on them — the Protection with its ten seconds, then the ghosted Kings asking to go back on — and when a target is carrying Forbearance, the red drain under the bar is the minute you cannot Protect them for.")
         panel:AddSlider({
-            label = "Refresh Window",
-            tooltip = "Seconds left at or under which a Hand counts as expiring — the row turns cyan (REFRESH) and sorts up by how long is actually left, or orange (FADING) when Forbearance means you cannot replace it. Ten seconds of Freedom goes fast, so set this to the reaction time you actually want.",
+            label = "Expiring Window",
+            tooltip = "Seconds left at or under which a Freedom, Protection or Sacrifice counts as expiring — its slot turns amber and the row goes cyan (REFRESH), sorted up by how long is actually left. This is the seconds-scale sister of the Rebuff Window above, which is for the ten- and thirty-minute blessings. Ten seconds of Freedom goes fast, so set this to the reaction time you actually want.",
             min = 1, max = 10, step = 1,
             format = "%.0fs",
             get = function() return CommanderPartyFramesDB.BlessRefreshAt end,
             set = function(value) CommanderPartyFramesDB.BlessRefreshAt = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
-        panel:AddSlider({
-            label = "Hand Me At",
-            tooltip = "Health at or under which an ally carrying none of your Hands turns yellow (READY — this is the one to Protect or Free). A Hand is a cooldown you get once a fight, so this sits far lower than a hot board's: an ally at 89% is not a decision. An ally with an enemy melee parked on them qualifies at 85% whatever this says.",
-            min = 30, max = 100, step = 5,
-            format = "%.0f%%",
-            get = function() return CommanderPartyFramesDB.BlessReadyAt end,
-            set = function(value) CommanderPartyFramesDB.BlessReadyAt = value end,
-            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
-        })
+        panel:AddSection("Banner", "The strip across the top of the board: which of your cooldowns it carries beside your upkeep.")
         panel:AddCheckbox({
             label = "Banner Cooldowns",
-            tooltip = "Show Lay on Hands, Divine Shield, Divine Protection, the three Hands, Divine Favor, Avenging Wrath, Hammer of Justice, Divine Illumination and Repentance on the banner — lit when ready, dimmed with the time left when not. Only the ones you have actually trained appear, so a holy paladin never sees a Repentance slot.",
+            tooltip = "Show Lay on Hands, Divine Shield, Divine Protection, Blessing of Protection, Freedom and Sacrifice, Divine Favor, Avenging Wrath, Hammer of Justice, Divine Illumination and Repentance on the banner — lit when ready, dimmed with the time left when not. Only the ones you have actually trained appear, so a holy paladin never sees a Repentance slot.",
             get = function() return CommanderPartyFramesDB.BlessBannerCooldowns end,
             set = function(value) CommanderPartyFramesDB.BlessBannerCooldowns = value end,
             isEnabled = BannerCdsOn,
@@ -3173,6 +3335,7 @@ local function CreateCorePanel()
 
     AddDispelSection(panel, LAYER_UI.PWS)
 
+    panel:AddSection("Banner", "The strip across the top of the board: which of your cooldowns it carries beside your upkeep.")
     panel:AddCheckbox({
         label = "Banner Cooldowns",
         tooltip = "Show Pain Suppression, Power Infusion, Fear Ward, Psychic Scream, Silence, Inner Focus, Shadowfiend, Mass Dispel and Desperate Prayer on the banner — lit when ready, dimmed with the time left when not. Only the ones you have actually trained appear, so a holy priest never sees a Pain Suppression slot.",
@@ -3181,7 +3344,7 @@ local function CreateCorePanel()
         isEnabled = BannerCdsOn,
     })
 
-    panel:AddSection("Your Hots", "Renew and Prayer of Mending on each ally, one fixed slot each on the left of the row, timed by a radial sweep — the same strip a druid's hots and a paladin's Hands ride. Which of them get a slot is set in the Ally Buffs grid above. The row's state stays what it has always been: the shield and the Weakened Soul lockout, because no hot outranks those on this board.")
+    panel:AddSection("Your Hots", "Renew and Prayer of Mending on each ally, one fixed slot each on the left of the row, timed by a radial sweep — the same strip a druid's hots ride. Which of them get a slot is set in the Ally Buffs grid above. The row's state stays what it has always been: the shield and the Weakened Soul lockout, because no hot outranks those on this board.")
     panel:AddCheckbox({
         label = "Refresh Flash",
         tooltip = "Pulse a hot's slot red while it is inside the refresh window below, so an about-to-drop Renew catches your eye. With this off the slot still tints amber — it just stops pulsing. This is the only warning the priest board gives about an expiring hot: on the druid and paladin boards the whole row changes colour, but here the row is busy saying something about the shield.",
