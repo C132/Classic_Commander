@@ -118,6 +118,8 @@ function R.Config(get)
         interruptFlash = G("RadialInterruptFlash", true),
         coreArt = G("RadialCoreArt", "CLASS"),
         coreText = G("RadialCoreText", "SMART"),
+        textShade = G("RadialTextShade", 0.45),
+        coreTextSize = G("RadialCoreTextSize", 0),
         coreCast = G("RadialCoreCast", true),
         coreCC = G("RadialCoreCC", true),
         name = G("RadialName", "BELOW"),
@@ -165,6 +167,7 @@ function R.Config(get)
         cfg.size, cfg.healthThick, tostring(cfg.power), cfg.powerThick, tostring(cfg.cast),
         cfg.castThick, cfg.nameSize, cfg.nameWidth, cfg.name, cfg.offsetY, cfg.backdropPad,
         cfg.glowStyle, cfg.glowScale, tostring((cfg.backdropAlpha or 0) > 0),
+        cfg.textShade, cfg.coreTextSize,
     }, ":")
     return cfg
 end
@@ -228,9 +231,22 @@ local function NewGlow(w, layer, sub)
     return tex
 end
 
+-- Every number on this plate is written over a picture -- a class icon, a
+-- portrait, a spell -- and the picture is as often white as it is dark. The
+-- one-pixel outline alone is not a floor under a white number on a white
+-- icon: at these sizes it is a hairline the eye does not find. A hard black
+-- shadow under the outline doubles the dark edge on the side text is read
+-- from, and costs nothing.
+function R.Legible(fs)
+    if fs.SetShadowColor then fs:SetShadowColor(0, 0, 0, 1) end
+    if fs.SetShadowOffset then fs:SetShadowOffset(1, -1) end
+    fs.legible = true
+end
+
 local function NewText(parent, size)
     local fs = parent:CreateFontString(nil, "OVERLAY")
     fs:SetFont(FONT, size or 10, "OUTLINE")
+    R.Legible(fs)
     fs:Hide()
     return fs
 end
@@ -284,6 +300,17 @@ function R.New(parent)
         end)
         w.wipeMasked = (i == 1 or w.wipeMasked) and ok == true
     end
+
+    -- The shade: the face darkened while a number is written across it. The
+    -- shadow on the text holds its edges; this is what holds its MIDDLE -- a
+    -- white "60" over a paladin's white-gold class icon has an edge and
+    -- nothing inside it to tell from the picture. Above the face and the
+    -- wipe, below every ring, and only ever up while there is text to read.
+    w.shade = w:CreateTexture(nil, "BACKGROUND", nil, 3)
+    w.shade:SetTexture(R.MASK_FILE)
+    w.shade:SetPoint("CENTER", w, "CENTER")
+    w.shade:SetVertexColor(0, 0, 0, 0.45)
+    w.shade:Hide()
 
     -- The arcs, lowest first: a heal on the way and the trail of health just
     -- lost both sit UNDER the health arc and start where it does, so all that
@@ -413,6 +440,10 @@ function R.Layout(w, cfg)
     local coreSize = w.coreMasked and coreD or coreD * 0.7071
     w.core:SetSize(coreSize, coreSize)
     w.coreCd:SetSize(coreSize, coreSize)
+    w.shade:SetSize(coreD, coreD)
+    w.laid.textShade = cfg.textShade or 0
+    w.shade:SetVertexColor(0, 0, 0, w.laid.textShade)
+    if w.laid.textShade <= 0 then w.shade:Hide() end
     local wipeSize = (coreSize / 2) / WIPE_RADIUS
     for _, tex in ipairs(w.wipe) do
         tex:SetSize(wipeSize, wipeSize)
@@ -458,8 +489,14 @@ function R.Layout(w, cfg)
     for _, tex in ipairs({ w.raid, w.healer, w.classBadge }) do tex:SetSize(badge, badge) end
     w.laid.badge = badge
 
-    w.centerText:SetFont(FONT, math.max(8, math.floor(r.core * 0.85)), "OUTLINE")
-    w.drBadge:SetFont(FONT, math.max(8, math.floor(r.core * 0.55)), "OUTLINE")
+    -- The number in the middle: sized off the face unless the player has said
+    -- otherwise, and the DR bracket under it keeps its proportion to it either
+    -- way -- a badge that stayed small under a number made large would read
+    -- as a footnote to it.
+    local centerSize = math.max(8, math.floor(r.core * 0.85))
+    if (cfg.coreTextSize or 0) > 0 then centerSize = cfg.coreTextSize end
+    w.centerText:SetFont(FONT, centerSize, "OUTLINE")
+    w.drBadge:SetFont(FONT, math.max(8, math.floor(centerSize * 0.65)), "OUTLINE")
     w.levelText:SetFont(FONT, math.max(8, math.floor(cfg.size * 0.2)), "OUTLINE")
     w.nameText:SetFont(FONT, cfg.nameSize, "OUTLINE")
     w.nameText:SetWidth(cfg.nameWidth)
@@ -841,10 +878,16 @@ function R.SetMarker(w, key, fraction, r, g, b)
 end
 
 function R.SetCenterText(w, text, r, g, b)
-    if not text or text == "" then w.centerText:Hide() return end
+    if not text or text == "" then
+        w.centerText:Hide()
+        w.shade:Hide()
+        return
+    end
     w.centerText:SetText(text)
     w.centerText:SetTextColor(r or 1, g or 1, b or 1)
     w.centerText:Show()
+    -- The face goes dark under the number for exactly as long as there is one
+    w.shade:SetShown((w.laid.textShade or 0) > 0)
 end
 
 function R.SetDrBadge(w, text, r, g, b)
@@ -1021,6 +1064,8 @@ function R.NewOrbitIcon(parent)
     f.badge = f.text:CreateFontString(nil, "OVERLAY")
     f.badge:SetFont(FONT, 9, "OUTLINE")
     f.badge:SetPoint("TOPLEFT", f, "TOPLEFT", -2, 2)
+    -- Written on an aura's own icon, which is whatever colour the spell is
+    R.Legible(f.count); R.Legible(f.timer); R.Legible(f.badge)
     f.badge:Hide()
     f.glow = f:CreateTexture(nil, "OVERLAY", nil, 3)
     f.glow:SetTexture(R.GLOW_FILE)
@@ -1110,6 +1155,7 @@ function R.Clear(w)
     w.arrowL:Hide(); w.arrowR:Hide()
     for _, f in ipairs(w.drIcons or {}) do f:Hide() end
     w.centerText:Hide(); w.drBadge:Hide(); w.levelText:Hide()
+    w.shade:Hide()
     w.nameText:Hide(); w.castText:Hide()
     w:SetScript("OnUpdate", nil)
     w:Hide()

@@ -616,7 +616,8 @@ end
 -- NEXT cast in the category would do -- half, a quarter, or nothing at all --
 -- because that is the question a sheep or a stun is waiting on. The sweep is
 -- the reset: `reset` seconds from the aura fading, frozen (no sweep) while
--- something in the category is still up. `iconFor(spellId)` names the art.
+-- something in the category is still up. `iconFor(spellId, category)` names
+-- the art.
 E.DR_NEXT_LABEL = { [2] = "\194\189", [3] = "\194\188", [4] = "X" }
 E.DR_NEXT_TINT = {
     [2] = { 0.98, 0.86, 0.35 },
@@ -635,7 +636,7 @@ function E.DrRows(open, reset, iconFor, out)
             local row = out[n] or {}
             out[n] = row
             row.cat = o.cat
-            row.icon = iconFor and iconFor(o.last) or nil
+            row.icon = iconFor and iconFor(o.last, o.cat) or nil
             row.label = E.DR_NEXT_LABEL[b]
             row.r, row.g, row.b = tint[1], tint[2], tint[3]
             if o.resetAt and not o.held then

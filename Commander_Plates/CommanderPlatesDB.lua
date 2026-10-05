@@ -51,6 +51,8 @@ local DefaultSettings = {
     -- Radial: the face and the text
     RadialCoreArt = "CLASS",            -- CLASS (players; portrait on NPCs) | PORTRAIT | NONE
     RadialCoreText = "SMART",           -- SMART | PERCENT | HEALTH | ARENA | NONE
+    RadialCoreTextSize = 0,             -- the middle number's font size in points (0 = sized off the face)
+    RadialTextShade = 0.45,             -- how far the face darkens under a number written on it (0 = not at all)
     RadialCoreCast = true,              -- the spell being cast takes the face
     RadialCoreCC = true,                -- the control being sat in takes the face
     RadialName = "BELOW",               -- BELOW | ABOVE | NONE
@@ -1999,6 +2001,24 @@ local function AddRadialFaceSection(panel)
         },
         get = function() return CommanderPlatesDB.RadialCoreText end,
         set = function(v) CommanderPlatesDB.RadialCoreText = v end,
+        isEnabled = RadialOn,
+    })
+    panel:AddSlider({
+        label = "Number Size",
+        tooltip = "The font size of the number in the middle. Auto sizes it off the face, so it grows and shrinks with Plate Size; a fixed size stays put whatever the plate does. The DR bracket under it keeps its proportion to it.",
+        min = 0, max = 24, step = 1,
+        format = function(v) return v == 0 and "Auto" or string.format("%dpt", v) end,
+        get = function() return CommanderPlatesDB.RadialCoreTextSize end,
+        set = function(v) CommanderPlatesDB.RadialCoreTextSize = (v > 0 and v < 8) and 8 or v end,
+        isEnabled = RadialOn,
+    })
+    panel:AddSlider({
+        label = "Darken Face Under Text",
+        tooltip = "How far the face darkens while a number is written across it. Every number on the plate also carries a black shadow, which holds its edges; this is what holds its middle -- a white 60 over a white-gold class icon has an outline and nothing inside it to tell from the picture. The face is only ever darkened while there is a number on it. 0 leaves the picture untouched.",
+        min = 0, max = 0.8, step = 0.05,
+        format = function(v) return v == 0 and "Off" or string.format("%d%%", v * 100 + 0.5) end,
+        get = function() return CommanderPlatesDB.RadialTextShade end,
+        set = function(v) CommanderPlatesDB.RadialTextShade = v end,
         isEnabled = RadialOn,
     })
     panel:AddCheckboxPair({

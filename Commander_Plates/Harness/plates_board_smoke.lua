@@ -275,6 +275,16 @@ WidgetMT.__index = function(self, key)
         local fn = function(s) return s.__text end
         rawset(self, key, fn); return fn
     end
+    -- Recorded: a number written over a picture is only readable for its dark
+    -- edge, and "does this text have one" is a question a no-op cannot answer
+    if key == "SetShadowOffset" then
+        local fn = function(s, x, y) s.__shadow = { x, y } end
+        rawset(self, key, fn); return fn
+    end
+    if key == "SetShadowColor" then
+        local fn = function(s, r, g, b, a) s.__shadowColor = { r, g, b, a } end
+        rawset(self, key, fn); return fn
+    end
     if key == "SetAlpha" then
         local fn = function(s, a) s.__alpha = a end
         rawset(self, key, fn); return fn
@@ -1341,6 +1351,50 @@ CHECK(w.backdrop.__shown == false, "backdrop opacity 0: no backdrop")
 CommanderPlatesDB.RadialBackdropAlpha = 0.6
 Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
 CHECK(w.centerText.__text == "60", "SMART centre text: the percent once hurt", w.centerText.__text)
+
+-- A number on the face has to be readable whatever the face is. The outline
+-- alone is a hairline at these sizes -- white on a white class icon had an
+-- edge nobody could find and nothing inside it -- so every number carries a
+-- hard black shadow, and the face goes dark under it while it is there.
+do
+    local function Shadowed(fs)
+        return fs.__shadow and fs.__shadow[1] == 1 and fs.__shadow[2] == -1
+            and fs.__shadowColor and fs.__shadowColor[1] == 0 and fs.__shadowColor[4] == 1
+    end
+    CHECK(Shadowed(w.centerText), "the number in the middle carries a black shadow under its outline")
+    CHECK(Shadowed(w.drBadge) and Shadowed(w.nameText) and Shadowed(w.castText) and Shadowed(w.levelText),
+        "and so does every other piece of text on the plate")
+    local orbit = CommanderPlates_Radial.NewOrbitIcon(UIParent)
+    CHECK(Shadowed(orbit.timer) and Shadowed(orbit.count) and Shadowed(orbit.badge),
+        "an aura's timer and stacks are written on its own icon, and are shadowed too")
+    CHECK(w.shade.__shown == true, "the face is shaded while a number is written on it")
+    CHECK(w.shade.__color and w.shade.__color[1] == 0 and w.shade.__color[4] == 0.45,
+        "black, at the strength the setting asks for", w.shade.__color and w.shade.__color[4])
+    local radii = CommanderPlates_Radial.Config(function(k) return CommanderPlatesDB[k] end).radii
+    CHECK(w.shade.__w == radii.core * 2, "over the face and nothing else: it stops short of the rings",
+        tostring(w.shade.__w) .. " vs " .. tostring(radii.core * 2))
+    CommanderPlatesDB.RadialTextShade = 0
+    Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+    CHECK(w.centerText.__shown == true and w.shade.__shown == false,
+        "at 0 the picture is left alone and the number stays")
+    CommanderPlatesDB.RadialTextShade = 0.45
+    Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+    CHECK(w.shade.__shown == true, "and it comes back with the setting")
+
+    -- ...and how big it is written is the player's to say. Auto is the size
+    -- the face implies; a number is that many points whatever the plate does.
+    local auto = math.max(8, math.floor(radii.core * 0.85))
+    CHECK(w.centerText.__font and w.centerText.__font[2] == auto, "Auto sizes the number off the face",
+        w.centerText.__font and w.centerText.__font[2])
+    CommanderPlatesDB.RadialCoreTextSize = 18
+    Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+    CHECK(w.centerText.__font[2] == 18, "a set size is that size", w.centerText.__font[2])
+    CHECK(w.drBadge.__font[2] == math.floor(18 * 0.65), "and the DR bracket keeps its proportion to it",
+        w.drBadge.__font[2])
+    CommanderPlatesDB.RadialCoreTextSize = 0
+    Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+    CHECK(w.centerText.__font[2] == auto, "back to Auto, back to the face's size", w.centerText.__font[2])
+end
 CHECK(rm.__hit and rm.__hit[1].relativePoint == "CENTER" and rm.__hit[1].offsetX < 0, "hit box is the disc, from the bar's centre")
 local half = CommanderPlates_Radial.Config(function(k) return CommanderPlatesDB[k] end).radii.outer
 CHECK(Near(rm.__hit[2].offsetX, half + (CommanderPlatesDB.HitBoxSides or 0)), "...as wide as the disc", rm.__hit[2].offsetX)
@@ -1542,6 +1596,7 @@ units.nameplate5.raid = nil
 Fire("RAID_TARGET_UPDATE")
 CHECK(ew.raid.__shown == false, "raid marker cleared")
 CHECK(ew.centerText.__shown == false, "SMART: nothing in the middle at full health")
+CHECK(ew.shade.__shown == false, "...and with no number on it, the face is not darkened")
 
 -- Totems keep their own look
 local rt = Spawn("nameplate6", { guid = "Creature-T9", name = "Grounding Totem", player = false, friend = false })

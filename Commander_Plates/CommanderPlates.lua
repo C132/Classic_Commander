@@ -177,6 +177,8 @@ local function NewIcon(parent)
     f.badge:SetFont(STANDARD_TEXT_FONT, 11, "OUTLINE")
     f.badge:SetPoint("TOPLEFT", f, "TOPLEFT", -1, 2)
     f.badge:Hide()
+    -- All three are written on the aura's own icon: see Radial.Legible
+    Radial.Legible(f.count); Radial.Legible(f.timer); Radial.Legible(f.badge)
 
     f.glow = f:CreateTexture(nil, "OVERLAY", nil, 3)
     f.glow:SetTexture(GLOW)
@@ -1051,7 +1053,14 @@ end
 -- Diminishing returns round the disc, from Commander Diminish when it is
 -- loaded and watching this unit
 local DR_SCRATCH = {}
-local function DrIcon(spellId)
+local function DrIcon(spellId, cat)
+    -- A ladder's picture is Commander Diminish's to choose (its Icons
+    -- setting: the category's own, or the last spell's), so the same ladder
+    -- is the same icon on the plate as everywhere else it is drawn
+    if cat and CommanderDiminish_Icon then
+        local icon = CommanderDiminish_Icon(cat, spellId)
+        if icon then return icon end
+    end
     if not spellId then return DATA.FALLBACK_ICON end
     return (GetSpellTexture and GetSpellTexture(spellId))
         or (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellId))
