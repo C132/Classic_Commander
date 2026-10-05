@@ -51,8 +51,10 @@ control room opens.
   want to move it again, **triple-right-click it** to unlock (or use the
   checkbox in settings).
 - **Choosing a look:** most Commander windows have a Style menu — **None**
-  (invisible frame), **Classic** (gold border), **Dark** (sleek), or
-  **Window** (a real little window with a title bar, lock button, close
+  (invisible frame), **Classic** (gold border), **Dark** (a see-through
+  tint), **Solid Dark** (a near-black plate with a hairline edge and a tight
+  margin — the most compact and the easiest to read against any background),
+  or **Window** (a real little window with a title bar, lock button, close
   button, and a corner you can drag to resize).
 - **Typing commands:** every module has its own slash command (listed below).
   Typing just the command opens its settings. Most also understand extra
@@ -123,6 +125,7 @@ dashboard lists them in. Here is every module, its command, and what it does.
 | Commander_Tradecraft | `/ctradecraft`, `/ctc` | Guided profession leveling, one step on screen at a time — the way the leveling guides do it. The guide window shows the recipe to craft now, about how many more it takes (modeled from your actual skill, not a fixed list), what you hold against what it needs, and a **Craft** button (or a `Tradecraft` macro it keeps up to date for binding) that casts the recipe and lands the enchant on your own bracers in one click, replace-prompt included. Formula steps name the vendor, the zone and the coordinates with a TomTom waypoint; a banner says when a trainer has a new rank for you; `/ctc shop` is the rest of the route by trainer bracket — each one a shopping trip — less what is already in your bags and bank, and hands itself to Auctionator. Alternatives from the guide are one click away — and with Auctionator's prices the guide costs each way per skill point and takes the cheaper one for you, prices every step and the whole shopping list, nets off the wands and oils you make, and says what your alts are already holding. Enchanting 1 – 375 to start. |
 | Commander_Recovery | `/crec` | When you die, Recovery logs where, keeps a casualty count, and (with Orders installed) points an arrow back at your corpse the moment you release. |
 | Commander_Who | `/cwho`, `/cw` | Turns `/who` into a recruiting tool: tick the players you want and whisper them all at once, with a polite delay between sends. |
+| Commander_Guide | `/cguide`, `/cgu` | A raid guide in the game, boss by boss, written for the seat you are in: the fight in one line, your job, the phases, what to dispel. It talks: targeting a boss reads the brief, and during the pull the client's own text-to-speech tells you what to do the moment the combat log says it matters ("Garrote on you", "Flame Wreath, nobody moves", "Evocation, twenty seconds"). Karazhan, healer's seat, first. |
 
 ### 🖥️ Interface — the game's screens, upgraded
 
