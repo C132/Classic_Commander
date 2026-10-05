@@ -76,6 +76,31 @@ local MAX_MARKERS = 240
 local PLAY_SPEEDS = { 1, 2, 4 }
 local BRACKET = { [1] = "", [2] = " \194\189", [3] = " \194\188", [4] = " (immune?)" }
 local CLASS_RING = "Interface\\TargetingFrame\\UI-Classes-Circles"
+local TRINKET_SPELL = { id = 42292, name = "PvP Trinket" }  -- the medallion's spell, for the tooltip
+local TRINKET_BADGE = 16
+local TRINKET_CD = 120
+-- The medallion's own art per faction, not the spell's generic icon
+local TRINKET_ICON = {
+    Alliance = "Interface\\Icons\\INV_Jewelry_TrinketPVP_01",
+    Horde = "Interface\\Icons\\INV_Jewelry_TrinketPVP_02",
+}
+-- Race file tokens (UnitRace's second return) to faction; the scoreboard's
+-- faction field is the arena SIDE in arenas, so the race is the source
+local RACE_FACTION = {
+    Human = "Alliance", Dwarf = "Alliance", NightElf = "Alliance", Gnome = "Alliance", Draenei = "Alliance",
+    Orc = "Horde", Scourge = "Horde", Tauren = "Horde", Troll = "Horde", BloodElf = "Horde",
+}
+
+local function SeatFaction(seat)
+    local f = seat.race and RACE_FACTION[seat.race]
+    if f then return f end
+    -- Unknown race: our team is our faction; the enemy is most often the
+    -- other one (a same-faction arena shows the wrong medallion on an
+    -- unread enemy, which is the honest limit of the log)
+    local mine = UnitFactionGroup and UnitFactionGroup("player") or "Alliance"
+    if seat.team == "us" then return mine end
+    return mine == "Alliance" and "Horde" or "Alliance"
+end
 local POWER_COLOR = {
     [0] = { 0.30, 0.55, 0.95 },   -- mana
     [1] = { 0.85, 0.25, 0.25 },   -- rage
@@ -211,7 +236,7 @@ end
 local KIND_COLOR = {
     CC = "statCC", CCFAIL = "danger", KICK = "statUtil", DISPEL = "statUtil",
     DEATH = "statDeath", CD = "statCd", TRINKET = "statCd", DRINK = "statMana",
-    DRAIN = "statMana", GATES = "accent", END = "accent", SPEC = "textDim",
+    DRAIN = "statMana", GATES = "accent", END = "accent", SPEC = "textDim", FEIGN = "textDim",
 }
 
 local function MomentWord(e)
@@ -232,6 +257,7 @@ local function MomentText(m, e)
     if k == "GATES" then return head .. "The gates open" end
     if k == "END" then return head .. "Match over — " .. (e.name or "?") end
     if k == "SPEC" then return head .. (e.name or "?") .. ESC.dim .. " revealed|r" end
+    if k == "FEIGN" then return head .. "Feign Death" .. ESC.dim .. "  (not a death)|r" end
     if k == "CC" then
         local dur = e.t2 and format(" · %.1fs", e.t2 - e.t) or " · open"
         local s = head .. (e.name or "?") .. Esc(THEME.statCC) .. (BRACKET[e.x or 1] or "") .. "|r → "
@@ -444,16 +470,56 @@ local function BuildCard(parent, index, teamIndex)
     card.portraitFallback:Hide()
     card.ccIcon = card.portraitBtn:CreateTexture(nil, "OVERLAY")
     card.ccIcon:SetSize(22, 22)
-    card.ccIcon:SetPoint("CENTER", card.portraitBtn, "CENTER", 0, 0)
+    card.ccIcon:SetPoint("CENTER", card.portraitBtn, "CENTER", -3, 3)
     card.ccIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     card.ccIcon:Hide()
     card.state = MakeText(card, 9, "CENTER")
     card.state:SetPoint("TOP", card.portraitBtn, "BOTTOM", 0, -1)
     card.state:SetWidth(PORTRAIT + 6)
+    -- The PvP trinket badge on the portrait's top-right corner: full color
+    -- while it is up, desaturated with the time left while it is down. The
+    -- one enemy cooldown a spectator watches for above all others.
+    card.trinket = MakeIcon(card)
+    card.trinket.trinketBadge = true
+    card.trinket:SetSize(TRINKET_BADGE, TRINKET_BADGE)
+    -- Tucked inside the portrait's bottom-right corner (an arena frame's
+    -- place for it); the control icon sits a little up-left of center to
+    -- stay clear of it
+    card.trinket:SetPoint("CENTER", card.portraitBtn, "BOTTOMRIGHT", -8, 8)
+    card.trinket:SetFrameLevel(card.portraitBtn:GetFrameLevel() + 2)
+    -- The clock sits on the badge itself (under it, it ran into the state
+    -- word beneath the portrait)
+    card.trinket.text:ClearAllPoints()
+    card.trinket.text:SetPoint("CENTER", card.trinket, "CENTER", 0, 0)
+    card.trinket.text:SetJustifyH("CENTER")
+    card.trinket.text:SetWidth(24)
+    -- The radial: the client's own cooldown sweep, PAUSED at the cursor's
+    -- fraction (the Kicks / Arena Frames sweep, held still)
+    card.trinket.sweep = CreateFrame("Cooldown", nil, card.trinket, "CooldownFrameTemplate")
+    card.trinket.sweep:SetAllPoints()
+    pcall(card.trinket.sweep.SetHideCountdownNumbers, card.trinket.sweep, true)
+    pcall(card.trinket.sweep.SetDrawEdge, card.trinket.sweep, false)
+    pcall(card.trinket.sweep.SetDrawBling, card.trinket.sweep, false)
+    pcall(card.trinket.sweep.SetReverse, card.trinket.sweep, false)
+    card.trinket.tipLines = function(self, rec)
+        local m = Match()
+        if not m then return end
+        local td, tf = THEME.tipDim, THEME.tipFaint
+        if self.left then
+            GameTooltip:AddDoubleLine("READY IN", FmtTime(self.left), td[1], td[2], td[3], THEME.danger[1], THEME.danger[2], THEME.danger[3])
+            if self.pressedAt then
+                GameTooltip:AddDoubleLine("PRESSED", GateTime(m, self.pressedAt), td[1], td[2], td[3], tf[1], tf[2], tf[3])
+            end
+        else
+            GameTooltip:AddDoubleLine("STATUS", "up", td[1], td[2], td[3], THEME.healTx[1], THEME.healTx[2], THEME.healTx[3])
+            GameTooltip:AddLine("Read from the combat log: a press starts two minutes; nothing seen means up.",
+                THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3], true)
+        end
+    end
 
     card.name = MakeText(card, THEME.fontSize, "LEFT")
     card.name:SetHeight(13)
-    card.name:SetPoint("TOPLEFT", card, "TOPLEFT", PORTRAIT + 9, -3)
+    card.name:SetPoint("TOPLEFT", card, "TOPLEFT", PORTRAIT + 11, -3)
     card.name:SetPoint("RIGHT", card, "RIGHT", -96, 0)
     -- Who they are on, from their newest cast's target
     card.target = MakeText(card, THEME.fontSizeSmall, "RIGHT")
@@ -1308,6 +1374,12 @@ local function RepaintCard(card, m, seat, st, t, atEnd)
         -- bracket and clock take the cast bar (a controlled player is not
         -- casting anyway)
         card.state:SetText(Esc(THEME.statCC) .. format("%.1fs|r", max(left, 0)))
+    elseif st and st.feign then
+        -- Feigning: on the floor, not dead — dimmed, and said so
+        card.portrait:SetVertexColor(coords and 0.6 or c[1] * 0.25, coords and 0.6 or c[2] * 0.25, coords and 0.6 or c[3] * 0.25, 1)
+        card.ring:SetVertexColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3], 1)
+        card.ccIcon:Hide()
+        card.state:SetText(ESC.dim .. "FEIGN|r")
     else
         if coords then
             card.portrait:SetVertexColor(1, 1, 1, 1)
@@ -1442,15 +1514,50 @@ local function RepaintCard(card, m, seat, st, t, atEnd)
             b:Hide()
         end
     end
+    -- The trinket badge: down if a TRINKET press still covers the cursor
+    local tk, tkLeft
+    for i = 1, (st and st.cdN or 0) do
+        local e = st.cd[i]
+        if e.kind == "TRINKET" and e.x == "TRINKET" then tk, tkLeft = e, st.cdLeft[i]; break end
+    end
+    card.trinket.rec = TRINKET_SPELL
+    card.trinket.icon:SetTexture(TRINKET_ICON[SeatFaction(seat)] or TRINKET_ICON.Alliance)
+    card.trinket.left = tkLeft
+    card.trinket.pressedAt = tk and tk.t or nil
+    local sweep = card.trinket.sweep
+    if tk then
+        -- Radial: start the client's sweep as if pressed (cd - left) ago,
+        -- then hold it there; without Pause on this client it creeps by
+        -- at most half a second between repaints before being reset
+        local cdLen = tk.amount or TRINKET_CD
+        sweep:SetCooldown(GetTime() - (cdLen - tkLeft), cdLen)
+        if sweep.Pause then pcall(sweep.Pause, sweep) end
+        card.trinket.icon:SetVertexColor(1, 1, 1, 1)
+        card.trinket.border:SetVertexColor(THEME.danger[1], THEME.danger[2], THEME.danger[3], 1)
+        card.trinket.text:SetText(FmtTime(tkLeft))
+    else
+        if sweep.Clear then pcall(sweep.Clear, sweep) else sweep:SetCooldown(0, 0) end
+        card.trinket.icon:SetVertexColor(1, 1, 1, dead and 0.4 or 1)
+        card.trinket.border:SetVertexColor(THEME.statCd[1], THEME.statCd[2], THEME.statCd[3], dead and 0.4 or 1)
+        card.trinket.text:SetText("")
+    end
+    card.trinket:Show()
+    -- Cooldown row: book presses and racial breaks; the medallion has its badge
     local ncd = st and st.cdN or 0
+    local slot = 0
     for i = 1, ICONS_PER_ROW do
         local b = card.cds[i]
-        local e = i <= ncd and st.cd[i]
+        local e
+        while slot < ncd do
+            slot = slot + 1
+            local c = st.cd[slot]
+            if not (c.kind == "TRINKET" and c.x == "TRINKET") then e = c; break end
+        end
         if e then
             b.tipLines = CdTip
-            b.left = st.cdLeft[i]
+            b.left = st.cdLeft[slot]
             -- Minutes past a minute: "29:29" is wider than a 16 px icon
-            local left = st.cdLeft[i]
+            local left = st.cdLeft[slot]
             SetIcon(b, e, left >= 60 and format("%dm", math.ceil(left / 60)) or format("%.0f", left))
         else
             b.rec = nil

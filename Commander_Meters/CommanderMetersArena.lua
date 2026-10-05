@@ -88,6 +88,48 @@ local TRINKET_IDS = {
 -- Their cooldowns (s), carried on the moment like a book entry's, so the
 -- replay can say how long the break is down for
 local TRINKET_CD = { [42292] = 120, [7744] = 120, [20589] = 60 }
+-- Feign Death puts a real UNIT_DIED in the log for the hunter. A death
+-- inside FEIGN_WINDOW of the feign's cast or aura is the feign, not a
+-- death; and a seat recorded dead that then ACTS was never dead.
+local FEIGN_IDS = { [5384] = true }
+local feignNames = { ["Feign Death"] = true }
+local FEIGN_WINDOW = 2         -- s between the feign and its UNIT_DIED, either order
+local REVIVE_HP_DELAY = 1.5    -- s after a death before an hp reading can contradict it
+local TRINKET_DEFAULT_CD = 120
+local TRINKET_DEDUP = 3        -- s: two reports this close are one press
+
+-- The medallions and insignias each cast their OWN item spell, so one id
+-- is not the trinket: a press is recognised by NAME as well (the aliases
+-- Party Frames matches on), plus the localized name of 42292 fed at login.
+local trinketNames = {
+    ["PvP Trinket"] = true,
+    ["Medallion of the Alliance"] = true, ["Medallion of the Horde"] = true,
+    ["Insignia of the Alliance"] = true, ["Insignia of the Horde"] = true,
+}
+
+function A.SetFeignNames(names)
+    for _, name in ipairs(names or {}) do
+        if type(name) == "string" and name ~= "" then feignNames[name] = true end
+    end
+end
+
+local function IsFeign(id, name)
+    return (id and FEIGN_IDS[id]) or (name and feignNames[name]) or false
+end
+
+function A.SetTrinketNames(names)
+    for _, name in ipairs(names or {}) do
+        if type(name) == "string" and name ~= "" then trinketNames[name] = true end
+    end
+end
+
+-- Is this spell a PvP trinket (the medallion kind)? Returns the kind tag.
+function A.IsTrinketSpell(id, name)
+    local kind = id and TRINKET_IDS[id]
+    if kind then return kind end
+    if name and trinketNames[name] then return "TRINKET" end
+    return nil
+end
 
 -- Combat-log flag masks (native constants when the client provides them)
 local AFFIL_GROUP = (COMBATLOG_OBJECT_AFFILIATION_MINE or 0x1)
@@ -295,6 +337,8 @@ local function NewSeat(guid, team)
         openDrink = nil,        -- ledger index
         lastHit = nil,          -- {guid, t, name, id}
         alive = true,
+        diedAt = nil,           -- t of the recorded death (nil while alive)
+        feignAt = nil,          -- t of the last Feign Death cast / aura
     }
 end
 
@@ -460,10 +504,17 @@ end
 -- picture. Readers divide by HP_SCALE.
 local HP_SCALE = 1000
 
+local Revive -- forward: undoes a death that was not one
+
 function A.SetHealth(guid, hp, hpMax, ts)
     if not live or not guid or not hp or not hpMax or hpMax <= 0 then return end
     local seat = live.seats[guid]
     if not seat then return end
+    -- A living reading well after a recorded death: they were never dead
+    -- (a feign the log did not announce, or one seen out of order)
+    if seat.diedAt and hp > 0 and (ts - live.tsStart) - seat.diedAt > REVIVE_HP_DELAY then
+        Revive(live, seat)
+    end
     local b = Bucket(live, ts)
     if not b then return end
     local s = seat.sHp
@@ -694,6 +745,47 @@ local function CloseDrink(m, seat, t)
     seat.drinkSeconds = seat.drinkSeconds + dur
 end
 
+-- One trinket press, from whichever source saw it first. Three sources
+-- report the same press — the combat log, the client's arena crowd-control
+-- answer, the cast event for our own side — so a report within
+-- TRINKET_DEDUP seconds of a recorded one only refines its cooldown.
+-- `tReal` may be a little in the past (the client reports a start time);
+-- the ledger clamps a late moment up to its newest time, and the cooldown
+-- is shortened by the same amount so it still ENDS when it really does.
+local function RecordTrinket(m, seat, tReal, id, name, cd, kind)
+    cd = cd or (id and TRINKET_CD[id]) or TRINKET_DEFAULT_CD
+    for i = m.ledgerN, 1, -1 do
+        local e = m.ledger[i]
+        if e.t < tReal - 130 then break end
+        if e.kind == "TRINKET" and e.src == seat.guid then
+            local pressed = e.t0 or e.t
+            if math.abs(pressed - tReal) <= TRINKET_DEDUP then
+                -- The same press seen again: the client's cooldown wins
+                if cd and cd > 0 then e.amount = cd - (e.t - pressed) end
+                return e
+            end
+        end
+    end
+    seat.trinkets = seat.trinkets + 1
+    local idx, e = Moment(m, tReal, "TRINKET", seat.guid, nil, id, name or "PvP Trinket", cd, kind or "TRINKET")
+    if e then
+        e.t0 = tReal
+        if e.t > tReal then e.amount = max(cd - (e.t - tReal), 0) end
+    end
+    return e
+end
+
+-- A press reported from outside the combat log (the client's arena
+-- crowd-control info for enemies, UNIT_SPELLCAST_SUCCEEDED for our side).
+-- ts is the epoch time of the PRESS; cd its length in seconds.
+function A.OnTrinket(guid, ts, cd, id, name)
+    local m = live
+    if not m or not guid then return end
+    local seat = m.seats[guid]
+    if not seat then return end
+    return RecordTrinket(m, seat, Rel(m, ts), id, name, cd, "TRINKET")
+end
+
 -- Casts: a start opens one, a success/failure/kick closes it; a success
 -- with nothing open is an instant (it still spends a global cooldown).
 local function CloseCast(seat, t, r)
@@ -737,6 +829,50 @@ local function CloseAura(seat, name, t)
     if a then a.t2 = t end
 end
 
+-- Undo a recorded death: the seat acted, read alive, or the death turned
+-- out to be its own Feign Death. The death record goes, the kill credit
+-- and first blood with it, and the DEATH moment becomes a FEIGN moment so
+-- the timeline still says what happened at that second.
+Revive = function(m, seat)
+    if not seat.diedAt then return end
+    for i = #m.deaths, 1, -1 do
+        local d = m.deaths[i]
+        if d.guid == seat.guid then
+            if d.killer then
+                local ks = m.seats[d.killer]
+                if ks and ks.kills > 0 then ks.kills = ks.kills - 1 end
+            end
+            table.remove(m.deaths, i)
+            break
+        end
+    end
+    if seat.deaths > 0 then seat.deaths = seat.deaths - 1 end
+    for i = m.ledgerN, 1, -1 do
+        local e = m.ledger[i]
+        if e.kind == "DEATH" and e.dst == seat.guid then
+            e.kind, e.src, e.dst, e.name, e.id = "FEIGN", seat.guid, nil, "Feign Death", 5384
+            break
+        end
+    end
+    local first = m.deaths[1]
+    m.firstBlood = first and { t = first.t, guid = first.guid } or nil
+    -- The auras the false death closed were never lost: reopen the ones
+    -- nothing has re-applied since (a real fade still logs its REMOVED)
+    local closed = seat.deathClosed
+    if closed then
+        for name, idx in pairs(closed) do
+            local a = seat.auras[idx]
+            if a and a.name == name and a.t2 == seat.diedAt and not seat.openAuras[name] then
+                a.t2 = nil
+                seat.openAuras[name] = idx
+            end
+        end
+        seat.deathClosed = nil
+    end
+    seat.alive = true
+    seat.diedAt = nil
+end
+
 function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24)
     local m = live
@@ -761,8 +897,15 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         local seat = PlayerSeat(m, dg, dn, df)
         if not seat then return end
         local t = Rel(m, ts)
+        -- The feign's own UNIT_DIED: a moment, not a death
+        if seat.feignAt and t - seat.feignAt <= FEIGN_WINDOW then
+            Moment(m, t, "FEIGN", seat.guid, nil, 5384, "Feign Death")
+            return
+        end
+        if seat.diedAt then return end -- already dead: one death per seat
         seat.deaths = seat.deaths + 1
         seat.alive = false
+        seat.diedAt = t
         local killer, kname, kid
         local lh = seat.lastHit
         if lh and (t - lh.t) <= KILL_WINDOW then
@@ -781,7 +924,11 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         -- vanish without a REMOVED event on this client when the unit dies)
         for key in pairs(seat.openCC) do CloseCC(m, seat, key, t) end
         CloseDrink(m, seat, t)
-        for name in pairs(seat.openAuras) do CloseAura(seat, name, t) end
+        -- (remembered, so a death that proves false can hand them back)
+        local closed = {}
+        for name, idx in pairs(seat.openAuras) do closed[name] = idx end
+        seat.deathClosed = closed
+        for name in pairs(closed) do CloseAura(seat, name, t) end
         CloseCast(seat, t, "FAIL")
         Moment(m, t, "DEATH", killer, dg, kid, kname)
         return
@@ -863,6 +1010,12 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         if type(a13) ~= "string" then return end
         local t = Rel(m, ts)
         local id = type(a12) == "number" and a12 or nil
+        if not pet then
+            -- The feign stamps the seat, so its own UNIT_DIED is not a death
+            if IsFeign(id, a13) then seat.feignAt = t end
+            -- The dead do not cast: a seat recorded dead was feigning
+            if seat.diedAt then Revive(m, seat) end
+        end
         if not pet and not AUTO_CASTS[a12] then
             -- The cast record: a success ends the cast in progress, or is
             -- an instant of its own (which still spends a GCD)
@@ -890,10 +1043,9 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
             seat.specRevealed = true
             Moment(m, t, "SPEC", seat.guid, nil, id, seat.spec)
         end
-        local trinket = id and TRINKET_IDS[id]
+        local trinket = (not pet) and A.IsTrinketSpell(id, a13)
         if trinket then
-            seat.trinkets = seat.trinkets + 1
-            Moment(m, t, "TRINKET", seat.guid, nil, id, a13, TRINKET_CD[id], trinket)
+            RecordTrinket(m, seat, t, id, a13, id and TRINKET_CD[id] or nil, trinket)
             return
         end
         local book = BookEntry(seat.class, id, a13)
@@ -920,6 +1072,13 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
                 CloseAura(dst, a13, t)
             end
             OpenAura(dst, t, id, a13, a15 == "BUFF", srcSeat and srcSeat.guid or nil)
+        end
+        if IsFeign(id, a13) then
+            dst.feignAt = t
+            local idx = dst.openAuras[a13]
+            if idx and dst.auras[idx] then dst.auras[idx].feign = true end
+            -- Only the living gain it: a UNIT_DIED logged first was the feign's own
+            if dst.diedAt then Revive(m, dst) end
         end
         if id and drinkIds[id] then
             if dst.openDrink then
@@ -993,6 +1152,7 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         if not seat or pet then return end
         if type(a13) ~= "string" then return end
         local t = Rel(m, ts)
+        if kind == 14 and seat.diedAt then Revive(m, seat) end
         if kind == 14 then
             if seat.openCast then CloseCast(seat, t, "FAIL") end
             seat.openCast = PushCast(seat, t, type(a12) == "number" and a12 or nil, a13, false)
@@ -1077,6 +1237,10 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         local src, pet = SeatOf(m, sg, sn, sf)
         local dst = PlayerSeat(m, dg, dn, df)
         if not (src or dst) then return end
+        -- A melee swing from a seat recorded dead: they were feigning.
+        -- (Spell damage proves nothing — bolts in flight and dots outlive
+        -- their caster.)
+        if src and not pet and src.diedAt and sub == "SWING_DAMAGE" then Revive(m, src) end
         -- The first blow between the teams opens the gates if the prep
         -- aura's fade was never seen
         if src and dst and src.team ~= dst.team and not m.tGates then A.SetGates(ts) end
@@ -1554,10 +1718,12 @@ local function SeatStateAt(m, seat, t, st)
     -- Auras on the seat at t: newest first, buffs and debuffs apart
     st.buffs = st.buffs or {}
     st.debuffs = st.debuffs or {}
+    st.feign = false
     local nb, nd = 0, 0
     for i = seat.aurasN, 1, -1 do
         local a = seat.auras[i]
         if a.t <= t and (a.t2 == nil or t < a.t2) then
+            if a.feign then st.feign = true end
             if a.buff then
                 nb = nb + 1
                 st.buffs[nb] = a
@@ -1952,6 +2118,7 @@ local function Strip(m)
         seat.openCast = nil
         seat.openAuras = {}
         seat.lastHit = nil
+        seat.deathClosed = nil
         seat.dr = {}
         seat._cum = nil
     end

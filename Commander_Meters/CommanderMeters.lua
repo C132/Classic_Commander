@@ -3125,6 +3125,50 @@ local function ArenaSampleHealth(now)
     for _, token in ipairs(ARENA_UNITS) do ArenaSampleUnit(token, now) end
 end
 
+-- The enemy's PvP trinket, from the client itself (the one enemy cooldown
+-- it answers for): C_PvP.GetArenaCrowdControlInfo(unit) -> spellId, start
+-- and duration in MILLISECONDS on the GetTime clock, zero while ready.
+-- The combat log misses it — each medallion casts its own item spell —
+-- so this is the source that makes the badge true for enemies.
+local trinketAsked = {}
+
+local function ArenaReadTrinkets()
+    local m = A.Live()
+    if not m or not (C_PvP and C_PvP.GetArenaCrowdControlInfo) then return end
+    for _, token in ipairs(ARENA_UNITS) do
+        if UnitExists(token) then
+            local guid = UnitGUID(token)
+            if guid then
+                if not trinketAsked[guid] and C_PvP.RequestCrowdControlSpell then
+                    trinketAsked[guid] = true
+                    pcall(C_PvP.RequestCrowdControlSpell, token)
+                end
+                local ok, spellId, startMs, durMs = pcall(C_PvP.GetArenaCrowdControlInfo, token)
+                if ok and type(startMs) == "number" and type(durMs) == "number" and startMs > 0 and durMs > 0 then
+                    -- Press time on the epoch clock: now minus how long ago it started
+                    local ago = GetTime() - startMs / 1000
+                    if ago < 0 then ago = 0 end
+                    local name = type(spellId) == "number" and GetSpellInfo and GetSpellInfo(spellId) or nil
+                    A.OnTrinket(guid, time() - ago, durMs / 1000, type(spellId) == "number" and spellId or nil,
+                        type(name) == "string" and name or nil)
+                end
+            end
+        end
+    end
+end
+
+-- Our own side's press, from the cast event (the combat log names an
+-- item spell; this names the unit and the spell id directly)
+local function ArenaOnUnitCast(unit, spellId)
+    if not A.Live() or not unit or type(spellId) ~= "number" then return end
+    if unit ~= "player" and not unit:find("^party%d$") then return end
+    local name = GetSpellInfo and GetSpellInfo(spellId) or nil
+    if type(name) ~= "string" then name = nil end
+    if not A.IsTrinketSpell(spellId, name) then return end
+    local guid = UnitGUID(unit)
+    if guid then A.OnTrinket(guid, time(), nil, spellId, name) end
+end
+
 local function ArenaMapName()
     local name = GetInstanceInfo and GetInstanceInfo()
     if type(name) == "string" and name ~= "" then return name end
@@ -3145,9 +3189,11 @@ local function ArenaBegin()
     E.SetMatch(true)
     A.Begin(time(), ArenaMapName())
     ArenaScanRoster()
+    for k in pairs(trinketAsked) do trinketAsked[k] = nil end
     if arenaEvents then
         pcall(arenaEvents.RegisterEvent, arenaEvents, "UNIT_HEALTH")
         pcall(arenaEvents.RegisterEvent, arenaEvents, "UNIT_POWER_UPDATE")
+        pcall(arenaEvents.RegisterEvent, arenaEvents, "UNIT_SPELLCAST_SUCCEEDED")
     end
 end
 
@@ -3215,9 +3261,11 @@ local function ArenaFinishIfDecided()
         local okR, ms = pcall(GetBattlefieldInstanceRunTime)
         if okR and type(ms) == "number" and ms > 0 then runTime = ms / 1000 end
     end
+    ArenaReadTrinkets() -- a last read, so a press in the final second lands
     if arenaEvents then
         pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_HEALTH")
         pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_POWER_UPDATE")
+        pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_SPELLCAST_SUCCEEDED")
     end
     E.SetMatch(false, MatchLabel(m), result, time())
     A.Finish(time(), result, runTime)
@@ -3280,6 +3328,7 @@ local function ArenaZoneCheck()
         if arenaEvents then
             pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_HEALTH")
             pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_POWER_UPDATE")
+            pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_SPELLCAST_SUCCEEDED")
         end
         E.SetMatch(false, MatchLabel(A.Live()), nil, time())
         A.Abort(time())
@@ -3314,6 +3363,9 @@ local function LoadArenaData()
     else
         arenaDataNote = "no DR table (install Commander_ArenaFrames or Commander_Diminish for CC brackets)"
     end
+    -- The trinket's localized spell name (the English aliases ship in the engine)
+    A.SetTrinketNames({ SpellName(42292) })
+    A.SetFeignNames({ SpellName(5384) })
     if CommanderArenaFrames_Data then
         A.SetBook(CommanderArenaFrames_Data.ENEMY_BOOK, CommanderArenaFrames_Data.RACIAL_BOOK)
         A.SetDrinkIds(CommanderArenaFrames_Data.DRINK_IDS)
@@ -3655,6 +3707,14 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
         end
         return
     end
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        ArenaOnUnitCast(arg1, arg3)
+        return
+    end
+    if event == "ARENA_CROWD_CONTROL_SPELL_UPDATE" or event == "ARENA_COOLDOWNS_UPDATE" then
+        ArenaReadTrinkets()
+        return
+    end
     if event == "UNIT_HEALTH" or event == "UNIT_POWER_UPDATE" then
         local m = A.Live()
         if m and arg1 then
@@ -3724,6 +3784,8 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
         pcall(events.RegisterEvent, events, "UPDATE_BATTLEFIELD_SCORE")
         pcall(events.RegisterEvent, events, "ARENA_OPPONENT_UPDATE")
         pcall(events.RegisterEvent, events, "ARENA_PREP_OPPONENT_SPECIALIZATIONS")
+        pcall(events.RegisterEvent, events, "ARENA_CROWD_CONTROL_SPELL_UPDATE")
+        pcall(events.RegisterEvent, events, "ARENA_COOLDOWNS_UPDATE")
         C_Timer.NewTicker(1, function()
             local now = time()
             E.Tick(now)
@@ -3732,6 +3794,7 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
                 -- reads a second while a match is on
                 ArenaScanRoster()
                 ArenaSampleHealth(now)
+                ArenaReadTrinkets()
             end
         end)
         ArenaZoneCheck()

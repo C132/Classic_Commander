@@ -150,10 +150,18 @@ visible wrong label, or missing feature) rather than silently mis-attributing.
     *Test*: after a rated game the summary shows "US 1850 → 1864"; if it
     shows only the RATED tag, the shape differs — /dump GetBattlefieldTeamInfo(0).
 
-27. **Every TBC PvP trinket casts spell 42292 ("PvP Trinket").** Will of
-    the Forsaken (7744) and Escape Artist (20589) ride along as breaks.
-    *Test*: trinket a Polymorph — a TRINKET moment must appear on the
-    ledger at that second.
+27. ~~Every TBC PvP trinket casts spell 42292 ("PvP Trinket").~~ **FALSE,
+    field-reported 2026-09-30**: presses were not tracked. The medallions
+    and insignias cast their own item spells. Replaced by: the client's
+    `C_PvP.GetArenaCrowdControlInfo(arenaN)` answers (spellId, startMs,
+    durationMs; zero while ready) for enemies, `UNIT_SPELLCAST_SUCCEEDED`
+    fires for `player`/`partyN` with the spell id as its third argument,
+    and the log's cast NAME is one of PvP Trinket / Medallion of the
+    Alliance|Horde / Insignia of the Alliance|Horde. Will of the Forsaken
+    (7744) and Escape Artist (20589) still ride along by id.
+    *Test*: trinket a Polymorph yourself, and watch an enemy trinket —
+    both badges must go red with a clock within a second, and
+    `/cmeters health` must show no arena anomaly.
 
 28. **`UNIT_HEALTH` fires for `arenaN` and `partyN` tokens, and
     `UnitHealth` answers for visible enemies.** The 1 Hz sample covers the
@@ -219,3 +227,12 @@ visible wrong label, or missing feature) rather than silently mis-attributing.
     *Test*: enter a battleground, fight, ride to another node for two
     minutes, fight again — the meter window must still show ONE current
     fight, not a new one per skirmish.
+
+39. **Feign Death logs SPELL_CAST_SUCCESS and SPELL_AURA_APPLIED (spell
+    5384 / "Feign Death") within two seconds of its UNIT_DIED**, in either
+    order, for enemy hunters as well as friendly ones. If neither reaches
+    the log, the recovery path still undoes the death at the hunter's next
+    cast, swing or living health reading.
+    *Test*: have a hunter feign mid-match — the card must read FEIGN (not
+    DEAD), no kill is credited, and when the feign ends the card is normal;
+    the ledger shows a FEIGN moment at that second.

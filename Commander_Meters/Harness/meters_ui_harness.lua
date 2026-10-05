@@ -133,6 +133,11 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    if key == "SetCooldown" then
+        local fn = function(s, start, dur) s.__cdStart, s.__cdDur = start, dur end
+        rawset(self, key, fn)
+        return fn
+    end
     if key == "CreateFontString" then
         local fn = function(s)
             local t = NewWidget("FontString")
@@ -1612,14 +1617,26 @@ do
         CHECK(kidneyIcon ~= nil and kidneyIcon.border.__color and math.abs(kidneyIcon.border.__color[1] - 0.86) < 1e-6,
             "ARENA: a control debuff icon wears the control color")
         -- Cooldown icons on a card at +75: the warrior's trinket (pressed +71)
-        local cdIcon = FindButton(function(f) return f.rec and f.rec.kind == "TRINKET" and f.__shown end)
-        CHECK(cdIcon ~= nil, "ARENA: the warrior's trinket shows as a running cooldown icon")
-        if cdIcon then
-            CHECK(cdIcon.text.__text == "2m", "ARENA: cooldown timer is compact minutes", cdIcon.text.__text)
-            cdIcon.__scripts.OnEnter(cdIcon)
-            Errors("ARENA: cooldown tooltip clean")
-            cdIcon.__scripts.OnLeave(cdIcon)
+        -- The trinket badge on the warrior's portrait reads the time left; the
+        -- generic cooldown row no longer repeats it
+        local badge = FindButton(function(f) return f.trinketBadge and f.__parent and f.__parent.guid == "Player-1-CMARENA11" end)
+        CHECK(badge ~= nil, "ARENA: the warrior's card has a trinket badge")
+        if badge then
+            CHECK(badge.text.__text == "1:57", "ARENA: the badge reads the trinket's time left (pressed at +71, cursor +74.5)", badge.text.__text)
+            CHECK(badge.border.__color and math.abs(badge.border.__color[1] - 0.85) < 1e-6, "ARENA: a down trinket wears the red border")
+            CHECK(badge.icon.__texture == "Interface\\Icons\\INV_Jewelry_TrinketPVP_02", "ARENA: an orc's badge is the Horde medallion", badge.icon.__texture)
+            CHECK(badge.sweep and badge.sweep.__cdDur == 120 and badge.sweep.__cdStart ~= nil, "ARENA: a down trinket runs the radial sweep over its 120 s")
+            CHECK(badge.sweep and math.abs((GetTime() - badge.sweep.__cdStart) - 3.5) < 1e-6, "ARENA: the sweep is set to the cursor's elapsed 3.5 s", badge.sweep and (GetTime() - badge.sweep.__cdStart))
+            badge.__scripts.OnEnter(badge)
+            Errors("ARENA: trinket badge tooltip clean")
+            badge.__scripts.OnLeave(badge)
         end
+        local cdIcon = FindButton(function(f) return f.rec and f.rec.kind == "TRINKET" and f.__shown and not f.trinketBadge end)
+        CHECK(cdIcon == nil, "ARENA: the medallion is not repeated in the cooldown row")
+        local mageBadge = FindButton(function(f) return f.trinketBadge and f.__parent and f.__parent.guid == "Player-0-CMARENA01" end)
+        CHECK(mageBadge and mageBadge.text.__text == "" and mageBadge.border.__color and math.abs(mageBadge.border.__color[1] - 0.95) < 1e-6,
+            "ARENA: an unpressed trinket reads up with the gold border")
+        CHECK(mageBadge and mageBadge.icon.__texture == "Interface\\Icons\\INV_Jewelry_TrinketPVP_01", "ARENA: a human's badge is the Alliance medallion")
         local buffIcon = FindButton(function(f) return f.rec and f.rec.name == "Ice Barrier" and f.__shown end)
         CHECK(buffIcon ~= nil, "ARENA: the mage's Ice Barrier shows as a buff icon")
         if buffIcon then
@@ -1888,6 +1905,67 @@ do
     units.arena2 = { guid = "Player-1-E2", name = "Sting", class = "HUNTER", race = "Orc", hp = 8000, max = 8000 }
     Fire("ARENA_OPPONENT_UPDATE", "arena2", "seen")
     CHECK(live.seats["Player-1-E2"] ~= nil, "ARENA: late opponent seated on ARENA_OPPONENT_UPDATE")
+    -- The enemy trinket, from the CLIENT (C_PvP.GetArenaCrowdControlInfo:
+    -- spellId, start and duration in ms on the GetTime clock, zero while up)
+    local trinketInfo = {}
+    local asked = {}
+    C_PvP = {
+        GetArenaCrowdControlInfo = function(unit)
+            local t = trinketInfo[unit]
+            if t then return t[1], t[2], t[3] end
+            return 195710, 0, 0
+        end,
+        RequestCrowdControlSpell = function(unit) asked[unit] = (asked[unit] or 0) + 1 end,
+    }
+    Fire("ARENA_COOLDOWNS_UPDATE")
+    CHECK(live.seats["Player-1-E1"].trinkets == 0, "TRINKET: a ready trinket records nothing")
+    CHECK(asked.arena1 == 1, "TRINKET: the client is asked for each enemy's trinket once")
+    -- arena1 pressed it two seconds ago: an item spell id the log table never had
+    -- (ten seconds into the match, so "two seconds ago" is inside it)
+    now = now + 10
+    trinketInfo.arena1 = { 195710, (GetTime() - 2) * 1000, 120000 }
+    Fire("ARENA_CROWD_CONTROL_SPELL_UPDATE", "arena1")
+    CHECK(live.seats["Player-1-E1"].trinkets == 1, "TRINKET: the client's answer records the enemy's press")
+    do
+        local e
+        for i = live.ledgerN, 1, -1 do if live.ledger[i].kind == "TRINKET" then e = live.ledger[i]; break end end
+        CHECK(e and e.src == "Player-1-E1" and e.amount == 120, "TRINKET: the moment carries the client's cooldown length")
+        CHECK(e and math.abs((e.t0 or e.t) - ((time() - 2) - live.tsStart)) < 1e-6, "TRINKET: the press is stamped when it started, not when it was read")
+    end
+    RunTickers()
+    Fire("ARENA_COOLDOWNS_UPDATE")
+    CHECK(live.seats["Player-1-E1"].trinkets == 1 and asked.arena1 == 1, "TRINKET: re-reading the same press each second stays one press, one request")
+    -- Our own side: the cast event names the unit and the spell
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 42292)
+    CHECK(live.seats[playerGuid].trinkets == 1, "TRINKET: our own press is recorded from the cast event")
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-2", 133)
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "target", "Cast-3", 42292)
+    CHECK(live.seats[playerGuid].trinkets == 1, "TRINKET: other spells and other unit tokens are ignored")
+    -- The replay's badge reads it down
+    CommanderMetersArena_Open()
+    report.__scripts.OnUpdate(report, 0.6)
+    do
+        local eb = FindButton(function(f) return f.trinketBadge and f.__parent and f.__parent.guid == "Player-1-E1" end)
+        CHECK(eb and eb.text.__text ~= "" and eb.sweep.__cdDur == 120, "TRINKET: the enemy's badge is down with its clock and sweep", eb and eb.text.__text)
+    end
+    Errors("TRINKET: live badge repaint clean")
+
+    -- Feign Death on the enemy hunter (arena2): not a death, and the card says FEIGN
+    do
+        local hg = "Player-1-E2"
+        A.OnCleu(time(), "SPELL_AURA_APPLIED", nil, hg, "Sting", 0x548, 0, hg, "Sting", 0x548, 0, 5384, "Feign Death", 1, "BUFF")
+        A.OnCleu(time() + 0.2, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, hg, "Sting", 0x548, 0)
+        CHECK(live.seats[hg].deaths == 0 and #live.deaths == 0, "FEIGN: the hunter's feign is not a death in a live match")
+        now = now + 1
+        report.__scripts.OnUpdate(report, 0.6)
+        CHECK(fsMatching("FEIGN|r"), "FEIGN: the card reads FEIGN while the aura is on")
+        Errors("FEIGN: repaint clean")
+        A.OnCleu(time() + 1, "SPELL_AURA_REMOVED", nil, hg, "Sting", 0x548, 0, hg, "Sting", 0x548, 0, 5384, "Feign Death", 1, "BUFF")
+        now = now + 3
+        report.__scripts.OnUpdate(report, 0.6)
+        CHECK(not fsMatching("^|c%x+FEIGN|r$"), "FEIGN: the card recovers when the feign is cancelled")
+    end
+
     -- UNIT_HEALTH feeds the replay while the match is on
     units.arena1.hp = 3000
     Fire("UNIT_HEALTH", "arena1")

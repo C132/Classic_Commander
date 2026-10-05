@@ -1273,3 +1273,118 @@ cards (the icon rows need every pixel of a 315 px card); the content
 column is one frame anchored past the sidebar, so every band moved with
 one number. The header's match menu stays as the keyboard-free duplicate.
 Harness after the sidebar and D28: engine 862, arena 381, UI 330; a WIN/LOSS tag declared below its own assignment (a global written, a nil local read) was caught by the UI harness on the way.
+
+### D27 pass 16 (2026-09-30) — the trinket badge
+
+Devin: "in a small icon next to the class icon portraits I want to see a
+CD tracker for their PvP trinkets." An 18 px badge on the portrait's
+top-right corner carries the medallion's icon (spell 42292): full color
+with a gold border while it is up, desaturated with a red border and the
+m:ss left while it is down — read from the recorder's TRINKET moments (a
+press starts two minutes; nothing seen means up, and the tooltip says
+so). The medallion left the generic cooldown row so it is not shown
+twice; racial breaks (Will of the Forsaken, Escape Artist) stay there.
+The badge sits over the portrait's corner rather than beside it because
+the name and bars begin six pixels from the portrait's edge, and a badge
+in the corner is what an arena frame does with it.
+Harness: UI 330 → 333.
+
+### D27 pass 17 (2026-09-30) — the trinket badge, as Devin wants it
+
+"Show the faction based PvP trinket icon instead of the spell icon, make
+it radial, and put it bottom right corner instead of top right." Done as
+said: the badge wears the medallion's own art per faction
+(INV_Jewelry_TrinketPVP_01 Alliance / _02 Horde), chosen from the seat's
+race file token — the scoreboard's faction field is the arena SIDE in
+arenas, so the race is the source; an unread race falls back to the
+player's faction for our team and the other faction for theirs, the
+honest limit of the log. The cooldown is drawn as the client's own
+radial sweep (a Cooldown frame, `SetCooldown` set to the cursor's
+elapsed and paused where the client offers Pause; otherwise it creeps at
+most half a second between repaints before the next reset), with the
+m:ss clock on the badge. The badge sits inside the portrait's
+bottom-right corner; the control icon moved a little up-left of center
+to stay clear of it. The UI mock learned `SetCooldown` so the sweep's
+start and length are pinned. Harness: UI 333 → 337.
+
+### D27 pass 18 (2026-09-30) — the trinket was not being tracked
+
+Devin, in game: "the trinket icon looks good but the addon isn't actually
+properly tracking the cooldown." ASSUMPTION 27 was wrong: the recorder
+recognised a trinket press as SPELL_CAST_SUCCESS of spell 42292 and
+nothing else. On this client the medallions and insignias cast their OWN
+item spells — which is why Party Frames matches the trinket by five spell
+NAMES and Arena Frames never uses the log for it at all, asking the
+client instead (`C_PvP.GetArenaCrowdControlInfo`). Both facts were in the
+suite; the recorder used neither.
+
+A press is now recorded from three sources, deduplicated in the engine:
+
+- **The client's own answer, for enemies.** `C_PvP.GetArenaCrowdControl
+  Info(arenaN)` returns the trinket's spell id and its start and duration
+  in milliseconds on the GetTime clock (zero while ready). It is read on
+  ARENA_CROWD_CONTROL_SPELL_UPDATE, ARENA_COOLDOWNS_UPDATE, the 1 Hz pass
+  and once more as the match ends; each enemy's trinket is requested once
+  (`RequestCrowdControlSpell`). The press is stamped when it STARTED, not
+  when it was read, and carries the client's cooldown length.
+- **The cast event, for our side.** UNIT_SPELLCAST_SUCCEEDED for `player`
+  and `partyN` (registered only while a match is on) names the unit and
+  the spell id directly.
+- **The combat log, by name as well as id.** The five aliases Party Frames
+  uses, plus the localized name of 42292 resolved at login; a pet's cast
+  is never a trinket.
+
+`RecordTrinket` treats reports within three seconds of a recorded press as
+the same press (the client's length refines it), so the three sources and
+the once-a-second re-read cannot double count. A press reported after
+newer moments were logged is clamped to the ledger's newest time (the
+bisection invariant) and its cooldown shortened by the same amount, so it
+still ENDS when it really does; the real press time is kept as `t0` for
+the dedup.
+
+Harness: arena 381 → 405 (Stage H), UI 337 → 347 (the client path through
+ARENA_CROWD_CONTROL_SPELL_UPDATE with a C_PvP mock, the once-only
+request, the cast event, the live badge).
+
+### D27 pass 19 (2026-10-01) — Feign Death is not a death
+
+Devin, in game: "feign death is messing up the replay system — it seems to
+not recover when the hunter cancels or when it's canceled." Feign Death
+puts a real UNIT_DIED in the combat log for the hunter. The recorder took
+it at face value: a death, a kill for the last hitter, first blood, every
+aura and cast on the seat closed, and — because an arena death is final —
+a card reading DEAD until the gates closed. (The core meter's guard,
+`UnitIsFeignDeath(token)`, only answers for your own group; the recorder
+needed its own.)
+
+Two mechanisms, because either alone leaves a hole:
+
+- **Prevention.** A Feign Death cast or aura (id 5384, or its name, the
+  localized one fed at login) stamps the seat; a UNIT_DIED within two
+  seconds of that stamp is the feign's own and becomes a FEIGN moment —
+  no death, no kill, nothing closed.
+- **Recovery.** A seat recorded dead that then ACTS was never dead: a cast
+  start or success of its own (not its pet's, and the feign itself
+  counts), gaining the feign's aura, a melee swing, or a living health
+  reading more than a second and a half after the "death". This also
+  covers the reversed order, UNIT_DIED logged before the feign. `Revive`
+  removes the death record, takes the kill back, recomputes first blood
+  from the deaths that remain, rewrites the DEATH moment as FEIGN so the
+  timeline still says what happened then, and reopens the auras the false
+  death closed (those nothing re-applied since). Spell damage and dots do
+  NOT revive — bolts in flight and dots outlive their caster — and
+  neither does the pet. Control and drink records the false death cut
+  short stay cut: reopening them would mean unwinding the DR ladder, and
+  a hunter feigning out of a CC is rare enough to leave.
+
+A seat can die once (a second UNIT_DIED for a dead seat is ignored), and a
+real death long after a feign is a death. While the feign's aura is on,
+the replay state carries `feign` and the card reads FEIGN, dimmed with a
+grey ring — on the floor, not dead — and returns to normal when the aura
+fades or is cancelled.
+
+Harness: arena 405 → 447 (Stage I: the normal order, the reversed order,
+an unannounced feign undone by a cast / a cast start / a swing / a living
+reading, the auras handed back, what must not revive, first blood passing
+to the real death, a localized name); UI 347 → 351 (the enemy hunter
+feigns and cancels in the live flow). Unverified in game.

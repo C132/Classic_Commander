@@ -985,6 +985,219 @@ do
     eq(G2.GetMatches()[1].seats[ME].aurasN, 4, "G: aura log survives the round trip")
 end
 
+-- ===========================================================================
+-- Stage H: the trinket press, from three sources that must agree
+-- (Devin, in game: "the addon isn't actually properly tracking the cooldown")
+-- ===========================================================================
+
+do
+    local H = LoadArena()
+    local hm = H.Begin(T0, "Trinket")
+    H.SetGates(T0 + 5)
+    H.SetSeat("us", ME, "Devinp", "MAGE", nil, "player")
+    H.SetSeat("them", W1, "Gorehowl", "WARRIOR", nil, "arena1")
+    H.SetOwner(FELHUNTER, W1, "Felhunter")
+    local function castS(ts, sg, sn, sf, id, name)
+        H.OnCleu(ts, "SPELL_CAST_SUCCESS", nil, sg, sn, sf, 0, "", "", 0x80000000, 0, id, name, 1)
+    end
+    -- The medallion casts its OWN item spell: an id the engine has never
+    -- seen, a name it knows
+    eq(H.IsTrinketSpell(42292, "anything"), "TRINKET", "H: 42292 is the trinket by id")
+    eq(H.IsTrinketSpell(99999, "Medallion of the Horde"), "TRINKET", "H: a medallion is the trinket by name")
+    eq(H.IsTrinketSpell(99999, "Frostbolt"), nil, "H: an ordinary spell is not")
+    castS(T0 + 20, W1, "Gorehowl", F_ENEMY, 99999, "Medallion of the Horde")
+    eq(hm.seats[W1].trinkets, 1, "H: a press with an unknown id and a known name is recorded")
+    eq(hm.ledger[hm.ledgerN].kind, "TRINKET", "H: ...as a TRINKET moment")
+    eq(hm.ledger[hm.ledgerN].amount, 120, "H: ...with the two-minute default")
+    -- The client reports the same press a moment later, with its own length
+    H.OnTrinket(W1, T0 + 21, 118, 99999, "Medallion of the Horde")
+    eq(hm.seats[W1].trinkets, 1, "H: the client's report of the same press is not a second press")
+    eq(hm.ledger[hm.ledgerN].amount, 118, "H: ...and its cooldown length wins")
+    -- The 1 Hz re-read of the client's answer changes nothing
+    H.OnTrinket(W1, T0 + 21, 118, 99999, "Medallion of the Horde")
+    H.OnTrinket(W1, T0 + 22, 118, 99999, nil)
+    eq(hm.seats[W1].trinkets, 1, "H: repeated reads of one press stay one press")
+    local st = H.StateAt(hm, 60, {})
+    eq(st.seats[W1].cdN, 1, "H: the press is a running cooldown at +60")
+    near(st.seats[W1].cdLeft[1], 20 + 118 - 60, "H: time left from the press and the client's length")
+    st = H.StateAt(hm, 139, st)
+    eq(st.seats[W1].cdN, 0, "H: it is back up after its length")
+    -- A second press, two and a half minutes on, is a second press
+    H.OnTrinket(W1, T0 + 170, 120, 99999, nil)
+    eq(hm.seats[W1].trinkets, 2, "H: a later press is counted")
+    -- The client names a press that started five seconds ago, after newer
+    -- moments were already logged: the moment is clamped, the END is not
+    H.OnCleu(T0 + 300, "SPELL_INTERRUPT", nil, ME, "Devinp", F_ME, 0, W1, "Gorehowl", F_ENEMY, 0, 2139, "Counterspell", 1, 1, "Heal", 2)
+    local late = H.OnTrinket(ME, T0 + 295, 120, 42292, "PvP Trinket")
+    CHECK(late ~= nil, "H: a press from our own side records")
+    near(late.t, 300, "H: a late-reported moment is clamped to the ledger's newest time")
+    near(late.t + late.amount, 295 + 120, "H: ...but its cooldown still ends when it really does")
+    -- Re-reading that late press dedups against its REAL press time
+    H.OnTrinket(ME, T0 + 295, 120, 42292, "PvP Trinket")
+    eq(hm.seats[ME].trinkets, 1, "H: a clamped press still dedups on its real time")
+    near(late.t + late.amount, 295 + 120, "H: ...and keeps its end")
+    -- A pet's cast named like a trinket is not its owner's trinket
+    castS(T0 + 320, FELHUNTER, "Felhunter", F_EPET, 99998, "PvP Trinket")
+    eq(hm.seats[W1].trinkets, 2, "H: a pet's cast is never a trinket press")
+    -- A report for someone not in the match is ignored
+    eq(H.OnTrinket("Player-9-NOBODY", T0 + 330, 120, 42292, nil), nil, "H: a report for an unseated guid is ignored")
+    -- The localized name fed at login matches too
+    H.SetTrinketNames({ "JcJ-Schmuckstück" })
+    eq(H.IsTrinketSpell(1, "JcJ-Schmuckstück"), "TRINKET", "H: the localized trinket name matches")
+    -- Racial breaks keep their own cooldowns and tags
+    castS(T0 + 340, W1, "Gorehowl", F_ENEMY, 20589, "Escape Artist")
+    eq(hm.ledger[hm.ledgerN].x, "ESCAPE", "H: Escape Artist keeps its own tag")
+    eq(hm.ledger[hm.ledgerN].amount, 60, "H: ...and its 60 s")
+    H.OnTrinket(W1, T0 + 340, 120, 99999, nil)
+    eq(hm.seats[W1].trinkets, 3, "H: counts: two medallion presses and the racial")
+end
+
+-- ===========================================================================
+-- Stage I: Feign Death is not a death (Devin, in game: "feign death is
+-- messing up the replay system — it seems to not recover")
+-- ===========================================================================
+
+do
+    local HU = "Player-1-HUNTER"
+    local function NewFeign()
+        local I = LoadArena()
+        local im = I.Begin(T0, "Feign")
+        I.SetGates(T0 + 5)
+        I.SetSeat("us", ME, "Devinp", "MAGE", nil, "player")
+        I.SetSeat("them", HU, "Sting", "HUNTER", nil, "arena1")
+        I.SetOwner("Pet-0-CAT", HU, "Cat")
+        I.OnCleu(T0 + 10, "SPELL_DAMAGE", nil, ME, "Devinp", F_ME, 0, HU, "Sting", F_ENEMY, 0,
+            27072, "Frostbolt", 16, 900, 0, 16, 0, 0, 0, false, false, false, false)
+        return I, im
+    end
+    local function died(I, ts) I.OnCleu(ts, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, HU, "Sting", F_ENEMY, 0) end
+    local function feignCast(I, ts) I.OnCleu(ts, "SPELL_CAST_SUCCESS", nil, HU, "Sting", F_ENEMY, 0, "", "", 0x80000000, 0, 5384, "Feign Death", 1) end
+    local function feignAura(I, ts, sub) I.OnCleu(ts, sub, nil, HU, "Sting", F_ENEMY, 0, HU, "Sting", F_ENEMY, 0, 5384, "Feign Death", 1, "BUFF") end
+
+    -- 1. The normal order: cast, aura, then the feign's own UNIT_DIED
+    local I, im = NewFeign()
+    feignCast(I, T0 + 12)
+    feignAura(I, T0 + 12, "SPELL_AURA_APPLIED")
+    died(I, T0 + 12.2)
+    eq(im.seats[HU].deaths, 0, "I: a feign's UNIT_DIED is not a death")
+    eq(#im.deaths, 0, "I: no death record")
+    eq(im.firstBlood, nil, "I: no first blood from a feign")
+    eq(im.seats[ME].kills, 0, "I: no kill credited for a feign")
+    eq(im.ledger[im.ledgerN].kind, "FEIGN", "I: a FEIGN moment marks it")
+    local st = I.StateAt(im, 13, {})
+    eq(st.seats[HU].alive, true, "I: the hunter is alive while feigning")
+    eq(st.seats[HU].feign, true, "I: ...and flagged as feigning")
+    eq(st.seats[HU].buffN, 1, "I: his auras were not closed by the feign")
+    -- The hunter cancels: the aura fades, he is simply alive
+    feignAura(I, T0 + 16, "SPELL_AURA_REMOVED")
+    st = I.StateAt(im, 17, st)
+    CHECK(st.seats[HU].alive == true and st.seats[HU].feign == false, "I: after the cancel he is alive and no longer feigning")
+    -- A REAL death later (the feign long over) is a death
+    I.OnCleu(T0 + 30, "SPELL_DAMAGE", nil, ME, "Devinp", F_ME, 0, HU, "Sting", F_ENEMY, 0,
+        27072, "Frostbolt", 16, 5000, 0, 16, 0, 0, 0, true, false, false, false)
+    died(I, T0 + 31)
+    eq(im.seats[HU].deaths, 1, "I: a real death long after a feign counts")
+    eq(im.seats[ME].kills, 1, "I: ...with its kill")
+    st = I.StateAt(im, 32, st)
+    eq(st.seats[HU].alive, false, "I: dead after the real death")
+    -- A second UNIT_DIED for an already-dead seat changes nothing
+    died(I, T0 + 33)
+    eq(im.seats[HU].deaths, 1, "I: one death per seat")
+
+    -- 2. Out of order: UNIT_DIED first, the feign's aura a moment later
+    I, im = NewFeign()
+    died(I, T0 + 12)
+    eq(im.seats[HU].deaths, 1, "I: (out of order) the death is recorded first")
+    eq(im.seats[ME].kills, 1, "I: ...with a kill")
+    feignAura(I, T0 + 12.3, "SPELL_AURA_APPLIED")
+    eq(im.seats[HU].deaths, 0, "I: the feign arriving a moment later undoes the death")
+    eq(im.seats[ME].kills, 0, "I: ...and the kill credit")
+    eq(#im.deaths, 0, "I: ...and the death record")
+    eq(im.firstBlood, nil, "I: ...and first blood")
+    local feignMoment
+    for i = 1, im.ledgerN do if im.ledger[i].kind == "FEIGN" then feignMoment = im.ledger[i] end end
+    CHECK(feignMoment ~= nil and feignMoment.src == HU, "I: the DEATH moment became a FEIGN moment")
+    for i = 1, im.ledgerN do CHECK(im.ledger[i].kind ~= "DEATH", "I: no DEATH moment remains (" .. i .. ")") end
+    eq(I.StateAt(im, 20, {}).seats[HU].alive, true, "I: alive in the replay")
+
+    -- 3. A feign the log never announced: the "dead" hunter casts again
+    I, im = NewFeign()
+    died(I, T0 + 12)
+    eq(I.StateAt(im, 14, {}).seats[HU].alive, false, "I: (unannounced) dead until proven otherwise")
+    I.OnCleu(T0 + 18, "SPELL_CAST_SUCCESS", nil, HU, "Sting", F_ENEMY, 0, ME, "Devinp", F_ME, 0, 27019, "Arcane Shot", 64)
+    eq(im.seats[HU].deaths, 0, "I: the dead do not cast — the death is undone")
+    eq(im.seats[ME].kills, 0, "I: ...with its kill")
+    eq(I.StateAt(im, 14, {}).seats[HU].alive, true, "I: the replay no longer shows him dead at +14")
+
+    -- 3b. The buffs the false death closed come back with him
+    I, im = NewFeign()
+    I.OnCleu(T0 + 8, "SPELL_AURA_APPLIED", nil, HU, "Sting", F_ENEMY, 0, HU, "Sting", F_ENEMY, 0, 27044, "Aspect of the Hawk", 1, "BUFF")
+    died(I, T0 + 12)
+    eq(I.StateAt(im, 14, {}).seats[HU].buffN, 0, "I: a death closes the seat's auras")
+    I.SetHealth(HU, 4000, 8000, T0 + 15)
+    eq(I.StateAt(im, 14, {}).seats[HU].buffN, 1, "I: undoing the death hands the auras back")
+    eq(I.StateAt(im, 40, {}).seats[HU].buffN, 1, "I: ...still open, not ended at the false death")
+    I.OnCleu(T0 + 45, "SPELL_AURA_REMOVED", nil, HU, "Sting", F_ENEMY, 0, HU, "Sting", F_ENEMY, 0, 27044, "Aspect of the Hawk", 1, "BUFF")
+    eq(I.StateAt(im, 46, {}).seats[HU].buffN, 0, "I: ...and a later fade closes it as usual")
+    do
+        local blob = I.Serialize and I.Export and I.Export(6)
+        CHECK(blob ~= nil, "I: a match with an undone death still exports")
+    end
+
+    -- 4. ...or starts a cast
+    I, im = NewFeign()
+    died(I, T0 + 12)
+    I.OnCleu(T0 + 15, "SPELL_CAST_START", nil, HU, "Sting", F_ENEMY, 0, "", "", 0x80000000, 0, 27016, "Steady Shot", 1)
+    eq(im.seats[HU].deaths, 0, "I: a cast start revives too")
+
+    -- 5. ...or swings
+    I, im = NewFeign()
+    died(I, T0 + 12)
+    I.OnCleu(T0 + 15, "SWING_DAMAGE", nil, HU, "Sting", F_ENEMY, 0, ME, "Devinp", F_ME, 0, 300, 0, 1, 0, 0, 0, false, false, false, false)
+    eq(im.seats[HU].deaths, 0, "I: a melee swing revives")
+
+    -- 6. ...or reads alive on the unit frame a moment later
+    I, im = NewFeign()
+    died(I, T0 + 12)
+    I.SetHealth(HU, 4000, 8000, T0 + 12.5)
+    eq(im.seats[HU].deaths, 1, "I: a reading half a second after the death proves nothing")
+    I.SetHealth(HU, 4000, 8000, T0 + 14)
+    eq(im.seats[HU].deaths, 0, "I: a living reading two seconds later undoes the death")
+    I.SetHealth(HU, 0, 8000, T0 + 20)
+    eq(im.seats[HU].deaths, 0, "I: a zero reading revives nobody and kills nobody")
+
+    -- 7. What does NOT revive: a dot ticking, a bolt landing, the pet acting
+    I, im = NewFeign()
+    died(I, T0 + 12)
+    I.OnCleu(T0 + 13, "SPELL_PERIODIC_DAMAGE", nil, HU, "Sting", F_ENEMY, 0, ME, "Devinp", F_ME, 0,
+        27016, "Serpent Sting", 8, 200, 0, 8, 0, 0, 0, false, false, false, false)
+    I.OnCleu(T0 + 13, "SPELL_DAMAGE", nil, HU, "Sting", F_ENEMY, 0, ME, "Devinp", F_ME, 0,
+        27019, "Arcane Shot", 64, 600, 0, 64, 0, 0, 0, false, false, false, false)
+    I.OnCleu(T0 + 14, "SWING_DAMAGE", nil, "Pet-0-CAT", "Cat", F_EPET, 0, ME, "Devinp", F_ME, 0, 150, 0, 1, 0, 0, 0, false, false, false, false)
+    I.OnCleu(T0 + 14, "SPELL_CAST_SUCCESS", nil, "Pet-0-CAT", "Cat", F_EPET, 0, ME, "Devinp", F_ME, 0, 27050, "Bite", 1)
+    eq(im.seats[HU].deaths, 1, "I: dots, bolts in flight and the pet do not revive their owner")
+
+    -- 8. Two seats: undoing the hunter's false death keeps the real first blood
+    I, im = NewFeign()
+    I.SetSeat("them", W1, "Gorehowl", "WARRIOR", nil, "arena2")
+    died(I, T0 + 12)
+    I.OnCleu(T0 + 20, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, W1, "Gorehowl", F_ENEMY, 0)
+    eq(im.firstBlood.guid, HU, "I: first blood is the (false) hunter death for now")
+    feignCast(I, T0 + 25) -- too late to be this death's feign: he ACTED, so it revives him
+    eq(im.firstBlood.guid, W1, "I: first blood passes to the real death")
+    eq(#im.deaths, 1, "I: one real death remains")
+
+    -- 9. The localized feign name matches
+    local J = LoadArena()
+    J.SetFeignNames({ "Totstellen" })
+    local jm = J.Begin(T0, "DE")
+    J.SetGates(T0 + 1)
+    J.SetSeat("them", HU, "Sting", "HUNTER")
+    J.OnCleu(T0 + 5, "SPELL_AURA_APPLIED", nil, HU, "Sting", F_ENEMY, 0, HU, "Sting", F_ENEMY, 0, 14325, "Totstellen", 1, "BUFF")
+    J.OnCleu(T0 + 5.1, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, HU, "Sting", F_ENEMY, 0)
+    eq(jm.seats[HU].deaths, 0, "I: a localized feign name is recognised")
+end
+
 if fails > 0 then
     io.write(string.format("RESULT: %d/%d FAILED\n", fails, checks))
     os.exit(1)
