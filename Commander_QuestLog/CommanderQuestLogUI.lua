@@ -18,14 +18,16 @@
 -- comes in two materials: dark stone (the default, and the rest of the suite's
 -- weight) and the parchment of the stock log.
 --
--- The window has two tabs. The Log is this file. The Zones tab -- a zone's
--- every quest from Questie, with its completion -- is CommanderQuestLogZones.lua,
--- which builds its own widgets in the same frame and draws with this file's
--- ink through Q._kit. This file only dispatches: Q.Refresh scans the log in
--- either tab (the Zones tab and the Questie adapter both read the scan), then
--- hands the frame to whichever tab is up and puts the other one's widgets
--- away. The Log's code path is otherwise the one it always was, which is the
--- point of keeping the Zones tab out of it.
+-- The window has tabs, and this file keeps their register. The Log is this
+-- file and is always there. Every other tab -- the Zones tab (a zone's every
+-- quest from Questie, with its completion), the Reputations tab (a faction's)
+-- -- is a catalogue (CommanderQuestLogCatalogue.lua) that registers itself
+-- with Q.RegisterTab, builds its own widgets in the same frame and draws with
+-- this file's ink through Q._kit. This file only dispatches: Q.Refresh scans
+-- the log whatever tab is up (the catalogues and the Questie adapter all read
+-- the scan), puts every other tab's widgets away, then hands the frame to the
+-- one that is up. The Log's code path is otherwise the one it always was,
+-- which is the point of keeping the other tabs out of it.
 
 CommanderQuestLog = CommanderQuestLog or {}
 local Q = CommanderQuestLog
@@ -54,6 +56,9 @@ local selectedKey, selectedEntry, selectedDetail
 local revealSelection, selectedTop, selectedHeight = false, nil, nil
 -- Where the briefed quest is handed in, when Questie knows (nil without it)
 local selectedFinisher
+-- What the briefed quest is worth, the one number every surface shows
+-- ({ text, none } from LogReputation; nil without Questie or the rules)
+local selectedRep
 local searchText = ""
 local pendingRefresh = false
 local ApplyFraming
@@ -438,8 +443,10 @@ end
 -- The Log is the live log and works without Questie (D13 still holds for
 -- everything the client can answer). What the client cannot answer is where
 -- a quest is handed in, and Questie can: with it loaded and ready, the
--- briefing gains a "Turn in:" line and the action bar a Waypoint button. All
--- of it goes through the adapter (Q.Questie), which is the only file that
+-- briefing gains a "Turn in:" line and the action bar a Waypoint button. Nor
+-- can it say what a quest pays in standing; with the rules engine loaded too
+-- (1.6.0) the briefing says that as well, under REWARDS or under the facts.
+-- All of it goes through the adapter (Q.Questie), which is the only file that
 -- names Questie, and every answer is optional.
 -- ---------------------------------------------------------------------------
 
@@ -465,6 +472,41 @@ local function LogFinisher(entry)
     if found == nil then
         found = adapter.Finisher(questID) or false
         finisherCache[questID] = found
+    end
+    return found or nil
+end
+
+-- What the briefed quest is worth to this character now (1.6.0): the
+-- adapter's one line ("+275 Honor Hold", "No reputation"), the same line the
+-- Zones and Reputations tabs, the map drawer, a waypoint's note and the NPC's
+-- dialog show -- worked out by the rules engine, cached by the adapter per
+-- generation, and looked up here once per quest per generation, like the
+-- finisher. nil without Questie, without the rules, for a quest Questie does
+-- not know, or with Show Reputation Everywhere off.
+-- -> { text = "Reputation: +275 Honor Hold" | "No reputation", none = bool }
+local repCache = { generation = -1 }
+
+local function LogReputation(entry)
+    local adapter = Q.Questie
+    if not (entry and adapter and adapter.RepLine) or DB().ShowRepEverywhere == false then return nil end
+    local questID = entry.questID
+    if type(questID) ~= "number" or questID <= 0 or not QuestieReady() then return nil end
+    local generation = adapter.generation or 0
+    if repCache.generation ~= generation then repCache = { generation = generation } end
+    local found = repCache[questID]
+    if found == nil then
+        found = false
+        local line, effects = adapter.RepLine(questID)
+        if type(line) == "string" then
+            local none = Q.Standing and line == Q.Standing.NO_REPUTATION
+            local observed = false
+            for _, effect in ipairs(type(effects) == "table" and effects or {}) do
+                if type(effect) == "table" and effect.observed then observed = true end
+            end
+            found = { text = (none and line or ("Reputation: " .. line)) .. (observed and " (seen in game)" or ""),
+                      none = none and true or false }
+        end
+        repCache[questID] = found
     end
     return found or nil
 end
@@ -867,9 +909,10 @@ end
 -- ---------------------------------------------------------------------------
 -- The kit
 --
--- The Zones tab (CommanderQuestLogZones.lua) and the world-map drawer draw
--- with the same ink, the same quads and the same panes as this file, and get
--- them here rather than each growing a copy: a second Paper() that drifted
+-- The catalogue tabs (CommanderQuestLogCatalogue.lua: the Zones and
+-- Reputations tabs) and the world-map drawer draw with the same ink, the
+-- same quads and the same panes as this file, and get them here rather
+-- than each growing a copy: a second Paper() that drifted
 -- from this one is exactly how D16 would quietly come undone. They are
 -- separate files because threading a second mode through AcquireNavRow and
 -- LayoutDetail would have turned every Log code path into a mode switch --
@@ -896,6 +939,173 @@ Q._kit = {
     NavScroll = function() return navScroll end,
     DetailScroll = function() return detailScroll end,
 }
+
+-- ---------------------------------------------------------------------------
+-- The tabs
+--
+-- A register rather than a pair. Each tab is a table:
+--
+--   { id, order, label, width, tooltip,       -- the button in the title band
+--     IsEnabled(),                             -- its setting (nil: always)
+--     Refresh(entries), HideAll(),             -- draw / put away its widgets
+--     SearchText(), SetSearch(text), EscapeSearch(), SearchTip,  -- its search
+--     NavTopInset(),                           -- how far its card pushes the navigator down
+--     PrepareOpen(key, questId) }              -- a way in from outside (Q.OpenToTab)
+--
+-- ViewMode is a tab's id. The tab that draws is the registered one whose id
+-- it names, when that tab is enabled -- else the Log, so a ViewMode left
+-- over from a tab since switched off, or from a file no longer loaded, is
+-- the Log with nothing to clean up. The Log registers here and draws inline
+-- in Q.Refresh; it has no Refresh of its own.
+--
+-- The buttons are words in the title band's free top left, drawn like the
+-- filter buttons: the font object first, the colour after it (swapping the
+-- font re-applies the font's own grey), and an accent underline on the
+-- active one; placed one after another by width, enabled tabs only. Above
+-- the drag strip's frame level, or the strip would take their clicks. A lone
+-- Log tab is noise, so with no other tab enabled there are none at all.
+-- ---------------------------------------------------------------------------
+
+local TAB_W, TAB_H, TAB_X, TAB_GAP = 58, 20, 12, 2
+
+local tabList, tabById, tabButtons = {}, {}, {}
+
+local function TabBefore(a, b)
+    if (a.order or 50) ~= (b.order or 50) then return (a.order or 50) < (b.order or 50) end
+    return a.id < b.id
+end
+
+-- A second register of the same id replaces the first (a reload), and keeps
+-- the button it already has
+function Q.RegisterTab(tab)
+    if type(tab) ~= "table" or type(tab.id) ~= "string" or tab.id == "" then return nil end
+    local old = tabById[tab.id]
+    if old then
+        for index, entry in ipairs(tabList) do
+            if entry == old then table.remove(tabList, index) break end
+        end
+    end
+    tabById[tab.id] = tab
+    tabList[#tabList + 1] = tab
+    table.sort(tabList, TabBefore)
+    local button = tabButtons[tab.id]
+    if button then
+        button:SetText(tab.label or tab.id)
+        button:SetWidth(tab.width or TAB_W)
+        button._x = nil
+    end
+    return tab
+end
+
+-- The Log is always enabled; any other tab when it can draw and its setting
+-- allows it
+local function TabAvailable(tab)
+    if tab.id == "LOG" then return true end
+    if not tab.Refresh then return false end
+    return not tab.IsEnabled or tab.IsEnabled() ~= false
+end
+
+local function ActiveTab()
+    local tab = tabById[DB().ViewMode]
+    if tab and tab.id ~= "LOG" and TabAvailable(tab) then return tab end
+    return tabById.LOG
+end
+
+-- Every tab's widgets but the active one's, put away
+local function HideOtherTabs(active)
+    for _, tab in ipairs(tabList) do
+        if tab ~= active and tab.HideAll then tab.HideAll() end
+    end
+end
+
+local function StyleTab(button, active)
+    if button.SetNormalFontObject then
+        button:SetNormalFontObject(active and GameFontNormalSmall or GameFontDisableSmall)
+    end
+    local fs = button.GetFontString and button:GetFontString()
+    if fs then
+        if active then fs:SetTextColor(Ink("strong")) else fs:SetTextColor(Ink("faint")) end
+    end
+    -- A fill too goes on the paper as ink: the default accent is white, and
+    -- white over cream is no underline at all
+    local r, g, b = InkAccent()
+    button.underline:SetVertexColor(r, g, b, active and 0.95 or 0)
+end
+
+local UpdateTabs
+
+local function MakeTabButton(tab)
+    local button = CreateFrame("Button", nil, frame)
+    button:SetSize(tab.width or TAB_W, TAB_H)
+    button:SetFrameLevel((frame:GetFrameLevel() or 1) + 20)
+    button:SetNormalFontObject(GameFontDisableSmall)
+    button:SetHighlightFontObject(GameFontHighlightSmall)
+    button:SetText(tab.label or tab.id)
+    button.underline = Quad(button, "ARTWORK")
+    button.underline:SetHeight(2)
+    button.underline:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 8, 1)
+    button.underline:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -8, 1)
+    local id = tab.id
+    button.mode = id
+    button:SetScript("OnClick", function()
+        if Q.SetViewMode then Q.SetViewMode(id) end
+    end)
+    if Commander and Commander.UI and Commander.UI.AttachTooltip then
+        Commander.UI.AttachTooltip(button, tab.label or id, tab.tooltip, "ANCHOR_BOTTOM")
+    end
+    -- A hover swaps the label's font and back, and each swap puts the font's
+    -- own colour over the ink (D14), so the ink goes back on a frame after
+    -- the pointer leaves -- and on the paper it is ink during the hover too
+    button:HookScript("OnLeave", function()
+        if C_Timer and C_Timer.After then C_Timer.After(0, UpdateTabs) else UpdateTabs() end
+    end)
+    InkOnHover(button)
+    tabButtons[id] = button
+    return button
+end
+
+-- Builds any button a registered tab is still missing (a tab registered
+-- after the window was built gets one here), then shows, places and inks
+UpdateTabs = function()
+    if not frame then return end
+    local others = false
+    for _, tab in ipairs(tabList) do
+        if not tabButtons[tab.id] then MakeTabButton(tab) end
+        if tab.id ~= "LOG" and TabAvailable(tab) then others = true end
+    end
+    local active = ActiveTab()
+    local x = TAB_X
+    for _, tab in ipairs(tabList) do
+        local button = tabButtons[tab.id]
+        local shown = others and TabAvailable(tab)
+        button:SetShown(shown)
+        if shown then
+            if button._x ~= x then
+                button:ClearAllPoints()
+                button:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -5)
+                button._x = x
+            end
+            x = x + (tab.width or TAB_W) + TAB_GAP
+        end
+        StyleTab(button, tab == active)
+    end
+end
+
+Q.UpdateTabs = UpdateTabs
+-- The register, in strip order, and the buttons by id (the harness's, and a
+-- catalogue's W.tabs)
+function Q.Tabs() return tabList end
+function Q.TabButtons() return tabButtons end
+
+-- The Log, the one tab that is always there
+Q.RegisterTab({
+    id = "LOG", order = 10, label = "Log", width = TAB_W,
+    tooltip = "Every quest in your log, with its objectives, rewards and actions.",
+    SearchText = function() return searchText end,
+    SetSearch = function(text) searchText = text or "" end,
+    EscapeSearch = function() searchText = "" end,
+    SearchTip = "Matches a quest's name, its zone, and the text of its objectives.",
+})
 
 local function LayoutDetail()
     local width = DetailWidth()
@@ -944,6 +1154,12 @@ local function LayoutDetail()
 
     local entry = selectedEntry
     local detail = selectedDetail or {}
+    local showRewards = DB().ShowRewards ~= false
+    local hasRewards = showRewards and (#(detail.choices or {}) > 0 or #(detail.rewards or {}) > 0
+        or detail.spell or (detail.money or 0) > 0)
+    -- What it is worth in standing: a reward line under REWARDS, or under the
+    -- facts when there is no REWARDS section to put it in
+    local repColour = selectedRep and { Ink(selectedRep.none and "secondary" or "primary") }
 
     Body(entry.title, "GameFontNormalLarge", InkSet().title)
 
@@ -959,6 +1175,9 @@ local function LayoutDetail()
     -- this only draws it (D2).
     if selectedFinisher then
         Body(FinisherLine(selectedFinisher), "GameFontHighlightSmall", { Ink("secondary") })
+    end
+    if selectedRep and not hasRewards then
+        Body(selectedRep.text, "GameFontHighlightSmall", repColour)
     end
 
     if detail.timeLeft then
@@ -995,10 +1214,6 @@ local function LayoutDetail()
         Body("DESCRIPTION", "GameFontNormalSmall", { InkAccent() })
         Body(detail.description, "GameFontHighlightSmall", { Ink("primary") }, 4)
     end
-
-    local showRewards = DB().ShowRewards ~= false
-    local hasRewards = showRewards and (#(detail.choices or {}) > 0 or #(detail.rewards or {}) > 0
-        or detail.spell or (detail.money or 0) > 0)
 
     if hasRewards then
         Rule()
@@ -1060,6 +1275,9 @@ local function LayoutDetail()
             local money = GetCoinTextureString and GetCoinTextureString(detail.requiredMoney)
                 or tostring(detail.requiredMoney)
             Body("Required: " .. money, "GameFontHighlightSmall", { 0.9, 0.5, 0.4 }, 6)
+        end
+        if selectedRep then
+            Body(selectedRep.text, "GameFontHighlightSmall", repColour, 6)
         end
     end
 
@@ -1158,9 +1376,10 @@ end
 local function AnchorNavPane()
     if not (frame and frame.navPane) then return end
     local pane = frame.navPane
-    -- On the Zones tab the zone card sits over the navigator column and the
+    -- On a catalogue tab its card sits over the navigator column and the
     -- pane moves down to make room for it; the Log has nothing there
-    local inset = (Q.Zones and Q.Zones.NavTopInset and Q.Zones.NavTopInset()) or 0
+    local active = ActiveTab()
+    local inset = (active and active.NavTopInset and active.NavTopInset()) or 0
     pane:ClearAllPoints()
     pane:SetPoint("TOPLEFT", frame.toolbar, "BOTTOMLEFT", 0, -8 - inset)
     pane:SetWidth(NAV_W)
@@ -1259,22 +1478,16 @@ Q.AnchorNavPane = AnchorNavPane
 -- ---------------------------------------------------------------------------
 -- Refresh
 --
--- One scan either way, then one tab draws. The Zones tab is up only when it
--- is switched on and its file is loaded; a ViewMode of "ZONE" left over from
--- a session where it was, or a Zones tab turned off in the settings, is the
--- Log, with nothing else to clean up.
+-- One scan whatever the tab, then one tab draws (ActiveTab). A catalogue tab
+-- is up only when it is switched on and its file is loaded; a ViewMode left
+-- over from a session where it was, a tab turned off in the settings, or a
+-- value nobody registered, is the Log, with nothing else to clean up.
 -- ---------------------------------------------------------------------------
-
-local function ZoneMode()
-    local db = DB()
-    return db.ViewMode == "ZONE" and db.ShowZoneTab ~= false
-        and Q.Zones ~= nil and Q.Zones.Refresh ~= nil
-end
 
 local LOG_ACTIONS = { "trackBtn", "shareBtn", "announceBtn", "waypointBtn", "abandonBtn" }
 
 -- The Log's toolbar set and action bar, shown on the Log and put away while
--- the Zones tab draws in the same space. Navigator rows and briefing blocks
+-- a catalogue tab draws in the same space. Navigator rows and briefing blocks
 -- only ever need hiding here: the next Log pass shows what it uses.
 local function SetLogWidgetsShown(shown)
     if not frame then return end
@@ -1302,12 +1515,13 @@ function Q.Refresh()
     -- so it hears every scan whichever tab is up
     if Q.Questie and Q.Questie.SetLogEntries then Q.Questie.SetLogEntries(entries) end
 
-    local mode = ZoneMode() and "ZONE" or "LOG"
+    local active = ActiveTab()
+    local mode = active.id
     if frame._mode ~= mode then
         frame._mode = mode
         AnchorNavPane()
-        -- Both tabs draw into the same two scroll frames, so the offset the
-        -- other tab left would otherwise open this one part-way down (clamped
+        -- Every tab draws into the same two scroll frames, so the offset the
+        -- last tab left would otherwise open this one part-way down (clamped
         -- to the new range): the top of the log off screen. Each tab starts
         -- at its top.
         if navScroll and navScroll.SetVerticalScroll then navScroll:SetVerticalScroll(0) end
@@ -1315,23 +1529,23 @@ function Q.Refresh()
         CancelReveal(navScroll)
         -- Each tab keeps its own search. The box is shared, so a tab change
         -- puts that tab's text in it; SetText arrives at OnTextChanged as NOT
-        -- user input, which is what keeps it out of the other tab's search.
+        -- user input, which is what keeps it out of the other tabs' searches.
         if frame.searchBox then
-            local text = searchText
-            if mode == "ZONE" and Q.Zones.SearchText then text = Q.Zones.SearchText() or "" end
-            frame.searchBox:SetText(text)
+            frame.searchBox:SetText(active.SearchText and active.SearchText() or "")
         end
     end
     -- A reveal asked for (RevealInLog, OpenToQuest) is this pass's to do
     local reveal = revealSelection
     revealSelection = false
-    if mode == "ZONE" then
+    -- Whatever the last tab drew goes away first, whichever tab that was
+    HideOtherTabs(active)
+    UpdateTabs()
+    if mode ~= "LOG" then
         SetLogWidgetsShown(false)
-        Q.Zones.Refresh(entries)
+        active.Refresh(entries)
         Q.UpdateResets()
         return
     end
-    if Q.Zones and Q.Zones.HideAll then Q.Zones.HideAll() end
     SetLogWidgetsShown(true)
 
     -- Re-find the selection by key. The index it had is meaningless after any
@@ -1376,6 +1590,7 @@ function Q.Refresh()
 
     selectedDetail = selectedEntry and Q.ReadDetail(selectedEntry.index) or nil
     selectedFinisher = LogFinisher(selectedEntry)
+    selectedRep = LogReputation(selectedEntry)
     -- The reward tooltips read from the SELECTED log entry, so it is left
     -- pointing at the briefed quest for as long as the window is up
     if selectedEntry and SelectQuestLogEntry then
@@ -1670,18 +1885,19 @@ local function EnsureFrame()
     frame.searchBox:SetPoint("LEFT", previous, "RIGHT", 14, 0)
     frame.searchBox:SetAutoFocus(false)
     frame.searchBox:SetMaxLetters(60)
-    -- One box, two searches: the text typed here belongs to whichever tab is
-    -- up. A tab change swaps the box's text with SetText, which this handler
-    -- sees as not user input and leaves alone.
+    -- One box, one search per tab: the text typed here belongs to whichever
+    -- tab is up. A tab change swaps the box's text with SetText, which this
+    -- handler sees as not user input and leaves alone.
     frame.searchBox:SetScript("OnTextChanged", function(self, userInput)
         if not userInput then return end
-        local text = self:GetText() or ""
-        if ZoneMode() then Q.Zones.SetSearch(text) else searchText = text end
+        local tab = ActiveTab()
+        if tab.SetSearch then tab.SetSearch(self:GetText() or "") end
         Q.Refresh()
     end)
     frame.searchBox:SetScript("OnEscapePressed", function(self)
         self:SetText("")
-        if ZoneMode() then Q.Zones.EscapeSearch() else searchText = "" end
+        local tab = ActiveTab()
+        if tab.EscapeSearch then tab.EscapeSearch() end
         self:ClearFocus()
         Q.Refresh()
     end)
@@ -1692,11 +1908,12 @@ local function EnsureFrame()
     frame.searchBox:HookScript("OnTextChanged", function(self)
         ghost:SetShown((self:GetText() or "") == "")
     end)
-    -- One box, two searches, two answers: the Zones tab matches names only
-    -- (its headings are status groups, not zones)
+    -- One box, one answer per tab: a catalogue matches names only (its
+    -- headings are status groups, not zones)
     Commander.UI.AttachTooltip(frame.searchBox, "Search", function()
-        if ZoneMode() then return "Matches a quest's name, in the zone on the card." end
-        return "Matches a quest's name, its zone, and the text of its objectives."
+        local tip = ActiveTab().SearchTip
+        if type(tip) == "function" then return tip() end
+        return tip
     end, "ANCHOR_BOTTOM")
 
     frame.sortDrop = CreateFrame("Frame", "CommanderQuestLogSortDrop", toolbar, "UIDropDownMenuTemplate")
@@ -1916,9 +2133,9 @@ local function EnsureFrame()
     end)
     Commander.UI.AttachTooltip(grip, "Resize", "Drag to resize the window.", "ANCHOR_LEFT")
 
-    -- The Log / Zones tabs, in the title band's free top left. Zones builds
-    -- them (and everything else of its own) so this file need not know them.
-    if Q.Zones and Q.Zones.EnsureTabs then Q.Zones.EnsureTabs(frame) end
+    -- The tabs, in the title band's free top left: one button per registered
+    -- tab (the catalogues build everything else of their own)
+    UpdateTabs()
 
     frame:SetScript("OnShow", function()
         ApplyFraming(true)
@@ -2028,7 +2245,7 @@ end
 -- already up fires no OnShow, so a header or a stale index used to leave the
 -- Zones tab's widgets drawn under a Log ViewMode until the next event.
 function CommanderQuestLog_OpenToQuest(index)
-    if DB().ViewMode == "ZONE" then DB().ViewMode = "LOG" end
+    if DB().ViewMode ~= "LOG" then DB().ViewMode = "LOG" end
     CommanderQuestLog_Show()
     if index and GetQuestLogTitle then
         local title, _, _, isHeader, _, _, _, questID = GetQuestLogTitle(index)
@@ -2042,15 +2259,17 @@ function CommanderQuestLog_OpenToQuest(index)
 end
 
 -- ---------------------------------------------------------------------------
--- The two tabs
+-- Switching tabs
 -- ---------------------------------------------------------------------------
 
--- "LOG" or "ZONE". Only the setting moves here; the next refresh re-anchors
--- the navigator and swaps the search box's text (see Q.Refresh).
+-- A registered tab's id ("LOG", "ZONE", "REP"); a tab that is switched off,
+-- not loaded or never registered is the Log. Only the setting moves here; the
+-- next refresh re-anchors the navigator and swaps the search box's text (see
+-- Q.Refresh).
 local function SwitchMode(mode)
-    local db = DB()
-    if mode == "ZONE" and not (Q.Zones and db.ShowZoneTab ~= false) then mode = "LOG" end
-    db.ViewMode = mode
+    local tab = tabById[mode]
+    if not (tab and TabAvailable(tab)) then mode = "LOG" end
+    DB().ViewMode = mode
 end
 
 function Q.SetViewMode(mode)
@@ -2087,29 +2306,42 @@ function Q.RevealInLog(key)
     return found
 end
 
+-- The id of the tab that draws: "LOG" unless a registered, enabled tab is up
 function Q.ViewMode()
-    return ZoneMode() and "ZONE" or "LOG"
+    return ActiveTab().id
 end
 
--- The Zones tab on a zone, for the map drawer and /cql zone. areaId is
--- Questie's AREA id (not a uiMapID); nil follows the zone the player stands
--- in. questId, when given, is selected and brought into view.
-function CommanderQuestLog_OpenToZone(areaId, questId)
+-- A catalogue tab on one of its keys, for the map drawer, the slash commands
+-- and anything else that wants a tab opened from outside. key is the tab's
+-- own (an AREA id for the Zones tab, a faction id for the Reputations tab);
+-- nil follows. questId, when given, is selected and brought into view. A tab
+-- that is switched off says so (its PrepareOpen) and the window opens on
+-- whatever it was showing.
+local function OpenToTab(id, key, questId)
     if not Enabled() then
         print("Commander Quest Log: the module is switched off in its settings.")
         return
     end
-    local zones = Q.Zones
-    if not (zones and zones.PrepareOpen and zones.PrepareOpen(areaId, questId)) then
+    local tab = tabById[id]
+    if not (tab and tab.PrepareOpen and tab.PrepareOpen(key, questId)) then
         CommanderQuestLog_Show()
         return
     end
-    SwitchMode("ZONE")
+    SwitchMode(id)
     if frame and frame:IsShown() then
         Q.Refresh()
     else
         CommanderQuestLog_Show()
     end
+end
+
+Q.OpenToTab = OpenToTab
+
+-- The Zones tab on a zone, for the map drawer and /cql zone. areaId is
+-- Questie's AREA id (not a uiMapID); nil follows the zone the player stands
+-- in. questId, when given, is selected and brought into view.
+function CommanderQuestLog_OpenToZone(areaId, questId)
+    OpenToTab("ZONE", areaId, questId)
 end
 
 -- ---------------------------------------------------------------------------

@@ -82,6 +82,13 @@
 --   * The pin art is Questie's own icon files -- the one borrowed art, drawn
 --     only while Questie is loaded, which is the only time a pin can exist.
 --     Everything else is WHITE8X8 quads and plain words (D11).
+--   * Reputation (1.6.0): a quest's row tooltip and every quest in a pin's
+--     tooltip carry what it is worth ("Reputation: +275 Honor Hold", "No
+--     reputation") -- the adapter's one line, the same the window and the NPC
+--     dialog show, never worked out here. The row also carries the number as
+--     a badge with its faction's tag ("+275 HH"), but only in the maximized
+--     drawer: the windowed one is 30 px narrower and a quest title is what it
+--     is there to show.
 
 CommanderQuestLog = CommanderQuestLog or {}
 local Q = CommanderQuestLog
@@ -115,6 +122,9 @@ local STATE_W = 42
 local WHEEL_ROWS = 2
 local PULSE_SECONDS = 3
 local TOOLTIP_QUEST_CAP = 8
+local BADGE_GAP = 4                    -- between a row's reputation badge and its state word
+local BADGE_MAX_W = 64                 -- the window's cap; RepBadgeText keeps a badge to 12 characters ("+1000 Scry")
+local OBSERVED_WORDS = "seen in game"
 
 -- The drawer's compact STATUS grouping. The titles are the fold keys in
 -- CommanderQuestLogDB.MapCollapsed, so they are fixed strings.
@@ -376,6 +386,64 @@ local function DifficultyInk(level)
         if type(r) == "number" then return { r, g, b } end
     end
     return INK.secondary
+end
+
+-- Reputation: the adapter's one line for a quest, in the words every surface
+-- uses ("Reputation: +275 Honor Hold", "No reputation", and "(seen in game)"
+-- when the calibration has watched it pay); nil without the rules, for a
+-- quest Questie does not know, or with Show Reputation Everywhere off
+local function RepText(questId)
+    local A = Adapter()
+    if DB().ShowRepEverywhere == false or not (A and type(A.RepLine) == "function") then return nil end
+    local line, effects = A.RepLine(questId)
+    if type(line) ~= "string" then return nil end
+    local R = Q.Standing
+    local text = (type(R) == "table" and line == R.NO_REPUTATION) and line or ("Reputation: " .. line)
+    for _, effect in ipairs(type(effects) == "table" and effects or EMPTY) do
+        if type(effect) == "table" and effect.observed then return text .. " (" .. OBSERVED_WORDS .. ")" end
+    end
+    return text
+end
+
+-- The row badge: the quest's biggest direct gain and the faction it is for
+-- ("+275 HH", "0" for none or capped) and its ink, off the effects the zone
+-- view's facts already carry. The tag is the Zones tab's (the catalogue's
+-- RepTag, unique over the zone's factions), else the rules engine's own
+-- abbreviation: "+550" alone made a Cenarion Circle quest look like the best
+-- Honor Hold one. The Zones tab's row setting (ZoneRowRep) governs it too:
+-- it is the same zone list.
+local function RepTag(factionId)
+    local catalogue = Q.Catalogue
+    if type(catalogue) == "table" and type(catalogue.RepTag) == "function" then
+        return catalogue.RepTag(S.view, factionId)
+    end
+    local R, A = Q.Standing, Adapter()
+    local name = A and type(A.FactionName) == "function" and A.FactionName(factionId) or nil
+    if type(R) == "table" and type(R.Abbrev) == "function" and type(name) == "string" then return R.Abbrev(name) end
+    return nil
+end
+
+local function RepBadge(entry)
+    local R = Q.Standing
+    local effects = type(entry.fact) == "table" and entry.fact.repEffects or nil
+    if DB().ShowRepEverywhere == false or DB().ZoneRowRep == false
+        or not (type(R) == "table" and type(R.Primary) == "function" and type(effects) == "table") then
+        return nil
+    end
+    local factionId, delta = R.Primary(effects)
+    if not factionId or delta == 0 then return "0", INK.faint end
+    local tag = RepTag(factionId)
+    -- the catalogue's fit, so the drawer's 64-px badge reads whole as the tab's does
+    local catalogue = Q.Catalogue
+    local text
+    if type(catalogue) == "table" and type(catalogue.RepBadgeText) == "function" then
+        text = catalogue.RepBadgeText(R, delta, tag)
+    else
+        text = R.FormatRep(delta) .. (tag and (" " .. tag) or "")
+    end
+    if delta < 0 then return text, STATE_INK.bad end
+    local r, g, b = Accent()
+    return text, { r, g, b }
 end
 
 -- ---------------------------------------------------------------------------
@@ -654,6 +722,40 @@ local function PlaceState(row, y)
     row.state:SetPoint("RIGHT", row, "RIGHT", 0, y)
 end
 
+local function HideBadge(row)
+    if row.badge then row.badge:Hide() end
+end
+
+-- The reputation badge left of the state word, maximized only; returns the
+-- width it takes from the title (0 without one)
+local function PlaceBadge(row, entry)
+    local text, ink
+    if S.width == DRAWER_W_MAXIMIZED then text, ink = RepBadge(entry) end
+    if not text then
+        HideBadge(row)
+        return 0
+    end
+    if not row.badge then
+        row.badge = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        if row.badge.SetJustifyH then row.badge:SetJustifyH("RIGHT") end
+        if row.badge.SetWordWrap then row.badge:SetWordWrap(false) end
+    end
+    local badge = row.badge
+    -- measured unconstrained (a width of 0 is "as wide as the text"), as the
+    -- catalogue measures its badges, then held to the cap
+    badge:SetWidth(0)
+    SetIfChanged(badge, text)
+    SetInk(badge, ink)
+    local natural = (badge.GetUnboundedStringWidth and badge:GetUnboundedStringWidth())
+        or (badge.GetStringWidth and badge:GetStringWidth()) or 0
+    local width = math.min(math.ceil(natural), BADGE_MAX_W)
+    badge:SetWidth(width)
+    badge:ClearAllPoints()
+    badge:SetPoint("RIGHT", row, "RIGHT", -(STATE_W + BADGE_GAP), 0)
+    badge:Show()
+    return width + BADGE_GAP
+end
+
 local function FillQuest(row, entry)
     local C = Engine()
     local word, key = "", "faint"
@@ -668,7 +770,7 @@ local function FillQuest(row, entry)
     SetIfChanged(row.level, (level and level > 0) and tostring(level) or "")
     SetInk(row.level, DifficultyInk(level))
     row.level:Show()
-    PlaceTitle(row, 4 + LEVEL_W + 4, 0, STATE_W + 4)
+    PlaceTitle(row, 4 + LEVEL_W + 4, 0, STATE_W + 4 + PlaceBadge(row, entry))
     SetIfChanged(row.title, entry.title or "")
     -- Dimmed by counted, not by bucket: an exclusive slot's other members
     -- keep their bucket and stop counting
@@ -688,6 +790,7 @@ local function FillQuest(row, entry)
 end
 
 local function FillHeader(row, item)
+    HideBadge(row)
     row.strip:Hide()
     row.level:Hide()
     row.band:Hide()
@@ -708,6 +811,7 @@ local function FillZone(row, item)
     local C = Engine()
     local summary = item.summary
     HideChevron(row)
+    HideBadge(row)
     row.strip:Hide()
     row.level:Hide()
     row.band:Hide()
@@ -1045,6 +1149,8 @@ local function QuestTooltip(owner, entry)
         GameTooltip:AddLine("Starts in " .. entry.startZoneName,
             INK.secondary[1], INK.secondary[2], INK.secondary[3], true)
     end
+    local rep = RepText(entry.id)
+    if rep then GameTooltip:AddLine(rep, INK.primary[1], INK.primary[2], INK.primary[3], true) end
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine(ROW_HINT, INK.faint[1], INK.faint[2], INK.faint[3], true)
     GameTooltip:Show()
@@ -1296,6 +1402,8 @@ local function PinTooltip(pin)
                 GameTooltip:AddLine(reason, INK.secondary[1], INK.secondary[2], INK.secondary[3], true)
             end
         end
+        local rep = RepText(entry.id)
+        if rep then GameTooltip:AddLine(rep, INK.secondary[1], INK.secondary[2], INK.secondary[3], true) end
     end
     GameTooltip:Show()
 end

@@ -1,7 +1,9 @@
 CommanderQuestLogDB = _G.CommanderQuestLogDB or {}
 -- Per character: the quests this character told the Zones tab to leave out of
--- its 100%. An alt's list is not a main's, which is why it is not in the
--- account-wide table above -- and why Restore Defaults never touches it.
+-- its 100% (Ignored), and what the game was seen to pay this character for a
+-- turn-in (RepObserved, written by the Questie adapter's calibration). An
+-- alt's lists are not a main's, which is why they are not in the
+-- account-wide table above -- and why Restore Defaults never touches them.
 CommanderQuestLogChar = _G.CommanderQuestLogChar or {}
 
 COMMANDER_QUESTLOG_EVENTS = {
@@ -37,8 +39,10 @@ local DefaultSettings = {
     FrameScale = 1.0,
     FramePos = false,
 
-    -- The Zones tab. ViewMode is where the player left the window, like
-    -- Filter and Sort; ShowZoneTab is the switch for the whole tab.
+    -- The tabs. ViewMode is where the player left the window, like Filter
+    -- and Sort: a registered tab's id, "LOG", "ZONE" or "REP" (anything else,
+    -- or a tab since switched off, opens on the Log). ShowZoneTab and
+    -- ShowRepTab are the switches for the two catalogue tabs.
     ViewMode = "LOG",
     ShowZoneTab = true,
     ZoneFilter = "ALL",
@@ -56,6 +60,33 @@ local DefaultSettings = {
     CountOptional = false,
     CountRival = false,
     CountExtras = false,
+
+    -- The Reputations tab: every quest that pays one faction. Its keys are
+    -- the Zones tab's under its own stem (the catalogue names them from the
+    -- prefix "Rep"): RepFollow follows the faction the player watches in the
+    -- game's Reputation pane (else the one their log's quests pay most),
+    -- RepPicked is a faction id pinned instead (false: none; account-wide
+    -- like the rest, so a pin of the other side's faction, an alt's, is
+    -- passed over on this side), RepCollapsed its own fold table, keyed by
+    -- its group titles.
+    ShowRepTab = true,
+    RepFilter = "ALL",
+    RepGroup = "GUIDE",
+    RepCollapsed = {},
+    RepFollow = true,
+    RepPicked = false,
+    -- The picker lists the classic factions (the capitals, the goblin towns,
+    -- Argent Dawn...) under the TBC ones, each once it has a quest for this
+    -- character. Off, it is the TBC factions alone.
+    RepIncludeClassic = true,
+    -- Reputation on every surface that shows a quest: one number, the rules
+    -- engine's (CommanderQuestLogStanding.lua), on the Log's briefing, the
+    -- Zones tab, the map drawer, a waypoint's note and the quest giver's own
+    -- dialog. ZoneRowRep and RepInQuestDialog are two of those surfaces,
+    -- each with a switch of its own under this one.
+    ShowRepEverywhere = true,
+    ZoneRowRep = true,
+    RepInQuestDialog = true,
 
     -- The world map: a completion drawer docked inside its right edge, and
     -- pins on the quest givers Questie does not draw
@@ -81,14 +112,16 @@ local function Reset()
     -- Defaults that forgot which zones they had folded would read as the
     -- window losing its place. ResetToDefaults only writes defaulted keys, so
     -- it is lifted out and put back rather than being left out of the table.
-    -- The Zones tab's folds and the map drawer's are the same kind of thing
-    -- and get the same treatment.
+    -- The Zones and Reputations tabs' folds and the map drawer's are the same
+    -- kind of thing and get the same treatment.
     local collapsed = CommanderQuestLogDB.Collapsed
     local zoneCollapsed = CommanderQuestLogDB.ZoneCollapsed
+    local repCollapsed = CommanderQuestLogDB.RepCollapsed
     local mapCollapsed = CommanderQuestLogDB.MapCollapsed
     Commander.UI.ResetToDefaults(CommanderQuestLogDB, DefaultSettings)
     CommanderQuestLogDB.Collapsed = collapsed or {}
     if type(zoneCollapsed) == "table" then CommanderQuestLogDB.ZoneCollapsed = zoneCollapsed end
+    if type(repCollapsed) == "table" then CommanderQuestLogDB.RepCollapsed = repCollapsed end
     if type(mapCollapsed) == "table" then CommanderQuestLogDB.MapCollapsed = mapCollapsed end
     Commander.Notify(COMMANDER_QUESTLOG_EVENTS.UPDATE)
     print("Commander Quest Log: settings restored to defaults")
@@ -101,6 +134,12 @@ end
 local function EnsureCharDB()
     if type(CommanderQuestLogChar) ~= "table" then CommanderQuestLogChar = {} end
     if type(CommanderQuestLogChar.Ignored) ~= "table" then CommanderQuestLogChar.Ignored = {} end
+    -- RepObserved is made by the adapter on its first sample, never here; a
+    -- value that is not a table is not one it wrote, and would only be read
+    -- around, so it goes
+    if CommanderQuestLogChar.RepObserved ~= nil and type(CommanderQuestLogChar.RepObserved) ~= "table" then
+        CommanderQuestLogChar.RepObserved = nil
+    end
     return CommanderQuestLogChar
 end
 
@@ -133,6 +172,25 @@ end
 
 local function Enabled()
     return CommanderQuestLogDB.EnableQuestLog
+end
+
+-- The per-surface reputation switches are under the one that turns
+-- reputation off everywhere
+local function RepEverywhereEnabled()
+    return CommanderQuestLogDB.EnableQuestLog and CommanderQuestLogDB.ShowRepEverywhere ~= false
+end
+
+-- /cql rep [faction]: the Reputations tab on a faction found by name (any
+-- part of it, any case, apostrophes optional: "shatar", "cons", "Honor
+-- Hold") or by id; no name follows the faction you watch. The tab file
+-- does the finding, from the names the client and the data know.
+local function OpenReputations(text)
+    local reps = CommanderQuestLog and CommanderQuestLog.Reps
+    if not (reps and reps.OpenTo) then
+        print("Commander Quest Log: the Reputations tab is not loaded.")
+        return
+    end
+    reps.OpenTo(text)
 end
 
 local function PinsEnabled()
@@ -168,6 +226,9 @@ local function CreateOptionsPanel()
             zone = function()
                 if CommanderQuestLog_OpenToZone then CommanderQuestLog_OpenToZone() end
             end,
+            -- The Reputations tab following the faction you watch; with a
+            -- name after it, see the wrapper after Finalize below
+            rep = function() OpenReputations(nil) end,
             status = PrintStatus,
         },
     })
@@ -299,7 +360,7 @@ local function CreateOptionsPanel()
     panel:AddSection("Zones & Completion")
     panel:AddCheckbox({
         label = "Zones Tab",
-        tooltip = "A second tab in the quest log window: every quest a zone holds for this character, read from Questie's database, with a completion bar and a guide to what to do next. Needs Questie; the Log tab works without it.",
+        tooltip = "A tab in the quest log window: every quest a zone holds for this character, read from Questie's database, with a completion bar and a guide to what to do next. Needs Questie; the Log tab works without it.",
         get = function() return CommanderQuestLogDB.ShowZoneTab ~= false end,
         set = function(value) CommanderQuestLogDB.ShowZoneTab = value end,
         isEnabled = Enabled,
@@ -339,6 +400,50 @@ local function CreateOptionsPanel()
             width = 200,
             tooltip = "Put every quest this character told the Zones tab to ignore back into its zone's 100%. Each character keeps its own list, so this one's is the only one cleared.",
             onClick = ClearIgnored,
+            isEnabled = Enabled,
+        },
+    })
+
+    panel:AddSection("Reputation")
+    panel:AddCheckboxPair({
+        label = "Reputations Tab",
+        tooltip = "A tab in the quest log window grouped by faction: every quest that pays one faction, what each is worth to this character, what is left, whether quests alone reach the next standing or Exalted, the quests to do before their door shuts, and the repeatables and dailies that carry on from there. Needs Questie; the Log tab works without it.",
+        get = function() return CommanderQuestLogDB.ShowRepTab ~= false end,
+        set = function(value) CommanderQuestLogDB.ShowRepTab = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Classic Factions in the Picker",
+        tooltip = "List the older factions too — the capital cities, the goblin towns, Argent Dawn and the rest — each under its own heading after the Outland ones, once it has a quest for this character. Off, the picker is the Outland factions alone.",
+        get = function() return CommanderQuestLogDB.RepIncludeClassic ~= false end,
+        set = function(value) CommanderQuestLogDB.RepIncludeClassic = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddCheckbox({
+        label = "Reputation on Every Quest",
+        tooltip = "Say what a quest is worth in reputation wherever it is shown — the Log's briefing, the Zones tab, the map drawer, a waypoint's note, the quest giver's own window — including \"No reputation\" for a quest that pays none. One number everywhere, worked out by this module's own rules: Diplomacy and the Hallow's End buff, the Aldor and Scryers losses, spillover, and the quests whose reward stops at a standing. Once you have turned a quest in, what the game actually paid replaces the estimate.",
+        get = function() return CommanderQuestLogDB.ShowRepEverywhere ~= false end,
+        set = function(value) CommanderQuestLogDB.ShowRepEverywhere = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddCheckboxPair({
+        label = "Reputation on Zone Rows",
+        tooltip = "A short figure and the faction it is for (\"+250 HH\") beside each quest on the Zones tab's list, and on the world map drawer's rows while the map is maximized: the most it pays any one faction, and which. The row's tooltip and the briefing carry the whole line.",
+        get = function() return CommanderQuestLogDB.ZoneRowRep ~= false end,
+        set = function(value) CommanderQuestLogDB.ZoneRowRep = value end,
+        isEnabled = RepEverywhereEnabled,
+    }, {
+        label = "Reputation in the Quest Dialog",
+        tooltip = "A line in the quest giver's own window — when a quest is offered and when it is handed in — saying what it will pay (\"Reputation: +250 Honor Hold\", or \"No reputation\"). A plain line of text added under the rewards; nothing of the game's own window is changed.",
+        get = function() return CommanderQuestLogDB.RepInQuestDialog ~= false end,
+        set = function(value) CommanderQuestLogDB.RepInQuestDialog = value end,
+        isEnabled = RepEverywhereEnabled,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Open Reputations",
+            width = 130,
+            tooltip = "Open the quest log on the Reputations tab at the faction you watch (also: /cql rep, or /cql rep followed by a faction's name).",
+            onClick = function() OpenReputations(nil) end,
             isEnabled = Enabled,
         },
     })
@@ -392,6 +497,22 @@ local function CreateOptionsPanel()
     })
 
     panel:Finalize({ onDefaults = Reset })
+
+    -- The framework matches a subcommand on the whole line, so "/cql rep
+    -- shatar" would be its usage message. A faction's name after "rep" is
+    -- taken here, ahead of it; every other line goes on to the framework.
+    local key = "COMMANDERUI_QUESTLOG"
+    local framework = SlashCmdList and SlashCmdList[key]
+    if type(framework) == "function" then
+        SlashCmdList[key] = function(msg)
+            local text = type(msg) == "string" and msg:match("^%s*[Rr][Ee][Pp]%s+(.-)%s*$") or nil
+            if text and text ~= "" then
+                OpenReputations(text)
+                return
+            end
+            return framework(msg)
+        end
+    end
 end
 
 local function OnEvent(self, event, addonName)
@@ -409,6 +530,9 @@ local function OnEvent(self, event, addonName)
         end
         if type(CommanderQuestLogDB.ZoneCollapsed) ~= "table" then
             CommanderQuestLogDB.ZoneCollapsed = {}
+        end
+        if type(CommanderQuestLogDB.RepCollapsed) ~= "table" then
+            CommanderQuestLogDB.RepCollapsed = {}
         end
         if type(CommanderQuestLogDB.MapCollapsed) ~= "table" then
             CommanderQuestLogDB.MapCollapsed = { Done = true }

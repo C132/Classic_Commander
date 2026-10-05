@@ -28,8 +28,17 @@
 -- alternatives, the /way line when refused), Route Zone and the entrance
 -- resolver; L giver pins; M one-quest reads; N broken and
 -- absent Questies; O end to end through the REAL engine (skipped, not
--- failed, while that file is absent); P nothing forbidden was ever called,
--- no global leaked, no shape glyph was printed.
+-- failed, while that file is absent); R reputation (1.6.0) over
+-- Fake.RepWorld() with the REAL rules engine and generated data -- one number
+-- per quest, the faction index, faction views on their own cache, the picker,
+-- faction summaries, zone totals, the character, today's rotating dailies,
+-- phase-held quests, calibration from the bars and the chat line, the guards,
+-- the status lines, and the same number on every surface (skipped with O);
+-- P nothing forbidden was ever called, no global leaked, no shape glyph was
+-- printed.
+--
+--   CQL_STANDING=/path/copy.lua  luajit questie_adapter_smoke.lua  -- a mutated rules engine (R)
+--   CQL_REPDATA=/path/copy.lua   luajit questie_adapter_smoke.lua  -- another data file (R)
 --
 -- Mock notes worth keeping:
 --   * Timers run by FRAME: a C_Timer.After(0, fn) scheduled during a frame
@@ -1566,6 +1575,1212 @@ do
             view and view.totals.counted)
     end
     CHECK(A._LastError() == nil, "Q: no adapter error across the section", A._LastError())
+end
+
+-- ===========================================================================
+-- R. Reputation (1.6.0) over Fake.RepWorld(), with the REAL rules engine and
+--    the generated data. The two are loaded for this section only and taken
+--    away after it, so every other section runs as it always did. Each
+--    subsection is a fresh adapter over a fresh world.
+-- ===========================================================================
+
+local skippedRep = false
+do
+    local RepR, RepD
+    local function LoadRules()
+        Q.Standing, CommanderQuestLogReputationData = nil, nil
+        for _, path in ipairs({
+            os.getenv("CQL_REPDATA") or (ADDONS .. "/Commander_QuestLog/CommanderQuestLogReputationData.lua"),
+            os.getenv("CQL_STANDING") or (ADDONS .. "/Commander_QuestLog/CommanderQuestLogStanding.lua"),
+        }) do
+            local chunk = loadfile(path)
+            if chunk then pcall(chunk) end
+        end
+        RepR, RepD = Q.Standing, CommanderQuestLogReputationData
+        return type(RepR) == "table" and type(RepR.Effects) == "function" and type(RepD) == "table"
+    end
+
+    -- A fresh READY adapter over a fresh reputation world (optionally
+    -- edited), with the real engine and fresh saved variables
+    local function RepFresh(edit)
+        CommanderQuestLogDB = {}
+        CommanderQuestLogChar = { Ignored = {} }
+        local world = Fake.RepWorld()
+        if edit then edit(world) end
+        local fakeR = Install(world)
+        LoadAdapter()
+        Q.Completion = RealEngine
+        Fire("PLAYER_LOGIN")
+        Settle()
+        return fakeR, world
+    end
+
+    -- A faction view needs the index read: asking the menu starts it
+    local function Indexed()
+        A.FactionMenu()
+        Settle()
+    end
+
+    local function Ids(entries)
+        local ids = {}
+        for _, entry in ipairs(entries or {}) do ids[#ids + 1] = entry.id end
+        table.sort(ids)
+        return table.concat(ids, ",")
+    end
+
+    local function Find(list, key, value)
+        for _, item in ipairs(list or {}) do if item[key] == value then return item end end
+        return nil
+    end
+
+    local function Line(questId, opts) return (A.RepLine(questId, opts)) end
+
+    local function DeepEqual(a, b)
+        if type(a) ~= type(b) then return false end
+        if type(a) ~= "table" then return a == b end
+        for k, v in pairs(a) do if not DeepEqual(v, b[k]) then return false end end
+        for k in pairs(b) do if a[k] == nil then return false end end
+        return true
+    end
+
+    local function GlyphFree(text)
+        local stripped = text:gsub("\194\183", ""):gsub("\226\128\148", "")
+        return not stripped:find("[\128-\255]")
+    end
+
+    if not (RealEngine and LoadRules()) then
+        skippedRep = true
+        io.write("SKIPPED: reputation section (the completion engine or the rules engine is not present)\n")
+    else
+        -- -------------------------------------------------------------------
+        -- R1. One number per quest
+        -- -------------------------------------------------------------------
+        do
+            local fakeR = RepFresh()
+            local R = RepR
+            CHECK(A.RepMultiplier() == 110, "R1: a Human is paid at 110% (Diplomacy)", A.RepMultiplier())
+            CHECK(Line(9355) == "+275 Honor Hold", "R1: 250 Honor Hold is +275 to a Human", Line(9355))
+            CHECK(Line(91001) == "No reputation", "R1: a quest that pays nothing says so", Line(91001))
+            CHECK(Line(91002) == "+110 Honor Hold", "R1: a row for a faction with no standing slot is dropped",
+                Line(91002))
+            local e = A.RepEffects(10326) or {}
+            local aldor, scryers, shatar = R.For(e, 932), R.For(e, 934), R.For(e, 935)
+            CHECK(#e == 3 and e[1].factionId == 932 and aldor and aldor.delta == 275 and aldor.kind == "DIRECT",
+                "R1: More Marks of Kil'jaeden pays the Aldor +275 directly", #e)
+            CHECK(scryers and scryers.delta == -302 and scryers.kind == "RIVAL",
+                "R1: the rival loss is spillover from the boosted gain (-302, not Questie's -275)",
+                scryers and scryers.delta)
+            CHECK(shatar and shatar.delta == 137 and shatar.kind == "SPILL",
+                "R1: the stored Sha'tar half is spillover, paid once (+137: not 137.5, not 125 on top)",
+                shatar and shatar.delta)
+            CHECK(Line(10326) == "+275 The Aldor  -302 The Scryers  +137 The Sha'tar", "R1: the full line", Line(10326))
+            CHECK(Line(10326, { compact = true }) == "+275 Aldor -302 Scryers +137 Sha'tar", "R1: the compact line",
+                Line(10326, { compact = true }))
+            CHECK(Line(11354) == "+385 The Consortium  +385 Honor Hold",
+                "R1: an audited row is paid (Honor Hold), the other side's (Thrallmar) is not", Line(11354))
+            local nether = A.RepEffects(10871) or {}
+            CHECK(Line(10871) == "+42,000 Netherwing" and nether[1] and nether[1].unknown == nil,
+                "R1: Ally of the Netherwing: the audited 38182, boosted, lifts a Human from the base (-42000) to 0",
+                Line(10871))
+            CHECK(Line(9266) == "+550 Everlook  -450 Bloodsail Buccaneers  +275 Booty Bay  +275 Gadgetzan  +275 Ratchet",
+                "R1: the goblin-town rows are spillover; a Human loses 10% less", Line(9266))
+            CHECK(Line(91003) == "+275 Stormwind  +68 Ironforge  +68 Gnomeregan Exiles  +68 Darnassus  +68 Exodar",
+                "R1: the capitals' quarter", Line(91003))
+            local miss, why = A.RepEffects(77777)
+            CHECK(miss == nil and why == "UNKNOWN_QUEST" and Line(77777) == nil,
+                "R1: a quest Questie does not know has no answer (and no line)", why)
+            miss, why = A.RepEffects("x")
+            CHECK(miss == nil and why == "NO_QUEST", "R1: nor has a non-id", why)
+            local first = A.RepEffects(9355)
+            CHECK(rawequal(first, A.RepEffects(9355)), "R1: one answer per generation, shared")
+            A.Bump("test")
+            Advance(300)
+            CHECK(not rawequal(A.RepEffects(9355), first), "R1: a new generation works it out again")
+            local plain = A.RepEffects(9355, { pct = 100 }) or {}
+            CHECK(plain[1] and plain[1].delta == 250 and not rawequal(plain, A.RepEffects(9355)),
+                "R1: opts are answered fresh, never cached")
+            local high = A.RepEffects(9355, { standings = { [946] = 42900 } }) or {}
+            CHECK(high[1] and high[1].delta == 99 and high[1].capped == true,
+                "R1: at 42,900 a +275 stops at the 42,999 ceiling", high[1] and high[1].delta)
+            CHECK(A.RepLine(9355, { effects = high }) == "+99 Honor Hold (capped)", "R1: RepLine puts handed effects into words",
+                A.RepLine(9355, { effects = high }))
+            local loose = A.RepEffects(55555, { rows = { { 946, 250 } } })
+            CHECK(loose and loose[1] and loose[1].delta == 275, "R1: rows handed in need no quest Questie knows")
+            -- membership mirrors the engine's own preparation, on every quest
+            local mismatched = {}
+            local queryRows = fakeR.modules.QuestieDB.QueryQuestSingle
+            for questId in pairs(fakeR.world.quests) do
+                local effects = R.Effects(RepD, questId, queryRows(questId, "reputationReward") or {}, {}, 100)
+                local engine, mine = {}, A._DirectRows(questId) or {}
+                for _, entry in ipairs(effects) do if entry.kind == "DIRECT" then engine[entry.factionId] = true end end
+                for factionId in pairs(engine) do
+                    if mine[factionId] == nil then mismatched[#mismatched + 1] = questId .. ":" .. factionId end
+                end
+                for factionId in pairs(mine) do
+                    if not engine[factionId] then mismatched[#mismatched + 1] = questId .. ":" .. factionId end
+                end
+            end
+            CHECK(#mismatched == 0, "R1: DirectRows names the engine's DIRECT factions on every quest of the world",
+                table.concat(mismatched, ","))
+            local detail = A.QuestDetail(10326)
+            CHECK(detail and #detail.repRewards == 2 and detail.repRewards[2].value == 125,
+                "R1: the detail keeps Questie's raw rows for what they are")
+            CHECK(detail and detail.repLine == Line(10326) and rawequal(detail.repEffects, A.RepEffects(10326)),
+                "R1: ...and carries the one number")
+            local view = A.ZoneView(3483)
+            local job = view and view.byId[9355]
+            CHECK(job and rawequal(job.fact.repEffects, A.RepEffects(9355)),
+                "R1: a full zone view's facts carry the same effects")
+            CHECK(job and job.fact.repRows and job.fact.repRows[1][1] == 946 and job.fact.repRows[1][2] == 250,
+                "R1: ...and Questie's raw rows")
+            local none = view and view.byId[91001]
+            CHECK(none and none.fact.repRows == nil and #none.fact.repEffects == 0, "R1: no rows, no effects")
+            -- a quest's waypoint carries what it is worth
+            local L = ordersLog
+            L.available, L.why = true, nil
+            CommanderOrders = FakeOrders()
+            A.Waypoint({ title = "A Job for an Intelligent Man", areaId = 3483, x = 56.6, y = 66.4, questId = 9355 })
+            CHECK(L.adds[#L.adds].note == "+275 Honor Hold", "R1: a quest's waypoint is noted with its reputation",
+                L.adds[#L.adds].note)
+            A.Waypoint({ title = "Scout the Perimeter", areaId = 3483, x = 56.6, y = 66.4, questId = 91001 })
+            CHECK(L.adds[#L.adds].note == "No reputation", "R1: ...No reputation included", L.adds[#L.adds].note)
+            A.Waypoint({ title = "Mine", areaId = 3483, x = 56.6, y = 66.4, questId = 9355, note = "my own" })
+            CHECK(L.adds[#L.adds].note == "my own", "R1: a note of the caller's own wins")
+            A.Waypoint({ title = "None", areaId = 3483, x = 56.6, y = 66.4, questId = 9355, note = false })
+            CHECK(L.adds[#L.adds].note == nil, "R1: note = false leaves it off")
+            A.Waypoint({ title = "Somewhere", areaId = 3483, x = 56.6, y = 66.4 })
+            CHECK(L.adds[#L.adds].note == nil, "R1: no quest, no note")
+            CommanderQuestLogDB.ShowRepEverywhere = false
+            A.Waypoint({ title = "Off", areaId = 3483, x = 56.6, y = 66.4, questId = 9355 })
+            CHECK(L.adds[#L.adds].note == nil, "R1: Show Reputation Everywhere off leaves it off")
+            CommanderQuestLogDB.ShowRepEverywhere = nil
+            CommanderOrders = nil
+            CHECK(A._LastError() == nil, "R1: no adapter error across the section", A._LastError())
+        end
+
+        -- -------------------------------------------------------------------
+        -- R2. The faction index: read on first need, 400 quests a frame
+        -- -------------------------------------------------------------------
+        do
+            local _, world = RepFresh(function(w) w.filler = 1000 end)
+            local quests, paying = 0, 0
+            for _, q in pairs(world.quests) do
+                quests = quests + 1
+                if q.reputationReward then paying = paying + 1 end
+            end
+            CHECK(A.FactionIndexState() == "NONE", "R2: the faction index is not read at login", A.FactionIndexState())
+            local view, err = A.FactionView(946)
+            CHECK(view == nil and err == "INDEXING", "R2: a faction asked about first says the index is being read", err)
+            local state, done, total = A.FactionIndexState()
+            CHECK(state == "BUILDING" and done == 0 and total == quests, "R2: ...and starts it over every quest",
+                state .. " " .. done .. "/" .. total)
+            Frame()
+            state, done = A.FactionIndexState()
+            CHECK(state == "BUILDING" and done == 400, "R2: 400 quests a frame", done)
+            local generation = A.generation
+            Settle()
+            state, done, total = A.FactionIndexState()
+            CHECK(state == "READY" and done == quests and total == quests, "R2: then complete", state)
+            CHECK(A.generation > generation, "R2: ...and the generation steps, so the tab redraws")
+            local index = A._FactionIndex()
+            CHECK(index.ticks == 3 and index.paying == paying, "R2: three frames; every quest that pays reputation",
+                tostring(index.ticks) .. " " .. tostring(index.paying) .. "/" .. paying)
+            local by = index.byFaction or {}
+            CHECK(by[946] and by[946][9355] == 250 and by[946][11354] == 350 and by[947] and by[947][11354] == 350,
+                "R2: audited rows are members (Honor Hold and Thrallmar on 11354)")
+            CHECK(by[935] and by[935][10886] == 500 and by[935][10326] == nil,
+                "R2: a stored Sha'tar half is not a membership")
+            CHECK(by[21] == nil and by[87] and by[87][9266] == -500 and by[577] and by[577][9266] == 500,
+                "R2: nor is a goblin-town half; a negative row is")
+            CHECK(by[99999] == nil, "R2: a faction with no standing slot has no members")
+            CHECK(by[1077] and by[1077][11524] == 150 and by[1077][91010] == 500, "R2: quests Questie holds back are indexed too")
+            CHECK(rawequal(A.FactionView(946), A.FactionView(946)), "R2: views are built once it is read")
+            -- never read before Questie is ready, whoever asks
+            local fakeR = RepFresh(function(w) w.ready = false end)
+            A.RequestSummaries({ 946 }, function() end, "FACTION")
+            Settle()
+            CHECK(A.FactionIndexState() == "NONE" and #A.FactionMenu() == 0, "R2: nothing is read before Questie is ready")
+            fakeR.SetReady()
+            Settle()
+            A.FactionMenu()
+            Settle()
+            CHECK(A.FactionIndexState() == "READY", "R2: ...and once it is, the first faction asked about starts it",
+                A.FactionIndexState())
+        end
+
+        -- -------------------------------------------------------------------
+        -- R3. Faction views
+        -- -------------------------------------------------------------------
+        do
+            RepFresh()
+            Indexed()
+            local R = RepR
+            local view, err = A.FactionView(946)
+            CHECK(view and view.factionId == 946 and view.name == "Honor Hold" and view.areaId == nil,
+                "R3: Honor Hold's view", err)
+            CHECK(Ids(view and view.entries) == "9355,10106,10937,11354,11362,11363,11364,91002",
+                "R3: its quests: the Wanted dailies the audit gave it, not the Horde's 10110", Ids(view and view.entries))
+            local rep = view and view.rep or {}
+            CHECK(rep.value == 4000 and rep.met == true and rep.word == "Friendly" and rep.progress == "Friendly 1,000 / 6,000"
+                and rep.base == 0 and rep.pct == 110, "R3: its standing", rep.progress)
+            CHECK(rep.toNext == 5000 and rep.toExalted == 38000, "R3: 5,000 to Honored, 38,000 to Exalted")
+            CHECK(view and view.totals.counted == 3 and view.totals.done == 1, "R3: three count (dailies do not), one done",
+                view and view.totals.counted)
+            local totals = rep.totals or {}
+            CHECK(totals.doneOnce == 1100 and totals.doneCount == 1 and totals.leftCount == 2 and totals.leftOnce == 385,
+                "R3: about 1,100 done (an estimate), 385 left in two quests", totals.doneOnce)
+            CHECK(rep.projection and rep.projection.reach == 4385 and rep.projection.rank == 4,
+                "R3: quests alone take it to 4,385", rep.projection and rep.projection.reach)
+            local job = view and view.byId[9355]
+            CHECK(job and job.repEffect and job.repEffect.delta == 275 and job.repEffect.kind == "DIRECT",
+                "R3: a row's badge is the engine's effect on this faction")
+            local dailies = rep.dailies or { rotating = {} }
+            CHECK(dailies.perDay == 165 and dailies.count == 1,
+                "R3: daily income: Hellfire Fortifications; a rotating daily only on its day", dailies.perDay)
+            local normal, heroic = dailies.rotating.NORMAL, dailies.rotating.HEROIC
+            CHECK(normal and normal.known and normal.elsewhere and normal.today == nil,
+                "R3: today's normal Wanted daily is another faction's")
+            CHECK(heroic and heroic.known == false and heroic.candidates == 3 and heroic.best == 385,
+                "R3: today's heroic is not known: three candidates, at most +385")
+            CHECK(rep.rotatingToday and rep.rotatingToday.NORMAL == 11371 and rep.rotatingToday.HEROIC == nil,
+                "R3: today's normal one is 11371")
+            CHECK(rep.phaseHidden == 0 and rep.phaseKnown == true and #rep.dailyQuests == 5,
+                "R3: nothing held back; five dailies listed")
+            CHECK(rawequal(A.FactionView(946), view), "R3: a cache hit")
+            local firstHonorHold = view
+            local cache = A._RepCacheInfo()
+            CHECK(cache.views == 1 and cache.order[1] == 946 and A._CacheInfo().views == 0,
+                "R3: in the faction cache, never the zones' LRU")
+            local summary = A.FactionSummary(946)
+            CHECK(summary and summary.counted == 3 and summary.done == 1 and summary.value == 4000 and summary.reach == 4385
+                and summary.quests == 8, "R3: its summary")
+            CHECK(A.ZoneSummary(946) == nil, "R3: ...kept apart from the zones'")
+
+            -- the Aldor: repeatables with their item costs, what the rival's quests cost it
+            view = A.FactionView(932)
+            CHECK(Ids(view and view.entries) == "10020,10021,10325,10326,10327,10421,10551", "R3: the Aldor's quests",
+                Ids(view and view.entries))
+            rep = view and view.rep or {}
+            local costs = {}
+            for _, c in ipairs(rep.costs or {}) do costs[#costs + 1] = c.questId .. ":" .. c.source .. ":" .. c.delta end
+            CHECK(table.concat(costs, ",") == "10412:934:-302,10414:934:-29,10552:934:-4235",
+                "R3: what the Scryers' quests would cost it", table.concat(costs, ","))
+            local marks = Find(rep.repeatables, "questId", 10326)
+            CHECK(marks and marks.perTurnIn == 275 and marks.cap == 8999 and marks.toCap == 19 and marks.toNext == nil
+                and marks.costItem == 29425 and marks.costCount == 10 and marks.costToCap == 190
+                and marks.costName == "Mark of Kil'jaeden",
+                "R3: More Marks: 19 turn-ins (190 marks) to its 8,999 clamp; the item named from the client's cache",
+                marks and marks.toCap)
+            local single = Find(rep.repeatables, "questId", 10327)
+            CHECK(single and single.perTurnIn == 27 and single.toCap == 186,
+                "R3: a single mark is 27 (truncated, not 27.5): 186 of them to the clamp", single and single.toCap)
+            local arms = Find(rep.repeatables, "questId", 10421)
+            CHECK(arms and arms.perTurnIn == 385 and arms.toNext == 13 and arms.toExalted == 99 and arms.toCap == 102
+                and arms.costName == "Fel Armament",
+                "R3: Fel Armaments run to Exalted: 13 to Honored, 99 to Exalted; the item named from Questie's table",
+                arms and arms.toExalted)
+            CHECK(rep.totals.doneOnce == 4125 and rep.totals.doneCount == 2 and rep.totals.leftCount == 2,
+                "R3: the pledge and one quest done (about 4,125), two left", rep.totals.doneOnce)
+            CHECK(rep.projection.reach == 4660 and rep.projection.repeatReach == 42999,
+                "R3: once-only quests take the Aldor to 4,660, its repeatables all the way", rep.projection.reach)
+
+            -- the Sha'tar: its own quests and the Aldor and Scryers quests of its window
+            view = A.FactionView(935)
+            CHECK(Ids(view and view.entries) == "10020,10021,10210,10325,10326,10327,10412,10414,10421,10551,10552,10886",
+                "R3: the Sha'tar's quests and those of its window", Ids(view and view.entries))
+            rep = view and view.rep or {}
+            local via = view and view.byId[10326]
+            CHECK(via and via.layer == "EXTRA" and via.fact.repVia == 932 and via.counted == false and via.repEffect
+                and via.repEffect.delta == 137 and via.repEffect.kind == "SPILL",
+                "R3: a window quest is listed, not counted, with its source and its spill as the badge")
+            local rival = view and view.byId[10412]
+            CHECK(rival and rival.fact.repVia == 934 and rival.base == "RIVAL", "R3: the Scryers' side is the rival's")
+            CHECK(view and view.totals.counted == 2 and view.totals.done == 1, "R3: only its own two count")
+            local windows = rep.spill and rep.spill.windows or {}
+            CHECK(#windows == 3 and windows[1].source == 932 and windows[1].open == true and windows[1].top == 8999
+                and windows[2].source == 934 and windows[3].source == 936,
+                "R3: windows from the Aldor, the Scryers and Shattrath City, open until 8,999", #windows)
+            CHECK(rep.spill and #rep.spill.members == 10, "R3: ten window quests", rep.spill and #rep.spill.members)
+            local window = rep.projection and rep.projection.spillWindow
+            CHECK(rep.projection and rep.projection.reach == 2879 and window and window.landed == 329 and window.source == 932,
+                "R3: the window first (the Aldor's two open quests, +329), then its own (+550): 2,879",
+                rep.projection and rep.projection.reach)
+            CommanderQuestLogDB.CountExtras = true
+            A.Bump("settings")
+            Advance(300)
+            view = A.FactionView(935)
+            CHECK(view and view.totals.counted == 2, "R3: window quests never count, whatever Count Extras says",
+                view and view.totals.counted)
+            CommanderQuestLogDB.CountExtras = nil
+
+            -- the Consortium: gates that close as it rises
+            view = A.FactionView(933)
+            rep = view and view.rep or {}
+            CHECK(rep.phaseHidden == 2 and Contains(rep.phaseHiddenIds, 11499) and Contains(rep.phaseHiddenIds, 11500),
+                "R3: the Magisters' Terrace dailies are not in this phase yet", rep.phaseHidden)
+            local hints = rep.projection and rep.projection.orderHints or {}
+            CHECK(#hints == 2 and hints[1] == 'Do "A Head Full of Ivory" before Friendly'
+                and hints[2] == 'Do "Stealing from Thieves" before Friendly',
+                "R3: the quests that lock as it rises, in the order they close", table.concat(hints, " | "))
+            CHECK(rep.projection and rep.projection.reach == 3575
+                and table.concat(rep.projection.order, ",") == "9914,9882,9900,10165",
+                "R3: the closing quests first, soonest-closing first: 3,575",
+                rep.projection and table.concat(rep.projection.order, ","))
+            CHECK(rep.dailies and rep.dailies.perDay == 275 and rep.dailies.count == 1
+                and rep.dailies.rotating.NORMAL.today == 11371, "R3: today's normal Wanted daily is the Consortium's",
+                rep.dailies and rep.dailies.perDay)
+            local crystals = Find(rep.repeatables, "questId", 9883)
+            CHECK(crystals and crystals.toNext == 3 and crystals.cap == 3025 and crystals.costItem == 25416
+                and crystals.costName == nil,
+                "R3: More Crystal Fragments: three to Friendly, where it closes; an uncached item has no name yet")
+
+            -- held back, not met
+            view, err = A.FactionView(1077)
+            CHECK(view and #view.entries == 0 and view.rep.phaseHidden == 4 and view.rep.value == 0 and view.rep.met == false,
+                "R3: the Shattered Sun: nothing in this phase, four quests held back for a later one", err)
+            view = A.FactionView(1015)
+            rep = view and view.rep or {}
+            CHECK(Ids(view and view.entries) == "10871,11015", "R3: Netherwing's quests for a Human (10870 is everyone else's)",
+                Ids(view and view.entries))
+            CHECK(rep.value == -42000 and rep.met == false and rep.base == -42000 and rep.word == "Hated"
+                and rep.progress == "Hated 0 / 36,000", "R3: not met: at its base, never Neutral", rep.progress)
+            CHECK(rep.projection and rep.projection.reach == 0 and rep.projection.left == 42000 and rep.projection.rank == 3,
+                "R3: Ally of the Netherwing lands it on exactly 0")
+            CHECK(rep.dailies and rep.dailies.perDay == 0, "R3: a daily locked behind Neutral earns nothing yet")
+            view = A.FactionView(970)
+            rep = view and view.rep or {}
+            CHECK(rep.value == -2500 and rep.met == false and rep.word == "Unfriendly" and rep.projection.reach == -1675,
+                "R3: Sporeggar from its base: The Sporelings' Plight takes it to -1,675", rep.projection and rep.projection.reach)
+            local sacs = Find(rep.repeatables, "questId", 9742)
+            CHECK(sacs and sacs.perTurnIn == 825 and sacs.toNext == 4 and sacs.toCap == 7,
+                "R3: More Spore Sacs: four to Neutral, seven before its gate closes")
+
+            -- area 47 is The Hinterlands, faction 47 is Ironforge
+            local zone = A.ZoneView(47)
+            local faction = A.FactionView(47)
+            CHECK(zone and zone.areaId == 47 and zone.name == "The Hinterlands" and faction and faction.factionId == 47
+                and faction.name == "Ironforge" and not rawequal(zone, faction),
+                "R3: area 47 and faction 47 are two views")
+            CHECK(rawequal(A.ZoneView(47), zone) and rawequal(A.FactionView(47), faction), "R3: each in its own cache")
+            local shares = faction and faction.rep.spill.shares or {}
+            CHECK(#shares == 1 and shares[1].source == 72 and shares[1].quests == 1 and shares[1].total == 68,
+                "R3: Stormwind's quests reach Ironforge as a quarter: summed, not listed")
+            CHECK(A.ZoneSummary(47) and A.ZoneSummary(47).counted == 1 and A.FactionSummary(47)
+                and A.FactionSummary(47).quests == 1, "R3: ...and two summaries")
+            CHECK(A._RepCacheInfo().views == 2, "R3: two faction views kept", A._RepCacheInfo().views)
+            local hh = A.FactionView(946)
+            CHECK(hh and not rawequal(hh, firstHonorHold) and A._RepCacheInfo().order[2] == 946,
+                "R3: an evicted faction is built again")
+            local detail = A.QuestDetail(10326, 935, "FACTION")
+            CHECK(detail and detail.name == "More Marks of Kil'jaeden"
+                and detail.repLine == "+275 The Aldor  -302 The Scryers  +137 The Sha'tar",
+                "R3: a quest's detail read from a faction view", detail and detail.repLine)
+            view, err = A.FactionView(947)
+            CHECK(view == nil and err == "OTHER_SIDE", "R3: the other side's faction has no view", err)
+            view, err = A.FactionView(99999)
+            CHECK(view == nil and err == "NO_FACTION", "R3: nor has an id the data does not know", err)
+            view, err = A.FactionView(54)
+            CHECK(view == nil and err == "NO_QUESTS", "R3: a faction reached only as a quarter has no quests of its own", err)
+            CHECK(A._LastError() == nil, "R3: no adapter error across the section", A._LastError())
+
+            -- a change in the log's ready set is a bump with only a faction view cached
+            RepFresh()
+            Indexed()
+            local shatar = A.FactionView(935)
+            local generation = A.generation
+            CHECK(A._CacheInfo().views == 0, "R3: no zone view cached")
+            A.SetLogEntries({ { isHeader = false, questID = 10886, isComplete = true, isFailed = false } })
+            Advance(300)
+            CHECK(A.generation == generation + 1 and not rawequal(A.FactionView(935), shatar),
+                "R3: the log's ready set changing is a bump while a faction view is up")
+        end
+
+        -- -------------------------------------------------------------------
+        -- R4. The picker
+        -- -------------------------------------------------------------------
+        do
+            RepFresh()
+            local menu = A.FactionMenu()
+            local alliance = Find(menu, "key", "ALLIANCE")
+            CHECK(#menu == 6 and alliance and #alliance.items == 8 and alliance.items[1].quests == nil,
+                "R4: while the index is read, every faction of your side is listed, uncounted", #menu)
+            Settle()
+            menu = A.FactionMenu()
+            local keys = {}
+            for i, group in ipairs(menu) do keys[i] = group.key end
+            CHECK(table.concat(keys, ",") == "OUTLAND,SHATTRATH,TBC_OTHER,ALLIANCE,STEAMWHEEDLE,CLASSIC_OTHER",
+                "R4: the data's groups in order, no Horde group for the Alliance", table.concat(keys, ","))
+            local function GroupIds(key)
+                local group = Find(menu, "key", key)
+                local ids = {}
+                for i, item in ipairs(group and group.items or {}) do ids[i] = item.factionId end
+                return table.concat(ids, ","), group
+            end
+            local outland, og = GroupIds("OUTLAND")
+            CHECK(outland == "1012,942,933,946,978,1015,1038,970", "R4: Outland without the Horde's Mag'har and Thrallmar",
+                outland)
+            CHECK(og and og.text == "Outland" and og.tbc == true, "R4: titled from the data while the client has no header name")
+            local hh = Find(og and og.items, "factionId", 946)
+            CHECK(hh and hh.name == "Honor Hold" and hh.word == "Friendly" and hh.quests == 8
+                and hh.note == "Friendly  \194\183  8 quests", "R4: a faction: name, standing, quests", hh and hh.note)
+            local nether = Find(og and og.items, "factionId", 1015)
+            CHECK(nether and nether.met == false and nether.value == -42000 and nether.word == "Hated" and nether.quests == 2,
+                "R4: a faction not met, at its base")
+            local ogri = Find(og and og.items, "factionId", 1038)
+            CHECK(ogri and ogri.quests == 0 and ogri.name == "Ogri'la", "R4: a TBC faction is listed with no quest for you")
+            local shattrath, sg = GroupIds("SHATTRATH")
+            CHECK(shattrath == "932,1011,934,935,1031,1077", "R4: Shattrath City", shattrath)
+            local sso = Find(sg and sg.items, "factionId", 1077)
+            CHECK(sso and sso.quests == 0 and sso.phaseHidden == 4
+                and sso.note == "Neutral  \194\183  0 quests  \194\183  4 not in this phase yet",
+                "R4: the Shattered Sun: none yet, four in a later phase", sso and sso.note)
+            CHECK((GroupIds("TBC_OTHER")) == "930,989,990,967", "R4: the other TBC factions, the Horde's two left out",
+                (GroupIds("TBC_OTHER")))
+            CHECK((GroupIds("ALLIANCE")) == "47,72", "R4: classic factions only with a quest of their own",
+                (GroupIds("ALLIANCE")))
+            CHECK((GroupIds("STEAMWHEEDLE")) == "577", "R4: Everlook; the other towns only through stored spillover",
+                (GroupIds("STEAMWHEEDLE")))
+            CHECK((GroupIds("CLASSIC_OTHER")) == "87", "R4: the Bloodsail, whom Making Amends costs",
+                (GroupIds("CLASSIC_OTHER")))
+            CommanderQuestLogDB.RepIncludeClassic = false
+            menu = A.FactionMenu()
+            CHECK(#menu == 3 and menu[3].key == "TBC_OTHER", "R4: classic factions off: the TBC groups alone", #menu)
+            CommanderQuestLogDB.RepIncludeClassic = nil
+        end
+
+        -- -------------------------------------------------------------------
+        -- R5. Faction summaries in the background
+        -- -------------------------------------------------------------------
+        do
+            RepFresh(function(w) w.filler = 1000 end)
+            local got = {}
+            A.RequestSummaries({ 946, 1077, 932 }, function(factionId, summary)
+                got[#got + 1] = factionId .. ":" .. tostring(summary.counted)
+            end, "FACTION")
+            Frame()
+            Frame()
+            CHECK(#got == 0 and A.FactionIndexState() == "BUILDING", "R5: a faction job waits while the index is read")
+            Settle()
+            CHECK(table.concat(got, ",") == "946:3,1077:0,932:4", "R5: then one faction a tick", table.concat(got, ","))
+            local stale = A.FactionSummary(946, true)
+            CHECK(stale and stale.reach == 4385 and stale.quests == 8 and A.ZoneSummary(946, true) == nil,
+                "R5: faction summaries, never the zones'")
+            CHECK(A.FactionSummary(946) == nil and stale.generation < A.generation,
+                "R5: ...by generation: the index's own step has passed them (a label reads them stale)")
+            CHECK(A._RepCacheInfo().views == 0 and A._RepCacheInfo().summaries == 3, "R5: a summary keeps no view")
+        end
+
+        -- -------------------------------------------------------------------
+        -- R6. What a zone's quests are worth, per faction
+        -- -------------------------------------------------------------------
+        do
+            RepFresh()
+            local totals = A.ZoneRepTotals(3483)
+            local order = {}
+            for i, t in ipairs(totals) do order[i] = t.factionId end
+            CHECK(table.concat(order, ",") == "946,933",
+                "R6: Hellfire pays Honor Hold and the Consortium; Thrallmar's rows are the other side's", table.concat(order, ","))
+            local hh = totals[1] or {}
+            CHECK(hh.remainingOnce == 385 and hh.doneOnce == 1100 and hh.doneCount == 1 and hh.leftCount == 2
+                and hh.reach == 4385 and hh.reachesNext == false and hh.reachesExalted == false and hh.word == "Friendly",
+                "R6: Honor Hold: 385 left once-only, about 1,100 done; not enough for Honored", hh.remainingOnce)
+            CHECK(hh.repeatables and #hh.repeatables == 5 and hh.repeatablesPerTurnIn == 385,
+                "R6: ...five dailies, the best +385 a turn-in", hh.repeatables and #hh.repeatables)
+            local cons = totals[2] or {}
+            CHECK(cons.remainingOnce == 0 and cons.repeatables and #cons.repeatables == 4 and cons.word == "Neutral",
+                "R6: the Consortium only through its Wanted dailies")
+            totals = A.ZoneRepTotals(3703)
+            local shatar = Find(totals, "factionId", 935)
+            local aldor = Find(totals, "factionId", 932)
+            CHECK(totals[1] and totals[1].factionId == 935 and shatar.remainingOnce == 879 and shatar.viaSpill == 329,
+                "R6: Shattrath: the Sha'tar first, its window from the Aldor's open quests counted (+329)",
+                shatar and shatar.remainingOnce)
+            CHECK(aldor and aldor.remainingOnce == 660 and aldor.doneOnce == 4125 and #aldor.repeatables == 3,
+                "R6: the Aldor: 660 left, about 4,125 done, three repeatables", aldor and aldor.remainingOnce)
+            CHECK(Find(totals, "factionId", 934) == nil, "R6: the rival's quests pay this character nothing to count")
+            CHECK(#A.ZoneRepTotals(99999) == 0, "R6: no zone, no totals")
+        end
+
+        -- -------------------------------------------------------------------
+        -- R7. The character: standings, the multiplier, the side
+        -- -------------------------------------------------------------------
+        do
+            local fakeR = RepFresh()
+            local char = A.Character()
+            CHECK(char.repPct == 110 and char.repSide == "Alliance", "R7: the character carries its multiplier and side")
+            CHECK(char.standing(1015) == -42000 and char.standing(970) == -2500 and char.standing(978) == -1200
+                and char.standing(946) == 4000, "R7: standing(): the bar, or the base for a faction not met")
+            CHECK(char.repValue(1015) == nil, "R7: repValue keeps its meaning (unknown never locks)")
+            local spore = A.FactionStanding(970)
+            CHECK(spore and spore.value == -2500 and spore.met == false and spore.word == "Unfriendly"
+                and spore.progress == "Unfriendly 500 / 3,000" and spore.name == "Sporeggar" and spore.base == -2500,
+                "R7: a faction's standing without a view", spore and spore.progress)
+            CHECK(A.FactionStanding(99999) == nil, "R7: nothing for an id the data does not know")
+            CHECK(A.FactionName(935) == "The Sha'tar" and A.FactionName(1015) == "Netherwing",
+                "R7: names: the client's once met, the data's before")
+            local generation = A.generation
+            fakeR.SetAura(24705, true)
+            Fire("UNIT_AURA", "target")
+            Advance(1000)
+            CHECK(A.generation == generation, "R7: another unit's auras are not looked at")
+            Fire("UNIT_AURA", "player")
+            Advance(1000)
+            CHECK(A.generation == generation + 1, "R7: the Wickerman taken is a bump", A.generation - generation)
+            CHECK(A.RepMultiplier() == 120 and A.Character().repPct == 120 and Line(9355) == "+300 Honor Hold",
+                "R7: ...and 250 is +300 under it", Line(9355))
+            local joined = table.concat(A.StatusLines(), "\n")
+            CHECK(joined:find("Reputation multiplier: 120% (Diplomacy, Invocation of the Wickerman)", 1, true),
+                "R7: status says why", joined)
+            Fire("UNIT_AURA", "player")
+            Advance(1000)
+            CHECK(A.generation == generation + 1, "R7: an aura change that moves nothing is no bump")
+            fakeR.SetAura(24705, false)
+            local byId = C_UnitAuras.GetPlayerAuraBySpellID
+            C_UnitAuras.GetPlayerAuraBySpellID = nil
+            fakeR.SetAura(24705, true)
+            CHECK(select(2, A.RepMultiplier()).wickerman == true, "R7: without the by-id call, a buff scan finds it")
+            local auras = C_UnitAuras
+            C_UnitAuras = nil
+            CHECK(select(2, A.RepMultiplier()).wickerman == true, "R7: without C_UnitAuras, UnitBuff does")
+            C_UnitAuras = auras
+            C_UnitAuras.GetPlayerAuraBySpellID = byId
+            fakeR.SetAura(24705, false)
+            CHECK(A.RepMultiplier() == 110, "R7: gone again: 110")
+
+            -- an Orc: no Diplomacy, the Horde's rows, a reward clamp
+            RepFresh(function(w)
+                w.player.race, w.player.raceFile, w.player.raceId, w.player.faction = "Orc", "Orc", 2, "Horde"
+                w.reps[932] = 8900
+                w.factions[947], w.reps[947] = "Thrallmar", 1000
+                w.factions[946], w.reps[946] = nil, nil
+            end)
+            CHECK(A.RepMultiplier() == 100 and A.Character().repSide == "Horde", "R7: an Orc is paid at 100%")
+            CHECK(Line(10326) == "+99 The Aldor (capped)  -108 The Scryers  +49 The Sha'tar",
+                "R7: at 8,900 More Marks stops at 8,999; the spill comes from the clamped gain", Line(10326))
+            CHECK(Line(11354) == "+350 The Consortium  +350 Thrallmar", "R7: the Horde is paid Thrallmar's row, not Honor Hold's",
+                Line(11354))
+            CHECK(A.FactionStanding(941).value == -500 and A.FactionStanding(946).value == -42000,
+                "R7: the Mag'har's base for an Orc; the other side's -42,000")
+            local view, err = A.FactionView(946)
+            CHECK(view == nil and err == "OTHER_SIDE", "R7: Honor Hold is the other side's", err)
+            Indexed()
+            view = A.FactionView(947)
+            CHECK(view and Ids(view.entries) == "10110,11354,11362,11363,11364", "R7: Thrallmar's quests for the Horde",
+                view and Ids(view.entries))
+            local outland = Find(A.FactionMenu(), "key", "OUTLAND")
+            local ids = {}
+            for i, item in ipairs(outland and outland.items or {}) do ids[i] = item.factionId end
+            CHECK(table.concat(ids, ",") == "1012,942,933,941,1015,1038,970,947", "R7: the Horde's Outland",
+                table.concat(ids, ","))
+        end
+
+        -- -------------------------------------------------------------------
+        -- R8. Today's rotating dailies; quests held back by phase
+        -- -------------------------------------------------------------------
+        do
+            local fakeR = RepFresh()
+            local today = A.RotatingToday()
+            CHECK(today.NORMAL == 11371 and today.HEROIC == nil,
+                "R8: Questie's record leaves one normal Wanted daily (the held-back one is never a candidate)")
+            fakeR.SetUnavailable(11362, true)
+            CHECK(A.RotatingToday().HEROIC == 11363, "R8: one more NPC talked to settles the heroic")
+            fakeR.ResetDailies()
+            today = A.RotatingToday()
+            CHECK(today.NORMAL == nil and today.HEROIC == nil,
+                "R8: after the reset (Questie replaces its table) nothing is known: no stale copy kept")
+            fakeR.SetInLog(11362, true)
+            CHECK(A.RotatingToday().HEROIC == 11362, "R8: one in the log is today's")
+            fakeR.SetInLog(11362, false)
+            fakeR.SetUnavailable(11354, true)
+            fakeR.SetUnavailable(11364, true)
+            fakeR.SetUnavailable(11376, true)
+            fakeR.modules.AvailableQuests.__unavailableQuestsDeterminedByTalking = nil
+            CHECK(A.RotatingToday().NORMAL == 11371, "R8: read from Questie's saved record by realm, not only its alias")
+            fakeR.ResetDailies()
+            fakeR.SetUnavailable(11354, true)
+            local record = Fake.DeepCopy(Questie.db.global.unavailableQuestsDeterminedByTalking)
+            Indexed()
+            A.FactionView(933)
+            A.RotatingToday()
+            A.StatusLines()
+            CHECK(DeepEqual(record, Questie.db.global.unavailableQuestsDeterminedByTalking),
+                "R8: Questie's record is read, never written")
+            CHECK(fakeR.calls.BlacklistTbcQuestsByPhase == 1, "R8: Questie's phase list is read once",
+                fakeR.calls.BlacklistTbcQuestsByPhase)
+            RepFresh(function(w) w.contentPhases = nil end)
+            Indexed()
+            local sso = A.FactionView(1077)
+            CHECK(sso and sso.rep.phaseHidden == 5 and sso.rep.phaseKnown == false,
+                "R8: without Questie's phase list, every quest it holds back that would pay (not the Horde's)",
+                sso and sso.rep.phaseHidden)
+            RepFresh(function(w) w.locale = "deDE" end)
+            CHECK(A.FactionName(1015) == "Netherschwingen" and A.FactionName(935) == "The Sha'tar",
+                "R8: a faction not met has this locale's name from the data; a met one the client's")
+            RepFresh(function(w) w.player.sex = 3; w.femaleLabels = { [5] = "Friendly (her)" } end)
+            CHECK(A.FactionStanding(946).word == "Friendly (her)", "R8: standing words in the client's own form for her",
+                A.FactionStanding(946).word)
+        end
+
+        -- -------------------------------------------------------------------
+        -- R9. Calibration: what the bars did on a turn-in
+        -- -------------------------------------------------------------------
+        do
+            local fakeR, world = RepFresh()
+            local function Sample(questId, factionId)
+                local store = type(CommanderQuestLogChar) == "table" and CommanderQuestLogChar.RepObserved
+                return type(store) == "table" and store[questId] and store[questId][factionId] or nil
+            end
+            CHECK(CommanderQuestLogChar.RepObserved == nil, "R9: no store before the first sample")
+            -- an emulator's order: the bar moves, then QUEST_TURNED_IN
+            fakeR.SetRep(946, 4275)
+            Fire("UPDATE_FACTION")
+            Frame()
+            Fire("QUEST_TURNED_IN", 9355, 0, 0)
+            fakeR.Complete(9355)
+            Advance(2500)
+            local s = Sample(9355, 946)
+            CHECK(s and s.raw == 250 and s.delta == 275 and s.n == 1 and s.kind == "DIRECT",
+                "R9: +275 seen on a Human is stored as the listed 250", s and s.raw)
+            local generationLine = A.StatusLines()[4] or ""
+            CHECK(generationLine:find("calibration", 1, true), "R9: a sample is a bump", generationLine)
+            local seen = A.RepEffects(9355) or {}
+            CHECK(seen[1] and seen[1].observed == true and Line(9355) == "+275 Honor Hold", "R9: the quest reads as seen in game")
+            -- the other order: QUEST_TURNED_IN, then the bar a frame later
+            Fire("QUEST_TURNED_IN", 10030, 0, 0)
+            Frame()
+            fakeR.SetRep(1011, 275)
+            Fire("UPDATE_FACTION")
+            Advance(2500)
+            s = Sample(10030, 1011)
+            CHECK(s and s.raw == 250, "R9: the window runs both ways", s and s.raw)
+            -- the data overruled, by a faction met for the first time
+            fakeR.Meet(970, -2225)
+            Fire("UPDATE_FACTION")
+            Fire("QUEST_TURNED_IN", 9739, 0, 0)
+            Advance(2500)
+            s = Sample(9739, 970)
+            CHECK(s and s.raw == 250 and s.delta == 275,
+                "R9: Sporeggar met by its first quest moves from its base: +275 seen is 250 listed, not Questie's 750",
+                s and s.raw)
+            local spore = A.RepEffects(9739) or {}
+            CHECK(spore[1] and spore[1].delta == 275 and spore[1].observed == true and Line(9739) == "+275 Sporeggar",
+                "R9: what was seen overrides the data", Line(9739))
+            Indexed()
+            local sporeggar = A.FactionView(970)
+            local plight = sporeggar and Find(sporeggar.rep.direct, "questId", 9739)
+            CHECK(plight and plight.observed == true and plight.raw == 250 and sporeggar.rep.observed == 1
+                and sporeggar.rep.projection.reach == -1950,
+                "R9: ...in the faction view too: the projection counts what was seen (-2,225 + 275)",
+                sporeggar and sporeggar.rep.projection.reach)
+            -- the chat line stands in when the snapshot saw nothing
+            Fire("QUEST_TURNED_IN", 10918, 0, 0)
+            Fire("CHAT_MSG_COMBAT_FACTION_CHANGE", "Reputation with Lower City increased by 275.")
+            Advance(2500)
+            s = Sample(10918, 1011)
+            CHECK(s and s.raw == 250, "R9: the chat line is the second source", s and s.raw)
+            -- a DIRECT row that did not move while the rest of the quest did
+            fakeR.SetRep(933, 2475)
+            Fire("UPDATE_FACTION")
+            Fire("QUEST_TURNED_IN", 11371, 0, 0)
+            Advance(2500)
+            CHECK(Sample(11371, 933) and Sample(11371, 933).raw == 250 and Sample(11371, 942)
+                and Sample(11371, 942).raw == 0, "R9: a row that did not move while the quest's other did: a sample of 0")
+            CHECK(Line(11371) == "+275 The Consortium  0 Cenarion Expedition", "R9: ...which the line shows", Line(11371))
+            -- two turn-ins close enough to share a faction: both set aside
+            local observer = A._RepObserver()
+            local aside = observer.dropped
+            fakeR.SetRep(932, 4275)
+            fakeR.SetRep(934, -4702)
+            fakeR.SetRep(935, 2137)
+            Fire("UPDATE_FACTION")
+            Fire("QUEST_TURNED_IN", 10326, 0, 0)
+            Advance(400)
+            fakeR.SetRep(932, 4550)
+            fakeR.SetRep(934, -5004)
+            fakeR.SetRep(935, 2274)
+            Fire("UPDATE_FACTION")
+            Fire("QUEST_TURNED_IN", 10326, 0, 0)
+            Advance(3000)
+            CHECK(CommanderQuestLogChar.RepObserved[10326] == nil and observer.dropped == aside + 6
+                and (observer.why.ambiguous or 0) == 6,
+                "R9: two turn-ins of one quest in quick succession teach nothing (each faction set aside)",
+                observer.dropped - aside)
+            -- two turn-ins whose moves one snapshot read caught together: one
+            -- move of +440 on a faction both pay is nobody's
+            fakeR.SetRep(946, world.reps[946] + 440)
+            Fire("UPDATE_FACTION")
+            Fire("QUEST_TURNED_IN", 9355, 0, 0)
+            Fire("QUEST_TURNED_IN", 10106, 0, 0)
+            Advance(3000)
+            CHECK(Sample(10106, 946) == nil and Sample(9355, 946).n == 1 and (observer.why.ambiguous or 0) == 8,
+                "R9: a move two turn-ins could both own is set aside for both", observer.why.ambiguous)
+            -- a faction that moved twice in the window: a kill, then the quest
+            fakeR.SetRep(946, 4290)
+            Fire("UPDATE_FACTION")
+            Frame()
+            fakeR.SetRep(946, 4455)
+            Fire("UPDATE_FACTION")
+            Frame()
+            Fire("QUEST_TURNED_IN", 10106, 0, 0)
+            Advance(2500)
+            CHECK(Sample(10106, 946) == nil and observer.why.ambiguous == 9, "R9: a faction that moved twice is set aside",
+                observer.why.ambiguous)
+            -- a reward clamp cut the turn-in: nothing learned, not even the spill off it
+            fakeR.SetRep(932, 8900)
+            Fire("UPDATE_FACTION")
+            Advance(3000)
+            fakeR.SetRep(932, 8999)
+            fakeR.SetRep(934, world.reps[934] - 108)
+            fakeR.SetRep(935, world.reps[935] + 49)
+            Fire("UPDATE_FACTION")
+            Fire("QUEST_TURNED_IN", 10326, 0, 0)
+            Advance(2500)
+            CHECK(CommanderQuestLogChar.RepObserved[10326] == nil and observer.why["source capped"] == 2
+                and (observer.why["reward clamp"] or 0) >= 1,
+                "R9: a clamped turn-in is no sample, nor are the spills off it")
+            -- normalised by the multiplier of the moment
+            fakeR.SetAura(24705, true)
+            Fire("UNIT_AURA", "player")
+            Advance(1000)
+            fakeR.SetRep(933, world.reps[933] + 600)
+            Fire("UPDATE_FACTION")
+            Fire("QUEST_TURNED_IN", 10165, 0, 0)
+            Advance(2500)
+            s = Sample(10165, 933)
+            CHECK(s and s.raw == 500 and s.pct == 120 and s.delta == 600,
+                "R9: +600 seen under the Wickerman is stored as the listed 500", s and s.raw)
+            fakeR.SetAura(24705, false)
+            Fire("UNIT_AURA", "player")
+            Advance(1000)
+            CHECK(Line(10165) == "+550 The Consortium", "R9: ...so without it the quest reads +550", Line(10165))
+            -- what cannot be a sample
+            Fire("QUEST_TURNED_IN", 77777, 0, 0)
+            Advance(2500)
+            CHECK(observer.why["unknown quest"] == 1, "R9: a quest Questie does not know")
+            Fire("QUEST_TURNED_IN", 9900, 0, 0)
+            Advance(2500)
+            CHECK(observer.why["no move seen"] == 1 and Sample(9900, 933) == nil, "R9: a turn-in that moved nothing")
+            local saved = CommanderQuestLogChar
+            CommanderQuestLogChar = nil
+            fakeR.SetRep(1011, world.reps[1011] + 275)
+            Fire("UPDATE_FACTION")
+            Fire("QUEST_TURNED_IN", 10030, 0, 0)
+            Advance(2500)
+            CHECK(observer.why["no saved variables"] == 1 and CommanderQuestLogChar == nil,
+                "R9: no saved variables yet: nothing written, no global made")
+            CommanderQuestLogChar = saved
+            -- the chat line, read with the client's own strings
+            local factionId, delta = A._ParseRepChat("Reputation with The Sha'tar increased by 137.")
+            CHECK(factionId == 935 and delta == 137, "R9: chat: an increase")
+            factionId, delta = A._ParseRepChat("Reputation with The Scryers decreased by 302.")
+            CHECK(factionId == 934 and delta == -302, "R9: chat: a decrease")
+            factionId, delta = A._ParseRepChat("Reputation with Honor Hold increased by 5. (+1.0 bonus)")
+            CHECK(factionId == 946 and delta == 5, "R9: chat: the bonus form")
+            CHECK(A._ParseRepChat("Reputation with Honor Hold increased.") == nil
+                and A._ParseRepChat("You are now Friendly with Honor Hold.") == nil
+                and A._ParseRepChat("Reputation with Nobody increased by 5.") == nil,
+                "R9: chat: no amount, a rank-up line, a name that is no faction")
+            local joined = table.concat(A.StatusLines(), "\n")
+            CHECK(joined:find("Reputation seen in game: 6 quests, 7 samples (", 1, true),
+                "R9: status counts what was seen and what was set aside", joined)
+            -- a locale that puts the number first, and the data's name for it
+            RepFresh(function(w) w.locale = "deDE" end)
+            local english = FACTION_STANDING_INCREASED
+            FACTION_STANDING_INCREASED = "%2$d Ruf mehr bei %1$s."
+            factionId, delta = A._ParseRepChat("137 Ruf mehr bei Die Sha'tar.")
+            CHECK(factionId == 935 and delta == 137, "R9: chat: the number first, the faction by this locale's name")
+            FACTION_STANDING_INCREASED = english
+        end
+
+        -- -------------------------------------------------------------------
+        -- R10. The guards: no rules, a raising engine
+        -- -------------------------------------------------------------------
+        do
+            RepFresh()
+            Indexed()
+            local standing = Q.Standing
+            Q.Standing = nil
+            local effects, why = A.RepEffects(9355)
+            CHECK(effects == nil and why == "NO_RULES" and A.RepLine(9355) == nil,
+                "R10: without the rules engine there is no number, quietly", why)
+            local view, err = A.FactionView(946)
+            CHECK(view == nil and err == "NO_RULES" and #A.FactionMenu() == 0 and #A.ZoneRepTotals(3483) == 0,
+                "R10: ...no faction view, no picker, no totals", err)
+            local detail = A.QuestDetail(9355)
+            CHECK(detail and detail.repEffects == nil and detail.repLine == nil and #detail.repRewards == 1,
+                "R10: the detail carries Questie's raw rows alone")
+            CHECK(A.ZoneView(3483) ~= nil and A.Character().repPct == nil, "R10: zone views and the character as before")
+            local joined = table.concat(A.StatusLines(), "\n")
+            CHECK(joined:find("Reputation rules: the rules engine did not load", 1, true), "R10: status says why", joined)
+            Q.Standing = standing
+            local data = CommanderQuestLogReputationData
+            CommanderQuestLogReputationData = nil
+            joined = table.concat(A.StatusLines(), "\n")
+            CHECK(joined:find("Reputation rules: the reputation data did not load", 1, true) and A.RepLine(9355) == nil,
+                "R10: ...or the data")
+            CommanderQuestLogReputationData = data
+            CHECK(A._LastError() == nil, "R10: missing rules are not an error", A._LastError())
+            local project = standing.Project
+            standing.Project = function() error("projection broke") end
+            A.Bump("test")
+            Advance(300)
+            view, err = A.FactionView(946)
+            CHECK(view == nil and err == "ADAPTER_ERROR" and (A._LastError() or ""):find("FactionView", 1, true),
+                "R10: a raising engine costs the view, never a Lua error; the error is kept for /cql status", A._LastError())
+            standing.Project = project
+            local effectsFn = standing.Effects
+            standing.Effects = function() error("effects broke") end
+            A.Bump("test")
+            Advance(300)
+            CHECK(A.RepEffects(9355) == nil and A.RepLine(9355) == nil, "R10: ...nor the number")
+            local zone = A.ZoneView(3483)
+            CHECK(zone ~= nil and (A._LastError() or ""):find("reputation effects", 1, true),
+                "R10: ...and the zone view is still built", A._LastError())
+            standing.Effects = effectsFn
+            CHECK(#caughtErrors == 0, "R10: nothing reached the error handler", caughtErrors[1])
+        end
+
+        -- -------------------------------------------------------------------
+        -- R11. /cql status
+        -- -------------------------------------------------------------------
+        do
+            RepFresh()
+            local joined = table.concat(A.StatusLines(), "\n")
+            CHECK(joined:find("Reputation rules: loaded (data for 2.5.6.69795)", 1, true), "R11: the rules", joined)
+            CHECK(joined:find("Faction index: not read yet", 1, true), "R11: the index, not read yet")
+            CHECK(joined:find("Reputation multiplier: 110% (Diplomacy)", 1, true), "R11: the multiplier and why")
+            CHECK(joined:find("Reputation seen in game: 0 quests, 0 samples", 1, true), "R11: the calibration count")
+            CHECK(joined:find("Cached: 0 faction views, 0 faction summaries", 1, true), "R11: the faction cache")
+            CHECK(joined:find("Wanted dailies today: normal Wanted: Coilfang Myrmidons, heroic not known yet", 1, true),
+                "R11: today's Wanted dailies")
+            Indexed()
+            A.FactionView(946)
+            local index = A._FactionIndex()
+            local lines = A.StatusLines()
+            joined = table.concat(lines, "\n")
+            CHECK(joined:find(string.format("Faction index: complete (%d quests read, %d pay reputation, %d factions)",
+                index.quests or -1, index.paying or -1, index.factions or -1), 1, true), "R11: the index, complete", joined)
+            CHECK(joined:find("Cached: 1 faction view, 1 faction summary", 1, true), "R11: one of each")
+            local clean = true
+            for _, line in ipairs(lines) do if not GlyphFree(line) then clean = false end end
+            CHECK(clean, "R11: no shape glyph in a status line")
+        end
+
+        -- -------------------------------------------------------------------
+        -- R12. The same number on every surface
+        -- -------------------------------------------------------------------
+        do
+            RepFresh()
+            Indexed()
+            ordersLog.available, ordersLog.why = true, nil
+            CommanderOrders = FakeOrders()
+            local bad, quests = {}, 0
+            for _, areaId in ipairs({ 3483, 3703, 3519, 3518, 3521, 3520, 12, 47, 33 }) do
+                local view = A.ZoneView(areaId)
+                for _, entry in ipairs(view and view.entries or {}) do
+                    local questId = entry.id
+                    local line = A.RepLine(questId)
+                    quests = quests + 1
+                    if not (line and rawequal(entry.fact.repEffects, A.RepEffects(questId))) then
+                        bad[#bad + 1] = "zone:" .. questId
+                    end
+                    local detail = A.QuestDetail(questId, areaId)
+                    if not (detail and detail.repLine == line) then bad[#bad + 1] = "detail:" .. questId end
+                    A.Waypoint({ title = "x", areaId = areaId, x = 50, y = 50, questId = questId })
+                    if ordersLog.adds[#ordersLog.adds].note ~= line then bad[#bad + 1] = "waypoint:" .. questId end
+                end
+            end
+            for _, factionId in ipairs({ 946, 932, 935, 933, 1015, 970, 978, 942, 1011, 47, 72, 577, 87 }) do
+                local view = A.FactionView(factionId)
+                for _, entry in ipairs(view and view.entries or {}) do
+                    local effect = RepR.For(A.RepEffects(entry.id), factionId)
+                    quests = quests + 1
+                    if not (entry.repEffect and effect and entry.repEffect.delta == effect.delta
+                        and entry.repEffect.kind == effect.kind) then
+                        bad[#bad + 1] = "faction:" .. factionId .. ":" .. entry.id
+                    end
+                    local detail = A.QuestDetail(entry.id, factionId, "FACTION")
+                    if not (detail and detail.repLine == A.RepLine(entry.id)) then
+                        bad[#bad + 1] = "faction detail:" .. factionId .. ":" .. entry.id
+                    end
+                end
+            end
+            CHECK(#bad == 0 and quests > 60,
+                "R12: every surface shows the same number for the same quest (zone rows, the detail, waypoint notes, faction rows)",
+                #bad > 0 and table.concat(bad, ",") or quests)
+            CommanderOrders = nil
+            CHECK(A._LastError() == nil, "R12: no adapter error across the section", A._LastError())
+        end
+
+        -- -------------------------------------------------------------------
+        -- R13. The 2026-10-04 review: what a zone's totals say, mixed
+        --      calibration moves, today's Wanted pick across a reset, the
+        --      waypoint's note, and income at the cap
+        -- -------------------------------------------------------------------
+        do
+            local R = RepR
+            -- the Sha'tar's window shut (Honored): the zone's spill share is
+            -- what the window LANDS -- nothing -- not every source's sum
+            RepFresh(function(w) w.reps[935] = 9500 end)
+            local shatar = Find(A.ZoneRepTotals(3703), "factionId", 935) or {}
+            local window = shatar.projection and shatar.projection.spillWindow
+            CHECK(window and window.landed == 0 and shatar.viaSpill == 0 and shatar.remainingOnce == 550,
+                "R13: the window shut: no spill share in the zone's totals (was +329 that never lands)",
+                tostring(shatar.viaSpill) .. "/" .. tostring(window and window.landed))
+
+            -- unpledged: both pledges open, one exclusive choice that is
+            -- each faction's own to make
+            RepFresh(function(w)
+                w.complete[10551] = nil
+                w.reps[932], w.reps[934] = 0, 0
+            end)
+            local totals = A.ZoneRepTotals(3703)
+            local scryers, aldor = Find(totals, "factionId", 934), Find(totals, "factionId", 932)
+            CHECK(A.ZoneView(3703).byId[10552].counted == false and A.ZoneView(3703).byId[10552].choiceOf == 2,
+                "R13: the zone counts one pledge of the two (the Aldor's, the lower id)")
+            CHECK(scryers and scryers.remainingOnce == 3850 and scryers.leftCount == 1,
+                "R13: ...yet the Scryers' own pledge counts for the Scryers (+3,850; it was missing)",
+                scryers and scryers.remainingOnce)
+            CHECK(aldor and aldor.leftCount == 3 and aldor.remainingOnce == 4510,
+                "R13: ...and the Aldor's for the Aldor (3,850 + 275 + 385)", aldor and aldor.remainingOnce)
+
+            -- a Scryers quest open beside the Aldor's: the Sha'tar's window
+            -- takes ONE side, and the zone's spill share is that side's
+            RepFresh(function(w)
+                w.quests[91023] = { name = "A Scryer's Errand", questLevel = 65, requiredLevel = 60, zoneOrSort = 3703,
+                    startedBy = { { 21002 } }, finishedBy = { { 21002 } }, reputationReward = { { 934, 500 } } }
+            end)
+            shatar = Find(A.ZoneRepTotals(3703), "factionId", 935) or {}
+            window = shatar.projection and shatar.projection.spillWindow
+            CHECK(window and window.source == 932 and window.landed == 329 and shatar.viaSpill == 329
+                and shatar.remainingOnce == 879,
+                "R13: the spill share is the Aldor's +329 that lands, not +604 with the Scryers' added",
+                tostring(shatar.viaSpill))
+
+            -- a dungeon quest starting here pays as much as any; a LOCKED
+            -- Wanted daily is no headline; done and left read one set
+            RepFresh(function(w)
+                w.zones[3563] = { name = "Hellfire Citadel", category = 9 }
+                w.quests[91020] = { name = "Weaken the Ramparts", questLevel = 62, requiredLevel = 59, zoneOrSort = 3563,
+                    startedBy = { { 21006 } }, finishedBy = { { 21006 } }, reputationReward = { { 946, 350 } } }
+                for _, id in ipairs({ 11354, 11362, 11363, 11364 }) do w.quests[id].state = "LEVEL_TOO_LOW" end
+            end)
+            local ramparts = A.ZoneView(3483) and A.ZoneView(3483).byId[91020]
+            CHECK(ramparts and ramparts.layer == "EXTRA" and ramparts.counted == false,
+                "R13: the dungeon quest is listed here, outside the zone's 100%")
+            totals = A.ZoneRepTotals(3483)
+            local hh, cons = Find(totals, "factionId", 946) or {}, Find(totals, "factionId", 933) or {}
+            CHECK(hh.remainingOnce == 770 and hh.leftCount == 3 and hh.extraCount == 1 and hh.extraLeft == 385
+                and hh.reach == 4770,
+                "R13: ...and its reputation is in the zone's (+385 of +770), as the Reputations tab counts it",
+                hh.remainingOnce)
+            CHECK(#hh.repeatables == 5 and hh.repeatablesPerTurnIn == 165 and hh.steadyCount == 1
+                and hh.steadyPerTurnIn == 165 and hh.rotatingCount == 4,
+                "R13: four locked Wanted dailies: the best turn-in open now is +165, not their +385",
+                hh.repeatablesPerTurnIn)
+            local flagged = Find(hh.repeatables, "questId", 11354)
+            CHECK(flagged and flagged.rotating == "HEROIC" and flagged.open == false and flagged.daily == true,
+                "R13: each repeatable says whether it rotates and whether it is open")
+            CHECK(cons.repeatablesPerTurnIn == 385 and cons.rotatingCount == 4 and cons.steadyCount == 0,
+                "R13: nothing open at all: the best of them still answers")
+            CommanderQuestLogChar.Ignored[10937] = true
+            CommanderQuestLogChar.Ignored[9355] = true
+            A.Bump("settings")
+            Advance(300)
+            hh = Find(A.ZoneRepTotals(3483), "factionId", 946) or {}
+            CHECK(hh.doneCount == 0 and hh.doneOnce == 0 and hh.leftCount == 2 and hh.remainingOnce == 495,
+                "R13: an ignored quest is out of both done and left", hh.doneCount)
+
+            -- at the cap: every per-turn-in figure is what the row shows (0)
+            RepFresh(function(w) w.reps[946] = 42999 end)
+            Indexed()
+            hh = Find(A.ZoneRepTotals(3483), "factionId", 946) or {}
+            local fortifications = R.For(A.RepEffects(10106) or {}, 946)
+            CHECK(fortifications and fortifications.delta == 0 and hh.repeatablesPerTurnIn == 0,
+                "R13: Exalted 999: the zone's best turn-in is 0, the 0 its row shows", hh.repeatablesPerTurnIn)
+            local view = A.FactionView(946)
+            CHECK(view and view.rep.dailies and view.rep.dailies.perDay == 0,
+                "R13: ...and a day's dailies are worth nothing more", view and view.rep.dailies and view.rep.dailies.perDay)
+
+            -- quests behind a standing only repeatables reach: counted apart
+            RepFresh(function(w)
+                w.quests[91021] = { name = "Spore Errand", questLevel = 63, requiredLevel = 61, zoneOrSort = 3521,
+                    startedBy = { { 21008 } }, finishedBy = { { 21008 } }, reputationReward = { { 970, 750 } },
+                    requiredMinRep = { 970, 0 }, state = "MISSING_REPUTATION" }
+            end)
+            local spore = Find(A.ZoneRepTotals(3521), "factionId", 970) or {}
+            CHECK(spore.unreachedCount == 1 and spore.reach == -1675 and spore.repeatReach and spore.repeatReach >= 0,
+                "R13: Sporeggar: one quest waits on Neutral; More Spore Sacs carry it there",
+                tostring(spore.unreachedCount) .. "/" .. tostring(spore.repeatReach))
+        end
+
+        -- a move several of one quest's rows made: never a sample
+        do
+            local fakeR = RepFresh(function(w)
+                w.quests[91022] = { name = "A Capital Errand", questLevel = 20, requiredLevel = 15, zoneOrSort = 12,
+                    startedBy = { { 21011 } }, finishedBy = { { 21011 } }, reputationReward = { { 72, 250 }, { 47, 250 } } }
+            end)
+            local before = Line(91022)
+            CHECK(before == "+343 Ironforge  +343 Stormwind  +136 Gnomeregan Exiles  +136 Darnassus  +136 Exodar",
+                "R13: Stormwind and Ironforge each pay 275 and spill a quarter into the other", before)
+            -- what an older build stored after one exact turn-in
+            CommanderQuestLogChar.RepObserved = { [91022] = {
+                [72] = { raw = 312, kind = "DIRECT", n = 1 }, [47] = { raw = 312, kind = "DIRECT", n = 1 },
+                [54] = { raw = 124, kind = "SPILL", n = 1 }, [69] = { raw = 124, kind = "SPILL", n = 1 },
+                [930] = { raw = 124, kind = "SPILL", n = 1 } } }
+            A.Bump("calibration")
+            Advance(300)
+            CHECK(Line(91022) == before, "R13: samples of mixed moves are never read (they doubled the line)", Line(91022))
+            fakeR.SetRep(72, 9343)
+            fakeR.SetRep(47, 3443)
+            fakeR.SetRep(54, 3236)
+            fakeR.SetRep(69, 3236)
+            fakeR.SetRep(930, 3136)
+            Fire("UPDATE_FACTION")
+            Frame()
+            Fire("QUEST_TURNED_IN", 91022, 0, 0)
+            fakeR.Complete(91022)
+            Advance(2500)
+            local observer = A._RepObserver()
+            CHECK(observer.why.mixed == 5 and CommanderQuestLogChar.RepObserved[91022] == nil,
+                "R13: the turn-in's five moves are set aside, and the old samples dropped", observer.why.mixed)
+            CHECK(Line(91022) == before, "R13: ...so the quest still reads its five numbers once", Line(91022))
+        end
+
+        -- today's Wanted pick across a daily reset in one session
+        do
+            local fakeR, world = RepFresh(function(w)
+                w.serverTime, w.questResetIn = 1000000, 3600
+                w.unavailableByTalking = { Testrealm = {} }
+            end)
+            fakeR.Complete(11354)
+            CHECK(A.RotatingToday().HEROIC == 11354, "R13: a Wanted daily done this session is today's")
+            -- the reset passes; Questie keeps its done list until a relog
+            world.serverTime, world.questResetIn = 1003610, 86390
+            fakeR.ResetDailies()
+            CHECK(A.RotatingToday().HEROIC == nil, "R13: after the reset yesterday's turn-in is no longer today's")
+            Fire("QUEST_TURNED_IN", 11362, 0, 0)
+            fakeR.Complete(11362)
+            CHECK(A.RotatingToday().HEROIC == 11362, "R13: one turned in since the reset is")
+            Advance(2500)
+        end
+
+        -- a waypoint's note follows the numbers while the waypoint lives
+        do
+            local fakeR = RepFresh()
+            ordersLog.available, ordersLog.why = true, nil
+            local api = FakeOrders()
+            local byUid, updates = {}, 0
+            local add = api.Add
+            api.Add = function(spec)
+                local uid = add(spec)
+                if uid then byUid[uid] = { uid = uid, source = spec.source, key = spec.key, note = spec.note } end
+                return uid, nil, "added"
+            end
+            api.List = function(filter)
+                local out = {}
+                for _, wp in pairs(byUid) do
+                    if not (filter and filter.source) or wp.source == filter.source then
+                        out[#out + 1] = { uid = wp.uid, source = wp.source, key = wp.key, note = wp.note }
+                    end
+                end
+                return out
+            end
+            api.Update = function(uid, fields)
+                local wp = byUid[uid]
+                if not wp then return nil, "unknown" end
+                updates = updates + 1
+                if fields.note ~= nil then wp.note = fields.note or nil end
+                return { uid = uid, note = wp.note }
+            end
+            CommanderOrders = api
+            A.Waypoint({ title = "A Job", areaId = 3483, x = 50, y = 50, questId = 9355 })
+            A.Waypoint({ title = "Drill", areaId = 3483, x = 50, y = 50, questId = 91002 })
+            A.Waypoint({ title = "Fortify", areaId = 3483, x = 50, y = 50, questId = 10106 })
+            local job, drill, fort
+            for _, wp in pairs(byUid) do
+                if wp.key == "quest:9355" then job = wp elseif wp.key == "quest:91002" then drill = wp else fort = wp end
+            end
+            CHECK(job and job.note == "+275 Honor Hold", "R13: a quest's waypoint is noted with what it pays", job and job.note)
+            drill.note = "my own words"
+            byUid[fort.uid] = nil
+            local adds = #ordersLog.adds
+            fakeR.SetAura(24705, true)
+            Fire("UNIT_AURA", "player")
+            Advance(1000)
+            CHECK(job.note == "+300 Honor Hold" and updates == 1,
+                "R13: the Wickerman taken: the note is written again (+300), through Update", job.note)
+            CHECK(drill.note == "my own words" and #ordersLog.adds == adds and byUid[fort.uid] == nil,
+                "R13: a note someone changed is left alone, a waypoint removed stays removed")
+            Fire("UNIT_AURA", "player")
+            Advance(1000)
+            A.Bump("test")
+            Advance(300)
+            CHECK(updates == 1, "R13: nothing moved, nothing written", updates)
+            fakeR.SetAura(24705, false)
+            CommanderOrders = nil
+            CHECK(A._LastError() == nil, "R13: no adapter error across the section", A._LastError())
+        end
+
+        -- -------------------------------------------------------------------
+        -- R14. The 2026-10-05 review: a spill window lands only what the
+        --      source's own gate lets be done (an unpledged character's
+        --      Shadowmoon read +1,574 for the Sha'tar from Scryers quests
+        --      that need Friendly with the Scryers)
+        -- -------------------------------------------------------------------
+        do
+            local function Shadowmoon(w)
+                local function Quest(name, rows, minRep, maxRep)
+                    return { name = name, questLevel = 70, requiredLevel = 67, zoneOrSort = 3520,
+                             startedBy = { { 21009 } }, finishedBy = { { 21009 } }, reputationReward = rows,
+                             requiredMinRep = minRep, requiredMaxRep = maxRep }
+                end
+                -- no stored Sha'tar half: the data drops those for the real ids only
+                w.quests[91020] = Quest("An Aldor Errand at Friendly", { { 932, 350 } }, { 932, 3000 })
+                w.quests[91021] = Quest("An Aldor Errand", { { 932, 250 } }, { 932, 0 })
+                w.quests[91022] = Quest("An Aldor Errand at Revered", { { 932, 500 } }, { 932, 21000 })
+                -- offered only below Neutral with the Aldor (Strained Supplies' shape)
+                w.quests[91024] = Quest("An Aldor Errand for the Hostile", { { 932, 250 } }, nil, { 932, 0 })
+                w.quests[91023] = Quest("A Sha'tar Errand", { { 935, 500 } }, nil)
+            end
+            RepFresh(function(w)
+                Shadowmoon(w)
+                w.reps[932], w.reps[934], w.reps[935] = 0, 0, 0
+                w.complete[10551], w.complete[10021] = nil, nil
+            end)
+            local totals = A.ZoneRepTotals(3520)
+            local shatar, aldor = Find(totals, "factionId", 935), Find(totals, "factionId", 932)
+            local spillOrder = shatar and shatar.projection.spillOrder or {}
+            CHECK(aldor and aldor.remainingOnce == 275 and aldor.unreachedCount == 2,
+                "R14: unpledged in Shadowmoon, the Aldor's quests here reach +275; two need a standing they never reach",
+                aldor and aldor.remainingOnce)
+            CHECK(shatar and shatar.viaSpill == 137 and shatar.remainingOnce == 687
+                and table.concat(spillOrder, ",") == "91021",
+                "R14: ...so the Sha'tar's window lands only the ungated quest's +137 (550 of its own, 687 in all)",
+                shatar and (shatar.viaSpill .. " " .. shatar.remainingOnce .. " " .. table.concat(spillOrder, ",")))
+            Indexed()
+            local view = A.FactionView(935)
+            local fv = view and view.rep and view.rep.projection or { spillOrder = {} }
+            CHECK(Contains(fv.spillOrder, 91020) and Contains(fv.spillOrder, 91021) and not Contains(fv.spillOrder, 91022),
+                "R14: the Sha'tar's own view: the pledge reaches Friendly, never Revered, so 91022 spills nothing",
+                table.concat(fv.spillOrder or {}, ","))
+            RepFresh(Shadowmoon)
+            totals = A.ZoneRepTotals(3520)
+            shatar = Find(totals, "factionId", 935)
+            spillOrder = shatar and shatar.projection.spillOrder or {}
+            CHECK(shatar and shatar.viaSpill == 329 and table.concat(spillOrder, ",") == "91021,91020",
+                "R14: pledged (the Aldor at 4,000), the Friendly quest spills too: +329; the Revered one and the one shut above Neutral do not",
+                shatar and (shatar.viaSpill .. " " .. table.concat(spillOrder, ",")))
+            CHECK(A._LastError() == nil, "R14: no adapter error", A._LastError())
+        end
+
+        -- Leave the rest of the run as it was
+        Q.Standing, CommanderQuestLogReputationData = nil, nil
+        Fake.UninstallRepClient()
+        CommanderOrders = nil
+        CommanderQuestLogDB = {}
+        CommanderQuestLogChar = { Ignored = {} }
+    end
 end
 
 -- ===========================================================================

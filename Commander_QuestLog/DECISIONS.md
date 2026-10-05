@@ -484,6 +484,9 @@ Guide cannot hide their rows. The new globals are few and named:
 children after its parent and will not work without one, and
 `CommanderQuestLogMapDrawer`, so `/dump` can reach the drawer. Window
 harness Q.
+*(1.6.0: the Zones tab's widgets are now built by the catalogue factory and
+the tabs are a register, D36; "the window shows one tab's widgets and hides
+the other's" becomes "every other tab's".)*
 
 **D31 — On the Zones tab, nothing selected means the zone.** The briefing
 with no selection is the zone's overview — the completion bar, the
@@ -607,6 +610,385 @@ parent maps stays on Dungeon maps. Adapter harness K and O, window harness Q, ma
 D and F, and the contract harness (questlog_orders_contract.lua) A-E, which runs
 the adapter against the real Orders: the dungeon giver getting its entrance,
 the nearest spawn winning, the route taken.
+
+**D36 — The Zones tab is one catalogue instance; the tabs are a register.**
+(1.6.0. Supersedes D30's two-tab wording; D30's reasons stand.) A second
+browser over Questie -- every quest of a faction -- was the Zones tab again
+over another set of ids, and threading a mode through it would have been
+exactly the mode-switch D30 turned down. So the generic three quarters of
+`CommanderQuestLogZones.lua` moved into `CommanderQuestLogCatalogue.lua` as a
+factory, `Q.NewCatalogue(spec)` (= `Q.Catalogue.New`): every call builds its
+own toolbar set, card, rows, briefing pools, actions and state, all on first
+use, and a spec says where its quests come from and how its card, overview,
+rows and briefing differ (the hooks are listed at the top of the file).
+`Q.Zones = Q.NewCatalogue(ZONE_SPEC)` keeps every name it had: its public
+functions, the `Zone*` keys, `S.areaId` / `S.areaName` (read-only aliases of
+the generic `S.key` / `S.keyName`) and the W field names. The window's tabs
+are a register, `Q.RegisterTab{ id, order, label, width, tooltip, IsEnabled,
+Refresh, HideAll, SearchText, SetSearch, EscapeSearch, NavTopInset,
+SearchTip, PrepareOpen }`, which each catalogue joins itself (as `Z.tab`); the
+Log registers too (order 10; the Zones tab 20, the Reputations tab 30). The
+26 places that knew "Log or Zones" now ask the register: `ViewMode` is a
+registered, enabled tab's id or the Log (an unknown or switched-off id opens
+the Log), `Q.Refresh` hides every tab but the one it draws, a quest link from
+any tab lands on the Log, the search box routes to the tab that is up, the
+buttons are placed by order and width, and `Q.OpenToTab(id, key, questId)`
+is the one way in from outside (`CommanderQuestLog_OpenToZone` is it with
+"ZONE"). The strip is hidden only when no tab but the Log is enabled, which
+generalises "Zones Tab off hides both tabs". Frame names follow one stem
+rule, because `UIDropDownMenuTemplate` names its children after its parent:
+an instance's two dropdowns are `CommanderQuestLog<prefix>GroupDrop` and
+`CommanderQuestLog<prefix>Menu` and its settings `<prefix>Filter`,
+`<prefix>Group`, `<prefix>Collapsed`, `<prefix>Follow`, `<prefix>Picked` --
+so the Zones tab keeps its two frames and the Reputations tab adds
+`CommanderQuestLogRepGroupDrop` and `CommanderQuestLogRepMenu`, the only new
+frame names. Every catalogue shares one adapter generation listener. The
+factory's body closes over 40 of Lua's 60 upvalues: a new shared helper
+belongs on `Q.Catalogue` (reached through `cat`), not in another file-level
+local. Window harness Q3; every other window check unedited.
+
+**D37 — One reputation number per quest, from our own rules; never
+Questie's.** (1.6.0.) The brief came from a player sweeping Hellfire for
+Honor Hold who found too late that some quests paid next to nothing, so
+every surface that shows a quest says what it pays this character NOW, and
+they must agree. The number comes from one place:
+`CommanderQuestLogStanding.lua` (`Q.Standing`), a pure engine over the
+generated data (D38) -- no client API, no Questie, its inputs handed in --
+through the adapter's `A.RepEffects` / `A.RepLine`, worked out once per quest
+per generation and shared read-only by every surface. Questie's
+`QuestieReputation.GetReputationReward` is never shown: it never rounds
+(+137.5), takes a Human's rival loss from the raw value (-275 where the
+server takes -302), has no reward clamp, boosts the stored Sha'tar row as if
+it were a reward and shows a Human +46200 for Ally of the Netherwing. The
+rules are the server's (CMaNGOS `CalculateReputationGain` and
+`SetReputation`) with the client's Faction.db2: every turn-in truncated
+toward zero on its own (a Human's 25-point mark is 27, never 27.5);
+Diplomacy (`UnitRace`'s race file "Human") and Invocation of the Wickerman
+(aura 24705) +10% each, added for a gain and taken away for a loss, read at
+the moment of asking and never stored (a change in the aura is a Bump); the
+doubled quest rate of Argent Dawn, the Cenarion Circle and Timbermaw Hold;
+the quest's reward clamp, then the 42,999 ceiling, THEN spillover from that
+clamped, boosted gain at the DB2 edge's own rate (a header passes at each
+child's rate, critic W4); the Aldor / Scryers loss is the -110% edge, not a
+stored row; the other side's factions are dropped, since an audited quest
+can pay Honor Hold AND Thrallmar (critic 3.9); no low-level penalty (CMaNGOS
+"2.0.1"; the rules flag `lowLevelQuestPenalty` stays for calibration).
+CMaNGOS's quirk is kept: any result, a loss too, is 0 once the standing is
+at the quest's clamp. A quest capped to nothing says "0 The Aldor (capped)",
+never "No reputation": the quest is worth nothing to you now, and that is
+the news. Standing smoke; adapter harness R1 and R12; the cross-surface
+check, rep-everywhere harness H.
+
+**D38 — The reputation data is generated, stored spillover is dropped, and
+a Wowhead correction must beat both databases.** (1.6.0.) No client API says
+what a quest pays (`GetQuestLogRewardFactionInfo` is not in the 2.5.6
+binary), so `Harness/make_reputations.py` writes
+`CommanderQuestLogReputationData.lua` -- the one new global, pure data --
+from the Faction DB2 for this build (bases, parents, spill rate and the
+highest rank a spill lands in; the same table per locale for names) and the
+CMaNGOS dump (the reward clamps, item costs, rotating givers), with the
+template-against-DB2 reconciliation recorded in the file and held to zero
+by its smoke. Questie's rows carry spillover written in as if it were a
+reward: the Sha'tar's half on 85 Aldor and Scryers quests, the Exodar's on
+4766 and the goblin towns' on 9266 / 9268 (those two exist only in Questie,
+so the generator carries them as a snapshot that `--questie` re-checks).
+These are `derived`, dropped and regenerated from the spill rules, which
+also gets the window and Diplomacy right; otherwise the Sha'tar is paid
+twice. An equal pair on a header's 100% edge (281: Alliance and Gnomeregan,
+7642: Alliance and Darnassus) is NOT marked: equality there proves nothing.
+The reward clamps are every RewMaxRepValue row (critic W1's fifteen quests)
+plus one written by hand, 10871 = 0, the Human copy of 10870 that CMaNGOS
+only has as a stub. Item costs are flat pair lists (80 turn-ins take more
+than one item) for every rep-paying repeatable and daily, classic ones too,
+because the picker lists classic factions by default. Overrides come from a
+Wowhead audit (190 quests) and every one cites its page; but Wowhead's /tbc/
+pages turned out to carry the Wrath value on a family of quests (Sporeggar
+750 -> 250, Mag'har and Kurenai halved, Hero of the Mag'har 2000 -> 1000,
+Mana-Tombs Wanted 350 -> 500), so a row is overridden only where Wowhead
+disagrees with BOTH databases AND a TBC-era source or plain arithmetic backs
+it. Five pass: 10871 (Netherwing 38182 = 42000 / 1.1, so Diplomacy lands a
+Human on exactly 0) and the four Hellfire Citadel Wanted dailies (Honor Hold
+and Thrallmar 350 / 350 / 350 / 250, which both databases lack; medium
+confidence, A44). An override is the quest's complete corrected row set; 0
+removes a row. **Widened 2026-10-04** (the lead's decision on the accuracy
+review, which matched the engine to an independent CMaNGOS-rules
+computation and found these quests differ only by data): where Wowhead
+(TBC) AND CMaNGOS agree against Questie, the override is written too. Nine
+quests, mostly classic rows that bake the capitals' quarter in and are then
+paid again as spillover: 4267, 5096, 6804, 7639, 7640, 7781, 7782, 10016
+(Timber Worg Tails, Terokkar: +547 to each Alliance capital became nothing)
+and 11211 (+698 to each Horde capital became Gadgetzan 10); each is the
+quest's whole row set, Questie's extra rows at 0, cited with a note. 7781 /
+7782 (The Lord of Blackrock, five 500 rows) compound -- each capital's 550
+plus four 137 spills, as the CMaNGOS server pays it -- and a mixed move is
+no sample (D40), so those two rest on the sources (A57). Fourteen overrides
+in all. The file is 31.6 KB against a ~20 KB guide (localized
+names 5 KB, behind `SHIP_NAMES`; classic item costs 6.5 KB), kept whole for
+now. Data smoke K5; standing smoke Q.
+
+**D39 — A faction not met is its starting standing, and an unknown standing
+has no word.** (1.6.0.) `GetFactionInfoByID` may answer nil for a faction
+the character has not met (A21, A39). Its standing is then its Faction.db2
+base for this race and class -- the first base row whose masks fit:
+Sporeggar -2500, Kurenai -1200, Mag'har -500, Netherwing -42000, the Aldor
+and the Scryers +-3500 for a Draenei or a Blood Elf, the other side's
+factions -42000 -- never "Neutral". `C.StandingWord(value, base)` reads the
+base when the value is unknown and answers nil with neither (it used to say
+"Neutral", critic W6); its one caller always has a number. The completion
+engine's `char.repValue` keeps its meaning (unknown never locks, D23) and
+`char.standing` is the new reading. The player's side is the client's
+`UnitFactionGroup`, else the data's vote (a -42000 base votes for the other
+side; the flags do not say it, critic W9). A name is the client's once met,
+else this locale's from the data (the 22 TBC factions, nine locales, only
+where they differ), else English; standing words are the client's
+`GetText("FACTION_STANDING_LABEL"..n, UnitSex("player"))`, English filling a
+gap. The picker lists every TBC faction met or not. Engine smoke O; standing
+smoke D and L; adapter harness R7.
+
+**D40 — What the game paid replaces the data, per character.** (1.6.0.)
+Both databases share a lineage, so the runtime is the tie-breaker. A rolling
+snapshot of all 75 standing-slot factions is read once in every frame where
+UPDATE_FACTION fires and diffed; the chat line (patterns built from the
+client's own `FACTION_STANDING_INCREASED` / `_DECREASED` formats) is the
+second source. On CMaNGOS the moves arrive BEFORE `QUEST_TURNED_IN`, so a
+turn-in's window runs both ways, one second before and two after. Moves are
+matched to the factions the quest may move (its rows and the spill targets
+of its direct rows) and stored in `CommanderQuestLogChar.RepObserved` as the
+listed value that reproduces the move -- normalised by the multiplier of
+the moment (a direct move by 100 +- mods and the quest rate, a spill by the
+multiplier alone), so a sample taken under the Wickerman reads right
+without it. Thrown out: a move that hit the ceiling, the bottom, a reward
+clamp or a spill window's top; a faction another turn-in in the window also
+names, or that moved twice (a kill and the quest); a spill share whose
+source gain was clamped; a turn-in where nothing moved; and (2026-10-04
+review) a MIXED move, which several of the quest's own direct rows made
+between them -- a direct faction another of its rows spills into (Orgrimmar
+on Cutting Teeth, which pays the Darkspear Trolls too) or a spill target two
+of them feed (the Undercity): such a sample is a sum, and read back as one
+faction's value it was paid again on every share, doubling 123 quests
+(most of Durotar and Dun Morogh, the Exodar and Silvermoon pairs) after a
+single turn-in. `R.MixedSources` names them, the adapter sets them aside
+("mixed") and drops any an older build kept, and `R.Effects` never reads
+one; a spill reads only a share stored as a spill (`R.ObservedFor` is the
+reading for a faction's own value). A wrong sample would
+override the data, a lost one costs nothing. A direct row whose faction is
+met and uncapped, and did not move while the turn-in's other moves were
+seen, is a sample of 0: "this quest paid nothing" is exactly what the brief
+asked to know. A sample overrides the data for display ("seen in game"); a
+faction seen moving that no rule names is shown as seen. Restore Defaults
+never touches the samples; a value there that is not a table is dropped at
+load. Standing smoke P; adapter harness R9.
+
+**D41 — "Can quests alone get me there" is an ordered, capped simulation.**
+(1.6.0.) A sum overstates it. Several quests are offered only BELOW a
+standing (the Consortium's crystal and ivory quests under 3000, Sporeggar's
+under Friendly, Cenarion Expedition 9784 under 8999), the Sha'tar takes the
+Aldor's and the Scryers' spillover only while it is Friendly or below, and an
+exclusive choice counts once. So `R.Project` simulates the best order: the
+spill window first while it is open, each closing quest slotted in just
+before the step that would shut it; then the closing quests still open,
+soonest first; then the rest; every turn-in truncated and clamped on its
+own. A reward clamp below the ceiling (Ally of the Netherwing pays up to
+exactly 0) is ordered like a gate but never locked out; the Aldor and the
+Scryers as sources are one choice, the better simulated (an exclusive slot
+among the spilling quests -- the two pledges -- is settled inside each
+choice, so the Scryers' side is weighed with the Scryers' pledge). A
+source's quest spills only if the source's own climb gets it done: the
+adapter projects the source over the same quests first (the zone's, or
+every quest a faction view lists that pays it) and drops from the window
+each quest that projection leaves unreached or locks out, so an unpledged
+character's Shadowmoon no longer reads +1,574 for the Sha'tar from Scryers
+quests that need Friendly with the Scryers (2026-10-05 review; on the
+Zones tab that is "quests here alone", as the source's own line says).
+The Sha'tar's
+spill stops at 8,999, the top of Friendly ("capTop"): the DB2 says
+spillover lands only up to Friendly, and CMaNGOS itself clamps every
+Sha'tar row of the mark turn-ins at 8999 (critic W1); the rules' "mangos"
+setting lets the last spill overshoot, for calibration (A41). Repeatables
+come after the once-only quests (`repeatReach`), never interleaved, so a
+ladder whose one-time quests wait on ranks only dailies reach (Netherwing)
+reads short on "quests alone". Sporeggar's quests behind Neutral, which
+plain repeatables (More Spore Sacs) reach, are no different: the zone
+totals hand the zone's non-daily repeatables in too, so `repeatReach` and
+`unreachedCount` let the overview say "N wait on a standing" rather than
+"0 left in N" (2026-10-04 review; interleaving them would make "quests
+alone" untrue on the Reputations tab). The projection also reports what
+each quest paid in its order (`gains`). The order gives the hints "Do "A Head Full
+of Ivory" before Friendly". Done quests' worth is an estimate: a standing
+mixes quests, kills and items. Greedy, not exhaustive: exact for the gate
+shapes TBC has. Standing smoke O; adapter harness R3, R6 and R14.
+
+**D42 — Rotating dailies are never income; Halaa is a condition.** (1.6.0.)
+The Wanted dailies are one normal (Nether-Stalker Mah'duun) and one heroic
+(Wind Trader Zhareem) a day, read from the two givers in the dump (8 and
+16). Today's is the one in the log or done today, else the one candidate
+Questie's own record of what the NPCs did NOT offer leaves
+(`Questie.db.global.unavailableQuestsDeterminedByTalking[realm]`, read,
+never written, never kept); quests Questie holds back (the Magisters' Terrace
+pair) are never candidates. A pool is summed only when today's is known, and
+the day's total is held to `GetMaxDailyQuests()` (25). In Defense of Halaa
+and Enemies, Old and New are listed as "only while your side holds Halaa",
+not counted. "Done today" (2026-10-04 review): Questie rebuilds its done list
+at login and never clears it at the reset (only its "not offered" record),
+so a rotating daily done counts as today's only when the session began
+after the last reset (`GetServerTime` + `GetQuestResetTime`) or the adapter
+saw the turn-in since; otherwise yesterday's Wanted would be named today's
+in a session that ran through the reset. A client that cannot say when the
+reset was keeps the plain reading. Income is what a turn-in pays from the
+standing now (`R.DailyIncome` opts.value: the row's clamp and the ceiling,
+the day's total held to the room left), so at Exalted 999 a daily is worth
+the 0 its row shows, not +165. Standing smoke N; adapter harness R8 and R13.
+
+**D43 — The Reputations tab.** (1.6.0.) A catalogue (D36), id REP, prefix
+"Rep", over `A.FactionView`: the engine's view of every quest that pays the
+faction plus `view.rep`, on a cache of its own (two views by generation)
+because faction ids collide with area ids (47 is Ironforge and The
+Hinterlands); a quest's detail is read by kind ("FACTION"), and Show on Map
+opens the zone the quest starts in, so a faction id never reaches anything
+zone-keyed. The faction index (every quest's rows, about 6,700 reads) is
+read the first time a faction is asked about, 400 quests a frame, never at
+login. Membership is a DIRECT row after `derived` and the overrides; a quest
+that reaches the faction only by spillover is summed in the overview, not
+listed -- except the Sha'tar's window on the Aldor and Scryers quests,
+listed in its own "Via Aldor/Scryers (until Honored)" group and never
+counted. Following is the faction on the reputation bar
+(`C_Reputation.GetWatchedFactionData`; `GetWatchedFactionInfo` is not in the
+2.5.6 binary), else the faction the log's quests pay most, else the pin;
+only a faction the tab can show (in the data, not a heading, not the other
+side's, which is refused). `RepPicked` is account-wide like every key, so a
+pin of the other side's faction is an alt's: it is passed over (the card
+asks for a pick, the navigator names whose pin it was), never shown as a
+dead end this character could not have chosen. The Guide is the engine's retold for a faction:
+Turn in, In progress, **Will lock soon**, Pick up now (most rep first),
+Unlocks with level, After another quest, Needs reputation or skill, Done,
+then the uncounted tail with Repeatable sources and Dailies apart. Will lock
+soon sits AHEAD of Pick up now -- the SPEC put it after the locks -- because
+the climb shuts those quests and the Guide is the to-do order (one line to
+swap back). By zone heads by Questie's own quest-log heading; By value by
+what each pays now. A row's badge is the engine's effect on THIS faction;
+a 0 is faint and dims its title ("0 capped" when a clamp did it): every
+quest listed here pays the faction, so one that pays nothing now is the
+news. (The Zones tab never dims for it, D44: there a dim title means "not
+counted".) The card's second line is short
+(one 280 px line, cut short rather than wrapped onto the navigator -- the
+catalogue's card note never wraps): how much is left and where it reaches,
+and "pinned" only when pinned; its tooltip says it in full. The picker says
+what its number counts ("Honor Hold  Honored  ·  31/49 done", the once-only
+quests): a bare percentage beside the standing word read as progress
+through the standing. A quest's REPUTATION section is the Zones tab's own
+painter (`Z.PaintReputation`, this faction in the strong ink), so one quest
+reads the same in the same words on both tabs, and on this tab it comes
+straight under the quest's reason with AS A SOURCE / WILL LOCK SOON
+(`reputationFirst`): a 22-quest chain put them out of the pane. An item
+cost is "Mark of Kil'jaeden x10 a turn-in" (an item's name is never
+pluralised by hand). A Wanted pool whose pick is not known says how many of
+the rotation pay this faction, "on a day one of them is offered" -- the
+engine's count is this faction's share, not the rotation's size, and "one
+of 1 a day" promised Honor Hold a Wanted daily every day; with every pool
+unknown and no steady daily the section reads "Nothing to count on yet",
+not "None you can do today". At the ceiling (Exalted 999 / 1,000, the
+engine's `R.CAP`, where it holds every gain to 0) DAILIES is one line,
+"Exalted 999 / 1,000: dailies pay nothing more.", and QUESTS "N quests left,
+none pays anything more": "up to 0", "worth 0" and a Wanted pick blamed for
+a day that pays nothing whatever is offered were the alternative; below it,
+open dailies a reward clamp holds to 0 say so in words (2026-10-05 review,
+second round). The CHAIN heading says what it counts, "CHAIN (quests that
+pay Honor Hold)" (the catalogue's `chainLabel`): the faction view holds only
+the quests that pay it, so its chains break at a step that pays nothing and
+"18 of 22" is not the Zones tab's "22 of 31" for the same quest. Drawing the
+zone view's whole chain here, the 0-rep steps faint, is the fuller fix,
+left for when a player asks for it. A faction whose every quest a later phase
+holds back says so in the navigator rather than blaming the search. Watch Faction finds the faction's
+row by a read-only walk of `GetFactionInfo` and calls
+`SetWatchedFactionIndex`; it never calls `ExpandFactionHeader` (that would
+rewrite the player's pane) and says so when the faction is under a folded
+heading or not met. `/cql rep [name]`: the settings framework matches a
+subcommand on the whole line, so DB.lua wraps its slash handler to take
+"rep <name>" (any case, apostrophes optional, a prefix, an id) and passes
+every other line on. "N quests not in this phase yet" counts the hidden
+quests Questie's own phase list (`ContentPhases.BlacklistTbcQuestsByPhase`)
+holds back. Reputations harness.
+
+**D44 — Reputation on every surface, the quest giver's dialog included.**
+(1.6.0.) The Log's briefing gives "Reputation: +275 Honor Hold" (or "No
+reputation") as a reward line, under the facts when a quest has no rewards,
+looked up once per quest per generation (D2's discipline). A Zones row's
+badge is the biggest direct gain and the faction it is for ("+275 HH",
+"+550 CC": the catalogue's `RepTag`, the rules engine's abbreviation made
+unique over the zone's factions -- "+550" alone made Missing Missive, a
+Cenarion Circle quest, read as Hellfire's best Honor Hold one, the very
+surprise of the brief; held to 12 characters by `C.RepBadgeText`, the comma
+dropped and then the tag cut to four letters, "+1000 Scry", so the 64-px
+cap never eats the tag, A54), a faint "0"
+for none or capped -- and never dims the row, because on that tab a dim
+title means "not counted"; its tooltip and briefing carry every effect,
+with the stock raw-row section kept when the rules failed to load or
+Reputation on Every Quest is off (then the briefing is 1.5.0's, raw rows
+at the end; with a number to give, REPUTATION comes straight under the
+quest's reason). The zone's overview adds REPUTATION IN THIS ZONE straight
+under the zone's completion, before NEXT UP -- "can 100%-ing this zone get
+me there" is the question, and in Hellfire the chains alone fill the pane
+-- per faction: left (the quests the projection does, the dungeon quests'
+share named), done, whether it reaches the next standing and how far that
+leaves Exalted, what the spill window lands from "the Aldor's" quests,
+the quests waiting on a standing these quests never reach (never "0 left
+in 2 quests"), the steady repeatables and dailies at their best OPEN
+turn-in, the rotating Wanted ones apart ("on a day one is offered (one
+normal and one heroic a day in all)") and Halaa's with its condition, and
+the quests to do first. A faction at the ceiling (`R.CAP`, Exalted 999 /
+1,000) is one name on one line, "Exalted, nothing more to earn here: Honor
+Hold.", never "0 left in 13 quests" and "0 a turn-in" under a standing
+nobody can raise; between 42,000 and the ceiling the verdict is "Already
+Exalted.", as on the Reputations tab, never "Quests here reach Exalted";
+quests and repeatables a reward clamp holds to 0 are said in words ("none
+pays anything more"), never as a 0 (2026-10-05 review, second round). Every figure there is the projection's own (its
+order, unreached, spill window), never a raw sum. Worked out once per zone
+per generation, and the Zones tab gains a By reputation grouping. What those
+totals count (`A.ZoneRepTotals`, 2026-10-04 review): the zone's 100%, plus
+the dungeon quests that start here (the EXTRA layer, whatever Count Extras
+says: their reputation is as real, the Reputations tab counts them, and
+Hellfire's +2,255 Honor Hold in six of them was missing from "how far")
+and the other members of an undecided exclusive choice, because the
+choice is per faction (the Scryers' pledge is the Scryers' to make while
+the zone counts the Aldor's; a shared slot key keeps one per faction);
+never a missed, rival, ignored, optional or seasonal quest, and done and
+left read that one set. `extraLeft` / `extraCount` say how much of it is
+dungeon quests. The spill share (`viaSpill`) is what the projection's
+window LANDS from the one source it chose -- 0 once the Sha'tar is past
+Friendly -- not a sum over both rivals, and only from the source's quests
+its own projection here reaches (D41). Every per-turn-in figure is what a
+turn-in pays from the standing now (0 at the cap, as the row says); the
+best repeatable quoted is the best OPEN one (a level-70 Wanted heroic is
+no headline at 64), and each repeatable carries `rotating`,
+`conditional` and `open` for the overview to set the Wanted pools apart.
+The map
+drawer's rows and giver pins carry the line in their tooltips, and its rows
+a badge only when the map is maximized (the windowed drawer is 30 px
+narrower); Reputation on Zone Rows governs that badge too. A quest's
+waypoint carries the line as its Commander Orders note, set in `A.Waypoint`,
+the one place that calls Orders, and kept current: on each generation step
+every note the adapter wrote that Orders still holds unchanged is written
+again through Orders' `Update` when the words differ (the Wickerman, a cap,
+a sample) -- never re-added, so a waypoint the player removed stays
+removed, and never over a note someone else changed. The NPC's dialog gets a line under its
+rewards on the offer and the turn-in panels
+(`CommanderQuestLogQuestFrame.lua`): post-hooks only -- `hooksecurefunc` on
+`QuestInfo_Display` and `QuestInfo_ShowRewards`, `HookScript` OnHide on the
+two panels -- one plain nameless frame parented to the scroll child the
+dialog draws into, the dialog's own ink (`GetMaterialTextColors`), following
+the detail panel's fade, one faction a line under "Reputation:" when a
+quest moves several (275 px wraps a single line inside an effect, "+385" at
+one line's end and "Honor Hold" at the next one's start; the Log's wider
+pane keeps the one line, and "(seen in game)" heads those lines,
+"Reputation (seen in game):", rather than trailing the last one), and no field of any Blizzard frame written, so
+nothing can taint; the quest is `GetQuestID()`, else for a turn-in the one
+log quest with the dialog's title. "(seen in game)" marks a calibrated line
+on every full-line surface, never a badge. Show Reputation Everywhere,
+Reputation on Zone Rows and Reputation in the Quest Dialog are read as
+"~= false" and live, so a setting needs no Bump. Rep-everywhere harness
+(its section H is the SPEC's cross-surface check: four quests, eight
+surfaces, plain, under the Wickerman and calibrated), quest-dialog harness,
+map harness O; adapter harness R13 (the zone totals and the waypoint note).
 
 ## Assumptions worth re-checking in game
 

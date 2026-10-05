@@ -2,35 +2,23 @@
 --
 -- Loads the REAL shared framework (CommanderSettingsUI.lua, CommanderEvents.lua)
 -- and every Commander_QuestLog window file -- DB, Model, the completion engine,
--- the Questie adapter, the window and the Zones tab; not the map drawer, which
--- has its own harness -- under a permissive WoW mock, with a fake Questie
--- (fake_questie.lua) installed before any of them loads. Then it drives a
--- whole session against a MUTABLE quest log: scanning it, searching it,
--- folding zones shut, tracking and abandoning, and turning a quest in
--- underneath the window while it is open (A-P); then the Zones tab over the
--- fake Questie's Hellfire Peninsula (Q) and the review's fixes to it (Q2);
--- then a second load of the module with no Questie at all (R).
+-- the Questie adapter, the window, the catalogue and the Zones tab; not the
+-- map drawer, which has its own harness -- under a permissive WoW mock
+-- (questlog_mock.lua), with a fake Questie (fake_questie.lua) installed before
+-- any of them loads. Then it drives a whole session against a MUTABLE quest
+-- log: scanning it, searching it, folding zones shut, tracking and
+-- abandoning, and turning a quest in underneath the window while it is open
+-- (A-P); then the Zones tab over the fake Questie's Hellfire Peninsula (Q),
+-- the review's fixes to it (Q2), and the tab register with a second
+-- catalogue registered beside it (Q3); then a second load of the module with
+-- no Questie at all (R).
 --
 --   luajit questlog_harness.lua
 --
--- Mock notes worth keeping:
---   * The quest log is MUTABLE and its INDICES MOVE. That is the whole point:
---     every index bug this module can have is an index that went stale between
---     the row being drawn and the button being pressed, and a fixture whose
---     indices never move proves nothing.
---   * Show/Hide fire OnShow/OnHide, because the window does all its work in
---     OnShow and a mock that skipped it would test an empty frame -- and, as
---     in the client, Show on a frame that is already shown fires NOTHING. A
---     mock that fired OnShow every time hid a window left half-switched by
---     CommanderQuestLog_OpenToQuest.
---   * A button's normal and highlight font objects are recorded, and the
---     fonts carry their own colours, so a hover's font swap (which puts the
---     font's colour back over a label's ink) can be acted out.
---   * The vertical scroll offset of a ScrollFrame is kept, not a constant 0,
---     so "this tab opens at its top" is a real check.
---   * Widths and heights are tracked for real: the navigator advances its
---     layout by each row's height and sizes its progress bars off the pane, so
---     a mock that answered 0 to both would draw every row on top of the first.
+-- The mock's own notes -- why the log is mutable and its indices move, why
+-- Show fires OnShow only on a hidden frame, how a hover's font swap is acted
+-- out, why scroll offsets and sizes are kept -- are in questlog_mock.lua's
+-- header, with how a new harness file stands on it.
 
 local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]+$")) or "."
 if HERE:sub(1, 1) ~= "/" then
@@ -51,579 +39,54 @@ end
 
 -- ===========================================================================
 -- WoW mock
+--
+-- The client lives in Harness/questlog_mock.lua, so another harness file can
+-- stand on the same one (see its header). It is loaded first: it installs
+-- its globals as it loads. The sections below still read and assign the
+-- client's state through the bare names they always have -- `log`,
+-- `selection`, `watched`, `chatSent` and the rest -- because those are this
+-- file's locals, bound into the mock: the mock's GetQuestLogTitle reads this
+-- `log`, its SelectQuestLogEntry writes this `selection`.
 -- ===========================================================================
 
-local now = 1000
-function GetTime() return now end
-function time() return 1700000000 end
-date = os.date
+local mock = dofile(ADDONS .. "/Commander_QuestLog/Harness/questlog_mock.lua")
 
--- The two reset clocks. Server epoch 1700000000 is Tuesday 2023-11-14
--- 22:13:20 UTC; the server is a US realm on Pacific Standard Time, so
--- GetGameTime answers 14:13. The next daily reset is Wednesday 15:00 UTC,
--- 60400 seconds out, and the next Tuesday reset is six days after that.
-local clock = {
-    serverTime = 1700000000, gameHour = 14, gameMinute = 13, region = 1,
-    daily = 60400, apiWeekly = 60400 + 6 * 86400,
-    dailyDone = 3, dailyMax = 25,
-}
-function GetServerTime() return clock.serverTime end
-function GetGameTime() return clock.gameHour, clock.gameMinute end
-function GetCurrentRegion() return clock.region end
-function GetQuestResetTime() return clock.daily end
-function GetDailyQuestsCompleted() return clock.dailyDone end
-function GetMaxDailyQuests() return clock.dailyMax end
-C_DateAndTime = {
-    GetSecondsUntilWeeklyReset = function() return clock.apiWeekly end,
-    GetSecondsUntilDailyReset = function() return clock.daily end,
-}
-local savedInstances = {}
-local raidInfoRequests = 0
-function RequestRaidInfo() raidInfoRequests = raidInfoRequests + 1 end
-function GetNumSavedInstances() return #savedInstances end
-function GetSavedInstanceInfo(index)
-    local i = savedInstances[index]
-    if not i then return nil end
-    return i.name, 100 + index, i.reset, i.difficulty or 1, i.locked ~= false, i.extended or false,
-        0, i.isRaid ~= false, i.maxPlayers or 10, i.difficultyName or "Normal"
-end
-function GetBuildInfo() return "2.5.6", "69546", "Aug 28 2026", 20506 end
-
-local printLog = {}
-print = function(...)
-    local parts = {}
-    for i = 1, select("#", ...) do parts[#parts + 1] = tostring(select(i, ...)) end
-    printLog[#printLog + 1] = table.concat(parts, " ")
-end
-local function Logged(pattern)
-    for _, line in ipairs(printLog) do
-        if line:find(pattern, 1, true) then return line end
-    end
-    return nil
-end
-local function WipeLog() for i = #printLog, 1, -1 do printLog[i] = nil end end
-
-local caughtErrors = {}
-local errorHandler = function(err) caughtErrors[#caughtErrors + 1] = tostring(err) end
-function geterrorhandler() return errorHandler end
-function seterrorhandler(fn) errorHandler = fn end
-
-local eventRegistry = {}
-local NewWidget
-
-local NUMERIC_GETTERS = {
-    GetScale = 1, GetEffectiveScale = 1, GetFrameLevel = 2,
-    GetLeft = 0, GetBottom = 0, GetTop = 0, GetRight = 0,
-    GetVerticalScroll = 0, GetVerticalScrollRange = 0,
-    GetStringWidth = 40, GetStringHeight = 12,
-    GetID = 1, GetNumPoints = 1, NumLines = 0,
-}
-
-local METHOD_PREFIXES = {
-    "Set", "Enable", "Disable", "Register", "Unregister", "Clear",
-    "Start", "Stop", "Raise", "Lower", "Lock", "Play", "Add", "Highlight",
-    "Is", "Can", "Get", "Hook", "Create", "Update",
-}
-
-local function IsAutoMethod(key)
-    for _, prefix in ipairs(METHOD_PREFIXES) do
-        if key:sub(1, #prefix) == prefix then return true end
-    end
-    return false
-end
-
-local WidgetMT = {}
-local FireScript
-
-WidgetMT.__index = function(self, key)
-    if type(key) ~= "string" then return nil end
-    local fn
-    if key == "SetWidth" then fn = function(s, w) s.__w = w end
-    elseif key == "GetWidth" then fn = function(s) return s.__w or 0 end
-    elseif key == "SetHeight" then fn = function(s, h) s.__h = h end
-    elseif key == "GetHeight" then fn = function(s) return s.__h or 0 end
-    elseif key == "SetSize" then fn = function(s, w, h) s.__w, s.__h = w, h end
-    elseif key == "SetPoint" then
-        fn = function(s, point, rel, relPoint, x, y)
-            s.__points = s.__points or {}
-            s.__points[#s.__points + 1] = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
+local log, selection, watched, abandoned, pushed, abandonArmed = {}, 0, {}, {}, {}, nil
+local expandCalls, raidInfoRequests, inRaid, inParty = 0, 0, false, false
+local chatSent, popupsShown, hiddenPanels, savedInstances = {}, {}, {}, {}
+mock.Bind({ "log", "selection", "watched", "abandoned", "pushed", "abandonArmed", "expandCalls",
+    "raidInfoRequests", "inRaid", "inParty", "chatSent", "popupsShown", "hiddenPanels", "savedInstances" },
+    function(key)
+        if key == "log" then return log elseif key == "selection" then return selection
+        elseif key == "watched" then return watched elseif key == "abandoned" then return abandoned
+        elseif key == "pushed" then return pushed elseif key == "abandonArmed" then return abandonArmed
+        elseif key == "expandCalls" then return expandCalls elseif key == "raidInfoRequests" then return raidInfoRequests
+        elseif key == "inRaid" then return inRaid elseif key == "inParty" then return inParty
+        elseif key == "chatSent" then return chatSent elseif key == "popupsShown" then return popupsShown
+        elseif key == "hiddenPanels" then return hiddenPanels elseif key == "savedInstances" then return savedInstances
         end
-    elseif key == "GetPoint" then
-        fn = function(s)
-            local p = s.__points and s.__points[1]
-            if not p then return nil end
-            return p.point, p.rel, p.relPoint, p.x or 0, p.y or 0
-        end
-    elseif key == "ClearAllPoints" then fn = function(s) s.__points = {} end
-    elseif key == "SetText" then fn = function(s, text) s.__text = text end
-    elseif key == "GetText" then fn = function(s) return s.__text end
-    elseif key == "SetTextColor" or key == "SetColorTexture" or key == "SetVertexColor" then
-        fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
-    elseif key == "SetBackdropColor" then
-        fn = function(s, r, g, b, a) s.__backdropColor = { r, g, b, a } end
-    elseif key == "SetAlpha" then fn = function(s, a) s.__alpha = a end
-    elseif key == "GetAlpha" then fn = function(s) return s.__alpha or 1 end
-    elseif key == "Show" then
-        fn = function(s)
-            local was = s.__shown
-            s.__shown = true
-            if not was then FireScript(s, "OnShow") end
-        end
-    elseif key == "Hide" then
-        fn = function(s) s.__shown = false; FireScript(s, "OnHide") end
-    elseif key == "SetShown" then
-        fn = function(s, shown)
-            shown = not not shown
-            if s.__shown ~= shown then
-                s.__shown = shown
-                FireScript(s, shown and "OnShow" or "OnHide")
-            end
-        end
-    elseif key == "IsShown" or key == "IsVisible" then fn = function(s) return s.__shown end
-    -- Frame levels are tracked, so "this sits above that" is a real check
-    elseif key == "SetFrameLevel" then fn = function(s, level) s.__level = level end
-    elseif key == "SetWordWrap" then fn = function(s, on) s.__wordWrap = on end
-    elseif key == "SetVerticalScroll" then fn = function(s, offset) s.__vscroll = offset end
-    elseif key == "GetVerticalScroll" then fn = function(s) return s.__vscroll or 0 end
-    elseif key == "SetNormalFontObject" then fn = function(s, font) s.__normalFont = font end
-    elseif key == "SetHighlightFontObject" then fn = function(s, font) s.__highlightFont = font end
-    elseif key == "GetFrameLevel" then fn = function(s) return s.__level or 2 end
-    elseif key == "SetFocus" then fn = function(s) s.__focused = true end
-    elseif key == "ClearFocus" then fn = function(s) s.__focused = false end
-    elseif key == "HasFocus" then fn = function(s) return s.__focused == true end
-    elseif key == "SetEnabled" then fn = function(s, on) s.__enabled = not not on end
-    elseif key == "IsEnabled" then fn = function(s) return s.__enabled ~= false end
-    elseif key == "CreateTexture" then
-        fn = function(s, name, layer)
-            local t = NewWidget("Texture"); t.__parent = s; t.__layer = layer
-            s.__textures = s.__textures or {}
-            s.__textures[#s.__textures + 1] = t
-            return t
-        end
-    elseif key == "CreateFontString" then
-        fn = function(s, name, layer, template)
-            local t = NewWidget("FontString"); t.__parent = s; t.__template = template
-            s.__fontStrings = s.__fontStrings or {}
-            s.__fontStrings[#s.__fontStrings + 1] = t
-            return t
-        end
-    elseif key == "SetScript" or key == "HookScript" then
-        fn = function(s, name, handler)
-            if key == "HookScript" and s.__scripts[name] then
-                local previous = s.__scripts[name]
-                s.__scripts[name] = function(...) previous(...) handler(...) end
-            else
-                s.__scripts[name] = handler
-            end
-        end
-    elseif key == "GetScript" then fn = function(s, name) return s.__scripts[name] end
-    elseif key == "RegisterEvent" then
-        fn = function(s, event)
-            eventRegistry[event] = eventRegistry[event] or {}
-            table.insert(eventRegistry[event], s)
-        end
-    elseif key == "UnregisterEvent" then
-        fn = function(s, event)
-            local list = eventRegistry[event]
-            if list then
-                for i = #list, 1, -1 do if list[i] == s then table.remove(list, i) end end
-            end
-        end
-    elseif NUMERIC_GETTERS[key] ~= nil then
-        local v = NUMERIC_GETTERS[key]
-        fn = function() return v end
-    elseif IsAutoMethod(key) then
-        fn = function() end
-    end
-    if fn then rawset(self, key, fn) end
-    return fn
-end
-
-FireScript = function(widget, name, ...)
-    local handler = widget.__scripts and widget.__scripts[name]
-    if handler then handler(widget, ...) end
-end
-
-NewWidget = function(kind, name)
-    return setmetatable({ __kind = kind, __name = name, __scripts = {}, __shown = true }, WidgetMT)
-end
-
-local allFrames = {}
-function CreateFrame(frameType, name, parent, template)
-    local f = NewWidget(frameType, name)
-    f.__template = template
-    f.__parent = parent
-    if template and template:find("CheckButton") then f.Text = NewWidget("FontString") end
-    do
-        local fs = NewWidget("FontString")
-        f.GetFontString = function() return fs end
-    end
-    if template == "BasicFrameTemplateWithInset" then
-        f.TitleText = NewWidget("FontString")
-        f.CloseButton = NewWidget("Button")
-        f.Bg, f.TitleBg, f.Inset, f.NineSlice =
-            NewWidget("Texture"), NewWidget("Texture"), NewWidget("Frame"), NewWidget("Frame")
-    end
-    if name then _G[name] = f end
-    allFrames[#allFrames + 1] = f
-    return f
-end
-
-UIParent = NewWidget("Frame", "UIParent")
-GameTooltip = NewWidget("GameTooltip", "GameTooltip")
-GameTooltip.__lines = {}
-GameTooltip.SetOwner = function(self) self.__lines = {} end
-GameTooltip.SetText = function(self, text) self.__lines[#self.__lines + 1] = tostring(text) end
-GameTooltip.AddLine = function(self, text) self.__lines[#self.__lines + 1] = tostring(text) end
-GameTooltip.AddDoubleLine = function(self, left, right)
-    self.__lines[#self.__lines + 1] = tostring(left) .. "  " .. tostring(right)
-end
-UISpecialFrames = {}
-tinsert = table.insert
-wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
-unpack = unpack or table.unpack
-
-for _, name in ipairs({ "GameFontNormal", "GameFontNormalLarge", "GameFontNormalHuge",
-    "GameFontNormalSmall", "GameFontHighlight", "GameFontHighlightSmall",
-    "GameFontDisableSmall", "NumberFontNormal" }) do
-    _G[name] = NewWidget("Font", name)
-end
--- The fonts' own colours: what a font swap puts back over a label's ink
-GameFontNormalSmall.__fontColor = { 1, 0.82, 0 }
-GameFontDisableSmall.__fontColor = { 0.5, 0.5, 0.5 }
-GameFontHighlightSmall.__fontColor = { 1, 1, 1 }
--- A hover as the client acts it out on a Button with a highlight font: the
--- label takes the highlight font (and its colour), OnEnter runs; on leaving
--- it takes the normal font back (and THAT font's colour), OnLeave runs.
-local function HoverButton(button)
-    local fs = button:GetFontString()
-    local function Swap(font)
-        local c = font and font.__fontColor
-        if c then fs.__color = { c[1], c[2], c[3] } end
-    end
-    Swap(button.__highlightFont)
-    FireScript(button, "OnEnter")
-    Swap(button.__normalFont)
-    FireScript(button, "OnLeave")
-end
--- The same hover in two halves, so a check can look at the label WHILE the
--- pointer is on it
-local function HoverIn(button)
-    local fs = button:GetFontString()
-    local c = button.__highlightFont and button.__highlightFont.__fontColor
-    if c then fs.__color = { c[1], c[2], c[3] } end
-    FireScript(button, "OnEnter")
-end
-local function HoverOut(button)
-    local fs = button:GetFontString()
-    local c = button.__normalFont and button.__normalFont.__fontColor
-    if c then fs.__color = { c[1], c[2], c[3] } end
-    FireScript(button, "OnLeave")
-end
-BACKDROP_SLIDER_8_8 = {}
-YES, NO = "Yes", "No"
-
-RAID_CLASS_COLORS = { WARRIOR = { r = 0.78, g = 0.61, b = 0.43 } }
-function UnitClass() return "Warrior", "WARRIOR" end
-function UnitLevel() return 62 end
-function GetCursorPosition() return 0, 0 end
-function IsShiftKeyDown() return false end
-function IsControlKeyDown() return false end
-local inRaid, inParty, inGuild = false, false, true
-function IsInRaid() return inRaid end
-function IsInGroup() return inParty or inRaid end
-function IsInGuild() return inGuild end
-local chatSent = {}
-function SendChatMessage(text, channel) chatSent[#chatSent + 1] = { text = text, channel = channel } end
-function GetCoinTextureString(copper) return string.format("%dc", copper) end
-function ChatEdit_InsertLink() end
-function PlaySound() end
-SOUNDKIT = {}
-
-local categories = {}
-Settings = {
-    RegisterCanvasLayoutCategory = function(panel)
-        local cat = { __panel = panel, GetID = function() return #categories + 1 end }
-        categories[#categories + 1] = cat; return cat
     end,
-    RegisterCanvasLayoutSubcategory = function(parent, panel)
-        local cat = { __panel = panel, GetID = function() return #categories + 1 end }
-        categories[#categories + 1] = cat; return cat
-    end,
-    RegisterAddOnCategory = function() end,
-    OpenToCategory = function() end,
-}
-C_AddOns = { GetAddOnMetadata = function() return "1.0.0" end }
-
-local timers = {}
-C_Timer = {
-    After = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
-    NewTicker = function(interval, fn)
-        local t = { interval = interval, fn = fn }
-        t.Cancel = function(self) self.cancelled = true end
-        return t
-    end,
-}
-local function RunTimers(seconds)
-    now = now + (seconds or 1)
-    for _, t in ipairs(timers) do
-        if not t.done and t.at <= now then t.done = true; t.fn() end
-    end
-end
-
-function UIDropDownMenu_Initialize(dropdown, fn) dropdown.__init = fn end
-function UIDropDownMenu_CreateInfo() return {} end
-function UIDropDownMenu_AddButton() end
-function UIDropDownMenu_SetWidth() end
-function UIDropDownMenu_SetSelectedValue() end
-function UIDropDownMenu_SetText() end
-function UIDropDownMenu_EnableDropDown() end
-function UIDropDownMenu_DisableDropDown() end
-function ToggleDropDownMenu() end
-SlashCmdList = {}
-
-StaticPopupDialogs = {}
-local popupsShown = {}
-function StaticPopup_Show(which, arg1)
-    local dialog = { which = which, arg1 = arg1 }
-    popupsShown[#popupsShown + 1] = dialog
-    return dialog
-end
--- Presses Yes on the popup the way the player would
-local function AcceptPopup()
-    local dialog = popupsShown[#popupsShown]
-    if not dialog then return false end
-    local spec = StaticPopupDialogs[dialog.which]
-    if spec and spec.OnAccept then spec.OnAccept(dialog, dialog.data) end
-    return true
-end
-
--- ---------------------------------------------------------------------------
--- The quest log
---
--- A list of entries in log order, mutated by hand. Collapsing a header REMOVES
--- its quests from the index space exactly as the client does, which is the
--- behaviour the module's expand-first scan exists to survive.
--- ---------------------------------------------------------------------------
-
-local log = {}
-local selection = 0
-local watched = {}
-local watchLimit = 5
-local abandoned = {}
-local pushed = {}
-local abandonArmed = nil
-
-local function VisibleLog()
-    local out, hidden = {}, false
-    for _, entry in ipairs(log) do
-        if entry.isHeader then
-            out[#out + 1] = entry
-            hidden = entry.collapsed and true or false
-        elseif not hidden then
-            out[#out + 1] = entry
+    function(key, value)
+        if key == "log" then log = value elseif key == "selection" then selection = value
+        elseif key == "watched" then watched = value elseif key == "abandoned" then abandoned = value
+        elseif key == "pushed" then pushed = value elseif key == "abandonArmed" then abandonArmed = value
+        elseif key == "expandCalls" then expandCalls = value elseif key == "raidInfoRequests" then raidInfoRequests = value
+        elseif key == "inRaid" then inRaid = value elseif key == "inParty" then inParty = value
+        elseif key == "chatSent" then chatSent = value elseif key == "popupsShown" then popupsShown = value
+        elseif key == "hiddenPanels" then hiddenPanels = value elseif key == "savedInstances" then savedInstances = value
         end
-    end
-    return out
-end
+    end)
 
-function GetNumQuestLogEntries()
-    local visible = VisibleLog()
-    local quests = 0
-    for _, entry in ipairs(visible) do
-        if not entry.isHeader then quests = quests + 1 end
-    end
-    return #visible, quests
-end
-
-function GetQuestLogTitle(index)
-    local entry = VisibleLog()[index]
-    if not entry then return nil end
-    if entry.isHeader then
-        return entry.title, 0, nil, true, entry.collapsed and true or false, nil, nil, 0
-    end
-    return entry.title, entry.level, entry.group, false, false,
-        entry.isComplete, entry.frequency or 1, entry.questID
-end
-
--- The client's questID -> index, in the same (collapse-aware) index space:
--- 0 for a quest under a folded heading or not in the log at all
-function GetQuestLogIndexByID(questID)
-    for index, entry in ipairs(VisibleLog()) do
-        if not entry.isHeader and entry.questID == questID then return index end
-    end
-    return 0
-end
-
-local expandCalls = 0
-function ExpandQuestHeader(which)
-    expandCalls = expandCalls + 1
-    for _, entry in ipairs(log) do
-        if entry.isHeader then entry.collapsed = false end
-    end
-    -- The real client fires this off the back of the expand, which is exactly
-    -- the loop the module's guard exists for
-    _G.__Fire("QUEST_LOG_UPDATE")
-end
-
-function SelectQuestLogEntry(index) selection = index end
-function GetQuestLogSelection() return selection end
-
-local function SelectedQuest()
-    local entry = VisibleLog()[selection]
-    if entry and not entry.isHeader then return entry end
-    return nil
-end
-
-function GetNumQuestLeaderBoards(index)
-    local entry = VisibleLog()[index]
-    if not entry or entry.isHeader then return 0 end
-    return #(entry.objectives or {})
-end
-
-function GetQuestLogLeaderBoard(objective, index)
-    local entry = VisibleLog()[index]
-    if not entry or entry.isHeader then return nil end
-    local row = (entry.objectives or {})[objective]
-    if not row then return nil end
-    return row.text, row.kind or "monster", row.finished and true or false
-end
-
-function GetQuestLogQuestText()
-    local entry = SelectedQuest()
-    if not entry then return "", "" end
-    return entry.description or "", entry.objectivesText or ""
-end
-
-function GetQuestLogTimeLeft()
-    local entry = SelectedQuest()
-    return entry and entry.timeLeft or nil
-end
-
-function GetQuestLogPushable()
-    local entry = SelectedQuest()
-    return entry and entry.pushable ~= false
-end
-
-function GetQuestLogRewardMoney()
-    local entry = SelectedQuest()
-    return entry and entry.money or 0
-end
-
-function GetNumQuestLogChoices()
-    local entry = SelectedQuest()
-    return entry and #(entry.choices or {}) or 0
-end
-
-function GetQuestLogChoiceInfo(slot)
-    local entry = SelectedQuest()
-    local item = entry and (entry.choices or {})[slot]
-    if not item then return nil end
-    return item.name, item.texture, item.count or 1, item.quality or 1, item.usable ~= false
-end
-
-function GetNumQuestLogRewards()
-    local entry = SelectedQuest()
-    return entry and #(entry.rewards or {}) or 0
-end
-
-function GetQuestLogRewardInfo(slot)
-    local entry = SelectedQuest()
-    local item = entry and (entry.rewards or {})[slot]
-    if not item then return nil end
-    return item.name, item.texture, item.count or 1, item.quality or 1, item.usable ~= false
-end
-
-function GetQuestLogItemLink(kind, slot)
-    local entry = SelectedQuest()
-    if not entry then return nil end
-    local list = (kind == "choice") and entry.choices or entry.rewards
-    local item = list and list[slot]
-    return item and ("|cffffffff|Hitem:" .. (item.id or 1) .. "|h[" .. item.name .. "]|h|r") or nil
-end
-
-function GetQuestLogRewardSpell()
-    local entry = SelectedQuest()
-    if not entry or not entry.spell then return nil end
-    return "Interface\\Icons\\Spell", entry.spell
-end
-
-local function WatchKey(index)
-    local entry = VisibleLog()[index]
-    return entry and entry.title or nil
-end
-
-function IsQuestWatched(index)
-    local key = WatchKey(index)
-    return key and watched[key] and true or false
-end
-
-function AddQuestWatch(index)
-    local key = WatchKey(index)
-    if not key then return end
-    if GetNumQuestLeaderBoards(index) == 0 then return end
-    local count = 0
-    for _ in pairs(watched) do count = count + 1 end
-    if count >= watchLimit then return end   -- the era declines silently
-    watched[key] = true
-end
-
-function RemoveQuestWatch(index)
-    local key = WatchKey(index)
-    if key then watched[key] = nil end
-end
-
-function QuestWatch_Update() end
-
-function QuestLogPushQuery(index)
-    pushed[#pushed + 1] = WatchKey(index)
-end
-
-function SetAbandonQuest()
-    abandonArmed = SelectedQuest() and SelectedQuest().title or nil
-end
-
-function AbandonQuest()
-    if not abandonArmed then return end
-    for position, entry in ipairs(log) do
-        if entry.title == abandonArmed and not entry.isHeader then
-            table.remove(log, position)
-            abandoned[#abandoned + 1] = entry.title
-            break
-        end
-    end
-    abandonArmed = nil
-end
-
-QuestLogFrame = CreateFrame("Frame", "QuestLogFrame", UIParent)
-QuestLogFrame:Hide()
-local hiddenPanels = {}
-function HideUIPanel(panel)
-    hiddenPanels[#hiddenPanels + 1] = panel.__name or "?"
-    panel.__shown = false
-end
-function ShowUIPanel(panel) panel:Show() end
-function ToggleQuestLog()
-    if QuestLogFrame:IsShown() then HideUIPanel(QuestLogFrame) else ShowUIPanel(QuestLogFrame) end
-end
+local clock, printLog, caughtErrors, eventRegistry = mock.clock, mock.printLog, mock.caughtErrors, mock.eventRegistry
+local allFrames, categories, NewWidget = mock.allFrames, mock.categories, mock.NewWidget
+local Logged, WipeLog, RunTimers, AcceptPopup = mock.Logged, mock.WipeLog, mock.RunTimers, mock.AcceptPopup
+local HoverButton, HoverIn, HoverOut = mock.HoverButton, mock.HoverIn, mock.HoverOut
 
 -- ===========================================================================
 -- Load the framework and the module
 -- ===========================================================================
 
-local function Load(path) assert(loadfile(path))() end
-
-local function Fire(event, ...)
-    local list = eventRegistry[event]
-    if not list then return end
-    local snap = {}
-    for i, f in ipairs(list) do snap[i] = f end
-    for _, f in ipairs(snap) do
-        local handler = f.__scripts.OnEvent
-        if handler then handler(f, event, ...) end
-    end
-end
-_G.__Fire = Fire
+local Load, Fire = mock.Load, mock.Fire
 
 -- Questie, faked (Harness/fake_questie.lua) and installed BEFORE the module
 -- loads, so the adapter attaches at login exactly as it does in game. Its
@@ -636,11 +99,17 @@ local world = Fake.DefaultWorld()
 local fake = Fake.Install(world)
 Fake.InstallClient(world)
 
--- The TOC's files in the TOC's order, minus the map drawer (it has its own
--- harness, questlog_map_harness.lua, and this mock has no world map)
+-- The window's files in the TOC's order, minus the map drawer (it has its
+-- own harness, questlog_map_harness.lua, and this mock has no world map).
+-- The 1.6.0 files -- the reputation data, the standing engine, the
+-- Reputations tab, the quest dialog -- are driven by harnesses of their own
+-- on questlog_mock.lua, so the counts here stay this file's: section Q's
+-- "takes both tabs away" is the two-tab window, and with a Reputations tab
+-- loaded the Log and that tab would rightly stay (Q3 checks that rule).
 local MODULE_FILES = {
     "CommanderQuestLogDB.lua", "CommanderQuestLogModel.lua", "CommanderQuestLogCompletion.lua",
-    "CommanderQuestLogQuestie.lua", "CommanderQuestLogUI.lua", "CommanderQuestLogZones.lua",
+    "CommanderQuestLogQuestie.lua", "CommanderQuestLogUI.lua", "CommanderQuestLogCatalogue.lua",
+    "CommanderQuestLogZones.lua",
 }
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
@@ -2369,6 +1838,419 @@ do
     RunTimers(1)
 
     CHECK(#fake.forbidden == 0, "Q2: nothing forbidden reached Questie", table.concat(fake.forbidden, ","))
+    db.ViewMode = "LOG"
+    CommanderQuestLog_Hide()
+end
+
+-- ---------------------------------------------------------------------------
+-- Q3: the tab register, and a second catalogue (1.6.0)
+--
+-- The window's tabs are a register now (Q.RegisterTab), not a Log | Zones
+-- pair, and the Zones tab is one instance of the catalogue
+-- (Q.NewCatalogue). A third tab is registered here the way the Reputations
+-- tab will be: a catalogue of its own over the fake Hellfire Peninsula, with
+-- every hook a spec can hand the catalogue answered by a stub. The register:
+-- three buttons placed by width; moving off a tab puts ITS widgets away
+-- whichever tab comes next; a quest link from it lands on the Log; its
+-- switch takes its button away and puts the window on the Log; a ViewMode
+-- nobody registered is the Log. The hooks: the spec's own groupings, filters,
+-- badge, card, overview, briefing sections, words, menu and actions are what
+-- the instance draws, its two named dropdowns are its own, and the Zones
+-- tab's widgets are never touched.
+-- ---------------------------------------------------------------------------
+do
+    local Z, A, C = Q.Zones, Q.Questie, Q.Catalogue
+    local window = _G.CommanderQuestLogFrame
+    local ZW = Z._Widgets()
+    local kit = Q._kit
+    local calls = { overview = 0, sections = 0, briefing = 0, group = 0, action = 0, rowTip = 0, filter = 0 }
+    local stubKey = 3483
+    local function TitleOf(id) return world.quests[id] and world.quests[id].name end
+
+    db.ViewMode = "LOG"
+    CommanderQuestLog_Show()
+    CHECK(type(Q.RegisterTab) == "function" and type(Q.NewCatalogue) == "function" and C ~= nil,
+        "Q3: the window publishes its register and the catalogue factory")
+    CHECK(#Q.Tabs() == 2 and Q.Tabs()[1].id == "LOG" and Q.Tabs()[2].id == "ZONE",
+        "Q3: before a third tab, the register holds the Log and the Zones tab, in that order")
+    CHECK(ZW.tabs == Q.TabButtons(), "Q3: the Zones tab's W.tabs is the window's own buttons")
+
+    local REP = Q.NewCatalogue({
+        id = "REP", order = 30, label = "Reputations", title = "Reputations", width = 78,
+        tooltip = "A faction's every quest.", prefix = "HarnessRep", showKey = "ShowRepTab",
+        offMessage = "Commander Quest Log: the harness tab is switched off.",
+        searchTip = "Matches a quest's name, among the faction's quests.",
+        countTip = "Harness count words.",
+        Resolve = function() if stubKey then return stubKey, "Honor Hold" end return nil, nil end,
+        View = function(_, key) return A.ZoneView(key) end,
+        groups = { "GUIDE", "BAND", "LEVEL" }, groupLabels = { BAND = "By band" },
+        Group = function(cat, view, mode)
+            if mode ~= "BAND" then return nil end
+            calls.group = calls.group + 1
+            local bands, order = {}, {}
+            for _, entry in ipairs(view.entries) do
+                local band = (entry.level or 0) >= 61 and 61 or 58
+                if not bands[band] then bands[band] = {}; order[#order + 1] = band end
+                table.insert(bands[band], entry)
+            end
+            table.sort(order)
+            local list = {}
+            for _, band in ipairs(order) do
+                table.sort(bands[band], function(a, b) return a.id < b.id end)
+                cat.Emit(list, "BAND" .. band, "Band " .. band, bands[band])
+            end
+            return list
+        end,
+        filterOrder = { "ALL", "OPEN", "DONE" },
+        filterSpecs = { ALL = { label = "Every", tooltip = "Every quest of the faction." } },
+        PassesFilter = function(_, entry, key)
+            calls.filter = calls.filter + 1
+            if key == "OPEN" then return entry.base == "AVAILABLE" end
+            return nil
+        end,
+        RowRight = function(_, entry)
+            if entry.id == 9005 then return "+250", "good" end
+            if entry.id == 9004 then return "0", "faint", true end
+            return nil
+        end,
+        RowTooltip = function() calls.rowTip = calls.rowTip + 1; GameTooltip:AddLine("Harness rep line") end,
+        StateWord = function(_, entry) if entry.id == 9001 then return "rep", "good" end return nil end,
+        Reason = function(_, entry) if entry.id == 9004 then return "Harness reason." end return nil end,
+        PaintCard = function(_, card)
+            card.name:SetText("Harness faction")
+            card.totals:SetText("Friendly 1,250 / 6,000")
+            card.bar:Hide()
+            card.note:SetText("Harness note.")
+        end,
+        MenuInit = function(cat, level, menuList) calls.menuArgs = { cat, level, menuList } end,
+        PaintOverview = function(cat, view)
+            calls.overview = calls.overview + 1
+            cat.Line("HARNESS OVERVIEW " .. tostring(view.name), "GameFontNormalLarge", cat.InkT("primary"))
+        end,
+        OverviewSections = function(cat)
+            calls.sections = calls.sections + 1
+            cat.Rule()
+            cat.Heading("EXTRA SECTION")
+        end,
+        Reputation = function(cat, entry, detail)
+            if detail and type(detail.repRewards) == "table" and #detail.repRewards > 0 then
+                cat.Rule()
+                cat.Heading("REPUTATION (hook) " .. entry.id)
+            end
+        end,
+        BriefingSections = function(cat, entry)
+            calls.briefing = calls.briefing + 1
+            cat.Rule()
+            cat.Heading("REP SECTION")
+            cat.Line("for " .. entry.id, "GameFontHighlightSmall", cat.InkT("secondary"), 4)
+        end,
+        actions = {
+            "WAYPOINT",
+            { field = "watchBtn", label = "Watch", width = 70,
+              onClick = function(cat) calls.action = calls.action + 1; calls.actionCat = cat end,
+              Update = function(_, button, entry) button:SetEnabled(entry ~= nil) end },
+            { stock = "IGNORE", tooltip = "Harness ignore words." },
+        },
+    })
+    local RW, RS = REP._Widgets(), REP._State()
+    local function RepRow(title)
+        for _, row in ipairs(RW.rows) do
+            if row:IsShown() and row.title:GetText() == title then return row end
+        end
+        return nil
+    end
+    local function Shown(blocks)
+        local out = {}
+        for _, fs in ipairs(blocks) do
+            if fs:IsShown() and fs:GetText() then out[#out + 1] = fs:GetText() end
+        end
+        return out
+    end
+    local function Has(lines, text)
+        for _, line in ipairs(lines) do
+            if line:find(text, 1, true) then return line end
+        end
+        return nil
+    end
+    local function AnyShown(list)
+        for _, widget in ipairs(list) do if widget:IsShown() then return true end end
+        return false
+    end
+    local function TopLeftX(widget)
+        for _, pt in ipairs(widget.__points or {}) do
+            if pt.point == "TOPLEFT" then return pt.x end
+        end
+        return nil
+    end
+    local function RightX(widget)
+        local x
+        for _, pt in ipairs(widget.__points or {}) do
+            if pt.point == "RIGHT" then x = pt.x end
+        end
+        return x
+    end
+    local function NavTop()
+        local y
+        for _, pt in ipairs(window.navPane.__points or {}) do
+            if pt.point == "TOPLEFT" then y = pt.y end
+        end
+        return y
+    end
+
+    -- The register
+    CHECK(#Q.Tabs() == 3 and Q.Tabs()[3].id == "REP" and Q.Tabs()[3].instance == REP,
+        "Q3: a catalogue registers itself, after the Zones tab by its order")
+    Q.Refresh()
+    local buttons = Q.TabButtons()
+    CHECK(buttons.REP and buttons.REP:IsShown() and buttons.LOG:IsShown() and buttons.ZONE:IsShown(),
+        "Q3: a tab registered after the window was built gets its button on the next pass")
+    CHECK(TopLeftX(buttons.LOG) == 12 and TopLeftX(buttons.ZONE) == 72 and TopLeftX(buttons.REP) == 132,
+        "Q3: the buttons sit one after another by width (12, 72, 132)",
+        tostring(TopLeftX(buttons.LOG)) .. " " .. tostring(TopLeftX(buttons.ZONE)) .. " " .. tostring(TopLeftX(buttons.REP)))
+    CHECK(buttons.REP.__w == 78 and buttons.REP:GetText() == "Reputations",
+        "Q3: ...each as wide as its tab asks, with its own word")
+    CHECK((buttons.REP:GetFrameLevel() or 0) > (window:GetFrameLevel() or 0) + 1,
+        "Q3: the new tab sits above the drag strip too")
+    local before = buttons.REP
+    REP.tab.order = 15
+    Q.RegisterTab(REP.tab)
+    Q.Refresh()
+    CHECK(Q.Tabs()[2].id == "REP" and TopLeftX(buttons.REP) == 72 and TopLeftX(buttons.ZONE) == 72 + 78 + 2,
+        "Q3: the strip follows the order, each button placed by the widths before it",
+        tostring(TopLeftX(buttons.REP)) .. " " .. tostring(TopLeftX(buttons.ZONE)))
+    REP.tab.order = 30
+    Q.RegisterTab(REP.tab)
+    Q.Refresh()
+    CHECK(#Q.Tabs() == 3 and Q.TabButtons().REP == before and TopLeftX(buttons.REP) == 132,
+        "Q3: registering the same id again replaces it, keeping its one button")
+
+    -- Onto the third tab
+    buttons.REP:GetScript("OnClick")(buttons.REP)
+    CHECK(db.ViewMode == "REP" and Q.ViewMode() == "REP", "Q3: the third tab switches the window over")
+    CHECK(buttons.REP.underline.__color[4] > 0.5 and buttons.ZONE.underline.__color[4] == 0
+        and buttons.LOG.underline.__color[4] == 0, "Q3: ...and is the one underlined")
+    CHECK(RW.toolbar:IsShown() and RW.card:IsShown() and RW.actions:IsShown(),
+        "Q3: its own toolbar, card and action bar are up")
+    CHECK(not ZW.toolbar:IsShown() and not ZW.card:IsShown() and not ZW.actions:IsShown()
+        and not AnyShown(ZW.rows) and not AnyShown(ZW.blocks),
+        "Q3: the Zones tab's toolbar, card, action bar, rows and briefing are all put away")
+    CHECK(not window.filters.ALL:IsShown() and not window.trackBtn:IsShown(), "Q3: ...and so are the Log's")
+    CHECK(NavTop() == -8 - 50, "Q3: the navigator moves down under the new tab's card", NavTop())
+    CHECK(RW.card.name:GetText() == "Harness faction" and RW.card.totals:GetText() == "Friendly 1,250 / 6,000"
+        and RW.card.note:GetText() == "Harness note.", "Q3: the card is the spec's PaintCard")
+    CHECK(_G.CommanderQuestLogHarnessRepGroupDrop == RW.groupDrop and _G.CommanderQuestLogHarnessRepMenu == RW.menu,
+        "Q3: the new tab's two dropdowns are named after its prefix")
+    CHECK(_G.CommanderQuestLogZoneGroupDrop == ZW.groupDrop and _G.CommanderQuestLogZoneMenu == ZW.menu
+        and RW.groupDrop ~= ZW.groupDrop, "Q3: ...and the Zones tab keeps its own")
+    CHECK(RS.key == 3483 and Z._State().areaId ~= nil and RS.areaId == nil,
+        "Q3: each instance keeps its own state (areaId is the Zones tab's name for its key alone)")
+
+    -- Its rows: the spec's badge, words and dimming
+    local enemy = RepRow(TitleOf(9005))
+    CHECK(enemy and enemy.badge and enemy.badge:IsShown() and enemy.badge:GetText() == "+250",
+        "Q3: RowRight puts a badge on the row", enemy and enemy.badge and enemy.badge:GetText())
+    CHECK(enemy and RightX(enemy.title) == -(46 + 10 + 40 + 4),
+        "Q3: ...and the title gives up the badge's width", enemy and RightX(enemy.title))
+    CHECK(enemy and enemy.badge.__points[1].rel == enemy.state and enemy.badge.__points[1].point == "RIGHT",
+        "Q3: ...which sits just left of the state word")
+    local legion = RepRow(TitleOf(9004))
+    local fr, fg, fb = kit.Paper(kit.Ink("faint"))
+    CHECK(legion and legion.title.__color[1] == fr and legion.title.__color[2] == fg and legion.title.__color[3] == fb,
+        "Q3: a badge's dim flag inks a counted quest's title faint")
+    local plain = RepRow(TitleOf(9033))
+    CHECK(plain and RightX(plain.title) == -(46 + 10) and not (plain.badge and plain.badge:IsShown()),
+        "Q3: a row with no badge keeps the full title width", plain and RightX(plain.title))
+    local zoneHasBadge = false
+    for _, row in ipairs(ZW.rows) do if row.badge then zoneHasBadge = true end end
+    CHECK(not zoneHasBadge, "Q3: the Zones tab, with no RowRight, never makes a badge")
+    local arrival = RepRow(TitleOf(9001))
+    CHECK(arrival and arrival.state:GetText() == "rep", "Q3: StateWord answers for the quests it knows",
+        arrival and arrival.state:GetText())
+    CHECK(enemy and enemy.state:GetText() == "open", "Q3: ...and hands the rest to the engine")
+    legion:GetScript("OnEnter")(legion)
+    local tip = table.concat(GameTooltip.__lines, " | ")
+    CHECK(tip:find("Harness reason.", 1, true) and tip:find("Harness rep line", 1, true)
+        and tip:find("Right-click for a waypoint", 1, true),
+        "Q3: a row's tooltip carries the spec's reason and its RowTooltip lines", tip)
+
+    -- Groups and filters from the spec
+    local added = {}
+    local realAdd = UIDropDownMenu_AddButton
+    UIDropDownMenu_AddButton = function(info) added[#added + 1] = info end
+    RW.groupDrop.__init(RW.groupDrop)
+    UIDropDownMenu_AddButton = realAdd
+    CHECK(#added == 3 and added[1].text == "Guide" and added[2].text == "By band" and added[3].text == "By level",
+        "Q3: the group dropdown lists the spec's modes with its words, the engine's words for the rest",
+        (added[1] and added[1].text or "-") .. "," .. (added[2] and added[2].text or "-"))
+    db.HarnessRepGroup = "BAND"
+    Q.Refresh()
+    local band = RepRow("Band 61")
+    CHECK(calls.group > 0 and band and band.headerTitle == "Band 61" and RepRow("Band 58") ~= nil,
+        "Q3: a spec's Group draws its own headings (cat.Emit)")
+    band:GetScript("OnClick")(band, "LeftButton")
+    CHECK(db.HarnessRepCollapsed and db.HarnessRepCollapsed["Band 61"] == true
+        and (db.ZoneCollapsed or {})["Band 61"] == nil and RepRow(TitleOf(9005)) == nil,
+        "Q3: folding one writes the tab's own fold table, never the Zones tab's")
+    RepRow("Band 61"):GetScript("OnClick")(RepRow("Band 61"), "LeftButton")
+    db.HarnessRepGroup = "GUIDE"
+    Q.Refresh()
+    CHECK(RepRow("Pick up now") ~= nil, "Q3: a mode the spec does not know goes to the engine")
+    CHECK(RW.filters.ALL and RW.filters.ALL:GetText() == "Every" and RW.filters.OPEN
+        and RW.filters.OPEN:GetText() == "Open" and RW.filters.MISSED == nil,
+        "Q3: the filter buttons are the spec's (its words where it has them)")
+    RW.filters.OPEN:GetScript("OnClick")(RW.filters.OPEN)
+    local anyLog, anyOpen = false, false
+    for _, item in ipairs(RS.rows) do
+        if item.entry and item.entry.base == "LOG" then anyLog = true end
+        if item.entry and item.entry.base == "AVAILABLE" then anyOpen = true end
+    end
+    CHECK(db.HarnessRepFilter == "OPEN" and anyOpen and not anyLog and calls.filter > 0,
+        "Q3: the spec's PassesFilter decides its keys (Open without the quest in the log)")
+    CHECK(db.ZoneFilter ~= "OPEN", "Q3: ...in the tab's own filter key")
+    RW.filters.ALL:GetScript("OnClick")(RW.filters.ALL)
+
+    -- The briefing: the spec's overview, then a quest with its sections
+    local brief = Shown(RW.blocks)
+    CHECK(calls.overview > 0 and Has(brief, "HARNESS OVERVIEW Hellfire Peninsula") and Has(brief, "EXTRA SECTION"),
+        "Q3: the overview is the spec's PaintOverview, then its OverviewSections", table.concat(brief, " | "))
+    REP.Select(9005)
+    brief = Shown(RW.blocks)
+    CHECK(brief[1] == TitleOf(9005) and Has(brief, "WHERE"), "Q3: a quest's briefing is the catalogue's own")
+    CHECK(Has(brief, "REPUTATION (hook) 9005") and not Has(brief, "+250  Honor Hold"),
+        "Q3: the spec's Reputation replaces the stock REPUTATION section")
+    CHECK(Has(brief, "REP SECTION") and Has(brief, "for 9005"), "Q3: ...and BriefingSections come after it")
+    CHECK(not AnyShown(ZW.blocks), "Q3: nothing of it lands in the Zones tab's briefing pool")
+
+    -- The menu and the actions
+    RW.menu.__init(RW.menu, 2, "harness")
+    CHECK(calls.menuArgs and calls.menuArgs[1].instance == REP and calls.menuArgs[2] == 2
+        and calls.menuArgs[3] == "harness", "Q3: the card's menu is the spec's MenuInit, handed the context")
+    CHECK(RW.waypointBtn and RW.watchBtn and RW.ignoreBtn and RW.mapBtn == nil and RW.logBtn == nil
+        and RW.routeBtn == nil, "Q3: the action bar is the spec's list, stock and custom")
+    CHECK(RW.watchBtn.__points[1].rel == RW.waypointBtn and RW.ignoreBtn.__points[1].point == "RIGHT",
+        "Q3: ...packed from the left, Ignore at the right")
+    CHECK(RW.watchBtn:IsEnabled() and RW.ignoreBtn:IsEnabled(), "Q3: a custom action's Update runs (a quest selected)")
+    RW.watchBtn:GetScript("OnClick")(RW.watchBtn)
+    CHECK(calls.action == 1 and calls.actionCat and calls.actionCat.instance == REP,
+        "Q3: ...and its onClick is handed the context")
+    RW.ignoreBtn:GetScript("OnEnter")(RW.ignoreBtn)
+    CHECK(table.concat(GameTooltip.__lines, " | "):find("Harness ignore words.", 1, true),
+        "Q3: a stock action takes the spec's own words")
+    RW.ignoreBtn:GetScript("OnClick")(RW.ignoreBtn)
+    CHECK(CommanderQuestLogChar.Ignored[9005] == true and RW.ignoreBtn:GetText() == "Count",
+        "Q3: Ignore on any tab writes the one per-character list")
+    RW.ignoreBtn:GetScript("OnClick")(RW.ignoreBtn)
+    RunTimers(1)
+    RunTimers(1)
+    REP.Select(nil)
+    CHECK(not RW.watchBtn:IsEnabled(), "Q3: ...and with nothing selected, its Update greys it out")
+
+    -- Each tab keeps its own search
+    local box = window.searchBox
+    box:SetText("legion")
+    box:GetScript("OnTextChanged")(box, true)
+    CHECK(REP.SearchText() == "legion" and Z.SearchText() == "" and RS.shown == 1,
+        "Q3: typing on the new tab searches the new tab alone", RS.shown)
+    local tipBox = box.__scripts.OnEnter
+    if tipBox then tipBox(box) end
+    CHECK(table.concat(GameTooltip.__lines, " | "):find("among the faction's quests", 1, true),
+        "Q3: the search box's tooltip is the active tab's")
+    buttons.ZONE:GetScript("OnClick")(buttons.ZONE)
+    CHECK((box:GetText() or "") == "", "Q3: the Zones tab brings its own, empty, search", box:GetText())
+    buttons.REP:GetScript("OnClick")(buttons.REP)
+    CHECK(box:GetText() == "legion", "Q3: ...and the new tab its own again", box:GetText())
+    box:GetScript("OnEscapePressed")(box)
+    CHECK(REP.SearchText() == "", "Q3: Escape clears the new tab's search")
+
+    -- Moving off the third tab puts ITS widgets away, whichever tab is next
+    REP.Select(9004)
+    buttons.ZONE:GetScript("OnClick")(buttons.ZONE)
+    CHECK(Q.ViewMode() == "ZONE" and ZW.card:IsShown() and ZW.toolbar:IsShown(), "Q3: REP to Zones: the Zones tab is up")
+    CHECK(not RW.toolbar:IsShown() and not RW.card:IsShown() and not RW.actions:IsShown()
+        and not AnyShown(RW.rows) and not AnyShown(RW.blocks) and not AnyShown(RW.quads),
+        "Q3: ...and every widget of the REP tab is put away")
+    CHECK(AnyShown(ZW.rows) and not AnyShown(RW.rows), "Q3: ...the navigator holds the zone's rows only")
+    buttons.REP:GetScript("OnClick")(buttons.REP)
+    CHECK(not ZW.card:IsShown() and not AnyShown(ZW.rows) and RW.card:IsShown(), "Q3: ...and back the other way")
+    CHECK(REP.Selected() and REP.Selected().id == 9004, "Q3: ...with the new tab's selection where it was left")
+
+    -- A quest link from the third tab lands on the Log
+    CommanderQuestLog_OpenToQuest(2)
+    CHECK(db.ViewMode == "LOG" and Q.ViewMode() == "LOG" and Q.Selected() and Q.Selected().questID == 9003,
+        "Q3: OpenToQuest from the new tab lands on the Log with the quest selected")
+    CHECK(window.trackBtn:IsShown() and not RW.card:IsShown() and not AnyShown(RW.rows)
+        and buttons.LOG.underline.__color[4] > 0.5, "Q3: ...the Log's widgets up, the new tab's away")
+
+    -- Opening a tab from outside
+    Q.OpenToTab("REP", 3519, 9014)
+    CHECK(Q.ViewMode() == "REP" and db.HarnessRepFollow == false and db.HarnessRepPicked == 3519,
+        "Q3: Q.OpenToTab opens a tab pinned to a key")
+    stubKey = 3519
+    Q.Refresh()
+    CHECK(REP.Selected() == nil and RS.key == 3519, "Q3: (the stub follows its pin)")
+    REP.PrepareOpen(nil, 9014)
+    Q.Refresh()
+    CHECK(REP.Selected() and REP.Selected().id == 9014 and db.HarnessRepFollow == true,
+        "Q3: ...and a nil key follows, selecting the quest asked for")
+    stubKey = nil
+    Q.Refresh()
+    CHECK(RW.emptyFS and RW.emptyFS:IsShown()
+        and RW.emptyFS:GetText() == "Nothing to show here. Pick one from the card above.",
+        "Q3: with nothing resolved, the stock empty sentence", RW.emptyFS and RW.emptyFS:GetText())
+    CHECK(Shown(RW.blocks)[1] == "Reputations", "Q3: ...under the tab's title", Shown(RW.blocks)[1])
+    stubKey = 3483
+    RW.card:GetScript("OnClick")(RW.card, "RightButton")
+    CHECK(db.HarnessRepFollow == true and db.HarnessRepPicked == false, "Q3: right-clicking the card follows")
+
+    -- Its switch
+    db.ShowRepTab = false
+    Commander.Notify(COMMANDER_QUESTLOG_EVENTS.UPDATE)
+    CHECK(Q.ViewMode() == "LOG" and window.trackBtn:IsShown() and not RW.card:IsShown(),
+        "Q3: switching the new tab off puts the window on the Log")
+    CHECK(not buttons.REP:IsShown() and buttons.LOG:IsShown() and buttons.ZONE:IsShown(),
+        "Q3: ...and takes its button away, leaving the Log and the Zones tab")
+    Q.SetViewMode("REP")
+    CHECK(db.ViewMode == "LOG" and Q.ViewMode() == "LOG", "Q3: a switched-off tab cannot be switched to")
+    WipeLog()
+    Q.OpenToTab("REP", 3483)
+    CHECK(Logged("the harness tab is switched off") and Q.ViewMode() == "LOG",
+        "Q3: ...nor opened from outside, which says why")
+    db.ShowRepTab = nil
+    db.ShowZoneTab = false
+    Q.Refresh()
+    CHECK(buttons.LOG:IsShown() and not buttons.ZONE:IsShown() and buttons.REP:IsShown()
+        and TopLeftX(buttons.REP) == 72, "Q3: with the Zones tab off, the new tab moves up beside the Log",
+        TopLeftX(buttons.REP))
+    db.ShowRepTab = false
+    Q.Refresh()
+    CHECK(not buttons.LOG:IsShown() and not buttons.ZONE:IsShown() and not buttons.REP:IsShown(),
+        "Q3: with every other tab off there are no tabs at all")
+    db.ShowRepTab = nil
+    db.ShowZoneTab = true
+    Q.Refresh()
+    CHECK(TopLeftX(buttons.ZONE) == 72 and TopLeftX(buttons.REP) == 132 and buttons.REP:IsShown(),
+        "Q3: ...and with both back, back in their places")
+
+    -- A ViewMode nobody registered is the Log
+    db.ViewMode = "NO_SUCH_TAB"
+    Q.Refresh()
+    CHECK(Q.ViewMode() == "LOG" and window.trackBtn:IsShown() and window.filters.ALL:IsShown()
+        and not RW.card:IsShown() and not ZW.card:IsShown() and buttons.LOG.underline.__color[4] > 0.5,
+        "Q3: an unknown ViewMode draws the Log, with nothing of the other tabs up")
+    Q.SetViewMode("NO_SUCH_TAB")
+    CHECK(db.ViewMode == "LOG", "Q3: ...and switching to one writes the Log", db.ViewMode)
+
+    -- Ink on paper: the new tab's badge goes through Paper() like the rest
+    db.ViewMode = "REP"
+    OpenAs("PARCHMENT")
+    enemy = RepRow(TitleOf(9005))
+    CHECK(enemy and enemy.badge and Lum(enemy.badge.__color) <= INK_MAX,
+        "Q3: on paper a row's badge is ink", enemy and enemy.badge and tostring(Lum(enemy.badge.__color)))
+    OpenAs("STONE")
+
+    CHECK(#fake.forbidden == 0, "Q3: nothing forbidden reached Questie", table.concat(fake.forbidden, ","))
+    db.HarnessRepGroup, db.HarnessRepFilter, db.HarnessRepCollapsed = nil, nil, nil
+    db.HarnessRepFollow, db.HarnessRepPicked, db.ShowRepTab = nil, nil, nil
     db.ViewMode = "LOG"
     CommanderQuestLog_Hide()
 end

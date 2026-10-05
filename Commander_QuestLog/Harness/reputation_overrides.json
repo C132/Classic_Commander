@@ -1,0 +1,116 @@
+{
+  "4267": {
+    "47": 0,
+    "54": 0,
+    "69": 0,
+    "369": 0,
+    "930": 0,
+    "src": "https://www.wowhead.com/tbc/quest=4267",
+    "note": "Rise of the Silithid. Wowhead TBC lists no reputation and CMaNGOS has no reward row; Questie stores 350 for Ironforge, Gnomeregan, Darnassus, Gadgetzan and the Exodar, which the rules then spill into each other (a Human saw about +673 each). Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "5096": {
+    "68": 250,
+    "76": 0,
+    "81": 0,
+    "530": 0,
+    "911": 0,
+    "src": "https://www.wowhead.com/tbc/quest=5096",
+    "note": "Scarlet Diversions. Wowhead TBC and CMaNGOS: Undercity 250 only. Questie adds 75 for each other Horde capital, the capitals' quarter baked in as rows, which the rules would pay again as spillover (Silvermoon +191 where the server pays +62). Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "6804": {
+    "67": 250,
+    "68": 0,
+    "76": 0,
+    "81": 0,
+    "530": 0,
+    "911": 0,
+    "src": "https://www.wowhead.com/tbc/quest=6804",
+    "note": "Poisoned Water. Wowhead TBC and CMaNGOS: Horde 250, the header, which passes 250 to each Horde capital at its own rate. Questie stores five equal capital rows instead (the header cascade written down as rows), which the rules then re-spill: about +498 each where the server pays 250. Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "7639": {
+    "47": 0,
+    "69": 0,
+    "72": 75,
+    "930": 0,
+    "src": "https://www.wowhead.com/tbc/quest=7639",
+    "note": "To Show Due Judgment. Wowhead TBC and CMaNGOS: Stormwind 75 only. Questie adds 25 for Ironforge, Darnassus and the Exodar, the capitals' quarter baked in as rows, paid twice by the rules. Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "7640": {
+    "47": 0,
+    "69": 0,
+    "72": 250,
+    "930": 0,
+    "src": "https://www.wowhead.com/tbc/quest=7640",
+    "note": "Exorcising Terrordale. Wowhead TBC and CMaNGOS: Stormwind 250 only. Questie adds 75 for Ironforge, Darnassus and the Exodar, the capitals' quarter baked in as rows, paid twice by the rules. Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "7781": {
+    "47": 500,
+    "54": 500,
+    "69": 500,
+    "72": 500,
+    "930": 500,
+    "src": "https://www.wowhead.com/tbc/quest=7781",
+    "note": "The Lord of Blackrock. Wowhead TBC and CMaNGOS: 500 for each of the five Alliance capitals. Questie has Ironforge 250 and no Exodar row. Caveat: five direct rows spill into each other, so the rules (as the CMaNGOS server does) give a Human about +1,098 each; calibration cannot settle a mixed move (D40), so this rests on the two sources. Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "7782": {
+    "47": 500,
+    "54": 500,
+    "69": 500,
+    "72": 500,
+    "930": 500,
+    "src": "https://www.wowhead.com/tbc/quest=7782",
+    "note": "The Lord of Blackrock, the second quest of that name. Wowhead TBC and CMaNGOS: 500 for each of the five Alliance capitals. Questie has Ironforge 250 and no Exodar row. Same compounding caveat as 7781. Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "10016": {
+    "47": 0,
+    "54": 0,
+    "69": 0,
+    "72": 0,
+    "930": 0,
+    "src": "https://www.wowhead.com/tbc/quest=10016",
+    "note": "Timber Worg Tails (Terokkar, level 64). Wowhead TBC lists no reputation and CMaNGOS has no reward row; Questie stores 250 for each Alliance capital, which the rules spill into each other (a Human saw +547 each, and the Terokkar overview counted the capitals as done there). Settles in game with one Alliance turn-in (A43). Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "10871": {
+    "1015": 38182,
+    "src": "https://www.wowhead.com/tbc/quest=10871",
+    "note": "Ally of the Netherwing, the Human-only copy of 10870. Wowhead TBC lists 38182 Netherwing, which is 42000/1.1: with Diplomacy a Human gains trunc(38182 x 1.1) = 42000 and lands on exactly Neutral 0 from the -42000 base, as 10870 does for every other race. Questie stores 42000 (a Human would see +46200); CMaNGOS has no 10871 at all. warcraft.wiki.gg/wiki/Ally_of_the_Netherwing: 'Humans do not gain an extra 10% reputation boost on the completion of this quest.' Audit 2026-10-04, report rep/audit/report.md."
+  },
+  "11211": {
+    "68": 0,
+    "76": 0,
+    "81": 0,
+    "369": 10,
+    "530": 0,
+    "911": 0,
+    "src": "https://www.wowhead.com/tbc/quest=11211",
+    "note": "Help for Mudsprocket. Wowhead TBC and CMaNGOS: Gadgetzan 10. Questie stores 350 for each Horde capital instead, re-spilled by the rules to about +698 each. Wowhead TBC and CMaNGOS (tbc-db quest_template) agree against Questie: the 'Wowhead and CMaNGOS agree against Questie' class D38 left open, applied 2026-10-04 on the accuracy review's verdict (handcalc.py matched the engine on Questie's rows; these quests differ only by data). 0 drops a Questie row."
+  },
+  "11354": {
+    "933": 350,
+    "946": 350,
+    "947": 350,
+    "src": "https://www.wowhead.com/tbc/quest=11354",
+    "note": "Wanted: Nazan's Riding Crop (heroic Hellfire Ramparts, Wind Trader Zhareem). Wowhead TBC: 350 Consortium, 350 Honor Hold, 350 Thrallmar. Questie and CMaNGOS store Consortium 350 only. Every other Wanted daily pays the Consortium plus the dungeon's own faction; Hellfire Citadel's is Honor Hold/Thrallmar. Corroborated by a Dec 2007 (patch 2.3) TenTonHammer daily guide ('350 reputation with the Consortium and the faction with the dungeon') and the Warcraft Tavern TBC Honor Hold guide. Full row set, Consortium unchanged; the engine keeps only the player's side of 946/947. Audit 2026-10-04."
+  },
+  "11362": {
+    "933": 350,
+    "946": 350,
+    "947": 350,
+    "src": "https://www.wowhead.com/tbc/quest=11362",
+    "note": "Wanted: Keli'dan's Feathered Stave (heroic Blood Furnace). Wowhead TBC: 350 Consortium, 350 Thrallmar, 350 Honor Hold; Questie and CMaNGOS: Consortium 350 only. Same evidence as 11354 (2007 TenTonHammer guide, Warcraft Tavern TBC Honor Hold guide). Full row set, Consortium unchanged; the engine keeps only the player's side of 946/947. Audit 2026-10-04."
+  },
+  "11363": {
+    "933": 350,
+    "946": 350,
+    "947": 350,
+    "src": "https://www.wowhead.com/tbc/quest=11363",
+    "note": "Wanted: Bladefist's Seal (heroic Shattered Halls). Wowhead TBC: 350 Consortium, 350 Thrallmar, 350 Honor Hold; Questie and CMaNGOS: Consortium 350 only. Same evidence as 11354, plus the wowclassicdb TBC page as indexed (350/350/350). Full row set, Consortium unchanged; the engine keeps only the player's side of 946/947. Audit 2026-10-04."
+  },
+  "11364": {
+    "933": 250,
+    "946": 250,
+    "947": 250,
+    "src": "https://www.wowhead.com/tbc/quest=11364",
+    "note": "Wanted: Shattered Hand Centurions (normal Shattered Halls, Nether-Stalker Mah'duun). Wowhead TBC: 250 Consortium, 250 Honor Hold, 250 Thrallmar; Questie and CMaNGOS: Consortium 250 only. The 2007 TenTonHammer guide: normal dailies give '250 reputation with the consortium and the faction the dungeon you visited has'; Warcraft Tavern TBC Honor Hold guide lists 250. Full row set, Consortium unchanged; the engine keeps only the player's side of 946/947. Audit 2026-10-04."
+  }
+}

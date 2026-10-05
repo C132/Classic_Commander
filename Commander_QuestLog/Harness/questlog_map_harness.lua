@@ -1617,6 +1617,166 @@ CHECK(WM.canvasErrors == 0 and #caughtErrors == 0, "N: Blizzard's every-pin pass
 CreateUnsecuredRegionPoolInstance = unsecuredPoolApi
 
 -- ===========================================================================
+-- O. Reputation (1.6.0): every quest on the map says what it is worth
+--
+-- The drawer's row tooltip and every quest in a giver pin's tooltip carry the
+-- adapter's one line ("Reputation: +275 Honor Hold", "No reputation"), and
+-- the maximized drawer's rows a badge ("+275 HH", "0": the figure and the
+-- faction it is for) left of the state word.
+-- Over Fake.RepWorld() (a level-70 Human, real quest ids and Questie's real
+-- rows) with the REAL rules engine and generated data, loaded for this
+-- section only; every section above ran without them, and the default world
+-- shows no reputation at all (O0), so their counts are their own.
+-- ===========================================================================
+
+do
+    -- O0. Without the rules there is no number: no badge, no line
+    caughtErrors = {}
+    Boot({ edit = MainWorld })
+    WorldMapFrame:Show()
+    local plainRow = QuestRow(9004)
+    Hover(plainRow)
+    CHECK(plainRow and not (plainRow.badge and plainRow.badge.__shown) and not TooltipHas("Reputation"),
+        "O0: without the reputation rules, the drawer shows no badge and no reputation line")
+
+    -- The reputation world, with the rules behind the adapter
+    local function RepWorld(w)
+        for key in pairs(w) do w[key] = nil end
+        for key, value in pairs(Fake.RepWorld()) do w[key] = value end
+    end
+    caughtErrors = {}
+    Boot({ edit = RepWorld })
+    -- (the boot installs the fake client's reputation calls; what the module
+    -- itself adds from here on is the data and the drawer, nothing else)
+    local globalsBeforeRep = {}
+    for key in pairs(_G) do globalsBeforeRep[key] = true end
+    assert(loadfile(MODULE .. "/CommanderQuestLogReputationData.lua"))()
+    assert(loadfile(MODULE .. "/CommanderQuestLogStanding.lua"))()
+    A.Bump("rules")
+    Settle()
+    CHECK(A.RepLine(9355) == "+275 Honor Hold" and A.RepLine(91001) == "No reputation",
+        "O: the rules are in: 250 Honor Hold is +275 to a Human", A.RepLine(9355))
+    WM.mapID, WM.maximized = 1944, true
+    WorldMapFrame:Show()
+    local row = QuestRow(9355)
+    CHECK(row and row.badge and row.badge.__shown and row.badge.__text == "+275 HH",
+        "O1: the maximized drawer's row carries the badge, the faction named", row and row.badge and row.badge.__text)
+    CHECK(QuestRow(91002) and QuestRow(91002).badge.__text == "+110 HH" and QuestRow(91001).badge.__text == "0",
+        "O1: +110 HH for 91002 (its row for a faction with no standing slot dropped), 0 for a quest that pays nothing")
+    local badgePoint = row and FindPoint(row.badge, "RIGHT")
+    CHECK(badgePoint and badgePoint.rel == row and badgePoint.x == -(42 + 4), "O1: the badge sits left of the state word",
+        badgePoint and badgePoint.x)
+    CHECK(row and row.title.__w == (250 - 12 - 6) - 26 - (42 + 4) - (35 + 4),
+        "O1: ...and the title gives up the badge's width", row and row.title.__w)
+    local accentR, accentG, accentB = 0.55, 0.65, 0.80
+    CHECK(row and SAME_COLOUR(row.badge.__textColor, accentR, accentG, accentB),
+        "O1: a gain in the accent (steel without the window's kit)")
+    CHECK(SAME_COLOUR(QuestRow(91001).badge.__textColor, 0.5, 0.5, 0.5), "O1: a 0 in the faint ink")
+    Hover(row)
+    CHECK(TooltipHas("Reputation: +275 Honor Hold"), "O2: the row's tooltip carries the line", AllTooltipText())
+    Hover(QuestRow(91001))
+    CHECK(TooltipHas("No reputation"), "O2: ...No reputation included")
+    -- A giver's pin: every quest it holds, each with its line
+    local pin = PinsWith(9355)[1]
+    CHECK(pin and PinHas(pin, 91001) and PinHas(pin, 91002), "O3: Force Commander Danath's pin holds the three")
+    if pin then Hover(pin) end
+    CHECK(TooltipHas("Reputation: +275 Honor Hold") and TooltipHas("Reputation: +110 Honor Hold")
+        and TooltipHas("No reputation"), "O3: the pin's tooltip says what each quest is worth", AllTooltipText())
+    -- A waypoint from the drawer carries the note
+    local before = #orders
+    Click(row, "RightButton")
+    CHECK(#orders == before + 1 and orders[#orders].spec.note == "+275 Honor Hold",
+        "O4: a waypoint from the drawer is noted with the line", orders[#orders] and orders[#orders].spec.note)
+    -- Windowed: no badge, the title its full width
+    WM.maximized = false
+    WorldMapFrame:SynchronizeDisplayState()
+    row = QuestRow(9355)
+    CHECK(row and not row.badge.__shown and row.title.__w == (220 - 12 - 6) - 26 - (42 + 4),
+        "O5: the windowed drawer has no badge, and the title its full width", row and row.title.__w)
+    Hover(row)
+    CHECK(TooltipHas("Reputation: +275 Honor Hold"), "O5: ...the tooltip keeps the line")
+    WM.maximized = true
+    WorldMapFrame:SynchronizeDisplayState()
+    -- The Wickerman: the drawer follows the multiplier
+    world.player.auras[24705] = true
+    A.Bump("aura")
+    Settle()
+    CHECK(QuestRow(9355).badge.__text == "+300 HH", "O6: under the Wickerman the badge reads +300 HH", QuestRow(9355).badge.__text)
+    Hover(QuestRow(9355))
+    CHECK(TooltipHas("Reputation: +300 Honor Hold"), "O6: ...and so does the tooltip")
+    world.player.auras[24705] = nil
+    A.Bump("aura")
+    Settle()
+    -- What was seen in game, and says so
+    CommanderQuestLogChar.RepObserved = { [9355] = { [946] = { raw = 200, n = 1, delta = 220, pct = 110, kind = "DIRECT" } } }
+    A.Bump("calibration")
+    Settle()
+    Hover(QuestRow(9355))
+    CHECK(QuestRow(9355).badge.__text == "+220 HH" and TooltipHas("Reputation: +220 Honor Hold (seen in game)"),
+        "O7: a sample seen in game replaces the data on the map, marked as seen", AllTooltipText())
+    CommanderQuestLogChar.RepObserved = nil
+    A.Bump("calibration")
+    Settle()
+    -- The switches
+    SetSetting("ShowRepEverywhere", false)
+    row = QuestRow(9355)
+    Hover(row)
+    CHECK(row and not row.badge.__shown and not TooltipHas("Reputation"), "O8: Reputation on Every Quest off: no badge, no line")
+    if pin then
+        Hover(PinsWith(9355)[1])
+        CHECK(not TooltipHas("Reputation") and not TooltipHas("No reputation"), "O8: ...nor on a pin")
+    end
+    SetSetting("ShowRepEverywhere", nil)
+    SetSetting("ZoneRowRep", false)
+    row = QuestRow(9355)
+    Hover(row)
+    CHECK(row and not row.badge.__shown and TooltipHas("Reputation: +275 Honor Hold"),
+        "O8: Reputation on Zone Rows off takes the badge and leaves the line")
+    SetSetting("ZoneRowRep", nil)
+    -- A header or a zone row reuses the pool: no badge left behind
+    WorldMapFrame:SetMapID(1945)
+    Settle()
+    local stale = 0
+    for _, shown in ipairs(ShownRows()) do
+        if shown.item.kind ~= "QUEST" and shown.badge and shown.badge.__shown then stale = stale + 1 end
+    end
+    CHECK(#ShownRows() > 0 and stale == 0, "O9: a continent's zone rows carry no badge left over from a quest row", stale)
+    -- O10. The badge names its faction, so a zone that pays several tells
+    -- them apart: a quest whose best gain is ANOTHER faction's never reads
+    -- like one for the faction beside it (the brief's Hellfire surprise)
+    WorldMapFrame:SetMapID(1955)
+    Settle()
+    CHECK(QuestRow(10325) and QuestRow(10325).badge.__text == "+275 Aldor"
+        and QuestRow(10886) and QuestRow(10886).badge.__text == "+550 Sha'tar",
+        "O10: Shattrath: the Aldor's quest and the Sha'tar's each name their faction",
+        (QuestRow(10325) and QuestRow(10325).badge.__text or "-") .. " / " .. (QuestRow(10886) and QuestRow(10886).badge.__text or "-"))
+    WorldMapFrame:SetMapID(1944)
+    Settle()
+    Click(HeaderRow("Done"))
+    CHECK(QuestRow(10937) and QuestRow(10937).badge.__text == "+1,100 HH" and QuestRow(10937).badge.__w == 45,
+        "O10: +1,100 HH fits the badge's 64 px whole", QuestRow(10937) and QuestRow(10937).badge.__w)
+    Click(HeaderRow("Done"))
+    -- Hygiene
+    local leakedRep = {}
+    for key in pairs(_G) do
+        local name = tostring(key)
+        if not globalsBeforeRep[key] and name ~= "CommanderQuestLogMapDrawer" and name ~= "CommanderQuestLogReputationData" then
+            leakedRep[#leakedRep + 1] = name
+        end
+    end
+    CHECK(#leakedRep == 0, "O: no global but the drawer's and the data's", table.concat(leakedRep, ","))
+    CHECK(#WM.writes == 0, "O: never assigned a field on WorldMapFrame", table.concat(WM.writes, ","))
+    local glyphs = {}
+    for _, text in ipairs(textLog) do if not GlyphFree(text) then glyphs[#glyphs + 1] = text end end
+    for _, text in ipairs(tooltipLines) do if not GlyphFree(text) then glyphs[#glyphs + 1] = text end end
+    CHECK(#glyphs == 0, "O: no shape glyph in any drawn string", glyphs[1])
+    CHECK(#caughtErrors == 0 and M._State().lastError == nil and A._LastError() == nil, "O: no errors",
+        caughtErrors[1] or M._State().lastError or A._LastError())
+    Fake.UninstallRepClient()
+    Q.Standing, CommanderQuestLogReputationData = nil, nil
+end
+
+-- ===========================================================================
 
 io.write(("\n%d checks, %d failed\n"):format(checks, fails))
 os.exit(fails == 0 and 0 or 1)

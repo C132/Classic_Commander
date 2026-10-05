@@ -7,7 +7,16 @@ session can report against them. A1–A4 decide whether the Zones tab works at
 all; A12–A15 decide whether the map drawer does; the rest degrade to a missing
 line, a slower frame or a wrong colour. A28–A35 were added by the review of
 2026-10-04, for fixes whose last step can only be watched in the client,
-A36 by its second round, A37 with the move to Commander Orders (1.5.0), and A38 by the Orders review's entrance fixes. The Log tab's own assumptions (the
+A36 by its second round, A37 with the move to Commander Orders (1.5.0), and A38 by the Orders review's entrance fixes. A39–A55 came with
+the Reputations tab and reputation on every surface (1.6.0): A39, A40 and
+A53 decide whether the numbers and the quest dialog's line are right at
+all, A40–A47 are the in-game checks the research could not settle (critic
+§5 and the Wowhead audit), and every one of those also corrects itself
+once calibration (D40) has watched a turn-in. A56–A59 came with that tab's
+review (2026-10-04): the nine data corrections, the compounding that
+calibration now cannot settle, today's Wanted pick across a reset, and the
+waypoint note kept current; A60 with its UI fixes (the card's note on one
+line). The Log tab's own assumptions (the
 takeover, the reset clocks) stay at the end of `DECISIONS.md`.
 
 Most tests start with `/cql status`, which prints what the adapter can see:
@@ -21,7 +30,16 @@ Your zone: Hellfire Peninsula (area 3483, map 1944)
 Cached: 1 zone view, 4 zone summaries
 Waypoints go to …
 Last error: …            (only when something failed)
+Reputation rules: loaded (data for 2.5.6.69795)
+Faction index: complete (N quests read, M pay reputation, K factions)
+Reputation multiplier: 110% (Diplomacy)
+Reputation seen in game: N quests, M samples
+Cached: 1 faction view, 12 faction summaries
+Wanted dailies today: normal …, heroic …
 ```
+
+The faction index is read the first time a faction is asked about; until
+then its line reads "not read yet".
 
 ---
 
@@ -308,6 +326,10 @@ Test: `/dump GetFactionInfoByID(932)` — the sixth value is your Aldor bar
 value. With one side Hostile, the other side's quests list under
 "Other faction".
 
+*(1.6.0.)* The reputation numbers rest on the nil half of this too: a faction
+not met is read as its Faction.db2 base. A39 has the test that settles it,
+and what changes if the client answers the base instead.
+
 ## A22 — An unanchored MENU dropdown opens under the zone card, and level-2 lists work and fit
 
 **Load bearing for picking a zone.** `ToggleDropDownMenu(1, nil, menu, card)`
@@ -588,10 +610,419 @@ comes from this resolver: `/dump CommanderQuestLog.Questie.Entrance(273)`
 should print Tanaris 0.657, 0.498 and `...Entrance(246)` Hellfire 0.477,
 0.520 titled "The Shattered Halls entrance".
 
+## A39 — A faction not met answers nil from `GetFactionInfoByID`, or its starting standing
+
+**Load bearing for every faction a character has not met** (Netherwing,
+Sporeggar, the Kurenai or the Mag'har, the Ogri'la, the Skyguard). The
+reports disagreed (critic W6): A21 assumes nil, the function is documented
+as answering "regardless of whether the faction is known". 1.6.0 is built
+for both answers (D39). With nil, the adapter uses the faction's Faction.db2
+base for this race and class (Netherwing -42000, Sporeggar -2500, Kurenai
+-1200), names it from the data (the client's name only once met), and the
+picker says "not met yet". With an answer, the client's own bar value and
+name are used and nothing is "not met". Either way a first gain is measured
+from that value, so calibration (D40) sees it as a move from the base.
+
+Symptom if wrong: an unmet Netherwing reads Neutral (the client answers 0,
+not -42000), so "Ally of the Netherwing" shows +42000 capped to 0 rather
+than the climb from Hated -- or a met faction reads "not met yet".
+
+Test: on a character that has never met Netherwing (or Sporeggar),
+`/dump GetFactionInfoByID(1015)` (970). nil confirms A21; a name and a
+sixth value of -42000 (-2500) means the client answers the base and the
+"not met" wording never shows. Then `/dump CommanderQuestLog.Questie.FactionStanding(1015)`
+reads value -42000, word "Hated", met false (nil case) or true.
+
+## A40 — A Human's Aldor turn-in pays +275 / -302 / +137: the stored Sha'tar row is spillover, paid once
+
+**Load bearing for every Aldor and Scryers number** (critic §5.2). The quest
+data stores the Sha'tar's half on 85 Aldor and Scryers quests; the generator
+drops it as `derived` (D38) and the rules regenerate it as spillover from
+the boosted, clamped gain, so a Human sees Aldor +275, Scryers -302 (the
+-110% edge of 275) and Sha'tar +137. CMaNGOS today pays the Sha'tar twice
+(the template AND the row); Questie shows -275 and +137.5. Calibration
+replaces whatever the game actually does after one turn-in.
+
+Symptom if wrong: the Sha'tar moves +262 (or +250 for a non-Human: paid
+twice), or the Scryers lose 275 rather than 302; every Aldor or Scryers
+line is off by that much until a turn-in calibrates it.
+
+Test: as a Human below Friendly with the Sha'tar, turn in 10326 More Marks
+of Kil'jaeden (or any Aldor item turn-in); the chat says Aldor +275, Scryers
+-302, Sha'tar +137, and afterwards `/dump CommanderQuestLogChar.RepObserved[10326]`
+holds raw 250 for the Aldor (932) and samples for 934 and 935 with no
+"changed" count, the quest's briefing marking each "seen in game".
+
+## A41 — The Sha'tar's spillover stops at 8,999, the top of Friendly
+
+Not load bearing outside the Sha'tar. The rules' default `spillClamp =
+"capTop"` (D41) stops a spill at the top of the window's highest rank; the
+DB2's maxRankIn says Friendly, and CMaNGOS clamps every Sha'tar row of the
+mark turn-ins at 8999 (critic W1). The emulator's own code checks the rank
+BEFORE the gain, so the last spill could carry past 8999 into Honored (the
+"mangos" setting in the data's rules).
+
+Symptom if wrong: a Sha'tar at 8,900 gains the full +137 from an Aldor
+turn-in and ends in Honored, where the briefing said "+99 ... spillover
+stops at 8,999".
+
+Test: with the Sha'tar a little under 8,999, one Aldor or Scryers item
+turn-in: the Sha'tar stops at 8,999 (5,999 / 6,000 Friendly), and any later
+turn-in moves it 0. If it overshoots, make the `rules` line in
+`Harness/make_reputations.py` say `spillClamp = "mangos"` and re-run it.
+
+## A42 — Pledging to the Aldor or the Scryers moves the Sha'tar +1750
+
+Not load bearing. Allegiance (10551 / 10552) pays +3500 to the side and has
+no stored Sha'tar row; the rules give the rival -3850 and the Sha'tar
++1750 by spillover (critic §2). If the server does not spill on these, the
+pledge's briefing overstates the Sha'tar by 1,750 until calibrated; a
+faction seen moving that the rules do not name is shown "seen in game only".
+
+Symptom if wrong: after pledging, the Sha'tar did not move, while the
+briefing had said +1,750 (+1,925 for a Human).
+
+Test: before pledging, note `/dump select(6, GetFactionInfoByID(935))`;
+pledge; read it again. Or, on an alt that already pledged, read
+`CommanderQuestLogChar.RepObserved[10551]` (or 10552) after the next pledge.
+
+## A43 — The databases' values are the TBC values where Wowhead's /tbc/ pages show Wrath's
+
+**Load bearing for Sporeggar, the Kurenai and the Mag'har.** The audit
+(D38) found Wowhead's /tbc/ pages carrying the Wrath value on a family of
+quests and kept the databases' (both CMaNGOS and Questie, backed by TBC
+guides): Sporeggar 9742 More Spore Sacs 750 (Wowhead 250), Kurenai 10477
+More Warbeads and Mag'har 10478 More Warbeads! 500 (Wowhead 250), Hero of
+the Mag'har 10212 2000 (Wowhead 1000).
+
+Symptom if wrong: those repeatables pay a third or half of what the tab
+promises; the turn-ins-to-Friendly count is too low by that factor.
+
+Test: one More Spore Sacs turn-in below Friendly with Sporeggar: +750
+(+825 for a Human). One More Warbeads: +500 (+550). Calibration then shows
+either one as "seen in game".
+
+## A44 — The Hellfire Citadel Wanted dailies pay Honor Hold or Thrallmar
+
+Not load bearing outside four dailies, and medium confidence. Both
+databases pay the Consortium only on 11354, 11362, 11363 and 11364; the
+audit's overrides add Honor Hold and Thrallmar (350 / 350 / 350 / 250) on
+Wowhead's TBC pages, a 2007 guide and the symmetry with every other Wanted
+daily paying its dungeon's faction (critic W3). Only the player's side is
+shown.
+
+Symptom if wrong: the daily's Honor Hold (Thrallmar) gain never arrives;
+the first turn-in calibrates it to 0 ("0 Honor Hold, seen in game").
+
+Test: turn in Wanted: Nazan's Riding Crop (11354) or Wanted: Shattered Hand
+Centurions (11364): the chat says Consortium and Honor Hold (Thrallmar).
+`/dump CommanderQuestLog.Questie.RepLine(11364)` before it reads "+250 The
+Consortium  +250 Honor Hold" (+275 each for a Human).
+
+## A45 — Ally of the Netherwing lands a Human on exactly Neutral 0
+
+Not load bearing. 10871 is the Human-only copy of 10870; the audit's
+override (38182 = 42000 / 1.1) and the hand-written reward clamp of 0 land a
+Human with Diplomacy on 0 from -42000, as 10870 does every other race
+(Questie stores 42000: +46200). Under the Wickerman the gain is clamped at
+0 too.
+
+Symptom if wrong: a Human ends a little short of (or past) Neutral 0 after
+the quest; Netherwing's projection is off by the difference.
+
+Test: as a Human at Netherwing -42000, turn in Ally of the Netherwing:
+`/dump select(6, GetFactionInfoByID(1015))` prints 0.
+
+## A46 — No quest pays less for being grey, and three Classic factions pay double
+
+Not load bearing for TBC factions. TBC has no low-level quest penalty
+(CMaNGOS "2.0.1"; the rules keep the flag off), and CMaNGOS doubles quest
+gains for Argent Dawn (529), the Cenarion Circle (609) and Timbermaw Hold
+(576), which the rules copy (D37). Neither is confirmed on Blizzard's
+server (critic W5, §2).
+
+Symptom if wrong: a quest six or more levels grey pays a fraction of the
+line; an Argent Dawn or Timbermaw turn-in pays half of it.
+
+Test: hand in a quest grey to you that pays a TBC faction and compare the
+chat line with the briefing's; then one Timbermaw Hold feather turn-in
+(the briefing shows the listed value doubled).
+
+## A47 — A daily turned in stays done until the reset, and Questie keeps today's Wanted record by realm
+
+Not load bearing. A daily's DONE state (the Guide, the daily income) comes
+from Questie's complete table and `IsQuestFlaggedCompleted` (critic §5.8);
+today's Wanted pick from `Questie.db.global.unavailableQuestsDeterminedByTalking[GetRealmName()]`,
+which Questie fills when you talk to the NPCs and replaces at the reset
+(D42). The real-data boot had that record empty, so "today" is unverified
+on real data.
+
+Symptom if wrong: a daily done today reads as open again before the reset;
+the Wanted pools stay "today's not known yet" after both givers were asked.
+
+Test: turn in a daily, then `/dump C_QuestLog.IsQuestFlaggedCompleted(<id>)`
+is true until the reset. Talk to Nether-Stalker Mah'duun and Wind Trader
+Zhareem, then `/cql status` reads "Wanted dailies today: normal <quest>,
+heroic <quest>".
+
+## A48 — A turn-in's moves arrive as UPDATE_FACTION within about two seconds, and reading every standing then is cheap
+
+Load bearing for calibration (D40) only. The adapter reads all 75 standing
+slots once in every frame where `UPDATE_FACTION` fires -- every reputation
+kill in a dungeon -- and matches the moves to a turn-in within one second
+before it and two after (on CMaNGOS they arrive before
+`QUEST_TURNED_IN`). The chat line (`CHAT_MSG_COMBAT_FACTION_CHANGE`, parsed
+with patterns built from this locale's `FACTION_STANDING_INCREASED` /
+`_DECREASED`) is the second source. Auto-turn-in chains that share a
+faction inside the window are set aside, by design.
+
+Symptom if wrong: `/cql status` never counts a sample ("Reputation seen in
+game: 0 quests") after several turn-ins, or counts them "set aside"; or a
+frame hitch on every reputation kill.
+
+Test: turn in two reputation quests a few seconds apart; `/cql status`
+reads "Reputation seen in game: 2 quests, ..." with nothing set aside. In a
+dungeon, kill a pack with the Reputations tab shut: no hitch.
+
+## A49 — `C_UnitAuras.GetPlayerAuraBySpellID(24705)` answers, and `UNIT_AURA` fires for the Wickerman
+
+Not load bearing outside Hallow's End. The multiplier reads Invocation of
+the Wickerman by spell id through `C_UnitAuras` (in the 2.5.6 binary),
+falling back to a buff scan; `UnitBuff` exists on this client only behind
+the deprecation fallbacks. A change in it is seen on `UNIT_AURA` (0.5 s
+settle) and Bumps, so every surface moves at once.
+
+Symptom if wrong: with the buff up, the lines still read 100% (or 110% for
+a Human), or one surface updates and another does not until the next
+event.
+
+Test: take the buff at a Wickerman bonfire; `/cql status` reads
+"Reputation multiplier: 110% (Invocation of the Wickerman)" (120% for a
+Human), and the Log's briefing, the Zones badge and an open quest dialog all
+show the bigger number without another click.
+
+## A50 — `GetText("FACTION_STANDING_LABEL"..n, UnitSex("player"))` gives the client's word, female form included
+
+Not load bearing. Standing words come from the client so a localised
+client reads its own, and a locale with female forms
+(`FACTION_STANDING_LABEL1_FEMALE`) reads hers; English fills a gap.
+
+Symptom if wrong: English standing words on a localised client, or the
+male form for a female character where the locale has both.
+
+Test: on a localised client (frFR has female forms), a female character's
+Reputations card reads the same word for a standing as the game's own
+Reputation pane does; `/dump GetText("FACTION_STANDING_LABEL5", UnitSex("player"))`
+prints it.
+
+## A51 — The watched faction and the Reputation pane read as the tab expects
+
+Not load bearing outside Following and Watch Faction (D43).
+`C_Reputation.GetWatchedFactionData()` answers a table with `factionID` (nil,
+or 0, with none watched); `GetFactionInfo(index)` answers isWatched twelfth
+and factionID fourteenth, as Classic's ReputationFrame.lua reads them;
+`SetWatchedFactionIndex` moves the bar and fires `UPDATE_FACTION`;
+`FACTION_BAR_COLORS` holds colours with `.r`, `.g`, `.b`.
+
+Symptom if wrong: the tab never follows the watched faction (it falls back
+to the log's), Watch Faction watches the wrong row or does nothing, the
+card's bar is the fallback colour.
+
+Test: tick "Show as experience bar" on the Consortium in the game's pane;
+the Reputations tab (following) switches to it. Pick the Sha'tar and press
+Watch Faction: the bar shows the Sha'tar and the button greys out. Fold
+"Shattrath City" in the pane, pick the Aldor, press it: a chat line says the
+heading is folded and nothing unfolds.
+
+## A52 — `GET_ITEM_INFO_RECEIVED` brings an item cost's name
+
+Not load bearing. A repeatable's item cost is named by `GetItemInfo`, else
+"item N" until the client has the item, and redrawn when
+`GET_ITEM_INFO_RECEIVED` names that item id first.
+
+Symptom if wrong: "10 of item 25433 each" stays until the next refresh.
+
+Test: on a fresh login, open the Reputations tab on the Kurenai (or the
+Mag'har) and read REPEATABLE SOURCES: "Obsidian Warbeads" appears within a
+second.
+
+## A53 — The quest dialog's line sits under the rewards, scrolls with them and fades in with them
+
+**Load bearing for the dialog line** (D44). `GetQuestID()` names the quest
+on both the detail and the reward panel (the binary has it; Blizzard's TBC
+QuestInfo.lua calls it); our nameless child of the dialog's scroll child is
+expected to extend the scroll range the way QuestInfo's own spacer does;
+`GetMaterialTextColors` and the `QuestFont` object exist; the line copies
+the alpha of the element it hangs under while the detail panel fades its
+rewards in. A dialog-replacing addon (Immersion and the like) never calls
+`QuestInfo_Display`, so there is simply no line.
+
+Symptom if wrong: no line at a quest giver, a line cut off at the bottom of
+a long quest that the scroll bar does not reach, a line showing before the
+description has finished typing, or the wrong ink on the parchment.
+
+A quest that moves several factions gets one per line under
+"Reputation:" ("\n" in the one FontString, the holder sized from
+`GetStringHeight`), so 275 px never wraps a gain away from its faction.
+
+Test: accept a Honor Hold quest from Hellfire's quest givers: after the text
+has typed out, "Reputation: +250 Honor Hold" (+275 for a Human) appears
+under the rewards in the dialog's own brown; on a long quest, scroll to
+the bottom and the line is reachable. Hand it in: the line is on the
+reward panel too. Take Marks of Kil'jaeden from Adyen: "Reputation:" then
+the Aldor, the Scryers and the Sha'tar each on a line of its own, all three
+reachable by the scroll bar.
+
+## A54 — The new words fit their widths
+
+Not load bearing. "Reputations" fits its 78 px tab (estimated, about 60 px
+in GameFontNormalSmall); the card's second line ("+1,375 in quests ·
+reaches Friendly · pinned") fits 280 px in Friz Quadrata; "Watch Faction"
+fits 104 px; a row badge is measured with `GetUnboundedStringWidth` and held
+to 64 px on the tabs and in the maximized drawer. With its faction's tag a
+badge is kept to 12 characters (`C.RepBadgeText`, 2026-10-05 review), which
+at about 5.3 px a character in Friz Quadrata 10 is expected to fit whole:
+"+1,100 HH", "+385 Cons", "+275 Exodar", "+385 Scryers", "+550 Sha'tar"
+and "+42,000 Neth" (Ally of the Netherwing, the widest, about 60 px) as
+they are; a longer one loses its thousands comma first ("+1000 Exodar")
+and then its tag is cut to four letters ("+1000 Scry" for Varedis Must Be
+Stopped and Turning Point's "+1,000 Scryers", "+3850 Scry", "+2000 Mag"
+for Hero of the Mag'har, "+1000 Kure"), where "+1,000 Scryers" whole was
+about 70-77 px and ended in "+1,000 Sc...", the tag being the part lost.
+The row tooltip names the faction in full. Long titles on the
+Reputations tab end in an ellipsis (about 153 px against the Zones tab's
+180, the badge taking the rest); the row tooltip has the whole title.
+
+Symptom if wrong: clipped tab label, card line or button; badges
+overlapping the state word; a 12-character badge ("+385 Scryers", "+550
+Sha'tar", "+42,000 Neth") ending in an ellipsis, which would want
+`BADGE_CHARS` at 11 (or 10).
+
+Test: open the Reputations tab on the Consortium: the strip reads Log /
+Zones / Reputations unclipped; the card's two lines and the action bar's
+five buttons fit; widen nothing. On the Zones tab in Hellfire and in the
+maximized map's drawer, the badges read "+275 HH" and the like whole, no
+ellipsis. On the Zones tab in Shattrath City, Allegiance to the Scryers
+reads "+3850 Scry" and Trial of the Naaru: Tenacity "+550 Sha'tar", both
+whole; in Shadowmoon Valley (a Scryer) Varedis Must Be Stopped reads
+"+1000 Scry", and in Netherstorm Turning Point the same, no ellipsis on
+either, here or in the maximized map's drawer.
+
+## A55 — A faction view costs about a zone view, and the faction index never hitches
+
+Not load bearing. Under LuaJIT on the real Questie data a faction view cost
+4.8 ms (the Sha'tar) against 4.0 ms for Shattrath's zone view, and the
+whole index 5.3 ms over 18 frames; WoW's interpreter is slower (A10). A view
+is rebuilt on each generation step while the tab is up, so a reputation
+kill recomputes it as a zone view is recomputed.
+
+Symptom if wrong: a hitch on opening the Reputations tab, on each pick, or
+on every reputation kill while it is open.
+
+Test: `/run local t=debugprofilestop() CommanderQuestLog.Questie.FactionView(935) print(debugprofilestop()-t)`
+(after a reputation change, so the view is not cached) prints well under 50
+(ms); `/cql status` within a few seconds of first opening the tab reads
+"Faction index: complete (...)".
+
+## A56 — Where Wowhead (TBC) and CMaNGOS agree against Questie, 2.5.6 pays what they say
+
+**Load bearing for nine quests** (D38, widened 2026-10-04): 4267, 5096,
+6804, 7639, 7640, 7781, 7782, 10016 and 11211 now read the two sources'
+rows, not Questie's. Both share a lineage with Questie (D40), and Wowhead's
+/tbc/ pages carry Wrath values on some quests (A43), so offline nothing
+settles which one the Anniversary server follows. 10016 Timber Worg Tails
+is the one a TBC leveller meets.
+
+Symptom if wrong: a Human's Timber Worg Tails moves the Alliance capitals
+(about +547 each) while every surface says "No reputation"; Poisoned Water
+moves each Horde capital by about +498 where it says +250.
+
+Test: turn in 10016 on an Alliance character with the chat frame showing
+reputation lines: no "Reputation with Stormwind increased" line, and
+`/cql status` counts no new set-aside for it. On the Horde, 6804 Poisoned
+Water: one "Reputation with Horde" line and +250 for each capital; 11211
+Help for Mudsprocket: Gadgetzan +10 only.
+
+## A57 — Two rows of one quest that spill into each other compound, as the rules pay them
+
+**Load bearing for 123 quests** (most of Durotar and Dun Morogh, the Exodar
+and Silvermoon pairs, The Lord of Blackrock 7781 / 7782). The rules pay each
+direct row and then its spillover, so Cutting Teeth (Darkspear 250,
+Orgrimmar 250) moves Orgrimmar 250 + 62 = +312 and each other Horde capital
+62 + 62 = +124, and The Lord of Blackrock gives a Human about +1,098 with
+each Alliance capital. That is CMaNGOS's RewardReputation, one row at a
+time. Calibration cannot settle it: those moves are sums and are set aside
+("mixed", D40), so the data stands.
+
+Symptom if wrong: on those quests the capitals move by the plain row (+250 /
++62) and the line overstates them by a quarter or so.
+
+Test: turn in 788 Cutting Teeth on a new Orc or Troll and read the chat:
+"Reputation with Orgrimmar increased by 312", Darkspear Trolls 312,
+Undercity, Thunder Bluff and Silvermoon City 124 each (a Troll's Darkspear
+line is the same). `/cql status` then counts five set aside.
+
+## A58 — Questie keeps a daily done until a relog, and the client says when the last reset was
+
+Not load bearing. Today's Wanted pick (D42) treats a rotating daily in
+Questie's done list as today's only when this session began after the last
+daily reset, `GetServerTime() + GetQuestResetTime() - 86400`, or the adapter
+saw the turn-in since. That rests on Questie's `complete` table being
+rebuilt at login and never cleared at the reset (QuestLifecycle,
+QuestieQuest; read from its source, not watched), and on both client calls
+answering server seconds.
+
+Symptom if wrong: after playing through the reset, the Reputations tab's
+DAILIES still names yesterday's Wanted as today's; or, the other way, a
+Wanted done today stops being named after a relog.
+
+Test: turn in a heroic Wanted daily, stay logged in across the daily reset,
+then `/cql status`: "Wanted dailies today: ... heroic not known yet" until
+Wind Trader Zhareem is talked to. `/dump GetServerTime(), GetQuestResetTime()`
+answers seconds since 1970 and under 86400.
+
+## A59 — Commander Orders lists our waypoints by source and takes a new note through Update
+
+Not load bearing. A quest waypoint's note (D44) is kept current with
+`CommanderOrders.List({ source = "QuestLog" })` and `CommanderOrders.Update(uid,
+{ note = ... })`, matched by the waypoint's key `quest:<id>`; both are
+Orders' public API (CommanderOrders.lua) and its tooltip prints the note as
+stored.
+
+Symptom if wrong: a waypoint's note keeps the figure it was set with after
+the Wickerman, a cap or a calibration sample changes the quest's line.
+
+Test: set a waypoint from the Zones tab for an Honor Hold quest as a Human,
+take Invocation of the Wickerman, and hover the Orders pin: its note reads
+the +20% line (+300 for a 250 quest). Remove the waypoint and take the buff
+off: it does not come back.
+
+## A60 — The card's note is one line in Friz Quadrata, cut short rather than wrapped
+
+Not load bearing (the 1.6.0 review's one PLAUSIBLE finding, fixed blind).
+The catalogue's card note (Zones and Reputations) is a 280 px FontString on
+a 46 px card; the review's renderer, with a substitute font, wrapped the
+Reputations tab's longest note ("No quests left · repeatables reach
+Friendly · pinned", about 265-290 px in Friz Quadrata at 10) onto the
+navigator's top border. The note now has `SetWordWrap(false)` and
+`SetMaxLines(1)` (both guarded), so the worst case is a trailing ellipsis;
+the card's tooltip says it all in full.
+
+Symptom if wrong: the note's last word ("pinned") lost to an ellipsis more
+often than expected, or (a client without either method) a second line over
+the navigator's first row.
+
+Test: on the Reputations tab pin the Consortium after its once-only quests
+are done, then `/run local n=CommanderQuestLog.Reps._Widgets().card.note print(n:GetStringWidth(), n:GetWidth(), n:IsTruncated and n:IsTruncated())`:
+the width is at most 280, and the note sits on one line above the
+navigator.
+
 ---
 
 Not relied on, so not listed above: whether `C_QuestLog.GetQuestInfo` returns
 titles for quests never seen (critic §4.1 — there is no Questie-less fallback),
 `C_Map.SetUserWaypoint` and `QuestMapFrame` (absent on this client and unused),
-and the XML parentKeys of the maximized map (the drawer anchors to
-`ScrollContainer` only).
+the XML parentKeys of the maximized map (the drawer anchors to
+`ScrollContainer` only), and the payload of `FACTION_STANDING_CHANGED`
+(critic §5.6: calibration reads the bars and the chat line, never that
+event).

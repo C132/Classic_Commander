@@ -123,7 +123,20 @@
 --     junkId = 77777,                              -- the zoneMap junk entry (false to omit)
 --     junkZones = { 3483, 3430 },                  -- where it is planted
 --     omitModules = { AvailableQuests = true },    -- modules Questie "does not have"
+--     -- reputation worlds (Fake.RepWorld() is a complete example):
+--     rep = true,                                  -- InstallClient also installs the reputation client
+--     realm = "Testrealm", locale = "enUS",        -- GetRealmName / GetLocale
+--     unavailableByTalking = { Testrealm = { [11354] = true } },  -- Questie.db.global's record
+--     contentPhases = { active = 3, byPhase = { [5] = { [11499] = true } } },  -- ContentPhases, Questie.IsTBC
+--     unmetNames = { [1015] = "Netherwing" },      -- the name fake.Meet gives a faction
+--     itemCache = { [29425] = "Mark of Kil'jaeden" },  -- GetItemInfo answers only these
+--     maxDailies = 25, noAuraById = true,          -- GetMaxDailyQuests; drop GetPlayerAuraBySpellID
+--     serverTime = 1e9, questResetIn = 3600,       -- GetServerTime / GetQuestResetTime (only when set)
+--     player.race / raceFile / sex / auras = { [24705] = true }   -- UnitRace, UnitSex, the aura APIs
 --   }
+--
+-- A faction missing from `factions` is NOT MET: GetFactionInfoByID answers
+-- nil for it, the way the adapter has to expect (A21).
 --
 -- THE HANDLE Fake.Install returns:
 --
@@ -146,6 +159,19 @@
 --   fake.SetAvailable(id, bool)           AvailableQuests.__availableQuests (Questie draws it)
 --   fake.ModulesCreated()                 modules ImportModule conjured (must stay empty)
 --   fake.Uninstall()                      remove the Questie / QuestieLoader globals
+--   reputation worlds:
+--   fake.SetUnavailable(id, bool)         Questie's "not offered today" record, this realm
+--   fake.ResetDailies()                   the daily reset: the realm's record is REPLACED
+--   fake.SetAura(spellId, bool)           an aura on the player (24705 the Wickerman)
+--   fake.Meet(factionId[, value])         GetFactionInfoByID starts answering for it
+--   fake.RepChange(factionId, delta)      moves a bar; returns the client's chat line for it
+--
+-- Fake.InstallRepClient(world, opts) / Fake.UninstallRepClient(): the client
+-- calls and GlobalStrings reputation reads (UnitRace, UnitSex,
+-- UnitFactionGroup, GetRealmName, GetLocale, GetText and the
+-- FACTION_STANDING_* strings, GetMaxDailyQuests, GetItemInfo, the aura APIs).
+-- InstallClient calls the first for a world with rep = true; the second puts
+-- back exactly what was there before.
 --
 -- THE DEFAULT WORLD AT A GLANCE (what the real engine makes of it, default
 -- settings; the adapter smoke's section O asserts these):
@@ -166,6 +192,10 @@
 --   Outland (uiMap 1945) lists Hellfire and Terokkar; dungeon maps: Ramparts
 --     347 / Blood Furnace 261 -> group 3563, Mana-Tombs 272 -> group 3917,
 --     Underbog 262 -> 3716. Unknown uiMap 9999 makes ZoneDB throw.
+--
+-- The default world is never given reputation fixtures: its counts are other
+-- harnesses' assertions. Fake.RepWorld() is the reputation world (described
+-- above its definition below).
 --
 -- zoneMap is BUILT the way ZoneDB.GetZonesWithQuests builds it: hidden quests
 -- dropped unless HIDE_ON_MAP or an event quest; race/class filtered against the
@@ -484,6 +514,257 @@ local DEFAULT_WORLD = {
 
 function Fake.DefaultWorld()
     return DeepCopy(DEFAULT_WORLD)
+end
+
+-- ---------------------------------------------------------------------------
+-- The reputation world: a level-70 human paladin who pledged to the Aldor,
+-- across Shattrath, Terokkar, Hellfire, Nagrand, Zangarmarsh, Shadowmoon,
+-- the Isle of Quel'Danas, Elwynn, the Hinterlands and Stranglethorn. Its
+-- quests carry REAL quest ids and Questie's real reputationReward rows (from
+-- the realdata dump), so the generated data's derived rows, overrides, reward
+-- caps, item costs and rotating dailies apply to them as they do in game;
+-- the few synthetic ids are 91000 and up. Gates are Questie's; the verdicts
+-- (state) are scripted to match the standings below. Section R of the
+-- adapter smoke asserts what the rules engine makes of it; the rows to know:
+--
+--   Standings (met): Aldor 4000, Scryers -4400, Sha'tar 2000 (its window from
+--     the Aldor and Scryers open), Honor Hold 4000, Consortium 2200,
+--     Cenarion Expedition 9500, Lower City 0, Stormwind 9000, Ironforge 3100,
+--     the other capitals 3000-3100, the goblin towns 500, Bloodsail -6500.
+--     Not met (GetFactionInfoByID answers nil): Netherwing, Sporeggar,
+--     Kurenai, Shattered Sun -- their bases are -42000, -2500, -1200, 0.
+--   Honor Hold: 10937 done (1000), 9355 (250) and 91002 (100; its other row
+--     is for a faction with no standing slot, dropped), the 10106 daily, and
+--     the four Hellfire Citadel Wanted dailies the audit gave Honor Hold AND
+--     Thrallmar (11354/11362/11363 heroic, 11364 normal). 10110 is Horde's.
+--   Aldor: 10551 pledged (done; 10552, the Scryers', is its exclusive
+--     peer), 10021 done, 10325 and 10020 open, the 10326 / 10327 / 10421
+--     repeatables. Scryers: 10412 / 10414, both the rival's.
+--   Sha'tar: 10886 (500, in the log), 10210 (10, done); the Aldor and Scryers
+--     quests above reach it through its window.
+--   Consortium: 9914 (gate 2999) and 9882 (gate 3000) close as it rises,
+--     9900, 10165 open; 9883 / 9915 repeatables; the Wanted dailies, of which
+--     Questie's record (Testrealm) has 11354, 11364 and 11376 as not offered
+--     today, so the normal one today is 11371; the Magisters' Terrace pair
+--     (11499 / 11500) is held back for phase 5.
+--   Shattered Sun: nothing visible; 11499, 11500, 11524, 11545 held back by
+--     phase; 91010 hidden but in no phase list; 91011 Horde-only.
+--   Netherwing: 10871 (the human copy, audited to 38182, clamped to land on
+--     0) and the 11015 daily (locked: needs Neutral); 10870 is not human.
+--   Sporeggar: 9739 (750), 9742 repeatable. Kurenai: 10477 repeatable,
+--     11502 (Halaa, conditional, locked). Cenarion Expedition: 9875
+--     repeatable, 9784 missed (past its one-way cap).
+--   Classic: 91003 Stormwind 250 (Elwynn), 91004 Ironforge 250 (filed under
+--     AREA 47, The Hinterlands -- faction 47 is Ironforge), 9266 Making
+--     Amends (Everlook 500, Bloodsail -500, three goblin-town rows that are
+--     stored spillover). 91001 pays nothing at all.
+--   Items: Mark of Kil'jaeden is in the client's cache, Fel Armament only in
+--     Questie's item table.
+-- ---------------------------------------------------------------------------
+
+local function RepQuest(name, level, required, zone, giver, rows, extra)
+    local q = { name = name, questLevel = level, requiredLevel = required, zoneOrSort = zone,
+                startedBy = { { giver } }, finishedBy = { { giver } }, reputationReward = rows }
+    for k, v in pairs(extra or {}) do q[k] = v end
+    return q
+end
+
+local REPEATABLE, DAILY = { specialFlags = 1, questFlags = 136 }, { specialFlags = 1, questFlags = 4224 }
+local function With(base, more)
+    local out = {}
+    for k, v in pairs(base) do out[k] = v end
+    for k, v in pairs(more or {}) do out[k] = v end
+    return out
+end
+
+local REP_WORLD = {
+    ready = true,
+    rep = true,
+    realm = "Testrealm",
+    locale = "enUS",
+    junkId = false,
+    player = {
+        level = 70, class = "PALADIN", className = "Paladin", classId = 2,
+        race = "Human", raceFile = "Human", raceId = 1, sex = 2, faction = "Alliance",
+        uiMapId = 1955, x = 50, y = 50, professions = {}, auras = {},
+    },
+    zones = {
+        [3483] = { name = "Hellfire Peninsula", uiMapId = 1944, category = 3 },
+        [3703] = { name = "Shattrath City", uiMapId = 1955, category = 3 },
+        [3519] = { name = "Terokkar Forest", uiMapId = 1952, category = 3 },
+        [3518] = { name = "Nagrand", uiMapId = 1951, category = 3 },
+        [3521] = { name = "Zangarmarsh", uiMapId = 1946, category = 3 },
+        [3520] = { name = "Shadowmoon Valley", uiMapId = 1948, category = 3 },
+        [3535] = { name = "Hellfire Citadel" },
+        [3905] = { name = "Coilfang Reservoir", category = 9 },
+        [3917] = { name = "Auchindoun", category = 9 },
+        [4131] = { name = "Magisters' Terrace", category = 9 },
+        [4080] = { name = "Isle of Quel'Danas", uiMapId = 1957, category = 1 },
+        [12] = { name = "Elwynn Forest", uiMapId = 1429, category = 1 },
+        [47] = { name = "The Hinterlands", uiMapId = 1425, category = 1 },
+        [33] = { name = "Stranglethorn Vale", uiMapId = 1434, category = 1 },
+    },
+    uiMaps = {
+        [946] = { name = "Cosmic", mapType = 0, children = { 947, 1945 } },
+        [947] = { name = "Azeroth", mapType = 1, parent = 946, areaId = 10089, children = { 1415 } },
+        [1415] = { name = "Eastern Kingdoms", mapType = 2, parent = 947, areaId = 10074,
+                   children = { 1429, 1425, 1434, 1957 } },
+        [1945] = { name = "Outland", mapType = 2, parent = 946, areaId = 0,
+                   children = { 1944, 1946, 1948, 1951, 1952, 1955 } },
+        [1944] = { name = "Hellfire Peninsula", mapType = 3, parent = 1945, areaId = 3483 },
+        [1946] = { name = "Zangarmarsh", mapType = 3, parent = 1945, areaId = 3521 },
+        [1948] = { name = "Shadowmoon Valley", mapType = 3, parent = 1945, areaId = 3520 },
+        [1951] = { name = "Nagrand", mapType = 3, parent = 1945, areaId = 3518 },
+        [1952] = { name = "Terokkar Forest", mapType = 3, parent = 1945, areaId = 3519 },
+        [1955] = { name = "Shattrath City", mapType = 3, parent = 1945, areaId = 3703 },
+        [1957] = { name = "Isle of Quel'Danas", mapType = 3, parent = 1415, areaId = 4080 },
+        [1429] = { name = "Elwynn Forest", mapType = 3, parent = 1415, areaId = 12 },
+        [1425] = { name = "The Hinterlands", mapType = 3, parent = 1415, areaId = 47 },
+        [1434] = { name = "Stranglethorn Vale", mapType = 3, parent = 1415, areaId = 33 },
+    },
+    continents = { [1] = "Eastern Kingdoms", [2] = "Kalimdor", [3] = "Outland", [9] = "Dungeons" },
+    factions = {
+        [932] = "The Aldor", [934] = "The Scryers", [935] = "The Sha'tar", [946] = "Honor Hold",
+        [933] = "The Consortium", [942] = "Cenarion Expedition", [1011] = "Lower City",
+        [72] = "Stormwind", [47] = "Ironforge", [54] = "Gnomeregan Exiles", [69] = "Darnassus",
+        [930] = "Exodar", [21] = "Booty Bay", [369] = "Gadgetzan", [470] = "Ratchet", [577] = "Everlook",
+        [87] = "Bloodsail Buccaneers", [989] = "Keepers of Time", [967] = "The Violet Eye",
+        [990] = "The Scale of the Sands",
+    },
+    reps = {
+        [932] = 4000, [934] = -4400, [935] = 2000, [946] = 4000, [933] = 2200, [942] = 9500, [1011] = 0,
+        [72] = 9000, [47] = 3100, [54] = 3100, [69] = 3100, [930] = 3000, [21] = 500, [369] = 500,
+        [470] = 500, [577] = 500, [87] = -6500, [989] = 0, [967] = 0, [990] = 0,
+    },
+    -- the names fake.Meet gives a faction the first time it answers
+    unmetNames = { [1015] = "Netherwing", [970] = "Sporeggar", [978] = "Kurenai", [1077] = "Shattered Sun Offensive" },
+    npcs = {
+        [21001] = { name = "Adyen the Lightwarden", spawns = { [3703] = { { 30.0, 34.5 } } } },
+        [21002] = { name = "Arcanist Adyria", spawns = { [3703] = { { 51.0, 41.0 } } } },
+        [21003] = { name = "A'dal", spawns = { [3703] = { { 53.6, 44.0 } } } },
+        [21004] = { name = "Nether-Stalker Mah'duun", spawns = { [3703] = { { 75.0, 37.0 } } } },
+        [21005] = { name = "Wind Trader Zhareem", spawns = { [3703] = { { 75.5, 36.5 } } } },
+        [21006] = { name = "Force Commander Danath", spawns = { [3483] = { { 56.6, 66.4 } } } },
+        [21007] = { name = "Gezhe", spawns = { [3518] = { { 31.0, 57.0 } } } },
+        [21008] = { name = "Fahssn", spawns = { [3521] = { { 19.0, 63.0 } } } },
+        [21009] = { name = "Mordenai", spawns = { [3520] = { { 61.0, 60.0 } } } },
+        [21010] = { name = "Shattered Sun Agent", spawns = { [4080] = { { 47.0, 31.0 } } } },
+        [21011] = { name = "Marshal Dughan", spawns = { [12] = { { 42.0, 65.0 } } } },
+        [21012] = { name = "Fleet Master Seahorn", spawns = { [33] = { { 27.0, 77.0 } } } },
+        [21013] = { name = "Lower City Scout", spawns = { [3519] = { { 40.0, 30.0 } } } },
+        [21014] = { name = "Ruam", spawns = { [3521] = { { 79.0, 64.0 } } } },
+        [21015] = { name = "Kurenai Elder", spawns = { [3518] = { { 60.0, 23.0 } } } },
+        [21016] = { name = "Wildhammer Envoy", spawns = { [47] = { { 14.0, 46.0 } } } },
+    },
+    items = {
+        [29425] = { name = "Mark of Kil'jaeden" },
+        [29740] = { name = "Fel Armament" },
+    },
+    itemCache = { [29425] = "Mark of Kil'jaeden" },
+    quests = {
+        -- Shattrath: the Aldor and the Scryers
+        [10551] = RepQuest("Allegiance to the Aldor", 65, 60, 3703, 21001, { { 932, 3500 } }, { exclusiveTo = { 10552 } }),
+        [10552] = RepQuest("Allegiance to the Scryers", 65, 60, 3703, 21002, { { 934, 3500 } }, { exclusiveTo = { 10551 } }),
+        [10021] = RepQuest("Restoring the Light", 64, 62, 3703, 21001, { { 932, 250 }, { 935, 125 } },
+            { requiredMinRep = { 932, 0 } }),
+        [10325] = RepQuest("Marks of Kil'jaeden", 65, 62, 3703, 21001, { { 932, 250 }, { 935, 125 } },
+            { requiredMinRep = { 932, 0 } }),
+        [10020] = RepQuest("A Cure for Zahlia", 64, 62, 3703, 21001, { { 932, 350 }, { 935, 175 } },
+            { requiredMinRep = { 932, 3000 } }),
+        [10326] = RepQuest("More Marks of Kil'jaeden", 65, 62, 3703, 21001, { { 932, 250 }, { 935, 125 } },
+            With(REPEATABLE, { requiredMinRep = { 932, 0 }, requiredMaxRep = { 932, 9000 } })),
+        [10327] = RepQuest("Single Mark of Kil'jaeden", 65, 62, 3703, 21001, { { 932, 25 }, { 935, 12 } },
+            With(REPEATABLE, { requiredMinRep = { 932, 0 }, requiredMaxRep = { 932, 9000 } })),
+        [10421] = RepQuest("Fel Armaments", 70, 64, 3703, 21001, { { 932, 350 }, { 935, 175 } },
+            With(REPEATABLE, { requiredMinRep = { 932, 0 } })),
+        [10412] = RepQuest("Firewing Signets", 65, 62, 3703, 21002, { { 934, 250 }, { 935, 125 } },
+            { requiredMinRep = { 934, 0 }, state = "MISSING_REPUTATION" }),
+        [10414] = RepQuest("Single Firewing Signet", 70, 64, 3703, 21002, { { 934, 25 }, { 935, 12 } },
+            With(REPEATABLE, { requiredMinRep = { 934, 0 }, requiredMaxRep = { 934, 9000 }, state = "MISSING_REPUTATION" })),
+        -- the Sha'tar's own
+        [10886] = RepQuest("Trial of the Naaru: Tenacity", 70, 70, 3703, 21003, { { 935, 500 } }),
+        [10210] = RepQuest("A'dal", 65, 60, 3519, 21003, { { 935, 10 } }),
+        -- the Wanted dailies (Questie's rows; the audit added Honor Hold and
+        -- Thrallmar to the four Hellfire Citadel ones)
+        [11354] = RepQuest("Wanted: Nazan's Riding Crop", 70, 70, 3535, 21005, { { 933, 350 } }, DAILY),
+        [11362] = RepQuest("Wanted: Keli'dan's Feathered Stave", 70, 70, 3535, 21005, { { 933, 350 } }, DAILY),
+        [11363] = RepQuest("Wanted: Bladefist's Seal", 70, 70, 3535, 21005, { { 933, 350 } }, DAILY),
+        [11364] = RepQuest("Wanted: Shattered Hand Centurions", 70, 70, 3535, 21004, { { 933, 250 } }, DAILY),
+        [11371] = RepQuest("Wanted: Coilfang Myrmidons", 70, 70, 3905, 21004, { { 933, 250 }, { 942, 250 } }, DAILY),
+        [11376] = RepQuest("Wanted: Malicious Instructors", 70, 70, 3917, 21004, { { 933, 250 }, { 1011, 250 } }, DAILY),
+        [11499] = RepQuest("Wanted: The Signet Ring of Prince Kael'thas", 70, 70, 4131, 21005,
+            { { 933, 350 }, { 1077, 350 } }, With(DAILY, { hidden = true })),
+        [11500] = RepQuest("Wanted: Sisters of Torment", 70, 70, 4131, 21004, { { 933, 250 }, { 1077, 250 } },
+            With(DAILY, { hidden = true })),
+        -- Terokkar: Lower City
+        [10030] = RepQuest("Recover the Bones", 65, 63, 3519, 21013, { { 1011, 250 } }),
+        [10918] = RepQuest("More Feathers", 65, 62, 3519, 21013, { { 1011, 250 } },
+            With(REPEATABLE, { requiredMaxRep = { 1011, 8999 } })),
+        -- Hellfire: Honor Hold
+        [10937] = RepQuest("Drill the Drillmaster", 62, 58, 3483, 21006, { { 946, 1000 } }, { requiredRaces = 1101 }),
+        [9355] = RepQuest("A Job for an Intelligent Man", 61, 58, 3483, 21006, { { 946, 250 } }),
+        [10106] = RepQuest("Hellfire Fortifications", -1, 58, 3483, 21006, { { 946, 150 } },
+            With(DAILY, { questFlags = 4232, requiredRaces = 1101, requiredMinRep = { 946, 0 } })),
+        [10110] = RepQuest("Hellfire Fortifications", -1, 58, 3483, 21006, { { 947, 150 } },
+            With(DAILY, { questFlags = 4232, requiredRaces = 690, requiredMinRep = { 947, 0 } })),
+        [91001] = RepQuest("Scout the Perimeter", 61, 58, 3483, 21006, nil),
+        [91002] = RepQuest("A Strange Debt", 61, 58, 3483, 21006, { { 99999, 250 }, { 946, 100 } }),
+        -- Nagrand: the Consortium, Kurenai
+        [9914] = RepQuest("A Head Full of Ivory", 66, 64, 3518, 21007, { { 933, 250 } },
+            { requiredMaxRep = { 933, 2999 } }),
+        [9882] = RepQuest("Stealing from Thieves", 66, 64, 3518, 21007, { { 933, 250 } },
+            { requiredMaxRep = { 933, 3000 } }),
+        [9900] = RepQuest("Gava'xi", 67, 65, 3518, 21007, { { 933, 250 } }),
+        [10165] = RepQuest("Undercutting the Competition", 66, 64, 3518, 21007, { { 933, 500 } }),
+        [9883] = RepQuest("More Crystal Fragments", 66, 64, 3518, 21007, { { 933, 250 } },
+            With(REPEATABLE, { requiredMaxRep = { 933, 3000 } })),
+        [9915] = RepQuest("More Heads Full of Ivory", 66, 64, 3518, 21007, { { 933, 250 } },
+            With(REPEATABLE, { requiredMaxRep = { 933, 2999 } })),
+        [10477] = RepQuest("More Warbeads", 68, 65, 3518, 21015, { { 978, 500 } },
+            With(REPEATABLE, { requiredRaces = 1101 })),
+        [11502] = RepQuest("In Defense of Halaa", 70, 64, 3518, 21015, { { 978, 500 } },
+            With(DAILY, { questFlags = 4296, requiredRaces = 1101, requiredMinRep = { 978, 0 },
+                          state = "MISSING_REPUTATION" })),
+        -- Zangarmarsh: Sporeggar, the Cenarion Expedition
+        [9739] = RepQuest("The Sporelings' Plight", 63, 61, 3521, 21008, { { 970, 750 } }),
+        [9742] = RepQuest("More Spore Sacs", 63, 61, 3521, 21008, { { 970, 750 } },
+            With(REPEATABLE, { requiredMaxRep = { 970, 3000 } })),
+        [9875] = RepQuest("Uncatalogued Species", 63, 60, 3521, 21014, { { 942, 500 } },
+            With(REPEATABLE, { questFlags = 128, requiredMaxRep = { 942, 20999 } })),
+        [9784] = RepQuest("Identify Plant Parts", 64, 60, 3521, 21014, { { 942, 250 } },
+            With(REPEATABLE, { requiredMaxRep = { 942, 8999 }, oneWayRep = true, state = "EXCEED_REPUTATION" })),
+        -- Shadowmoon: Netherwing
+        [10871] = RepQuest("Ally of the Netherwing", 70, 70, 3520, 21009, { { 1015, 42000 } },
+            { requiredRaces = 1, questFlags = 640 }),
+        [10870] = RepQuest("Ally of the Netherwing", 70, 70, 3520, 21009, { { 1015, 42000 } },
+            { requiredRaces = 1790, questFlags = 640 }),
+        [11015] = RepQuest("Netherwing Crystals", 70, 70, 3520, 21009, { { 1015, 250 } },
+            With(DAILY, { requiredMinRep = { 1015, 0 }, state = "MISSING_REPUTATION" })),
+        -- the Isle of Quel'Danas: held back (phase 5), and one hidden for another reason
+        [11524] = RepQuest("Erratic Behavior", 70, 70, 4080, 21010, { { 1077, 150 } }, With(DAILY, { hidden = true })),
+        [11545] = RepQuest("A Charitable Donation", 70, 70, 4080, 21010, { { 1077, 150 } },
+            With(DAILY, { questFlags = 4232, requiredMaxRep = { 1077, 42000 }, hidden = true })),
+        [91010] = RepQuest("A Retired Errand", 70, 70, 4080, 21010, { { 1077, 500 } }, { hidden = true }),
+        [91011] = RepQuest("A Horde Errand", 70, 70, 4080, 21010, { { 1077, 150 } },
+            { hidden = true, requiredRaces = 690 }),
+        -- classic: the capitals' quarter, the goblin towns' half
+        [91003] = RepQuest("A Stormwind Errand", 10, 8, 12, 21011, { { 72, 250 } }),
+        [91004] = RepQuest("A Hinterlands Errand", 45, 40, 47, 21016, { { 47, 250 } }),
+        [9266] = RepQuest("Making Amends", -1, 40, 33, 21012,
+            { { 21, 250 }, { 87, -500 }, { 369, 250 }, { 470, 250 }, { 577, 500 } }, { specialFlags = 1, questFlags = 8 }),
+    },
+    complete = { [10551] = true, [10021] = true, [10210] = true, [10937] = true },
+    log = { [10886] = true },
+    unavailableByTalking = { Testrealm = { [11354] = true, [11364] = true, [11376] = true } },
+    contentPhases = {
+        active = 3,
+        byPhase = { [4] = {}, [5] = { [11499] = true, [11500] = true, [11524] = true, [11545] = true, [91011] = true } },
+    },
+    filler = 0,
+}
+
+function Fake.RepWorld()
+    return DeepCopy(REP_WORLD)
 end
 
 -- ---------------------------------------------------------------------------
@@ -862,6 +1143,26 @@ function Fake.Install(world, opts)
         return q and q.event or ""
     end)
 
+    -- ---- ContentPhases (a reputation world only) ------------------------------------------------
+    -- The real BlacklistTbcQuestsByPhase is a pure function: it adds every
+    -- quest of the phases after `contentPhase` to the table it is handed and
+    -- returns it. The quests themselves are hidden through `hidden = true`,
+    -- as Questie's blacklist does with the same list.
+    if W.contentPhases then
+        local Phases = Module("ContentPhases")
+        Phases.activePhases = { TBC = W.contentPhases.active or 3 }
+        local byPhase = W.contentPhases.byPhase or {}
+        Phases.BlacklistTbcQuestsByPhase = Dot("ContentPhases.BlacklistTbcQuestsByPhase", function(into, contentPhase)
+            Count("BlacklistTbcQuestsByPhase")
+            local last = 0
+            for phase in pairs(byPhase) do if phase > last then last = phase end end
+            for phase = contentPhase + 1, last do
+                for questId in pairs(byPhase[phase] or {}) do into[questId] = true end
+            end
+            return into
+        end)
+    end
+
     -- ---- QuestieReputation / QuestieProfessions ----------------------------------------------
     local Reputation = Module("QuestieReputation")
     Reputation.GetPlayerReputations = Colon(Reputation, "QuestieReputation:GetPlayerReputations", function()
@@ -913,10 +1214,16 @@ function Fake.Install(world, opts)
         db = {
             char = { complete = DeepCopy(W.complete), hidden = {} },
             profile = { debugEnabled = false },
-            global = { unavailableQuestsDeterminedByTalking = {} },
+            -- by realm, then quest id: the rotating dailies an NPC did not offer today
+            global = { unavailableQuestsDeterminedByTalking = DeepCopy(W.unavailableByTalking or {}) },
         },
         API = { isReady = W.ready ~= false },
+        IsTBC = W.contentPhases and true or nil,
     }
+    if W.unavailableByTalking and W.realm then
+        Available.__unavailableQuestsDeterminedByTalking =
+            Questie.db.global.unavailableQuestsDeterminedByTalking[W.realm]
+    end
     Questie.API.Enums = {
         QuestUpdateTriggerReason = { QUEST_ACCEPTED = 1, QUEST_UPDATED = 2, QUEST_TURNED_IN = 3, QUEST_ABANDONED = 4 },
     }
@@ -990,6 +1297,40 @@ function Fake.Install(world, opts)
     function fake.SetState(id, name) if W.quests[id] then W.quests[id].state = name end end
     function fake.SetRep(factionId, value) W.reps[factionId] = value end
     function fake.SetAvailable(id, on) W.available[id] = on and true or nil end
+    -- Reputation worlds. Questie's record of the rotating dailies an NPC did
+    -- not offer today, per realm (written the way AvailableQuests does).
+    function fake.SetUnavailable(id, on)
+        local byRealm = Questie.db.global.unavailableQuestsDeterminedByTalking
+        local realm = W.realm or "Testrealm"
+        byRealm[realm] = byRealm[realm] or {}
+        byRealm[realm][id] = on and true or nil
+    end
+    -- The daily reset: Questie REPLACES the realm's table (a kept reference goes stale)
+    function fake.ResetDailies()
+        local realm = W.realm or "Testrealm"
+        Questie.db.global.unavailableQuestsDeterminedByTalking[realm] = {}
+        Available.__unavailableQuestsDeterminedByTalking = Questie.db.global.unavailableQuestsDeterminedByTalking[realm]
+    end
+    function fake.SetAura(spellId, on)
+        W.player.auras = W.player.auras or {}
+        W.player.auras[spellId] = on and true or nil
+    end
+    -- First contact with a faction: GetFactionInfoByID starts answering, at
+    -- `value` (the Faction.db2 base when not given -- the caller knows it)
+    function fake.Meet(factionId, value)
+        W.factions[factionId] = W.factions[factionId] or (W.unmetNames or {})[factionId] or ("Faction " .. factionId)
+        if value ~= nil then W.reps[factionId] = value end
+    end
+    -- Moves a met faction's bar by delta and returns the chat line the client
+    -- would print for it (from the FACTION_STANDING_* globals, so the
+    -- harness must have installed the reputation client first)
+    function fake.RepChange(factionId, delta)
+        W.reps[factionId] = (W.reps[factionId] or 0) + delta
+        local name = W.factions[factionId] or (W.unmetNames or {})[factionId] or ("Faction " .. factionId)
+        local format = delta >= 0 and _G.FACTION_STANDING_INCREASED or _G.FACTION_STANDING_DECREASED
+        if type(format) ~= "string" then return nil end
+        return string.format(format, name, math.abs(delta))
+    end
     function fake.Uninstall()
         Questie = nil
         QuestieLoader = nil
@@ -1101,6 +1442,122 @@ function Fake.InstallClient(world, opts)
         local map = W.uiMaps[W.player.uiMapId]
         return map and map.name or ""
     end)
+    if W.rep then Fake.InstallRepClient(W, opts) end
+end
+
+-- ---------------------------------------------------------------------------
+-- The reputation client (a reputation world only; InstallClient calls it for
+-- a world with rep = true). Each global is set only where the harness has
+-- none (opts.force overwrites), and remembered, so UninstallRepClient puts
+-- back exactly what was there -- a default-world section that runs after a
+-- reputation section sees the client it always saw.
+-- ---------------------------------------------------------------------------
+
+-- The enUS GlobalStrings of 2.5.6.69795 the module reads
+local REP_STRINGS = {
+    FACTION_STANDING_LABEL1 = "Hated", FACTION_STANDING_LABEL2 = "Hostile",
+    FACTION_STANDING_LABEL3 = "Unfriendly", FACTION_STANDING_LABEL4 = "Neutral",
+    FACTION_STANDING_LABEL5 = "Friendly", FACTION_STANDING_LABEL6 = "Honored",
+    FACTION_STANDING_LABEL7 = "Revered", FACTION_STANDING_LABEL8 = "Exalted",
+    FACTION_STANDING_INCREASED = "Reputation with %s increased by %d.",
+    FACTION_STANDING_DECREASED = "Reputation with %s decreased by %d.",
+    FACTION_STANDING_INCREASED_ACH_BONUS = "Reputation with %s increased by %d. (+%.1f bonus)",
+    FACTION_STANDING_INCREASED_GENERIC = "Reputation with %s increased.",
+    FACTION_STANDING_DECREASED_GENERIC = "Reputation with %s decreased.",
+}
+local repSaved = nil      -- { [tbl] = { [key] = previous value | false } }
+
+function Fake.InstallRepClient(world, opts)
+    opts = opts or {}
+    local W = world
+    local force = opts.force
+    repSaved = repSaved or {}
+    local function Set(tbl, key, value)
+        if not (force or tbl[key] == nil) then return end
+        repSaved[tbl] = repSaved[tbl] or {}
+        if repSaved[tbl][key] == nil then
+            local previous = rawget(tbl, key)
+            if previous == nil then previous = false end
+            repSaved[tbl][key] = previous
+        end
+        tbl[key] = value
+    end
+    local p = W.player
+    for key, text in pairs(REP_STRINGS) do Set(_G, key, text) end
+    for n = 1, 8 do
+        Set(_G, "FACTION_STANDING_LABEL" .. n .. "_FEMALE", W.femaleLabels and W.femaleLabels[n] or REP_STRINGS["FACTION_STANDING_LABEL" .. n])
+    end
+    -- localizedRace, raceFile, raceID
+    Set(_G, "UnitRace", function(unit)
+        if unit ~= "player" then return nil end
+        return p.race or p.raceFile, p.raceFile, p.raceId
+    end)
+    Set(_G, "UnitClass", function(unit)
+        if unit ~= "player" then return nil end
+        return p.className or p.class, p.class, p.classId
+    end)
+    Set(_G, "UnitSex", function() return p.sex or 2 end)
+    Set(_G, "UnitFactionGroup", function(unit)
+        if unit ~= "player" then return nil end
+        return p.faction, p.faction
+    end)
+    Set(_G, "GetRealmName", function() return W.realm or "Testrealm" end)
+    Set(_G, "GetLocale", function() return W.locale or "enUS" end)
+    -- GetText("token", gender): 3 picks the _FEMALE form where there is one
+    Set(_G, "GetText", function(token, gender)
+        if gender == 3 and type(_G[token .. "_FEMALE"]) == "string" then return _G[token .. "_FEMALE"] end
+        return _G[token]
+    end)
+    Set(_G, "GetMaxDailyQuests", function() return W.maxDailies or 25 end)
+    -- The server clock and the daily reset, only for a world that sets them
+    -- (world.serverTime: seconds, live; world.questResetIn: seconds to the
+    -- next reset), so no other harness meets a client call it never had
+    if W.serverTime ~= nil then
+        Set(_G, "GetServerTime", function() return W.serverTime end)
+        Set(_G, "GetQuestResetTime", function() return W.questResetIn end)
+    end
+    -- An item's name only once the client has it cached (world.itemCache)
+    Set(_G, "GetItemInfo", function(itemId)
+        local name = (W.itemCache or {})[itemId]
+        return name
+    end)
+    -- The player's auras: world.player.auras = { [spellId] = true }
+    local function AuraList()
+        local ids = {}
+        for spellId, on in pairs(p.auras or {}) do if on then ids[#ids + 1] = spellId end end
+        table.sort(ids)
+        return ids
+    end
+    if rawget(_G, "C_UnitAuras") == nil then Set(_G, "C_UnitAuras", {}) end
+    if not W.noAuraById then
+        Set(_G.C_UnitAuras, "GetPlayerAuraBySpellID", function(spellId)
+            if (p.auras or {})[spellId] then return { spellId = spellId, name = "Aura " .. spellId } end
+            return nil
+        end)
+    end
+    Set(_G.C_UnitAuras, "GetBuffDataByIndex", function(unit, index)
+        if unit ~= "player" then return nil end
+        local spellId = AuraList()[index]
+        if not spellId then return nil end
+        return { spellId = spellId, name = "Aura " .. spellId }
+    end)
+    -- name, icon, count, debuffType, duration, expirationTime, source,
+    -- isStealable, nameplateShowPersonal, spellId
+    Set(_G, "UnitBuff", function(unit, index)
+        if unit ~= "player" then return nil end
+        local spellId = AuraList()[index]
+        if not spellId then return nil end
+        return "Aura " .. spellId, 0, 1, nil, 0, 0, "player", false, false, spellId
+    end)
+end
+
+function Fake.UninstallRepClient()
+    for tbl, keys in pairs(repSaved or {}) do
+        for key, previous in pairs(keys) do
+            if previous == false then tbl[key] = nil else tbl[key] = previous end
+        end
+    end
+    repSaved = nil
 end
 
 return Fake

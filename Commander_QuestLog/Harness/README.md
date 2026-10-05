@@ -1,47 +1,104 @@
 # Commander_QuestLog harnesses
 
-Five luajit checks, run from the AddOns root. Each resolves the AddOns root
-from its own file location, so it works in a git worktree as well as in the
-live AddOns directory (and from any working directory), and exits non-zero if
-any check fails. Run all five before touching anything in the module: the
-window harness loads every file but the map, the next three load the engine
-and the adapter the window and the drawer both stand on, and the contract
-harness runs the adapter against the real Commander Orders.
+Ten luajit checks and one generator check, run from the AddOns root. Each
+resolves the AddOns root from its own file location, so it works in a git
+worktree as well as in the live AddOns directory (and from any working
+directory), and exits non-zero if any check fails. Run them all before
+touching anything in the module. The first five are the 1.5.0 set: the window
+(every file but the map and the 1.6.0 ones), the engine and the adapter the
+window and the drawer both stand on, the drawer, and the adapter against the
+real Commander Orders. The next five came with the Reputations tab (1.6.0):
+the generated reputation data, the reputation rules engine, the Reputations
+tab, reputation on every other surface, and the NPC's quest dialog.
 
 ```bash
-/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_harness.lua        # 447 checks
-/opt/homebrew/bin/luajit Commander_QuestLog/Harness/completion_engine_smoke.lua # 747 checks
-/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questie_adapter_smoke.lua   # 423 checks
-/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_map_harness.lua    # 309 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_harness.lua         # 525 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/completion_engine_smoke.lua  # 756 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questie_adapter_smoke.lua    # 666 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_map_harness.lua     # 337 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_orders_contract.lua # 25 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/reputation_data_smoke.lua    # 432 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/standing_smoke.lua           # 609 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_reps_harness.lua    # 192 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_rep_everywhere_harness.lua  # 203 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questframe_harness.lua       # 72 checks
+python3 Commander_QuestLog/Harness/make_reputations.py --check                   # exit 0: the data file is current
 ```
+
+The 1.6.0 counts against 1.5.0's: the window 447 -> 525 (section Q3, the tab
+register), the engine 747 -> 756 (section O, `StandingWord` with no value),
+the adapter 423 -> 635 (section R, reputation), the drawer 309 -> 335
+(section O, reputation). Every 1.5.0 check is unedited; each count only grew.
+The 1.6.0 review's fixes (2026-10-04) added, without editing a check: the
+adapter 635 -> 661 (R13), the data 431 -> 432 (K5), the rules engine
+584 -> 609 (N, O, P and Q). On the UI side the review changed what the
+player reads (D43, D44), so some 1.6.0 checks moved deliberately, each to the new
+words, and new ones came with them: the drawer 335 -> 337 (O1/O6/O7 read
+"+275 HH", O10 new), the Reputations tab 179 -> 185 (C's Wanted reason, D's
+and F's item costs ("Mark of Kil'jaeden x10 a turn-in"), the heroic pool's
+words and the REPUTATION section in the Zones tab's words, N's one space, J
+an alt's pin passed over; B's one-line note and the new section P),
+reputation everywhere 183 -> 196 (B's and H's badges name their faction, D
+re-drawn for the section's new place, the Wanted pools, "the Aldor's" and
+the Exalted gap, with new checks in B, C and D), the quest dialog 70 -> 71
+(D: several factions one per line). The 1.5.0 checks are still unedited.
+The 2026-10-05 review added, without editing a check, the adapter 661 -> 666
+(R14, the spill window held to the source's own gate); its UI fixes added,
+also without editing one, the Reputations tab 185 -> 192 (G: Honor Hold at
+the ceiling with today's Wanted known and not, at Exalted 900, open dailies
+held to 0, the CHAIN heading's label), reputation everywhere 196 -> 203 (B:
+the badge's 12-character fit and Shattrath's "+3850 Scry"; D: a faction at
+the ceiling, at Exalted 500, and quests and repeatables held to 0; F: the
+drawer's fit; H: several factions seen in game) and the quest dialog
+71 -> 72 (H: "(seen in game)" on the heading).
 
 Mutation hooks, for proving a check bites against a broken copy of a file
 (the copy lives anywhere; the live file is never touched):
 
 ```bash
 CQL_ADAPTER=/path/copy.lua  luajit .../questie_adapter_smoke.lua   # a mutated adapter
-CQL_ENGINE=/nonexistent     luajit .../questie_adapter_smoke.lua   # the engine-absent path (prints SKIPPED for O)
+CQL_ENGINE=/nonexistent     luajit .../questie_adapter_smoke.lua   # the engine-absent path (SKIPPED for O and R: 343 checks)
+CQL_STANDING=/path/copy.lua luajit .../questie_adapter_smoke.lua   # a mutated rules engine (R; /nonexistent: R SKIPPED, 423 checks)
+CQL_REPDATA=/path/copy.lua  luajit .../questie_adapter_smoke.lua   # another reputation data file (R)
 CQL_MAP=/path/copy.lua      luajit .../questlog_map_harness.lua    # a mutated map module
 CQL_ADAPTER=/path/copy.lua  luajit .../questlog_orders_contract.lua  # the adapter against real Orders
+CQL_REPDATA=/path/copy.lua  luajit .../reputation_data_smoke.lua   # another data file
+CQL_STANDING=/path/copy.lua luajit .../standing_smoke.lua          # a mutated rules engine
+CQL_REPDATA=/path/copy.lua  luajit .../standing_smoke.lua          # another data file (the scratch prototype: Q SKIPPED, 555)
+CQL_REPS=/path/copy.lua     luajit .../questlog_reps_harness.lua   # a mutated Reputations tab
+CQL_UI= / CQL_ZONES= / CQL_QUESTFRAME= / CQL_MAP=/path/copy.lua luajit .../questlog_rep_everywhere_harness.lua
+CQL_WITH_REPS=1             luajit .../questlog_rep_everywhere_harness.lua  # also load the Reputations tab (still 203)
+CQL_QUESTFRAME=/path/copy.lua luajit .../questframe_harness.lua    # a mutated quest-dialog file
 ```
 
-`fake_questie.lua` is not a harness: it is the Questie the others run on
-(see "The fake Questie" below).
+Three files in this folder are not harnesses but what the harnesses stand on:
+`fake_questie.lua` is the Questie they run on ("The fake Questie" below),
+`questlog_mock.lua` is the WoW client the window harnesses run on (lifted out
+of `questlog_harness.lua` in 1.6.0 so another file can drive the window), and
+`questframe_mock.lua` is the 2.5.6 NPC quest dialog. `make_reputations.py`
+writes `CommanderQuestLogReputationData.lua`, and `reputation_overrides.json`
+is its one hand-written input (the Wowhead audit).
 
-The suite's own settings smoke (`Commander_Events/Harness/settings_ui_smoke.lua`)
-is worth a run after a change to the settings page: it exercises the framework
-this module's page is built on, including the fold-and-search layout a page
-with more than three sections gets.
+The suite's own settings smoke (`Commander_Events/Harness/settings_ui_smoke.lua`,
+89 checks) is worth a run after a change to the settings page: it exercises
+the framework this module's page is built on, including the fold-and-search
+layout a page with more than three sections gets (1.6.0 made it six, with
+Reputation between Zones & Completion and World Map). Commander Orders' own
+five harnesses
+(`Commander_Orders/Harness/*.lua`: 679, 569, 779, 523 and 490 checks) boot the
+pins and the store the contract harness hands waypoints to; a change to the
+adapter's `A.Waypoint` is worth a run of them too.
 
 ---
 
-# questlog_harness.lua — the window (447 checks)
+# questlog_harness.lua — the window (525 checks)
 
 The harness loads the real `CommanderSettingsUI.lua` and `CommanderEvents.lua`
-alongside the window's files — DB, Model, Completion, Questie, UI and Zones, in
-TOC order; not Map, which has its own harness and needs a world map this mock
-does not have — under a permissive WoW mock. The fake Questie is installed
+alongside the window's files — DB, Model, Completion, Questie, UI, Catalogue
+and Zones, in TOC order; not Map, which has its own harness and needs a world
+map this mock does not have, and not the 1.6.0 reputation files, which have
+harnesses of their own on the same mock — under a permissive WoW mock
+(`questlog_mock.lua`, below). The fake Questie is installed
 BEFORE the module files load, as Questie loads before this addon in game.
 It builds a nine-entry quest log across three zone headings, fires login, and
 then drives a whole session — including turning quests in underneath the
@@ -181,6 +238,32 @@ window while it is open.
   alone. Run over `UI.lua` and `Zones.lua` from before round 2 (a copy of
   the AddOns tree; the harness finds its files from its own location), 13 of
   these fail.
+- **Q3 — the tab register and a second catalogue (1.6.0).** The tabs are a
+  register (`Q.RegisterTab`, D36) and the Zones tab one instance of the
+  catalogue (`Q.NewCatalogue`), so a third tab is registered here the way the
+  Reputations tab is: a catalogue of its own over the fake Hellfire, every
+  hook a spec can hand the catalogue answered by a stub. The register: three
+  buttons placed by order and width; moving off a tab puts ITS widgets away
+  whichever tab comes next; a quest link from it lands on the Log; its switch
+  takes its button away and puts the window on the Log; a `ViewMode` nobody
+  registered is the Log; each tab keeps its own search text. The hooks: the
+  spec's own groupings (`Group`, `cat.Emit`, its own fold key), filters
+  (`PassesFilter`), row badge (`RowRight`, with its dim flag), card,
+  overview and its extra sections, briefing sections, state words, reasons,
+  row tooltip, menu (`MenuInit`, paged by `cat.AddCategoryPages`), stock and
+  custom actions, the ignore list shared with the Zones tab, its two named
+  dropdowns (`CommanderQuestLog<prefix>GroupDrop` / `...Menu`) and
+  `Q.OpenToTab` — and the Zones tab's widgets never touched. When written,
+  a scratch copy without `HideOtherTabs`, with a binary `OpenToQuest`, with
+  `IsEnabled` ignored, without `RowRight` and with fixed-width placement each
+  failed a check. The window does NOT load the rules engine, so the Zones
+  tab here has no badge and its briefing keeps Questie's raw REPUTATION rows
+  (`+250  Honor Hold`): loading `CommanderQuestLogReputationData.lua` and
+  `CommanderQuestLogStanding.lua` here would deliberately move exactly two
+  checks (Q's "REPUTATION lists what it pays", which becomes "+275 Honor
+  Hold" for a Human, and Q3's "the Zones tab, with no RowRight, never makes a
+  badge"); reputation on the window's surfaces is
+  `questlog_rep_everywhere_harness.lua`'s.
 - **R — no Questie at all.** A second load of every file with the Questie
   globals gone and `ViewMode` left on ZONE: the window opens, the Log works,
   the Zones tab says Questie is not loaded, and nothing errors.
@@ -194,6 +277,10 @@ window while it is open.
 
 ## Mock notes
 
+The mock lives in `questlog_mock.lua` since 1.6.0 (the harness `dofile`s it
+and binds its fourteen bare state names — `log`, `selection`, `watched` and
+the rest — with `mock.Bind`, so every section reads them as it always did;
+from the fixtures on the file is byte for byte what it was, apart from Q3).
 Lessons already paid for, so the next run does not re-learn them:
 
 - **The quest log is MUTABLE and its indices MOVE.** That is the whole point.
@@ -230,12 +317,12 @@ Lessons already paid for, so the next run does not re-learn them:
   Section R uninstalls it and loads every file a second time.
 - **Frame levels are tracked.** The mock used to answer a constant 2, which
   made "the tabs sit above the drag strip" a check that could not fail.
-- **The main chunk is close to Lua's 200 locals.** Sections Q and R are each
-  wrapped in `do ... end`; a new section should be too.
+- **The main chunk is close to Lua's 200 locals.** Sections Q, Q3 and R are
+  each wrapped in `do ... end`; a new section should be too (91 of 200 used).
 
 ---
 
-# completion_engine_smoke.lua — the engine (747 checks)
+# completion_engine_smoke.lua — the engine (756 checks)
 
 Loads `CommanderQuestLogCompletion.lua` ALONE into a sealed environment in
 which reading any global the engine was not handed raises — the proof that the
@@ -282,7 +369,12 @@ naming only), and `isGone`.
   met at it (a Scryer Neutral quest, a maximum on the Aldor), so an Aldor
   pledge moves nothing and a Scryer one swaps the sets, an open quest staying
   open with both sides counted; a rival quest behind a lost pledge missed, in
-  both modes; **O** standings; **P** no shape
+  both modes; **O** standings, and *(1.6.0)* an unknown standing that is NOT
+  Neutral: `StandingWord(nil)` has no word, an unmet faction reads the DB2
+  base handed in as the second argument (Sporeggar, Kurenai and Mag'har
+  Unfriendly, Netherwing Hated), a known value wins over the base, and a word
+  is neither (critic W6; nine checks, a do-block of their own, nothing above
+  them edited; three mutants of the fix each caught); **P** no shape
   glyphs anywhere.
 - **Z** last, and in a SEPARATE environment: the real
   `CommanderQuestLogModel.lua`, proving a zone entry is a valid `Q.BuildList`
@@ -295,7 +387,7 @@ The 2026-10-04 checks (H1, H2, Q) were each run against the engine as it was
 before the review and fail there; the round-2 checks fail 25 times against
 the engine before round 2.
 
-# questie_adapter_smoke.lua — the Questie adapter (423 checks)
+# questie_adapter_smoke.lua — the Questie adapter (666 checks)
 
 Drives `CommanderQuestLogQuestie.lua` over `fake_questie.lua` under a WoW mock
 just big enough for it: a `C_Timer` on a manual clock that runs one frame at a
@@ -353,13 +445,62 @@ pcall would otherwise swallow it) and must stay empty.
   more; ready under a heading collapsed in the stock log (through
   `IsQuestComplete`), beating a stale scan, and only on a true answer; **P** nothing forbidden, nothing leaked into
   globals, no glyphs.
+- **R — reputation (1.6.0)**, 238 checks over `Fake.RepWorld()` (real quest
+  ids with Questie's real rows) with the REAL rules engine and the generated
+  data, both loaded for this section only and taken away after it, a fresh
+  adapter over a fresh world per subsection. **R1** one number per quest
+  (+275 for a Human's 250, the rival's -302 and the Sha'tar's +137, the
+  audited Hellfire Wanted rows on the player's side only, the Netherwing
+  clamp, the 42,999 ceiling, "No reputation", rows handed in for a quest
+  Questie does not know, one answer per generation, the adapter's DIRECT
+  rows equal to the engine's own on every quest of the world, a waypoint's
+  note and its switches); **R2** the faction index read on first need, never
+  at login, 400 quests a frame, stepping the generation when done, audited
+  rows members and stored spillover halves not; **R3** faction views on their
+  own two-slot cache (area 47 The Hinterlands against faction 47
+  Ironforge), `view.rep`, the Sha'tar window listed as uncounted extras,
+  order hints, repeatable item costs, `QuestDetail` by kind; **R4** the
+  picker (groups, sides, `RepIncludeClassic`, notes); **R5** faction
+  summaries in the background, waiting on the index; **R6** a zone's totals
+  per faction; **R7** the character (standings, the base for a faction not
+  met, the multiplier, the Orc clamp, the side); **R8** today's rotating
+  dailies from Questie's record and quests held back by phase; **R9**
+  calibration from the bars and from the chat line (the two-way window,
+  ambiguity, a faction moving twice, source-capped spills, zero samples,
+  normalised under the Wickerman, no saved variables); **R10** the guards
+  (no rules, a raising engine); **R11** `/cql status`; **R12** the same
+  number on every surface; **R13** the 1.6.0 review's fixes (2026-10-04):
+  the zone totals' spill share is what the window lands (0 when the
+  Sha'tar's is shut, the chosen side's alone when both rivals have quests
+  here), an undecided choice counted per faction (the Scryers' pledge), a
+  dungeon quest that starts here in the totals (`extraLeft`), the best OPEN
+  turn-in quoted and the Wanted dailies flagged, an ignored quest out of
+  done and left, every per-turn-in figure 0 at the cap as the row is,
+  Sporeggar's quest waiting on Neutral (`unreachedCount`, `repeatReach`),
+  a mixed calibration move set aside and an older build's samples of one
+  never read, today's Wanted pick across a daily reset (the world's
+  `serverTime` / `questResetIn`), and a waypoint note rewritten through
+  Orders' `Update` when the numbers move, never over another's note or a
+  removed waypoint. Every R13 check fails against the adapter and engine as
+  they stood before the review (18 failures). **R14** the 2026-10-05 review: a
+  spill window lands only the source quests the source's own projection
+  reaches -- an unpledged character's Shadowmoon (Aldor 0) gets the
+  Sha'tar +137 from the one ungated Aldor quest, not the Friendly-gated
+  one's too; the Sha'tar's faction view, whose pledge reaches Friendly,
+  keeps that one and drops the Revered-gated one; pledged, the quest shut
+  above Neutral is dropped as locked out. With the adapter's `GateSpill`
+  a no-op, three of its five checks fail. Printed as SKIPPED (and the count 423) when
+  `CQL_STANDING` points at a missing engine; with `CQL_ENGINE` missing too,
+  343. The 423 checks above it are unedited: the 1.5.0 smoke file itself,
+  run against the 1.6.0 adapter and fake, still passes 423/0. All 40
+  single-change adapter mutations tried when written are caught.
 
 Mutation-tested when written: about thirty-five single-line breakages of the
 adapter, each failing at least one check; and on 2026-10-04 each of the
 review's nine adapter fixes reverted alone, each caught (`CQL_ADAPTER`); the
 adapter from before round 2 fails four of the round-2 checks.
 
-# questlog_map_harness.lua — the world-map drawer and pins (309 checks)
+# questlog_map_harness.lua — the world-map drawer and pins (337 checks)
 
 Loads the REAL engine, the REAL adapter over the fake Questie, and the map
 module — not the window files, so the drawer is proved to work without the
@@ -409,6 +550,16 @@ active pin, as the canvas's `OnUpdate` does — where a bare frame errors.
   once, a map change inside Blizzard's own `OnShow`, and an adapter error
   whose line fits the windowed strip; **N** a client without the unsecured
   pool: `CreateFramePool`'s proxy still makes real pins through `postCreate`.
+- **O — reputation (1.6.0)**, 26 checks appended before the last line (none
+  above edited), over `Fake.RepWorld()` with the REAL rules engine and data,
+  loaded for this section only. **O0** the default world without the rules:
+  no badge, no line; **O1-O9** the badge in the MAXIMIZED drawer only (the
+  windowed one is 30 px narrower), the row and giver-pin tooltips'
+  "Reputation: ..." line, a waypoint's note, the Wickerman, a sample seen in
+  game, `ZoneRowRep` and `ShowRepEverywhere`, no stale badge on a pooled
+  zone row; **O10** the badge names its faction ("+275 Aldor" beside "+550
+  Sha'tar" in Shattrath; "+1,100 HH" whole in the 64 px cap); globals,
+  writes and glyphs. The reputation client is uninstalled afterwards.
 
 Mutation-tested when written: 31 single-line breakages, 30 caught; the
 survivor removes a deliberately redundant guard. On 2026-10-04 the map file
@@ -436,6 +587,25 @@ with no quest log of its own the client's `GetQuestLogIndexByID` /
 tri-state "ready"; `world.logCollapsed` collapses its one heading, which
 takes the quests out of the index space as the client does, and
 `IsQuestComplete(questID)` answers by id whatever the headings.
+
+**The reputation world (1.6.0).** `Fake.RepWorld()` is a level-70 Human
+paladin pledged to the Aldor, over REAL quest ids carrying Questie's real
+`reputationReward` rows (from the real-data boot; synthetic ids start at
+91000), with `rep = true` so `InstallClient` also calls
+`Fake.InstallRepClient(world, opts)`: `UnitRace`, `UnitSex`,
+`UnitFactionGroup`, `GetRealmName`, `GetLocale`, `GetText` and the
+`FACTION_STANDING_*` strings, `GetMaxDailyQuests`, `GetItemInfo` and the aura
+APIs; `Fake.UninstallRepClient()` puts back exactly what was there. A faction
+missing from `world.factions` is NOT MET (`GetFactionInfoByID` answers nil,
+A21). Its handle adds `SetUnavailable` (Questie's "not offered today"
+record), `ResetDailies`, `SetAura` (24705, the Wickerman), `Meet` and
+`RepChange` (moves a bar and returns the client's chat line). The world keys
+(`realm`, `locale`, `unavailableByTalking`, `contentPhases`, `unmetNames`,
+`itemCache`, `maxDailies`, `noAuraById`, `femaleLabels`, and since the
+2026-10-04 review `serverTime` / `questResetIn`, which install
+`GetServerTime` / `GetQuestResetTime` only for a world that sets them) are
+documented in the fake's header. The default world is never given reputation fixtures: its
+counts are other harnesses' assertions.
 
 ---
 
@@ -468,3 +638,285 @@ the adapter after Orders' `ADDON_LOADED`, the client's order for an addon with
 route mode, the registration at Init and the entrance's 0..1 scaling each fail
 a check when broken.
 
+
+---
+
+# reputation_data_smoke.lua — the generated reputation data (432 checks)
+
+Loads the GENERATED `CommanderQuestLogReputationData.lua` alone into a SEALED
+environment: reading any global raises, and the only global it may write is
+its own table, so the run itself proves the file is pure data. Then it walks
+the table the way the rules engine and the adapter read it, and holds the
+generator to what it claimed.
+
+- **A** the file is data: one global, no functions, no metatables; **B** the
+  scalars: build, bottom, cap, the eight thresholds, the rules (no low-level
+  penalty, Diplomacy 20599, the Wickerman 24705, spillClamp "capTop").
+- **C** all 75 factions: a name, a slot, base rows that fit, known parents,
+  spill edges onto real factions at sane rates and sides, and the starting
+  standings the design leans on fitted as the client fits them (Sporeggar
+  -2500, Kurenai -1200 for every Alliance race, Mag'har -500, Netherwing
+  -42000, the Aldor and the Scryers +-3500 by race, Silvermoon and the
+  Exodar by race, the other side's -42000).
+- **D** the picker groups: order (Outland, Shattrath, the other TBC
+  factions, then the classic headings), membership, no faction twice, no
+  heading; the `tbc`, `side` and `header` fields. **E** the localized names:
+  TBC factions only, only where they differ from English.
+- **F** `rewardCap`: every RewMaxRepValue row (critic W1's fifteen quests)
+  plus the manual 10871. **G** `derived`: the spillover written into rows
+  (10326, 9266, 4766) and not the header coincidences (281, 7642). **H**
+  `repeatCost` (flat pair lists), **I** `rotating`, **J** `conditional`.
+- **K** `overrides`: every row cites its Wowhead page, none was refused;
+  **K5** the nine corrections where Wowhead and CMaNGOS agree against
+  Questie (D38, widened 2026-10-04) are emitted whole, every Questie row
+  they drop written as 0 (it fails against the data generated before them).
+  **L** the reconciliation the generator recorded: zero template mismatches.
+
+Rules that hold for every row are batched into one check each (the count of
+offenders and the first one on failure), so the count does not move when
+the generator is re-run on new data. Twelve deliberate breakages of a copy
+of the data file (`CQL_REPDATA`) each failed it when written.
+
+## make_reputations.py — the generator
+
+```bash
+python3 Commander_QuestLog/Harness/make_reputations.py            # rebuild from the cache (no network)
+python3 Commander_QuestLog/Harness/make_reputations.py --check    # write nothing; exit 1 if the file is stale
+python3 Commander_QuestLog/Harness/make_reputations.py --fetch    # fetch Faction_<locale>.csv (and any missing input) first
+python3 Commander_QuestLog/Harness/make_reputations.py --questie dump.tsv   # also reconcile against a Questie dump (qrep.lua format)
+```
+
+Inputs: the client's Faction DB2 for this build (wago.tools CSV,
+2.5.6.69795) and the same table per locale, and the CMaNGOS tbc-db dump read
+through `Commander_Formulary/Harness/cmangos.py` (gzipped, through its
+`_columns` / `_tuples`; the script sets `dont_write_bytecode` so nothing is
+written into Formulary's folder). Both live in the suite's shared, git-ignored
+generator cache, `Commander_Quartermaster/Harness/.cache` (`--cache` or
+`$CQL_REP_CACHE` override it). `--fetch` writes only `Faction_<locale>.csv`
+there, and `Faction.csv` when it is missing; the dump comes from
+Quartermaster's own `tbcdb_to_sqlite.py --fetch`. A rerun without the
+locale files stops rather than silently shipping no names. The one
+hand-written input is `reputation_overrides.json` (the Wowhead audit, D38):
+every row must cite its page, name a known faction and carry integers, or it
+is refused and counted (`reconciliation.overridesRefused`, which the smoke
+holds to 0). The stdout report is the list of everything that did not
+reconcile: read it by hand after a run. `SHIP_NAMES = False` in the script
+ships an empty names table (about 5 KB of the 31.6 KB). Whenever
+`reputation_overrides.json` changes, run the generator, then the data smoke
+and `standing_smoke.lua`; neither count moves (unless a check names the
+override: K5 and standing Q do for the nine of 2026-10-04).
+
+# standing_smoke.lua — the reputation rules engine (609 checks)
+
+Loads `CommanderQuestLogStanding.lua` ALONE into a sealed environment, as the
+completion smoke does, so the run proves the engine is pure. The generated
+data is loaded into an environment of its own (it may write its one global
+and read none) and handed to the engine as an argument. Two kinds of check,
+kept apart: ENGINE checks run on the real factions table with a FIXTURE of
+quest tables written in the harness, so they prove the rules whatever the
+generator emits; DATA CONTRACT checks (section Q, 53 checks) run the same
+scenarios on the generated quest tables.
+
+- **A** loading; **B** the data as the engine reads it; **C** ranks and their
+  edges (-6001/-6000, -1/0, 8999/9000, 41999/42000, the 42999 clamp); **D**
+  starting standings, the first base row that fits; **E** the multiplier and
+  one turn-in (`trunc(250 x 110%) = 275`, the doubled quest rate of the
+  three Classic factions, the reward clamp, the ceiling).
+- **F** effects on the Aldor, the Scryers and the Sha'tar (+275 / -302 /
+  +137 for a Human); **G** clamps, the Sha'tar window (capTop: spill stops at
+  8999), the ceiling and the bottom (an Orc at 8900 Aldor doing 10326: +99 /
+  -108 / +49; 10870 from -42000: 0); **H** derived rows dropped (10326, 9266,
+  4766), overrides applied (0 removes a row), headers at each child's rate,
+  sides, unknown standings, observations; **I** `Primary` and `For`.
+- **J** the line ("+250 Honor Hold", the full three-faction line, "No
+  reputation", "0 ... (capped)", the compact form, "and N more"); **K**
+  abbreviations, unique within a table; **L** words and numbers (localised
+  labels, a female form, `FormatProgress`).
+- **M** repeatables: turn-ins to the next rank, to the cap and to Exalted, a
+  gate's last turn-in, the reward clamp, every item cost of a multi-item
+  turn-in; **N** today's rotating Wanted dailies and daily income (never
+  summed, the cap of 25, Halaa conditional, and from the standing now: 0 at
+  Exalted 999, the 99 left below it); **O** the projection: the best
+  order, closing gates first (the Consortium's below-3000 quests before the
+  big ones), the Sha'tar window, exclusive slots counted once, Aldor against
+  Scryers as one choice, Ally of the Netherwing early, the "Do X before
+  Friendly" hints, what each quest paid in the order (`gains`), the two
+  pledges as one slot weighed inside each side (the Scryers' choice keeps
+  the Scryers' pledge); **P**
+  calibration: normalisation by the multiplier that applied and the drop
+  rules (ceiling, bottom, reward clamp, spill cap), and a MIXED move --
+  Orgrimmar and the Darkspear spilling into each other -- stored exactly and
+  read back as the same numbers, not doubled (`MixedSources`, `ObservedFor`,
+  a spill never reading a DIRECT sample).
+- **Q** the data contract (critic W1's caps, the derived rows, every override
+  cited, and the nine corrections of 2026-10-04 end to end on Questie's own
+  rows: Timber Worg Tails and Rise of the Silithid pay nothing, Poisoned
+  Water the Horde header's 250, Help for Mudsprocket Gadgetzan 10, The Lord
+  of Blackrock's compounding 1,098). With the scratch prototype as data
+  (`CQL_REPDATA`) it prints Q SKIPPED and counts 555. **Z** glyphs (only the middle dot and the em dash
+  outside ASCII), purity and code bans.
+
+Mutation-tested when written: 49 of 49 mutated engine copies (`CQL_STANDING`)
+were caught; the 2026-10-04 additions to N, O and P fail against the engine as
+  it stood before the review (10 failures), the Q additions against the data
+  generated before the nine overrides (9). Budgets: main chunk 55 of 200
+  locals, at most 25 of 60 upvalues.
+
+# questlog_reps_harness.lua — the Reputations tab (192 checks)
+
+The window's third tab over `Fake.RepWorld()` with the REAL rules engine,
+generated data, adapter, catalogue and window, on `questlog_mock.lua`. Every
+TOC file loads but the map drawer and the NPC dialog, which have harnesses of
+their own (a scratch copy that also loads the dialog file gives 192/0 too).
+The client's Reputation pane is modelled here, because nothing else needs
+it: headings that fold and the factions under them behind `GetNumFactions` /
+`GetFactionInfo` (isWatched 12th, factionID 14th, as Classic's
+ReputationFrame.lua reads them), the watched faction behind
+`C_Reputation.GetWatchedFactionData`, and `SetWatchedFactionIndex` and
+`ExpandFactionHeader` recorded, so "Watch Faction never unfolds the pane" is
+a real check.
+
+- **A** the tab, its settings and `/cql rep`; **B** following (the watched
+  faction, else the faction the log's quests pay most, else the pin), the
+  index being read, the card; **C** rows (the badge, "0 capped" dimmed, the
+  state words for repeatables) and the five groupings (Guide, By zone, By
+  value, By status, By chain); **D** the Consortium's overview and a quest's
+  briefing; **E** the Sha'tar's spill window, open and shut, a quest in the
+  log; **F** the Aldor's repeatables, item costs (a name the client does not
+  have yet, redrawn on `GET_ITEM_INFO_RECEIVED`), a quest's every effect and
+  a cap; **G** Honor Hold, Netherwing not met (its base, Hated) and
+  Stormwind (a capital's quarter); Honor Hold at the ceiling (Exalted 999 /
+  1,000: DAILIES one line whether today's Wanted is known or not, QUESTS
+  "none pays anything more", never "worth 0" or "up to 0"), at Exalted 900
+  (held to the 99 left), open dailies a reward clamp holds to 0 (stubbed),
+  and the CHAIN heading's "(quests that pay Honor Hold)" (a chain handed to
+  the view: the fake world's faction views have none).
+- **H** the actions (Waypoint, Show on Map on the zone the quest starts in,
+  Open in Log, Watch Faction, Ignore / Count); **I** `/cql rep` following,
+  `/cql rep <name>` by name in any case without the apostrophe, by the start
+  of a name, by id, the other side's faction and nonsense not found, and
+  every other subcommand still the framework's; **J** nothing to show: the other side's
+  faction pinned (`RepPicked` is account-wide, so that pin is an alt's: passed
+  over, and the navigator says whose it was), no quests, no rules; **K** the register: moving off, switching
+  off; **L** on the parchment; **M** standing words in the client's female
+  form; **N** one number: every row's badge is the adapter's effect on the
+  faction and every briefing's line `A.RepLine`'s; **O** no glyph in 200+
+  drawn strings (the middle dot, the em dash and the ellipsis are the only
+  characters outside ASCII); **P** words that say what they count: the
+  picker's "0/4 done" (never a bare percentage beside the standing word),
+  the Consortium with today's Wanted not known ("Nothing to count on yet",
+  never "None you can do today"; each pool "N in the rotation pay it"), the
+  Shattered Sun before its phase (the navigator says why it is empty), and
+  REPUTATION and AS A SOURCE above WHERE; **Z** clean: no error, nothing forbidden asked
+  of Questie, the pane never unfolded, no adapter error.
+
+`CQL_REPS` loads a mutated copy of the tab; 37 of 37 single-change mutants
+were caught when written, and each of the review's UI fixes reverted alone
+(2026-10-05, a scratch copy of the module) is caught here, in the
+rep-everywhere harness, the drawer's or the dialog's: 25 of 25; the second
+round's ten (the ceiling's words on both tabs, the badge fit on the tab and
+in the drawer, the dialog's heading, the CHAIN label) likewise, 10 of 10. The mock's `RegisterUnitEvent` is a no-op here, so
+the Wickerman check steps the generation with `A.Bump`; the adapter smoke
+covers the event path.
+
+# questlog_rep_everywhere_harness.lua — one number on every surface (203 checks)
+
+The whole module as the TOC loads it (data, rules, adapter, window,
+catalogue and Zones tab, the quest dialog and the map drawer; the
+Reputations tab only with `CQL_WITH_REPS=1`, still 203/0) on
+`questlog_mock.lua`, over `Fake.RepWorld()` with four quests in the log, the
+2.5.6 quest dialog (`questframe_mock.lua`), a small world map for the drawer
+and a recording Commander Orders.
+
+- **A** the Log's briefing: "Reputation: +275 Honor Hold" as a reward line
+  under REWARDS, or under the facts when there is none; "No reputation";
+  the switches; ink on paper; "(seen in game)"; the Log's waypoint note.
+- **B** the Zones rows: the badge left of the state word, naming its
+  faction ("+275 HH", "+385 Cons", a faint "0"), a quest worth 0 still
+  counted and never dimmed for it, the row tooltip's line (light on the
+  parchment too: the tooltip is the game's dark one), `ZoneRowRep` and
+  `ShowRepEverywhere`; the badge held to 12 characters
+  (`C.RepBadgeText`: "+1000 Scry", "+2000 Mag", UTF-8 safe) and Shattrath's
+  Allegiance to the Scryers reading "+3850 Scry". **C** the Zones briefing's REPUTATION: every effect
+  with its kind and cap, the multiplier, a shut spill window shown at 0,
+  the section under the reason (before WHERE), and with Reputation on Every
+  Quest off 1.5.0's section (Questie's raw row, at the end). **D** the
+  overview's REPUTATION IN THIS ZONE, straight under the zone's completion:
+  left (the projection's count), done, whether it reaches the next standing
+  and how far short of Exalted, what the spill window LANDS from the source
+  chosen (open, about to shut at 8,500, shut at 9,500, and a stubbed
+  totals table whose raw sum differs), the dungeon quests' share, quests
+  waiting on a standing never reached, the steady dailies apart from the
+  rotating Wanted ones and Halaa's, order hints, factions not met, the
+  done-only line, worked out once a generation; Honor Hold at the ceiling
+  (one "Exalted, nothing more to earn here" line, no "0 left in", "0 a
+  turn-in" or "up to 0") and at Exalted 500 ("Already Exalted.", never
+  "Quests here reach Exalted."), and a stubbed table with quests and
+  repeatables held to 0 below the ceiling and two factions at it.
+  **E** By reputation.
+- **F** the map drawer: the badge (maximized only, "+275 HH", Shattrath's
+  "+3850 Scry" fitted as on the tab), the tooltip, the waypoint's note. **G** the quest dialog.
+- **H** THE CROSS-SURFACE CHECK (SPEC section 9): four quests on eight
+  surfaces each (the Log, the Zones badge, tooltip and briefing, the
+  waypoint's note, the drawer's badge and tooltip, the dialog, whose
+  several factions are one per line), the same number three times over: plain, under the Wickerman, and after a sample
+  seen in game replaces the data's (Marks of Kil'jaeden's too, whose dialog
+  puts "(seen in game)" on its heading).
+- **I** hygiene: no global beyond the documented ones, no glyph, no error,
+  nothing forbidden asked of Questie.
+
+`CQL_UI`, `CQL_ZONES`, `CQL_QUESTFRAME` and `CQL_MAP` load mutated copies;
+56 single-line breaks were caught when written.
+
+# questframe_harness.lua — the NPC quest dialog's line (72 checks)
+
+Drives `CommanderQuestLogQuestFrame.lua` over `questframe_mock.lua` (the
+2.5.6 dialog as Blizzard builds it) on `questlog_mock.lua`, with
+`Fake.RepWorld()` and the REAL rules and data behind the adapter.
+
+- **A** loading: post-hooks only, at load; no global; no field written on
+  any Blizzard frame or table, ever (read again at the end of the run).
+- **B** the offer: "Reputation: +275 Honor Hold" under the rewards, in the
+  dialog's own ink and font, in the scroll child the dialog draws into,
+  arriving with the rewards' fade and not before; **C** the turn-in panel;
+  **D** "No reputation", a quest with no rewards (under what the spacer
+  hangs from), several factions one per line under "Reputation:" (in 275 px
+  one line wraps inside an effect), word for word the adapter's line.
+- **E** every other panel, another caller's Display (the TBC quest log has
+  none, but the shared frames are anyone's) and the dialog closing take it
+  away; **F** rewards arriving late (`QUEST_ITEM_UPDATE`);
+  **G** no quest id from the client: a turn-in found in the log by title, an
+  offer gets nothing, two log quests with one title get nothing.
+- **H** the settings (flipped while the dialog is up), Questie still loading,
+  the Wickerman and a calibration sample changing what an open dialog says
+  (several factions seen in game: "Reputation (seen in game):" heads them);
+  **I** what cannot be answered gets no line; an error is reported and the
+  dialog drawn all the same; a client without the dialog at load is hooked
+  at PLAYER_LOGIN.
+
+`CQL_QUESTFRAME` loads a mutated copy.
+
+# questlog_mock.lua and questframe_mock.lua — not harnesses
+
+`questlog_mock.lua` is the permissive client `questlog_harness.lua` was
+written against, lifted out in 1.6.0 so the Reputations tab, reputation on
+every surface and the quest dialog can drive the window on the same client.
+Load it FIRST (it installs its globals on load); its header has the recipe
+(`mock.state`, `mock.Bind`, `mock.Checker()`, `mock.TocFiles(exclude)`,
+`mock.LoadFramework` / `LoadModule` / `Login`, `mock.Header` / `Quest`,
+`RunTimers`, `Fire`, the hover helpers, the print and error logs). Any
+widget method it never heard of is a silent no-op whose Get answers nil, so a
+check that reads one back proves nothing: assert on what the mock tracks
+(sizes, levels, shown state, text, colours, word wrap). `GameTooltip`
+records each line's text in `__lines` and, since the 1.6.0 review, the
+colour it was given in `__colors` (a tooltip line's ink was unchecked).
+
+`questframe_mock.lua` is the 2.5.6 NPC quest dialog cut down from
+Blizzard's own source (`Classic/QuestFrame.lua` with `TBC/QuestFrame.xml`,
+`TBC/QuestInfo.lua` and `.xml`): the detail and reward panels laying
+themselves out through `QuestInfo_Display`, the rewards' late re-layout
+through the global `QuestInfo_ShowRewards`, the detail panel's fade, and a
+record of every field the module writes on a Blizzard table (there must be
+none). In this process it also gives `questlog_mock`'s widgets
+`SetParent` / `GetParent` and a `RegisterUnitEvent` that registers (the
+plain mock's is a no-op).

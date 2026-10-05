@@ -1494,6 +1494,20 @@ do
     for _, case in ipairs(cases) do EQ(C.StandingWord(case[1]), case[2], "O: standing at " .. case[1]) end
 end
 
+-- An unknown standing is not Neutral (critic W6): an unmet faction reads its
+-- DB2 base, handed in as the fallback; with neither there is no word at all.
+do
+    EQ(C.StandingWord(nil), nil, "O: an unknown standing has no word, never \"Neutral\"")
+    EQ(C.StandingWord(nil, -2500), "Unfriendly", "O: an unmet Sporeggar reads its base, Unfriendly")
+    EQ(C.StandingWord(nil, -1200), "Unfriendly", "O: ...an unmet Kurenai too")
+    EQ(C.StandingWord(nil, -500), "Unfriendly", "O: ...and an unmet Mag'har")
+    EQ(C.StandingWord(nil, -42000), "Hated", "O: an unmet Netherwing reads Hated")
+    EQ(C.StandingWord(nil, 0), "Neutral", "O: a Neutral base reads Neutral")
+    EQ(C.StandingWord(5000, -42000), "Friendly", "O: a known value wins over the base")
+    EQ(C.StandingWord("x"), nil, "O: a word is not a value")
+    EQ(C.StandingWord(nil, "x"), nil, "O: ...nor a base")
+end
+
 -- ===========================================================================
 -- P. Glyphs and purity
 -- ===========================================================================

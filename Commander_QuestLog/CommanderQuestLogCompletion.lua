@@ -475,10 +475,13 @@ local STANDINGS = {
 }
 
 -- The standing a raw reputation value falls in. The game's own words, so
--- "Honored" keeps the client's spelling.
-function C.StandingWord(value)
-    value = tonumber(value)
-    if not value then return "Neutral" end
+-- "Honored" keeps the client's spelling. An unknown value is NOT Neutral: a
+-- faction the character has not met sits at its Faction.db2 base for this
+-- race and class (Sporeggar -2500, Kurenai -1200, Netherwing -42000), which
+-- the caller hands in as `base`; with neither there is no word to give.
+function C.StandingWord(value, base)
+    value = tonumber(value) or tonumber(base)
+    if not value then return nil end
     local word = STANDINGS[1][2]
     for _, row in ipairs(STANDINGS) do
         if value >= row[1] then word = row[2] end
