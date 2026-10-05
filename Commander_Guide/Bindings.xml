@@ -1,0 +1,14 @@
+<Bindings>
+    <Binding name="COMMANDERGUIDE_TOGGLE" header="COMMANDERGUIDE" runOnUp="false">
+        CommanderGuide_Toggle()
+    </Binding>
+    <Binding name="COMMANDERGUIDE_BRIEF" runOnUp="false">
+        CommanderGuide_Brief()
+    </Binding>
+    <Binding name="COMMANDERGUIDE_STOP" runOnUp="false">
+        CommanderGuide_Stop()
+    </Binding>
+    <Binding name="COMMANDERGUIDE_ENTRANCE" runOnUp="false">
+        CommanderGuide_Entrance()
+    </Binding>
+</Bindings>

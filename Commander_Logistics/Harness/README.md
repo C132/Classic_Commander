@@ -5,10 +5,6 @@ a worktree works too):
 
     /opt/homebrew/bin/luajit Commander_Logistics/Harness/logistics_orders_smoke.lua   # 159 checks
 
-159 with `Commander_Guide` on disk, as in the live AddOns folder. Guide is not
-committed yet, so a checkout without it skips Guide's 15 section G checks,
-prints a `SKIP` line and runs the other 144.
-
 Never loaded by the client (not in the TOC). Must exit 0 before a Logistics
 or Adjutant repair change ships.
 
@@ -55,8 +51,7 @@ file) and loads Logistics and Adjutant on top, as one session would.
   distance; a re-pointed follow keeps its uid and never re-takes the arrow;
   pets and the player are refused, which is why PartyFrames filters them
   first). Those modules' own harnesses test their halves against a recording
-  stub; this is where the real Orders says yes. Guide's half runs only when
-  `Commander_Guide/CommanderGuideData.lua` is on disk.
+  stub; this is where the real Orders says yes.
 - **H** one pass of the repair flow with every Orders file loaded, its map
   pins and manager included (A to G leave them out, as Orders' own runtime
   harness does, so a fault there cannot hide behind these checks).

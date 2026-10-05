@@ -584,45 +584,31 @@ end
 -- G  the consumer contract: the specs the other modules send, on the real API
 -- ===========================================================================
 do
-    -- Commander_Guide: the engine's own spec, Karazhan's two doors. Guide is
-    -- not committed yet, so its half of this contract runs only where its
-    -- files are on disk (the live AddOns folder); a checkout without it
-    -- skips those checks and says so. The Entrance accessor, Spoils and
-    -- PartyFrames checks below run either way.
-    local guideFile = io.open(ADDONS .. "/Commander_Guide/CommanderGuideData.lua", "r")
-    if guideFile then guideFile:close() end
-    local hasGuide = guideFile ~= nil
-    if not hasGuide then
-        io.write("SKIP  G: Commander_Guide is not on disk; its entrance checks are skipped\n")
-    end
-    local _, D, E, kara, pn, pw, dn, dw
-    local uid, why, view
-    if hasGuide then
-        LoadAddonFile(ADDONS .. "/Commander_Guide/CommanderGuideData.lua")
-        LoadAddonFile(ADDONS .. "/Commander_Guide/CommanderGuideEngine.lua")
-        CHECK(#loadErrors == 0, "G: Guide's data and engine load beside Orders", loadErrors[1])
-        D, E = CommanderGuide_Data, CommanderGuide_Engine
-        kara = D and D.RAIDS[1]
-        local spec = E and kara and E.EntranceSpec(D, kara, nil)
-        CHECK(spec ~= nil, "G: Guide builds Karazhan's spec")
-        M.SetPlayer(1430, 0.47, 0.76)              -- Deadwind Pass, by the southern door
-        uid, why = O().Add(spec)
-        CHECK(uid ~= nil, "G: the real Orders takes Guide's entrance spec", why)
-        local wp = uid and O().Get(uid)
-        EQ(wp and wp.alternatives and #wp.alternatives, 2, "G: ...with both doors as alternatives")
-        EQ(wp and wp.source, "Guide", "G: ...owned by the Guide")
-        EQ(O().Active() and O().Active().uid, uid, "G: ...and it has the arrow")
-        Pass(6)
-        view = O().R.View()
-        EQ(view.mode, "NAV", "G: the arrow navigates to the entrance")
-        _, pn, pw = M.World(1430, 0.47, 0.76)
-        _, dn, dw = M.World(1430, 0.469, 0.747)
-        NEAR(view.distance, math.sqrt((pn - dn) ^ 2 + (pw - dw) ^ 2), 1.0,
-            "G: ...to the NEARER door (Orders picks among the alternatives)")
-        local again = O().Add(E.EntranceSpec(D, kara, nil))
-        EQ(again, uid, "G: a second press is the same waypoint")
-        O().Remove(uid)
-    end
+    -- Commander_Guide: the engine's own spec, Karazhan's two doors
+    LoadAddonFile(ADDONS .. "/Commander_Guide/CommanderGuideData.lua")
+    LoadAddonFile(ADDONS .. "/Commander_Guide/CommanderGuideEngine.lua")
+    CHECK(#loadErrors == 0, "G: Guide's data and engine load beside Orders", loadErrors[1])
+    local D, E = CommanderGuide_Data, CommanderGuide_Engine
+    local kara = D and D.RAIDS[1]
+    local spec = E and kara and E.EntranceSpec(D, kara, nil)
+    CHECK(spec ~= nil, "G: Guide builds Karazhan's spec")
+    M.SetPlayer(1430, 0.47, 0.76)              -- Deadwind Pass, by the southern door
+    local uid, why = O().Add(spec)
+    CHECK(uid ~= nil, "G: the real Orders takes Guide's entrance spec", why)
+    local wp = uid and O().Get(uid)
+    EQ(wp and wp.alternatives and #wp.alternatives, 2, "G: ...with both doors as alternatives")
+    EQ(wp and wp.source, "Guide", "G: ...owned by the Guide")
+    EQ(O().Active() and O().Active().uid, uid, "G: ...and it has the arrow")
+    Pass(6)
+    local view = O().R.View()
+    EQ(view.mode, "NAV", "G: the arrow navigates to the entrance")
+    local _, pn, pw = M.World(1430, 0.47, 0.76)
+    local _, dn, dw = M.World(1430, 0.469, 0.747)
+    NEAR(view.distance, math.sqrt((pn - dn) ^ 2 + (pw - dw) ^ 2), 1.0,
+        "G: ...to the NEARER door (Orders picks among the alternatives)")
+    local again = O().Add(E.EntranceSpec(D, kara, nil))
+    EQ(again, uid, "G: a second press is the same waypoint")
+    O().Remove(uid)
 
     -- CommanderOrders.Entrance (the accessor Commander_Guide asks first)
     CHECK(type(O().Entrance) == "function", "G: CommanderOrders.Entrance exists")
@@ -641,26 +627,24 @@ do
     e.map = 1
     CHECK(O().Entrance(350).map == 1430 and door.map == 1430, "G: what it hands out is a copy, never the resolver's table")
     EQ(O().Entrance("junk"), nil, "G: nil-safe")
-    if hasGuide then
-        local s2, via = E.EntranceSpec(D, kara, O().Entrance(350))
-        EQ(via, "resolver", "G: Guide takes the resolver's answer")
-        CHECK(O().Add(s2) ~= nil, "G: ...and the real Orders takes that spec too")
-        -- The suite's normal setup: the Quest Log's resolver answers Questie's
-        -- FIRST Karazhan door only (it stops after one). Guide must still hand
-        -- Orders both doors, so the arrow takes the nearer one from the south
-        door.x, door.y, door.title = 0.467, 0.702, "Karazhan entrance"
-        M.SetPlayer(1430, 0.47, 0.76)
-        local s3, via3 = E.EntranceSpec(D, kara, O().Entrance(350))
-        EQ(via3, "resolver", "G: Questie's first door through the resolver")
-        EQ(s3 and s3.alternatives and #s3.alternatives, 2, "G: ...still carries both doors")
-        local kuid = O().Add(s3)
-        Pass(6)
-        view = O().R.View()
-        EQ(O().Active() and O().Active().uid, kuid, "G: (the resolver's Karazhan spec has the arrow)")
-        NEAR(view.distance, math.sqrt((pn - dn) ^ 2 + (pw - dw) ^ 2), 1.0,
-            "G: ...and with the resolver too, the arrow takes the NEARER door")
-        O().Remove(kuid)
-    end
+    local s2, via = E.EntranceSpec(D, kara, O().Entrance(350))
+    EQ(via, "resolver", "G: Guide takes the resolver's answer")
+    CHECK(O().Add(s2) ~= nil, "G: ...and the real Orders takes that spec too")
+    -- The suite's normal setup: the Quest Log's resolver answers Questie's
+    -- FIRST Karazhan door only (it stops after one). Guide must still hand
+    -- Orders both doors, so the arrow takes the nearer one from the south
+    door.x, door.y, door.title = 0.467, 0.702, "Karazhan entrance"
+    M.SetPlayer(1430, 0.47, 0.76)
+    local s3, via3 = E.EntranceSpec(D, kara, O().Entrance(350))
+    EQ(via3, "resolver", "G: Questie's first door through the resolver")
+    EQ(s3 and s3.alternatives and #s3.alternatives, 2, "G: ...still carries both doors")
+    local kuid = O().Add(s3)
+    Pass(6)
+    view = O().R.View()
+    EQ(O().Active() and O().Active().uid, kuid, "G: (the resolver's Karazhan spec has the arrow)")
+    NEAR(view.distance, math.sqrt((pn - dn) ^ 2 + (pw - dw) ^ 2), 1.0,
+        "G: ...and with the resolver too, the arrow takes the NEARER door")
+    O().Remove(kuid)
 
     -- Commander_Spoils: Back to the farm
     M.SetPlayer(1951, 0.5, 0.5)

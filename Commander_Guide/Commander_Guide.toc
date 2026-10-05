@@ -1,0 +1,15 @@
+## Interface: 20506
+## Category: Commander
+## Title: Commander Guide
+## Author: Devin
+## Version: 1.1.0
+## Notes: A raid guide in the game, boss by boss, written for the seat you are in. Open it and read the healer's page for the boss in front of you: the fight in one line, your job, the phases, the debuffs to dispel. Then let it talk: the voice reads the brief when you target the boss, and during the pull it tells you what to do the moment the combat log says it matters -- Garrote on you, Flame Wreath, don't move, Evocation, twenty seconds, top everyone. Karazhan, healer's seat, first. And it gets you to the door: Waypoint to Entrance points the Commander Orders arrow at the raid's entrance, or prints the /way line when Orders is not loaded.
+## IconTexture: Interface\Icons\INV_Misc_Book_11
+## SavedVariables: CommanderGuideDB
+## RequiredDeps: Commander_Events
+## OptionalDeps: Commander_Console, Commander_Orders
+
+CommanderGuideData.lua
+CommanderGuideEngine.lua
+CommanderGuideDB.lua
+CommanderGuide.lua
