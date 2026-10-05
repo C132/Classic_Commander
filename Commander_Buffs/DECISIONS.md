@@ -164,3 +164,47 @@ row. The cost is a wider block, which is honest and visible, rather than
 icons quietly colliding. Scoped to BUFFS only, matching the gold rim: the
 feature separates your upkeep from the raid's, and a debuff you applied to
 yourself is not upkeep.
+
+**D23. Right-click cancel is a secure SIBLING of the block, bound by name, and
+sticky in combat.** `CancelUnitBuff` is protected in combat on this client
+(ADDON_ACTION_BLOCKED, 17 times in one session through the old pcall), so a
+cancel that works mid-fight has to come from secure code. The obvious shapes
+were both wrong: making the icons secure would make the block protected and
+unable to re-lay-out in combat (the whole reason it is insecure), and a
+`SecureAuraHeader` would hand Blizzard the layout the module exists to own.
+Instead each icon gets a `SecureActionButton` overlay parented to UIParent,
+whose right button runs the macro `/cancelaura <name>` (a secure slash command
+on this branch). The overlay is pinned to the icon's rect on SCREEN and never
+anchored to the icon: the first cut used `SetAllPoints(icon)` and the client
+answered with `CommanderBuffsIcon1:SetSize()` blocked in a combat relayout, and
+a block that stopped drawing new auras mid-fight — the frame a secure button is
+anchored to joins its protected family and is locked in combat like a parent.
+So in combat both the overlay's macro and its place are frozen, and the BUFF
+group is held to match: a buff keeps the cell the last free layout gave it, a
+faded buff's cell goes to a new buff first (the overlay there cancels an absent
+buff, a no-op, and serves the newcomer's tooltip off the icon), and the buff
+grid grows only past its recorded cells. Debuffs carry no overlay and reflow
+freely on their own rows, exactly as out of combat. The groups are NEVER
+merged: a debuff never takes a buff's cell and a buff never lands on a debuff
+row (the first combat layout did merge them, and was thrown out the day it
+shipped). With debuffs on top their rows are reserved at the free layout's
+count, and a debuff row past that is drawn under the buffs rather than push
+them. The paint after `PLAYER_REGEN_ENABLED` lays everything out free again
+and re-binds.
+Cancel by NAME rather than index on purpose: an index frozen at combat start
+would cancel a neighbour the moment an earlier aura fades. A test-stack aura
+carries no index and is never bound, so the test stack cannot cancel a real
+buff. The 10 Hz ticker watches one bound icon for drift (Edit Mode, a scale
+change) and re-places the overlays out of combat.
+
+**D24. Cancelling in combat is opt-in, because its held layout is visible.**
+D23's honest combat layout holds every buff cell, leaves gaps where buffs
+fade and puts newcomers where a cell is free — and the first two versions of it
+were rejected on sight ("there is always something messed up when I'm in
+combat", 2026-09-24). A secure cancel cannot be had without holding the cells,
+and the block's own reasons for existing (policy filtering, enlargement, the
+Blizzard-exact look) rule out handing the layout to a `SecureAuraHeader`. So
+the choice is the player's: Right-Click to Cancel alone is exact out of combat
+and leaves the block flowing freely in a fight (no secure button is ever
+created), and Also In Combat, off by default, buys the mid-fight cancel at the
+price D23 describes.

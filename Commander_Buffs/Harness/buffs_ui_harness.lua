@@ -79,9 +79,32 @@ end
 
 local NewWidget
 
+-- Combat lockdown on protected frames: refused and recorded, as the client
+-- reports ADDON_ACTION_BLOCKED. A secure frame and every ANCESTOR of it are
+-- protected (the Tradecraft/PartyFrames field lesson); InCombatLockdown is
+-- the character's own, defined further down.
+blockedCalls = {}
+function Blocked(s, what)
+    if not (InCombatLockdown and InCombatLockdown() and rawget(s, "__protected")) then return false end
+    blockedCalls[#blockedCalls + 1] = (rawget(s, "__name") or rawget(s, "__kind") or "?") .. ":" .. what
+    return true
+end
+
 local WidgetMT = {}
 WidgetMT.__index = function(self, key)
     if type(key) ~= "string" then return nil end
+    -- A size that was set is a size that can be read back (the overlays are
+    -- placed off their icon's rect)
+    if key == "GetWidth" then
+        local fn = function(s) return rawget(s, "__w") or 240 end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetHeight" then
+        local fn = function(s) return rawget(s, "__h") or 0 end
+        rawset(self, key, fn)
+        return fn
+    end
     if NUMERIC_GETTERS[key] ~= nil then
         local v = NUMERIC_GETTERS[key]
         local fn = function() return v end
@@ -151,6 +174,7 @@ WidgetMT.__index = function(self, key)
     end
     if key == "Show" then
         local fn = function(s)
+            if Blocked(s, "Show") then return end
             s.__shown = true
             if s.__scripts.OnShow then s.__scripts.OnShow(s) end
         end
@@ -158,7 +182,48 @@ WidgetMT.__index = function(self, key)
         return fn
     end
     if key == "Hide" then
-        local fn = function(s) s.__shown = false end
+        local fn = function(s) if Blocked(s, "Hide") then return end s.__shown = false end
+        rawset(self, key, fn)
+        return fn
+    end
+    -- Anchoring a protected frame to a frame puts THAT frame in the
+    -- protected anchor family: its size and position are locked in combat
+    -- too (field-verified 2026-09-24: CommanderBuffsIcon1:SetSize() blocked
+    -- once a secure cancel button was SetAllPoints to the icon)
+    local function JoinAnchorFamily(s, target)
+        if rawget(s, "__protected") and type(target) == "table" then
+            target.__protected = true
+        end
+    end
+    if key == "SetPoint" then
+        local fn = function(s, point, rel, relPoint, x, y)
+            if Blocked(s, "SetPoint") then return end
+            s.__point = { point, rel, relPoint, x, y }
+            JoinAnchorFamily(s, rel)
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetAllPoints" then
+        local fn = function(s, target)
+            if Blocked(s, "SetAllPoints") then return end
+            s.__anchor = target
+            JoinAnchorFamily(s, target)
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "SetAttribute" then
+        local fn = function(s, name, value)
+            if Blocked(s, "SetAttribute") then return end
+            s.__attr = s.__attr or {}
+            s.__attr[name] = value
+        end
+        rawset(self, key, fn)
+        return fn
+    end
+    if key == "GetAttribute" then
+        local fn = function(s, name) return s.__attr and s.__attr[name] end
         rawset(self, key, fn)
         return fn
     end
@@ -168,7 +233,10 @@ WidgetMT.__index = function(self, key)
         return fn
     end
     if key == "SetSize" then
-        local fn = function(s, w, h) s.__w, s.__h = w, h end
+        local fn = function(s, w, h)
+            if Blocked(s, "SetSize") then return end
+            s.__w, s.__h = w, h
+        end
         rawset(self, key, fn)
         return fn
     end
@@ -264,6 +332,15 @@ end
 function CreateFrame(frameType, name, parent, template)
     local f = NewWidget(frameType, name)
     f.__template = template
+    f.__parent = parent
+    -- A secure frame and its whole parent chain are protected
+    if template and template:find("Secure") then
+        local p = f
+        while p do
+            p.__protected = true
+            p = rawget(p, "__parent")
+        end
+    end
     if frameType == "CheckButton" or (template and template:find("CheckButton")) then
         f.Text = NewWidget("FontString")
     end
@@ -455,8 +532,17 @@ function hooksecurefunc(target, name, fn)
     end
 end
 
+-- CancelUnitBuff is protected IN COMBAT on this client (ADDON_ACTION_BLOCKED
+-- 'UNKNOWN()' 17x in one session, through the block's pcall): refused and
+-- recorded like a protected frame method, honoured out of combat.
 local cancelled = {}
-function CancelUnitBuff(unit, index) cancelled[#cancelled + 1] = index end
+function CancelUnitBuff(unit, index)
+    if combat then
+        blockedCalls[#blockedCalls + 1] = "CancelUnitBuff"
+        return
+    end
+    cancelled[#cancelled + 1] = index
+end
 
 DebuffTypeColor = {
     Magic = { r = 0.2, g = 0.6, b = 1 },
@@ -727,6 +813,377 @@ CHECK(not _G.CommanderBuffsBlock.__shown, "B: block hides when switched off")
 CommanderBuffsDB.EnableBlock = true
 Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
 CHECK(_G.CommanderBuffsBlock.__shown, "B: block comes back")
+
+-- ===========================================================================
+-- R: right-click cancel. CancelUnitBuff is protected in combat, so the cancel
+-- is a SecureActionButton per icon running "/cancelaura <name>" -- a SIBLING
+-- of the block under UIParent, anchored to its icon, so the block itself
+-- never becomes protected and still re-lays-out mid-fight. In combat an
+-- overlay can be neither re-bound nor moved, so an aura keeps the icon it
+-- was bound to (sticky by name) and newcomers take icons with no overlay up.
+-- ===========================================================================
+
+-- Every SHOWN overlay must sit over an icon showing the very buff its macro
+-- names -- or its buff must be GONE (a faded buff's cell goes to a newcomer
+-- mid-fight; the overlay's cancel is then a no-op, never a wrong buff)
+local function CancelOverlaysConsistent(present)
+    for slot = 1, 40 do
+        local overlay = _G["CommanderBuffsCancel" .. slot]
+        if overlay and overlay.__shown then
+            local icon = _G["CommanderBuffsIcon" .. slot]
+            local macro = overlay.__attr and overlay.__attr.macrotext2
+            local bound = macro and macro:match("^/cancelaura (.+)$")
+            if icon and icon.__shown and not (icon.auraFilter == "HELPFUL" and bound == icon.auraName)
+                and (not present or present[bound]) then
+                return false, slot .. ": " .. tostring(macro) .. " over " .. tostring(icon.auraName)
+            end
+        end
+    end
+    return true
+end
+
+-- The rows (y offsets) the shown icons of one kind occupy
+local function RowsOf(filter)
+    local rows = {}
+    for slot = 1, 40 do
+        local icon = _G["CommanderBuffsIcon" .. slot]
+        if icon and icon.__shown and icon.auraFilter == filter and icon.__point then
+            rows[icon.__point[5]] = true
+        end
+    end
+    return rows
+end
+
+-- Buffs and debuffs never share a row: the groups are stacked, never merged
+local function GroupsSeparate()
+    local buffRows, debuffRows = RowsOf("HELPFUL"), RowsOf("HARMFUL")
+    for y in pairs(buffRows) do
+        if debuffRows[y] then return false, "shared row y=" .. tostring(y) end
+    end
+    return true
+end
+
+-- No two shown icons may share a cell
+local function CellsDistinct()
+    local seen = {}
+    for slot = 1, 40 do
+        local icon = _G["CommanderBuffsIcon" .. slot]
+        if icon and icon.__shown and icon.__point then
+            local key = tostring(icon.__point[4]) .. "/" .. tostring(icon.__point[5])
+            if seen[key] then return false, key end
+            seen[key] = true
+        end
+    end
+    return true
+end
+
+local function ShownOverlays()
+    local n = 0
+    for slot = 1, 40 do
+        local overlay = _G["CommanderBuffsCancel" .. slot]
+        if overlay and overlay.__shown then n = n + 1 end
+    end
+    return n
+end
+
+local function BuffColumns()
+    local xs = {}
+    for slot = 1, 40 do
+        local icon = _G["CommanderBuffsIcon" .. slot]
+        if icon and icon.__shown and icon.auraFilter == "HELPFUL" and icon.__point then
+            xs[#xs + 1] = icon.__point[4]
+        end
+    end
+    table.sort(xs)
+    return table.concat(xs, ",")
+end
+
+CHECK(CommanderBuffsDB.RightClickCancel == true, "R: right-click cancel ships on")
+CHECK(CommanderBuffsDB.CancelInCombat == false, "R: cancelling in combat ships OFF (its held layout is visible)")
+CommanderBuffsDB.CancelInCombat = true
+-- Buffs first, so the slot numbers below read as written (the mirror mode
+-- falls back to buffs on the bottom when there is no target frame to read)
+local savedTopMode = CommanderBuffsDB.BuffsOnTopMode
+CommanderBuffsDB.BuffsOnTopMode = "ON"
+SetStack({
+    { name = "Arcane Intellect", id = 10157, duration = 1800, left = 1500 },
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    { name = "Ice Block", id = 45438, duration = 10, left = 2, mine = true },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+})
+Fire("UNIT_AURA", "player")
+do
+    local o1 = _G.CommanderBuffsCancel1
+    CHECK(o1 and o1.__template and o1.__template:find("SecureActionButtonTemplate"),
+        "R: the cancel is a secure button", o1 and o1.__template)
+    CHECK(o1 and o1.__parent == UIParent, "R: parented to UIParent, not the block")
+    CHECK(o1 and o1.__point and o1.__point[2] == UIParent and not o1.__anchor,
+        "R: pinned to the screen, never anchored to its icon (an anchor target is locked in combat)")
+    CHECK(o1 and o1.__attr and o1.__attr.type2 == "macro", "R: right button runs a macro",
+        o1 and o1.__attr and o1.__attr.type2)
+    CHECK(o1 and o1.__attr and o1.__attr.macrotext2 == "/cancelaura Arcane Intellect",
+        "R: the macro names the buff", o1 and o1.__attr and o1.__attr.macrotext2)
+    CHECK(_G.CommanderBuffsCancel3 and _G.CommanderBuffsCancel3.__attr.macrotext2 == "/cancelaura Ice Block",
+        "R: every buff icon is bound")
+    CHECK(ShownOverlays() == 3, "R: three overlays up for three buffs", ShownOverlays())
+    local o4 = _G.CommanderBuffsCancel4
+    CHECK(not (o4 and o4.__shown), "R: no overlay over a debuff")
+    CHECK(not _G.CommanderBuffsBlock.__protected and not PlayerFrame.__protected,
+        "R: the block and the player frame stay unprotected")
+    CHECK(not _G.CommanderBuffsIcon1.__protected, "R: the icon stays unprotected")
+    CHECK(CancelOverlaysConsistent())
+    -- The overlay covers the icon, so it must carry the tooltip
+    if o1 then
+        o1.__scripts.OnEnter(o1)
+        CHECK(GameTooltip.__shown, "R: hovering the overlay shows the aura tooltip")
+        o1.__scripts.OnLeave(o1)
+        CHECK(not GameTooltip.__shown, "R: and leaving hides it")
+    end
+end
+
+-- Out of combat the icon's own fallback still cancels by index (an icon
+-- without an overlay, e.g. before the first layout or with the secure
+-- template refused)
+do
+    local before = #cancelled
+    _G.CommanderBuffsIcon2.__scripts.OnMouseUp(_G.CommanderBuffsIcon2, "RightButton")
+    CHECK(#cancelled == before + 1 and cancelled[#cancelled] == 2,
+        "R: out of combat the icon fallback cancels by index", cancelled[#cancelled])
+    _G.CommanderBuffsIcon2.__scripts.OnMouseUp(_G.CommanderBuffsIcon2, "LeftButton")
+    CHECK(#cancelled == before + 1, "R: left click cancels nothing")
+end
+
+-- Combat: Arcane Intellect fades, Blessing of Kings lands. Nothing protected
+-- may be touched, every icon reflows into a gapless grid, and every shown
+-- overlay still names the buff under it.
+combat = true
+blockedCalls = {}
+SetStack({
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    { name = "Ice Block", id = 45438, duration = 10, left = 2, mine = true },
+    { name = "Blessing of Kings", id = 20217 },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+})
+Fire("UNIT_AURA", "player")
+CHECK(#blockedCalls == 0, "R: a combat relayout touches nothing protected", blockedCalls[1])
+CHECK(not _G.CommanderBuffsIcon1.__protected and not _G.CommanderBuffsBlock.__protected,
+    "R: no icon and not the block is in a protected anchor family")
+CHECK(_G.CommanderBuffsIcon1.__shown and _G.CommanderBuffsIcon1.auraName == "Blessing of Kings",
+    "R: the newcomer takes the faded buff's cell", _G.CommanderBuffsIcon1.auraName)
+CHECK(_G.CommanderBuffsIcon2.auraName == "Renew" and _G.CommanderBuffsIcon2.__shown,
+    "R: Renew keeps its cell", _G.CommanderBuffsIcon2.auraName)
+CHECK(_G.CommanderBuffsIcon3.auraName == "Ice Block" and _G.CommanderBuffsIcon3.__shown,
+    "R: Ice Block keeps its cell", _G.CommanderBuffsIcon3.auraName)
+CHECK(_G.CommanderBuffsIcon4.auraName == "Polymorph" and _G.CommanderBuffsIcon4.__shown,
+    "R: the debuff keeps its cell too", _G.CommanderBuffsIcon4.auraName)
+CHECK(CancelOverlaysConsistent({ Renew = true, ["Ice Block"] = true, ["Blessing of Kings"] = true, Polymorph = true }))
+CHECK(ShownIcons("CommanderBuffsIcon") == 4, "R: four icons drawn", ShownIcons("CommanderBuffsIcon"))
+CHECK(BuffColumns() == "15,50,85", "R: the buffs fill the first three cells, no gap", BuffColumns())
+CHECK(CellsDistinct())
+CHECK(GroupsSeparate())
+-- A debuff landing mid-fight while a buff cell is dead must NOT take that
+-- cell: the groups are stacked, never merged
+SetStack({
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    { name = "Ice Block", id = 45438, duration = 10, left = 2, mine = true },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+    { name = "Sunder Armor", id = 7386, duration = 30, left = 20, stacks = 5 },
+})
+Fire("UNIT_AURA", "player")
+CHECK(#blockedCalls == 0, "R: new debuff in combat, nothing protected touched", blockedCalls[1])
+CHECK(GroupsSeparate())
+CHECK(not _G.CommanderBuffsIcon1.__shown, "R: the dead buff cell stays empty rather than take a debuff")
+do
+    -- Hovering that emptied cell must show nothing: the hidden icon's index
+    -- is stale and would describe some other buff
+    GameTooltip.__shown = false
+    local o1 = _G.CommanderBuffsCancel1
+    o1.__scripts.OnEnter(o1)
+    CHECK(not GameTooltip.__shown, "R: an emptied cell shows no tooltip")
+end
+CHECK(BuffColumns() == "50,85", "R: the held buffs keep their cells", BuffColumns())
+do
+    local n = 0
+    for y in pairs(RowsOf("HARMFUL")) do n = n + 1 end
+    CHECK(n == 1, "R: both debuffs sit on one debuff row", n)
+end
+CHECK(CellsDistinct())
+-- A right-click on the newcomer reaches the icon's own handler (no overlay
+-- over it): in combat that must NOT call the protected function
+do
+    local before = #cancelled
+    for slot = 1, 40 do
+        local icon = _G["CommanderBuffsIcon" .. slot]
+        if icon and icon.__shown and icon.auraName == "Blessing of Kings" then
+            icon.__scripts.OnMouseUp(icon, "RightButton")
+        end
+    end
+    CHECK(#cancelled == before and #blockedCalls == 0,
+        "R: in combat the icon fallback never calls CancelUnitBuff", blockedCalls[1])
+end
+-- Arcane Intellect is re-cast mid-fight: it goes back onto the icon whose
+-- overlay still names it, so that overlay is live again
+SetStack({
+    { name = "Arcane Intellect", id = 10157, duration = 1800, left = 1500 },
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    { name = "Ice Block", id = 45438, duration = 10, left = 2, mine = true },
+    { name = "Blessing of Kings", id = 20217 },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+})
+Fire("UNIT_AURA", "player")
+CHECK(#blockedCalls == 0, "R: still nothing protected touched", blockedCalls[1])
+CHECK(_G.CommanderBuffsIcon1.__shown and _G.CommanderBuffsIcon1.auraName == "Arcane Intellect",
+    "R: a returning buff takes its cell back", _G.CommanderBuffsIcon1.auraName)
+CHECK(CancelOverlaysConsistent({ ["Arcane Intellect"] = true, Renew = true, ["Ice Block"] = true,
+    ["Blessing of Kings"] = true, Polymorph = true }))
+CHECK(ShownIcons("CommanderBuffsIcon") == 5, "R: five icons drawn", ShownIcons("CommanderBuffsIcon"))
+CHECK(CellsDistinct())
+CHECK(GroupsSeparate())
+-- The displaced newcomer goes to the next BUFF cell, on the buff rows
+CHECK(BuffColumns() == "15,50,85,120", "R: the displaced newcomer takes the next buff cell", BuffColumns())
+CHECK(_G.CommanderBuffsBlock.__h and _G.CommanderBuffsBlock.__h > 0, "R: the block keeps a height")
+-- Combat ends: the free layout returns and the newcomer gets its own overlay
+combat = false
+Fire("PLAYER_REGEN_ENABLED")
+CHECK(_G.CommanderBuffsIcon4.auraName == "Blessing of Kings"
+    and _G.CommanderBuffsCancel4 and _G.CommanderBuffsCancel4.__shown
+    and _G.CommanderBuffsCancel4.__attr.macrotext2 == "/cancelaura Blessing of Kings",
+    "R: after combat the newcomer is bound in the free layout",
+    _G.CommanderBuffsCancel4 and _G.CommanderBuffsCancel4.__attr.macrotext2)
+CHECK(ShownOverlays() == 4, "R: four overlays up", ShownOverlays())
+CHECK(CancelOverlaysConsistent())
+
+-- Debuffs on top: their rows are reserved at the count the free layout had,
+-- and a debuff row past that goes UNDER the held buffs, never over them
+CommanderBuffsDB.BuffsOnTopMode = "OFF"
+SetStack({
+    { name = "Arcane Intellect", id = 10157, duration = 1800, left = 1500 },
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+})
+Fire("UNIT_AURA", "player")
+local buffRowY
+for y in pairs(RowsOf("HELPFUL")) do buffRowY = y end
+CHECK(buffRowY ~= nil and buffRowY < 0, "R: debuffs on top puts the buffs on the second row", buffRowY)
+combat = true
+blockedCalls = {}
+do
+    local debuffs = {}
+    for i = 1, 9 do debuffs[i] = { name = "Debuff " .. i, id = 9000 + i, duration = 30, left = 20 } end
+    SetStack({
+        { name = "Arcane Intellect", id = 10157, duration = 1800, left = 1500 },
+        { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    }, debuffs)
+end
+Fire("UNIT_AURA", "player")
+CHECK(#blockedCalls == 0, "R: nine debuffs in combat, nothing protected touched", blockedCalls[1])
+CHECK(GroupsSeparate())
+CHECK(CellsDistinct())
+do
+    local buffY
+    for y in pairs(RowsOf("HELPFUL")) do buffY = y end
+    CHECK(buffY == buffRowY, "R: the held buffs did not move", tostring(buffY) .. " vs " .. tostring(buffRowY))
+    local above, below = 0, 0
+    for y in pairs(RowsOf("HARMFUL")) do
+        if y > buffRowY then above = above + 1 else below = below + 1 end
+    end
+    CHECK(above == 1 and below == 1, "R: the ninth debuff starts a row under the buffs", above .. "/" .. below)
+end
+combat = false
+Fire("PLAYER_REGEN_ENABLED")
+CHECK(GroupsSeparate())
+do
+    local n = 0
+    for y in pairs(RowsOf("HARMFUL")) do n = n + 1 end
+    CHECK(n == 2, "R: out of combat the two debuff rows sit together again", n)
+end
+CommanderBuffsDB.BuffsOnTopMode = "ON"
+SetStack({
+    { name = "Arcane Intellect", id = 10157, duration = 1800, left = 1500 },
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    { name = "Ice Block", id = 45438, duration = 10, left = 2, mine = true },
+    { name = "Blessing of Kings", id = 20217 },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+})
+Fire("UNIT_AURA", "player")
+
+-- The shipped mode: right-click out of combat only. No overlay exists, the
+-- block flows freely in a fight, and nothing protected is ever touched.
+CommanderBuffsDB.CancelInCombat = false
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(ShownOverlays() == 0, "R: Also In Combat off hides every overlay", ShownOverlays())
+combat = true
+blockedCalls = {}
+SetStack({
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    { name = "Blessing of Kings", id = 20217 },
+}, {
+    { name = "Polymorph", id = 118, duration = 10, left = 6, school = "Magic" },
+})
+Fire("UNIT_AURA", "player")
+CHECK(#blockedCalls == 0, "R: shipped mode, combat relayout clean", blockedCalls[1])
+CHECK(_G.CommanderBuffsIcon1.auraName == "Renew" and _G.CommanderBuffsIcon2.auraName == "Blessing of Kings"
+    and _G.CommanderBuffsIcon3.auraName == "Polymorph" and ShownIcons("CommanderBuffsIcon") == 3,
+    "R: shipped mode, the block flows freely in combat")
+CHECK(GroupsSeparate())
+do
+    local before = #cancelled
+    _G.CommanderBuffsIcon1.__scripts.OnMouseUp(_G.CommanderBuffsIcon1, "RightButton")
+    CHECK(#cancelled == before and #blockedCalls == 0, "R: shipped mode, a combat right-click is a quiet no-op")
+end
+combat = false
+Fire("PLAYER_REGEN_ENABLED")
+do
+    local before = #cancelled
+    _G.CommanderBuffsIcon1.__scripts.OnMouseUp(_G.CommanderBuffsIcon1, "RightButton")
+    CHECK(#cancelled == before + 1, "R: shipped mode, right-click cancels out of combat")
+end
+CommanderBuffsDB.CancelInCombat = true
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+
+-- Switching the option off puts every overlay away, and a combat relayout
+-- is then plain sequential again
+CommanderBuffsDB.RightClickCancel = false
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(ShownOverlays() == 0, "R: option off hides every overlay", ShownOverlays())
+combat = true
+blockedCalls = {}
+SetStack({
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+    { name = "Blessing of Kings", id = 20217 },
+}, {})
+Fire("UNIT_AURA", "player")
+CHECK(#blockedCalls == 0, "R: option off, combat relayout clean", blockedCalls[1])
+CHECK(_G.CommanderBuffsIcon1.auraName == "Renew" and _G.CommanderBuffsIcon2.auraName == "Blessing of Kings",
+    "R: option off, icons are handed out in order again")
+combat = false
+CommanderBuffsDB.RightClickCancel = true
+Commander.Notify(COMMANDER_BUFFS_EVENTS.UPDATE)
+CHECK(ShownOverlays() == 2, "R: option back on rebinds", ShownOverlays())
+
+-- The test stack carries no aura index: a test buff must never be bound to a
+-- real cancel (a "/cancelaura Ice Block" would cancel a REAL Ice Block)
+CommanderBuffs_Test()
+CHECK(ShownOverlays() == 0, "R: the test stack binds no overlay", ShownOverlays())
+now = now + 20
+Fire("UNIT_AURA", "player")
+
+-- Leave the stack as the sections below expect it
+SetStack({
+    { name = "Arcane Intellect", id = 10157, duration = 1800, left = 1500 },
+    { name = "Renew", id = 139, duration = 15, left = 9, mine = true },
+}, {})
+Fire("UNIT_AURA", "player")
+CHECK(ShownOverlays() == 2, "R: two overlays for the two buffs", ShownOverlays())
+CommanderBuffsDB.BuffsOnTopMode = savedTopMode
+CommanderBuffsDB.CancelInCombat = false
+Fire("UNIT_AURA", "player")
 
 -- Opacity rides the container so icons, rims, counts, and timers fade together
 CommanderBuffsDB.BlockOpacity = 0.4

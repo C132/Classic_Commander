@@ -116,3 +116,18 @@ overhangs on both sides by design. *Test:* trigger the test stack (`/cbuffs
 test`, which now seeds a Kidney Shot) and look at the portrait. If the word
 collides with anything, the Sentinel X/Y nudges or a smaller Icon Size are
 the dials; if it is unreadable, the label wants an OUTLINE font object.
+
+**A17. An icon's rect (`GetLeft`/`GetBottom`/`GetWidth`/`GetHeight`) answers
+correctly right after the layout that anchored it, in the same frame.** The
+cancel overlays (D23) are placed off that rect at the end of every free
+layout; a nil answer is retried from the ticker, a wrong one would leave an
+overlay beside its icon. (The first cut's assumption — that a secure button may
+be anchored to the icon without locking it — FAILED in the field on
+2026-09-24: `CommanderBuffsIcon1:SetSize()` blocked mid-fight and new auras
+stopped appearing. Anchor targets join the protected family.) *Test:* with
+Right-Click to Cancel on, hover each buff out of combat: the tooltip must
+appear over every icon, not offset from it. Then in a fight get a new buff and
+lose one: the new one must draw (in the faded one's cell or below the block),
+right-clicking a buff that was up when the fight began must cancel THAT buff,
+and `/cdebug` must show no `ADDON_ACTION_BLOCKED` naming `CommanderBuffsIcon`,
+`CommanderBuffsBlock` or `CommanderBuffsCancel`.

@@ -95,6 +95,7 @@ local DefaultSettings = {
     BlockOpacity = 1,
     BlockFilter = "ALL",               -- ALL | RULES | SCORED
     RightClickCancel = true,
+    CancelInCombat = false,            -- secure cancel buttons; holds the buff cells in a fight
 
     -- The portrait sentinel
     EnablePortrait = true,
@@ -217,10 +218,18 @@ local function CreatePanel()
         isEnabled = BlockOn,
     }, {
         label = "Right-Click to Cancel",
-        tooltip = "Right-click a buff in the block to cancel it. Best effort only: the block is insecure by design (a secure aura button could not re-lay-out in combat), and this client may refuse the cancel from addon code — a refusal is a silent no-op, and Blizzard's own frames remain the supported way to cancel.",
+        tooltip = "Right-click a buff in the block to cancel it. Out of combat this is exact and the block keeps laying itself out freely in a fight. Cancelling IN combat needs the option below.",
         get = function() return CommanderBuffsDB.RightClickCancel end,
         set = function(value) CommanderBuffsDB.RightClickCancel = value end,
         isEnabled = BlockOn,
+    })
+
+    panel:AddCheckbox({
+        label = "Also In Combat",
+        tooltip = "Cancel buffs by right-click during a fight too. The client only allows that from a secure button, and a secure button cannot move once combat starts — so with this on, every buff HOLDS the cell it had when the fight began: a buff that fades leaves its cell empty, a buff that lands mid-fight fills an empty buff cell or the next one, and with Debuffs On Top an extra debuff row is drawn under the buffs instead of pushing them. Debuffs still flow freely on their own rows, and the block lays itself out normally again the moment combat ends. Off: the block always flows freely and right-click works out of combat only.",
+        get = function() return CommanderBuffsDB.CancelInCombat end,
+        set = function(value) CommanderBuffsDB.CancelInCombat = value end,
+        isEnabled = function() return BlockOn() and CommanderBuffsDB.RightClickCancel == true end,
     })
 
     panel:AddDropdown({

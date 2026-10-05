@@ -9,11 +9,19 @@
 -- has hold of me right now", and its job is to be readable without being
 -- looked at — which is why it stays empty most of the time.
 --
--- Everything here is INSECURE by design. A frame built from a secure
--- template is protected: it cannot be moved, shown, or re-attributed in
--- combat from addon code (the PartyFrames click-cast lesson). An aura block
--- must re-lay-out mid-fight, so it is display-only — right-click cancel is a
--- best-effort pcall and says so in its option tooltip.
+-- The block and its icons are INSECURE by design. A frame built from a
+-- secure template is protected, and so is every ancestor of it: none of them
+-- can be moved, shown, resized or re-attributed in combat from addon code
+-- (the PartyFrames click-cast lesson). An aura block must re-lay-out
+-- mid-fight, so nothing secure may live UNDER it. Right-click cancel needs
+-- secure code, though — CancelUnitBuff is protected in combat on this client
+-- (ADDON_ACTION_BLOCKED, 17 times in one session) — so, when Also In Combat
+-- is on, each icon gets a SecureActionButton overlay that is a SIBLING of
+-- the block (parented to UIParent, pinned to the icon's place on screen)
+-- running "/cancelaura <name>". The cancel-overlay section below says how
+-- the block keeps those honest in combat, and what that costs the layout;
+-- the option ships OFF because that cost is visible, and with it off the
+-- block flows freely in a fight and right-click is exact out of combat.
 --
 -- Blizzard's own BuffFrame/DebuffFrame are hidden rather than moved: we do
 -- not fight Edit Mode for a frame we are replacing. Hiding is deferred out
@@ -121,6 +129,15 @@ local ranked = {}              -- engine results, highest score first
 local blockList, blockN = {}, 0 -- what the block draws, after its own filter
 
 local block, blockIcons = nil, {}
+local cancelButtons = {}       -- slot -> secure right-click overlay, a SIBLING of the block
+local cancelBound = {}         -- slot -> the buff NAME its overlay's macro cancels; nil when hidden
+local cancelBoundMax = 0       -- highest bound slot, the combat picker's scan limit
+local cancelUnavailable = false -- the secure template was refused once: stop asking
+local cancelAnchorSlot = 0     -- a bound slot the ticker watches for drift
+local overlayDirty = false     -- an overlay could not be placed yet (no rect): retry from the ticker
+local slotAura = {}            -- slot -> { name, harmful } the last free layout put there
+local frozenN = 0              -- how many slots the last free layout recorded; 0 = nothing to hold
+local groupRec = {}            -- "buff" / "debuff" -> that group's grid in the last free layout
 local sentinel, sentinelSlots = nil, {}
 local hooked = {}              -- Blizzard frames we have hooked Show on
 local hidingDefaults = false
@@ -412,8 +429,13 @@ local function BuildIcon(parent, named)
         if button ~= "RightButton" then return end
         if not (db and db.RightClickCancel) then return end
         if self.auraFilter ~= "HELPFUL" or not self.auraIndex then return end
-        -- Best effort: the retail-era framework this build runs may refuse
-        -- CancelUnitBuff from insecure code. A refusal is a silent no-op.
+        -- Only reached by an icon with no overlay over it: the secure
+        -- template refused, or a buff that landed mid-fight. CancelUnitBuff
+        -- is protected IN COMBAT on this client, and calling it then is not
+        -- a Lua error the pcall would swallow but an ADDON_ACTION_BLOCKED
+        -- report — so in combat it is simply not attempted. Out of combat it
+        -- is the exact, index-addressed cancel.
+        if InCombatLockdown and InCombatLockdown() then return end
         pcall(CancelUnitBuff, "player", self.auraIndex)
     end)
 
@@ -627,6 +649,164 @@ local function ApplyRound(slot, round)
 end
 
 -- ---------------------------------------------------------------------------
+-- Right-click cancel overlays
+--
+-- CancelUnitBuff is protected in combat, so a cancel that works mid-fight has
+-- to come from secure code: a SecureActionButton whose right button runs the
+-- macro "/cancelaura <name>" (a secure slash command on this client, see
+-- Blizzard_ChatFrameBase/Shared/SlashCommands.lua on the classic_anniversary
+-- branch). Two rules keep the block free and the overlays honest:
+--
+--   * An overlay is a SIBLING of the block, parented to UIParent, and it is
+--     pinned to the SCREEN — never anchored to its icon. Protection walks up
+--     the parent chain AND across anchors: the frame a secure button is
+--     anchored to joins its protected family and can no longer be resized
+--     or moved in combat (field-verified 2026-09-24: CommanderBuffsIcon1:
+--     SetSize() blocked once an overlay was SetAllPoints to it, and the block
+--     stopped drawing new auras mid-fight). So the overlay is placed at the
+--     icon's absolute rect, out of combat, and no addon frame is ever its
+--     anchor.
+--   * An overlay is only ever created, shown, hidden, re-bound, re-levelled
+--     or re-placed OUT of combat. In combat both its macro and its place on
+--     screen are frozen, so the block must go on drawing the buff that macro
+--     names in that very cell: the combat layout (LayoutBlockFrozen) holds
+--     the BUFF group where the last free layout put it, hands a faded
+--     buff's cell to a new buff (the overlay there cancels an absent buff,
+--     a no-op, and serves the newcomer's tooltip), and grows the buff grid
+--     only past that. Debuffs carry no overlay and reflow freely on their
+--     own rows; the two groups are never merged. The paint after
+--     PLAYER_REGEN_ENABLED lays everything out free again and re-binds.
+--
+-- Cancel by NAME rather than by aura index on purpose: indices shift the
+-- moment any earlier aura fades, and a frozen index would cancel a neighbour.
+-- ---------------------------------------------------------------------------
+
+local function InCombat()
+    return InCombatLockdown and InCombatLockdown() or false
+end
+
+local function CancelOverlaysWanted()
+    return Enabled() and db.EnableBlock and db.RightClickCancel and db.CancelInCombat
+        and not cancelUnavailable
+end
+
+local function BuildCancelOverlay(slot, icon)
+    if cancelUnavailable then return nil end
+    local ok, overlay = pcall(CreateFrame, "Button", "CommanderBuffsCancel" .. slot, UIParent,
+        "SecureActionButtonTemplate")
+    if not ok or not overlay then
+        cancelUnavailable = true
+        return nil
+    end
+    overlay.icon = icon
+    -- Right button only, BOTH edges: SecureActionButton_OnClick acts on
+    -- exactly one of them (the one ActionButtonUseKeyDown names) and discards
+    -- the other, so this is one cancel per click, not two.
+    overlay:RegisterForClicks("RightButtonDown", "RightButtonUp")
+    overlay:SetAttribute("type2", "macro")
+    overlay:SetAttribute("macrotext2", "")
+    -- The overlay sits over the icon and takes its mouse, so the tooltip is
+    -- served from here, off whatever the icon is painted with right now.
+    overlay:SetScript("OnEnter", function(self)
+        -- Over an emptied cell (its buff faded mid-fight) there is nothing
+        -- to describe: the hidden icon's index is stale and would name some
+        -- other buff
+        if not self.icon:IsShown() then return end
+        local handler = self.icon:GetScript("OnEnter")
+        if handler then handler(self.icon) end
+    end)
+    overlay:SetScript("OnLeave", function(self)
+        local handler = self.icon:GetScript("OnLeave")
+        if handler then handler(self.icon) end
+    end)
+    overlay:Hide()
+    cancelButtons[slot] = overlay
+    return overlay
+end
+
+-- Pin the overlay to the icon's rect on screen. The overlay lives under
+-- UIParent, so it is scaled to the icon's effective scale first and then the
+-- icon's own coordinates apply to it unchanged.
+local function PlaceOverlay(overlay, icon)
+    local left, bottom = icon:GetLeft(), icon:GetBottom()
+    local w, h = icon:GetWidth(), icon:GetHeight()
+    if not (left and bottom and w and h and w > 0 and h > 0) then
+        -- The client has not laid the icon out yet: the ticker retries
+        overlayDirty = true
+        return
+    end
+    local uiScale = (UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+    local scale = (icon:GetEffectiveScale() or 1) / uiScale
+    local p = overlay.placed
+    if p and p[1] == left and p[2] == bottom and p[3] == w and p[4] == h and p[5] == scale then return end
+    overlay.placed = { left, bottom, w, h, scale }
+    overlay:SetScale(scale)
+    overlay:SetSize(w, h)
+    overlay:ClearAllPoints()
+    overlay:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
+end
+
+-- Bring the overlays into line with what the icons show. Out of combat only:
+-- in combat this is a no-op, and the paint after PLAYER_REGEN_ENABLED (which
+-- Refresh already runs) does the work.
+local function SyncCancelOverlays()
+    if InCombat() then return end
+    overlayDirty = false
+    local wanted = CancelOverlaysWanted()
+    local maxBound, anchorSlot = 0, 0
+    for slot = 1, #blockIcons do
+        local icon = blockIcons[slot]
+        -- A test-stack aura carries no index on purpose, and it must never
+        -- be bound: "/cancelaura Ice Block" would cancel a REAL Ice Block.
+        local name = wanted and icon:IsShown() and icon.auraFilter == "HELPFUL"
+            and icon.auraIndex and icon.auraName or nil
+        local overlay = cancelButtons[slot]
+        if name then
+            overlay = overlay or BuildCancelOverlay(slot, icon)
+            if overlay then
+                if cancelBound[slot] ~= name then
+                    overlay:SetAttribute("macrotext2", "/cancelaura " .. name)
+                    cancelBound[slot] = name
+                end
+                -- Stacking is not inherited from a sibling: mirror the icon's
+                local strata = icon:GetFrameStrata()
+                if strata and overlay:GetFrameStrata() ~= strata then
+                    overlay:SetFrameStrata(strata)
+                end
+                local level = (icon:GetFrameLevel() or 1) + 3
+                if overlay:GetFrameLevel() ~= level then overlay:SetFrameLevel(level) end
+                PlaceOverlay(overlay, icon)
+                if not overlay:IsShown() then overlay:Show() end
+                maxBound = slot
+                if anchorSlot == 0 then anchorSlot = slot end
+            end
+        elseif overlay then
+            if overlay:IsShown() then overlay:Hide() end
+            cancelBound[slot] = nil
+        end
+    end
+    cancelBoundMax = maxBound
+    cancelAnchorSlot = anchorSlot
+end
+
+-- The overlays are pinned to the screen, not to their icons, so anything
+-- that moves the block out of combat (Edit Mode, a scale change) leaves them
+-- behind until the next layout: watch one bound icon for drift, and retry a
+-- placement the client could not answer yet. One GetLeft per tick.
+local function WatchCancelOverlays()
+    if cancelBoundMax == 0 or InCombat() then return end
+    if overlayDirty then
+        SyncCancelOverlays()
+        return
+    end
+    local overlay = cancelButtons[cancelAnchorSlot]
+    local icon = overlay and overlay.icon
+    local p = overlay and overlay.placed
+    if not (icon and p and overlay:IsShown()) then return end
+    if icon:GetLeft() ~= p[1] or icon:GetBottom() ~= p[2] then SyncCancelOverlays() end
+end
+
+-- ---------------------------------------------------------------------------
 -- The block
 -- ---------------------------------------------------------------------------
 
@@ -711,7 +891,8 @@ local function LayoutGroup(startSlot, list, count, size, top, opts)
         rows = row + 1
         local icon = AcquireBlockIcon(slot)
         ApplyRound(icon, opts.round)
-        PaintIcon(icon, entry, size * MineScaleFor(entry, opts), opts)
+        local painted = size * MineScaleFor(entry, opts)
+        PaintIcon(icon, entry, painted, opts)
         icon:ClearAllPoints()
         -- Anchored by its BOTTOM CENTER to the foot of the cell. Bottom-aligned
         -- rather than top-aligned so every icon in a row sits on one baseline
@@ -724,20 +905,69 @@ local function LayoutGroup(startSlot, list, count, size, top, opts)
         else
             icon:SetPoint("BOTTOM", block, "TOPLEFT", x, y)
         end
+        -- Remembered for the combat layout, which holds a buff in the cell
+        -- the last free layout gave it (tables reused: this runs on every
+        -- UNIT_AURA)
+        local auraRec = slotAura[slot] or {}
+        auraRec.name, auraRec.harmful = entry.name, entry.isHarmful
+        slotAura[slot] = auraRec
         slot = slot + 1
     end
-    return slot, rows * stride
+    return slot, rows * stride, {
+        top = top, cell = cell, gap = gap, stride = stride, perRow = perRow,
+        count = count, rows = rows, size = size, right = opts.growLeft and true or false,
+        firstSlot = startSlot,
+    }
 end
 
-local function LayoutBlock()
-    if not block then return end
-    if not (Enabled() and db.EnableBlock) then
-        block:Hide()
-        for _, icon in pairs(blockIcons) do icon:Hide() end
-        return
-    end
+local function BlockOpts()
+    return {
+        perRow = db.IconsPerRow or 8,
+        gap = db.IconGap or 5,
+        timers = db.ShowTimers,
+        sweep = db.IconSweep,
+        mineRim = db.MineRim,
+        growLeft = db.GrowLeft,
+        round = db.RoundBlockIcons == true,
+        native = IsBlizzardStyle(),
+        mineScale = db.MineScale or 1,
+    }
+end
 
-    BuildBlockList()
+-- Cell index -> the icon's anchor offsets in a group's grid, plus its row
+local function CellXY(rec, index)
+    local col = (index - 1) % rec.perRow
+    local row = math.floor((index - 1) / rec.perRow)
+    return col * (rec.cell + rec.gap) + rec.cell / 2, rec.top - row * rec.stride - rec.cell, row + 1
+end
+
+local function AnchorIcon(icon, x, y, right)
+    icon:ClearAllPoints()
+    if right then
+        icon:SetPoint("BOTTOM", block, "TOPRIGHT", -x, y)
+    else
+        icon:SetPoint("BOTTOM", block, "TOPLEFT", x, y)
+    end
+end
+
+-- The combat layout, used while cancel overlays are up. The overlays are
+-- frozen in combat, macro and place alike, so the BUFF group is held: a
+-- buff the last free layout drew keeps its cell (and the icon that overlay
+-- serves), a new buff fills a faded buff's cell first — the overlay there
+-- cancels an absent buff, a no-op, and shows the newcomer's tooltip — and
+-- the buff grid grows only past its recorded cells. Debuffs carry no
+-- overlay and reflow freely on their own rows, exactly as out of combat.
+-- The groups are NEVER merged: a debuff never takes a buff's cell and a buff
+-- never lands on a debuff row. With debuffs on top, their rows are reserved
+-- at the count the free layout had; a debuff row past that would push the
+-- held buffs, so it is drawn under the buffs instead until combat drops.
+-- Nothing here touches an overlay or the block's anchor.
+local function LayoutBlockFrozen(opts)
+    local buffRec = groupRec.buff
+    if not buffRec then return false end
+    local used = {}
+    local groupGap = 4
+    local buffsFirst = BuffsOnTop()
 
     local buffs, buffN = {}, 0
     local debuffs, debuffN = {}, 0
@@ -752,27 +982,138 @@ local function LayoutBlock()
         end
     end
 
-    local opts = {
-        perRow = db.IconsPerRow or 8,
-        gap = db.IconGap or 5,
-        timers = db.ShowTimers,
-        sweep = db.IconSweep,
-        mineRim = db.MineRim,
-        growLeft = db.GrowLeft,
-        round = db.RoundBlockIcons == true,
-        native = IsBlizzardStyle(),
-        mineScale = db.MineScale or 1,
+    -- A slot with no overlay up and no icon assigned yet, lowest first
+    local function SpareSlot()
+        local s = 1
+        while used[s] or cancelBound[s] do s = s + 1 end
+        return s
+    end
+
+    -- Buffs: recorded cell by name first, then dead cells, then new cells
+    local cellOf, cellTaken = {}, {}
+    for i = 1, buffN do
+        local entry = buffs[i]
+        for k = 1, buffRec.count do
+            local rec = slotAura[buffRec.firstSlot + k - 1]
+            if not cellTaken[k] and rec and not rec.harmful and rec.name == entry.name then
+                cellOf[i], cellTaken[k] = k, true
+                break
+            end
+        end
+    end
+    local nextCell = 1
+    for i = 1, buffN do
+        if not cellOf[i] then
+            while cellTaken[nextCell] do nextCell = nextCell + 1 end
+            cellOf[i], cellTaken[nextCell] = nextCell, true
+        end
+    end
+    local buffRows = buffRec.rows
+    local buffSize = db.BuffSize or BLIZZ_ICON
+    for i = 1, buffN do
+        local k = cellOf[i]
+        -- A recorded cell keeps its slot: that slot's overlay sits over it
+        local slot = k <= buffRec.count and (buffRec.firstSlot + k - 1) or SpareSlot()
+        used[slot] = true
+        local icon = AcquireBlockIcon(slot)
+        ApplyRound(icon, opts.round)
+        PaintIcon(icon, buffs[i], buffSize * MineScaleFor(buffs[i], opts), opts)
+        local x, y, row = CellXY(buffRec, k)
+        AnchorIcon(icon, x, y, buffRec.right)
+        if row > buffRows then buffRows = row end
+    end
+    local buffHeight = buffRows * buffRec.stride
+
+    -- Debuffs: a free grid of their own, above (reserved rows) or below
+    local debuffSize = db.DebuffSize or BLIZZ_ICON
+    local dRec = {
+        perRow = opts.perRow, gap = opts.gap,
+        cell = debuffSize * math.max(1, opts.mineScale or 1),
     }
+    dRec.stride = dRec.cell + dRec.gap + (opts.timers and BLIZZ_DURATION_LANE or 0)
+    local reservedRows = (not buffsFirst and groupRec.debuff) and groupRec.debuff.rows or 0
+    local belowTop = buffRec.top - buffHeight - groupGap
+    local rowsBelow, rowsAbove = 0, 0
+    for i = 1, debuffN do
+        local entry = debuffs[i]
+        local slot = SpareSlot()
+        used[slot] = true
+        local icon = AcquireBlockIcon(slot)
+        ApplyRound(icon, opts.round)
+        PaintIcon(icon, entry, debuffSize * MineScaleFor(entry, opts), opts)
+        local x, y, row
+        if not buffsFirst and i <= reservedRows * dRec.perRow then
+            dRec.top = 0
+            x, y, row = CellXY(dRec, i)
+            if row > rowsAbove then rowsAbove = row end
+        else
+            dRec.top = belowTop
+            x, y, row = CellXY(dRec, buffsFirst and i or (i - reservedRows * dRec.perRow))
+            if row > rowsBelow then rowsBelow = row end
+        end
+        AnchorIcon(icon, x, y, opts.growLeft)
+    end
+
+    for i = 1, #blockIcons do
+        if not used[i] then blockIcons[i]:Hide() end
+    end
+
+    -- Only the height may change: the icons hang off the block's top edge,
+    -- so a taller block moves nothing already drawn, while a different width
+    -- would (Grow Left anchors to TOPRIGHT).
+    local height = buffHeight + groupGap
+    if buffsFirst then
+        if rowsBelow > 0 then height = height + rowsBelow * dRec.stride + groupGap end
+    else
+        height = reservedRows * dRec.stride + groupGap + height
+        if rowsBelow > 0 then height = height + rowsBelow * dRec.stride + groupGap end
+    end
+    block:SetSize(block:GetWidth(), math.max(height, 1))
+    block:SetAlpha(db.BlockOpacity or 1)
+    block:Show()
+    return true
+end
+
+local function LayoutBlock()
+    if not block then return end
+    if not (Enabled() and db.EnableBlock) then
+        block:Hide()
+        for _, icon in pairs(blockIcons) do icon:Hide() end
+        SyncCancelOverlays()
+        return
+    end
+
+    BuildBlockList()
+
+    local opts = BlockOpts()
+    if frozenN > 0 and cancelBoundMax > 0 and InCombat() and LayoutBlockFrozen(opts) then
+        return
+    end
+
+    local buffs, buffN = {}, 0
+    local debuffs, debuffN = {}, 0
+    for i = 1, blockN do
+        local entry = blockList[i]
+        if entry.isHarmful then
+            debuffN = debuffN + 1
+            debuffs[debuffN] = entry
+        else
+            buffN = buffN + 1
+            buffs[buffN] = entry
+        end
+    end
 
     local slot, top = 1, 0
     local groupGap = 4
     local buffsFirst = BuffsOnTop()
     local usedHeight = 0
+    groupRec.buff, groupRec.debuff = nil, nil
 
     local function drawGroup(list, count, size)
         if count == 0 then return end
-        local nextSlot, height = LayoutGroup(slot, list, count, size, top, opts)
+        local nextSlot, height, cursor = LayoutGroup(slot, list, count, size, top, opts)
         slot = nextSlot
+        groupRec[list == buffs and "buff" or "debuff"] = cursor
         top = top - height - groupGap
         usedHeight = usedHeight + height + groupGap
     end
@@ -786,8 +1127,12 @@ local function LayoutBlock()
     end
 
     for i = slot, #blockIcons do
-        if blockIcons[i] then blockIcons[i]:Hide() end
+        blockIcons[i]:Hide()
     end
+
+    -- What the combat layout holds on to — nothing, when there is no overlay
+    -- to keep honest, so the block reflows freely in combat as it always did
+    frozenN = CancelOverlaysWanted() and (slot - 1) or 0
 
     -- The enlargement widens the BUFF cell only, so the block's own width is
     -- measured off whichever group actually ends up wider.
@@ -811,6 +1156,7 @@ local function LayoutBlock()
         block:SetPoint("TOP" .. horizontal, parent, "BOTTOM" .. horizontal, x, y)
     end
     block:Show()
+    SyncCancelOverlays()
 end
 
 -- The 10 Hz path. Re-laying the whole block out ten times a second would
@@ -818,10 +1164,11 @@ end
 -- the icons already on screen and only touches their countdown.
 local function TickBlockTimers()
     local now = Now()
-    for i = 1, blockN do
+    -- Every pooled icon rather than the first blockN: the combat layout can
+    -- leave a hidden icon in the middle of the shown ones.
+    for i = 1, #blockIcons do
         local icon = blockIcons[i]
-        if not icon or not icon:IsShown() then break end
-        if icon.showTimer and icon.entry then
+        if icon:IsShown() and icon.showTimer and icon.entry then
             local remaining = E.Remaining(icon.entry, now)
             if remaining then
                 SetDurationText(icon, remaining, icon.native)
@@ -1103,5 +1450,6 @@ events:SetScript("OnUpdate", function(_, elapsed)
     end
     E.Evaluate(auras, Rules(), EvalOptions(), Now(), ranked)
     if db.EnableBlock and db.ShowTimers then TickBlockTimers() end
+    if db.EnableBlock then WatchCancelOverlays() end
     UpdateSentinel()
 end)
