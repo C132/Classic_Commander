@@ -4,6 +4,12 @@
 -- joins the queue as a bar draining toward ready — full at cooldown start,
 -- empty the moment it comes back. Keyed by spell name so multiple ranks
 -- sharing a cooldown collapse into one entry.
+--
+-- Three ways to draw the same queue: bars with names, a strip of icons, or
+-- radial discs (CommanderProductionRadial.lua) -- the spell's icon cut round
+-- with its cooldown as a ring around it.
+
+local Radial = CommanderProduction_Radial
 
 local BOOKTYPE = "spell"
 -- Row metrics are settings (Row Height, Icon Size, Spacing, Icons per Row);
@@ -66,20 +72,33 @@ local function IsIconStrip(layout)
     return layout == "ICONS" or layout == "ICONS_RTL"
 end
 
+-- The discs march and wrap exactly as the strip's icons do; only what stands
+-- in each cell differs
+local function IsRadial(layout)
+    return layout == "RADIAL" or layout == "RADIAL_RTL"
+end
+
 -- Every size the queue draws with, resolved once per draw into one reused
 -- table. The signature string is what rows are stamped with: geometry is
 -- re-applied when a setting moves, not on every draw.
 local metrics = {}
+local radialConfig = {}
 
 local function Metrics()
     local db = CommanderProductionDB or {}
     local m = metrics
     m.layout = db.Layout or "BARS_DOWN"
     m.strip = IsIconStrip(m.layout)
+    m.radial = IsRadial(m.layout)
+    -- Strip and discs are both a grid: cells marching out from the anchored
+    -- edge, wrapping every Icons per Row
+    m.grid = m.strip or m.radial
+    m.rtl = m.layout == "ICONS_RTL" or m.layout == "RADIAL_RTL"
     m.overlay = db.CooldownOverlay or "BAR"
     -- In the strip the slim bar is one overlay choice among four, so when it
-    -- is off the row gives that height back instead of reserving it
-    m.showBar = (not m.strip) or m.overlay == "BAR" or m.overlay == "BOTH"
+    -- is off the row gives that height back instead of reserving it. A disc
+    -- has no bar at all: its ring is the bar.
+    m.showBar = not m.radial and ((not m.strip) or m.overlay == "BAR" or m.overlay == "BOTH")
     m.barWidth = db.BarWidth or 110
     m.rowHeight = db.RowHeight or BAR_HEIGHT
     m.iconSize = db.IconSize or ICON_SIZE
@@ -87,10 +106,17 @@ local function Metrics()
     m.perRow = math.max(1, math.min(db.PerRow or MAX_PER_ROW, MAX_PER_ROW))
     m.rowWidth = m.barWidth + m.rowHeight + ROW_ICON_GAP + ROW_PAD
     m.stripRowHeight = m.iconSize + (m.showBar and (ICON_BAR_HEIGHT + 2) or 0)
-    m.stepX = m.iconSize + m.gap
-    m.stepY = m.stripRowHeight + m.gap
-    m.sig = string.format("%s|%d|%d|%d|%d|%d|%s", m.layout, m.barWidth,
-        m.rowHeight, m.iconSize, m.gap, m.perRow, tostring(m.showBar))
+    if m.radial then
+        m.disc = Radial.Config(db, radialConfig)
+        m.cellW, m.cellH = m.disc.cell, m.disc.cell
+    else
+        m.cellW, m.cellH = m.iconSize, m.stripRowHeight
+    end
+    m.stepX = m.cellW + m.gap
+    m.stepY = m.cellH + m.gap
+    m.sig = string.format("%s|%d|%d|%d|%d|%d|%s|%s", m.layout, m.barWidth,
+        m.rowHeight, m.iconSize, m.gap, m.perRow, tostring(m.showBar),
+        m.radial and m.disc.signature or "")
     return m
 end
 
@@ -185,19 +211,36 @@ local function ApplyRowGeometry(row, index, m)
     row.bar:ClearAllPoints()
     row.label:ClearAllPoints()
     row.time:ClearAllPoints()
-    if m.strip then
-        -- SC2 replay production tab: icons marching out from the anchored
+    if m.grid then
+        -- SC2 replay production tab: cells marching out from the anchored
         -- edge in either direction, wrapping onto a new line every Icons per
         -- Row so a long queue reads as a block instead of a banner across
-        -- the screen, a slim progress bar under each
+        -- the screen
         local col = (index - 1) % m.perRow
         local line = math.floor((index - 1) / m.perRow)
-        row:SetSize(m.iconSize, m.stripRowHeight)
-        if m.layout == "ICONS_RTL" then
+        row:SetSize(m.cellW, m.cellH)
+        if m.rtl then
             row:SetPoint("TOPRIGHT", root, "TOPRIGHT", -col * m.stepX, -line * m.stepY)
         else
             row:SetPoint("TOPLEFT", root, "TOPLEFT", col * m.stepX, -line * m.stepY)
         end
+    end
+    if m.radial then
+        -- The disc stands in for everything the row otherwise draws; it is
+        -- only built for a row that has been a disc
+        row.icon:Hide()
+        row.barBG:Hide()
+        row.bar:Hide()
+        row.label:Hide()
+        row.time:Hide()
+        row.sweepStart = nil
+        row.sweep:Hide()
+        row.timer:Hide()
+        if not row.disc then row.disc = Radial.New(row) end
+        Radial.Layout(row.disc, m.disc)
+        row.disc:Show()
+    elseif m.strip then
+        -- An icon with a slim progress bar under it
         row.icon:SetSize(m.iconSize, m.iconSize)
         row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
         row.barBG:SetSize(m.iconSize, ICON_BAR_HEIGHT)
@@ -229,6 +272,10 @@ local function ApplyRowGeometry(row, index, m)
         SetScaledFont(row.timer, m.rowHeight * 0.62, 8, 14)
         row.label:Show()
         row.time:Show()
+    end
+    if not m.radial then
+        row.icon:Show()
+        if row.disc then Radial.Clear(row.disc) end
     end
     row.geometrySig = m.sig
 end
@@ -428,6 +475,37 @@ local function QueueCompare(a, b)
     return a.name < b.name
 end
 
+-- One entry as a disc. The same dirty checks as the bar and strip rows: the
+-- brushes skip what has not moved, and the text is only written when the
+-- second it shows changes.
+local function DrawDisc(row, item, cfg)
+    local disc, entry = row.disc, item.entry
+    Radial.SetIcon(disc, entry.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+    -- Suite icon recess, in its round cut where the face is round
+    if Commander.DebossIcon then
+        Commander.DebossIcon(disc.core, CommanderProductionDB.IconRecess or "SOFT", disc.coreMasked)
+    end
+    if item.ready then
+        Radial.SetReady(disc, cfg, entry.readyAt, 0.3, 1, 0.4)
+        if row.shownName ~= item.name or row.shownSecs ~= -1 then
+            row.shownName, row.shownSecs = item.name, -1
+            Radial.SetCountdown(disc, nil)
+            row.tipText = string.format("%s — ready", item.name)
+        end
+        row:SetAlpha(item.alpha or 1)
+    else
+        Radial.SetPending(disc, cfg, entry.start, entry.duration, 0.35, 0.65, 1)
+        local secs = math.ceil(item.remaining)
+        if row.shownName ~= item.name or row.shownSecs ~= secs
+            or row.shownCountdown ~= cfg.countdown then
+            row.shownName, row.shownSecs, row.shownCountdown = item.name, secs, cfg.countdown
+            Radial.SetCountdown(disc, cfg.countdown and FormatRemaining(item.remaining) or nil)
+            row.tipText = string.format("%s — %s", item.name, FormatRemaining(item.remaining))
+        end
+        row:SetAlpha(1)
+    end
+end
+
 local function Draw()
     local now = GetTime()
     local readyHold, readyFade = LingerWindow()
@@ -482,79 +560,83 @@ local function Draw()
             row.shownName = nil
         end
         local item = queue[i]
-        row.icon:SetTexture(item.entry.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
-        -- Suite icon recess (Commander_Events' shared art)
-        if Commander.DebossIcon then
-            Commander.DebossIcon(row.icon, CommanderProductionDB.IconRecess or "SOFT")
-        end
-        row.barBG:SetShown(m.showBar)
-        row.bar:SetShown(m.showBar)
-        if item.ready then
-            -- READY straggler: full green bar, fading out on its clock.
-            -- Text content is static per item (secs key -1) — only the
-            -- first draw after a change pays the format
-            row.bar:SetVertexColor(0.3, 1, 0.4, 0.9)
-            if m.strip then
-                row.bar:SetSize(m.iconSize, ICON_BAR_HEIGHT)
-            else
-                row.bar:SetSize(m.barWidth, m.rowHeight)
-            end
-            if row.shownName ~= item.name or row.shownSecs ~= -1 then
-                row.shownName, row.shownSecs = item.name, -1
-                if not m.strip then
-                    row.label:SetText(item.name)
-                    row.time:SetText("READY")
-                    row.time:SetTextColor(0.3, 1, 0.4)
-                end
-                row.tipText = string.format("%s — ready", item.name)
-            end
-            row.sweepStart = nil
-            row.sweep:Hide()
-            row.timer:Hide()
-            row:SetAlpha(item.alpha or 1)
+        if m.radial then
+            DrawDisc(row, item, m.disc)
         else
-            -- Drain style: full at cooldown start, empty at ready
-            local fill = item.remaining / item.entry.duration
-            row.bar:SetVertexColor(0.35, 0.65, 1, 0.9)
-            if m.strip then
-                row.bar:SetSize(math.max(m.iconSize * fill, 1), ICON_BAR_HEIGHT)
-            else
-                row.bar:SetSize(math.max(m.barWidth * fill, 1), m.rowHeight)
+            row.icon:SetTexture(item.entry.texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+            -- Suite icon recess (Commander_Events' shared art)
+            if Commander.DebossIcon then
+                Commander.DebossIcon(row.icon, CommanderProductionDB.IconRecess or "SOFT")
             end
-            -- Text changes once per second; the bar resizes every draw.
-            -- Skip the format+SetText+tipText churn on unchanged seconds.
-            local secs = math.ceil(item.remaining)
-            if row.shownName ~= item.name or row.shownSecs ~= secs
-                or row.shownOverlay ~= overlay then
-                row.shownName, row.shownSecs, row.shownOverlay = item.name, secs, overlay
-                if not m.strip then
-                    row.label:SetText(item.name)
-                    row.time:SetText(FormatRemaining(item.remaining))
-                    row.time:SetTextColor(1, 1, 1)
+            row.barBG:SetShown(m.showBar)
+            row.bar:SetShown(m.showBar)
+            if item.ready then
+                -- READY straggler: full green bar, fading out on its clock.
+                -- Text content is static per item (secs key -1) — only the
+                -- first draw after a change pays the format
+                row.bar:SetVertexColor(0.3, 1, 0.4, 0.9)
+                if m.strip then
+                    row.bar:SetSize(m.iconSize, ICON_BAR_HEIGHT)
+                else
+                    row.bar:SetSize(m.barWidth, m.rowHeight)
                 end
-                if overlay == "TEXT" then
-                    row.timer:SetText(FormatRemaining(item.remaining))
+                if row.shownName ~= item.name or row.shownSecs ~= -1 then
+                    row.shownName, row.shownSecs = item.name, -1
+                    if not m.strip then
+                        row.label:SetText(item.name)
+                        row.time:SetText("READY")
+                        row.time:SetTextColor(0.3, 1, 0.4)
+                    end
+                    row.tipText = string.format("%s — ready", item.name)
                 end
-                row.tipText = string.format("%s — %s", item.name, FormatRemaining(item.remaining))
-            end
-            if overlay == "SWEEP" or overlay == "BOTH" then
-                -- Numeric comparison: the old string signature allocated
-                -- two tostrings and a concat per row per draw
-                if row.sweepStart ~= item.entry.start or row.sweepDuration ~= item.entry.duration then
-                    row.sweepStart, row.sweepDuration = item.entry.start, item.entry.duration
-                    row.sweep:SetCooldown(item.entry.start, item.entry.duration)
-                end
-                row.sweep:Show()
-            else
                 row.sweepStart = nil
                 row.sweep:Hide()
-            end
-            if overlay == "TEXT" then
-                row.timer:Show()
-            else
                 row.timer:Hide()
+                row:SetAlpha(item.alpha or 1)
+            else
+                -- Drain style: full at cooldown start, empty at ready
+                local fill = item.remaining / item.entry.duration
+                row.bar:SetVertexColor(0.35, 0.65, 1, 0.9)
+                if m.strip then
+                    row.bar:SetSize(math.max(m.iconSize * fill, 1), ICON_BAR_HEIGHT)
+                else
+                    row.bar:SetSize(math.max(m.barWidth * fill, 1), m.rowHeight)
+                end
+                -- Text changes once per second; the bar resizes every draw.
+                -- Skip the format+SetText+tipText churn on unchanged seconds.
+                local secs = math.ceil(item.remaining)
+                if row.shownName ~= item.name or row.shownSecs ~= secs
+                    or row.shownOverlay ~= overlay then
+                    row.shownName, row.shownSecs, row.shownOverlay = item.name, secs, overlay
+                    if not m.strip then
+                        row.label:SetText(item.name)
+                        row.time:SetText(FormatRemaining(item.remaining))
+                        row.time:SetTextColor(1, 1, 1)
+                    end
+                    if overlay == "TEXT" then
+                        row.timer:SetText(FormatRemaining(item.remaining))
+                    end
+                    row.tipText = string.format("%s — %s", item.name, FormatRemaining(item.remaining))
+                end
+                if overlay == "SWEEP" or overlay == "BOTH" then
+                    -- Numeric comparison: the old string signature allocated
+                    -- two tostrings and a concat per row per draw
+                    if row.sweepStart ~= item.entry.start or row.sweepDuration ~= item.entry.duration then
+                        row.sweepStart, row.sweepDuration = item.entry.start, item.entry.duration
+                        row.sweep:SetCooldown(item.entry.start, item.entry.duration)
+                    end
+                    row.sweep:Show()
+                else
+                    row.sweepStart = nil
+                    row.sweep:Hide()
+                end
+                if overlay == "TEXT" then
+                    row.timer:Show()
+                else
+                    row.timer:Hide()
+                end
+                row:SetAlpha(1)
             end
-            row:SetAlpha(1)
         end
         row.spellID = item.entry.spellID
         row:Show()
@@ -566,7 +648,7 @@ local function Draw()
     -- Unlocked or Always Show keeps the frame visible with an empty queue.
     local slots = CommanderProductionDB.FixedHeight
         and (CommanderProductionDB.MaxBars or 5) or math.max(shown, 1)
-    if m.strip then
+    if m.grid then
         -- Only as wide as the longest line, only as tall as the lines used
         local columns = math.min(slots, m.perRow)
         local lines = math.ceil(slots / m.perRow)

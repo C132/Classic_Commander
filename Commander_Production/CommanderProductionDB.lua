@@ -23,6 +23,22 @@ local DefaultSettings = {
     Spacing = 4,
     PerRow = 20,          -- == the Queue Length ceiling: one line, no wrap
     CooldownOverlay = "BAR",
+
+    -- Radial Discs (Layout RADIAL | RADIAL_RTL): the disc
+    RadialSize = 40,              -- diameter to the ring's outer edge
+    RadialThickness = 4,
+    RadialTrackAlpha = 0.35,      -- the empty part of the ring; 0 = not drawn
+    RadialSpark = true,
+    RadialCountdown = true,       -- the number across the face
+    RadialTextShade = 0.45,       -- how far the face darkens under it (0 = not at all)
+    RadialWipe = false,           -- a clock wipe over the face as well as the ring
+    RadialBackdropAlpha = 0.6,    -- 0 = no backdrop
+    RadialBackdropSize = 2,       -- px past the ring; negative pulls it in
+    RadialBackdropBorder = true,
+    RadialGlowStyle = "SOFT",     -- OFF, or see CommanderProduction_Radial.GLOW_ORDER
+    RadialGlowSize = 1.0,
+    RadialGlowMotion = "NONE",    -- NONE | SPIN | PULSE | BOTH
+    RadialReadyFlash = true,
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "CLASSIC")) do
     DefaultSettings[key] = value
@@ -38,12 +54,162 @@ local function Reset()
     print("Commander Production: settings restored to defaults")
 end
 
+local function IsRadial()
+    local layout = CommanderProductionDB.Layout
+    return layout == "RADIAL" or layout == "RADIAL_RTL"
+end
+
+-- The disc's own options: a foldout that is only on the page while the
+-- layout is one of the Radial Discs
+local function AddRadialSection(panel)
+    local Radial = CommanderProduction_Radial
+    local radialOn = function()
+        return CommanderProductionDB.EnableProduction and IsRadial()
+    end
+    local backdropOn = function()
+        return radialOn() and (CommanderProductionDB.RadialBackdropAlpha or 0) > 0
+    end
+    -- Only a finished cooldown that lingers is still there to glow
+    local glowOn = function()
+        return radialOn() and CommanderProductionDB.LingerReady
+            and CommanderProductionDB.RadialGlowStyle ~= "OFF"
+    end
+    local percent = function(v) return string.format("%d%%", v * 100 + 0.5) end
+    local percentOrOff = function(v) return v == 0 and "Off" or percent(v) end
+
+    panel:AddFoldout("Radial: The Disc",
+        "Each cooldown as a disc: the spell's icon in the middle, its cooldown the ring around it -- full when the cooldown starts, draining clockwise, empty the moment it is back. Icons per Row and Spacing above lay the discs out.",
+        {
+            key = "radial", expanded = true, isShown = IsRadial,
+            summary = function() return CommanderProductionDB.RadialSize .. "px disc" end,
+        })
+    panel:AddSliderPair({
+        label = "Disc Size",
+        tooltip = "Diameter of each disc, to the outer edge of its ring.",
+        min = 24, max = 72, step = 2,
+        format = "%.0f px",
+        get = function() return CommanderProductionDB.RadialSize end,
+        set = function(value) CommanderProductionDB.RadialSize = value end,
+        isEnabled = radialOn,
+    }, {
+        label = "Ring Thickness",
+        tooltip = "Thickness of the cooldown ring in pixels (the nearest of six weights of ring art).",
+        min = 2, max = 10, step = 1,
+        format = "%.0f px",
+        get = function() return CommanderProductionDB.RadialThickness end,
+        set = function(value) CommanderProductionDB.RadialThickness = value end,
+        isEnabled = radialOn,
+    })
+    panel:AddSliderPair({
+        label = "Empty Ring Opacity",
+        tooltip = "How visible the empty part of the ring is. Off draws only what is left of the cooldown.",
+        min = 0, max = 1, step = 0.05,
+        format = percentOrOff,
+        get = function() return CommanderProductionDB.RadialTrackAlpha end,
+        set = function(value) CommanderProductionDB.RadialTrackAlpha = value end,
+        isEnabled = radialOn,
+    }, {
+        label = "Darken Face Under Text",
+        tooltip = "How far the icon darkens while the countdown is written across it. The number carries an outline and a black shadow, which hold its edges; this is what holds its middle over a white-gold icon. The face is only ever darkened while there is a number on it.",
+        min = 0, max = 0.8, step = 0.05,
+        format = percentOrOff,
+        get = function() return CommanderProductionDB.RadialTextShade end,
+        set = function(value) CommanderProductionDB.RadialTextShade = value end,
+        isEnabled = function() return radialOn() and CommanderProductionDB.RadialCountdown end,
+    })
+    panel:AddCheckboxPair({
+        label = "Countdown",
+        tooltip = "Write the time left across the face of each disc.",
+        get = function() return CommanderProductionDB.RadialCountdown end,
+        set = function(value) CommanderProductionDB.RadialCountdown = value end,
+        isEnabled = radialOn,
+    }, {
+        label = "Ring Spark",
+        tooltip = "A bright spark riding the head of the ring as it drains.",
+        get = function() return CommanderProductionDB.RadialSpark end,
+        set = function(value) CommanderProductionDB.RadialSpark = value end,
+        isEnabled = radialOn,
+    })
+    panel:AddCheckboxPair({
+        label = "Face Wipe",
+        tooltip = "A clock wipe over the icon as well as the ring around it: what is left of the cooldown stays dark and the rest clears clockwise, clipped to the round face so it never paints onto the ring.",
+        get = function() return CommanderProductionDB.RadialWipe end,
+        set = function(value) CommanderProductionDB.RadialWipe = value end,
+        isEnabled = radialOn,
+    }, {
+        label = "Backdrop Border",
+        tooltip = "A thin dark line round the edge of the backdrop, so neighbouring discs separate cleanly.",
+        get = function() return CommanderProductionDB.RadialBackdropBorder end,
+        set = function(value) CommanderProductionDB.RadialBackdropBorder = value end,
+        isEnabled = backdropOn,
+    })
+    panel:AddSliderPair({
+        label = "Backdrop Opacity",
+        tooltip = "A dark disc behind the whole thing, so the ring reads against bright snow and a dark cave alike. Off draws none.",
+        min = 0, max = 1, step = 0.05,
+        format = percentOrOff,
+        get = function() return CommanderProductionDB.RadialBackdropAlpha end,
+        set = function(value) CommanderProductionDB.RadialBackdropAlpha = value end,
+        isEnabled = radialOn,
+    }, {
+        label = "Backdrop Size",
+        tooltip = "How far the backdrop reaches past the ring, in pixels. Negative pulls it in behind the ring, down to just the face.",
+        min = -10, max = 12, step = 1,
+        format = function(v) return (v > 0 and "+" or "") .. v .. " px" end,
+        get = function() return CommanderProductionDB.RadialBackdropSize end,
+        set = function(value) CommanderProductionDB.RadialBackdropSize = value end,
+        isEnabled = backdropOn,
+    })
+    local glowOptions = { { text = "Off", value = "OFF" } }
+    for _, key in ipairs(Radial.GLOW_ORDER) do
+        glowOptions[#glowOptions + 1] = { text = Radial.GLOW_LABEL[key], value = key }
+    end
+    panel:AddDropdownPair({
+        label = "Ready Glow Style",
+        tooltip = "The glow behind a disc whose cooldown has finished, for as long as it lingers (Linger When Ready, below -- without it a finished cooldown leaves the queue at once and there is nothing left to glow).\n\nSoft Halo: a clean bloom.\nEmberflame: licking flame tongues.\nRunebound: a ring of glowing runes.\nArcane Orbit: twin rings with spiralling motes.\nRadiant Sunburst: rays of light.\nFrostshard: ice spikes and barbs.\nVoidsmoke: swirling shadow wisps.\nHoly Halo: a bright ring with cardinal flares.\nStar Sigil: an eight-pointed star of orbs.\nStormcall: crackling lightning.",
+        options = glowOptions,
+        width = 160,
+        get = function() return CommanderProductionDB.RadialGlowStyle end,
+        set = function(value) CommanderProductionDB.RadialGlowStyle = value end,
+        isEnabled = function() return radialOn() and CommanderProductionDB.LingerReady end,
+    }, {
+        label = "Glow Motion",
+        tooltip = "Turn the glow slowly (the runes, the sigil and the storm come alive), breathe it in and out, or both. Only a finished cooldown ever carries a glow, so it costs next to nothing.",
+        options = {
+            { text = "Still", value = "NONE" },
+            { text = "Spin", value = "SPIN" },
+            { text = "Pulse", value = "PULSE" },
+            { text = "Spin and pulse", value = "BOTH" },
+        },
+        get = function() return CommanderProductionDB.RadialGlowMotion end,
+        set = function(value) CommanderProductionDB.RadialGlowMotion = value end,
+        isEnabled = glowOn,
+    })
+    panel:AddSlider({
+        label = "Glow Size",
+        tooltip = "How far the glow reaches out from the disc.",
+        min = 0.6, max = 1.6, step = 0.05,
+        format = percent,
+        get = function() return CommanderProductionDB.RadialGlowSize end,
+        set = function(value) CommanderProductionDB.RadialGlowSize = value end,
+        isEnabled = glowOn,
+    })
+    panel:AddCheckbox({
+        label = "Ready Flash",
+        tooltip = "A burst of light on the disc the moment its cooldown finishes. Like the glow, it needs Linger When Ready: the disc has to still be there to flash.",
+        get = function() return CommanderProductionDB.RadialReadyFlash end,
+        set = function(value) CommanderProductionDB.RadialReadyFlash = value end,
+        isEnabled = function() return radialOn() and CommanderProductionDB.LingerReady end,
+    })
+    panel:EndFoldout()
+end
+
 local function CreateOptionsPanel()
     local panel = Commander.UI.NewPanel({
         key = "Production",
         title = "Production",
         addonName = "Commander_Production",
-        description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar draining toward ready — full when the cooldown starts, empty the moment it's back — stacked at the left edge of the screen, longest waits at the bottom, with a sound and callout of your choice the moment something finishes. With Commander Party Frames loaded, the same queue can also ride its banner in place of the class cooldowns — Party Frames → Header → Production in Header — as a second view alongside this frame.",
+        description = "Your cooldowns as a production queue. Every ability on cooldown becomes a bar draining toward ready — full when the cooldown starts, empty the moment it's back — stacked at the left edge of the screen, longest waits at the bottom, with a sound and callout of your choice the moment something finishes. The same queue can be a strip of icons instead, or radial discs: each spell's icon cut round, with its cooldown as a ring around it. With Commander Party Frames loaded, the same queue can also ride its banner in place of the class cooldowns — Party Frames → Header → Production in Header — as a second view alongside this frame.",
         event = COMMANDER_PRODUCTION_EVENTS.UPDATE,
         slash = { "/cprod" },
         slashHandlers = {
@@ -67,19 +233,21 @@ local function CreateOptionsPanel()
     })
     panel:AddDropdownPair({
         label = "Layout",
-        tooltip = "Bars list spells with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching out in either direction (hover an icon for the full spell tooltip). Right to left sits best parked on the right side of the screen, or with Fixed Frame Size on.",
+        tooltip = "Bars list spells with names and grow down or up from the frame's anchor. Icon Strip is the SC2 replay production tab: icons marching out in either direction (hover an icon for the full spell tooltip). Radial Discs march the same way, but each cooldown is a disc: the spell's icon cut round, its cooldown a ring around it draining clockwise toward ready, the countdown written across the face. Right to left sits best parked on the right side of the screen, or with Fixed Frame Size on.",
         options = {
             { text = "Bars — grow down", value = "BARS_DOWN" },
             { text = "Bars — grow up", value = "BARS_UP" },
             { text = "Icon Strip — left to right", value = "ICONS" },
             { text = "Icon Strip — right to left", value = "ICONS_RTL" },
+            { text = "Radial Discs — left to right", value = "RADIAL" },
+            { text = "Radial Discs — right to left", value = "RADIAL_RTL" },
         },
         get = function() return CommanderProductionDB.Layout end,
         set = function(value) CommanderProductionDB.Layout = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     }, {
         label = "Cooldown Overlay",
-        tooltip = "How each icon shows its cooldown progress: the slim Progress Bar, a classic Radial Sweep over the icon, both at once, or a Timer Text countdown. Sweep and Timer also apply to the small icons in the Bars layouts.",
+        tooltip = "How each icon shows its cooldown progress: the slim Progress Bar, a classic Radial Sweep over the icon, both at once, or a Timer Text countdown. Sweep and Timer also apply to the small icons in the Bars layouts. A Radial Disc's ring is its progress, so the discs have their own options below instead.",
         options = {
             { text = "Progress Bar", value = "BAR" },
             { text = "Radial Sweep", value = "SWEEP" },
@@ -88,17 +256,23 @@ local function CreateOptionsPanel()
         },
         get = function() return CommanderProductionDB.CooldownOverlay end,
         set = function(value) CommanderProductionDB.CooldownOverlay = value end,
-        isEnabled = function() return CommanderProductionDB.EnableProduction end,
+        isEnabled = function()
+            return CommanderProductionDB.EnableProduction and not IsRadial()
+        end,
     })
     local isStrip = function()
         local layout = CommanderProductionDB.Layout
         return layout == "ICONS" or layout == "ICONS_RTL"
     end
     local barsEnabled = function()
-        return CommanderProductionDB.EnableProduction and not isStrip()
+        return CommanderProductionDB.EnableProduction and not isStrip() and not IsRadial()
     end
     local stripEnabled = function()
         return CommanderProductionDB.EnableProduction and isStrip()
+    end
+    -- Strip and discs wrap the same way
+    local gridEnabled = function()
+        return CommanderProductionDB.EnableProduction and (isStrip() or IsRadial())
     end
     panel:AddSliderPair({
         label = "Bar Width",
@@ -127,22 +301,23 @@ local function CreateOptionsPanel()
         isEnabled = stripEnabled,
     }, {
         label = "Icons per Row",
-        tooltip = "How many icons go on one line before the strip wraps onto the next — a long queue becomes a compact block instead of a banner across the screen. At or above Queue Length nothing wraps and the strip stays a single line.",
+        tooltip = "How many icons or discs go on one line before the strip wraps onto the next — a long queue becomes a compact block instead of a banner across the screen. At or above Queue Length nothing wraps and the strip stays a single line.",
         min = 1, max = 20, step = 1,
         format = "%.0f",
         get = function() return CommanderProductionDB.PerRow end,
         set = function(value) CommanderProductionDB.PerRow = value end,
-        isEnabled = stripEnabled,
+        isEnabled = gridEnabled,
     })
     panel:AddSlider({
         label = "Spacing",
-        tooltip = "Gap between entries, in both layouts. Zero packs them edge to edge.",
+        tooltip = "Gap between entries, in every layout. Zero packs them edge to edge.",
         min = 0, max = 12, step = 1,
         format = "%.0f px",
         get = function() return CommanderProductionDB.Spacing end,
         set = function(value) CommanderProductionDB.Spacing = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     })
+    AddRadialSection(panel)
     panel:AddSliderPair({
         label = "Minimum Cooldown",
         tooltip = "Only track cooldowns at least this long — keeps short rotational abilities and the global cooldown out of the queue.",
@@ -168,7 +343,7 @@ local function CreateOptionsPanel()
         isEnabled = function() return CommanderProductionDB.EnableProduction end,
     }, {
         label = "Fixed Frame Size",
-        tooltip = "Keep the frame (and its styled backdrop) sized for the full queue length instead of shrinking to what is currently shown — a stable panel that never jumps around. Applies to both layouts.",
+        tooltip = "Keep the frame (and its styled backdrop) sized for the full queue length instead of shrinking to what is currently shown — a stable panel that never jumps around. Applies to every layout.",
         get = function() return CommanderProductionDB.FixedHeight end,
         set = function(value) CommanderProductionDB.FixedHeight = value end,
         isEnabled = function() return CommanderProductionDB.EnableProduction end,

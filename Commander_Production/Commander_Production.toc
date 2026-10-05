@@ -2,11 +2,12 @@
 ## Category: Commander
 ## Title: Commander Production
 ## Author: Devin
-## Version: 2.5.0
-## Notes: Spell cooldowns as an RTS production queue: bars that drain toward ready, with an optional completion callout. Commander Party Frames can carry the same queue on its banner in place of the class cooldowns (Party Frames → Header → Production in Header), as a second view alongside this frame.
+## Version: 2.6.0
+## Notes: Spell cooldowns as an RTS production queue: bars that drain toward ready, with an optional completion callout. Also as a strip of icons, or as radial discs: each spell's icon cut round with its cooldown as a ring around it, a spark on the ring's head, the countdown across the face and a glow when it is ready. Commander Party Frames can carry the same queue on its banner in place of the class cooldowns (Party Frames → Header → Production in Header), as a second view alongside this frame.
 ## IconTexture: Interface\Icons\INV_Misc_Gear_01
 ## SavedVariables: CommanderProductionDB
 ## RequiredDeps: Commander_Events
 
+CommanderProductionRadial.lua
 CommanderProductionDB.lua
 CommanderProduction.lua
