@@ -1171,6 +1171,27 @@ if SECURE then
     CHECK(tipShown == false and #tipLines == 0,
         "a quiet row shows no tooltip at all in notes-only mode", #tipLines)
 
+    -- Arena ratings from Commander_Muster (OptionalDep): after the notes in
+    -- notes-only mode, enough on their own to show the tooltip, never in FULL
+    -- (SetUnit is where Muster adds its own Arena line)
+    CommanderMuster = { RatingsLine = function(who) if who == "player" then return "2s 1850" end end }
+    Hover()
+    CHECK(tipShown == true and tipLines[#tipLines] == "Arena|2s 1850",
+        "a quiet row with known ratings shows just those", tostring(tipLines[#tipLines]))
+    unitDebuffs.player = { { name = "Smoke Dot", expirationTime = now + 12, duration = 12 } }
+    Fire("UNIT_AURA", "player")
+    Hover()
+    CHECK(tipLines[1] == "Pending" and tipLines[#tipLines] == "Arena|2s 1850",
+        "with notes, the ratings come after them", tostring(tipLines[1]) .. " / " .. tostring(tipLines[#tipLines]))
+    db.RowTooltip = "FULL"
+    Hover()
+    local doubled = false
+    for _, line in ipairs(tipLines) do if line == "Arena|2s 1850" then doubled = true end end
+    CHECK(not doubled, "FULL leaves the ratings to the unit tooltip, never doubled")
+    CommanderMuster = nil
+    unitDebuffs.player = {}
+    Fire("UNIT_AURA", "player")
+
     db.RowTooltip = "OFF"
     unitDebuffs.player = { { name = "Smoke Dot", expirationTime = now + 12, duration = 12 } }
     Fire("UNIT_AURA", "player")

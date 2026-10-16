@@ -8205,6 +8205,13 @@ local function BuildRowTooltip(self)
     if DB("ForecastTooltip", true) and DB("Forecast", "BAR") ~= "OFF" then
         util.ForecastTooltip(UnitGUID and UnitGUID(self.unitToken))
     end
+    -- Their arena ratings, from Commander Muster (an OptionalDep), after the
+    -- board's notes. The row never shows them, so they are no repeat of it.
+    -- FULL already has them: SetUnit is where Muster adds its own Arena line.
+    if mode ~= "FULL" and CommanderMuster and CommanderMuster.RatingsLine then
+        local ratings = CommanderMuster.RatingsLine(self.unitToken)
+        if ratings then GameTooltip:AddDoubleLine("Arena", ratings, 1, 0.82, 0, 1, 1, 1) end
+    end
     -- An empty tooltip is a grey box that follows the cursor for no reason.
     -- On the notes-only setting a quiet row genuinely has nothing to say, and
     -- saying nothing has to mean showing nothing.

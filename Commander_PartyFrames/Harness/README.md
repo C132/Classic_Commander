@@ -12,8 +12,8 @@ cd Commander_PartyFrames/Harness    # or name the files by full path
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua PRIEST            # 550 checks
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID             # 496 checks
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua PALADIN           # 509 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE clickcast    # 55 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID clickcast   # 55 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE clickcast    # 58 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID clickcast   # 58 checks
 python3 settings_reach.py                                               # 148 keys across 4 pages, exit 0
 ```
 
