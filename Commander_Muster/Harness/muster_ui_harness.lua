@@ -429,13 +429,43 @@ local roster = {
         items = { [1] = 30972, [5] = 30975 },
         arena = { [3] = { rating = 2210, played = 100, wins = 70 } } },
     orc = { guid = "Player-0-ORC", name = "Grak", class = "WARRIOR", isPlayer = true, inspectable = false, items = {} },
+    -- Group members for the background lookups (section E3)
+    hank = { guid = "Player-0-HANK", name = "Hank", class = "WARRIOR", isPlayer = true, inspectable = true,
+        items = { [1] = 29021 }, arena = { [2] = { rating = 1650, played = 30, wins = 16 } } },
+    ivy = { guid = "Player-0-IVY", name = "Ivy", realm = "Nightslayer", class = "MAGE", isPlayer = true,
+        inspectable = true, items = { [5] = 29011 }, arena = { [3] = { rating = 1777, played = 20, wins = 12 } } },
+    jon = { guid = "Player-0-JON", name = "Jon", class = "MAGE", isPlayer = true, inspectable = false,
+        items = { [5] = 29011 }, arena = { [5] = { rating = 1500, played = 8, wins = 4 } } },
     dummy = { guid = "Creature-0-DUMMY", name = "Training Dummy", isPlayer = false, inspectable = false, items = {} },
 }
 
 local function Place(token, who) units[token] = who end
 
 function UnitGUID(unit) return units[unit] and units[unit].guid end
-function UnitName(unit) return units[unit] and units[unit].name end
+function UnitName(unit)
+    local u = units[unit]
+    if not u then return nil end
+    return u.name, u.realm
+end
+function GetNormalizedRealmName() return "Dreamscythe" end
+function GetPlayerInfoByGUID(guid)
+    for _, u in pairs(roster) do
+        if u.guid == guid then return "Class", u.class, "Race", "Race", 2, u.name, u.realm or "" end
+    end
+end
+
+-- Commander_Ladder, the web feed (D11): a data table the harness fills, and
+-- the names Muster hands back for the next feed run
+local ladderData, ladderWants = {}, {}
+CommanderLadder = {
+    Lookup = function(name, realm)
+        return ladderData[name .. "-" .. (realm or "Dreamscythe")]
+    end,
+    Want = function(name, realm)
+        ladderWants[name .. "-" .. (realm or "Dreamscythe")] = time()
+    end,
+    Generated = function() return now - 3600 end,
+}
 function UnitClass(unit)
     local u = units[unit]
     if not u then return nil end
@@ -512,7 +542,8 @@ function GetInspectArenaTeamData(index)
 end
 
 -- Tooltip: unit-aware
-GameTooltip.SetOwner = function(s) s.__owner = true end
+GameTooltip.SetOwner = function(s, owner) s.__owner = owner end
+GameTooltip.GetOwner = function(s) return s.__owner end
 GameTooltip.SetText = function(s, text) s.__lines = { text }; s.__title = text end
 GameTooltip.GetUnit = function(s) return s.__unitName, s.__unit end
 GameTooltip.SetUnit = function(s, unit)
@@ -536,6 +567,44 @@ local function TooltipCount(pattern)
     end
     return n
 end
+
+-- hooksecurefunc: the original runs, then the hook, with the same arguments
+function hooksecurefunc(name, hook)
+    local original = _G[name]
+    _G[name] = function(...)
+        local results = { original(...) }
+        hook(...)
+        return unpack(results)
+    end
+end
+
+-- Blizzard's friends list (D13): the button update Muster hooks
+FRIENDS_BUTTON_TYPE_WOW = 3
+local friendsList = {}
+C_FriendList = { GetFriendInfoByIndex = function(i) return friendsList[i] end }
+function FriendsFrame_UpdateFriendButton(button)
+    button.buttonType = FRIENDS_BUTTON_TYPE_WOW
+    button.id = button.index
+    local info = friendsList[button.index]
+    button.info:SetText(info and info.area or "")
+end
+
+-- The guild roster's rows and its data
+local guildRoster = {}
+function GetGuildRosterInfo(index)
+    local g = guildRoster[index]
+    if not g then return nil end
+    return g.name, "Member", 2, 70, "Mage", "Shattrath City", "", "", true, 0, g.class
+end
+function Ambiguate(name) return (name:gsub("%-Dreamscythe$", "")) end
+local guildRow = CreateFrame("Button", "GuildFrameButton1")
+
+-- The group finder's search results (its own addon loads later, section E4)
+local lfgResults = {}
+C_LFGList = {
+    GetSearchResultInfo = function(id) return lfgResults[id] and lfgResults[id].info end,
+    GetSearchResultPlayerInfo = function(id, i) return lfgResults[id] and lfgResults[id].members[i] end,
+}
 
 -- The character panel: PaperDollFrame with its model
 PaperDollFrame = CreateFrame("Frame", "PaperDollFrame")
@@ -561,6 +630,7 @@ Load(ADDONS .. "/Commander_Muster/CommanderMusterData.lua")
 Load(ADDONS .. "/Commander_Muster/CommanderMusterEngine.lua")
 Load(ADDONS .. "/Commander_Muster/CommanderMusterDB.lua")
 Load(ADDONS .. "/Commander_Muster/CommanderMuster.lua")
+Load(ADDONS .. "/Commander_Muster/CommanderMusterSurfaces.lua")
 
 local function Fire(event, ...)
     local list = eventRegistry[event]
@@ -612,6 +682,13 @@ do
     CHECK(rec.arena[2].best == 1902 and rec.arena[2].bestFromServer, "own season high read from the second return",
         rec.arena[2].best)
     CHECK(rec.arena[3].best == nil, "an unplayed bracket has no best")
+    local r = CommanderMuster.RatingsFor(playerGuid)
+    CHECK(r and r[2].rating == 1850 and r[2].source == "live" and r[2].best == 1902,
+        "RatingsFor reads our own live rating and season high")
+    CHECK(CommanderMuster.RatingsFor("player")[2].rating == 1850, "a unit token works too")
+    local line = CommanderMuster.RatingsLine("Devinp")
+    CHECK(line and line:find("2s") and line:find("1850") and not line:find("%d[mhd]|r"),
+        "the line by bare name, live so with no age", line)
 end
 
 PaperDollFrame:Show()
@@ -689,6 +766,11 @@ do
     local entry = players[roster.bob.guid]
     CHECK(entry and entry[2] and entry[2].best == 1912 and entry.name == "Bob", "Bob's 2v2 best is in the saved ledger")
     CHECK(entry and entry[3] == nil, "his unplayed brackets are not")
+    CHECK(entry and entry.key == "Bob-Dreamscythe", "his ledger entry is keyed by Name-Realm")
+    local r = CommanderMuster.RatingsFor("Bob")
+    CHECK(r and r[2].rating == 1912 and r[2].source == "live", "RatingsFor finds him by bare name")
+    CHECK(CommanderMuster.RatingsFor("Bob-Dreamscythe") and CommanderMuster.RatingsFor(roster.bob.guid),
+        "by Name-Realm and by GUID too")
     CHECK(CommanderMusterBests.season == 3, "the ledger is stamped with the season")
     CHECK(players[playerGuid] and players[playerGuid][2].best == 1902, "our own server high is in the ledger too")
 end
@@ -826,6 +908,213 @@ do
 end
 
 -- ===========================================================================
+-- E2. Ratings without an inspect: the web feed (D11)
+-- ===========================================================================
+
+do
+    local before = #notifyLog
+    ladderData["Grak-Dreamscythe"] = { [2] = { 2105, 80, 40 }, [3] = { 1990, 30, 30 }, t = now - 13 * 3600 }
+    Advance(5)
+    GameTooltip:Hide()
+    Place("mouseover", roster.orc)
+    GameTooltip:SetUnit("mouseover")
+    Advance(2)
+    CHECK(#notifyLog == before, "the other faction is still never inspected")
+    CHECK(TooltipHas("Arena") and TooltipHas("2105") and TooltipHas("1990"),
+        "but the feed gives their tooltip an arena line", table.concat(GameTooltip.__lines, " | "))
+    CHECK(TooltipHas("13h"), "with the feed's age")
+    CHECK(not TooltipHas("Gear score"), "and still no gear line: gear needs an inspect")
+    local r = CommanderMuster.RatingsFor("Grak")
+    CHECK(r and r[2].rating == 2105 and r[2].source == "feed" and r[2].played == 120 and r[2].wins == 80,
+        "RatingsFor by bare name reads the feed")
+    CHECK(r and r[5] == nil, "a bracket the feed lacks stays empty")
+    r = CommanderMuster.RatingsFor(roster.orc.guid)
+    CHECK(r and r[2].rating == 2105, "a GUID never inspected is named through GetPlayerInfoByGUID")
+
+    ladderData["Zed-Nightslayer"] = { [5] = { 1888, 10, 2 } }
+    r = CommanderMuster.RatingsFor("Zed-Nightslayer")
+    CHECK(r and r[5].rating == 1888 and r[5].at == now - 3600,
+        "a cross-realm name nobody has met, timed by the feed file")
+    local line = CommanderMuster.RatingsLine("Zed-Nightslayer")
+    CHECK(line and line:find("5s") and line:find("1h"), "the one-call line carries the age", line)
+
+    local wantsBefore = 0
+    for _ in pairs(ladderWants) do wantsBefore = wantsBefore + 1 end
+    CHECK(CommanderMuster.RatingsFor("Creature-0-4372-0-42-1234-0000ABCDEF") == nil
+        and CommanderMuster.RatingsFor("Pet-0-4372-0-42-1234-0000ABCDEF") == nil, "a creature or pet GUID has no ratings")
+    local wantsAfter = 0
+    for _ in pairs(ladderWants) do wantsAfter = wantsAfter + 1 end
+    CHECK(wantsAfter == wantsBefore, "and is never handed to the feed as a name")
+
+    CHECK(CommanderMuster.RatingsFor("Nobody-Nightslayer") == nil, "a name nobody knows has no ratings")
+    CHECK(ladderWants["Nobody-Nightslayer"] ~= nil, "and is handed to the feed for its next run")
+    CHECK(CommanderMuster.RatingsFor(playerGuid) and ladderWants["Devinp-Dreamscythe"] == nil,
+        "we never ask the feed for ourselves")
+
+    -- The newest reading wins: what we saw of Bob beats an older feed entry...
+    ladderData["Bob-Dreamscythe"] = { [2] = { 1700, 50, 50 }, t = now - 86400 }
+    r = CommanderMuster.RatingsFor(roster.bob.guid)
+    CHECK(r and r[2].rating == 1880 and r[2].source ~= "feed", "what we saw beats an older feed", r and r[2].rating)
+    CHECK(r and r[2].best == 1912, "and the season best still comes from the ledger")
+    -- ...and a newer feed beats what we saw
+    ladderData["Bob-Dreamscythe"] = { [2] = { 1950, 70, 52 }, t = now }
+    r = CommanderMuster.RatingsFor(roster.bob.guid)
+    CHECK(r and r[2].rating == 1950 and r[2].source == "feed" and r[2].best == 1950,
+        "a newer feed beats what we saw", r and r[2].rating)
+    ladderData["Bob-Dreamscythe"] = nil
+    GameTooltip:Hide()
+end
+
+-- ===========================================================================
+-- E3. Group lookups (D12): party members one at a time, behind any hover
+-- ===========================================================================
+
+do
+    Advance(5)
+    Place("mouseover", nil)
+    Place("party1", roster.hank)
+    Place("party2", roster.ivy)
+    Place("party3", roster.jon)
+    local before = #notifyLog
+    Fire("GROUP_ROSTER_UPDATE")
+    Advance(1.1)
+    CHECK(#notifyLog == before + 1 and notifyLog[#notifyLog] == roster.hank.guid,
+        "a roster change looks up the first party member", notifyLog[#notifyLog])
+    AnswerInspect(roster.hank.guid)
+    AnswerHonor()
+    local r = CommanderMuster.RatingsFor("party1")
+    CHECK(r and r[2].rating == 1650, "the party member's rating is known")
+
+    -- A hover that arrives now goes before the next member
+    CommanderMuster_Forget()
+    Place("mouseover", roster.frank)
+    GameTooltip:SetUnit("mouseover")
+    Advance(2)
+    CHECK(notifyLog[#notifyLog] == roster.frank.guid, "a hover goes before the group", notifyLog[#notifyLog])
+    AnswerInspect(roster.frank.guid)
+    AnswerHonor()
+    GameTooltip:Hide()
+    Place("mouseover", nil)
+    Advance(2)
+    CHECK(notifyLog[#notifyLog] == roster.ivy.guid, "then the group carries on", notifyLog[#notifyLog])
+    AnswerInspect(roster.ivy.guid)
+    AnswerHonor()
+    r = CommanderMuster.RatingsFor("Ivy-Nightslayer")
+    CHECK(r and r[3].rating == 1777, "a cross-realm member is found by Name-Realm")
+    CHECK(CommanderMusterBests.players[roster.ivy.guid].key == "Ivy-Nightslayer", "the ledger keys her by her own realm")
+
+    local count = #notifyLog
+    Advance(20)
+    CHECK(#notifyLog == count, "a member out of reach is passed over")
+    roster.jon.inspectable = true
+    Advance(16)
+    CHECK(notifyLog[#notifyLog] == roster.jon.guid, "and looked up once in reach", notifyLog[#notifyLog])
+    AnswerInspect(roster.jon.guid)
+    AnswerHonor()
+
+    count = #notifyLog
+    Fire("GROUP_ROSTER_UPDATE")
+    Advance(20)
+    CHECK(#notifyLog == count, "an answered group is not looked up again inside half an hour")
+
+    Advance(1801)
+    inCombat = true
+    Fire("GROUP_ROSTER_UPDATE")
+    Advance(2)
+    CHECK(#notifyLog == count, "no group lookups in combat")
+    inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Advance(1.1)
+    CHECK(#notifyLog == count + 1 and notifyLog[#notifyLog] == roster.hank.guid,
+        "leaving combat resumes them, half an hour on", notifyLog[#notifyLog])
+    CommanderMusterDB.InspectGroup = false
+    AnswerInspect(roster.hank.guid)
+    AnswerHonor()
+    count = #notifyLog
+    Fire("GROUP_ROSTER_UPDATE")
+    Advance(20)
+    CHECK(#notifyLog == count, "Look Up Your Group off: nothing more goes out")
+    CommanderMusterDB.InspectGroup = true
+
+    Place("party1", nil)
+    Place("party2", nil)
+    Place("party3", nil)
+    CommanderMuster_Forget()
+end
+
+-- ===========================================================================
+-- E4. Blizzard's lists (D13): friends, guild roster, group finder
+-- ===========================================================================
+
+do
+    ladderData["Kay-Dreamscythe"] = { [3] = { 2010, 40, 20 }, t = now - 7200 }
+    friendsList[1] = { name = "Kay", guid = "Player-0-KAY", connected = true, area = "Shattrath City" }
+    friendsList[2] = { name = "Nemo", connected = true, area = "Ironforge" }
+    local holder = CreateFrame("Frame")
+    local kay = { index = 1, info = holder:CreateFontString() }
+    FriendsFrame_UpdateFriendButton(kay)
+    local text = kay.info:GetText() or ""
+    CHECK(text:find("^3s ") and text:find("2010") and text:find("Shattrath City"),
+        "a friend's ratings lead the line, before their zone", text)
+    FriendsFrame_UpdateFriendButton(kay)
+    local _, times = (kay.info:GetText() or ""):gsub("3s ", "")
+    CHECK(times == 1, "an update never doubles them", kay.info:GetText())
+    local nemo = { index = 2, info = holder:CreateFontString() }
+    FriendsFrame_UpdateFriendButton(nemo)
+    CHECK(nemo.info:GetText() == "Ironforge", "a friend nobody knows keeps the plain line", nemo.info:GetText())
+    CHECK(ladderWants["Nemo-Dreamscythe"] ~= nil, "and is handed to the feed")
+    CommanderMusterDB.RatingsOnLists = false
+    FriendsFrame_UpdateFriendButton(kay)
+    CHECK(kay.info:GetText() == "Shattrath City", "the setting turns them off", kay.info:GetText())
+    CommanderMusterDB.RatingsOnLists = true
+
+    guildRoster[3] = { name = "Kay-Dreamscythe", class = "MAGE" }
+    guildRoster[4] = { name = "Nemo-Dreamscythe", class = "MAGE" }
+    guildRow.guildIndex = 3
+    GameTooltip:Hide()
+    guildRow.__scripts.OnEnter(guildRow)
+    CHECK(GameTooltip:GetOwner() == guildRow and TooltipHas("Kay") and TooltipHas("Arena") and TooltipHas("2010")
+        and TooltipHas("2h"), "hovering a guild member shows their ratings with the feed's age",
+        table.concat(GameTooltip.__lines, " | "))
+    guildRow.__scripts.OnLeave(guildRow)
+    CHECK(not GameTooltip.__shown, "and leaving hides them")
+    guildRow.guildIndex = 4
+    GameTooltip.__owner = nil
+    guildRow.__scripts.OnEnter(guildRow)
+    CHECK(GameTooltip:GetOwner() ~= guildRow, "a member nobody knows gets no tooltip")
+
+    -- The group finder's own addon loads after login
+    function LFGBrowseSearchEntry_Update(entry) end
+    LFGBrowseSearchEntryTooltip = CreateFrame("Frame")
+    LFGBrowseSearchEntryTooltip:Show()
+    Fire("ADDON_LOADED", "Blizzard_GroupFinder_VanillaStyle")
+    lfgResults[7] = {
+        info = { numMembers = 2,
+            leaderPvpRatingInfo = { { bracket = 0, rating = 1534, activityName = "Arena 2v2", tier = 0 } } },
+        members = { { name = "Kay", classFilename = "MAGE", isLeader = true }, { name = "Nemo" } },
+    }
+    local entry = CreateFrame("Button")
+    entry.resultID = 7
+    LFGBrowseSearchEntry_Update(entry)
+    CHECK(entry.__scripts.OnEnter ~= nil, "a listing row is hooked the first time Blizzard fills it")
+    entry.__scripts.OnEnter(entry)
+    CHECK(GameTooltip:GetOwner() == entry and TooltipHas("Arena ratings") and TooltipHas("2010"),
+        "hovering a listing shows its members' ratings", table.concat(GameTooltip.__lines, " | "))
+    CHECK(TooltipHas("leader") and TooltipHas("not known"), "the leader is marked, an unknown member says so")
+    CHECK(TooltipHas("Listing: Arena 2v2 1534"), "the listing's own leader rating is shown when sent")
+    entry.__scripts.OnLeave(entry)
+
+    lfgResults[8] = { info = { numMembers = 1, leaderPvpRatingInfo = {} }, members = { { name = "Nemo" } } }
+    local quiet = CreateFrame("Button")
+    quiet.resultID = 8
+    LFGBrowseSearchEntry_Update(quiet)
+    GameTooltip.__owner = nil
+    quiet.__scripts.OnEnter(quiet)
+    CHECK(GameTooltip:GetOwner() ~= quiet, "a listing of unknowns shows nothing")
+    GameTooltip:Hide()
+end
+
+-- ===========================================================================
 -- F. Blizzard's inspect window: ride along, never interfere
 -- ===========================================================================
 
@@ -958,6 +1247,8 @@ do
     GameTooltip:SetUnit("mouseover")
     Advance(2)
     CHECK(#notifyLog == before and not TooltipHas("Gear score"), "off: no lines, no inspect")
+    CHECK(CommanderMuster.RatingsFor(playerGuid) == nil and CommanderMuster.RatingsLine("Grak") == nil,
+        "off: no ratings for any other addon either")
 end
 CommanderMusterDB.EnableMuster = true
 Commander.Notify(COMMANDER_MUSTER_EVENTS.UPDATE)

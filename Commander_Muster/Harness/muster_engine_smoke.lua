@@ -342,6 +342,87 @@ do
     CHECK(E.PruneBests(players, 5) == 4 and players.A, "under the limit nothing is pruned")
     CHECK(E.PruneBests(players, 2) == 2, "prune trims to the limit")
     CHECK(players.A == nil and players.C == nil and players.B and players.D, "the longest unseen go first")
+
+    local stamped = {}
+    E.MergeBests(stamped, { known = true, [2] = { rating = 1700, played = 10, wins = 6 } }, 5000)
+    CHECK(stamped[2].rating == 1700 and stamped[2].wins == 6 and stamped[2].at == 5000,
+        "the ledger keeps the current rating, wins and when it was read")
+    CHECK(E.MergeBests(stamped, { known = true, [2] = { rating = 1700, played = 10, wins = 6 } }, 6000) == false
+        and stamped[2].at == 6000, "a repeat read only moves the time")
+    CHECK(E.MergeBests(stamped, { known = true, [2] = { rating = 1688, played = 10, wins = 6 } }, 7000) == true,
+        "a changed rating at the same games is a change")
+end
+
+-- ===========================================================================
+-- Ratings from every source
+-- ===========================================================================
+
+do
+    CHECK(E.NameKey("Polypopin", nil, "Dreamscythe") == "Polypopin-Dreamscythe", "a bare name takes the home realm")
+    CHECK(E.NameKey("Polypopin-Nightslayer", nil, "Dreamscythe") == "Polypopin-Nightslayer", "a written realm is kept")
+    CHECK(E.NameKey("Bob", "Living Flame", "Dreamscythe") == "Bob-LivingFlame", "a realm loses its spaces")
+    CHECK(E.NameKey("Bob", "", "Dreamscythe") == "Bob-Dreamscythe", "an empty realm is the home realm")
+    CHECK(E.NameKey("Bob") == "Bob", "no realm anywhere leaves the bare name")
+    CHECK(E.NameKey("") == nil and E.NameKey(nil) == nil, "no name, no key")
+    local n, r = E.SplitKey("Polypopin-Dreamscythe")
+    CHECK(n == "Polypopin" and r == "Dreamscythe", "a key splits back into name and realm")
+    n, r = E.SplitKey("Bob")
+    CHECK(n == "Bob" and r == nil, "a bare key has no realm")
+
+    local feed = E.FeedSource({ [2] = { 1534, 21, 18 }, [5] = { 1605, 40, 46 }, t = 9000 }, 8000)
+    CHECK(feed and feed.source == "feed" and feed.at == 9000, "a feed entry's own time wins over the file's")
+    CHECK(feed.brackets[2].rating == 1534 and feed.brackets[2].wins == 21 and feed.brackets[2].played == 39,
+        "rating, won, lost become rating, wins, played")
+    CHECK(E.FeedSource({ [3] = { 1531, 21, 29 } }, 8000).at == 8000, "an entry without a time takes the file's")
+    CHECK(E.FeedSource({ t = 1 }) == nil and E.FeedSource(nil) == nil, "a feed entry with no brackets is no source")
+
+    local entry = { seen = 100,
+        [2] = { rating = 1500, wins = 10, played = 20, best = 1550, at = 9500 },
+        [3] = { rating = 1450, wins = 5, played = 9, best = 1450, at = 2000 },
+        [5] = { best = 1700, played = 30 } }
+    local seen = E.SeenSource(entry, 9800, 600)
+    CHECK(seen.brackets[2].source == "live", "a bracket read inside the window is live")
+    CHECK(seen.brackets[3].source == "seen", "an older one is seen")
+    CHECK(seen.brackets[5] == nil, "a bracket from before 1.2.0, with no current rating, is skipped")
+
+    local merged = E.MergeRatings({ seen, feed })
+    CHECK(merged[2].rating == 1500 and merged[2].source == "live", "the newer live reading beats the feed")
+    CHECK(merged[2].best == 1550, "best is the highest any source holds")
+    CHECK(merged[3].rating == 1450 and merged[3].source == "seen", "a bracket only one source has comes through")
+    CHECK(merged[5].rating == 1605 and merged[5].source == "feed" and merged[5].best == 1605,
+        "the feed fills a bracket the ledger lacks")
+
+    local older = E.SeenSource({ [2] = { rating = 1480, wins = 3, played = 5, best = 1600, at = 8000 } }, 9800, 600)
+    merged = E.MergeRatings({ older, feed })
+    CHECK(merged[2].rating == 1534 and merged[2].source == "feed" and merged[2].best == 1600,
+        "a newer feed beats an older seen reading, and the seen best still counts")
+    local tie = E.SeenSource({ [2] = { rating = 1490, wins = 1, played = 2, at = 9000 } }, 99999, 600)
+    merged = E.MergeRatings({ feed, tie })
+    CHECK(merged[2].rating == 1490 and merged[2].source == "seen", "a tie goes to what we saw, not the feed")
+    CHECK(E.MergeRatings({}) == nil and E.MergeRatings(nil) == nil, "no sources, no ratings")
+    CHECK(E.MergeRatings({ { source = "feed", at = 1, brackets = { [2] = { rating = 0, played = 0 } } } }) == nil,
+        "unrated brackets are no ratings")
+
+    CHECK(E.FormatAge(30) == "1m" and E.FormatAge(45 * 60) == "45m", "minutes under an hour")
+    CHECK(E.FormatAge(13 * 3600) == "13h" and E.FormatAge(47 * 3600) == "47h", "hours under two days")
+    CHECK(E.FormatAge(3 * 86400) == "3d", "days after that")
+
+    local line = E.FormatRatings({
+        [2] = { rating = 1534, played = 39, at = 9000, source = "feed" },
+        [3] = { rating = 1531, played = 50, at = 9000, source = "feed" },
+        [5] = { rating = 1605, played = 86, at = 9000, source = "feed" } }, 9000 + 13 * 3600)
+    CHECK(line and line:find("^2s ") and line:find("1534") and line:find("3s ") and line:find("5s ")
+        and line:find("1605"), "every rated bracket prints in order", line)
+    CHECK(line:find("·"), "brackets are separated by a dot", line)
+    CHECK(line:find("13h"), "a feed line carries its age", line)
+    line = E.FormatRatings({ [2] = { rating = 1850, played = 40, at = 9000, source = "live" },
+        [3] = { rating = 0, played = 0 } }, 9000)
+    CHECK(line and not line:find("3s") and not line:find("%dm|r") and not line:find("%dh"),
+        "a live line has no age and skips unrated brackets", line)
+    line = E.FormatRatings({ [2] = { rating = 1850, played = 40, at = 9000, source = "live" },
+        [5] = { rating = 1600, played = 10, at = 5000, source = "feed" } }, 9000)
+    CHECK(line and not line:find("1h"), "the age follows the newest bracket, which is live here", line)
+    CHECK(E.FormatRatings(nil) == nil and E.FormatRatings({}) == nil, "nothing rated prints nothing")
 end
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))

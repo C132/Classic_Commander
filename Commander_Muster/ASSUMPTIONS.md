@@ -125,3 +125,26 @@ next one. That player's old best carries over.
 
 Test: `/dump GetCurrentArenaSeason()`, and then
 `/dump CommanderMusterBests.season` after a login.
+
+## A13 — `GetNormalizedRealmName()` and `GetPlayerInfoByGUID()` behave as on retail (1.2.0)
+
+Name keys use `GetNormalizedRealmName()` (falling back to `GetRealmName()`
+with spaces removed), and a GUID nobody inspected is named through
+`GetPlayerInfoByGUID(guid)`. Its 6th and 7th returns are name and realm, and
+the realm is "" for our own. Both are legacy globals, absent from the
+generated docs, and called behind type checks. If the realm spelling differs
+from the feed's keys, feed lookups miss and every name is handed to `Want`.
+
+Test: `/dump GetNormalizedRealmName()` should print `Dreamscythe`. Mouse over
+a player from another realm and check the tooltip's Arena line against
+ironforge.pro.
+
+## A14 — `CanInspect` is false for a party member out of range (1.2.0)
+
+Group lookups lean on `CanInspect(unit, false)` to skip members who are
+too far away or offline. If it says yes regardless, each such member costs
+one 5-second timeout and then a 30-second backoff before the next try. That
+is slower, not wrong.
+
+Test: in a party with someone across the zone, the others should be looked
+up within a few seconds of joining.

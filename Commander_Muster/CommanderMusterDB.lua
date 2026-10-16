@@ -26,6 +26,11 @@ local DefaultSettings = {
     -- harmless, but the answer costs a server round trip per new player
     -- under the cursor, and a battleground is the wrong place to spend it.
     InspectInCombat = false,
+    -- Look up party and raid members in the background, one at a time
+    -- behind any hover, so their ratings are known on every surface.
+    InspectGroup = true,
+    -- Ratings on Blizzard's friends list, guild roster and group finder (D13)
+    RatingsOnLists = true,
 
     -- Readout composition
     ShowAverageItemLevel = true,
@@ -50,7 +55,7 @@ local function CreateOptionsPanel()
         key = "Muster",
         title = "Muster",
         addonName = "Commander_Muster",
-        description = "Every player's kit and record at a glance: a gear score and average item level on your character panel, on the inspect window, and on the tooltip of any player you mouse over, with their arena ratings beside it. The score is TacoTip's TBC GearScore, so it reads the same as the number everyone else is quoting; the tooltip fills in from a quiet background inspect of anyone you can inspect and remembers them for the session. Hovering a readout lists each bracket with its win–loss and the season best: yours from the server, anyone else's the highest Muster has seen them at, kept across sessions until the season turns.",
+        description = "Every player's kit and record at a glance: a gear score and average item level on your character panel, on the inspect window, and on the tooltip of any player you mouse over, with their arena ratings beside it. The score is TacoTip's TBC GearScore, so it reads the same as the number everyone else is quoting; the tooltip fills in from a quiet background inspect of anyone you can inspect and remembers them for the session. Hovering a readout lists each bracket with its win–loss and the season best: yours from the server, anyone else's the highest Muster has seen them at, kept across sessions until the season turns. Arena lines also read the Commander Ladder web feed when it is installed, so players you cannot inspect (the other faction, enemies, anyone far away) still show a rating, with its age.",
         event = COMMANDER_MUSTER_EVENTS.UPDATE,
         slash = { "/cmuster", "/gs" },
         slashHandlers = {
@@ -132,6 +137,22 @@ local function CreateOptionsPanel()
         get = function() return CommanderMusterDB.InspectInCombat end,
         set = function(value) CommanderMusterDB.InspectInCombat = value end,
         isEnabled = function() return CommanderMusterDB.EnableMuster and CommanderMusterDB.InspectOnMouseover end,
+    })
+    panel:AddCheckbox({
+        label = "Look Up Your Group",
+        tooltip = "Quietly look up party and raid members too, one at a time and always after anyone you are hovering, so their ratings are known in the meters, the frames and every list. Same rules as the mouseover: within inspect range, never under the inspect window, and not in combat unless Even In Combat is on. Each member is looked up again after half an hour.",
+        get = function() return CommanderMusterDB.InspectGroup end,
+        set = function(value) CommanderMusterDB.InspectGroup = value end,
+        isEnabled = function() return CommanderMusterDB.EnableMuster end,
+    })
+
+    panel:AddSection("Ratings On Lists", "Blizzard's own windows that list players by name.")
+    panel:AddCheckbox({
+        label = "Friends, Guild And Group Finder",
+        tooltip = "Show arena ratings on the friends list (before each friend's zone), when hovering a guild member, and when hovering a group finder listing (every member). The numbers are what Muster has seen, merged with the Commander Ladder web feed when it is installed.",
+        get = function() return CommanderMusterDB.RatingsOnLists end,
+        set = function(value) CommanderMusterDB.RatingsOnLists = value end,
+        isEnabled = function() return CommanderMusterDB.EnableMuster end,
     })
 
     panel:AddButtonRow({

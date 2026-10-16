@@ -19,6 +19,8 @@ local D
 local floor = math.floor
 local max = math.max
 
+local DIM = "|cff9d9d9d"
+
 function E.Init(data)
     D = data
 end
@@ -200,14 +202,16 @@ end
 -- seen them at, a floor under their real high that is only as good as how
 -- often they are looked at (D10).
 --
--- entry: one player's saved ledger, { [size] = { best = n, played = n } }
+-- entry: one player's saved ledger,
+--   { [size] = { best = n, played = n, rating = n, wins = n, at = epoch } }
 -- arena: a fresh read; a bracket carries seasonBest when the server said so
+-- now: epoch seconds of the read, stamped on each bracket as `at` (D11)
 -- Writes the merged best onto each rated bracket as b.best (b.bestFromServer
 -- when it is the server's number) and returns true when the entry changed.
 -- A bracket whose season games went DOWN is a new season, or in a teams
 -- season a new team (a new personal rating too): its old best is dropped
 -- before the new read counts.
-function E.MergeBests(entry, arena)
+function E.MergeBests(entry, arena, now)
     if type(entry) ~= "table" or not arena or not arena.known then return false end
     local changed = false
     for _, size in ipairs(D.BRACKETS) do
@@ -215,6 +219,7 @@ function E.MergeBests(entry, arena)
         if b then
             local rating = tonumber(b.rating) or 0
             local played = tonumber(b.played) or 0
+            local wins = tonumber(b.wins) or 0
             local kept = entry[size]
             if kept and played < (kept.played or 0) then
                 entry[size], kept, changed = nil, nil, true
@@ -229,9 +234,11 @@ function E.MergeBests(entry, arena)
                     kept = {}
                     entry[size] = kept
                 end
-                if kept.best ~= best or kept.played ~= played then
-                    kept.best, kept.played, changed = best, played, true
+                if kept.best ~= best or kept.played ~= played
+                    or kept.rating ~= rating or kept.wins ~= wins then
+                    kept.best, kept.played, kept.rating, kept.wins, changed = best, played, rating, wins, true
                 end
+                if now then kept.at = now end
                 b.best = best
                 b.bestFromServer = server and true or nil
             end
@@ -262,6 +269,137 @@ function E.PruneBests(players, keep)
         players[order[i].guid] = nil
     end
     return keep
+end
+
+-- ---------------------------------------------------------------------------
+-- Ratings from every source (D11)
+-- ---------------------------------------------------------------------------
+
+-- "Name-Realm" for any spelling of a player. A bare name takes the home
+-- realm, "Name-Realm" keeps its own, and the realm loses its spaces the way
+-- GetNormalizedRealmName() writes it. nil for an empty name.
+function E.NameKey(name, realm, homeRealm)
+    if type(name) ~= "string" or name == "" then return nil end
+    local base, own = name:match("^([^%-]+)%-(.+)$")
+    if base then name, realm = base, own end
+    if type(realm) ~= "string" or realm == "" then realm = homeRealm end
+    if type(realm) ~= "string" or realm == "" then return name end
+    return name .. "-" .. (realm:gsub("%s", ""))
+end
+
+-- The two halves of a NameKey: name, realm (realm nil when there is none)
+function E.SplitKey(key)
+    if type(key) ~= "string" then return nil end
+    local name, realm = key:match("^([^%-]+)%-(.+)$")
+    if name then return name, realm end
+    return key, nil
+end
+
+local SOURCE_RANK = { live = 3, seen = 2, feed = 1 }
+
+local function Rated(b)
+    return b and ((tonumber(b.rating) or 0) > 0 or (tonumber(b.played) or 0) > 0)
+end
+
+-- A ledger entry as a source. A bracket read within `liveWindow` seconds is
+-- "live"; older ones are "seen". Brackets from before 1.2.0 carry no current
+-- rating and are skipped.
+function E.SeenSource(entry, now, liveWindow)
+    if type(entry) ~= "table" then return nil end
+    local brackets, any = {}, false
+    for _, size in ipairs(D.BRACKETS) do
+        local kept = entry[size]
+        if type(kept) == "table" and kept.rating then
+            local at = tonumber(kept.at or entry.seen) or 0
+            brackets[size] = {
+                rating = kept.rating, wins = kept.wins, played = kept.played, best = kept.best, at = at,
+                source = (now and (now - at) < (liveWindow or 0)) and "live" or "seen",
+            }
+            any = true
+        end
+    end
+    return any and { source = "seen", brackets = brackets } or nil
+end
+
+-- A Commander_Ladder entry as a source: { [size] = { rating, won, lost }, t = epoch }.
+-- `generated` stands in for an entry with no fetch time of its own.
+function E.FeedSource(entry, generated)
+    if type(entry) ~= "table" then return nil end
+    local brackets, any = {}, false
+    for _, size in ipairs(D.BRACKETS) do
+        local v = entry[size]
+        if type(v) == "table" then
+            local won, lost = tonumber(v[2]) or 0, tonumber(v[3]) or 0
+            brackets[size] = { rating = tonumber(v[1]) or 0, wins = won, played = won + lost }
+            any = true
+        end
+    end
+    if not any then return nil end
+    return { source = "feed", at = tonumber(entry.t) or tonumber(generated) or 0, brackets = brackets }
+end
+
+-- sources: a list of { source, at, brackets = { [size] = { rating, wins,
+-- played, best, at?, source? } } }; a bracket's own `at` and `source` beat
+-- the source's. For each bracket the newest reading wins, a tie going to
+-- live, then seen, then feed. best is the highest best or rating any source
+-- holds. Returns { [size] = { rating, wins, played, best, at, source } }, or
+-- nil when no source has a rated bracket.
+function E.MergeRatings(sources)
+    if type(sources) ~= "table" then return nil end
+    local out, any = {}, false
+    for _, size in ipairs(D.BRACKETS) do
+        local pick, best = nil, 0
+        for _, src in ipairs(sources) do
+            local b = type(src) == "table" and src.brackets and src.brackets[size]
+            if Rated(b) then
+                local at = tonumber(b.at or src.at) or 0
+                local source = b.source or src.source
+                if not pick or at > pick.at
+                    or (at == pick.at and (SOURCE_RANK[source] or 0) > (SOURCE_RANK[pick.source] or 0)) then
+                    pick = {
+                        rating = tonumber(b.rating) or 0, wins = tonumber(b.wins) or 0,
+                        played = tonumber(b.played) or 0, at = at, source = source,
+                    }
+                end
+                best = max(best, tonumber(b.best) or 0, tonumber(b.rating) or 0)
+            end
+        end
+        if pick then
+            pick.best = max(best, pick.rating)
+            out[size] = pick
+            any = true
+        end
+    end
+    return any and out or nil
+end
+
+-- An age as one short word: 45m, 13h, 3d
+function E.FormatAge(seconds)
+    seconds = tonumber(seconds) or 0
+    if seconds < 3600 then return max(1, floor(seconds / 60)) .. "m" end
+    if seconds < 48 * 3600 then return floor(seconds / 3600) .. "h" end
+    return floor(seconds / 86400) .. "d"
+end
+
+-- "2s 1534 · 3s 1531 · 5s 1605", each number in its tier colour, followed by
+-- a dim age when the newest bracket is not live. nil when nothing is rated.
+function E.FormatRatings(ratings, now)
+    if type(ratings) ~= "table" then return nil end
+    local parts, newest, newestSource = {}, nil, nil
+    for _, size in ipairs(D.BRACKETS) do
+        local b = ratings[size]
+        if Rated(b) then
+            parts[#parts + 1] = size .. "s " .. E.FormatRating(b.rating or 0)
+            local at = tonumber(b.at) or 0
+            if not newest or at > newest then newest, newestSource = at, b.source end
+        end
+    end
+    if #parts == 0 then return nil end
+    local line = table.concat(parts, DIM .. " · |r")
+    if newestSource ~= "live" and newest and newest > 0 and now then
+        line = line .. "  " .. DIM .. E.FormatAge(now - newest) .. "|r"
+    end
+    return line
 end
 
 -- ---------------------------------------------------------------------------

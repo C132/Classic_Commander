@@ -25,6 +25,7 @@ local FILES = {
     "CommanderMusterEngine.lua",
     "CommanderMusterDB.lua",
     "CommanderMuster.lua",
+    "CommanderMusterSurfaces.lua",
 }
 
 local ALLOWED = {}
@@ -56,7 +57,14 @@ GetTime InCombatLockdown IsInRaid
 
 -- Units and their kit
 allow [[
-UnitGUID UnitName UnitClass UnitIsPlayer GetInventoryItemLink
+UnitGUID UnitName UnitClass UnitIsPlayer UnitExists GetInventoryItemLink
+]]
+
+-- Ratings for anyone (D11): name keys, GUID -> name for players never
+-- inspected (behind a type check), and the optional Commander_Ladder feed
+allow [[
+GetNormalizedRealmName GetRealmName GetPlayerInfoByGUID
+CommanderLadder
 ]]
 
 -- The inspect channel (Blizzard_InspectUI frames are read behind nil checks)
@@ -72,6 +80,12 @@ allow [[
 GetCurrentArenaSeasonUsesTeams GetCurrentArenaSeason
 GetArenaTeam GetPersonalRatedInfo RequestRatedInfo
 GetInspectArenaTeamData GetInspectArenaData
+]]
+
+-- Blizzard's lists (D13): friends, guild roster, group finder; all read-only
+allow [[
+hooksecurefunc C_FriendList FRIENDS_BUTTON_TYPE_WOW GetGuildRosterInfo Ambiguate
+C_LFGList LFGBrowseSearchEntryTooltip RAID_CLASS_COLORS
 ]]
 
 -- The character panel and presentation

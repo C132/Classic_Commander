@@ -72,19 +72,21 @@ frame uses, so a later season with teams costs nothing. In a teams season
 the PERSONAL rating is what prints, with the team rating in the breakdown —
 personal rating is what gear requirements are checked against.
 
-## D7 — Session memory only (one exception: D10)
+## D7 — Session memory only (one exception: the rating ledger, D10/D11)
 
 Records live in a session book (10-minute trust, 200 most recent). Gear and
 current ratings are never written to SavedVariables: gear changes between
 sessions, and the persistent file on an enemy is Commander_Dossier's job.
-The season-best ledger (D10) is the one exception.
+The rating ledger (D10, D11) is the one exception.
 
-## D8 — Nothing prints for players who cannot be inspected
+## D8 — Nothing prints that Muster does not know (revised 1.2.0)
 
-The other faction, out-of-range players, and creatures get no line at all —
-not "unknown", not "?". A line that says nothing is noise on every tooltip.
-The one exception is a pending honor page, where the score line is printed
-and the arena line simply waits.
+A player Muster cannot inspect gets no GEAR line, and creatures get nothing.
+A line that says nothing ("unknown", "?") is noise on every tooltip. The
+ARENA line is different since 1.2.0 (D11): it prints whenever the ledger or
+the web feed knows the player, inspectable or not, with the age of the
+number. A pending honor page still prints the score line and lets the arena
+line wait.
 
 ## D9 — Combat gate defaults on
 
@@ -125,3 +127,63 @@ Shown only in the readout's hover breakdown, after the win–loss:
 `1605  40–46  best 1619`. The one-line tooltip and readout lines stay at the
 current rating. They are already full, and a second number there would need
 a legend.
+
+## D11 — Muster is the suite's one rating source; the web feed fills the gaps (1.2.0)
+
+Devin wants a player's ratings wherever a name appears, inspected or not.
+The client gives another player's rating only through an inspect, so the
+rest comes from Blizzard's web API, fetched outside the game by
+Commander_Ladder's script and loaded at login (an OptionalDep: without it,
+everything still works from what Muster has seen).
+
+`CommanderMuster.RatingsFor(who)` takes a unit token, a GUID, or a
+`Name` / `Name-Realm` and merges two sources per bracket. The first is the
+ledger (`CommanderMusterBests`), which now keeps the current rating, wins,
+games and read time beside the best. A reading under 10 minutes old is
+"live", older is "seen". The second is the feed: `CommanderLadder.Lookup`,
+timed by the entry's fetch time or else the file's. The NEWEST reading wins
+each bracket; a tie goes to live, then seen, then the feed. The best is the
+highest any source holds. A name the feed lacks is handed to
+`CommanderLadder.Want`, never our own, so the next feed run looks it up.
+
+Name-only surfaces (the group finder, chat, the Who list) are why the
+ledger is also indexed by `Name-Realm`. The realm loses its spaces, the way
+`GetNormalizedRealmName()` writes it, and a bare name means our realm. A
+GUID nobody inspected is named through `GetPlayerInfoByGUID`.
+
+One display everywhere: `CommanderMuster.RatingsLine(who)` gives
+`2s 1534 · 3s 1531 · 5s 1605` in tier colours. A dim age (`13h`) follows when
+the newest bracket is not live, because a feed number can be a day old and
+should say so.
+
+## D12 — Group members are looked up in the background, behind any hover (1.2.0)
+
+Meters, the party and arena frames, and Contacts all show group members, so
+their ratings should be known without anyone hovering them. On a roster
+change, on leaving combat, and after each answered inspect, Muster walks
+party1-4 (raid1-40 in a raid) and quietly inspects the first member with no
+answer in the last 30 minutes. Every D3 rule holds: one in flight, the 1.5s
+cooldown, never under the inspect window, and the D9 combat gate. A group
+request never takes the `wanted` slot, so a hover always goes first. A
+member out of reach is passed over and the walk repeats every 15 seconds
+until everyone is answered. Setting: Look Up Your Group, on by default.
+
+## D13 — Blizzard's lists get the lightest touch that shows the ratings (1.2.0)
+
+`CommanderMusterSurfaces.lua` hooks three Blizzard windows that list
+players by name, read-only and through `hooksecurefunc` or `HookScript`:
+
+- **Friends list:** the ratings lead the line under each friend's name, so
+  a long zone name truncates instead of the numbers. Blizzard rewrites that
+  line on every update, so the ratings never double.
+- **Guild roster:** the rows have no room, so hovering a member shows a
+  tooltip with their ratings.
+- **Group finder:** the rows are tight, so hovering a listing shows every
+  member's ratings under Blizzard's own listing tooltip. It also shows the
+  listing's `leaderPvpRatingInfo` when the server sends it: the API
+  documents it, but nothing shows Anniversary fills it.
+
+A friend, guild member or listing nobody knows gets nothing added (D8). Every
+name is still handed to the feed through RatingsFor. Setting: Friends,
+Guild And Group Finder, on by default.
+

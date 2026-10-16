@@ -3,9 +3,9 @@
 Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit muster_engine_smoke.lua   # engine, no mock — 105 checks
-/opt/homebrew/bin/luajit muster_ui_harness.lua     # UI + inspect flow — 111 checks
-/opt/homebrew/bin/luajit globals_lint.lua          # 4 files, 0 undeclared globals
+/opt/homebrew/bin/luajit muster_engine_smoke.lua   # engine, no mock — 140 checks
+/opt/homebrew/bin/luajit muster_ui_harness.lua     # UI + inspect flow — 160 checks
+/opt/homebrew/bin/luajit globals_lint.lua          # 5 files, 0 undeclared globals
 ```
 
 All three resolve the AddOns root from their own file location, so they work
@@ -23,7 +23,9 @@ the two-hander and hunter weapon rules, incomplete kits, the weakest piece,
 the colour bands at each 400-point boundary, the arena line in every state,
 the session book's TTL, keep limit and forget, and the season-best merge
 (first sighting, rise, a lower rating keeping the best, games going down as
-a new season, the server's high winning, a zero high ignored, pruning).
+a new season, the server's high winning, a zero high ignored, pruning), and
+the rating merge (name keys, ledger and feed sources, newest-wins with the
+live > seen > feed tie order, ages, the one-line format).
 
 ## `muster_ui_harness.lua` — the UI and the inspect channel
 
@@ -51,6 +53,17 @@ mock, then drives:
   `best` after the win–loss in both breakdowns with the seen-best footnote,
   unrated players never written, a season reading 0 emptying nothing, a new
   season emptying the ledger, and `forget` leaving it alone
+- ratings for anyone (D11): `RatingsFor` by GUID, unit token, bare name and
+  Name-Realm; the mocked Commander_Ladder feed giving an other-faction player
+  an Arena line with its age and no inspect; unknown names handed to `Want`,
+  never ourselves; newest reading wins in both directions
+- group lookups (D12): roster change, hover first, cross-realm members, a
+  member out of reach passed over then caught, the 30-minute refresh, the
+  combat gate and the setting
+- Blizzard's lists (D13): the friends line leading with ratings and never
+  doubling, the guild row tooltip, the group finder's member panel (loaded
+  after login) with the listing's own leader rating, and nothing for players
+  nobody knows
 - the master switch, the per-surface toggles, both slash spellings, `report`
   and `forget`, and the settings page
 

@@ -28,9 +28,13 @@
 -- piece the item cache had not seen yet is scored later, on
 -- GET_ITEM_INFO_RECEIVED, without inspecting again.
 --
--- One thing outlives the session: each player's best arena rating per
--- bracket, in CommanderMusterBests (D10). Ours comes from the server; for
--- everyone else it is the highest rating any inspect has shown us.
+-- One thing outlives the session: the rating ledger, CommanderMusterBests
+-- (D10, D11). For each player and bracket it keeps the last rating an
+-- inspect showed and the season best (ours from the server). RatingsFor
+-- merges it with the Commander_Ladder web feed, so the suite can show a
+-- rating for anyone, inspected or not; that is the one rating source every
+-- other addon reads. Party and raid members are looked up in the
+-- background (D12).
 
 local D = CommanderMusterData
 local E = CommanderMusterEngine
@@ -45,11 +49,15 @@ local HONOR_TIMEOUT = 3           -- seconds to wait for INSPECT_HONOR_UPDATE
 local FAIL_BACKOFF = 30           -- seconds before a GUID that failed is tried again
 local BOOK_TTL = 600              -- seconds a stranger's record is trusted
 local BOOK_KEEP = 200             -- most strangers remembered
-local BESTS_KEEP = 2000           -- most players whose season best is kept on disk
+local BESTS_KEEP = 2000           -- most players whose ratings are kept on disk
+local LIVE_WINDOW = BOOK_TTL      -- seconds a reading counts as live rather than seen (D11)
+local GROUP_REFRESH = 1800        -- seconds before a group member is looked up again
+local GROUP_RETRY = 15            -- seconds between passes while a member is out of reach
 
 local book = E.NewBook(BOOK_TTL, BOOK_KEEP)
-local bests                       -- CommanderMusterBests.players: guid -> season-best ledger entry
+local bests                       -- CommanderMusterBests.players: guid -> rating ledger entry
 local bestsCount = 0
+local byName = {}                 -- "Name-Realm" -> guid, rebuilt from the ledger at login
 local playerRecord                -- our own record, kept outside the book (never expires)
 local pending                     -- the in-flight quiet inspect: { guid, unit, name, stage, at }
 local wanted                      -- a unit token waiting for the cooldown to pass
@@ -127,9 +135,11 @@ end
 
 local function NewRecord(unit, guid)
     local _, classToken = UnitClass(unit)
+    local name, realm = UnitName(unit)
     local record = {
         guid = guid or UnitGUID(unit),
-        name = UnitName(unit),
+        name = name,
+        realm = realm,
         class = classToken,
         items = ReadUnitItems(unit),
         arena = { known = false },
@@ -223,8 +233,25 @@ local function ReadInspectArena()
 end
 
 -- ---------------------------------------------------------------------------
--- Season bests (D10): the one thing written to disk
+-- The rating ledger (D10, D11): the one thing written to disk
 -- ---------------------------------------------------------------------------
+
+-- Our realm as GetNormalizedRealmName() writes it, for keys of bare names
+local function HomeRealm()
+    local realm = type(GetNormalizedRealmName) == "function" and GetNormalizedRealmName() or nil
+    if (not realm or realm == "") and type(GetRealmName) == "function" then
+        realm = (GetRealmName() or ""):gsub("%s", "")
+    end
+    if realm == "" then return nil end
+    return realm
+end
+
+local function RebuildNames()
+    wipe(byName)
+    for guid, entry in pairs(bests) do
+        if entry.key then byName[entry.key] = guid end
+    end
+end
 
 local function CurrentSeason()
     if type(GetCurrentArenaSeason) ~= "function" then return nil end
@@ -247,33 +274,41 @@ local function OpenBests()
     bests = store.players
     bestsCount = 0
     for _ in pairs(bests) do bestsCount = bestsCount + 1 end
+    RebuildNames()
 end
 
--- Folds a fresh arena read into the ledger, and the ledger's best back onto
--- the read (b.best). Returns the read, so a caller can assign through it.
-local function Remember(guid, name, arena)
+-- Folds a fresh arena read into the ledger: current rating, games and best
+-- per bracket, stamped with the time, and the ledger's best back onto the
+-- read (b.best). Returns the read, so a caller can assign through it.
+local function Remember(guid, name, arena, realm)
     if not (bests and guid and arena and arena.known) then return arena end
     local entry = bests[guid] or {}
-    E.MergeBests(entry, arena)
+    E.MergeBests(entry, arena, time())
     if not E.HasBests(entry) then
         if bests[guid] then
+            if entry.key then byName[entry.key] = nil end
             bests[guid] = nil
             bestsCount = bestsCount - 1
         end
         return arena
     end
     entry.name = name or entry.name
+    entry.key = E.NameKey(name, realm, HomeRealm()) or entry.key
     entry.seen = time()
+    if entry.key then byName[entry.key] = guid end
     if not bests[guid] then
         bests[guid] = entry
         bestsCount = bestsCount + 1
-        if bestsCount > BESTS_KEEP then bestsCount = E.PruneBests(bests, BESTS_KEEP) end
+        if bestsCount > BESTS_KEEP then
+            bestsCount = E.PruneBests(bests, BESTS_KEEP)
+            RebuildNames()
+        end
     end
     return arena
 end
 
 local function ReadInspectArenaFor(record)
-    return Remember(record.guid, record.name, ReadInspectArena())
+    return Remember(record.guid, record.name, ReadInspectArena(), record.realm)
 end
 
 local function WantArena()
@@ -294,7 +329,7 @@ end
 
 local function RefreshPlayerArena()
     if not playerRecord then return end
-    playerRecord.arena = Remember(playerGUID, playerRecord.name, ReadOwnArena())
+    playerRecord.arena = Remember(playerGUID, playerRecord.name, ReadOwnArena(), playerRecord.realm)
     Commander.Notify(COMMANDER_MUSTER_EVENTS.RECORD, playerGUID)
 end
 
@@ -306,6 +341,86 @@ local function RecordFor(guid)
 end
 
 CommanderMuster.RecordFor = RecordFor
+
+-- ---------------------------------------------------------------------------
+-- Ratings for anyone (D11): what we saw, merged with the web feed
+-- ---------------------------------------------------------------------------
+
+-- guid, name, realm for a unit token, a GUID, or a "Name" / "Name-Realm".
+-- Any of the three may be nil: a GUID the client never cached has no name,
+-- and a name nobody has been inspected under has no GUID.
+local function Resolve(who)
+    if type(who) ~= "string" or who == "" then return nil end
+    if UnitExists(who) then
+        local name, realm = UnitName(who)
+        return UnitGUID(who), name, realm
+    end
+    -- A GUID: "Type-number-...". Names hold no digits, so this never takes a
+    -- "Name-Realm". Pets, creatures and the rest have no ratings.
+    if who:match("^%a+%-%d+%-") and not who:match("^Player%-") then return nil end
+    if who:match("^Player%-") then
+        local entry = bests and bests[who]
+        if entry and entry.key then
+            local name, realm = E.SplitKey(entry.key)
+            return who, name, realm
+        end
+        if type(GetPlayerInfoByGUID) == "function" then
+            local ok, _, _, _, _, _, name, realm = pcall(GetPlayerInfoByGUID, who)
+            if ok and name then return who, name, realm end
+        end
+        return who, nil, nil
+    end
+    local key = E.NameKey(who, nil, HomeRealm())
+    local name, realm = E.SplitKey(key)
+    return byName[key], name, realm
+end
+
+-- Commander_Ladder's entry for a player, as a source. A player the feed does
+-- not have is handed to Want, so the next feed run looks them up by name.
+local function FeedFor(name, realm, guid)
+    if not name or type(CommanderLadder) ~= "table" or type(CommanderLadder.Lookup) ~= "function" then
+        return nil
+    end
+    if realm == "" then realm = nil end
+    local ok, entry = pcall(CommanderLadder.Lookup, name, realm)
+    if ok and type(entry) == "table" then
+        local generated
+        if type(CommanderLadder.Generated) == "function" then
+            local okGen, at = pcall(CommanderLadder.Generated)
+            generated = okGen and at or nil
+        end
+        return E.FeedSource(entry, generated)
+    end
+    if guid ~= playerGUID and type(CommanderLadder.Want) == "function" then
+        pcall(CommanderLadder.Want, name, realm)
+    end
+    return nil
+end
+
+-- { [size] = { rating, wins, played, best, at, source } } for `who` (a unit
+-- token, a GUID, or "Name-Realm"), or nil when nothing rated is known
+local function RatingsFor(who)
+    -- The master switch reaches every surface that asks, not only Muster's own
+    if not IsOn() then return nil end
+    local guid, name, realm = Resolve(who)
+    local sources = {}
+    local seen = guid and bests and E.SeenSource(bests[guid], time(), LIVE_WINDOW)
+    if seen then sources[#sources + 1] = seen end
+    local feed = FeedFor(name, realm, guid)
+    if feed then sources[#sources + 1] = feed end
+    return E.MergeRatings(sources)
+end
+
+CommanderMuster.RatingsFor = RatingsFor
+
+function CommanderMuster.FormatRatings(ratings)
+    return E.FormatRatings(ratings, time())
+end
+
+-- The one-call form surfaces use: "2s 1534 · 3s 1531 · 5s 1605" or nil
+function CommanderMuster.RatingsLine(who)
+    return E.FormatRatings(RatingsFor(who), time())
+end
 
 -- ---------------------------------------------------------------------------
 -- The quiet inspect
@@ -339,18 +454,24 @@ local function FindUnit(guid, preferred)
     return nil
 end
 
-local TryWanted
+local TryWanted, ScheduleGroupPump
+local groupCheckedAt = {}         -- guid -> time() of its last answered lookup
+local groupPumpDue                -- Now() when the queued group pass runs
 
--- Whoever was waiting behind the in-flight inspect goes next
+-- Whoever was waiting behind the in-flight inspect goes next; with nobody
+-- waiting, the group gets its turn
 local function ServeWanted()
     if wanted then
         C_Timer.After(0.1, TryWanted)
+    else
+        ScheduleGroupPump(INSPECT_COOLDOWN + 0.1)
     end
 end
 
 local function Finish(record, notify)
     if record then
         book:Put(record.guid, record, Now())
+        groupCheckedAt[record.guid] = time()
     end
     pending = nil
     SafeClearInspect()
@@ -367,8 +488,14 @@ local function Fail(guid)
     ServeWanted()
 end
 
-local function Request(unit)
-    if not IsOn() or not db.InspectOnMouseover then return false end
+-- viaGroup: a background group lookup, which never queues behind a hover
+local function Request(unit, viaGroup)
+    if not IsOn() then return false end
+    if viaGroup then
+        if not db.InspectGroup then return false end
+    elseif not db.InspectOnMouseover then
+        return false
+    end
     if not unit or not UnitIsPlayer(unit) then return false end
     local guid = UnitGUID(unit)
     if not guid or guid == playerGUID then return false end
@@ -380,6 +507,8 @@ local function Request(unit)
 
     local since = Now() - lastInspectAt
     if pending or since < INSPECT_COOLDOWN then
+        -- The group waits its turn rather than displace a hover
+        if viaGroup then return false end
         -- The newest wish wins; the earlier one is where the cursor was
         wanted = unit
         C_Timer.After(math.max(INSPECT_COOLDOWN - since, 0.05) + 0.05, TryWanted)
@@ -401,12 +530,67 @@ TryWanted = function()
     if pending then return end
     local unit = wanted
     wanted = nil
-    if not unit then return end
-    local guid = UnitGUID(unit)
-    if not guid then return end
+    local guid = unit and UnitGUID(unit)
     local record, fresh = RecordFor(guid)
-    if record and fresh and (record.arena.known or not WantArena()) then return end
-    Request(unit)
+    if guid and not (record and fresh and (record.arena.known or not WantArena())) and Request(unit) then
+        return
+    end
+    -- The hover needed nothing after all: the group's turn
+    ScheduleGroupPump(0.2)
+end
+
+-- ---------------------------------------------------------------------------
+-- Group lookups (D12): party and raid members, one at a time, behind hovers
+-- ---------------------------------------------------------------------------
+
+local function GroupTokens()
+    local tokens = {}
+    if IsInRaid() then
+        for i = 1, 40 do tokens[#tokens + 1] = "raid" .. i end
+    else
+        for i = 1, 4 do tokens[#tokens + 1] = "party" .. i end
+    end
+    return tokens
+end
+
+-- Looks up the next member with no answer in GROUP_REFRESH seconds. Only
+-- when nothing else is in flight or waiting; Finish and Fail come back here.
+-- A member out of reach (out of range, offline, in combat) is passed over
+-- and the pass repeats every GROUP_RETRY seconds until everyone is answered.
+local function PumpGroup()
+    if not (IsOn() and db.InspectGroup) then return end
+    local outstanding = false
+    for _, token in ipairs(GroupTokens()) do
+        local guid = UnitGUID(token)
+        if guid and guid ~= playerGUID and UnitIsPlayer(token) then
+            local checked = groupCheckedAt[guid]
+            if not checked or (time() - checked) >= GROUP_REFRESH then
+                outstanding = true
+                -- Busy: Finish, Fail or TryWanted brings us back
+                if pending or wanted then return end
+                local since = Now() - lastInspectAt
+                if since < INSPECT_COOLDOWN then
+                    ScheduleGroupPump(INSPECT_COOLDOWN - since + 0.05)
+                    return
+                end
+                if Request(token, true) then return end
+            end
+        end
+    end
+    if outstanding then ScheduleGroupPump(GROUP_RETRY) end
+end
+
+-- One queued pass at a time; a sooner request replaces a later one
+ScheduleGroupPump = function(delay)
+    delay = delay or 0.2
+    local due = Now() + delay
+    if groupPumpDue and groupPumpDue <= due then return end
+    groupPumpDue = due
+    C_Timer.After(delay, function()
+        if groupPumpDue ~= due then return end
+        groupPumpDue = nil
+        PumpGroup()
+    end)
 end
 
 local function AskForHonor(record)
@@ -485,6 +669,7 @@ local function OnInspectHonorUpdate()
     if frameTarget and frameTarget.record and InspectFrame and InspectFrame.unit
         and UnitGUID(InspectFrame.unit) == frameTarget.guid then
         frameTarget.record.arena = ReadInspectArenaFor(frameTarget.record)
+        groupCheckedAt[frameTarget.guid] = time()
         book:Put(frameTarget.guid, frameTarget.record, Now())
         Commander.Notify(COMMANDER_MUSTER_EVENTS.RECORD, frameTarget.guid)
     end
@@ -710,17 +895,23 @@ end
 -- Player tooltips
 -- ---------------------------------------------------------------------------
 
-local function AddTooltipLines(tooltip, record)
-    if db.TooltipGearScore then
+-- The gear line needs a record of our own. The arena line takes ratings
+-- from anywhere (D11), so a player we cannot inspect (the other faction, an
+-- enemy, anyone out of range) still gets one when the ledger or the feed
+-- knows them.
+local function AddTooltipLines(tooltip, record, unit)
+    if record and db.TooltipGearScore then
         local line = GearLine(record, db.TooltipItemLevel)
         if line then
             tooltip:AddDoubleLine("Gear score", line, 1, 0.82, 0, 1, 1, 1)
         end
     end
     if db.TooltipArena then
-        local line, state = ArenaLine(record)
-        if state ~= "pending" then
+        local line = E.FormatRatings(RatingsFor(unit), time())
+        if line then
             tooltip:AddDoubleLine("Arena", line, 1, 0.82, 0, 1, 1, 1)
+        elseif record and record.arena and record.arena.known then
+            tooltip:AddDoubleLine("Arena", DIM .. "unrated|r", 1, 0.82, 0, 1, 1, 1)
         end
     end
 end
@@ -735,9 +926,7 @@ local function OnTooltipSetUnit(tooltip)
     if not guid then return end
 
     local record, fresh = RecordFor(guid)
-    if record then
-        AddTooltipLines(tooltip, record)
-    end
+    AddTooltipLines(tooltip, record, unit)
     if guid ~= playerGUID and (not record or not fresh or (WantArena() and not record.arena.known)) then
         Request(unit)
     end
@@ -827,6 +1016,7 @@ local function OnEvent(self, event, arg1, arg2)
             "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "UNIT_INVENTORY_CHANGED",
             "GET_ITEM_INFO_RECEIVED", "INSPECT_READY", "INSPECT_HONOR_UPDATE",
             "ARENA_TEAM_UPDATE", "PVP_RATED_STATS_UPDATE", "ADDON_LOADED",
+            "GROUP_ROSTER_UPDATE", "PLAYER_REGEN_ENABLED",
         }) do
             RegisterSafely(e)
         end
@@ -866,6 +1056,9 @@ local function OnEvent(self, event, arg1, arg2)
         OpenBests()
         RefreshPlayer()
         RefreshPlayerArena()
+        ScheduleGroupPump(3)
+    elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_REGEN_ENABLED" then
+        ScheduleGroupPump(1)
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         RefreshPlayer()
     elseif event == "UNIT_INVENTORY_CHANGED" then
