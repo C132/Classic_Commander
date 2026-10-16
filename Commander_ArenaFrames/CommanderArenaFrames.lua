@@ -1104,6 +1104,13 @@ local function NewRow(index)
     -- way an icon and a number can.
     frame.ccBox = NewSlot(frame, 28, "GameFontHighlightSmall")
 
+    -- The trinket again, as a badge in the class square's bottom-right
+    -- corner -- the Arena Replay's place for it, and the place the eye
+    -- already is when it reads who an enemy is. Above the control square,
+    -- because "can they trinket this sap" is asked exactly while it shows.
+    frame.trinketBadge = NewSlot(frame, 12, "GameFontHighlightSmall")
+    frame.trinketBadge:SetFrameLevel(frame.ccBox:GetFrameLevel() + 3)
+
     -- Hover. Insecure throughout -- OnEnter/OnLeave scripts never touch the
     -- unit attribute, so click-cast and @mouseover macros are unaffected by
     -- anything the tooltip does or by switching it off.
@@ -1241,6 +1248,23 @@ local function LayoutRow(frame, entry, scale, locked)
         frame.classPlate:Hide()
         frame.edgeClass:Hide()
         frame.ccBox:Hide()
+    end
+    -- The corner badge: a little under half the square, flush in its corner
+    frame._badgeOn = iconOn and DB("TrinketBadge", true) or false
+    if frame._badgeOn then
+        local b = math.max(10, math.floor(H * 0.45 + 0.5))
+        frame.trinketBadge:ClearAllPoints()
+        frame.trinketBadge:SetPoint("BOTTOMRIGHT", frame, "TOPLEFT", H - 1, -(H - 1))
+        frame.trinketBadge:SetSize(b, b)
+        SizeSlotText(frame.trinketBadge, b)
+        SizeSlotRim(frame.trinketBadge, b)
+        local file = frame.trinketBadge.text:GetFont()
+        if file then
+            pcall(frame.trinketBadge.text.SetFont, frame.trinketBadge.text, file,
+                math.max(7, math.min(11, math.floor(b * 0.55 + 0.5))), "OUTLINE")
+        end
+    else
+        frame.trinketBadge:Hide()
     end
 
     -- Identity sits ON the health bar, not above it.
@@ -1548,7 +1572,7 @@ local function LayoutRow(frame, entry, scale, locked)
     ShadeSlots(frame.drSlots)
     ShadeSlots(frame.cdSlots)
     ShadeSlots(frame.auraSlots)
-    ShadeSlots({ frame.trinket, frame.ccBox })
+    ShadeSlots({ frame.trinket, frame.ccBox, frame.trinketBadge })
 
     local height = -y
     if not locked then frame:SetHeight(height) end
@@ -2174,43 +2198,52 @@ local function PaintAuras(frame, entry, now)
     for i = shown + 1, #frame.auraSlots do frame.auraSlots[i]:Hide() end
 end
 
-local function PaintTrinket(frame, entry, now)
-    if not DB("Trinket", true) then
-        frame.trinket:Hide()
-        return
-    end
-    local record = trinket[entry.guid]
-    frame.trinket:Show()
+-- One trinket, two faces: the slot at the row's end and the badge on the
+-- class square. Both wear the FACTION'S MEDALLION -- the spell's own icon is
+-- a white swirl that reads as a dispel -- and paint from the same record.
+local function PaintTrinketSlot(slot, entry, record, icon, now)
+    slot:Show()
+    slot.icon:SetTexture(icon)
     if not record or not record.spellId then
         -- Nothing reported yet. Shown as an empty socket rather than hidden,
         -- so the row's shape never changes when the answer arrives.
-        frame.trinket.icon:SetTexture("Interface\\Icons\\INV_Jewelry_TrinketPVP_01")
-        frame.trinket.icon:SetDesaturated(true)
-        frame.trinket.icon:SetVertexColor(0.4, 0.4, 0.4)
-        frame.trinket.text:SetText("")
-        frame.trinket.rim:SetVertexColor(1, 1, 1, 0.15)
-        SetSweep(frame.trinket, nil)
+        slot.icon:SetDesaturated(true)
+        slot.icon:SetVertexColor(0.4, 0.4, 0.4)
+        slot.text:SetText("")
+        slot.rim:SetVertexColor(1, 1, 1, 0.15)
+        SetSweep(slot, nil)
         return
     end
-    frame.trinket.icon:SetTexture((GetSpellTexture and GetSpellTexture(record.spellId))
-        or "Interface\\Icons\\INV_Jewelry_TrinketPVP_01")
     local left = record.readyAt and (record.readyAt - now) or nil
     local down = (left and left > 0) and true or false
-    local pulsing = ReadyPulse(frame.trinket, entry.guid, down, now)
+    local pulsing = ReadyPulse(slot, entry.guid, down, now)
     if down then
-        frame.trinket.icon:SetDesaturated(true)
-        frame.trinket.icon:SetVertexColor(0.45, 0.45, 0.45)
-        frame.trinket.text:SetText(E.FormatSlotTime(left))
-        frame.trinket.text:SetTextColor(1, 0.82, 0)
-        if not pulsing then frame.trinket.rim:SetVertexColor(0.9, 0.3, 0.3, 0.8) end
-        SetSweep(frame.trinket, record.readyAt, record.cd or 120)
+        slot.icon:SetDesaturated(true)
+        slot.icon:SetVertexColor(0.45, 0.45, 0.45)
+        slot.text:SetText(E.FormatSlotTime(left))
+        slot.text:SetTextColor(1, 0.82, 0)
+        if not pulsing then slot.rim:SetVertexColor(0.9, 0.3, 0.3, 0.8) end
+        SetSweep(slot, record.readyAt, record.cd or 120)
     else
-        frame.trinket.icon:SetDesaturated(false)
-        frame.trinket.icon:SetVertexColor(1, 1, 1)
-        frame.trinket.text:SetText("")
-        if not pulsing then frame.trinket.rim:SetVertexColor(0.4, 0.95, 0.45, 0.85) end
-        SetSweep(frame.trinket, nil)
+        slot.icon:SetDesaturated(false)
+        slot.icon:SetVertexColor(1, 1, 1)
+        slot.text:SetText("")
+        if not pulsing then slot.rim:SetVertexColor(0.4, 0.95, 0.45, 0.85) end
+        SetSweep(slot, nil)
     end
+end
+
+local function PaintTrinket(frame, entry, now)
+    local slotOn = DB("Trinket", true)
+    local badgeOn = frame._badgeOn
+    if not slotOn then frame.trinket:Hide() end
+    if not badgeOn then frame.trinketBadge:Hide() end
+    if not (slotOn or badgeOn) then return end
+    local record = trinket[entry.guid]
+    local icon = Commander.TrinketIcon and Commander.TrinketIcon(entry.unit, entry.race, true)
+        or "Interface\\Icons\\INV_Jewelry_TrinketPVP_01"
+    if slotOn then PaintTrinketSlot(frame.trinket, entry, record, icon, now) end
+    if badgeOn then PaintTrinketSlot(frame.trinketBadge, entry, record, icon, now) end
 end
 
 -- The state strip. Five things earn it, and every one of them is "stop what

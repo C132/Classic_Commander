@@ -690,6 +690,13 @@ Commander = {
         end
     end,
     DebossIcon = function() end,
+    -- Commander_Events' shared medallion picker, by race (the board passes
+    -- the arena token first; nothing here answers UnitFactionGroup)
+    TrinketIcon = function(unit, race, enemy)
+        local horde = { Orc = 1, Scourge = 1, Tauren = 1, Troll = 1, BloodElf = 1 }
+        return horde[race] and "Interface\\Icons\\INV_Jewelry_TrinketPVP_02"
+            or "Interface\\Icons\\INV_Jewelry_TrinketPVP_01"
+    end,
     UI = {
         HudChromeDefaults = function() return { HudStyle = "NONE", HudScale = 1,
                                                 HudLocked = true, HudPos = {} } end,
@@ -1176,6 +1183,18 @@ do
     CHECK(plain >= 1, "I: and the unused ones do not", plain)
     CHECK(Row(2).trinket.sweep:IsShown(), "I: the trinket on cooldown is swept")
     CHECK(not mage.trinket.sweep:IsShown(), "I: and the ready one is not")
+    -- The corner badge: the same trinket, on the class square, in the faction's medallion
+    CHECK(mage.trinketBadge:IsShown() and Row(2).trinketBadge:IsShown(), "I: a trinket badge on every class square")
+    CHECK(Row(2).trinketBadge.sweep:IsShown() and not mage.trinketBadge.sweep:IsShown(),
+          "I: the badge sweeps with the slot")
+    CHECK(mage.trinketBadge:GetHeight() < mage.classIcon:GetHeight() / 2 + 1, "I: the badge is a corner, not a cover",
+          mage.trinketBadge:GetHeight())
+    -- (the mock's GetFrameLevel is a constant; the level the board asked for is stored)
+    CHECK((rawget(mage.trinketBadge, "__level") or 0) > (rawget(mage.ccBox.top, "__level") or 99),
+          "I: the badge sits above the control square and its clock")
+    EQ(mage.trinket.icon:GetTexture(), "Interface\\Icons\\INV_Jewelry_TrinketPVP_01", "I: a gnome's trinket is the Alliance medallion")
+    EQ(rogue.trinketBadge.icon:GetTexture(), "Interface\\Icons\\INV_Jewelry_TrinketPVP_02", "I: an orc's is the Horde one")
+    CHECK(Row(2).trinket.icon:GetTexture() ~= "Interface\\Icons\\Spell_42292", "I: never the spell's icon")
     -- Slot text sits on the frame ABOVE the sweep, or it goes dark under it
     CHECK(mage.cdSlots[1].text:GetParent() == mage.cdSlots[1].top, "I: slot text rides above the sweep")
     -- The cast bar carries its spark on the fill's edge

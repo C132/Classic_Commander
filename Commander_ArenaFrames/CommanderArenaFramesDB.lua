@@ -132,6 +132,7 @@ local DefaultSettings = {
     TrinketFillRow = true,      -- the row's height, exactly like the class square
     TrinketSize = 20,           -- ...or this, when it is not
     TrinketAlert = true,        -- flash the row the moment it is used
+    TrinketBadge = true,        -- the trinket again, in the class square's bottom-right corner
 
     -- Auras on the enemy. Two strips with different jobs: what protects them
     -- (so you stop), and what YOU have on them (so you know your CC is live).
@@ -1164,6 +1165,14 @@ local function AddTrinketSection(panel)
         get = function() return CommanderArenaFramesDB.TrinketAlert end,
         set = function(value) CommanderArenaFramesDB.TrinketAlert = value end,
         isEnabled = function() return Enabled() and CommanderArenaFramesDB.Trinket end,
+    })
+
+    panel:AddCheckbox({
+        label = "Trinket Badge on Class Icon",
+        tooltip = "The trinket again, small, in the bottom-right corner of the class icon -- where the Arena Replay puts it, and where your eye already is when it reads who an enemy is. It stays on top of the crowd-control icon, because that is exactly when you are asking whether they can trinket. Works with or without the Trinket Slot.",
+        get = function() return CommanderArenaFramesDB.TrinketBadge end,
+        set = function(value) CommanderArenaFramesDB.TrinketBadge = value end,
+        isEnabled = function() return Enabled() and CommanderArenaFramesDB.ShowClassIcon end,
     })
 
     panel:AddCheckboxPair({
