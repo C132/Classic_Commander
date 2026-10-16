@@ -16,6 +16,24 @@
 -- pill, rules and markers are quads cut from WHITE8X8 and tinted, for the
 -- reasons Quest Log and Bags document -- ARIALN renders shape glyphs as
 -- missing-glyph boxes and icon FILES move between client patches.
+--
+-- Commander Orders 3.1 (1.1.0, DECISIONS D12). Three things, each looked up
+-- at the moment it is needed, so the window works the same without Orders:
+--   * "Arrow To Them" in a person's menu while they are in your party or
+--     raid: Orders follows them (a unit follow named by GUID, source
+--     "Contacts", key "follow", so asking for someone else moves the one
+--     follow). Somebody who is not grouped offers nothing: a zone name from
+--     the friends list is not a place (Orders' DECISIONS; "go to their zone"
+--     is not offered).
+--   * Logged lines are run through CommanderOrders.Linkify when they are
+--     drawn, so a "/way ..." or "Zone 45.2, 66.8" a friend sent carries a
+--     [Go] like it does in chat. A line from the log has no live context
+--     (where the sender was then is not where anybody is now), so a bare
+--     "/way 45 66" stays text; one naming its zone or map does not.
+--   * Hovering an Orders [Go] link fires EventRegistry's
+--     "ChatFrame.OnHyperlinkEnter" / "...Leave", the way a chat frame does,
+--     so Orders' tooltip shows; GameTooltip:SetHyperlink cannot show an
+--     addon link. Clicks already reach Orders through SetItemRef.
 
 CommanderContacts = CommanderContacts or {}
 local H = CommanderContacts
@@ -626,18 +644,84 @@ local function BuildActivityEntries(needle)
     return entries
 end
 
+-- ---------------------------------------------------------------------------
+-- Commander Orders 3.1: "Arrow To Them" and [Go] links (see the header)
+-- ---------------------------------------------------------------------------
+local Go = { links = setmetatable({}, { __mode = "k" }) }
+
+-- The party or raid token a person stands on right now (by GUID when the
+-- thread knows one, else by name), never yourself; nil when not grouped
+function Go.Token(name, guid)
+    if not (UnitExists and UnitGUID) then return nil end
+    local short = type(name) == "string" and (name:match("^([^%-]+)") or name) or nil
+    local raid = IsInRaid and IsInRaid()
+    for i = 1, raid and 40 or 4 do
+        local token = (raid and "raid" or "party") .. i
+        if UnitExists(token) and not (UnitIsUnit and UnitIsUnit(token, "player")) then
+            if guid and UnitGUID(token) == guid then return token end
+            if short and UnitName and UnitName(token) == short then return token end
+        end
+    end
+    return nil
+end
+
+-- The menu entry, or nil when it has nothing to offer (Orders absent, the
+-- person not in your group)
+function Go.Entry(name, guid)
+    local api = CommanderOrders
+    if not (type(api) == "table" and type(api.GoTo) == "function") then return nil end
+    if not Go.Token(name, guid) then return nil end
+    return { text = "Arrow To Them", func = function()
+        local token = Go.Token(name, guid)
+        if not token then
+            Say((name or "they") .. " is no longer in your group.")
+            return
+        end
+        -- Not silent: Orders says "Waypoint set" or its one refusal line
+        api.GoTo({ kind = "unit", unit = token, guid = UnitGUID(token) }, {
+            title = (name and name:match("^([^%-]+)")) or name, source = "Contacts", key = "follow", icon = "UNIT",
+        })
+    end }
+end
+
+-- A logged line with Orders' [Go] links, kept per message until its text or
+-- the Chat Links setting changes
+function Go.Linked(message)
+    local text = message.text
+    local api = CommanderOrders
+    if not (type(api) == "table" and type(api.Linkify) == "function") then return text end
+    local on = not (type(CommanderOrdersDB) == "table" and CommanderOrdersDB.ChatLinks == false)
+    local hit = Go.links[message]
+    if hit and hit.src == text and hit.on == on then return hit.out end
+    local ok, out = pcall(api.Linkify, text, {})
+    if not ok or type(out) ~= "string" then out = text end
+    Go.links[message] = { src = text, on = on, out = out }
+    return out
+end
+
+-- An Orders link's hover, as a chat frame fires it (Orders shows the tooltip)
+function Go.Hover(event, row, link, text)
+    local reg = EventRegistry
+    if type(reg) == "table" and type(reg.TriggerEvent) == "function" then
+        pcall(reg.TriggerEvent, reg, event, row, link, text)
+    end
+end
+
 local function RowMenu(entry)
     if entry.kind == "friend" then
         local short = entry.label
         local conv = S.EnsureDM(short, { class = entry.class })
-        ShowMenu({
+        local items = {
             { text = short, isTitle = true },
             { text = "Whisper In Chat", func = function() WhisperInChat(conv) end },
             { text = "Invite To Group", func = function() Invite(conv) end },
-            { text = "Open In Activity", func = function() H.OpenConversation(conv.key) end },
-            { text = "Ignore...", func = function() ConfirmIgnore(entry.friend.name) end },
-            { text = "Remove Friend...", func = function() ConfirmRemoveFriend(entry.friend.name) end },
-        })
+        }
+        local arrow = Go.Entry(short, conv.guid)
+        if arrow then items[#items + 1] = arrow end
+        items[#items + 1] = { text = "Open In Activity", func = function() H.OpenConversation(conv.key) end }
+        items[#items + 1] = { text = "Ignore...", func = function() ConfirmIgnore(entry.friend.name) end }
+        items[#items + 1] = { text = "Remove Friend...", func = function() ConfirmRemoveFriend(entry.friend.name) end }
+        ShowMenu(items)
     elseif entry.kind == "bn" then
         local conv = S.EnsureBN(entry.friend.bnetID, entry.label)
         conv.gameAccountID = entry.friend.gameAccountID
@@ -667,6 +751,8 @@ local function RowMenu(entry)
             local isFriend = H.IsFriend(conv.name)
             items[#items + 1] = { text = "Whisper In Chat", func = function() WhisperInChat(conv) end }
             items[#items + 1] = { text = "Invite To Group", func = function() Invite(conv) end }
+            local arrow = Go.Entry(conv.name, conv.guid)
+            if arrow then items[#items + 1] = arrow end
             if isFriend then
                 items[#items + 1] = { text = "Remove Friend...", func = function() ConfirmRemoveFriend(conv.target or conv.name) end }
             else
@@ -966,12 +1052,21 @@ local function BuildLineRow(index)
     row:SetScript("OnHyperlinkClick", function(_, link, text, button)
         if SetItemRef then SetItemRef(link, text, button) end
     end)
-    row:SetScript("OnHyperlinkEnter", function(self, link)
+    row:SetScript("OnHyperlinkEnter", function(self, link, text)
+        if type(link) == "string" and link:sub(1, 6) == "addon:" then
+            Go.Hover("ChatFrame.OnHyperlinkEnter", self, link, text)
+            return
+        end
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, link)
         if ok then GameTooltip:Show() end
     end)
-    row:SetScript("OnHyperlinkLeave", function() GameTooltip:Hide() end)
+    -- Leave: Orders hides a tooltip of its own (whatever the client passes
+    -- here), and this row hides whatever it showed
+    row:SetScript("OnHyperlinkLeave", function(self, link, text)
+        Go.Hover("ChatFrame.OnHyperlinkLeave", self, link, text)
+        GameTooltip:Hide()
+    end)
 
     lineRows[index] = row
     return row
@@ -1072,7 +1167,7 @@ function RefreshTranscript(conv, stick)
             end
             top = 16
         end
-        local text = message.text
+        local text = Go.Linked(message)
         local tag = CHANNEL_TAGS[message.ch or ""]
         if tag then text = tag .. text end
         row.text:ClearAllPoints()

@@ -1,15 +1,16 @@
 # Commander_Contacts harnesses
 
-Four luajit checks, all in-addon. Run **all four** before any change.
+Five luajit checks, all in-addon. Run **all five** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit contacts_store_smoke.lua   # store fixture — 131 checks
-/opt/homebrew/bin/luajit contacts_scout_smoke.lua   # scout fixture — 70 checks
-/opt/homebrew/bin/luajit contacts_ui_harness.lua    # UI + host     — 284 checks
+/opt/homebrew/bin/luajit contacts_store_smoke.lua   # store fixture - 131 checks
+/opt/homebrew/bin/luajit contacts_scout_smoke.lua   # scout fixture - 70 checks
+/opt/homebrew/bin/luajit contacts_ui_harness.lua    # UI + host     - 305 checks
+/opt/homebrew/bin/luajit contacts_orders_smoke.lua  # the REAL Commander Orders - 34 checks
 /opt/homebrew/bin/luajit globals_lint.lua           # 5 files, 0 undeclared globals
 ```
 
-All four resolve the AddOns root from their own file location, so they work in a git worktree as
+All five resolve the AddOns root from their own file location, so they work in a git worktree as
 well as in the live AddOns directory. Each is silent on success apart from a one-line count and
 exits non-zero if anything failed.
 
@@ -99,3 +100,28 @@ luajit's bytecode listing names every global a file really touches, so the check
 than heuristic: dump `GGET`/`GSET`, subtract the globals we mean to touch, and anything left is a
 scoping bug or an undeclared API. Add a genuinely new WoW API to `ALLOWED`; do not add a name just
 to make it quiet.
+
+## Commander Orders 3.1 (1.1.0, DECISIONS D12)
+
+`contacts_ui_harness.lua` section **G** drives the three additions against a recording stand-in for
+Orders: Arrow To Them in a grouped friend's menu (a unit follow on their token, named by GUID,
+source Contacts, key follow, the UNIT tint, not silent) and none when they are not grouped or
+Orders is absent; a whisper thread's menu in a raid (the raid token, the short name as the title);
+a logged line run through `Linkify` once and kept per line across redraws; hovering an `addon:`
+link firing EventRegistry's `ChatFrame.OnHyperlinkEnter` / `...Leave` with the row, and an item
+link keeping the game tooltip. `CONTACTS_UI=/path` loads a copy of `CommanderContactsUI.lua` (added
+for this round); five mutants (the entry always offered, the link cache dropped, the hover not
+fired, the log not linked, the title not shortened) are all killed. The globals lint now allows
+`UnitExists`, `UnitIsUnit`, `EventRegistry`, `CommanderOrders` and `CommanderOrdersDB`.
+
+`contacts_orders_smoke.lua` boots the REAL Commander Orders (its chat file included) over
+`Commander_Orders/Harness/orders_mock.lua` and the Contacts files after it. A loads clean; B Arrow
+To Them on a grouped person's thread is a real unit follow (Contacts, follow) on their token, in the
+UNIT tint, that does not clear on arrival, with the arrow on it and Orders' "Waypoint set" line
+once; after a roster shuffle Orders follows the same person by GUID; asking for someone else moves
+the one follow; C not grouped offers nothing; D a logged "Elwynn Forest 42.5, 61.2" carries
+Orders' own [Go] link and clicking it is Orders' Go, a bare "/way 45 66" stays text, and with
+Orders' Chat Links off the line is drawn plain; E hovering the link shows Orders' tooltip. Passing
+the GUID is equivalent against the real Orders (Orders records the token's GUID itself when a
+follow names none); the UI harness's G1 holds Contacts to passing it.
+

@@ -125,3 +125,29 @@ for that reason. Friends are filtered at list time, not record time, so a friend
 comes back into the list with their history intact; "Not Interested" is the opposite — the name is
 never recorded again. The record (`Performers`, `Dismissed`) lives beside the conversations and is
 equally out of reach of Restore Defaults (harness S18).
+
+## D12 - Commander Orders: Arrow To Them, and a [Go] in the log
+
+1.1.0, 2026-10-05 (Commander Orders 3.1, its SPEC 5). Three additions, each looked up at the moment
+it is needed, so the window is unchanged without Orders (now in the OptionalDeps so it loads first).
+
+**Arrow To Them** is offered in a person's menu (a friend's row, a whisper thread) only while they
+stand in your party or raid: Orders follows them as a unit follow named by GUID (source `Contacts`,
+key `follow`), so asking for someone else moves the one follow, Orders finds the same person again
+after the roster shuffles, and catching up with them does not end it. The press goes through
+`CommanderOrders.GoTo`, not silent, so Orders says "Waypoint set: <name>" or its ONE refusal line in
+its own words. Nobody ungrouped is offered anything: the friends list's zone name is a zone, not a
+place, and "go to their zone" is not a Go-to (Orders' DECISIONS D31, the 3.1 "Go to" words: Go to a
+place, follow a person). The words are the SPEC's "Arrow to them", in this window's Title Case.
+
+**A [Go] in the log.** Each logged line is run through `CommanderOrders.Linkify` when it is drawn
+and the result is kept per line (until its text or Orders' Chat Links setting changes), so a
+`/way ...` or "Zone 45.2, 66.8" someone sent carries the same [Go] as it does in chat. A line from
+the log is given no live context: where the sender stood then is not where anybody stands now, so a
+bare "/way 45 66" stays text; a line naming its zone or map is linked.
+
+**Hover.** `GameTooltip:SetHyperlink` cannot show an `addon:` link, so hovering one fires
+EventRegistry's `ChatFrame.OnHyperlinkEnter` / `ChatFrame.OnHyperlinkLeave` with the row, the way a
+chat frame does, and Orders shows its tooltip (A14). Clicks already reached Orders through
+`SetItemRef`.
+

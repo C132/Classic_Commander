@@ -74,6 +74,13 @@ UIDropDownMenu_SetWidth UIDropDownMenu_SetSelectedValue UIDropDownMenu_SetText
 ToggleDropDownMenu
 GameFontNormal GameFontNormalLarge GameFontNormalSmall GameFontHighlight
 GameFontHighlightSmall GameFontDisableSmall
+UnitExists UnitIsUnit EventRegistry
+]]
+
+-- Commander Orders 3.1 (optional, looked up at the moment of use): the unit
+-- follow, Linkify and the Chat Links setting it reads for its cache
+allow[[
+CommanderOrders CommanderOrdersDB
 ]]
 
 local problems, scanned = 0, 0

@@ -121,3 +121,16 @@ Symptom if wrong: no "Wears the … title" suggestions even standing next to a t
 Read straight off Muster's own source (`ReadInspectArena`, `RecordFor`), so this only breaks if
 Muster changes shape. The rating feed is optional; without Muster the scout runs on the scoreboard
 and titles alone.
+
+## A14 - A row's OnHyperlinkEnter / OnHyperlinkLeave get (self, link, text), and Orders' hover answers EventRegistry
+
+1.1.0. The transcript rows fire EventRegistry's `ChatFrame.OnHyperlinkEnter` (row, link, text) for an
+`addon:` link, as 2.5.6's chat frames do (Blizzard_ChatFrameBase OnHyperlinkEnter), and Commander
+Orders' chat file shows its tooltip from that callback; on leave the row fires
+`ChatFrame.OnHyperlinkLeave` and hides GameTooltip either way, so a leave the client calls with no
+arguments still clears it. Verified offline only (contacts_orders_smoke.lua E). Test: with Commander
+Orders loaded, open a thread where someone sent "Elwynn Forest 42.5, 61.2", hover the [Go]: Orders'
+tooltip (the place and "Click: Go. Shift-click: share. ...") appears and goes on leaving; click it:
+the arrow points there. Restart the client after this update (Commander_Events and Commander_Orders
+gained new files).
+

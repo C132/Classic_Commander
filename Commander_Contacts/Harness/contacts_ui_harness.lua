@@ -792,7 +792,8 @@ Load(ADDONS .. "/Commander_Contacts/CommanderContactsStore.lua")
 Load(ADDONS .. "/Commander_Contacts/CommanderContactsScout.lua")
 Load(ADDONS .. "/Commander_Contacts/CommanderContactsDB.lua")
 Load(ADDONS .. "/Commander_Contacts/CommanderContacts.lua")
-Load(ADDONS .. "/Commander_Contacts/CommanderContactsUI.lua")
+-- Mutation hook (Orders 3.1 work): CONTACTS_UI=/path of a copy to load instead
+Load(os.getenv("CONTACTS_UI") or (ADDONS .. "/Commander_Contacts/CommanderContactsUI.lua"))
 
 local S = CommanderContactsStore
 local H = CommanderContacts
@@ -1492,6 +1493,103 @@ EQ(T.Count(), 0, "S17 Forget Suggestions empties the record")
 CHECK(CommanderContactsDB.Dismissed.Topdps, "S17 but dismissals stay")
 CHECK(CommanderContacts_Defaults.Performers == nil and CommanderContacts_Defaults.Dismissed == nil, "S18 the record is out of reach of Restore Defaults")
 NoErrors("S19 no errors through scouting")
+
+-- ===========================================================================
+-- G. Commander Orders 3.1 (1.1.0, DECISIONS D12): Arrow To Them, [Go] links
+-- in the log, and an Orders link's hover. Orders is a recording stand-in
+-- here; contacts_orders_smoke.lua drives the same against the real Orders.
+-- ===========================================================================
+do
+    local goes, linkified, triggered = {}, {}, {}
+    CommanderOrders = {
+        GoTo = function(target, opts)
+            local spec = {}
+            for k, v in pairs(target or {}) do spec[k] = v end
+            for k, v in pairs(opts or {}) do spec[k] = v end
+            goes[#goes + 1] = spec
+            return "w1"
+        end,
+        Linkify = function(text)
+            linkified[#linkified + 1] = text
+            local out = text:gsub("(Nagrand %d+%.%d, %d+%.%d)", "%1 |cff71d5ff|Haddon:CommanderOrders:w:1951:0.4:0.6:|h[Go]|h|r")
+            return out
+        end,
+    }
+    EventRegistry = { TriggerEvent = function(_, event, ...) triggered[#triggered + 1] = { event = event, ... } end }
+
+    -- Miralei is a friend; in your party, her menu offers Arrow To Them
+    H.ShowTab("friends")
+    SetGroup("PARTY", { "P-mira" })
+    Click(RowFor("friend:Miralei"), "RightButton")
+    local m = {}
+    for _, info in ipairs(menuCaptured) do m[info.text] = info end
+    CHECK(m["Arrow To Them"] ~= nil, "G1 a grouped friend's menu offers Arrow To Them")
+    if m["Arrow To Them"] then m["Arrow To Them"].func() end
+    local g = goes[#goes] or {}
+    EQ(g.kind, "unit", "G1 Orders follows them (a unit follow)")
+    EQ(g.unit, "party1", "G1 on their group token")
+    EQ(g.guid, "P-mira", "G1 named by GUID, so Orders finds them again")
+    EQ(g.source, "Contacts", "G1 source Contacts")
+    EQ(g.key, "follow", "G1 one follow, moved by the next ask")
+    EQ(g.title, "Miralei", "G1 titled with their name")
+    EQ(g.icon, "UNIT", "G1 in the group-member tint")
+    CHECK(not g.silent, "G1 not silent: Orders says Waypoint set or why not")
+    -- Not grouped: nothing offered (a zone name is not a place)
+    SetGroup(nil)
+    Click(RowFor("friend:Miralei"), "RightButton")
+    m = {}
+    for _, info in ipairs(menuCaptured) do m[info.text] = info end
+    EQ(m["Arrow To Them"], nil, "G2 not in your group: no Arrow To Them")
+    -- A whisper thread's menu too, by the thread's GUID, in a raid
+    SetGroup("RAID", { "P-ally", "P-vexa" })
+    H.ShowTab("activity")
+    Click(RowFor("dm:Vexa-Blackrock"), "RightButton")
+    m = {}
+    for _, info in ipairs(menuCaptured) do m[info.text] = info end
+    CHECK(m["Arrow To Them"] ~= nil, "G3 a grouped stranger's thread offers it too")
+    if m["Arrow To Them"] then m["Arrow To Them"].func() end
+    g = goes[#goes] or {}
+    EQ(g.unit, "raid3", "G3 on the raid token")
+    EQ(g.title, "Vexa", "G3 titled with the short name")
+    -- Without Orders: nothing offered
+    local keep = CommanderOrders
+    CommanderOrders = nil
+    Click(RowFor("dm:Vexa-Blackrock"), "RightButton")
+    m = {}
+    for _, info in ipairs(menuCaptured) do m[info.text] = info end
+    EQ(m["Arrow To Them"], nil, "G4 without Commander Orders: nothing offered")
+    CommanderOrders = keep
+    SetGroup(nil)
+
+    -- A logged line naming a zone and coordinates carries Orders' [Go]
+    Whisper("CHAT_MSG_WHISPER", "meet at Nagrand 42.5, 61.2 now", "Vexa-Blackrock", "P-vexa")
+    Click(RowFor("dm:Vexa-Blackrock"))
+    local linkedRow
+    for _, f in ipairs(frames) do
+        if f.__kind == "Frame" and f.__shown and f.text and f.author and f.text.__text
+            and tostring(f.text.__text):find("|h[Go]|h", 1, true) then linkedRow = f end
+    end
+    CHECK(linkedRow ~= nil, "G5 a logged line carries Orders' [Go] link")
+    local n = #linkified
+    Commander.Notify(COMMANDER_CONTACTS_EVENTS.UPDATE)
+    Click(RowFor("dm:Vexa-Blackrock"))
+    EQ(#linkified, n, "G5 kept per line: a redraw does not ask again")
+    -- Hovering an Orders link fires what a chat frame fires
+    if linkedRow then
+        triggered = {}
+        linkedRow.__scripts.OnHyperlinkEnter(linkedRow, "addon:CommanderOrders:w:1951:0.4:0.6:", "[Go]")
+        EQ(triggered[1] and triggered[1].event, "ChatFrame.OnHyperlinkEnter", "G6 hovering [Go] fires the chat frame's hover")
+        EQ(triggered[1] and triggered[1][1], linkedRow, "G6 ...with the row as the frame")
+        linkedRow.__scripts.OnHyperlinkLeave(linkedRow, "addon:CommanderOrders:w:1951:0.4:0.6:", "[Go]")
+        EQ(triggered[2] and triggered[2].event, "ChatFrame.OnHyperlinkLeave", "G6 and leaving it, its leave")
+        triggered = {}
+        linkedRow.__scripts.OnHyperlinkEnter(linkedRow, "item:19019", "[Thunderfury]")
+        EQ(#triggered, 0, "G6 an item link keeps the game tooltip")
+    end
+    CommanderOrders = nil
+    EventRegistry = nil
+    NoErrors("G7 no errors through the Orders additions")
+end
 
 if fails > 0 then
     io.write(string.format("contacts ui harness: %d/%d checks FAILED\n", fails, checks))
