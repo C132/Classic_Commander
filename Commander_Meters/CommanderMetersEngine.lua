@@ -31,6 +31,7 @@ local E = CommanderMetersEngine
 local band = bit.band
 local floor = math.floor
 local max = math.max
+local DS = CommanderMetersDispel
 
 -- ---------------------------------------------------------------------------
 -- Tuning constants (documented in DECISIONS.md; deliberately not settings)
@@ -59,6 +60,7 @@ local AFFIL_GROUP = (COMBATLOG_OBJECT_AFFILIATION_MINE or 0x1)
     + (COMBATLOG_OBJECT_AFFILIATION_PARTY or 0x2)
     + (COMBATLOG_OBJECT_AFFILIATION_RAID or 0x4)
 local TYPE_PLAYER = COMBATLOG_OBJECT_TYPE_PLAYER or 0x400
+local REACT_HOSTILE = COMBATLOG_OBJECT_REACTION_HOSTILE or 0x40
 local TYPE_MINION = (COMBATLOG_OBJECT_TYPE_PET or 0x1000)
     + (COMBATLOG_OBJECT_TYPE_GUARDIAN or 0x2000)
     + (COMBATLOG_OBJECT_TYPE_OBJECT or 0x4000)
@@ -92,6 +94,7 @@ local petKeyCache = {}        -- petName -> spellName -> "petName: spellName"
 local capture = nil           -- raw-event dump target (debug command)
 local anomalies = {}          -- anomaly -> count; parse failures are loud, not silent
 local ccNames = {}            -- CC aura names (UI resolves from spell IDs at login)
+local corr = DS.NewCorrelator() -- our Mass Dispels ↔ the enemy shields they shattered
 
 -- Both the live fight and Overall receive every credit; this pair is the
 -- crediting loops' whole world. [1] is refreshed per event, [2] on reset.
@@ -128,6 +131,7 @@ local function NewActor(guid, name, class, isPlayer)
         heal = 0, overheal = 0, absorb = 0,
         deaths = 0,
         ints = 0, dispels = 0, ccb = 0, -- utility counters
+        purges = 0, cleanses = 0, -- dispels split: offensive (buffs off) / defensive (debuffs off)
         casts = 0,              -- successful casts (APM numerator)
         activeDmg = 0, lastDmgTs = nil,
         activeHeal = 0, lastHealTs = nil,
@@ -140,7 +144,8 @@ local function NewActor(guid, name, class, isPlayer)
         sourcesN = 0,
         heals = {},             -- key -> ability record (healing done)
         intSpells = {},         -- interrupted spell name -> count record
-        dispelSpells = {},      -- dispelled aura name -> count record
+        purgeSpells = {},       -- aura name -> count record, taken OFF an enemy (purge / steal / shatter)
+        cleanseSpells = {},     -- aura name -> count record, taken off a friend (cleanse)
         ccSpells = {},          -- broken CC aura name -> count record
         castSpells = {},        -- cast spell name -> count record
         sDmg = nil, sHeal = nil, sTaken = nil, sCasts = nil, -- 1s buckets, created on demand
@@ -630,19 +635,93 @@ local DISPATCH = {
     SPELL_AURA_BROKEN       = { kind = 9 },
     SPELL_AURA_BROKEN_SPELL = { kind = 9 },
     SPELL_CAST_SUCCESS      = { kind = 10 },
+    -- Auras matter to this engine only as the shields a Mass Dispel can
+    -- break (CommanderMetersDispel): one table lookup, then out
+    SPELL_AURA_APPLIED      = { kind = 11 },
+    SPELL_AURA_REMOVED      = { kind = 12 },
 }
 
--- Utility family bookkeeping: which actor fields each kind feeds
+-- Utility family bookkeeping: which actor fields each kind feeds (dispels
+-- feed two counters — the total and their side — see CreditDispel)
 local UTILITY_FIELDS = {
     [7] = { counter = "ints", map = "intSpells" },
-    [8] = { counter = "dispels", map = "dispelSpells" },
     [9] = { counter = "ccb", map = "ccSpells" },
 }
+
+-- One removal credited to a group actor in both segments: the total, the
+-- side (purge or cleanse) and the aura's record on that side's list.
+local function CreditDispel(og, on, oc, op, opet, what, whatId, offensive)
+    for i = 1, 2 do
+        local a = GetOwnerActor(segPair[i], og, on, oc, op, opet)
+        a.dispels = a.dispels + 1
+        local map
+        if offensive then
+            a.purges = a.purges + 1
+            map = a.purgeSpells
+        else
+            a.cleanses = a.cleanses + 1
+            map = a.cleanseSpells
+        end
+        local rec = map[what]
+        if not rec then
+            rec = NewAbility(what, nil, whatId)
+            map[what] = rec
+        end
+        rec.total = rec.total + 1
+        rec.count = rec.count + 1
+    end
+end
+
+-- Inside a match (D28) the gates purge and the opening Mass Dispel are the
+-- match's first actions, so a dispel opens its fight there; anywhere else
+-- utility holds a fight open but never opens one.
+local function UtilityFight(ts)
+    if current then return true end
+    if not matchMode then return false end
+    OpenFight(ts)
+    return true
+end
+
+-- A shield one of OUR Mass Dispels broke (the log names no dispel for it):
+-- an offensive removal for that priest. `who` is the landing's info.
+local function CreditShatter(who, dst, what, whatId, ts)
+    if not who or not UtilityFight(ts) then return end
+    lastEventTs = ts
+    lastActivityTs = ts
+    segPair[1] = current
+    CreditDispel(who.guid, who.name, classOf[who.guid], true, nil, what, whatId, true)
+    corr:Credited(dst, whatId, ts, true)
+end
+
+-- One of our Mass Dispels landed: shields that faded off the enemy just
+-- before this line are its doing
+local function MassDispelLanded(guid, name, ts)
+    local claimed, land = corr:Landed(guid, "us", ts, { guid = guid, name = name })
+    if not claimed then return end
+    for _, f in ipairs(claimed) do
+        CreditShatter(land.info, f.dst, f.name, f.id, ts)
+    end
+end
 
 function E.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24)
     local d = DISPATCH[sub]
     if not d then return end
+
+    if d.kind >= 11 then
+        -- A shield on an ENEMY (the only side our Mass Dispel breaks):
+        -- its clock on, its fade paired with our landing. Never captured,
+        -- never a fight of its own.
+        local id = a12
+        if not DS.SHATTERABLE[id] or band(df or 0, REACT_HOSTILE) == 0 then return end
+        if d.kind == 11 then
+            corr:Applied(dg, id, ts)
+        else
+            local land = corr:Faded(dg, "them", id, a13, ts)
+            if land then CreditShatter(land.info, dg, a13, id, ts) end
+        end
+        return
+    end
 
     if capture then
         local n = #capture
@@ -699,18 +778,43 @@ function E.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         return
     end
 
-    if kind == 7 or kind == 8 or kind == 9 then
-        -- Utility family: interrupts (7), dispels/steals (8), CC breaks (9).
-        -- Never opens a fight; counts only inside one. The recorded key is
-        -- what was interrupted / dispelled / broken, never the tool used.
-        if not current then return end
+    if kind == 8 then
+        -- SPELL_DISPEL / SPELL_STOLEN: prefix = the dispel cast, extra = the
+        -- removed aura (a15, a16), a18 its type — BUFF off = offensive
+        -- (purge / steal), DEBUFF off = defensive (cleanse). Keyed by what
+        -- was removed, never the tool; opens the match's fight (D28).
+        local og, on, oc, op, opet = ResolveOwner(sg, sn, sf)
+        if not og then return end
+        local what, whatId = a16, type(a15) == "number" and a15 or nil
+        if type(what) ~= "string" then
+            Anomaly("utility event with unexpected layout (" .. sub .. ")")
+            return
+        end
+        -- A shield whose shatter was already read off its fade: the log
+        -- naming it now is the same removal
+        if whatId and corr:Named(dg, whatId, ts) then return end
+        if DS.MASS_DISPEL[a12] then MassDispelLanded(og, on, ts) end
+        if not UtilityFight(ts) then return end
+        local offensive = DS.Offensive(sub, a18)
+        if offensive == nil then offensive = band(df or 0, REACT_HOSTILE) ~= 0 end
+        lastEventTs = ts
+        lastActivityTs = ts
+        segPair[1] = current
+        CreditDispel(og, on, oc, op, opet, what, whatId, offensive)
+        return
+    end
+
+    if kind == 7 or kind == 9 then
+        -- Utility family: interrupts (7) and CC breaks (9). Holds a fight
+        -- open; opens one only inside a match (D28). The recorded key is
+        -- what was interrupted / broken, never the tool used.
         local og, on, oc, op, opet = ResolveOwner(sg, sn, sf)
         if not og then return end
         local what, whatId
         if kind == 9 then
             what, whatId = a13, a12   -- prefix spell IS the broken aura
         else
-            what, whatId = a16, a15   -- extra: the interrupted/dispelled aura
+            what, whatId = a16, a15   -- extra: the interrupted spell
         end
         if type(what) ~= "string" then
             Anomaly("utility event with unexpected layout (" .. sub .. ")")
@@ -723,6 +827,7 @@ function E.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
             end
             if not ccNames[what] then return end
         end
+        if not UtilityFight(ts) then return end
         lastEventTs = ts
         lastActivityTs = ts
         segPair[1] = current
@@ -748,6 +853,11 @@ function E.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         -- Counts only inside an open fight and never opens or holds one:
         -- the DPS/HPS denominators stay exactly what they were, and a
         -- post-kill rebuff cannot pad a fight.
+        -- One of ours casting Mass Dispel is a landing whatever the fight
+        -- state: the shields it breaks are credited by the fade
+        if a12 == DS.MASS_DISPEL_CAST and band(sf, AFFIL_GROUP) ~= 0 and band(sf, TYPE_PLAYER) ~= 0 then
+            MassDispelLanded(sg, sn, ts)
+        end
         if not current then return end
         if band(sf, AFFIL_GROUP) == 0 or band(sf, TYPE_PLAYER) == 0 then return end
         if AUTO_CASTS[a12] then return end
@@ -1154,9 +1264,14 @@ E.MODES = {
     { key = "INT", label = "INTERRUPTS", value = ValInts, rateLabel = nil,
         primary = "total", series = nil,
         lists = { { title = "SPELLS INTERRUPTED", field = "intSpells", records = true } } },
+    -- Dispels: every removal, split by side — the small column reads
+    -- "offensive/defensive", the tooltip and the detail lists name both
     { key = "DISPEL", label = "DISPELS", value = ValDispels, rateLabel = nil,
         primary = "total", series = nil,
-        lists = { { title = "AURAS DISPELLED", field = "dispelSpells", records = true } } },
+        split = { { label = "OFFENSIVE", field = "purges", color = "statUtil" },
+                  { label = "DEFENSIVE", field = "cleanses", color = "statCleanse" } },
+        lists = { { title = "OFFENSIVE · PURGED / STOLEN", field = "purgeSpells", records = true },
+                  { title = "DEFENSIVE · CLEANSED", field = "cleanseSpells", records = true } } },
     { key = "CCBREAK", label = "CC BREAKS", value = ValCC, rateLabel = nil,
         primary = "total", series = nil,
         lists = { { title = "CC BROKEN", field = "ccSpells", records = true } } },
@@ -1278,8 +1393,10 @@ end
 -- session, so nothing mutates them afterwards.
 -- v2: actors gained the APM fields (casts/castSpells/sCasts); a v1
 -- snapshot would paint nil counters, so it is refused like any other
--- malformed one
-local SESSION_V = 2
+-- malformed one. v3: the dispel split (purges/cleanses and their two
+-- record lists replaced dispelSpells) — a v2 actor cannot say which side
+-- its dispels were on, so v2 is refused the same way.
+local SESSION_V = 3
 local SESSION_WINDOW = 600
 
 function E.ExportSession(now)

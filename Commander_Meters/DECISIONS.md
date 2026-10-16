@@ -1388,3 +1388,118 @@ an unannounced feign undone by a cast / a cast start / a swing / a living
 reading, the auras handed back, what must not revive, first blood passing
 to the real death, a localized name); UI 347 → 351 (the enemy hunter
 feigns and cancels in the live flow). Unverified in game.
+
+## D29. Dispels — both sides, Mass Dispel's shields, and a dispel log (2026-10-07)
+
+Devin: "commander meters is really not tracking everything I offensively
+and defensively dispel when I'm using my MD in arena. I want the dispels
+section to properly work for both offensive and defensive dispels as well
+as a replay like dispel log that shows the sequencing for what cast got
+what buffs."
+
+What was actually wrong, in order of how much it cost him:
+
+1. **Mass Dispel's shield break was invisible.** On this client Mass Dispel
+   is three spells (SpellEffect, build 2.5.6.69795): 32375 (the cast; DISPEL
+   Magic on allies), which triggers 32592 (DISPEL Magic on enemies), which
+   triggers 39897 — effect 108 DISPEL_MECHANIC, mechanic 29 IMMUNE_SHIELD:
+   Divine Shield, Ice Block, Blessing of Protection, Divine Protection. The
+   first two log SPELL_DISPEL; a mechanic removal does not (A40) — the
+   shield just fades. Neither engine ever saw the play that matters most.
+2. **The meter window's DISPELS mode dropped the opening.** Utility never
+   opened a fight (D17), and in an arena the fight opened on the first blow
+   (D28), so the gates purge and an opening Mass Dispel landed before any
+   fight existed and were thrown away.
+3. **No side.** DISPELS was one number keyed by aura, purges and cleanses
+   mixed. The arena engine split them by comparing teams, which fell
+   through to "defensive" whenever the far end was a pet (Purge on a
+   felhunter).
+4. **Nothing showed the sequence.** The replay's meters band had no dispel
+   column and the six-row moments feed interleaved dispels with everything.
+
+The fix:
+
+- **CommanderMetersDispel.lua** (new, pure, loaded before both engines):
+  the side rule — the removed aura's TYPE, SPELL_DISPEL's 18th argument:
+  BUFF off = offensive, DEBUFF off = defensive, SPELL_STOLEN always
+  offensive; the engines' sides decide only when the log leaves it out —
+  and the **Mass Dispel correlator**. A landing (the 32375 cast success,
+  or any SPELL_DISPEL from the family) and a shatterable aura fading off
+  the OTHER side pair within a lopsided window: 0.3 s fade-before-landing
+  (log print order only), 0.6 s after. A shield that ran its full DB2
+  length (±0.5 s) expired; an Ice Block cancelled during the 1.5 s cast
+  fades well before the landing and is not credited. If the log DOES name
+  the removal (A40 wrong, or a BoP the 32592 half dispelled normally), the
+  correlator either suppresses the inference (named first) or hands the
+  engine its earlier credit to upgrade (named after) — never two counts.
+- **Group engine**: actors gained `purges` / `cleanses` and two record
+  lists, `purgeSpells` / `cleanseSpells` (replacing `dispelSpells`;
+  session snapshot v3 refuses v2, the D26 precedent). Inside a match a
+  dispel OPENS the fight (D28 amended: the gates purge is the match's first
+  action); outside one utility still never opens a fight. It sees aura
+  APPLIED/REMOVED now, but only to ask "is this an enemy shield?" — one
+  lookup, out. Our Mass Dispel's shattered shields land on the offensive
+  list by name.
+- **Arena engine**: the side rule, a pet target folds to its owner's seat
+  (counted as the warlock's loss, logged with the pet's name), seats gained
+  `dispelFails` (SPELL_DISPEL_FAILED, and SPELL_MISSED of a dispel tool —
+  RESIST, IMMUNE under Cloak) and `shatters`. The match gained the **dispel
+  log**: `dlog` = casts in time order, `{t, src, id, name, pet, hits}`, a
+  hit `{dst, pet, dn, id, name, off, steal, inf, r}`. One caster's
+  same-named removals within 0.6 s are one cast (a Mass Dispel's ten arrive
+  in one instant; Abolish Poison's pulses are pulses); the Mass Dispel cast
+  success opens its record so a Mass Dispel into nothing still reads as a
+  press. Bounded: 400 casts × 24 hits. DISPEL moments carry `by` (the cast
+  name), `byId`, `pet`, `inf`. A match saved before the log rebuilds one
+  from its DISPEL moments on first read (`_dlog`, session-only, stripped).
+  The DISPEL stat's `count` is the offensive share (`countIf` on the
+  ledger pass), so any pane can print the split as of any cursor.
+- **Replay**: a DISPELS header button toggles a 300 px drawer to the right
+  (`db.ArenaDispelLog`, default open; the content column is now a fixed
+  width so the drawer widens the window and never stretches the replay).
+  Top: OURS / THEIRS / OFFENSIVE / DEFENSIVE filter chips. Then a per-seat
+  tally as of the cursor — OFF, DEF, MISS, LOST (their buffs purged), FREED
+  (their debuffs dispelled). Then the log: a cast line (time, caster, the
+  spell, "3 removed" / "took nothing") and its removals under it in log
+  order (aura → target, tagged PURGE / STEAL / SHATTER / DISPEL / RESISTED
+  / IMMUNE). Past-the-cursor lines dim, the cast at the cursor is lit, a
+  click moves the cursor; the list follows the cursor until the wheel
+  scrolls it and follows again when the cursor moves. A finished match
+  reads from the gates; a live one keeps the newest at the bottom. While
+  the drawer is open, dispels mark the timeline as dots on the caster's
+  side (offensive cyan, defensive mint — `statCleanse`, a new semantic
+  color). The moments feed names the cast ("PURGE Thorns off Leafshade ·
+  Mass Dispel", SHATTER for an inferred break).
+- **Meter window**: DISPELS rows read total + "off/def" in the small
+  column; the tooltip names both sides and each side's top auras; the
+  detail lists OFFENSIVE · PURGED / STOLEN and DEFENSIVE · CLEANSED (a
+  records list in the second slot keeps its icons and whole names —
+  ShortName would cut "Mind-numbing Poison" at the dash). A fifth arena
+  mode, ARENA DISPELS, shows both teams with the split. The arena seat
+  tooltip gives off/def, shields shattered, dispels that took nothing, and
+  purged-off / cleansed-off.
+
+*Rejected*: guessing a shatter from a Mass Dispel CAST alone (no fade →
+nothing broken; a cast is not a removal); a fixed window both ways (a
+cancelled Ice Block during the cast would be credited); a second meter mode
+per side (the split belongs on one row — two modes would rank the same
+priest twice); adding a dispel column to the replay's meters band (93 px of
+names left for 63, and the drawer's tally says more).
+
+Harness: engine 862 → 910 (record-sum and split invariants on every
+actor; Stage N: the gates purge in and out of a match, our Mass Dispel's
+bubble on the offensive list, named-later not double counted, expiry and
+own-team shields not credited, Overall agrees); arena 453 → 519 (Stage J:
+pet folding, sides with and without an aura type, cast grouping, both
+Mass Dispel halves under one press, a whiff, the shatter in both log
+orders, named-later upgrade, named-first suppression, full-length expiry,
+the cancelled Ice Block, own-team and enemy-priest shields, failed and
+missed dispels, the stat split / tally / index as of a cursor, a pre-log
+match rebuilt, the store round trip); UI 353 → 399 (the drawer: lines,
+order, tags, tooltips, click, dimming, filters, wheel/follow, toggle and
+the remembered choice, ARENA DISPELS rows, the DISPELS mode's split, tooltip
+and both detail lists). The canned arena match gained a Mass Dispel
+(roots off the mage, Gift of the Wild and Thorns off the enemy) and a
+resisted Devour Magic; the canned fight a purge. Unverified in game — A40
+to A42.
+

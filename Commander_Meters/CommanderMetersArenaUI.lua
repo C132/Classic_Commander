@@ -19,6 +19,11 @@
 --   METERS      one table per team: damage, healing, taken, control,
 --               kicks, kills/deaths — as of the cursor
 --   MOMENTS     the ledger around the cursor; click one to jump there
+--   DISPEL LOG  a drawer to the right (header button DISPELS): every
+--               dispel of the match cast by cast — who pressed what, and
+--               which auras it took off whom, offensive and defensive,
+--               Mass Dispel's shattered shields included — with a per-seat
+--               tally above it, both read as of the cursor
 --
 -- The cursor is the whole idea: every band reads the match AS OF the
 -- cursor time, so dragging it back to 1:12 shows the cards, the bars, the
@@ -69,6 +74,13 @@ local METER_COLS = { -- key, label, color, width
     { "CC", "CC", "statCC", 36 }, { "KICKS", "KICK", "statUtil", 30 }, { "KILLS", "K/D", "statDeath", 30 },
 }
 local FEED_ROWS = 6
+local DLOG_W = 300           -- the dispel log drawer (the window widens by it when open)
+local DLOG_LINES_MAX = 80    -- pooled log lines; as many show as the height fits
+local DLOG_TAG_W = 60
+local DLOG_TALLY = { -- field, label, color, width: the per-seat block, as of the cursor
+    { "off", "OFF", "statUtil", 36 }, { "def", "DEF", "statCleanse", 36 },
+    { "fail", "MISS", "danger", 38 }, { "lost", "LOST", "textDim", 38 }, { "cleansed", "FREED", "textDim", 42 },
+}
 local FEED_H = ROW_H + FEED_ROWS * ROW_H
 local HINT_H = 12
 local MAX_COLUMNS = 320
@@ -79,27 +91,10 @@ local CLASS_RING = "Interface\\TargetingFrame\\UI-Classes-Circles"
 local TRINKET_SPELL = { id = 42292, name = "PvP Trinket" }  -- the medallion's spell, for the tooltip
 local TRINKET_BADGE = 16
 local TRINKET_CD = 120
--- The medallion's own art per faction, not the spell's generic icon
-local TRINKET_ICON = {
-    Alliance = "Interface\\Icons\\INV_Jewelry_TrinketPVP_01",
-    Horde = "Interface\\Icons\\INV_Jewelry_TrinketPVP_02",
-}
--- Race file tokens (UnitRace's second return) to faction; the scoreboard's
--- faction field is the arena SIDE in arenas, so the race is the source
-local RACE_FACTION = {
-    Human = "Alliance", Dwarf = "Alliance", NightElf = "Alliance", Gnome = "Alliance", Draenei = "Alliance",
-    Orc = "Horde", Scourge = "Horde", Tauren = "Horde", Troll = "Horde", BloodElf = "Horde",
-}
-
-local function SeatFaction(seat)
-    local f = seat.race and RACE_FACTION[seat.race]
-    if f then return f end
-    -- Unknown race: our team is our faction; the enemy is most often the
-    -- other one (a same-faction arena shows the wrong medallion on an
-    -- unread enemy, which is the honest limit of the log)
-    local mine = UnitFactionGroup and UnitFactionGroup("player") or "Alliance"
-    if seat.team == "us" then return mine end
-    return mine == "Alliance" and "Horde" or "Alliance"
+-- The medallion's own art per faction, never the spell's icon (it reads as
+-- a dispel); the shared Commander.TrinketIcon picks it
+local function SeatTrinketIcon(seat)
+    return Commander.TrinketIcon(nil, seat and seat.race, not seat or seat.team ~= "us")
 end
 local POWER_COLOR = {
     [0] = { 0.30, 0.55, 0.95 },   -- mana
@@ -119,15 +114,22 @@ local view = {
     speedIndex = 1,
     dragging = false,
     sideOffset = 0,     -- sidebar scroll (rows)
+    dlog = true,        -- the dispel log drawer is open (db.ArenaDispelLog)
+    dlogOffset = 0,     -- its scroll (lines)
+    dlogFollow = true,  -- the list follows the cursor; the wheel stops it
+    dlogFollowT = nil,  -- ...until the cursor moves again
+    dlogUs = true, dlogThem = true,  -- filters: whose casts
+    dlogOff = true, dlogDef = true,  -- filters: which side of a dispel
 }
 
-local root, content, head, matchBtn, shareBtn, sumText
+local root, content, head, matchBtn, shareBtn, dlogBtn, sumText
 local side = {}         -- the match list: frame, rows, foot
 local teams = {}        -- [1] us, [2] them: { head, cards = {} }
 local vsBar = {}
 local plot, ctrl, axis = {}, {}, {}
 local meters = {}       -- [1], [2]: { head, rows = {} }
 local feed = {}
+local dlog = {}         -- the dispel log drawer: frame, chips, tally, lines
 local hint
 local bands = {}
 local layoutRows = nil
@@ -188,15 +190,8 @@ end
 local function ResultText(m)
     if not m.result then return IsLive(m) and "LIVE" or "?" end
     if m.result == "WIN" or m.result == "LOSS" then
-        local tm = m.teams.us
-        if tm.ratingBefore and tm.ratingAfter then
-            return format("%s %+d", m.result, tm.ratingAfter - tm.ratingBefore)
-        end
-        for _, seat in pairs(m.seats) do
-            if seat.team == "us" and seat.sb and seat.sb.ratingChange then
-                return format("%s %+d", m.result, seat.sb.ratingChange)
-            end
-        end
+        local _, _, change = A.OurRating(m)
+        if change then return format("%s %+d", m.result, change) end
     end
     return m.result
 end
@@ -217,7 +212,14 @@ local function MatchTitle(m)
         Esc(ResultColor(m)), ResultText(m), FmtTime(dur))
 end
 
-local function IconTexture(rec) return U.IconOf(rec) end
+local function IconTexture(rec)
+    -- A medallion press shows the medallion, on the moment list as on the badge
+    if type(rec) == "table" and rec.kind == "TRINKET" and rec.x == "TRINKET" then
+        local m = Match()
+        return SeatTrinketIcon(m and rec.src and m.seats[rec.src])
+    end
+    return U.IconOf(rec)
+end
 
 local function OpenMenu(builder, anchor) U.OpenMenu(builder, anchor) end
 
@@ -234,13 +236,16 @@ end
 -- ---------------------------------------------------------------------------
 
 local KIND_COLOR = {
-    CC = "statCC", CCFAIL = "danger", KICK = "statUtil", DISPEL = "statUtil",
+    CC = "statCC", CCFAIL = "danger", KICK = "statUtil", DISPEL = "statCleanse",
     DEATH = "statDeath", CD = "statCd", TRINKET = "statCd", DRINK = "statMana",
     DRAIN = "statMana", GATES = "accent", END = "accent", SPEC = "textDim", FEIGN = "textDim",
 }
 
 local function MomentWord(e)
-    if e.kind == "DISPEL" then return e.x == "PURGE" and "PURGE" or "DISPEL" end
+    if e.kind == "DISPEL" then
+        if e.x ~= "PURGE" then return "DISPEL" end
+        return e.inf and "SHATTER" or "PURGE"
+    end
     if e.kind == "CCFAIL" then return "WASTED" end
     return e.kind
 end
@@ -250,8 +255,20 @@ local function MomentWho(e)
     return e.src or e.dst
 end
 
+-- The far end of a removal: the seat, a pet with its owner, or the bare
+-- name of something that has no seat
+local function DispelTarget(m, dst, pet, dn)
+    if dst and m.seats[dst] then
+        local s = SeatLabel(m, dst)
+        if pet then return pet .. ESC.dim .. " (|r" .. s .. ESC.dim .. ")|r" end
+        return s
+    end
+    return ESC.dim .. (pet or dn or "?") .. "|r"
+end
+
 local function MomentText(m, e)
     local c = THEME[KIND_COLOR[e.kind] or "text"] or THEME.text
+    if e.kind == "DISPEL" and e.x == "PURGE" then c = e.inf and THEME.accent or THEME.statUtil end
     local head = Esc(c) .. MomentWord(e) .. "|r  "
     local k = e.kind
     if k == "GATES" then return head .. "The gates open" end
@@ -275,7 +292,8 @@ local function MomentText(m, e)
         return head .. tostring(e.x or "?") .. " → " .. SeatLabel(m, e.dst) .. ESC.dim .. "'s " .. (e.name or "?") .. "|r"
     end
     if k == "DISPEL" then
-        return head .. (e.name or "?") .. ESC.dim .. " off |r" .. SeatLabel(m, e.dst)
+        return head .. (e.name or "?") .. ESC.dim .. " off |r" .. DispelTarget(m, e.dst, e.pet, e.dn)
+            .. (e.by and (ESC.dim .. " · " .. e.by .. "|r") or "")
     end
     if k == "DEATH" then
         local by = e.src and (" (" .. SeatLabel(m, e.src, true) .. ")") or ""
@@ -877,6 +895,12 @@ local function FeedRowEnter(self)
             GameTooltip:AddDoubleLine("BROKEN BY", SeatLabel(m, e.brk, true) .. (e.own and "  (own team)" or ""), td[1], td[2], td[3], c[1], c[2], c[3])
         end
     end
+    if e.kind == "DISPEL" then
+        if e.by then GameTooltip:AddDoubleLine("CAST", e.by, td[1], td[2], td[3], tf[1], tf[2], tf[3]) end
+        local c = e.x == "PURGE" and THEME.statUtil or THEME.statCleanse
+        GameTooltip:AddDoubleLine("KIND", e.x == "PURGE" and (e.inf and "OFFENSIVE · SHATTERED" or "OFFENSIVE") or "DEFENSIVE",
+            td[1], td[2], td[3], c[1], c[2], c[3])
+    end
     GameTooltip:AddLine("Click to move the cursor here", THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3])
     GameTooltip:Show()
 end
@@ -952,6 +976,484 @@ local function BuildFeed(parent, y)
         row:SetScript("OnEnter", FeedRowEnter)
         row:SetScript("OnLeave", function() GameTooltip:Hide() end)
         feed.rows[i] = row
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- The dispel log: a drawer right of the replay, every dispel cast by cast
+-- ---------------------------------------------------------------------------
+
+-- Each cast is a header line (when, who, what they pressed, how much it
+-- took) with its removals under it in the order the log reported them:
+-- the aura, whom it came off, and what kind of removal it was. Lines past
+-- the cursor dim like the moments feed; the cast at the cursor is lit; a
+-- click moves the cursor to that cast. The list follows the cursor until
+-- the wheel scrolls it, and follows again the moment the cursor moves.
+
+local flat = {}             -- pooled line descriptors { kind, c, h }
+local tallyScratch = {}
+
+local function HitTag(h)
+    if h.r then
+        return Esc(THEME.danger) .. ((h.r == "FAIL" or h.r == "RESIST") and "RESISTED" or h.r) .. "|r"
+    end
+    if h.inf then return Esc(THEME.accent) .. "SHATTER|r" end
+    if h.off then return Esc(THEME.statUtil) .. (h.steal and "STEAL" or "PURGE") .. "|r" end
+    return Esc(THEME.statCleanse) .. "DISPEL|r"
+end
+
+local function HitKind(h)
+    if h.r then return "TOOK NOTHING · " .. ((h.r == "FAIL" or h.r == "RESIST") and "RESISTED" or h.r), THEME.danger end
+    if h.inf then return "OFFENSIVE · SHATTERED BY MASS DISPEL", THEME.accent end
+    if h.off then return h.steal and "OFFENSIVE · STOLEN" or "OFFENSIVE · PURGED", THEME.statUtil end
+    return "DEFENSIVE · DISPELLED", THEME.statCleanse
+end
+
+local function CastCounts(c)
+    local off, def, miss = 0, 0, 0
+    for _, h in ipairs(c.hits) do
+        if h.r then miss = miss + 1 elseif h.off then off = off + 1 else def = def + 1 end
+    end
+    return off, def, miss
+end
+
+local function DispelHitShown(h)
+    if h.off == nil then return view.dlogOff or view.dlogDef end
+    if h.off then return view.dlogOff end
+    return view.dlogDef
+end
+
+local function DispelCastShown(m, c)
+    local seat = c.src and m.seats[c.src]
+    local team = seat and seat.team
+    if team == "us" then return view.dlogUs end
+    if team == "them" then return view.dlogThem end
+    return view.dlogUs and view.dlogThem
+end
+
+-- The log as display lines, filters applied. A cast whose every removal is
+-- filtered out goes too; a cast that took nothing at all stays (a Mass
+-- Dispel into nothing is worth seeing). Returns the line count.
+local function FlattenDispelLog(m)
+    local n = 0
+    local log, count = A.DispelLog(m)
+    local function Line(kind, c, h)
+        n = n + 1
+        local d = flat[n]
+        if not d then d = {}; flat[n] = d end
+        d.kind, d.c, d.h = kind, c, h
+    end
+    for i = 1, count do
+        local c = log[i]
+        if DispelCastShown(m, c) then
+            local first = n
+            Line("cast", c, nil)
+            local shown = 0
+            for _, h in ipairs(c.hits) do
+                if DispelHitShown(h) then
+                    shown = shown + 1
+                    Line("hit", c, h)
+                end
+            end
+            if c.more and c.more > 0 and shown > 0 then Line("more", c, nil) end
+            if shown == 0 and (#c.hits > 0 or not (view.dlogOff or view.dlogDef)) then n = first end
+        end
+    end
+    for i = n + 1, #flat do flat[i].c, flat[i].h = nil, nil end
+    return n
+end
+
+local function DispelLineClick(self)
+    local m = Match()
+    local d = self.desc
+    if not (m and d and d.c) then return end
+    SetCursor(m, d.c.t)
+    view.playing = false
+    view.dlogFollow = true
+    RepaintAll()
+end
+
+local function DispelLineEnter(self)
+    local m = Match()
+    local d = self.desc
+    if not (m and d and d.c) then return end
+    local c, h = d.c, d.h
+    local td, tf = THEME.tipDim, THEME.tipFaint
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    local id = (h and h.id) or (not h and c.id) or nil
+    local shown = false
+    if id and GameTooltip.SetSpellByID then shown = pcall(GameTooltip.SetSpellByID, GameTooltip, id) end
+    if not shown then
+        GameTooltip:SetText((h and h.name) or c.name or "Dispel", THEME.tipText[1], THEME.tipText[2], THEME.tipText[3])
+    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddDoubleLine("AT", GateTime(m, c.t), td[1], td[2], td[3], tf[1], tf[2], tf[3])
+    GameTooltip:AddDoubleLine("BY", (c.src and SeatLabel(m, c.src, true) or "?") .. (c.pet and ("'s " .. c.pet) or ""),
+        td[1], td[2], td[3], tf[1], tf[2], tf[3])
+    GameTooltip:AddDoubleLine("CAST", c.name or "?", td[1], td[2], td[3], tf[1], tf[2], tf[3])
+    if h then
+        if h.dst or h.dn or h.pet then
+            local who = h.dst and SeatLabel(m, h.dst, true) or (h.pet or h.dn or "?")
+            if h.dst and h.pet then who = h.pet .. " (" .. who .. ")" end
+            GameTooltip:AddDoubleLine(h.off and "OFF" or "ON", who, td[1], td[2], td[3], tf[1], tf[2], tf[3])
+        end
+        local kind, kc = HitKind(h)
+        GameTooltip:AddDoubleLine("KIND", kind, td[1], td[2], td[3], kc[1], kc[2], kc[3])
+        if h.inf then
+            GameTooltip:AddLine("Read off the shield's fade: Mass Dispel breaks an immunity with an effect the combat log never reports as a dispel, so the shield fading as the Mass Dispel landed is the record.",
+                THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3], true)
+        end
+    else
+        local off, def, miss = CastCounts(c)
+        GameTooltip:AddDoubleLine("OFFENSIVE", tostring(off), td[1], td[2], td[3], THEME.statUtil[1], THEME.statUtil[2], THEME.statUtil[3])
+        GameTooltip:AddDoubleLine("DEFENSIVE", tostring(def), td[1], td[2], td[3], THEME.statCleanse[1], THEME.statCleanse[2], THEME.statCleanse[3])
+        if miss > 0 then GameTooltip:AddDoubleLine("TOOK NOTHING", tostring(miss), td[1], td[2], td[3], THEME.danger[1], THEME.danger[2], THEME.danger[3]) end
+        if c.more then GameTooltip:AddLine(format("…and %d more the log kept no room for", c.more), tf[1], tf[2], tf[3]) end
+    end
+    GameTooltip:AddLine("Click to move the cursor here", THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3])
+    GameTooltip:Show()
+end
+
+local function SetChip(chip, on)
+    local c = on and THEME.accent or THEME.textDim
+    chip.text:SetTextColor(c[1], c[2], c[3])
+    chip.under:SetShown(on)
+end
+
+local CHIP_TIPS = {
+    us = { "Ours", "Show your team's dispels." },
+    them = { "Theirs", "Show the enemy team's dispels." },
+    off = { "Offensive", "Purges, steals and Mass Dispel's shattered shields: a BUFF taken off an enemy." },
+    def = { "Defensive", "Dispels that freed a teammate: a DEBUFF taken off a friend." },
+}
+local CHIP_FIELD = { us = "dlogUs", them = "dlogThem", off = "dlogOff", def = "dlogDef" }
+
+local function BuildDispelLog()
+    local f = CreateFrame("Frame", nil, root)
+    dlog.frame = f
+    f:SetWidth(DLOG_W)
+    f:SetPoint("TOPLEFT", root, "TOPLEFT", W, -HEAD_H)
+    f:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", W, 0)
+    f.fill = MakeFill(f, { 0, 0, 0, 0.25 })
+    local edge = f:CreateTexture(nil, "BORDER")
+    edge:SetTexture(WHITE)
+    edge:SetVertexColor(THEME.edge[1], THEME.edge[2], THEME.edge[3], 1)
+    edge:SetWidth(1)
+    edge:SetPoint("TOPLEFT")
+    edge:SetPoint("BOTTOMLEFT")
+    dlog.title = MakeText(f, THEME.fontSizeSmall, "LEFT")
+    dlog.title:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -3)
+    dlog.title:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+    dlog.title:SetText("DISPEL LOG")
+    dlog.count = MakeText(f, THEME.fontSizeSmall, "RIGHT")
+    dlog.count:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -3)
+    dlog.count:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+    -- Filter chips: whose casts, which side of a dispel
+    dlog.chips = {}
+    local x = 4
+    for _, key in ipairs({ "us", "them", "off", "def" }) do
+        local chip = CreateFrame("Button", nil, f)
+        chip.chip = key
+        chip:SetHeight(ROW_H)
+        local label = key == "us" and "OURS" or key == "them" and "THEIRS" or key == "off" and "OFFENSIVE" or "DEFENSIVE"
+        local w = key == "us" and 44 or key == "them" and 52 or 74
+        chip:SetWidth(w)
+        chip:SetPoint("TOPLEFT", f, "TOPLEFT", x, -(ROW_H + 3))
+        x = x + w + (key == "them" and 14 or 2)
+        chip.text = MakeText(chip, THEME.fontSizeSmall, "CENTER")
+        chip.text:SetAllPoints()
+        chip.text:SetText(label)
+        chip.under = chip:CreateTexture(nil, "ARTWORK")
+        chip.under:SetTexture(WHITE)
+        chip.under:SetVertexColor(THEME.accent[1], THEME.accent[2], THEME.accent[3], 0.6)
+        chip.under:SetHeight(1)
+        chip.under:SetPoint("BOTTOMLEFT", chip, "BOTTOMLEFT", 6, 0)
+        chip.under:SetPoint("BOTTOMRIGHT", chip, "BOTTOMRIGHT", -6, 0)
+        chip.hover = chip:CreateTexture(nil, "HIGHLIGHT")
+        chip.hover:SetTexture(WHITE)
+        chip.hover:SetVertexColor(1, 1, 1, THEME.hover[4])
+        chip.hover:SetAllPoints()
+        chip:SetScript("OnClick", function(self)
+            local field = CHIP_FIELD[self.chip]
+            view[field] = not view[field]
+            RepaintAll()
+        end)
+        local tip = CHIP_TIPS[key]
+        Commander.UI.AttachTooltip(chip, tip[1], tip[2] .. " Click to show or hide.")
+        dlog.chips[key] = chip
+    end
+    -- The tally: one row per seat, as of the cursor
+    local tally = CreateFrame("Button", nil, f)
+    dlog.tally = tally
+    tally:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -(ROW_H * 2 + 8))
+    tally:SetPoint("RIGHT", f, "RIGHT", -4, 0)
+    tally:SetHeight(ROW_H * (MAX_SEATS * 2 + 1))
+    Commander.UI.AttachTooltip(tally, "Dispels per seat", "As of the cursor. OFF: buffs they took off an enemy (purges, steals, shattered shields). DEF: debuffs they took off a teammate. MISS: dispels that took nothing (resisted, immune). LOST: their buffs the other team purged. FREED: their debuffs their team dispelled.")
+    tally.head = MakeText(tally, THEME.fontSizeSmall, "LEFT")
+    tally.head:SetPoint("TOPLEFT", tally, "TOPLEFT", 2, 0)
+    tally.head:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+    tally.head:SetText("SEAT")
+    tally.cols = {}
+    local cx = DLOG_W - 8 - 2
+    for k = #DLOG_TALLY, 1, -1 do
+        local spec = DLOG_TALLY[k]
+        local fs = MakeText(tally, THEME.fontSizeSmall, "RIGHT")
+        fs:SetPoint("TOPRIGHT", tally, "TOPLEFT", cx, 0)
+        fs:SetWidth(spec[4])
+        local col = THEME[spec[3]] or THEME.text
+        fs:SetTextColor(col[1], col[2], col[3])
+        fs:SetText(spec[2])
+        tally.cols[k] = fs
+        cx = cx - spec[4]
+    end
+    tally.rows = {}
+    for r = 1, MAX_SEATS * 2 do
+        local row = CreateFrame("Frame", nil, tally)
+        row:SetHeight(ROW_H)
+        row:SetPoint("TOPLEFT", tally, "TOPLEFT", 0, -(r * ROW_H))
+        row:SetPoint("RIGHT", tally, "RIGHT", 0, 0)
+        row.team = row:CreateTexture(nil, "ARTWORK")
+        row.team:SetTexture(WHITE)
+        row.team:SetWidth(2)
+        row.team:SetPoint("TOPLEFT")
+        row.team:SetPoint("BOTTOMLEFT")
+        row.name = MakeText(row, THEME.fontSizeSmall, "LEFT")
+        row.name:SetPoint("LEFT", row, "LEFT", 6, 0)
+        row.name:SetWidth(DLOG_W - 8 - 6 - 190)
+        row.cols = {}
+        local rx = DLOG_W - 8 - 2
+        for k = #DLOG_TALLY, 1, -1 do
+            local spec = DLOG_TALLY[k]
+            local fs = MakeText(row, THEME.fontSizeSmall, "RIGHT")
+            fs:SetPoint("RIGHT", row, "LEFT", rx, 0)
+            fs:SetWidth(spec[4])
+            row.cols[k] = fs
+            rx = rx - spec[4]
+        end
+        tally.rows[r] = row
+    end
+    -- The log itself
+    local list = CreateFrame("Frame", nil, f)
+    dlog.list = list
+    list:SetPoint("LEFT", f, "LEFT", 1, 0)
+    list:SetPoint("RIGHT", f, "RIGHT", 0, 0)
+    list:SetPoint("BOTTOM", f, "BOTTOM", 0, 4)
+    list:EnableMouseWheel(true)
+    list:SetScript("OnMouseWheel", function(_, delta)
+        view.dlogOffset = max(0, view.dlogOffset - delta * 3)
+        view.dlogFollow = false
+        view.dlogFollowT = view.t
+        RepaintAll()
+    end)
+    dlog.lines = {}
+    for i = 1, DLOG_LINES_MAX do
+        local row = CreateFrame("Button", nil, list)
+        row.dlogLine = i
+        row:SetHeight(ROW_H)
+        row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(i - 1) * ROW_H)
+        row:SetPoint("RIGHT", list, "RIGHT", 0, 0)
+        row.hover = row:CreateTexture(nil, "HIGHLIGHT")
+        row.hover:SetTexture(WHITE)
+        row.hover:SetVertexColor(1, 1, 1, THEME.hover[4])
+        row.hover:SetAllPoints()
+        row.now = row:CreateTexture(nil, "BACKGROUND")
+        row.now:SetTexture(WHITE)
+        row.now:SetVertexColor(THEME.accent[1], THEME.accent[2], THEME.accent[3], 0.14)
+        row.now:SetAllPoints()
+        row.now:Hide()
+        row.team = row:CreateTexture(nil, "ARTWORK")
+        row.team:SetTexture(WHITE)
+        row.team:SetWidth(2)
+        row.team:SetPoint("TOPLEFT")
+        row.team:SetPoint("BOTTOMLEFT")
+        row.time = MakeText(row, THEME.fontSizeSmall, "RIGHT")
+        row.time:SetPoint("LEFT", row, "LEFT", 2, 0)
+        row.time:SetWidth(32)
+        row.time:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(12, 12)
+        row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        row.text = MakeText(row, THEME.fontSizeSmall, "LEFT")
+        row.text:SetPoint("RIGHT", row, "RIGHT", -(DLOG_TAG_W + 4), 0)
+        row.tag = MakeText(row, THEME.fontSizeSmall, "RIGHT")
+        row.tag:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.tag:SetWidth(DLOG_TAG_W)
+        row:SetScript("OnClick", DispelLineClick)
+        row:SetScript("OnEnter", DispelLineEnter)
+        row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        dlog.lines[i] = row
+    end
+end
+
+-- Open or close the drawer: the window widens by it, the content column
+-- never moves
+local function ApplyDrawer()
+    if not built then return end
+    root:SetWidth(view.dlog and (W + DLOG_W) or W)
+    dlog.frame:SetShown(view.dlog)
+    local c = view.dlog and THEME.accent or THEME.text
+    dlogBtn.text:SetTextColor(c[1], c[2], c[3])
+end
+
+local function DlogLayout(rows, rootH)
+    if not dlog.frame then return end
+    local seatRows = min(rows * 2, MAX_SEATS * 2)
+    dlog.seatRows = seatRows
+    dlog.tally:SetHeight(ROW_H * (seatRows + 1))
+    local top = ROW_H * 2 + 8 + ROW_H * (seatRows + 1) + 4
+    dlog.list:SetPoint("TOP", dlog.frame, "TOP", 0, -top)
+    local h = rootH - HEAD_H - top - 4
+    dlog.visible = max(min(floor(h / ROW_H), DLOG_LINES_MAX), 1)
+end
+
+local function RepaintDispelLog(m, t, atEnd)
+    if not view.dlog or not dlog.frame then return end
+    for key, chip in pairs(dlog.chips) do SetChip(chip, view[CHIP_FIELD[key]]) end
+    -- A different match starts at its top, following
+    if dlog.forMatch ~= m then
+        dlog.forMatch = m
+        view.dlogOffset = 0
+        view.dlogFollow = true
+    end
+    local tally = dlog.tally
+    local rowsShown = 0
+    if m then
+        A.DispelTallyAt(m, (not atEnd) and t or nil, tallyScratch)
+        for _, teamKey in ipairs({ "us", "them" }) do
+            local tm = m.teams[teamKey]
+            for i = 1, tm.n do
+                local seat = m.seats[tm.order[i]]
+                if seat and rowsShown < (dlog.seatRows or 0) then
+                    rowsShown = rowsShown + 1
+                    local row = tally.rows[rowsShown]
+                    local tc = teamKey == "us" and THEME.teamUs or THEME.teamThem
+                    row.team:SetVertexColor(tc[1], tc[2], tc[3], 1)
+                    row.name:SetText(SeatLabel(m, seat.guid))
+                    local rec = tallyScratch[seat.guid]
+                    for k, spec in ipairs(DLOG_TALLY) do
+                        local v = rec and rec[spec[1]] or 0
+                        local fs = row.cols[k]
+                        fs:SetText(tostring(v))
+                        local c = v > 0 and (THEME[spec[3]] or THEME.text) or THEME.textDim
+                        fs:SetTextColor(c[1], c[2], c[3], v > 0 and 1 or 0.45)
+                    end
+                    row:Show()
+                end
+            end
+        end
+    end
+    for r = rowsShown + 1, #tally.rows do tally.rows[r]:Hide() end
+
+    local lines = dlog.lines
+    if not m then
+        dlog.count:SetText("")
+        for i = 1, #lines do lines[i].desc = nil; lines[i]:Hide() end
+        return
+    end
+    local log, logN = A.DispelLog(m)
+    local total = FlattenDispelLog(m)
+    local V = dlog.visible or 1
+    -- The cast at the cursor: the last one at or before it
+    local nowLine, castsSoFar = 0, 0
+    for i = 1, total do
+        local d = flat[i]
+        if d.kind == "cast" and d.c.t <= t + 0.001 then nowLine = i end
+    end
+    for i = 1, logN do
+        if log[i].t <= t + 0.001 then castsSoFar = i else break end
+    end
+    dlog.count:SetText(atEnd and format("%d casts", logN) or format("%d of %d", castsSoFar, logN))
+    if not view.dlogFollow and view.t ~= view.dlogFollowT then view.dlogFollow = true end
+    local maxOff = max(total - V, 0)
+    if view.dlogFollow then
+        if atEnd and IsLive(m) then
+            view.dlogOffset = maxOff            -- live: the newest at the bottom
+        elseif atEnd then
+            view.dlogOffset = 0                 -- a finished match reads from the gates
+        else
+            view.dlogOffset = max(nowLine - floor(V / 3), 0)
+        end
+    end
+    if view.dlogOffset > maxOff then view.dlogOffset = maxOff end
+    local off = view.dlogOffset
+    for i = 1, #lines do
+        local row = lines[i]
+        local d = (i <= V) and flat[i + off] or nil
+        if d and i + off <= total then
+            row.desc = d
+            local c, h = d.c, d.h
+            local seat = c.src and m.seats[c.src]
+            row.icon:ClearAllPoints()
+            row.text:ClearAllPoints()
+            row.text:SetPoint("RIGHT", row, "RIGHT", -(DLOG_TAG_W + 4), 0)
+            if d.kind == "cast" then
+                row.time:SetText(GateTime(m, c.t))
+                if seat then
+                    local tc = seat.team == "us" and THEME.teamUs or THEME.teamThem
+                    row.team:SetVertexColor(tc[1], tc[2], tc[3], 1)
+                    row.team:Show()
+                else
+                    row.team:Hide()
+                end
+                row.icon:SetPoint("LEFT", row, "LEFT", 38, 0)
+                row.icon:SetTexture(U.IconOf(c))
+                row.icon:SetAlpha(1)
+                row.icon:Show()
+                row.text:SetPoint("LEFT", row, "LEFT", 54, 0)
+                row.text:SetText((c.src and SeatLabel(m, c.src) or (ESC.dim .. "?|r"))
+                    .. (c.pet and (ESC.dim .. " · " .. c.pet .. "|r") or "") .. "  " .. (c.name or "Dispel"))
+                local o, df, miss = CastCounts(c)
+                local n = o + df
+                if n == 0 then
+                    row.tag:SetText(Esc(THEME.danger) .. (miss > 0 and "missed" or "took nothing") .. "|r")
+                else
+                    row.tag:SetText(ESC.dim .. format("%d removed", n) .. "|r")
+                end
+                row.now:SetShown((not atEnd) and (i + off) == nowLine)
+            elseif d.kind == "hit" then
+                row.time:SetText("")
+                row.team:Hide()
+                row.icon:SetPoint("LEFT", row, "LEFT", 54, 0)
+                row.icon:SetTexture(U.IconOf(h.id and h or c))
+                row.icon:SetAlpha(h.r and 0.5 or 1)
+                row.icon:Show()
+                row.text:SetPoint("LEFT", row, "LEFT", 70, 0)
+                local who = (h.dst or h.pet or h.dn) and DispelTarget(m, h.dst, h.pet, h.dn) or nil
+                row.text:SetText((h.name and (Esc(THEME.text) .. h.name .. "|r") or "")
+                    .. (who and (ESC.dim .. (h.name and " → " or "→ ") .. "|r" .. who) or ""))
+                row.tag:SetText(HitTag(h))
+                row.now:Hide()
+            else
+                row.time:SetText("")
+                row.team:Hide()
+                row.icon:Hide()
+                row.text:SetPoint("LEFT", row, "LEFT", 70, 0)
+                row.text:SetText(ESC.dim .. format("…and %d more", c.more or 0) .. "|r")
+                row.tag:SetText("")
+                row.now:Hide()
+            end
+            row:SetAlpha(c.t > t + 0.001 and 0.45 or 1)
+            row:Show()
+        else
+            row.desc = nil
+            row.now:Hide()
+            row:Hide()
+        end
+    end
+    if total == 0 then
+        local row = lines[1]
+        row.desc = nil
+        row.time:SetText("")
+        row.team:Hide()
+        row.icon:Hide()
+        row.text:ClearAllPoints()
+        row.text:SetPoint("LEFT", row, "LEFT", 8, 0)
+        row.text:SetPoint("RIGHT", row, "RIGHT", -(DLOG_TAG_W + 4), 0)
+        row.text:SetText(ESC.dim .. (logN > 0 and "Nothing matches the filters" or "No dispels yet") .. "|r")
+        row.tag:SetText("")
+        row.now:Hide()
+        row:SetAlpha(1)
+        row:Show()
     end
 end
 
@@ -1135,7 +1637,6 @@ local function BuildWindow()
     matchBtn = U.MakeHeaderButton(head, "LEFT")
     matchBtn.headerRole = "arenaMatch"
     matchBtn:SetPoint("LEFT", head.title, "RIGHT", 0, 0)
-    matchBtn:SetPoint("RIGHT", head, "RIGHT", -48, 0)
     matchBtn:SetScript("OnClick", function(self) OpenMenu(MatchMenu, self) end)
     Commander.UI.AttachTooltip(matchBtn, "Match", "Which match the replay reads. Click for the live match and every kept one (newest first).")
 
@@ -1149,13 +1650,31 @@ local function BuildWindow()
     shareBtn:SetPoint("RIGHT", close, "LEFT", -4, 0)
     shareBtn:SetScript("OnClick", function(self) OpenMenu(ArenaShareMenu, self) end)
     Commander.UI.AttachTooltip(shareBtn, "Share", "Report this match — both teams' damage and healing as of the cursor, and first blood — to a chat channel. Nothing is ever sent automatically.")
+    dlogBtn = U.MakeHeaderButton(head, "CENTER")
+    dlogBtn.headerRole = "arenaDispels"
+    dlogBtn:SetWidth(62)
+    dlogBtn:SetPoint("RIGHT", shareBtn, "LEFT", -4, 0)
+    dlogBtn.text:SetText("DISPELS")
+    dlogBtn:SetScript("OnClick", function()
+        view.dlog = not view.dlog
+        local db = U.DB and U.DB()
+        if db then db.ArenaDispelLog = view.dlog end
+        ApplyDrawer()
+        RepaintAll()
+    end)
+    Commander.UI.AttachTooltip(dlogBtn, "Dispel Log", "Every dispel of the match, cast by cast — who pressed what, and which auras it took off whom, offensive and defensive, Mass Dispel's shattered shields included — with a per-seat tally. Read as of the cursor. Click to show or hide the drawer.")
+    matchBtn:SetPoint("RIGHT", dlogBtn, "LEFT", 0, 0)
 
     -- The content column sits right of the sidebar; every band anchors to
     -- it, so the sidebar's width is the one number that places them
+    -- (a fixed width, not the root's right edge: the dispel log drawer
+    -- widens the window and must never stretch the replay)
     content = CreateFrame("Frame", nil, root)
     content:SetPoint("TOPLEFT", root, "TOPLEFT", SIDEBAR_W, 0)
-    content:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", 0, 0)
+    content:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", SIDEBAR_W, 0)
+    content:SetWidth(CONTENT_W)
     BuildSidebar()
+    BuildDispelLog()
 
     local y = -(HEAD_H + PAD)
     sumText = MakeText(content, THEME.fontSizeSmall, "LEFT")
@@ -1247,6 +1766,9 @@ local function BuildWindow()
     root:SetScript("OnShow", function() repaintAcc = 1; RepaintAll() end)
     root:SetScript("OnHide", function() view.playing = false; view.dragging = false end)
     built = true
+    local db = U.DB and U.DB()
+    view.dlog = not (db and db.ArenaDispelLog == false)
+    ApplyDrawer()
 end
 
 -- Seat rows per team: the bracket (or the larger roster seen), never
@@ -1270,6 +1792,7 @@ local function Layout(rows)
     y = y - (FEED_H + HINT_H + PAD)
     root:SetHeight(-y)
     side.visible = floor((-y - HEAD_H - ROW_H - ROW_H - 2) / SIDE_ROW_H)
+    DlogLayout(rows, -y)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1288,13 +1811,23 @@ local function RepaintHeader(m)
         parts[#parts + 1] = "FIRST BLOOD " .. GateTime(m, m.firstBlood.t) .. " " .. SeatLabel(m, m.firstBlood.guid)
     end
     local us, them = m.teams.us, m.teams.them
-    if us.ratingBefore and us.ratingAfter then
-        parts[#parts + 1] = format("%sUS|r %d → %d", Esc(THEME.teamUs), us.ratingBefore, us.ratingAfter)
+    local myBefore, myAfter, myChange = A.OurRating(m)
+    if myChange and (m.teamless or not (us.ratingBefore and us.ratingAfter)) then
+        -- A personal-rating season: YOUR number, the team has none
+        local col = myChange >= 0 and THEME.healTx or THEME.danger
+        local txt = myBefore and format("%d → %d (%+d)", myBefore, myAfter, myChange) or format("%+d", myChange)
+        parts[#parts + 1] = format("%sRATING|r %s%s|r", Esc(THEME.teamUs), Esc(col), txt)
             .. (us.mmr and (ESC.dim .. format(" (MMR %d)|r", us.mmr)) or "")
-    end
-    if them.ratingBefore and them.ratingAfter then
-        parts[#parts + 1] = format("%sTHEM|r %d → %d", Esc(THEME.teamThem), them.ratingBefore, them.ratingAfter)
-            .. (them.mmr and (ESC.dim .. format(" (MMR %d)|r", them.mmr)) or "")
+        if them.mmr then parts[#parts + 1] = format("%sTHEM|r %sMMR %d|r", Esc(THEME.teamThem), ESC.dim, them.mmr) end
+    else
+        if us.ratingBefore and us.ratingAfter then
+            parts[#parts + 1] = format("%sUS|r %d → %d", Esc(THEME.teamUs), us.ratingBefore, us.ratingAfter)
+                .. (us.mmr and (ESC.dim .. format(" (MMR %d)|r", us.mmr)) or "")
+        end
+        if them.ratingBefore and them.ratingAfter then
+            parts[#parts + 1] = format("%sTHEM|r %d → %d", Esc(THEME.teamThem), them.ratingBefore, them.ratingAfter)
+                .. (them.mmr and (ESC.dim .. format(" (MMR %d)|r", them.mmr)) or "")
+        end
     end
     if m.rated == true then parts[#parts + 1] = "RATED" elseif m.rated == false then parts[#parts + 1] = "SKIRMISH" end
     parts[#parts + 1] = date("%b %d %H:%M", m.tsStart)
@@ -1521,7 +2054,7 @@ local function RepaintCard(card, m, seat, st, t, atEnd)
         if e.kind == "TRINKET" and e.x == "TRINKET" then tk, tkLeft = e, st.cdLeft[i]; break end
     end
     card.trinket.rec = TRINKET_SPELL
-    card.trinket.icon:SetTexture(TRINKET_ICON[SeatFaction(seat)] or TRINKET_ICON.Alliance)
+    card.trinket.icon:SetTexture(SeatTrinketIcon(seat))
     card.trinket.left = tkLeft
     card.trinket.pressedAt = tk and tk.t or nil
     local sweep = card.trinket.sweep
@@ -1756,8 +2289,9 @@ local function RepaintTimeline(m, t, atEnd)
     local mi = 0
     for i = 1, m.ledgerN do
         local e = m.ledger[i]
-        if MARKER_KIND[e.kind] and mi < MAX_MARKERS then
-            local who = e.kind == "TRINKET" and e.src or e.dst
+        local dispelMark = view.dlog and e.kind == "DISPEL" and e.src
+        if (MARKER_KIND[e.kind] or dispelMark) and mi < MAX_MARKERS then
+            local who = (e.kind == "TRINKET" or dispelMark) and e.src or e.dst
             local seat = who and m.seats[who]
             if seat and e.t >= t0 then
                 mi = mi + 1
@@ -1769,6 +2303,13 @@ local function RepaintTimeline(m, t, atEnd)
                     q:SetSize(3, 7)
                     q:SetVertexColor(THEME.statDeath[1], THEME.statDeath[2], THEME.statDeath[3], 1)
                     q:SetPoint(up and "TOP" or "BOTTOM", plot.frame, up and "TOPLEFT" or "BOTTOMLEFT", x, up and -2 or 2)
+                elseif e.kind == "DISPEL" then
+                    -- On the CASTER's side, a dot row clear of the CC and
+                    -- kick ticks: offensive cyan, defensive mint
+                    local c = e.x == "PURGE" and THEME.statUtil or THEME.statCleanse
+                    q:SetSize(2, 2)
+                    q:SetVertexColor(c[1], c[2], c[3], 1)
+                    q:SetPoint(up and "BOTTOMLEFT" or "TOPLEFT", plot.frame, "LEFT", x, up and 5 or -5)
                 else
                     local c = e.kind == "CC" and THEME.statCC or e.kind == "KICK" and THEME.statUtil or THEME.statCd
                     local len = e.kind == "CC" and (e.t2 and max((e.t2 - e.t) * scaleX, 1) or 1) or 1
@@ -1931,6 +2472,7 @@ RepaintAll = function()
     RepaintTimeline(m, t, atEnd)
     RepaintMeters(m, t, rows)
     RepaintFeed(m, t)
+    RepaintDispelLog(m, t, atEnd)
 end
 
 -- ---------------------------------------------------------------------------

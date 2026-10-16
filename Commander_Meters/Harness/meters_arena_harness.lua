@@ -29,6 +29,7 @@ end
 
 local function LoadArena()
     CommanderMetersArena = nil
+    assert(loadfile(METERS .. "/CommanderMetersDispel.lua"))()
     assert(loadfile(METERS .. "/CommanderMetersArena.lua"))()
     return CommanderMetersArena
 end
@@ -86,8 +87,8 @@ end
 local function kick(ts, sg, sn, sf, dg, dn, df, id, name, exId, exName)
     A.OnCleu(ts, "SPELL_INTERRUPT", nil, sg, sn, sf, 0, dg, dn, df, 0, id, name, 1, exId, exName, 8)
 end
-local function dispel(ts, sub, sg, sn, sf, dg, dn, df, id, name, exId, exName)
-    A.OnCleu(ts, sub, nil, sg, sn, sf, 0, dg, dn, df, 0, id, name, 2, exId, exName, 8, "BUFF")
+local function dispel(ts, sub, sg, sn, sf, dg, dn, df, id, name, exId, exName, auraType)
+    A.OnCleu(ts, sub, nil, sg, sn, sf, 0, dg, dn, df, 0, id, name, 2, exId, exName, 8, auraType or "BUFF")
 end
 local function broken(ts, sg, sn, sf, dg, dn, df, auraId, auraName, byId, byName)
     A.OnCleu(ts, "SPELL_AURA_BROKEN_SPELL", nil, sg, sn, sf, 0, dg, dn, df, 0,
@@ -246,7 +247,7 @@ eq(m.ledger[m.ledgerN].x, "Counterspell", "A: kick moment names the kick")
 
 -- Dispels: priest dispels the mage's Hamstring? No: dispel a friendly
 -- (defensive) and purge an enemy (offensive)
-dispel(T0 + 121, "SPELL_DISPEL", P3, "Vespers", F_PARTY, ME, "Devinp", F_ME, 527, "Dispel Magic", 8122, "Psychic Scream")
+dispel(T0 + 121, "SPELL_DISPEL", P3, "Vespers", F_PARTY, ME, "Devinp", F_ME, 527, "Dispel Magic", 8122, "Psychic Scream", "DEBUFF")
 eq(m.seats[P3].dispels, 1, "A: friendly dispel counted as a dispel")
 eq(m.seats[P3].purges, 0, "A: friendly dispel is not a purge")
 dispel(T0 + 122, "SPELL_DISPEL", P3, "Vespers", F_PARTY, D2, "Leafshade", F_ENEMY, 527, "Dispel Magic", 33763, "Lifebloom")
@@ -260,7 +261,7 @@ eq(m.seats[ME].purges, 1, "A: spellsteal is a purge")
 -- A dispelled CC ends now: warlock fears the rogue, priest dispels it
 aura(T0 + 124, "SPELL_AURA_APPLIED", L3, "Nethra", F_ENEMY, R2, "Shiv", F_PARTY, 8122, "Psychic Scream")
 local fear2 = m.ledgerN
-dispel(T0 + 125, "SPELL_DISPEL", P3, "Vespers", F_PARTY, R2, "Shiv", F_PARTY, 527, "Dispel Magic", 8122, "Psychic Scream")
+dispel(T0 + 125, "SPELL_DISPEL", P3, "Vespers", F_PARTY, R2, "Shiv", F_PARTY, 527, "Dispel Magic", 8122, "Psychic Scream", "DEBUFF")
 near(m.ledger[fear2].t2, 125, "A: dispelled CC closed at the dispel")
 eq(m.ledger[fear2].brk, P3, "A: dispeller recorded as the breaker")
 eq(m.seats[P3].ccBroke, 0, "A: dispelling an ENEMY's CC is not a mistake")
@@ -646,6 +647,50 @@ do
     local H2 = LoadArena()
     eq(H2.Import(st), 5, "H: a current store imports whole")
     eq(H2.Import({ v = 0, matches = {} }), 0, "H: an older store with no migration step is refused")
+end
+
+-- Personal rating (teamless season): YOUR scoreboard row is the number,
+-- never a teammate's, never the team fields
+do
+    local P = LoadArena()
+    local function game(i, myChange, mateChange, opts)
+        opts = opts or {}
+        local pm = P.Begin(T0 + i * 1000, "Nagrand Arena")
+        P.SetSeat("us", R2, "Shiv", "ROGUE", nil, "party1") -- seated first, so pairs() order cannot save us
+        P.SetSeat("us", ME, "Devinp", "MAGE", nil, "player")
+        P.SetSeat("them", W1, "Gorehowl", "WARRIOR")
+        P.SetSeat("them", D2, "Leafshade", "DRUID")
+        if opts.mine then P.SetMyRatings(pm, opts.mine) end
+        P.SetGates(T0 + i * 1000 + 10)
+        P.OnCleu(T0 + i * 1000 + 20, "SWING_DAMAGE", nil, ME, "Devinp", F_ME, 0, W1, "Gorehowl", F_ENEMY, 0,
+            100, 0, 1, 0, 0, 0, false, false, false, false)
+        P.MergeScoreboard(pm, {
+            { name = "Shiv", ratingChange = mateChange },
+            { name = "Devinp-Realm", ratingChange = myChange },
+            { name = "Gorehowl", ratingChange = -myChange },
+        }, 0)
+        P.SetTeamInfo(pm, "us", { name = opts.teamName, before = opts.tb, after = opts.ta, mmr = 1720, teamless = opts.teamless })
+        P.SetTeamInfo(pm, "them", { before = 0, after = 0, mmr = 1690, teamless = opts.teamless })
+        P.Finish(T0 + i * 1000 + 120, myChange > 0 and "WIN" or "LOSS")
+        if opts.late then P.SetMyRatings(pm, opts.late) end
+        return pm
+    end
+    local g1 = game(1, 17, 9, { teamless = true, tb = 0, ta = 0, mine = { [2] = 1600, [3] = 1400 } })
+    local b, a, c = P.OurRating(g1)
+    CHECK(b == 1600 and a == 1617 and c == 17, "R: teamless reads my row and my 2v2 rating before the gates", tostring(b) .. "/" .. tostring(a) .. "/" .. tostring(c))
+    CHECK(g1.teamless and g1.teams.us.ratingBefore == nil and g1.teams.them.ratingAfter == nil, "R: teamless keeps no team rating")
+    eq(g1.teams.us.mmr, 1720, "R: teamless keeps the side's average MMR")
+    local g2 = game(2, -11, -20, { teamless = true, late = { [2] = 1500 } })
+    b, a, c = P.OurRating(g2)
+    CHECK(b == nil and c == -11, "R: no snapshot -> change only; a post-result ratings read is refused", tostring(b) .. "/" .. tostring(c))
+    -- A record from before `teamless` existed, carrying nonsense team numbers
+    local g3 = game(3, 14, 22, { tb = 1500, ta = 1536 })
+    b, a, c = P.OurRating(g3)
+    eq(c, 14, "R: my scoreboard row outranks stale team before/after")
+    local hist = P.History(P.GetMatches(), {})
+    local rt
+    for i = 1, hist.n do if hist[i].kind == "RATING" then rt = hist[i] end end
+    CHECK(rt and rt.delta == 20 and rt.n == 3 and rt.from == 1600 and rt.to == 1617, "R: history sums my own changes", rt and (rt.delta .. " n" .. rt.n .. " " .. tostring(rt.from) .. ">" .. tostring(rt.to)))
 end
 
 -- ===========================================================================
@@ -1196,6 +1241,216 @@ do
     J.OnCleu(T0 + 5, "SPELL_AURA_APPLIED", nil, HU, "Sting", F_ENEMY, 0, HU, "Sting", F_ENEMY, 0, 14325, "Totstellen", 1, "BUFF")
     J.OnCleu(T0 + 5.1, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, HU, "Sting", F_ENEMY, 0)
     eq(jm.seats[HU].deaths, 0, "I: a localized feign name is recognised")
+end
+
+-- ===========================================================================
+-- Stage J: dispels — offensive / defensive by the aura's type, the dispel
+-- log cast by cast, and Mass Dispel's shattered shields (Devin: "not
+-- tracking everything I offensively and defensively dispel when I'm using
+-- my MD in arena")
+-- ===========================================================================
+
+do
+    local PA = "Player-1-PALADIN"
+    local MG = "Player-1-MAGE"
+    local FEL = "Pet-1-FEL"
+    local function NewDispels()
+        local J = LoadArena()
+        local jm = J.Begin(T0, "Blade's Edge Arena")
+        J.SetGates(T0 + 5)
+        J.SetSeat("us", P3, "Vespers", "PRIEST", nil, "player")
+        J.SetSeat("us", ME, "Devinp", "MAGE", nil, "party1")
+        J.SetSeat("them", PA, "Lightbane", "PALADIN", nil, "arena1")
+        J.SetSeat("them", MG, "Frostbyte", "MAGE", nil, "arena2")
+        J.SetSeat("them", L3, "Nethra", "WARLOCK", nil, "arena3")
+        J.SetOwner(FEL, L3, "Felhunter")
+        return J, jm
+    end
+    local function ev(J, ts, sub, sg, sn, sf, dg, dn, df, ...)
+        J.OnCleu(ts, sub, nil, sg, sn, sf, 0, dg, dn, df, 0, ...)
+    end
+    local function mdCast(J, ts, sg, sn, sf)
+        ev(J, ts, "SPELL_CAST_SUCCESS", sg or P3, sn or "Vespers", sf or F_ME, "", "", 0x80000000, 32375, "Mass Dispel", 1)
+    end
+    local function mdHit(J, ts, id, dg, dn, df, exId, exName, auraType)
+        ev(J, ts, "SPELL_DISPEL", P3, "Vespers", F_ME, dg, dn, df, id, "Mass Dispel", 1, exId, exName, 8, auraType)
+    end
+    local function shield(J, ts, sub, dg, dn, id, name)
+        ev(J, ts, sub, dg, dn, F_ENEMY, dg, dn, F_ENEMY, id, name, 2, "BUFF")
+    end
+
+    -- 1. The aura's type decides the side — a pet's buff included
+    local J, jm = NewDispels()
+    ev(J, T0 + 10, "SPELL_DISPEL", P3, "Vespers", F_ME, FEL, "Felhunter", F_EPET, 527, "Dispel Magic", 2, 27268, "Fel Intelligence", 32, "BUFF")
+    eq(jm.seats[P3].purges, 1, "J: a buff off an enemy PET is an offensive dispel (it was a defensive one)")
+    eq(jm.seats[P3].dispels, 0, "J: ...and not a defensive one")
+    eq(jm.seats[L3].purgesTaken, 1, "J: the pet's loss is its owner's")
+    local c = jm.dlog[1]
+    CHECK(c and c.hits[1].dst == L3 and c.hits[1].pet == "Felhunter", "J: the log names the pet and its owner")
+    eq(jm.ledger[jm.ledgerN].dst, L3, "J: the moment points at the owner's seat")
+    eq(jm.ledger[jm.ledgerN].pet, "Felhunter", "J: ...with the pet's name")
+    -- A debuff off a friend is defensive whatever the flags say
+    ev(J, T0 + 12, "SPELL_DISPEL", P3, "Vespers", F_ME, ME, "Devinp", F_PARTY, 988, "Dispel Magic", 2, 12826, "Polymorph", 64, "DEBUFF")
+    eq(jm.seats[P3].dispels, 1, "J: a debuff off a teammate is a defensive dispel")
+    eq(jm.seats[ME].dispelsTaken, 1, "J: the teammate was freed")
+    -- No aura type in the log: the teams decide
+    ev(J, T0 + 14, "SPELL_DISPEL", P3, "Vespers", F_ME, MG, "Frostbyte", F_ENEMY, 527, "Dispel Magic", 2, 27125, "Mage Armor", 64)
+    eq(jm.seats[P3].purges, 2, "J: without an aura type, an enemy target is offensive")
+    -- Two removals of one Dispel Magic in one instant are one cast; the
+    -- next press 1.5 s later is another
+    ev(J, T0 + 20, "SPELL_DISPEL", P3, "Vespers", F_ME, PA, "Lightbane", F_ENEMY, 988, "Dispel Magic", 2, 27149, "Blessing of Might", 2, "BUFF")
+    ev(J, T0 + 20, "SPELL_DISPEL", P3, "Vespers", F_ME, PA, "Lightbane", F_ENEMY, 988, "Dispel Magic", 2, 25898, "Greater Blessing of Kings", 2, "BUFF")
+    ev(J, T0 + 21.5, "SPELL_DISPEL", P3, "Vespers", F_ME, PA, "Lightbane", F_ENEMY, 988, "Dispel Magic", 2, 27154, "Blessing of Wisdom", 2, "BUFF")
+    local n = jm.dlogN
+    eq(#jm.dlog[n - 1].hits, 2, "J: a rank-2 Dispel Magic's two removals are one cast")
+    eq(#jm.dlog[n].hits, 1, "J: the next press is its own cast")
+    eq(jm.dlog[n - 1].name, "Dispel Magic", "J: the cast keeps the spell's name")
+    eq(jm.dlog[n - 1].id, 988, "J: ...and its id")
+
+    -- 2. Mass Dispel: one press, both halves under it, in log order
+    J, jm = NewDispels()
+    mdCast(J, T0 + 30)
+    eq(jm.dlogN, 1, "J: the Mass Dispel press opens its log record")
+    mdHit(J, T0 + 30, 32375, ME, "Devinp", F_PARTY, 10890, "Psychic Scream", "DEBUFF")
+    mdHit(J, T0 + 30, 32592, PA, "Lightbane", F_ENEMY, 27149, "Blessing of Might", "BUFF")
+    mdHit(J, T0 + 30, 32592, L3, "Nethra", F_ENEMY, 28176, "Fel Armor", "BUFF")
+    eq(jm.dlogN, 1, "J: both halves (32375 friendly, 32592 enemy) join the one cast")
+    local md = jm.dlog[1]
+    eq(#md.hits, 3, "J: three removals under the Mass Dispel")
+    CHECK(md.hits[1].off == false and md.hits[2].off == true and md.hits[3].off == true,
+        "J: the friendly half is defensive, the enemy half offensive")
+    eq(md.hits[2].name, "Blessing of Might", "J: removals keep the log's order")
+    eq(jm.seats[P3].purges, 2, "J: two offensive removals")
+    eq(jm.seats[P3].dispels, 1, "J: one defensive removal")
+    local e = jm.ledger[jm.ledgerN]
+    eq(e.by, "Mass Dispel", "J: each DISPEL moment names the cast")
+    -- A Mass Dispel into nothing still reads as a press
+    mdCast(J, T0 + 40)
+    eq(jm.dlogN, 2, "J: a Mass Dispel that took nothing is still a log record")
+    eq(#jm.dlog[2].hits, 0, "J: ...with no removals")
+
+    -- 3. The shatter: Divine Shield fades as an enemy Mass Dispel lands —
+    -- the log names no dispel for it
+    J, jm = NewDispels()
+    shield(J, T0 + 50, "SPELL_AURA_APPLIED", PA, "Lightbane", 1020, "Divine Shield")
+    mdCast(J, T0 + 53)
+    mdHit(J, T0 + 53, 32592, L3, "Nethra", F_ENEMY, 28176, "Fel Armor", "BUFF")
+    shield(J, T0 + 53, "SPELL_AURA_REMOVED", PA, "Lightbane", 1020, "Divine Shield")
+    eq(jm.seats[P3].shatters, 1, "J: the bubble Mass Dispel broke is credited")
+    eq(jm.seats[P3].purges, 2, "J: ...as an offensive removal (Fel Armor + the bubble)")
+    eq(jm.seats[PA].purgesTaken, 1, "J: the paladin lost it")
+    md = jm.dlog[1]
+    eq(#md.hits, 2, "J: the shatter sits under the same Mass Dispel")
+    CHECK(md.hits[2].inf == true and md.hits[2].name == "Divine Shield", "J: flagged inferred, named")
+    e = jm.ledger[jm.ledgerN]
+    CHECK(e.kind == "DISPEL" and e.inf == true and e.x == "PURGE" and e.dst == PA, "J: a PURGE moment flagged inferred")
+    -- The reverse log order: the fade printed before the cast line
+    J, jm = NewDispels()
+    shield(J, T0 + 60, "SPELL_AURA_APPLIED", MG, "Frostbyte", 45438, "Ice Block")
+    shield(J, T0 + 63, "SPELL_AURA_REMOVED", MG, "Frostbyte", 45438, "Ice Block")
+    eq(jm.seats[P3].shatters, 0, "J: a fade alone is no shatter (yet)")
+    mdCast(J, T0 + 63.1)
+    eq(jm.seats[P3].shatters, 1, "J: the Mass Dispel logged just after claims the Ice Block that fell")
+    CHECK(jm.dlog[1].hits[1] and jm.dlog[1].hits[1].name == "Ice Block", "J: under that cast")
+    -- The log names it after all (if the server does print the mechanic
+    -- removal): upgraded, never counted twice
+    J, jm = NewDispels()
+    shield(J, T0 + 70, "SPELL_AURA_APPLIED", PA, "Lightbane", 1020, "Divine Shield")
+    mdCast(J, T0 + 72)
+    shield(J, T0 + 72, "SPELL_AURA_REMOVED", PA, "Lightbane", 1020, "Divine Shield")
+    mdHit(J, T0 + 72, 39897, PA, "Lightbane", F_ENEMY, 1020, "Divine Shield", "BUFF")
+    eq(jm.seats[P3].purges, 1, "J: a shatter the log names later is counted once")
+    CHECK(jm.dlog[1].hits[1].inf == nil, "J: ...and is no longer marked inferred")
+    eq(#jm.dlog[1].hits, 1, "J: one removal, not two")
+    -- Named first: the fade that follows is not inferred again
+    J, jm = NewDispels()
+    shield(J, T0 + 80, "SPELL_AURA_APPLIED", PA, "Lightbane", 10278, "Blessing of Protection")
+    mdCast(J, T0 + 82)
+    mdHit(J, T0 + 82, 32592, PA, "Lightbane", F_ENEMY, 10278, "Blessing of Protection", "BUFF")
+    shield(J, T0 + 82, "SPELL_AURA_REMOVED", PA, "Lightbane", 10278, "Blessing of Protection")
+    eq(jm.seats[P3].purges, 1, "J: a BoP the enemy half dispelled is one removal")
+    eq(jm.seats[P3].shatters, 0, "J: ...not also a shatter")
+    -- What must NOT shatter
+    J, jm = NewDispels()
+    shield(J, T0 + 90, "SPELL_AURA_APPLIED", PA, "Lightbane", 1020, "Divine Shield")
+    mdCast(J, T0 + 102)
+    shield(J, T0 + 102, "SPELL_AURA_REMOVED", PA, "Lightbane", 1020, "Divine Shield")
+    eq(jm.seats[P3].shatters, 0, "J: a bubble that ran its full 12 s expired")
+    shield(J, T0 + 110, "SPELL_AURA_APPLIED", MG, "Frostbyte", 45438, "Ice Block")
+    shield(J, T0 + 112, "SPELL_AURA_REMOVED", MG, "Frostbyte", 45438, "Ice Block")
+    mdCast(J, T0 + 113)
+    eq(jm.seats[P3].shatters, 0, "J: an Ice Block cancelled during the 1.5 s cast was not broken by it")
+    ev(J, T0 + 120, "SPELL_AURA_APPLIED", ME, "Devinp", F_PARTY, ME, "Devinp", F_PARTY, 45438, "Ice Block", 16, "BUFF")
+    mdCast(J, T0 + 122)
+    ev(J, T0 + 122, "SPELL_AURA_REMOVED", ME, "Devinp", F_PARTY, ME, "Devinp", F_PARTY, 45438, "Ice Block", 16, "BUFF")
+    eq(jm.seats[P3].shatters, 0, "J: our own Mass Dispel never breaks our own team's Ice Block")
+    -- The enemy priest's Mass Dispel breaks OUR shield: credited to them
+    local EP = "Player-1-PRIEST"
+    J.SetSeat("them", EP, "Hexa", "PRIEST", nil, "arena4")
+    ev(J, T0 + 130, "SPELL_AURA_APPLIED", ME, "Devinp", F_PARTY, ME, "Devinp", F_PARTY, 45438, "Ice Block", 16, "BUFF")
+    mdCast(J, T0 + 132, EP, "Hexa", F_ENEMY)
+    ev(J, T0 + 132, "SPELL_AURA_REMOVED", ME, "Devinp", F_PARTY, ME, "Devinp", F_PARTY, 45438, "Ice Block", 16, "BUFF")
+    eq(jm.seats[EP].shatters, 1, "J: an enemy Mass Dispel on our Ice Block is theirs")
+    eq(jm.seats[ME].purgesTaken, 1, "J: our mage lost it")
+
+    -- 4. Attempts that took nothing: resisted, immune
+    J, jm = NewDispels()
+    ev(J, T0 + 140, "SPELL_DISPEL_FAILED", P3, "Vespers", F_ME, L3, "Nethra", F_ENEMY, 527, "Dispel Magic", 2, 28176, "Fel Armor", 32)
+    eq(jm.seats[P3].dispelFails, 1, "J: a failed dispel is counted")
+    eq(jm.seats[P3].purges, 0, "J: ...never as a removal")
+    CHECK(jm.dlog[1].hits[1].r == "FAIL" and jm.dlog[1].hits[1].name == "Fel Armor", "J: the log names what resisted")
+    ev(J, T0 + 145, "SPELL_MISSED", P3, "Vespers", F_ME, MG, "Frostbyte", F_ENEMY, 32592, "Mass Dispel", 1, "IMMUNE", false, 0, false)
+    eq(jm.seats[P3].dispelFails, 2, "J: a Mass Dispel into immunity took nothing")
+    CHECK(jm.dlog[2].hits[1].r == "IMMUNE" and jm.dlog[2].hits[1].dst == MG, "J: the miss names its type and target")
+    ev(J, T0 + 150, "SPELL_MISSED", FEL, "Felhunter", F_EPET, P3, "Vespers", F_ME, 27277, "Devour Magic", 32, "RESIST", false, 0, false)
+    eq(jm.seats[L3].dispelFails, 1, "J: the felhunter's resisted Devour Magic is its warlock's")
+    eq(jm.dlog[3].pet, "Felhunter", "J: the cast record names the pet that pressed it")
+    ev(J, T0 + 155, "SPELL_MISSED", P3, "Vespers", F_ME, MG, "Frostbyte", F_ENEMY, 25235, "Flash Heal", 2, "RESIST", false, 0, false)
+    eq(jm.dlogN, 3, "J: a non-dispel miss is not a log line")
+
+    -- 5. Reading it back: the stat's split, tallies and the index as of a cursor
+    J, jm = NewDispels()
+    ev(J, T0 + 10, "SPELL_DISPEL", P3, "Vespers", F_ME, ME, "Devinp", F_PARTY, 988, "Dispel Magic", 2, 12826, "Polymorph", 64, "DEBUFF")
+    ev(J, T0 + 20, "SPELL_DISPEL", P3, "Vespers", F_ME, PA, "Lightbane", F_ENEMY, 988, "Dispel Magic", 2, 27149, "Blessing of Might", 2, "BUFF")
+    ev(J, T0 + 30, "SPELL_STOLEN", ME, "Devinp", F_PARTY, PA, "Lightbane", F_ENEMY, 30449, "Spellsteal", 64, 27149, "Blessing of Freedom", 2, "BUFF")
+    local stat = J.StatByKey("DISPEL")
+    local v, cnt = J.SeatValueAt(jm, jm.seats[P3], stat, nil)
+    eq(v, 2, "J: the DISPEL stat counts every removal")
+    eq(cnt, 1, "J: its count is the offensive share")
+    v, cnt = J.SeatValueAt(jm, jm.seats[P3], stat, 15)
+    CHECK(v == 1 and cnt == 0, "J: as of 0:10 after the gates: one defensive, no offensive", tostring(v) .. "/" .. tostring(cnt))
+    local rowsData, rn = J.CollectRows(jm, stat, 25)
+    local pr
+    for i = 1, rn do if rowsData[i].seat.guid == P3 then pr = rowsData[i] end end
+    CHECK(pr and pr.value == 2 and pr.count == 1, "J: a pane at a cursor gets the split too")
+    local tally = J.DispelTallyAt(jm, 25, {})
+    CHECK(tally[P3].off == 1 and tally[P3].def == 1 and tally[ME].cleansed == 1 and tally[PA].lost == 1,
+        "J: tallies as of a cursor: who did what, who lost and who was freed")
+    eq(J.DispelTallyAt(jm, nil, tally)[ME].off, 1, "J: the whole match counts the steal")
+    eq(jm.dlog[3].hits[1].steal, true, "J: a steal is marked")
+    eq(J.DispelIndexAt(jm, 25), 2, "J: the last cast at or before a cursor")
+    eq(J.DispelIndexAt(jm, 5), 0, "J: none before the first")
+
+    -- 6. A match saved before the log existed rebuilds it from its moments
+    jm.dlog, jm.dlogN = nil, nil
+    local log, ln = J.DispelLog(jm)
+    eq(ln, 3, "J: a pre-log match rebuilds one cast per DISPEL moment group")
+    CHECK(log[2].hits[1].off == true and log[1].hits[1].off == false, "J: rebuilt hits keep their side")
+    eq(log[1].name, "Dispel Magic", "J: rebuilt casts keep the name the moments carried")
+    J.Finish(T0 + 200, "WIN")
+    local st = J.Export(5)
+    eq(st.matches[1]._dlog, nil, "J: the rebuilt log is session-only (stripped on export)")
+
+    -- 7. Persistence: the log rides the store byte-identically
+    J, jm = NewDispels()
+    mdCast(J, T0 + 30)
+    mdHit(J, T0 + 30, 32592, PA, "Lightbane", F_ENEMY, 27149, "Blessing of Might", "BUFF")
+    J.Finish(T0 + 60, "WIN")
+    local snap = J.Serialize(J.GetMatch("last"))
+    local K = LoadArena()
+    eq(K.Import(J.Export(5)), 1, "J: a match with a dispel log imports")
+    eq(K.Serialize(K.GetMatch("last")), snap, "J: ...byte-identical")
+    eq(K.GetMatch("last").dlog[1].hits[1].name, "Blessing of Might", "J: the log survives the store")
 end
 
 if fails > 0 then

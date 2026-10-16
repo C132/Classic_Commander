@@ -26,7 +26,10 @@
 --     rules are the server's: the 15 s reset clock starts when the aura
 --     FADES and is frozen while anything in the category is still on them.
 --   * Interrupts (kicks) and what they stopped; dispels split into
---     friendly dispels and offensive purges/steals.
+--     defensive cleanses and offensive purges/steals by the removed aura's
+--     type, Mass Dispel's shattered shields included (CommanderMetersDispel),
+--     and a DISPEL LOG that keeps every dispel cast with what it took off
+--     whom, in order — the replay's answer to "what did that MD hit?".
 --   * Kills (the last hit before a death), deaths, casts (APM), mana
 --     drained and drunk, trinkets, and every book cooldown seen — the
 --     book is Commander Arena Frames' when it is installed.
@@ -41,6 +44,7 @@
 
 CommanderMetersArena = {}
 local A = CommanderMetersArena
+local DS = CommanderMetersDispel
 
 local band = bit.band
 local floor = math.floor
@@ -67,6 +71,9 @@ local AURA_CAP = 600           -- buff/debuff intervals per seat (the store's we
 local CAST_OPEN_CAP = 10       -- s: a cast never seen ending is closed at this length
 local GCD = 1.5                -- s: the global cooldown the replay draws after a cast
 local TARGET_MEMORY = 8        -- s: a cast's target counts as "who they are on" this long
+local DLOG_CAP = 400           -- dispel casts per match in the dispel log
+local DLOG_HITS = 24           -- removals per cast (a Mass Dispel reaches 10 + 10 + shields)
+local DLOG_GROUP = 0.6         -- s: one caster's same-named removals this close are one cast
 local RATED_TEAMS = { "us", "them" }
 
 -- Auto-attacks the client reports as casts; never a decision
@@ -158,6 +165,7 @@ local bookById, bookByName = nil, nil -- cooldown book (soft import)
 local specById = nil           -- signature spell id -> spec name (soft import)
 local drinkIds = {}            -- aura ids that mean "drinking"
 local petKeyCache = {}
+local corr = DS.NewCorrelator() -- Mass Dispel ↔ the shields it shattered (per match)
 
 A.onMatchStart = nil           -- UI hooks
 A.onMatchEnd = nil             -- receives the closed match (or nil if discarded)
@@ -286,12 +294,17 @@ local function NewMatch(id, ts)
         map = nil,
         bracket = 0,            -- 2 / 3 / 5, 0 until both rosters are seen
         rated = nil,            -- true / false / nil unknown
+        teamless = nil,         -- true: a personal-rating season (no arena teams)
+        myRatings = nil,        -- { [2|3|5] = rating } read before the gates: our own ladder spots
         result = nil,           -- "WIN" | "LOSS" | "DRAW" | "LEFT"
         teams = { us = NewTeam("us"), them = NewTeam("them") },
         seats = {},             -- guid -> seat (players only, both teams)
         ledger = {},            -- moments, time-ordered
         ledgerN = 0,
         ledgerDropped = 0,
+        dlog = {},              -- dispel casts, time-ordered: {t, src, id, name, pet, hits = {...}}
+        dlogN = 0,
+        dlogDropped = 0,
         deaths = {},            -- {t, guid, killer, name, id}
         firstBlood = nil,       -- {t, guid}
         runTime = nil,          -- server's match age at the end (s)
@@ -309,6 +322,8 @@ local function NewSeat(guid, team)
         crits = 0, hits = 0, misses = 0,
         ints = 0, intsTaken = 0,
         dispels = 0, purges = 0, dispelsTaken = 0, purgesTaken = 0,
+        dispelFails = 0,        -- dispels that took nothing (resisted, missed, immune)
+        shatters = 0,           -- shields a Mass Dispel broke (counted in purges too)
         ccCasts = 0, ccSeconds = 0, ccTaken = 0, ccTakenSeconds = 0,
         ccBroke = 0,            -- broke a TEAMMATE's CC early (the mistake)
         ccWasted = 0,           -- CC that hit an immune/evaded/resisting target
@@ -400,6 +415,7 @@ function A.Begin(ts, map)
     if live then return live end
     matchCounter = matchCounter + 1
     live = NewMatch(matchCounter, ts)
+    corr:Reset()
     live.map = map
     if A.onMatchStart then A.onMatchStart(live) end
     return live
@@ -581,6 +597,100 @@ local function PlayerSeat(m, guid, name, flags)
 end
 
 -- ---------------------------------------------------------------------------
+-- The dispel log: every dispel of the match, cast by cast
+-- ---------------------------------------------------------------------------
+
+-- The far end of a dispel: a player's seat, or for a pet its OWNER's seat
+-- and the pet's name (a felhunter purged is the warlock's loss). A minion
+-- nobody owns is no seat — the log line keeps its name instead, and no
+-- anomaly is raised: a stray totem is not a recorder fault.
+local function DispelTarget(m, guid, name, flags)
+    if not guid or guid == "" then return nil end
+    flags = flags or 0
+    if band(flags, TYPE_PLAYER) ~= 0 then return SeatOf(m, guid, name, flags), nil end
+    if band(flags, TYPE_MINION) ~= 0 then
+        local owner = ownerOf[guid]
+        local seat = owner and m.seats[owner]
+        if seat then return seat, petNames[guid] or name or "Pet" end
+    end
+    return nil
+end
+
+-- One record per CAST, {t, src, id, name, pet, hits}, so a Mass Dispel
+-- reads as the one press it was with everything it took off listed under
+-- it in the order the log reported them. A hit is
+-- {dst, pet, dn, id, name, off, steal, inf, r}: the target seat (the
+-- owner's, for a pet, with the pet's name; `dn` names a target with no
+-- seat), the aura, offensive or not, a steal, INFERRED (a shield Mass
+-- Dispel broke, read off its fade — the log names no dispel for it), and
+-- `r` for an attempt that took nothing ("FAIL" = the aura resisted, else
+-- the miss type: RESIST, IMMUNE, ...). One caster's events under one spell
+-- name within DLOG_GROUP seconds are one cast: a Mass Dispel's removals
+-- arrive in one instant, an Abolish Poison's pulses two seconds apart are
+-- separate pulses.
+local function DispelCast(m, src, t, id, name, pet)
+    for i = m.dlogN, 1, -1 do
+        local c = m.dlog[i]
+        if c.t < t - DLOG_GROUP then break end
+        if c.src == src and c.name == name then
+            if not c.id then c.id = id end
+            return c
+        end
+    end
+    if m.dlogN >= DLOG_CAP then
+        m.dlogDropped = m.dlogDropped + 1
+        return nil
+    end
+    -- Time-ordered like the ledger (the log is chronological; only a
+    -- replayed fixture can misorder)
+    if m.dlogN > 0 and t < m.dlog[m.dlogN].t then t = m.dlog[m.dlogN].t end
+    m.dlogN = m.dlogN + 1
+    local c = { t = t, src = src, id = id, name = name, pet = pet, hits = {} }
+    m.dlog[m.dlogN] = c
+    return c
+end
+
+local function DispelHit(c, hit)
+    if not c then return nil end
+    local hits = c.hits
+    if #hits >= DLOG_HITS then
+        c.more = (c.more or 0) + 1
+        return nil
+    end
+    hits[#hits + 1] = hit
+    return hit
+end
+
+-- A shield Mass Dispel broke: an offensive removal for the priest, with a
+-- hit and a moment flagged inferred. The correlator keeps a handle on both
+-- so a SPELL_DISPEL naming the same removal later upgrades them instead of
+-- counting it twice.
+local function CreditShatter(m, srcGuid, castName, dstGuid, id, name, t, ts)
+    local src = m.seats[srcGuid]
+    if not src then return end
+    local dst = m.seats[dstGuid]
+    src.purges = src.purges + 1
+    src.shatters = src.shatters + 1
+    if dst then dst.purgesTaken = dst.purgesTaken + 1 end
+    local c = DispelCast(m, srcGuid, t, DS.MASS_DISPEL_CAST, castName)
+    local hit = DispelHit(c, { dst = dstGuid, id = id, name = name, off = true, inf = true })
+    local _, e = Moment(m, t, "DISPEL", srcGuid, dstGuid, id, name, nil, "PURGE")
+    if e then e.by, e.byId, e.inf = castName, DS.MASS_DISPEL_CAST, true end
+    corr:Credited(dstGuid, id, ts, { hit = hit, e = e })
+end
+
+-- A Mass Dispel from `src` landed (its cast, or a removal it made): the
+-- shields that faded off the other side a moment BEFORE this line are its
+-- doing too. The landing remembers the name the log used.
+local function MassDispelLanded(m, src, ts, t, castName)
+    local claimed, land = corr:Landed(src.guid, src.team, ts, castName)
+    if not claimed then return end
+    for _, f in ipairs(claimed) do
+        CreditShatter(m, src.guid, (land and land.info) or castName, f.dst, f.id, f.name, t, ts)
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Diminishing returns (per seat per category)
 -- ---------------------------------------------------------------------------
 
@@ -700,6 +810,7 @@ local DISPATCH = {
     SPELL_INTERRUPT         = { kind = 7 },
     SPELL_DISPEL            = { kind = 8 },
     SPELL_STOLEN            = { kind = 8 },
+    SPELL_DISPEL_FAILED     = { kind = 16 },
     SPELL_AURA_BROKEN       = { kind = 9 },
     SPELL_AURA_BROKEN_SPELL = { kind = 9 },
     SPELL_CAST_SUCCESS      = { kind = 10 },
@@ -955,27 +1066,75 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
     end
 
     if kind == 8 then
-        -- SPELL_DISPEL / SPELL_STOLEN: extra = the removed aura (a15, a16)
+        -- SPELL_DISPEL / SPELL_STOLEN: prefix = the dispel cast (a12, a13),
+        -- extra = the removed aura (a15, a16), a18 = its type. The TYPE says
+        -- offensive or defensive (a buff off = a purge, a debuff off = a
+        -- cleanse); the teams decide only when the log leaves it out.
         local src, pet = SeatOf(m, sg, sn, sf)
-        local dst = PlayerSeat(m, dg, dn, df)
+        local dst, dpet = DispelTarget(m, dg, dn, df)
         if not (src or dst) then return end
         if type(a16) ~= "string" then
             Anomaly("dispel with unexpected layout")
             return
         end
         local t = Rel(m, ts)
-        local offensive = src and dst and src.team ~= dst.team
-        if not src and dst then offensive = false end
+        local auraId = type(a15) == "number" and a15 or nil
+        local tool = type(a12) == "number" and a12 or nil
+        local toolName = type(a13) == "string" and a13 or "Dispel"
+        local offensive = DS.Offensive(sub, a18)
+        if offensive == nil then
+            if src and dst then
+                offensive = src.team ~= dst.team
+            else
+                offensive = band(sf or 0, REACT_HOSTILE) ~= band(df or 0, REACT_HOSTILE)
+            end
+        end
+        -- A shield the log names: a shatter already inferred from its fade
+        -- IS this removal (upgrade it, never count it again); otherwise the
+        -- fade that follows is not inferred a second time
+        if dst and not dpet and auraId then
+            local ref = corr:Named(dst.guid, auraId, ts)
+            if ref then
+                if ref.hit then ref.hit.inf = nil end
+                if ref.e then ref.e.inf = nil end
+                return
+            end
+        end
         if src then
             if offensive then src.purges = src.purges + 1 else src.dispels = src.dispels + 1 end
         end
         if dst then
             if offensive then dst.purgesTaken = dst.purgesTaken + 1 else dst.dispelsTaken = dst.dispelsTaken + 1 end
-            -- A dispelled CC is a CC that ended now
-            if dst.openCC[a16] then CloseCC(m, dst, a16, t, src and src.guid) end
+            -- A dispelled CC is a CC that ended now (the player's own, never a pet's)
+            if not dpet and dst.openCC[a16] then CloseCC(m, dst, a16, t, src and src.guid) end
         end
-        Moment(m, t, "DISPEL", src and src.guid, dg, type(a15) == "number" and a15 or nil,
+        local c = DispelCast(m, src and src.guid, t, tool, toolName, pet)
+        DispelHit(c, { dst = dst and dst.guid or nil, pet = dpet, dn = (not dst) and dn or nil,
+            id = auraId, name = a16, off = offensive, steal = sub == "SPELL_STOLEN" or nil })
+        local _, e = Moment(m, t, "DISPEL", src and src.guid, dst and dst.guid or nil, auraId,
             a16, nil, offensive and "PURGE" or "DISPEL")
+        if e then
+            e.by, e.byId, e.pet = toolName, tool, dpet
+            if not dst then e.dn = dn end
+        end
+        if src and tool and DS.MASS_DISPEL[tool] then MassDispelLanded(m, src, ts, t, toolName) end
+        return
+    end
+
+    if kind == 16 then
+        -- SPELL_DISPEL_FAILED: the dispel cast (prefix) and the aura that
+        -- resisted it (extra). An attempt that took nothing: the log line,
+        -- never a count of removals.
+        local src, pet = SeatOf(m, sg, sn, sf)
+        if not src then return end
+        local dst, dpet = DispelTarget(m, dg, dn, df)
+        local t = Rel(m, ts)
+        src.dispelFails = src.dispelFails + 1
+        local c = DispelCast(m, src.guid, t, type(a12) == "number" and a12 or nil,
+            type(a13) == "string" and a13 or "Dispel", pet)
+        DispelHit(c, { dst = dst and dst.guid or nil, pet = dpet, dn = (not dst) and dn or nil,
+            id = type(a15) == "number" and a15 or nil, name = type(a16) == "string" and a16 or nil,
+            off = dst and src.team ~= dst.team or nil, r = "FAIL" })
         return
     end
 
@@ -1010,6 +1169,13 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         if type(a13) ~= "string" then return end
         local t = Rel(m, ts)
         local id = type(a12) == "number" and a12 or nil
+        if not pet and id == DS.MASS_DISPEL_CAST then
+            -- The press itself opens its log record, so a Mass Dispel that
+            -- took nothing still reads as one; and it is a landing the
+            -- correlator pairs fading shields with
+            DispelCast(m, seat.guid, t, id, a13)
+            MassDispelLanded(m, seat, ts, t, a13)
+        end
         if not pet then
             -- The feign stamps the seat, so its own UNIT_DIED is not a death
             if IsFeign(id, a13) then seat.feignAt = t end
@@ -1064,6 +1230,8 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         local id = type(a12) == "number" and a12 or nil
         local t = Rel(m, ts)
         if id and PREP_AURAS[id] then return end
+        -- A shield's own clock, so its natural expiry is never called broken
+        if sub == "SPELL_AURA_APPLIED" and id and DS.SHATTERABLE[id] then corr:Applied(dst.guid, id, ts) end
         -- The general aura record (buffs and debuffs alike), for the
         -- replay's icon rows. A refresh or a stack extends the open one.
         if sub == "SPELL_AURA_APPLIED" or not dst.openAuras[a13] then
@@ -1136,6 +1304,14 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
             return
         end
         CloseAura(dst, a13, t)
+        if id and DS.SHATTERABLE[id] then
+            -- A shield fading as a Mass Dispel from the other side lands is
+            -- the shield it broke: the log names no dispel for it
+            local land = corr:Faded(dst.guid, dst.team, id, a13, ts)
+            if land then
+                CreditShatter(m, land.src, land.info or "Mass Dispel", dst.guid, id, a13, t, ts)
+            end
+        end
         if id and drinkIds[id] then
             CloseDrink(m, dst, t)
             return
@@ -1282,6 +1458,16 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
                 src.ccWasted = src.ccWasted + 1
                 Moment(m, Rel(m, ts), "CCFAIL", src.guid, dg, spellId, spellName, nil, missType)
             end
+            -- A purge / steal / Mass Dispel that missed took nothing: a
+            -- line in the dispel log under its cast (Cloak of Shadows reads
+            -- IMMUNE, a Grounding Totem names itself as the target)
+            if spellId and DS.TOOLS[spellId] then
+                src.dispelFails = src.dispelFails + 1
+                local tgt, tpet = DispelTarget(m, dg, dn, df)
+                local c = DispelCast(m, src.guid, Rel(m, ts), spellId, spellName, pet)
+                DispelHit(c, { dst = tgt and tgt.guid or nil, pet = tpet, dn = (not tgt) and dn or nil,
+                    off = true, r = type(missType) == "string" and missType or "MISS" })
+            end
         end
         if dst then
             local rec = Rec(dst, "takenSpells", "takenSpellsN", spellName, spellName, nil, spellId)
@@ -1370,16 +1556,66 @@ function A.MergeScoreboard(m, rows, ourFaction)
     return merged
 end
 
--- Team info from GetBattlefieldTeamInfo: { name, before, after, mmr }
+-- Team info from GetBattlefieldTeamInfo: { name, before, after, mmr,
+-- teamless }. In a teamless season (the Anniversary ladder: every player
+-- carries a personal rating and queues with anyone) there is no team to
+-- have a rating, and the scoreboard's per-player ratingChange is the only
+-- delta Blizzard's own board shows; the team fields then mean nothing,
+-- and only the side's average MMR is kept.
 function A.SetTeamInfo(m, teamKey, info)
     if not m or type(info) ~= "table" then return end
     local tm = m.teams[teamKey]
     if not tm then return end
+    if info.teamless then
+        m.teamless = true
+        if type(info.mmr) == "number" and info.mmr > 0 then tm.mmr = info.mmr end
+        return
+    end
     if type(info.name) == "string" and info.name ~= "" then tm.name = info.name end
     if type(info.before) == "number" then tm.ratingBefore = info.before end
     if type(info.after) == "number" then tm.ratingAfter = info.after end
     if type(info.mmr) == "number" then tm.mmr = info.mmr end
     if tm.name or tm.ratingBefore then m.rated = true end
+end
+
+-- Our personal ratings before the match, { [teamSize] = rating } from
+-- GetPersonalRatedInfo. Only ever written while the match is live and
+-- undecided, so a post-match refresh cannot pass itself off as "before".
+function A.SetMyRatings(m, byBracket)
+    if not m or m.result or type(byBracket) ~= "table" then return end
+    for size, rating in pairs(byBracket) do
+        if (size == 2 or size == 3 or size == 5) and type(rating) == "number" then
+            m.myRatings = m.myRatings or {}
+            m.myRatings[size] = rating
+        end
+    end
+end
+
+-- Our own rating across a match: before, after, change. The player's own
+-- scoreboard row is the truth (in a teamless season teammates' changes
+-- differ, so "any seat on our side" would read someone else's number);
+-- the team before/after is a fallback for a teams season only. A match
+-- recorded before `teamless` existed still reads right: the player's row
+-- outranks the team numbers it may carry.
+function A.OurRating(m)
+    if not m or m.rated == false then return nil end
+    local change
+    for _, seat in pairs(m.seats) do
+        if seat.team == "us" and seat.token == "player" and seat.sb and seat.sb.ratingChange then
+            change = seat.sb.ratingChange
+            break
+        end
+    end
+    if change then
+        local before = m.myRatings and m.myRatings[m.bracket]
+        if before then return before, before + change, change end
+        return nil, nil, change
+    end
+    local tm = m.teams.us
+    if not m.teamless and tm.ratingBefore and tm.ratingAfter then
+        return tm.ratingBefore, tm.ratingAfter, tm.ratingAfter - tm.ratingBefore
+    end
+    return nil
 end
 
 local function CloseOpen(m, t)
@@ -1477,8 +1713,13 @@ A.STATS = {
         value = function(s) return s.ints end,
         ledger = "KICK", ledgerSide = "src",
         lists = {} },
-    { key = "DISPEL", label = "DISPELS", rateLabel = nil, color = "statUtil",
+    -- Every removal; `count` is the OFFENSIVE share (purges, steals, Mass
+    -- Dispel's shattered shields), so value - count is the cleanses and a
+    -- pane can print the split ("off/def") as of any cursor
+    { key = "DISPEL", label = "DISPELS", rateLabel = nil, color = "statUtil", split = true,
         value = function(s) return s.dispels + s.purges end,
+        count = function(s) return s.purges end,
+        countIf = function(e) return e.x == "PURGE" end,
         ledger = "DISPEL", ledgerSide = "src",
         lists = {} },
     { key = "KILLS", label = "KILLS", rateLabel = nil, color = "statDeath",
@@ -1558,7 +1799,7 @@ function A.SeatValueAt(m, seat, stat, t)
         local e = m.ledger[i]
         if e.t > t then break end
         if LedgerMatch(stat, e) and e[stat.ledgerSide] == seat.guid then
-            count = count + 1
+            if not stat.countIf or stat.countIf(e) then count = count + 1 end
             if stat.ledgerSeconds then
                 local t2 = e.t2 or (e.t + CC_OPEN_CAP)
                 total = total + (min(t2, t) - e.t)
@@ -1607,7 +1848,9 @@ local function LedgerValuesAt(m, stat, t)
         if LedgerMatch(stat, e) then
             local guid = e[stat.ledgerSide]
             if guid then
-                countBy[guid] = (countBy[guid] or 0) + 1
+                if not stat.countIf or stat.countIf(e) then
+                    countBy[guid] = (countBy[guid] or 0) + 1
+                end
                 local add
                 if stat.ledgerSeconds then
                     local t2 = e.t2 or (e.t + CC_OPEN_CAP)
@@ -1853,6 +2096,105 @@ function A.LedgerIndexAt(m, t)
     return ans
 end
 
+-- ---------------------------------------------------------------------------
+-- Reading the dispel log
+-- ---------------------------------------------------------------------------
+
+-- A match recorded before the log existed still has its DISPEL moments:
+-- the log is rebuilt from them once (grouped by caster and time like the
+-- live recorder groups), without the cast names those moments never kept.
+-- Session-only (`_dlog`, stripped from the store).
+local function RebuiltLog(m)
+    local log = m._dlog
+    if log then return log end
+    log = { n = 0 }
+    for i = 1, m.ledgerN do
+        local e = m.ledger[i]
+        if e.kind == "DISPEL" then
+            local name = e.by or "Dispel"
+            local c
+            for j = log.n, 1, -1 do
+                local g = log[j]
+                if g.t < e.t - DLOG_GROUP then break end
+                if g.src == e.src and g.name == name then c = g; break end
+            end
+            if not c then
+                log.n = log.n + 1
+                c = { t = e.t, src = e.src, id = e.byId, name = name, hits = {} }
+                log[log.n] = c
+            end
+            c.hits[#c.hits + 1] = { dst = e.dst, pet = e.pet, dn = e.dn, id = e.id, name = e.name,
+                off = e.x == "PURGE", inf = e.inf }
+        end
+    end
+    m._dlog = log
+    return log
+end
+
+-- The log and its length: casts in time order, each with its hits
+function A.DispelLog(m)
+    if not m then return nil, 0 end
+    if m.dlog then return m.dlog, m.dlogN or #m.dlog end
+    local log = RebuiltLog(m)
+    return log, log.n
+end
+
+-- Index of the last cast at or before t (0 when none yet)
+function A.DispelIndexAt(m, t)
+    local log, n = A.DispelLog(m)
+    local lo, hi, ans = 1, n, 0
+    while lo <= hi do
+        local mid = floor((lo + hi) / 2)
+        if log[mid].t <= t then
+            ans = mid
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    return ans
+end
+
+-- Per-seat tallies as of t (nil = the whole match), read off the log:
+-- out[guid] = { def, off, fail, shatter, lost, cleansed } — lost = buffs
+-- purged off them, cleansed = debuffs taken off them. `out` is reused;
+-- seats with nothing keep zeroes. Bounded like the log (DLOG_CAP casts,
+-- DLOG_HITS each); the seat counters stay the whole-match truth.
+function A.DispelTallyAt(m, t, out)
+    for _, rec in pairs(out) do
+        rec.def, rec.off, rec.fail, rec.shatter, rec.lost, rec.cleansed = 0, 0, 0, 0, 0, 0
+    end
+    local function Of(guid)
+        local rec = out[guid]
+        if not rec then
+            rec = { def = 0, off = 0, fail = 0, shatter = 0, lost = 0, cleansed = 0 }
+            out[guid] = rec
+        end
+        return rec
+    end
+    local log, n = A.DispelLog(m)
+    for i = 1, n do
+        local c = log[i]
+        if t and c.t > t then break end
+        local s = c.src and Of(c.src)
+        for _, h in ipairs(c.hits) do
+            if h.r then
+                if s then s.fail = s.fail + 1 end
+            else
+                if s then
+                    if h.off then s.off = s.off + 1 else s.def = s.def + 1 end
+                    if h.inf then s.shatter = s.shatter + 1 end
+                end
+                if h.dst then
+                    local d = Of(h.dst)
+                    if h.off then d.lost = d.lost + 1 else d.cleansed = d.cleansed + 1 end
+                end
+            end
+        end
+    end
+    return out
+end
+
 -- Seat lookups the window layer needs by name (tooltips, scoreboard)
 function A.SeatName(m, guid)
     local seat = guid and m.seats[guid]
@@ -1980,7 +2322,7 @@ end
 -- ---------------------------------------------------------------------------
 -- History: the kept matches read together. Records (out[1..n], out.n):
 --   RECORD     played, wins, losses, left
---   RATING     delta, from, to  (our team's rating across rated matches)
+--   RATING     delta, from, to  (our own rating across rated matches; from/to only within one bracket)
 --   BRACKET    size, played, wins
 --   COMP       comp ("DRUID/WARLOCK/WARRIOR"), played, wins, losses
 --   MAP        map, played, wins
@@ -2000,17 +2342,6 @@ local function CompKey(m)
     return table.concat(classes, "/")
 end
 
-local function OurRatingMove(m)
-    local tm = m.teams.us
-    if tm.ratingBefore and tm.ratingAfter then return tm.ratingBefore, tm.ratingAfter end
-    for _, seat in pairs(m.seats) do
-        if seat.team == "us" and seat.token == "player" and seat.sb and seat.sb.ratingChange then
-            return nil, nil, seat.sb.ratingChange
-        end
-    end
-    return nil
-end
-
 function A.History(list, out)
     local n = 0
     local function add(rec) n = n + 1; out[n] = rec end
@@ -2019,6 +2350,7 @@ function A.History(list, out)
     local durSum, durN, fbSum, fbN = 0, 0, 0, 0
     local fb = { kind = "FIRSTBLOOD", drew = 0, wonWhenDrew = 0, gave = 0, wonWhenGave = 0 }
     local ratingDelta, ratingFrom, ratingTo, rated = 0, nil, nil, 0
+    local ratingBracket, ratingMixed -- personal ratings are per bracket: no from/to across two ladders
     for i = #list, 1, -1 do -- oldest first, so the rating trend runs forward
         local m = list[i]
         rec.played = rec.played + 1
@@ -2061,18 +2393,20 @@ function A.History(list, out)
                 if won then fb.wonWhenGave = fb.wonWhenGave + 1 end
             end
         end
-        local before, after, change = OurRatingMove(m)
-        if before and after then
-            rated = rated + 1
-            ratingFrom = ratingFrom or before
-            ratingTo = after
-            ratingDelta = ratingDelta + (after - before)
-        elseif change then
+        local before, after, change = A.OurRating(m)
+        if change then
             rated = rated + 1
             ratingDelta = ratingDelta + change
+            if before then
+                ratingFrom = ratingFrom or before
+                ratingTo = after
+                if ratingBracket and ratingBracket ~= m.bracket then ratingMixed = true end
+                ratingBracket = m.bracket
+            end
         end
     end
     add(rec)
+    if ratingMixed then ratingFrom, ratingTo = nil, nil end
     if rated > 0 then add({ kind = "RATING", delta = ratingDelta, from = ratingFrom, to = ratingTo, n = rated }) end
     if durN > 0 or fbN > 0 then
         add({ kind = "TIMING", avgDur = durN > 0 and durSum / durN or nil, avgFirstBlood = fbN > 0 and fbSum / fbN or nil, n = durN })
@@ -2122,6 +2456,7 @@ local function Strip(m)
         seat.dr = {}
         seat._cum = nil
     end
+    m._dlog = nil
 end
 
 function A.Export(keep)
@@ -2157,6 +2492,13 @@ local function ValidMatch(m)
         seat.auras = seat.auras or {}
         seat.aurasN = seat.aurasN or 0
         seat.auraDropped = seat.auraDropped or 0
+        -- and the dispel fields a pre-log store never had (its log is
+        -- rebuilt from the DISPEL moments on first read)
+        seat.dispelFails = seat.dispelFails or 0
+        seat.shatters = seat.shatters or 0
+    end
+    if m.dlog ~= nil and (type(m.dlog) ~= "table" or type(m.dlogN) ~= "number") then
+        m.dlog, m.dlogN = nil, nil
     end
     return true
 end

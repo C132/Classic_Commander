@@ -84,6 +84,7 @@ local DefaultSettings = {
     -- how many past matches survive a logout
     ArenaRecord = true,      -- record arena matches (both teams, replayable)
     ArenaKeepMatches = 6,    -- past matches saved across logout (0 = session only)
+    ArenaDispelLog = true,   -- the replay's DISPEL LOG drawer is open (its header button toggles it)
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "DARK")) do
     DefaultSettings[key] = value

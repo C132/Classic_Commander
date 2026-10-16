@@ -236,3 +236,28 @@ visible wrong label, or missing feature) rather than silently mis-attributing.
     *Test*: have a hunter feign mid-match — the card must read FEIGN (not
     DEAD), no kill is credited, and when the feign ends the card is normal;
     the ledger shows a FEIGN moment at that second.
+
+40. **Mass Dispel's immunity break (39897, DISPEL_MECHANIC 29) logs no
+    SPELL_DISPEL** — the shield's SPELL_AURA_REMOVED is the only trace, so
+    D29 infers the break from the fade. Either answer is safe: if the log
+    does name it, the correlator counts it once and drops the "inferred"
+    flag.
+    *Test*: Mass Dispel a Divine Shield or Ice Block — the dispel log shows
+    it under that Mass Dispel as SHATTER (or PURGE if the log named it),
+    your OFF count goes up by one, and never by two.
+
+41. **The two Mass Dispel halves log as SPELL_DISPEL with spell ids 32375
+    (friendly targets, auraType DEBUFF) and 32592 (enemy targets, BUFF)**,
+    both named "Mass Dispel", from the priest, within the same instant as
+    the 32375 SPELL_CAST_SUCCESS.
+    *Test*: Mass Dispel a fight with debuffs on your team and buffs on
+    theirs — ONE cast line in the dispel log with every removal under it,
+    debuffs tagged DISPEL, buffs tagged PURGE.
+
+42. **SPELL_DISPEL_FAILED carries the dispel at args 12-14 and the aura that
+    resisted at 15-17**, like SPELL_DISPEL without the aura type; a dispel
+    into Cloak of Shadows arrives as SPELL_MISSED IMMUNE with the dispel's
+    own id.
+    *Test*: Dispel Magic / Mass Dispel a rogue under Cloak — the log shows
+    the attempt as IMMUNE under its cast, MISS +1 in the tally.
+

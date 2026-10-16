@@ -72,7 +72,8 @@ local THEME = {
     statTaken = { 0.92, 0.42, 0.28 },  -- damage taken (hotter)
     statHeal  = { 0.40, 0.85, 0.45 },  -- healing
     statDeath = { 0.85, 0.25, 0.20 },  -- deaths
-    statUtil  = { 0.35, 0.80, 0.90 },  -- interrupts / dispels / cc breaks
+    statUtil  = { 0.35, 0.80, 0.90 },  -- interrupts / dispels / cc breaks (and OFFENSIVE dispels)
+    statCleanse = { 0.55, 0.90, 0.68 }, -- DEFENSIVE dispels: a debuff taken off a friend (mint)
     statApm   = { 0.72, 0.62, 0.95 },  -- actions per minute (violet)
     statCC    = { 0.86, 0.45, 1.00 },  -- crowd control (violet-magenta)
     statMana  = { 0.35, 0.55, 0.95 },  -- mana drained (mana blue)
@@ -177,6 +178,7 @@ local MODE_COLOR_KEYS = {
     DEATHS = "statDeath", INT = "statUtil", DISPEL = "statUtil", CCBREAK = "statUtil",
     APM = "statApm",
     ARENA_DMG = "statDmg", ARENA_HEAL = "statHeal", ARENA_TAKEN = "statTaken", ARENA_CC = "statCC",
+    ARENA_DISPEL = "statUtil",
 }
 
 local function ModeColor(mode)
@@ -273,6 +275,13 @@ local function FmtTime(secs)
     return format("%d:%02d", math.floor(secs / 60), secs % 60)
 end
 
+-- A dispel split for the small column: offensive in the utility cyan,
+-- defensive in the cleanse mint ("5/3"; the tooltip names both sides)
+local function SplitText(off, def)
+    return EscOf(THEME.statUtil) .. format("%d", off) .. "|r" .. ESC.dim .. "/|r"
+        .. EscOf(THEME.statCleanse) .. format("%d", def) .. "|r"
+end
+
 local function ShortName(name)
     if not name then return "?" end
     local dash = name:find("-", 1, true)
@@ -359,6 +368,7 @@ local ARENA_MODES = {
     { key = "ARENA_HEAL", label = "ARENA HEAL", arena = true, stat = "HEAL", lists = {} },
     { key = "ARENA_TAKEN", label = "ARENA TAKEN", arena = true, stat = "TAKEN", lists = {} },
     { key = "ARENA_CC", label = "ARENA CC", arena = true, stat = "CC", lists = {} },
+    { key = "ARENA_DISPEL", label = "ARENA DISPELS", arena = true, stat = "DISPEL", lists = {} },
 }
 
 local function ModeByKey(key)
@@ -599,6 +609,33 @@ local function BarTooltip(row)
     if mode.active then
         GameTooltip:AddDoubleLine("ACTIVE", FmtTime(actor[mode.active]),
             td[1], td[2], td[3], tf[1], tf[2], tf[3])
+    end
+    if mode.split then
+        -- Both sides by name, then each side's top auras
+        for _, part in ipairs(mode.split) do
+            local pc = THEME[part.color] or mc
+            GameTooltip:AddDoubleLine(part.label, FmtNum(actor[part.field] or 0),
+                td[1], td[2], td[3], pc[1], pc[2], pc[3])
+        end
+        for li, list in ipairs(mode.lists) do
+            local part = mode.split[li]
+            local sideTotal = part and actor[part.field] or 0
+            local k1, v1, r1, k2, v2, r2, k3, v3, r3 = TooltipTop3(actor[list.field])
+            if k1 and sideTotal > 0 then
+                local pc = part and THEME[part.color] or mc
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(list.title, td[1], td[2], td[3])
+                for _, kv in ipairs({ { k1, v1, r1 }, { k2, v2, r2 }, { k3, v3, r3 } }) do
+                    if kv[1] then
+                        GameTooltip:AddDoubleLine(IconTag(kv[3], 14) .. " " .. kv[1], FmtNum(kv[2]),
+                            tf[1], tf[2], tf[3], pc[1], pc[2], pc[3])
+                    end
+                end
+            end
+        end
+        GameTooltip:AddLine("Click for the full breakdown", THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3])
+        GameTooltip:Show()
+        return
     end
     local spec = mode.lists[1]
     if spec and value > 0 then
@@ -855,6 +892,10 @@ local function RepaintArenaPane(pane, mode, want)
                 big, small = FmtNum(data.rate), FmtNum(data.value)
             elseif stat.seconds then
                 big, small = FmtTime(data.value), (data.count or 0) .. "x"
+            elseif stat.split then
+                -- Offensive / defensive: the count is the offensive share
+                local off = data.count or 0
+                big, small = FmtNum(data.value), SplitText(off, data.value - off)
             else
                 big = FmtNum(data.value)
                 small = stat.rateLabel and FmtNum(data.rate) or ""
@@ -907,7 +948,12 @@ ArenaSeatTooltip = function(row, matchOverride)
     if seat.ccWasted > 0 then line("CC INTO IMMUNITY", tostring(seat.ccWasted), THEME.danger) end
     if seat.ccBroke > 0 then line("BROKE OWN TEAM'S CC", tostring(seat.ccBroke), THEME.danger) end
     line("KICKS", format("%d  (kicked %d)", seat.ints, seat.intsTaken), THEME.statUtil)
-    line("DISPELS / PURGES", format("%d / %d", seat.dispels, seat.purges), THEME.statUtil)
+    line("DISPELS", format("%s%d off|r · %s%d def|r", EscOf(THEME.statUtil), seat.purges, EscOf(THEME.statCleanse), seat.dispels), THEME.statUtil)
+    if (seat.shatters or 0) > 0 then line("SHIELDS SHATTERED", tostring(seat.shatters), THEME.statUtil) end
+    if (seat.dispelFails or 0) > 0 then line("DISPELS THAT TOOK NOTHING", tostring(seat.dispelFails), THEME.danger) end
+    if seat.purgesTaken > 0 or seat.dispelsTaken > 0 then
+        line("PURGED OFF / CLEANSED OFF", format("%d / %d", seat.purgesTaken, seat.dispelsTaken))
+    end
     line("KILLS / DEATHS", format("%d / %d", seat.kills, seat.deaths), THEME.statDeath)
     line("APM", format("%.0f  (%d casts)", seat.casts * 60 / dur, seat.casts), THEME.statApm)
     if seat.drained > 0 or seat.drainedTaken > 0 then
@@ -1005,6 +1051,9 @@ local function RepaintPane(paneIndex)
             local big, small
             if mode.primary == "rate" and mode.rateLabel then
                 big, small = FmtNum(data.rate), FmtNum(data.value)
+            elseif mode.split then
+                big = FmtNum(data.value)
+                small = SplitText(actor[mode.split[1].field] or 0, actor[mode.split[2].field] or 0)
             else
                 big = FmtNum(data.value)
                 small = mode.rateLabel and FmtNum(data.rate) or ""
@@ -1912,7 +1961,14 @@ RepaintDetail = function()
             local idx = i + view.targetOffset
             local slot = detailScratch2[idx]
             if slot and slot.key then
-                row.name:SetText(ShortName(slot.key))
+                -- A records list (aura names) keeps its icons and the whole
+                -- name: ShortName would cut "Mind-numbing Poison" at the dash
+                if spec2.records then
+                    local rec = slot.rec
+                    row.name:SetText((type(rec) == "table" and (IconTag(rec, 12) .. " ") or "") .. slot.key)
+                else
+                    row.name:SetText(ShortName(slot.key))
+                end
                 row.name:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
                 row.value:SetText(FmtNum(slot.value))
                 row.value:SetTextColor(mc[1], mc[2], mc[3])
@@ -3008,6 +3064,9 @@ function CommanderMeters_Test()
         6552, "Pummel", 1, 12345, "Dummy Bolt", 32)
     ev(10.8, "SPELL_DISPEL", nil, P3, "Confessor", FP, 0, P1, "Vanguard", FP, 0,
         527, "Dispel Magic", 2, 23456, "Dummy Curse", 32, "DEBUFF")
+    -- ...and an offensive one: a buff off the dummy (the DISPELS split)
+    ev(11.2, "SPELL_DISPEL", nil, P3, "Confessor", FP, 0, M1, "Training Dummy", FM, 0,
+        988, "Dispel Magic", 2, 23457, "Dummy Ward", 2, "BUFF")
     ev(11.0, "SPELL_DAMAGE", nil, M1, "Training Dummy", FM, 0, P1, "Vanguard", FP, 0,
         15621, "Skull Crack", 1, 1500, 0, 1, 0, 0, 350, false, false, true, false)
     -- The priest's shield eats a hit (healer absorb credit + attacker damage)
@@ -3183,12 +3242,33 @@ local function MatchLabel(m)
     return size .. " " .. (m.map or "Arena")
 end
 
+-- Our personal ratings before the gates: GetPersonalRatedInfo(i) ->
+-- rating @1 ... teamSize @12 (i is a slot, not a bracket). Asked for on
+-- entry (RequestRatedInfo -> PVP_RATED_STATS_UPDATE); the engine only
+-- accepts it while the match is undecided, so "before" is never post-match.
+local myRatingRead = {}
+
+local function ArenaReadMyRatings()
+    local m = A.Live()
+    if not m or not GetPersonalRatedInfo then return end
+    for k in pairs(myRatingRead) do myRatingRead[k] = nil end
+    for i = 1, 3 do
+        local ok, rating, _, _, _, _, _, _, _, _, _, _, teamSize = pcall(GetPersonalRatedInfo, i)
+        if ok and type(rating) == "number" and type(teamSize) == "number" then
+            myRatingRead[teamSize] = rating
+        end
+    end
+    A.SetMyRatings(m, myRatingRead)
+end
+
 local function ArenaBegin()
     if not (db and db.EnableMeters and db.ArenaRecord) then return end
     if A.Live() then return end
     E.SetMatch(true)
     A.Begin(time(), ArenaMapName())
     ArenaScanRoster()
+    ArenaReadMyRatings() -- whatever the client already holds; the request refreshes it
+    if RequestRatedInfo then pcall(RequestRatedInfo) end
     for k in pairs(trinketAsked) do trinketAsked[k] = nil end
     if arenaEvents then
         pcall(arenaEvents.RegisterEvent, arenaEvents, "UNIT_HEALTH")
@@ -3224,16 +3304,32 @@ end
 -- newTeamRating, teamRating(MMR) in Blizzard's TBC scoreboard. Index 0/1
 -- are the arena factions (green/gold); ours comes from
 -- GetBattlefieldArenaFaction. Every value is type-checked; anything odd
--- is simply not recorded.
+-- is simply not recorded. A teamless season (GetCurrentArenaSeasonUsesTeams
+-- false, the Anniversary ladder) has no team rating: Blizzard's board shows
+-- each player's own ratingChange instead, and so does the replay.
+local function ArenaSeasonTeamless()
+    if not GetCurrentArenaSeasonUsesTeams then return false end
+    local ok, usesTeams = pcall(GetCurrentArenaSeasonUsesTeams)
+    return ok and not usesTeams
+end
+
 local function ArenaReadTeamInfo(m, ourFaction)
     if not GetBattlefieldTeamInfo or type(ourFaction) ~= "number" then return end
+    local teamless = ArenaSeasonTeamless()
     for index = 0, 1 do
         local ok, name, before, after, mmr = pcall(GetBattlefieldTeamInfo, index)
         if ok then
             A.SetTeamInfo(m, index == ourFaction and "us" or "them",
-                { name = name, before = before, after = after, mmr = mmr })
+                { name = name, before = before, after = after, mmr = mmr, teamless = teamless })
         end
     end
+end
+
+-- Rated or skirmish, the way Blizzard's board decides it
+local function ArenaReadRanked(m)
+    if not IsActiveBattlefieldArena then return end
+    local ok, isArena, isRanked = pcall(IsActiveBattlefieldArena)
+    if ok and isArena then m.rated = isRanked and true or false end
 end
 
 local function ArenaFinishIfDecided()
@@ -3253,6 +3349,7 @@ local function ArenaFinishIfDecided()
     else
         result = "DRAW"
     end
+    ArenaReadRanked(m)
     local rows = ArenaReadScoreboard()
     if rows then A.MergeScoreboard(m, rows, ourFaction) end
     ArenaReadTeamInfo(m, ourFaction)
@@ -3471,6 +3568,7 @@ function CommanderMeters_ArenaTest()
     buff(31, "SPELL_AURA_APPLIED", P3, "Vespers", FPARTY, ME, "Frostweaver", FME, 25389, "Prayer of Fortitude")
     buff(31, "SPELL_AURA_APPLIED", P3, "Vespers", FPARTY, R2, "Shiv", FPARTY, 25389, "Prayer of Fortitude")
     buff(32, "SPELL_AURA_APPLIED", D2, "Leafshade", FENEMY, W1, "Gorehowl", FENEMY, 26991, "Gift of the Wild")
+    buff(32, "SPELL_AURA_APPLIED", D2, "Leafshade", FENEMY, D2, "Leafshade", FENEMY, 26992, "Thorns")
     buff(33, "SPELL_AURA_APPLIED", L3, "Nethra", FENEMY, L3, "Nethra", FENEMY, 27260, "Fel Armor")
     aura(60, "SPELL_AURA_REMOVED", ME, "Frostweaver", FME, ME, "Frostweaver", FME, 32727, "Arena Preparation")
     -- Opener: sap the druid, cheap shot the warlock, mage sheeps the warrior
@@ -3570,6 +3668,24 @@ function CommanderMeters_ArenaTest()
     hp[L3] = 0
     snap(L3, 109.5)
     ev(110, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, L3, "Nethra", FENEMY, 0)
+    -- The felhunter's Devour Magic at the priest's shield: resisted, a
+    -- dispel that took nothing (the dispel log's failed line)
+    ev(92, "SPELL_MISSED", nil, FEL, "Felhunter", FEPET, 0, ME, "Frostweaver", FME, 0, 27277, "Devour Magic", 32, "RESIST", false, 0, false)
+    -- MASS DISPEL: the druid roots the mage; the priest's Mass Dispel takes
+    -- the roots off the mage (defensive) and Gift of the Wild and Thorns
+    -- off the warrior and the druid (offensive) — one cast, three removals,
+    -- the sequence the dispel log reads back (cast between two Flash Heals)
+    aura(114, "SPELL_AURA_APPLIED", D2, "Leafshade", FENEMY, ME, "Frostweaver", FME, 26989, "Entangling Roots")
+    cast(114, D2, "Leafshade", FENEMY, 26989, "Entangling Roots", ME)
+    castStart(116.3, P3, "Vespers", FPARTY, 32375, "Mass Dispel")
+    cast(117.8, P3, "Vespers", FPARTY, 32375, "Mass Dispel")
+    spend(P3, 117.8, 140)
+    ev(117.8, "SPELL_DISPEL", nil, P3, "Vespers", FPARTY, 0, ME, "Frostweaver", FME, 0, 32375, "Mass Dispel", 1, 26989, "Entangling Roots", 8, "DEBUFF")
+    aura(117.8, "SPELL_AURA_REMOVED", D2, "Leafshade", FENEMY, ME, "Frostweaver", FME, 26989, "Entangling Roots")
+    ev(117.8, "SPELL_DISPEL", nil, P3, "Vespers", FPARTY, 0, W1, "Gorehowl", FENEMY, 0, 32592, "Mass Dispel", 1, 26991, "Gift of the Wild", 8, "BUFF")
+    buff(117.8, "SPELL_AURA_REMOVED", D2, "Leafshade", FENEMY, W1, "Gorehowl", FENEMY, 26991, "Gift of the Wild")
+    ev(117.8, "SPELL_DISPEL", nil, P3, "Vespers", FPARTY, 0, D2, "Leafshade", FENEMY, 0, 32592, "Mass Dispel", 1, 26992, "Thorns", 8, "BUFF")
+    buff(117.8, "SPELL_AURA_REMOVED", D2, "Leafshade", FENEMY, D2, "Leafshade", FENEMY, 26992, "Thorns")
     -- The warrior and druid fight on; the mage takes a beating, gets healed
     for i = 0, 5 do
         swing(111 + i * 2, W1, "Gorehowl", FENEMY, ME, "Frostweaver", FME, 560 + i * 20, i == 2)
@@ -3786,6 +3902,7 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
         pcall(events.RegisterEvent, events, "ARENA_PREP_OPPONENT_SPECIALIZATIONS")
         pcall(events.RegisterEvent, events, "ARENA_CROWD_CONTROL_SPELL_UPDATE")
         pcall(events.RegisterEvent, events, "ARENA_COOLDOWNS_UPDATE")
+        pcall(events.RegisterEvent, events, "PVP_RATED_STATS_UPDATE")
         C_Timer.NewTicker(1, function()
             local now = time()
             E.Tick(now)
@@ -3832,6 +3949,10 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
     end
     if event == "ZONE_CHANGED_NEW_AREA" then
         ArenaZoneCheck()
+        return
+    end
+    if event == "PVP_RATED_STATS_UPDATE" then
+        ArenaReadMyRatings()
         return
     end
     if event == "PLAYER_REGEN_DISABLED" then

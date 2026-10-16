@@ -44,6 +44,7 @@ function UnitHealthMax(token) return (hpByToken[token] and hpByToken[token][2]) 
 
 local function LoadEngine()
     CommanderMetersEngine = nil
+    assert(loadfile(METERS .. "/CommanderMetersDispel.lua"))()
     local chunk = assert(loadfile(METERS .. "/CommanderMetersEngine.lua"))
     chunk()
     return CommanderMetersEngine
@@ -169,10 +170,10 @@ function Fixture:interrupt(ts, sg, sn, sf, dg, dn, df, what, owner)
     self:bucket(self.fightNo, owner or sg, "ints", 1)
 end
 
-function Fixture:dispel(ts, sg, sn, sf, dg, dn, df, what, stolen, owner)
+function Fixture:dispel(ts, sg, sn, sf, dg, dn, df, what, stolen, owner, auraType)
     self.E.OnCleu(ts, stolen and "SPELL_STOLEN" or "SPELL_DISPEL", nil,
         sg, sn, sf, 0, dg, dn, df, 0,
-        527, "Dispel Magic", 2, 888, what, 32, "DEBUFF")
+        527, "Dispel Magic", 2, 888, what, 32, auraType or (stolen and "BUFF" or "DEBUFF"))
     self:bucket(self.fightNo, owner or sg, "dispels", 1)
 end
 
@@ -363,7 +364,8 @@ local function CheckSegment(E, seg, expected, expTotals, label, wantSeries)
                 eq(a.casts, exp.casts, label .. ": casts " .. guid)
                 eq(SumRecords(a.castSpells), a.casts, label .. ": cast records sum " .. guid)
                 eq(SumRecords(a.intSpells), a.ints, label .. ": int records sum " .. guid)
-                eq(SumRecords(a.dispelSpells), a.dispels, label .. ": dispel records sum " .. guid)
+                eq(SumRecords(a.purgeSpells) + SumRecords(a.cleanseSpells), a.dispels, label .. ": dispel records sum " .. guid)
+                eq(a.purges + a.cleanses, a.dispels, label .. ": dispel split sums " .. guid)
                 eq(SumRecords(a.ccSpells), a.ccb, label .. ": cc records sum " .. guid)
                 -- Invariant: per-ability == actor total == per-target
                 eq(SumRecords(a.spells), a.dmg, label .. ": spells sum == dmg " .. guid)
@@ -531,6 +533,11 @@ eq(f1.actors[B].ints, 1, "A: pet interrupt folded to the warlock")
 CHECK(f1.actors[B].intSpells["Guard Heal"] ~= nil, "A: interrupted spell keyed")
 eq(f1.actors[C].dispels, 1, "A: priest dispel")
 eq(f1.actors[D].dispels, 1, "A: spellsteal counts as a dispel")
+eq(f1.actors[C].cleanses, 1, "A: a curse off a friend is a defensive dispel")
+eq(f1.actors[C].purges, 0, "A: ...and not an offensive one")
+eq(f1.actors[D].purges, 1, "A: a steal is an offensive dispel")
+CHECK(f1.actors[D].purgeSpells["Gnarl Might"] ~= nil, "A: the stolen aura is on the offensive list")
+CHECK(f1.actors[C].cleanseSpells["Dummy Curse"] ~= nil, "A: the cleansed aura is on the defensive list")
 eq(f1.actors[A].ccb, 1, "A: polymorph break counted")
 eq(f1.actors[B].ccb, 1, "A: sap break via spell counted")
 CHECK(f1.actors[A].ccSpells["Ice Armor"] == nil, "A: non-CC aura break filtered")
@@ -957,6 +964,69 @@ do
     -- Ending match mode when it was never armed is quiet
     EM.SetMatch(false, "Never", "WIN", T0 + 700)
     eq(#closed, 4, "M: deactivating unarmed match mode is a no-op")
+end
+
+-- ===========================================================================
+-- Stage N: dispels — the offensive / defensive split, the gates purge
+-- inside a match, and our Mass Dispel's shattered shields
+-- ===========================================================================
+
+do
+    local EN = LoadEngine()
+    EN.Init({ IdleTimeout = 3 }, T0)
+    local PR, MG = "Player-0-PRIEST", "Player-0-MAGE"
+    local PA = "Player-1-PALADIN"
+    local FE_PLAYER = 0x548  -- hostile player
+    EN.SetRosterEntry(PR, "player", "Vespers", "PRIEST")
+    EN.SetRosterEntry(MG, "party1", "Devinp", "MAGE")
+    local function ev(ts, sub, sg, sn, sf, dg, dn, df, ...)
+        EN.OnCleu(ts, sub, nil, sg, sn, sf, 0, dg, dn, df, 0, ...)
+    end
+    local function purge(ts, id, exId, exName)
+        ev(ts, "SPELL_DISPEL", PR, "Vespers", FP_MINE, PA, "Lightbane", FE_PLAYER, id or 527, "Dispel Magic", 2, exId or 27149, exName or "Blessing of Might", 2, "BUFF")
+    end
+    -- Outside a match a dispel still never opens a fight
+    purge(T0 + 5)
+    CHECK(not EN.InFight(), "N: outside a match a lone dispel opens nothing")
+    -- Inside one the gates purge IS the match's first action
+    EN.SetMatch(true)
+    purge(T0 + 10)
+    CHECK(EN.InFight(), "N: inside a match the gates purge opens the fight")
+    local cur = EN.GetCurrent and EN.GetCurrent() or nil
+    local function Actor(guid)
+        local seg = EN.GetCurrent and EN.GetCurrent() or nil
+        return seg and seg.actors[guid]
+    end
+    CHECK(Actor(PR) and Actor(PR).purges == 1 and Actor(PR).dispels == 1, "N: the purge is counted, offensive")
+    -- A cleanse is defensive
+    ev(T0 + 12, "SPELL_DISPEL", PR, "Vespers", FP_MINE, MG, "Devinp", FP_PARTY, 988, "Dispel Magic", 2, 12826, "Polymorph", 64, "DEBUFF")
+    CHECK(Actor(PR).cleanses == 1 and Actor(PR).cleanseSpells["Polymorph"] ~= nil, "N: a debuff off a teammate is defensive, listed as cleansed")
+    -- Our Mass Dispel breaks the paladin's bubble: no dispel line for it
+    ev(T0 + 20, "SPELL_AURA_APPLIED", PA, "Lightbane", FE_PLAYER, PA, "Lightbane", FE_PLAYER, 1020, "Divine Shield", 2, "BUFF")
+    ev(T0 + 22, "SPELL_CAST_SUCCESS", PR, "Vespers", FP_MINE, "", "", 0x80000000, 32375, "Mass Dispel", 1)
+    ev(T0 + 22, "SPELL_DISPEL", PR, "Vespers", FP_MINE, MG, "Devinp", FP_PARTY, 32375, "Mass Dispel", 1, 10890, "Psychic Scream", 32, "DEBUFF")
+    ev(T0 + 22, "SPELL_AURA_REMOVED", PA, "Lightbane", FE_PLAYER, PA, "Lightbane", FE_PLAYER, 1020, "Divine Shield", 2, "BUFF")
+    CHECK(Actor(PR).purgeSpells["Divine Shield"] ~= nil, "N: the bubble our Mass Dispel broke is on the offensive list")
+    eq(Actor(PR).purges, 2, "N: ...counted as an offensive removal")
+    eq(Actor(PR).cleanses, 2, "N: the friendly half's removal is defensive")
+    -- If the log names the removal after all, it is the same one
+    ev(T0 + 22, "SPELL_DISPEL", PR, "Vespers", FP_MINE, PA, "Lightbane", FE_PLAYER, 39897, "Mass Dispel", 1, 1020, "Divine Shield", 2, "BUFF")
+    eq(Actor(PR).purges, 2, "N: a shatter named later is not counted twice")
+    -- A bubble that simply ran out is no shatter, Mass Dispel or not
+    ev(T0 + 30, "SPELL_AURA_APPLIED", PA, "Lightbane", FE_PLAYER, PA, "Lightbane", FE_PLAYER, 1020, "Divine Shield", 2, "BUFF")
+    ev(T0 + 42, "SPELL_CAST_SUCCESS", PR, "Vespers", FP_MINE, "", "", 0x80000000, 32375, "Mass Dispel", 1)
+    ev(T0 + 42, "SPELL_AURA_REMOVED", PA, "Lightbane", FE_PLAYER, PA, "Lightbane", FE_PLAYER, 1020, "Divine Shield", 2, "BUFF")
+    eq(Actor(PR).purges, 2, "N: an expired bubble is not credited")
+    -- A friendly shield fading under our own Mass Dispel is nothing of ours
+    ev(T0 + 50, "SPELL_AURA_APPLIED", MG, "Devinp", FP_PARTY, MG, "Devinp", FP_PARTY, 45438, "Ice Block", 16, "BUFF")
+    ev(T0 + 52, "SPELL_CAST_SUCCESS", PR, "Vespers", FP_MINE, "", "", 0x80000000, 32375, "Mass Dispel", 1)
+    ev(T0 + 52, "SPELL_AURA_REMOVED", MG, "Devinp", FP_PARTY, MG, "Devinp", FP_PARTY, 45438, "Ice Block", 16, "BUFF")
+    eq(Actor(PR).purges, 2, "N: our own team's Ice Block is never our purge")
+    -- Both segments agree, and the split sums
+    local ov = EN.GetOverall and EN.GetOverall() or nil
+    CHECK(ov and ov.actors[PR] and ov.actors[PR].purges == 2 and ov.actors[PR].cleanses == 2, "N: Overall carries the same split")
+    eq(Actor(PR).purges + Actor(PR).cleanses, Actor(PR).dispels, "N: purges + cleanses = dispels")
+    EN.SetMatch(false, "2v2 Blade's Edge Arena", "WIN", T0 + 60)
 end
 
 if fails > 0 then

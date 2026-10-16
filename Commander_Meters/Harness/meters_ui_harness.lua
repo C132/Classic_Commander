@@ -454,6 +454,7 @@ CommanderArenaFrames_Data = {
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 Load(ADDONS .. "/Commander_Meters/CommanderMetersDB.lua")
+Load(ADDONS .. "/Commander_Meters/CommanderMetersDispel.lua")
 Load(ADDONS .. "/Commander_Meters/CommanderMetersEngine.lua")
 Load(ADDONS .. "/Commander_Meters/CommanderMetersArena.lua")
 Load(ADDONS .. "/Commander_Meters/CommanderMeters.lua")
@@ -548,13 +549,13 @@ do
         if f.__kind == "Button" and f.headerRole == "mode" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
-            if #menuCaptured == 15 and menuCaptured[1].text == "DAMAGE" then
+            if #menuCaptured == 16 and menuCaptured[1].text == "DAMAGE" then
                 modeBtn = f
                 break
             end
         end
     end
-    CHECK(modeBtn ~= nil, "C: mode menu opens with 9 modes + the arena section (15 entries)")
+    CHECK(modeBtn ~= nil, "C: mode menu opens with 9 modes + the arena section (16 entries: five arena modes)")
     if modeBtn then
         for _, info in ipairs(menuCaptured) do
             if info.text == "HEALING" then info.func() end
@@ -570,7 +571,11 @@ do
     local warrior = f1 and f1.actors["Player-0-CMTEST01"]
     local priest = f1 and f1.actors["Player-0-CMTEST03"]
     CHECK(warrior and warrior.ints == 1, "C: test fight recorded the interrupt")
-    CHECK(priest and priest.dispels == 1, "C: test fight recorded the dispel")
+    CHECK(priest and priest.dispels == 2, "C: test fight recorded both dispels")
+    CHECK(priest and priest.purges == 1 and priest.cleanses == 1,
+        "C: the split: a buff off the dummy is offensive, a curse off the warrior defensive")
+    CHECK(priest and priest.purgeSpells["Dummy Ward"] and priest.cleanseSpells["Dummy Curse"],
+        "C: each removal is listed on its own side")
     -- APM: keypresses only — the warrior's wand shot and the pet's Cleave
     -- are not counted, the warlock's ten bolts and the priest's two heals are
     local warlock = f1 and f1.actors["Player-0-CMTEST02"]
@@ -579,6 +584,56 @@ do
     CHECK(warlock and warlock.casts == 10 and warlock.castSpells["Grimtongue: Cleave"] == nil,
         "C: test fight counted the warlock's casts, not the pet's")
     CHECK(priest and priest.casts == 2, "C: test fight counted the priest's heal casts")
+end
+
+-- The DISPELS mode: offensive / defensive in the row's small column, both
+-- named in the tooltip, and one detail list per side
+do
+    local function FindBtn(pred)
+        for _, f in ipairs(frames) do
+            if f.__kind == "Button" and pred(f) then return f end
+        end
+    end
+    local function fsHas(text)
+        for _, fs in ipairs(allFontStrings) do
+            if fs.__text == text and fs.__shown ~= false then return true end
+        end
+        return false
+    end
+    local modeBtn = FindBtn(function(f) return f.headerRole == "mode" and f.__scripts.OnClick end)
+    local picked = false
+    if modeBtn then
+        menuCaptured = {}
+        modeBtn.__scripts.OnClick(modeBtn)
+        for _, info in ipairs(menuCaptured) do
+            if info.text == "DISPELS" then info.func(); picked = true end
+        end
+    end
+    CHECK(picked, "C: mode menu offers DISPELS")
+    root.__scripts.OnUpdate(root, 0.6)
+    CHECK(#harnessFailedErrors == 0, "C: dispels mode repaint clean", harnessFailedErrors[1])
+    local row = FindBtn(function(f) return f.paneIndex == 1 and f.rank and f.guid == "Player-0-CMTEST03" and f.__shown end)
+    CHECK(row ~= nil, "C: the priest has a DISPELS row")
+    if row then
+        CHECK(row.value.__text == "2", "C: two removals", row.value.__text)
+        CHECK(row.rate.__text and row.rate.__text:find("1|r", 1, true) ~= nil, "C: the small column carries the split", row.rate.__text)
+        row.__scripts.OnEnter(row)
+        CHECK(#harnessFailedErrors == 0, "C: dispels tooltip clean", harnessFailedErrors[1])
+        row.__scripts.OnLeave(row)
+        row.__scripts.OnClick(row)
+        root.__scripts.OnUpdate(root, 0.6)
+        CHECK(#harnessFailedErrors == 0, "C: dispels detail clean", harnessFailedErrors[1])
+        CHECK(fsHas("OFFENSIVE · PURGED / STOLEN") and fsHas("DEFENSIVE · CLEANSED"), "C: the detail lists both sides")
+        local ward, curse = false, false
+        for _, fs in ipairs(allFontStrings) do
+            if type(fs.__text) == "string" then
+                if fs.__text:find("Dummy Ward$") then ward = true end
+                if fs.__text:find("Dummy Curse$") then curse = true end
+            end
+        end
+        CHECK(ward and curse, "C: each side lists its aura, whole and with its icon")
+        row.__scripts.OnClick(row) -- close the detail again
+    end
 end
 
 -- Kill/wipe tagging via ENCOUNTER_END (fires while the fight is open)
@@ -975,7 +1030,7 @@ do
         if f.__kind == "Button" and f.headerRole == "mode" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
-            if #menuCaptured == 15 and menuCaptured[1].text == "DAMAGE" then
+            if #menuCaptured == 16 and menuCaptured[1].text == "DAMAGE" then
                 modeBtn = f
                 break
             end
@@ -1193,7 +1248,7 @@ do
         if f.__kind == "Button" and f.headerRole == "mode" and f.__scripts.OnClick then
             menuCaptured = {}
             f.__scripts.OnClick(f)
-            if #menuCaptured == 15 and menuCaptured[1].text == "DAMAGE" then
+            if #menuCaptured == 16 and menuCaptured[1].text == "DAMAGE" then
                 modeBtn = f
                 break
             end
@@ -1342,7 +1397,7 @@ Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
 -- Session persistence: logout writes the snapshot only when opted in
 CommanderMetersDB.PersistData = true
 Fire("PLAYER_LOGOUT")
-CHECK(type(CommanderMetersSession) == "table" and CommanderMetersSession.v == 2,
+CHECK(type(CommanderMetersSession) == "table" and CommanderMetersSession.v == 3,
     "C: logout wrote the session snapshot")
 CHECK(CommanderMetersSession.overall ~= nil, "C: snapshot carries Overall")
 CommanderMetersDB.PersistData = false
@@ -1784,6 +1839,107 @@ do
         CHECK(sentChat[before + 4] and sentChat[before + 4].msg:find("First blood") ~= nil, "ARENA: report first blood line")
         for i = before + 1, #sentChat do
             CHECK(not sentChat[i].msg:find("|c", 1, true), "ARENA: report line " .. (i - before) .. " is plain text")
+        end
+    end
+    -- The DISPEL LOG drawer (open by default): every dispel cast by cast
+    do
+        view.t = nil
+        view.playing = false
+        report.__scripts.OnUpdate(report, 0.6)
+        Errors("DLOG: repaint clean")
+        local btn = FindButton(function(f) return f.headerRole == "arenaDispels" end)
+        CHECK(btn ~= nil, "DLOG: the replay header has a DISPELS button")
+        CHECK(view.dlog == true, "DLOG: the drawer is open by default")
+        CHECK(report.__w == 812 + 300, "DLOG: the window widens by the drawer", report.__w)
+        CHECK(fsMatching("^DISPEL LOG$"), "DLOG: titled")
+        CHECK(fsMatching("^4 casts$"), "DLOG: counts the match's dispel casts")
+        local function Line(pred)
+            return FindButton(function(f) return f.dlogLine and f.__shown and f.desc and f.desc.c and pred(f.desc) end)
+        end
+        local mdLine = Line(function(d) return d.kind == "cast" and d.c.name == "Mass Dispel" end)
+        CHECK(mdLine ~= nil, "DLOG: the Mass Dispel is a cast line")
+        CHECK(mdLine and mdLine.tag.__text:find("3 removed"), "DLOG: ...that took three auras", mdLine and mdLine.tag.__text)
+        local roots = Line(function(d) return d.kind == "hit" and d.h.name == "Entangling Roots" end)
+        CHECK(roots and roots.tag.__text:find("DISPEL"), "DLOG: the roots off the mage read as a defensive dispel")
+        local gotw = Line(function(d) return d.kind == "hit" and d.h.name == "Gift of the Wild" end)
+        CHECK(gotw and gotw.tag.__text:find("PURGE"), "DLOG: Gift of the Wild off the warrior reads as a purge")
+        CHECK(mdLine and roots and gotw and mdLine.dlogLine < roots.dlogLine and roots.dlogLine < gotw.dlogLine,
+            "DLOG: the removals sit under their cast, in log order")
+        CHECK(gotw and gotw.text.__text:find("Gorehowl"), "DLOG: a removal names whom it came off")
+        local miss = Line(function(d) return d.kind == "hit" and d.h.r == "RESIST" end)
+        CHECK(miss and miss.tag.__text:find("RESISTED"), "DLOG: the felhunter's resisted Devour Magic is a line")
+        CHECK(fsMatching("^FREED$") and fsMatching("^OFF$") and fsMatching("^DEF$"), "DLOG: the tally block's columns")
+        for _, l in ipairs({ mdLine, roots, miss }) do
+            if l then l.__scripts.OnEnter(l); l.__scripts.OnLeave(l) end
+        end
+        Errors("DLOG: line tooltips clean")
+        if mdLine then
+            mdLine.__scripts.OnClick(mdLine)
+            CHECK(view.t ~= nil and math.abs(view.t - mdLine.desc.c.t) < 1e-6, "DLOG: clicking a cast moves the cursor to it")
+            report.__scripts.OnUpdate(report, 0.6)
+            local lit = Line(function(d) return d.kind == "cast" and d.c.name == "Mass Dispel" end)
+            CHECK(lit and lit.now.__shown == true, "DLOG: the cast at the cursor is lit")
+            CHECK(fsMatching("^4 of 4$"), "DLOG: the count reads as of the cursor")
+            view.t = 85
+            report.__scripts.OnUpdate(report, 0.6)
+            local later = Line(function(d) return d.kind == "cast" and d.c.name == "Mass Dispel" end)
+            CHECK(later and later.__alpha and later.__alpha < 1, "DLOG: casts past the cursor dim")
+            CHECK(fsMatching("^1 of 4$"), "DLOG: one cast before the cursor at 0:25")
+        end
+        local offChip = FindButton(function(f) return f.chip == "off" end)
+        CHECK(offChip ~= nil, "DLOG: filter chips")
+        if offChip then
+            view.t = nil
+            offChip.__scripts.OnClick(offChip)
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(view.dlogOff == false, "DLOG: the OFFENSIVE chip toggles")
+            CHECK(Line(function(d) return d.kind == "hit" and d.h.name == "Gift of the Wild" end) == nil, "DLOG: offensive off hides the purges")
+            CHECK(Line(function(d) return d.kind == "hit" and d.h.name == "Entangling Roots" end) ~= nil, "DLOG: ...and keeps the dispels")
+            offChip.__scripts.OnClick(offChip)
+        end
+        local themChip = FindButton(function(f) return f.chip == "them" end)
+        if themChip then
+            themChip.__scripts.OnClick(themChip)
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(Line(function(d) return d.c.src == "Player-1-CMARENA13" end) == nil, "DLOG: THEIRS off hides the enemy's casts")
+            CHECK(Line(function(d) return d.c.name == "Mass Dispel" end) ~= nil, "DLOG: ...and keeps ours")
+            themChip.__scripts.OnClick(themChip)
+        end
+        local anyLine = FindButton(function(f) return f.dlogLine == 1 end)
+        local list = anyLine and anyLine.__parent
+        CHECK(list and list.__scripts.OnMouseWheel ~= nil, "DLOG: the list scrolls")
+        if list and list.__scripts.OnMouseWheel then
+            report.__scripts.OnUpdate(report, 0.6)
+            list.__scripts.OnMouseWheel(list, -1)
+            CHECK(view.dlogFollow == false, "DLOG: the wheel stops the list following the cursor")
+            view.t = 70
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(view.dlogFollow == true, "DLOG: moving the cursor follows again")
+            view.t = nil
+        end
+        if btn then
+            btn.__scripts.OnClick(btn)
+            CHECK(view.dlog == false and report.__w == 812, "DLOG: the button closes the drawer, the window shrinks back", report.__w)
+            CHECK(CommanderMetersDB.ArenaDispelLog == false, "DLOG: the choice is remembered")
+            report.__scripts.OnUpdate(report, 0.6)
+            Errors("DLOG: closed repaint clean")
+            btn.__scripts.OnClick(btn)
+            CHECK(view.dlog == true and report.__w == 1112, "DLOG: ...and opens it again")
+        end
+        -- The meter window's ARENA DISPELS mode: both teams, the split per row
+        CommanderMetersDB.ViewMode = "ARENA_DISPEL"
+        CommanderMetersDB.SplitOpen = false
+        Commander.Notify(COMMANDER_METERS_EVENTS.UPDATE)
+        root.__scripts.OnUpdate(root, 0.6)
+        Errors("DLOG: ARENA DISPELS pane clean")
+        local pr = FindButton(function(f) return f.paneIndex == 1 and f.rank and f.guid == "Player-0-CMARENA03" and f.__shown end)
+        CHECK(pr and pr.value.__text == "5", "DLOG: the priest's five removals", pr and pr.value.__text)
+        CHECK(pr and pr.rate.__text:find("3|r", 1, true) and pr.rate.__text:find("2|r", 1, true),
+            "DLOG: the row reads 3 offensive / 2 defensive", pr and pr.rate.__text)
+        if pr then
+            pr.__scripts.OnEnter(pr)
+            Errors("DLOG: seat tooltip with the dispel lines clean")
+            pr.__scripts.OnLeave(pr)
         end
     end
     io.write(string.format("ARENA: canned 3v3 serializes to %.0f KB (%d moments)\n", #A.Serialize(tm) / 1024, tm.ledgerN))

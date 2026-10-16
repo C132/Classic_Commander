@@ -4,14 +4,14 @@ Run with the compile-gate luajit:
 
     /opt/homebrew/bin/luajit meters_harness.lua      # engine fixture: §7 invariants,
                                                      # determinism, retention, resets,
-                                                     # throughput measurement, match mode (862 checks)
+                                                     # throughput measurement, match mode, dispels (910 checks)
     /opt/homebrew/bin/luajit meters_arena_harness.lua # arena match engine: both teams,
                                                      # the DR ladder, replay state,
-                                                     # persistence round trip, insights, history, replay records, the three-source trinket, Feign Death (447 checks)
+                                                     # persistence round trip, insights, history, replay records, the three-source trinket, Feign Death, your personal rating in a teamless season, dispels + Mass Dispel + the dispel log (519 checks)
     /opt/homebrew/bin/luajit meters_ui_harness.lua   # UI smoke under a WoW mock, loading
                                                      # the REAL Commander_Events framework,
                                                      # incl. the Arena Report and a live
-                                                     # match through the event path, the spectator replay, the sidebar, match mode, the trinket badge and its client source, a live feign (351 checks)
+                                                     # match through the event path, the spectator replay, the sidebar, match mode, the trinket badge and its client source, a live feign, the dispel log drawer and the DISPELS split (399 checks)
 
 Paths to the AddOns dir are absolute at the top of each file — adjust if the
 install moves. All three must exit 0 before any engine or UI change ships. Then:
