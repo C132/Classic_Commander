@@ -183,3 +183,15 @@ warrior-brown.
 3.0 reads a short alias list for each field and returns **white** for a class it
 cannot resolve. A wrong colour is worse than no colour: it is a fact the player
 will act on.
+
+## D13 — A row's hover carries the player's arena ratings, from Commander Muster (3.1.0)
+
+Devin wants a player's ratings wherever their name shows. The row tooltip
+asks `CommanderMuster.RatingsLine(fullName)` (an OptionalDep), the suite's
+one rating source. It merges what Muster has inspected with the Commander
+Ladder web feed. A Who result is usually nobody you can inspect, so the feed
+is most of what it knows.
+
+- **Nothing known, no line:** a player Muster knows nothing about gets no
+  line. Muster still hands the name to the feed, so a /who becomes a list
+  of names for its next run.

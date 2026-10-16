@@ -663,6 +663,24 @@ do
         byName.Brenna.class:GetText())
     CHECK(byName.Brenna.level:GetText() == "68", "as is the level")
     CHECK(byName.Brenna.zone:GetText() == "Nagrand", "and the zone")
+
+    -- Hovering a row adds the player's arena ratings from Commander_Muster
+    local lines = {}
+    local realAdd = GameTooltip.AddDoubleLine
+    GameTooltip.AddDoubleLine = function(_, left, right) lines[#lines + 1] = tostring(left) .. "=" .. tostring(right) end
+    CHECK(byName.Brenna.__scripts.OnEnter ~= nil, "a row has a hover")
+    byName.Brenna.__scripts.OnEnter(byName.Brenna)
+    CHECK(#lines == 0, "without Commander_Muster there is no arena line")
+    CommanderMuster = { RatingsLine = function(who)
+        if type(who) == "string" and who:match("^Brenna") then return "3s 1777" end
+    end }
+    byName.Brenna.__scripts.OnEnter(byName.Brenna)
+    CHECK(lines[1] == "Arena=3s 1777", "with it, hovering a row shows their ratings", lines[1])
+    lines = {}
+    byName.Alaric.__scripts.OnEnter(byName.Alaric)
+    CHECK(#lines == 0, "a player Muster knows nothing about gets no line")
+    GameTooltip.AddDoubleLine = realAdd
+    CommanderMuster = nil
 end
 
 do

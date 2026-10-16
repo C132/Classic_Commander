@@ -132,6 +132,13 @@ local function BuildRow(parent, index)
         if self.record.race ~= "" then
             GameTooltip:AddLine(self.record.race, 0.7, 0.7, 0.7)
         end
+        -- Arena ratings from Commander Muster (an OptionalDep), which merges
+        -- what it has seen with the Commander Ladder web feed
+        local ratings = CommanderMuster and CommanderMuster.RatingsLine
+            and CommanderMuster.RatingsLine(self.record.fullName)
+        if ratings then
+            GameTooltip:AddDoubleLine("Arena", ratings, 1, 0.82, 0, 1, 1, 1)
+        end
         GameTooltip:AddLine("Shift-click selects everything back to the last row you clicked.", 0.55, 0.6, 0.64, true)
         GameTooltip:Show()
     end)

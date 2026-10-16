@@ -4,7 +4,7 @@ Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit who_harness.lua      # engine fixture — 157 checks
-/opt/homebrew/bin/luajit who_ui_harness.lua   # host + UI      — 145 checks
+/opt/homebrew/bin/luajit who_ui_harness.lua   # host + UI      — 149 checks
 /opt/homebrew/bin/luajit globals_lint.lua     # 4 files, 0 undeclared globals
 ```
 

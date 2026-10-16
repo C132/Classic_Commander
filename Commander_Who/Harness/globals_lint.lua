@@ -54,6 +54,7 @@ allow [[
 Commander
 CommanderWhoDB COMMANDER_WHO_EVENTS COMMANDER_WHO_CHROME COMMANDER_WHO_DEFAULTS
 CommanderWhoEngine CommanderWho CommanderWhoUI
+CommanderMuster
 ]]
 
 -- The client API this module deliberately touches, grouped by why.
