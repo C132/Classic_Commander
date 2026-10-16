@@ -626,6 +626,23 @@ triggered, tooltipLinks = {}, {}
 mirrored.__scripts.OnHyperlinkEnter(mirrored, "item:19019", "[Thunderfury]")
 CHECK(tooltipLinks[1] == "item:19019" and GameTooltip.__shown == true, "an item link shows the item tooltip")
 CHECK(#triggered == 0, "and fires no chat-frame hover")
+-- A player's name: their arena ratings from Commander_Muster, else nothing
+tooltipLinks = {}
+GameTooltip.__shown = true
+mirrored.__scripts.OnHyperlinkEnter(mirrored, "player:Kay-Dreamscythe:42:WHISPER", "[Kay]")
+CHECK(GameTooltip.__shown == false and #tooltipLinks == 0, "a player link without Commander_Muster shows nothing")
+local tipLines = {}
+local realAdd = GameTooltip.AddDoubleLine
+GameTooltip.AddDoubleLine = function(_, l, r) tipLines[#tipLines + 1] = tostring(l) .. "=" .. tostring(r) end
+CommanderMuster = { RatingsLine = function(who) if who == "Kay-Dreamscythe" then return "3s 2010" end end }
+mirrored.__scripts.OnHyperlinkEnter(mirrored, "player:Kay-Dreamscythe:42:WHISPER", "[Kay]")
+CHECK(GameTooltip.__shown == true and tipLines[1] == "Arena=3s 2010",
+    "with it, hovering a name shows their arena ratings", tipLines[1])
+GameTooltip.__shown = true
+mirrored.__scripts.OnHyperlinkEnter(mirrored, "player:Nemo:43:WHISPER", "[Nemo]")
+CHECK(GameTooltip.__shown == false, "and a name Muster knows nothing about shows nothing")
+GameTooltip.AddDoubleLine = realAdd
+CommanderMuster = nil
 -- A client with no EventRegistry: the hover is quiet, never an error
 local registry = EventRegistry
 EventRegistry = nil

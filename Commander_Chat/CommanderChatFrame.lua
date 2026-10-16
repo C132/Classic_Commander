@@ -71,6 +71,24 @@ local function BuildWindow()
             end
             return
         end
+        -- A player's name has no tooltip of its own. When Commander Muster (an
+        -- OptionalDep) knows their arena ratings, from an inspect or the
+        -- Commander Ladder web feed, they are the tooltip; otherwise nothing,
+        -- as before.
+        if type(link) == "string" and link:sub(1, 7) == "player:" then
+            local name = link:match("^player:([^:]+)")
+            local ratings = name and CommanderMuster and CommanderMuster.RatingsLine
+                and CommanderMuster.RatingsLine(name)
+            if ratings then
+                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                GameTooltip:SetText(Ambiguate and Ambiguate(name, "short") or name, 1, 1, 1)
+                GameTooltip:AddDoubleLine("Arena", ratings, 1, 0.82, 0, 1, 1, 1)
+                GameTooltip:Show()
+            else
+                GameTooltip:Hide()
+            end
+            return
+        end
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, link)
         if ok then GameTooltip:Show() else GameTooltip:Hide() end
