@@ -477,15 +477,17 @@ end
 -- Arena: solo season by default, teams on demand
 local usesTeams = false
 function GetCurrentArenaSeasonUsesTeams() return usesTeams end
+local arenaSeason = 3
+function GetCurrentArenaSeason() return arenaSeason end
 local ratedRequests = 0
 function RequestRatedInfo() ratedRequests = ratedRequests + 1 end
-local ownArena = { [2] = { rating = 1850, played = 40, wins = 25 }, [3] = { rating = 0, played = 0, wins = 0 }, [5] = { rating = 0, played = 0, wins = 0 } }
+local ownArena = { [2] = { rating = 1850, played = 40, wins = 25, best = 1902 }, [3] = { rating = 0, played = 0, wins = 0 }, [5] = { rating = 0, played = 0, wins = 0 } }
 local SIZE_AT = { 2, 3, 5 }
 function GetPersonalRatedInfo(index)
     local size = SIZE_AT[index]
     local b = size and ownArena[size]
     if not b then return nil end
-    return b.rating, 0, 0, b.played, b.wins, 4, 2, 0, 0, 0, 0, size
+    return b.rating, b.best or 0, 0, b.played, b.wins, 4, 2, 0, 0, 0, 0, size
 end
 function GetInspectArenaData(index)
     local u = UnitByGuid(inspected)
@@ -607,6 +609,9 @@ do
     CHECK(rec.result.weakest and rec.result.weakest.slot == 9, "weakest piece is the old bracers")
     CHECK(rec.arena.known and rec.arena[2] and rec.arena[2].rating == 1850, "own 2v2 rating read from the personal rated info")
     CHECK(rec.arena[3] and rec.arena[3].rating == 0, "an unplayed bracket is present but zero")
+    CHECK(rec.arena[2].best == 1902 and rec.arena[2].bestFromServer, "own season high read from the second return",
+        rec.arena[2].best)
+    CHECK(rec.arena[3].best == nil, "an unplayed bracket has no best")
 end
 
 PaperDollFrame:Show()
@@ -622,7 +627,11 @@ CHECK(GameTooltip.__title == "Devinp", "breakdown is titled with the name")
 CHECK(TooltipHas("Weakest piece: Wrist"), "breakdown names the weakest piece")
 CHECK(TooltipHas("Warbringer Chestguard"), "breakdown lists the pieces")
 CHECK(TooltipHas("2v2") and TooltipHas("25–15"), "breakdown shows the arena record")
+CHECK(TooltipHas("25–15.*best.*1902"), "breakdown shows the season best after the win–loss")
+CHECK(not TooltipHas("Best: the highest"), "our own server high needs no footnote")
 readout.__scripts.OnLeave(readout)
+CHECK(readout.line2:GetText():find("1850") and not readout.line2:GetText():find("1902"),
+    "the readout's arena line stays the current rating", readout.line2:GetText())
 
 -- ===========================================================================
 -- B. Late item data on our own kit
@@ -673,6 +682,16 @@ GameTooltip:Hide()
 GameTooltip:SetUnit("mouseover")
 CHECK(#notifyLog == 1, "a remembered player costs no second inspect")
 CHECK(TooltipHas("Gear score") and TooltipHas("1912"), "lines come straight from the book")
+
+-- What a stranger's inspect leaves on disk
+do
+    local players = CommanderMusterBests.players
+    local entry = players[roster.bob.guid]
+    CHECK(entry and entry[2] and entry[2].best == 1912 and entry.name == "Bob", "Bob's 2v2 best is in the saved ledger")
+    CHECK(entry and entry[3] == nil, "his unplayed brackets are not")
+    CHECK(CommanderMusterBests.season == 3, "the ledger is stamped with the season")
+    CHECK(players[playerGuid] and players[playerGuid][2].best == 1902, "our own server high is in the ledger too")
+end
 
 -- ===========================================================================
 -- D. Throttle, newest wins, timeout and backoff
@@ -742,6 +761,26 @@ do
     rec = CommanderMuster.RecordFor(roster.dave.guid)
     CHECK(rec and rec.result.complete == true and rec.result.score == 145, "item data that lands mid-inspect is scored", rec and rec.result.score)
     CHECK(TooltipHas("Gear score") and not TooltipHas("…"), "tooltip shows the settled score", table.concat(GameTooltip.__lines, " | "))
+    CHECK(CommanderMusterBests.players[roster.dave.guid] == nil, "an unrated player is not written to disk")
+end
+
+-- A later look at a lower rating keeps the season best
+Advance(5)
+GameTooltip:Hide()
+roster.bob.arena[2] = { rating = 1880, played = 62, wins = 39 }
+CommanderMuster_Forget()
+Place("mouseover", roster.bob)
+GameTooltip:SetUnit("mouseover")
+AnswerInspect(roster.bob.guid)
+AnswerHonor()
+do
+    local rec = CommanderMuster.RecordFor(roster.bob.guid)
+    CHECK(rec and rec.arena[2].rating == 1880 and rec.arena[2].best == 1912, "a lower rating later keeps the best",
+        rec and rec.arena[2].best)
+    CHECK(rec and not rec.arena[2].bestFromServer, "a stranger's best is a seen best")
+    local entry = CommanderMusterBests.players[roster.bob.guid]
+    CHECK(entry and entry[2] and entry[2].played == 62, "the ledger follows his games")
+    CHECK(TooltipHas("1880") and not TooltipHas("1912"), "the tooltip's arena line is the current rating")
 end
 
 -- ===========================================================================
@@ -826,6 +865,10 @@ CHECK(inspectReadout.line2:GetText():find("…"), "arena pending on the inspect 
 CHECK(honorRequests >= 1, "the honor page was requested for the window's target")
 AnswerHonor()
 CHECK(inspectReadout.line2:GetText():find("3v3") and inspectReadout.line2:GetText():find("2210"), "inspect readout carries the 3v3 rating", inspectReadout.line2:GetText())
+inspectReadout.__scripts.OnEnter(inspectReadout)
+CHECK(TooltipHas("30.*best.*2210"), "the inspect breakdown shows the remembered best", table.concat(GameTooltip.__lines, " | "))
+CHECK(TooltipHas("Best: the highest Muster has seen"), "a seen best is footnoted")
+inspectReadout.__scripts.OnLeave(inspectReadout)
 do
     local clears = clearLog
     Advance(1)
@@ -880,6 +923,27 @@ end
 usesTeams = false
 
 -- ===========================================================================
+-- G2. A new season empties the ledger
+-- ===========================================================================
+
+arenaSeason = 0
+Fire("PLAYER_ENTERING_WORLD")
+CHECK(CommanderMusterBests.players[roster.frank.guid] ~= nil, "a season that still reads 0 empties nothing")
+arenaSeason = 4
+Fire("PLAYER_ENTERING_WORLD")
+CHECK(CommanderMusterBests.season == 4 and CommanderMusterBests.players[roster.frank.guid] == nil,
+    "a new season empties the ledger")
+CHECK(CommanderMusterBests.players[playerGuid] ~= nil, "and our own best is written straight back")
+Advance(5)
+GameTooltip:Hide()
+CommanderMuster_Forget()
+Place("mouseover", roster.frank)
+GameTooltip:SetUnit("mouseover")
+AnswerInspect(roster.frank.guid)
+AnswerHonor()
+CHECK(CommanderMusterBests.players[roster.frank.guid] ~= nil, "the new season's ledger fills again")
+
+-- ===========================================================================
 -- H. Settings and slash commands
 -- ===========================================================================
 
@@ -922,6 +986,7 @@ do
 end
 SlashCmdList.COMMANDERUI_MUSTER("forget")
 CHECK(CommanderMuster.RecordFor(roster.bob.guid) == nil, "forget via slash empties the book")
+CHECK(CommanderMusterBests.players[roster.frank.guid] ~= nil, "forget leaves the season bests alone")
 
 -- Settings page renders
 do

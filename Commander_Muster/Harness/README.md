@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit muster_engine_smoke.lua   # engine, no mock — 82 checks
-/opt/homebrew/bin/luajit muster_ui_harness.lua     # UI + inspect flow — 90 checks
+/opt/homebrew/bin/luajit muster_engine_smoke.lua   # engine, no mock — 105 checks
+/opt/homebrew/bin/luajit muster_ui_harness.lua     # UI + inspect flow — 111 checks
 /opt/homebrew/bin/luajit globals_lint.lua          # 4 files, 0 undeclared globals
 ```
 
@@ -21,7 +21,9 @@ heroic bracers 66, Sunwell two-hander 403), the monotonic tier ordering the
 original GearScore formula broke at item level 120 (swept 1–170 per quality),
 the two-hander and hunter weapon rules, incomplete kits, the weakest piece,
 the colour bands at each 400-point boundary, the arena line in every state,
-and the session book's TTL, keep limit and forget.
+the session book's TTL, keep limit and forget, and the season-best merge
+(first sighting, rise, a lower rating keeping the best, games going down as
+a new season, the server's high winning, a zero high ignored, pruning).
 
 ## `muster_ui_harness.lua` — the UI and the inspect channel
 
@@ -44,6 +46,11 @@ mock, then drives:
   fills the book and the inspect readout, and nothing clears the inspect
   under it
 - the teams season shape for both our own and an inspected player
+- season bests (D10): our own from `GetPersonalRatedInfo`'s second return,
+  a stranger's kept in `CommanderMusterBests` through a later, lower rating,
+  `best` after the win–loss in both breakdowns with the seen-best footnote,
+  unrated players never written, a season reading 0 emptying nothing, a new
+  season emptying the ledger, and `forget` leaving it alone
 - the master switch, the per-surface toggles, both slash spellings, `report`
   and `forget`, and the settings page
 

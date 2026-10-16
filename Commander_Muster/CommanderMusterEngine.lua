@@ -17,6 +17,7 @@ local E = CommanderMusterEngine
 
 local D
 local floor = math.floor
+local max = math.max
 
 function E.Init(data)
     D = data
@@ -160,7 +161,7 @@ function E.FormatRating(rating)
     return Colored(tostring(floor(tonumber(rating) or 0)), r, g, b)
 end
 
--- arena: { known = bool, [2] = { rating, played, wins, teamName }, [3] = ..., [5] = ... }
+-- arena: { known = bool, [2] = { rating, played, wins, teamName, best }, [3] = ..., [5] = ... }
 -- Returns the one-line summary ("2v2 1850 · 3v3 1720"), or nil when nothing
 -- is rated, or "…" while the answer is still on its way.
 function E.FormatArena(arena)
@@ -187,6 +188,80 @@ function E.BestRating(arena)
         end
     end
     return best, bestSize
+end
+
+-- ---------------------------------------------------------------------------
+-- Season bests: the highest rating seen per bracket, kept across sessions
+-- ---------------------------------------------------------------------------
+
+-- The server tells you your own season high (GetPersonalRatedInfo's second
+-- return) and nobody else's: GetInspectArenaData carries only the current
+-- rating. So another player's best is the highest rating this client has
+-- seen them at, a floor under their real high that is only as good as how
+-- often they are looked at (D10).
+--
+-- entry: one player's saved ledger, { [size] = { best = n, played = n } }
+-- arena: a fresh read; a bracket carries seasonBest when the server said so
+-- Writes the merged best onto each rated bracket as b.best (b.bestFromServer
+-- when it is the server's number) and returns true when the entry changed.
+-- A bracket whose season games went DOWN is a new season, or in a teams
+-- season a new team (a new personal rating too): its old best is dropped
+-- before the new read counts.
+function E.MergeBests(entry, arena)
+    if type(entry) ~= "table" or not arena or not arena.known then return false end
+    local changed = false
+    for _, size in ipairs(D.BRACKETS) do
+        local b = arena[size]
+        if b then
+            local rating = tonumber(b.rating) or 0
+            local played = tonumber(b.played) or 0
+            local kept = entry[size]
+            if kept and played < (kept.played or 0) then
+                entry[size], kept, changed = nil, nil, true
+            end
+            if rating > 0 or played > 0 then
+                local server = tonumber(b.seasonBest)
+                if server and server <= 0 then server = nil end
+                -- The server's high is the truth when it gives one; otherwise
+                -- the highest we have seen, which never falls inside a season
+                local best = server and max(rating, server) or max(rating, kept and kept.best or 0)
+                if not kept then
+                    kept = {}
+                    entry[size] = kept
+                end
+                if kept.best ~= best or kept.played ~= played then
+                    kept.best, kept.played, changed = best, played, true
+                end
+                b.best = best
+                b.bestFromServer = server and true or nil
+            end
+        end
+    end
+    return changed
+end
+
+-- True when a ledger entry holds a best for any bracket
+function E.HasBests(entry)
+    if type(entry) ~= "table" then return false end
+    for _, size in ipairs(D.BRACKETS) do
+        if entry[size] then return true end
+    end
+    return false
+end
+
+-- Trims the ledger to `keep` players, the longest unseen going first.
+-- players: { [guid] = { seen = epoch seconds, ... } }. Returns the new count.
+function E.PruneBests(players, keep)
+    local order = {}
+    for guid, entry in pairs(players) do
+        order[#order + 1] = { guid = guid, seen = tonumber(entry.seen) or 0 }
+    end
+    if #order <= keep then return #order end
+    table.sort(order, function(a, b) return a.seen < b.seen end)
+    for i = 1, #order - keep do
+        players[order[i].guid] = nil
+    end
+    return keep
 end
 
 -- ---------------------------------------------------------------------------

@@ -274,5 +274,75 @@ do
     CHECK(book:Count() == 0, "a nil GUID is ignored")
 end
 
+-- ===========================================================================
+-- Season bests
+-- ===========================================================================
+
+do
+    local entry = {}
+    local function Read(r2, p2, r5, p5, best2)
+        return { known = true,
+            [2] = { rating = r2, played = p2, wins = 0, seasonBest = best2 },
+            [3] = { rating = 0, played = 0, wins = 0 },
+            [5] = r5 and { rating = r5, played = p5, wins = 0 } or nil }
+    end
+
+    local a = Read(1494, 13, 1463, 20)
+    CHECK(E.MergeBests(entry, a) == true, "a first sighting changes the ledger")
+    CHECK(a[2].best == 1494 and a[5].best == 1463, "first best is the current rating",
+        tostring(a[2].best) .. "/" .. tostring(a[5].best))
+    CHECK(entry[2].best == 1494 and entry[2].played == 13, "the ledger keeps best and games")
+    CHECK(entry[3] == nil and a[3].best == nil, "an unplayed bracket is not kept and gets no best")
+    CHECK(a[2].bestFromServer == nil, "a seen best is not marked as the server's")
+
+    a = Read(1534, 39, 1619, 76)
+    E.MergeBests(entry, a)
+    CHECK(a[2].best == 1534 and a[5].best == 1619, "a higher rating raises the best")
+    a = Read(1520, 41, 1605, 86)
+    CHECK(E.MergeBests(entry, a) == true, "more games still update the ledger")
+    CHECK(a[2].best == 1534 and a[5].best == 1619, "a lower rating keeps the best",
+        tostring(a[2].best) .. "/" .. tostring(a[5].best))
+    a = Read(1520, 41, 1605, 86)
+    CHECK(E.MergeBests(entry, a) == false, "the same read changes nothing")
+
+    a = Read(1500, 2, 1605, 86)
+    E.MergeBests(entry, a)
+    CHECK(a[2].best == 1500 and entry[2].played == 2, "fewer games than last seen is a new season",
+        tostring(a[2].best))
+    CHECK(a[5].best == 1619, "only that bracket starts over")
+
+    a = { known = true, [2] = { rating = 0, played = 0, wins = 0 }, [5] = { rating = 1605, played = 86, wins = 40 } }
+    E.MergeBests(entry, a)
+    CHECK(entry[2] == nil, "a bracket back at zero games drops its best")
+    CHECK(E.HasBests(entry) == true, "the 5v5 best is still held")
+    CHECK(E.HasBests({ name = "x", seen = 1 }) == false, "name and time alone are no bests")
+
+    local own = {}
+    a = Read(1850, 40, nil, nil, 1902)
+    E.MergeBests(own, a)
+    CHECK(a[2].best == 1902 and a[2].bestFromServer == true, "the server's season high wins", tostring(a[2].best))
+    own[2].best = 2400   -- a stale best the played count did not catch
+    a = Read(1850, 41, nil, nil, 1902)
+    E.MergeBests(own, a)
+    CHECK(a[2].best == 1902, "the server's high overrides a stale seen best", tostring(a[2].best))
+    a = Read(1910, 42, nil, nil, 1902)
+    E.MergeBests(own, a)
+    CHECK(a[2].best == 1910, "a best is never below the current rating", tostring(a[2].best))
+    a = Read(1850, 43, nil, nil, 0)
+    E.MergeBests(own, a)
+    CHECK(a[2].best == 1910 and a[2].bestFromServer == nil, "a zero season high is no answer: the seen best stands",
+        tostring(a[2].best))
+
+    CHECK(E.MergeBests(entry, { known = false }) == false, "an unknown read is ignored")
+    CHECK(E.MergeBests(nil, a) == false, "no entry, no merge")
+
+    local players = {
+        A = { seen = 100 }, B = { seen = 300 }, C = { seen = 200 }, D = { seen = 400 },
+    }
+    CHECK(E.PruneBests(players, 5) == 4 and players.A, "under the limit nothing is pruned")
+    CHECK(E.PruneBests(players, 2) == 2, "prune trims to the limit")
+    CHECK(players.A == nil and players.C == nil and players.B and players.D, "the longest unseen go first")
+end
+
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

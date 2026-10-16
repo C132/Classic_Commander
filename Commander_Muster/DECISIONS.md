@@ -72,11 +72,12 @@ frame uses, so a later season with teams costs nothing. In a teams season
 the PERSONAL rating is what prints, with the team rating in the breakdown —
 personal rating is what gear requirements are checked against.
 
-## D7 — Session memory only
+## D7 — Session memory only (one exception: D10)
 
-Records live in a session book (10-minute trust, 200 most recent). Nothing
-is written to SavedVariables: gear changes between sessions, and the
-persistent file on a player is Commander_Dossier's job.
+Records live in a session book (10-minute trust, 200 most recent). Gear and
+current ratings are never written to SavedVariables: gear changes between
+sessions, and the persistent file on an enemy is Commander_Dossier's job.
+The season-best ledger (D10) is the one exception.
 
 ## D8 — Nothing prints for players who cannot be inspected
 
@@ -93,3 +94,34 @@ off; the tooltip still reads from the book in combat, it just stops adding
 to it. The option exists for sizing up a pug mid-pull. It cannot reach an
 enemy either way: `CanInspect` refuses hostile units, so arena opponents and
 the other faction never print — that is a client rule, not a setting.
+
+## D10 — Season best: the server's for you, the highest seen for others (1.1.0)
+
+ironforge.pro prints a "record rating" beside each bracket. The client
+answers half of that. Your own season high is `GetPersonalRatedInfo`'s second
+return (the `bestSeasonRating` slot of `PVPPersonalRatedInfo`; Blizzard's
+pane reads past it). Nobody else's is available: `GetInspectArenaData` gives
+rating, games and wins, and no high. ironforge.pro's number is no better. Its
+`top` is the highest of its own Profile API snapshots, so it misses any
+peak between two snapshots.
+
+So another player's best is the highest rating Muster has seen them at.
+That is a floor under their true high, and the breakdown says so in a
+footnote. A best only rises within a season, so unlike gear it does not go
+stale, and it is the one thing written to disk: `CommanderMusterBests` =
+`{ season, players = { [guid] = { name, seen, [size] = { best, played } } } }`,
+2000 players, the longest unseen pruned first. Unrated players are not
+written.
+
+A season turns over in two ways, and either one clears a best. If
+`GetCurrentArenaSeason()` names a different season, the whole ledger is
+emptied. That function is optional: Blizzard's own call to it is commented
+out, and 0 is ignored. And a bracket whose season games went DOWN since last
+seen is a new season, or a new team in a teams season, so its old best is
+dropped. When the server gives a high above zero it beats anything
+remembered. A zero is read as no answer.
+
+Shown only in the readout's hover breakdown, after the win–loss:
+`1605  40–46  best 1619`. The one-line tooltip and readout lines stay at the
+current rating. They are already full, and a second number there would need
+a legend.

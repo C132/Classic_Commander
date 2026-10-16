@@ -2,10 +2,10 @@
 ## Category: Commander
 ## Title: Commander Muster
 ## Author: Devin
-## Version: 1.0.0
-## Notes: The muster: every player's kit and record at a glance. A gear score and average item level on your character panel and on the inspect window, and the same two numbers — with arena ratings — on the tooltip of any player you mouse over, learned from a quiet background inspect and remembered for the session.
+## Version: 1.1.0
+## Notes: The muster: every player's kit and record at a glance. A gear score and average item level on your character panel and on the inspect window, and the same two numbers — with arena ratings — on the tooltip of any player you mouse over, learned from a quiet background inspect and remembered for the session. Each player's best arena rating this season is kept beside the current one: yours from the server, everyone else's the highest Muster has seen.
 ## IconTexture: Interface\Icons\INV_Misc_Note_02
-## SavedVariables: CommanderMusterDB
+## SavedVariables: CommanderMusterDB, CommanderMusterBests
 ## RequiredDeps: Commander_Events
 
 CommanderMusterData.lua

@@ -27,6 +27,10 @@
 -- Item links survive the inspect: they are stored with the record, so a
 -- piece the item cache had not seen yet is scored later, on
 -- GET_ITEM_INFO_RECEIVED, without inspecting again.
+--
+-- One thing outlives the session: each player's best arena rating per
+-- bracket, in CommanderMusterBests (D10). Ours comes from the server; for
+-- everyone else it is the highest rating any inspect has shown us.
 
 local D = CommanderMusterData
 local E = CommanderMusterEngine
@@ -41,8 +45,11 @@ local HONOR_TIMEOUT = 3           -- seconds to wait for INSPECT_HONOR_UPDATE
 local FAIL_BACKOFF = 30           -- seconds before a GUID that failed is tried again
 local BOOK_TTL = 600              -- seconds a stranger's record is trusted
 local BOOK_KEEP = 200             -- most strangers remembered
+local BESTS_KEEP = 2000           -- most players whose season best is kept on disk
 
 local book = E.NewBook(BOOK_TTL, BOOK_KEEP)
+local bests                       -- CommanderMusterBests.players: guid -> season-best ledger entry
+local bestsCount = 0
 local playerRecord                -- our own record, kept outside the book (never expires)
 local pending                     -- the in-flight quiet inspect: { guid, unit, name, stage, at }
 local wanted                      -- a unit token waiting for the cooldown to pass
@@ -165,12 +172,15 @@ local function ReadOwnArena()
     else
         if type(GetPersonalRatedInfo) ~= "function" then return arena end
         for i = 1, MAX_TEAMS do
-            local ok, rating, _, _, seasonPlayed, seasonWins, _, _, _, _, _, _, teamSize = pcall(GetPersonalRatedInfo, i)
+            -- The second return is the season high: Blizzard's pane skips it,
+            -- but it sits where PVPPersonalRatedInfo.bestSeasonRating does
+            local ok, rating, seasonBest, _, seasonPlayed, seasonWins, _, _, _, _, _, _, teamSize = pcall(GetPersonalRatedInfo, i)
             if ok and teamSize then
                 arena[teamSize] = {
                     rating = tonumber(rating) or 0,
                     played = tonumber(seasonPlayed) or 0,
                     wins = tonumber(seasonWins) or 0,
+                    seasonBest = tonumber(seasonBest),
                 }
             end
         end
@@ -212,6 +222,60 @@ local function ReadInspectArena()
     return arena
 end
 
+-- ---------------------------------------------------------------------------
+-- Season bests (D10): the one thing written to disk
+-- ---------------------------------------------------------------------------
+
+local function CurrentSeason()
+    if type(GetCurrentArenaSeason) ~= "function" then return nil end
+    local ok, season = pcall(GetCurrentArenaSeason)
+    season = ok and tonumber(season)
+    return season and season > 0 and season or nil
+end
+
+-- Binds the saved ledger, emptying it when the client names a new season.
+-- Safe to call again: the season can still read 0 at login.
+local function OpenBests()
+    if type(CommanderMusterBests) ~= "table" then CommanderMusterBests = {} end
+    local store = CommanderMusterBests
+    if type(store.players) ~= "table" then store.players = {} end
+    local season = CurrentSeason()
+    if season then
+        if store.season and store.season ~= season then store.players = {} end
+        store.season = season
+    end
+    bests = store.players
+    bestsCount = 0
+    for _ in pairs(bests) do bestsCount = bestsCount + 1 end
+end
+
+-- Folds a fresh arena read into the ledger, and the ledger's best back onto
+-- the read (b.best). Returns the read, so a caller can assign through it.
+local function Remember(guid, name, arena)
+    if not (bests and guid and arena and arena.known) then return arena end
+    local entry = bests[guid] or {}
+    E.MergeBests(entry, arena)
+    if not E.HasBests(entry) then
+        if bests[guid] then
+            bests[guid] = nil
+            bestsCount = bestsCount - 1
+        end
+        return arena
+    end
+    entry.name = name or entry.name
+    entry.seen = time()
+    if not bests[guid] then
+        bests[guid] = entry
+        bestsCount = bestsCount + 1
+        if bestsCount > BESTS_KEEP then bestsCount = E.PruneBests(bests, BESTS_KEEP) end
+    end
+    return arena
+end
+
+local function ReadInspectArenaFor(record)
+    return Remember(record.guid, record.name, ReadInspectArena())
+end
+
 local function WantArena()
     return db.TooltipArena or db.ShowArenaOnReadout
 end
@@ -230,7 +294,7 @@ end
 
 local function RefreshPlayerArena()
     if not playerRecord then return end
-    playerRecord.arena = ReadOwnArena()
+    playerRecord.arena = Remember(playerGUID, playerRecord.name, ReadOwnArena())
     Commander.Notify(COMMANDER_MUSTER_EVENTS.RECORD, playerGUID)
 end
 
@@ -351,7 +415,7 @@ local function AskForHonor(record)
         return false
     end
     if type(HasInspectHonorData) == "function" and HasInspectHonorData() then
-        record.arena = ReadInspectArena()
+        record.arena = ReadInspectArenaFor(record)
         return false
     end
     if type(RequestInspectHonorData) ~= "function" then
@@ -414,13 +478,13 @@ end
 
 local function OnInspectHonorUpdate()
     if pending and pending.stage == "honor" and pending.record then
-        pending.record.arena = ReadInspectArena()
+        pending.record.arena = ReadInspectArenaFor(pending.record)
         Finish(pending.record, true)
         return
     end
     if frameTarget and frameTarget.record and InspectFrame and InspectFrame.unit
         and UnitGUID(InspectFrame.unit) == frameTarget.guid then
-        frameTarget.record.arena = ReadInspectArena()
+        frameTarget.record.arena = ReadInspectArenaFor(frameTarget.record)
         book:Put(frameTarget.guid, frameTarget.record, Now())
         Commander.Notify(COMMANDER_MUSTER_EVENTS.RECORD, frameTarget.guid)
     end
@@ -519,7 +583,7 @@ local function FillBreakdown(tooltip, record)
     local arena = record.arena
     if arena and arena.known then
         tooltip:AddLine(" ")
-        local any = false
+        local any, seenOnly = false, false
         for _, size in ipairs(D.BRACKETS) do
             local b = arena[size]
             if b and ((b.rating or 0) > 0 or (b.played or 0) > 0) then
@@ -531,11 +595,18 @@ local function FillBreakdown(tooltip, record)
                     right = right .. DIM .. " (team " .. b.teamRating .. ")|r"
                 end
                 right = right .. "  " .. DIM .. (b.wins or 0) .. "–" .. ((b.played or 0) - (b.wins or 0)) .. "|r"
+                if (b.best or 0) > 0 then
+                    right = right .. "  " .. DIM .. "best|r " .. E.FormatRating(b.best)
+                    if not b.bestFromServer then seenOnly = true end
+                end
                 tooltip:AddDoubleLine(left, right)
             end
         end
         if not any then
             tooltip:AddLine(DIM .. "Arena: unrated this season|r")
+        elseif seenOnly then
+            -- Only our own high comes from the server; say what the others are
+            tooltip:AddLine(DIM .. "Best: the highest Muster has seen this season|r")
         end
     end
 end
@@ -750,6 +821,7 @@ local function OnEvent(self, event, arg1, arg2)
     if event == "PLAYER_LOGIN" then
         db = CommanderMusterDB
         playerGUID = UnitGUID("player")
+        OpenBests()
 
         for _, e in ipairs({
             "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "UNIT_INVENTORY_CHANGED",
@@ -791,6 +863,7 @@ local function OnEvent(self, event, arg1, arg2)
     if not IsOn() then return end
 
     if event == "PLAYER_ENTERING_WORLD" then
+        OpenBests()
         RefreshPlayer()
         RefreshPlayerArena()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then

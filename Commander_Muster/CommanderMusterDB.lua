@@ -50,7 +50,7 @@ local function CreateOptionsPanel()
         key = "Muster",
         title = "Muster",
         addonName = "Commander_Muster",
-        description = "Every player's kit and record at a glance: a gear score and average item level on your character panel, on the inspect window, and on the tooltip of any player you mouse over, with their arena ratings beside it. The score is TacoTip's TBC GearScore, so it reads the same as the number everyone else is quoting; the tooltip fills in from a quiet background inspect of anyone you can inspect and remembers them for the session.",
+        description = "Every player's kit and record at a glance: a gear score and average item level on your character panel, on the inspect window, and on the tooltip of any player you mouse over, with their arena ratings beside it. The score is TacoTip's TBC GearScore, so it reads the same as the number everyone else is quoting; the tooltip fills in from a quiet background inspect of anyone you can inspect and remembers them for the session. Hovering a readout lists each bracket with its win–loss and the season best: yours from the server, anyone else's the highest Muster has seen them at, kept across sessions until the season turns.",
         event = COMMANDER_MUSTER_EVENTS.UPDATE,
         slash = { "/cmuster", "/gs" },
         slashHandlers = {

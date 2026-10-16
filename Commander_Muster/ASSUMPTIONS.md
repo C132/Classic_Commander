@@ -100,3 +100,28 @@ prints `?`, harmlessly.
 
 Used to colour piece names in the breakdown; a missing `.hex` falls back to
 white.
+
+## A11 — `GetPersonalRatedInfo(i)`'s second return is your season high (1.1.0)
+
+Inferred, not read from a caller. Blizzard's pane destructures
+`rating, _, _, seasonPlayed, …` and skips it. The generated
+`PvpInfoDocumentation.lua` on this branch defines `PVPPersonalRatedInfo`
+with `bestSeasonRating` second, in an order that matches every position
+Blizzard does read (1, 4–7, 11). If the server leaves it at 0, Muster falls
+back to the highest rating it has seen you at. If it returns something
+else, your `best` is wrong while everyone else's is fine.
+
+Test: after a loss, hover the character readout. The 2v2 `best` should be
+the highest 2v2 you reached this season, not your current rating.
+`/dump GetPersonalRatedInfo(1)` shows the raw tuple.
+
+## A12 — `GetCurrentArenaSeason()` may be absent or read 0
+
+Blizzard's call to it is commented out. Absent or 0 just means the ledger
+is never emptied by season number, and the games-went-down rule (D10)
+catches the turnover instead. The case nothing catches: a player last seen
+in one season and not seen again until they have played more games in the
+next one. That player's old best carries over.
+
+Test: `/dump GetCurrentArenaSeason()`, and then
+`/dump CommanderMusterBests.season` after a login.

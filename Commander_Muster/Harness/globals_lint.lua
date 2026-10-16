@@ -39,10 +39,10 @@ print setmetatable getmetatable rawset rawget rawequal rawlen
 table math string os time date bit debug _G
 ]]
 
--- Suite framework, our saved variable, and what this module exports
+-- Suite framework, our saved variables, and what this module exports
 allow [[
 Commander
-CommanderMusterDB COMMANDER_MUSTER_EVENTS
+CommanderMusterDB CommanderMusterBests COMMANDER_MUSTER_EVENTS
 CommanderMusterData CommanderMusterEngine CommanderMuster
 CommanderMuster_Report CommanderMuster_Forget
 ]]
@@ -66,9 +66,10 @@ HasInspectHonorData RequestInspectHonorData
 InspectFrame InspectPaperDollFrame InspectModelFrame
 ]]
 
--- Arena, both season shapes
+-- Arena, both season shapes (GetCurrentArenaSeason only stamps the
+-- season-best ledger, behind a type check: Blizzard's own call is commented out)
 allow [[
-GetCurrentArenaSeasonUsesTeams
+GetCurrentArenaSeasonUsesTeams GetCurrentArenaSeason
 GetArenaTeam GetPersonalRatedInfo RequestRatedInfo
 GetInspectArenaTeamData GetInspectArenaData
 ]]
