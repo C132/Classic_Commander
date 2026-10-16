@@ -4,7 +4,7 @@ Two luajit harnesses, both in-addon. Run **both** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit dossier_harness.lua      # engine fixture — 152 checks
-/opt/homebrew/bin/luajit dossier_ui_harness.lua   # UI smoke      — 108 checks
+/opt/homebrew/bin/luajit dossier_ui_harness.lua   # UI smoke      — 110 checks
 ```
 
 Both resolve the AddOns root from their own file location, so they work in a

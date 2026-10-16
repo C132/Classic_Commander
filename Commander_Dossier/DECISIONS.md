@@ -152,3 +152,13 @@ so the regression cannot pass by luck.
 Damage events repeat the same handful of names hundreds of times a fight and
 would add nothing to a table keyed by name — the inference scores distinct
 talents, so volume is not evidence anyway.
+
+## D17 — The file pane shows an enemy's arena ratings, from Commander Muster (2.2.0)
+
+An identity line, `Arena 2s ... · 3s ... · 5s ...`, sits under the realm.
+It comes from `CommanderMuster.RatingsLine(key)`, an OptionalDep that is
+the suite's one rating source.
+
+- **Feed only:** the client never inspects an enemy, so this is the
+  Commander Ladder web feed's number, with its age.
+- **Nothing known, no line:** when nothing is known, no line is drawn.

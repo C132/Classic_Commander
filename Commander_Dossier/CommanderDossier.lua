@@ -713,6 +713,11 @@ local function RenderDetail(rec)
     lines[#lines + 1] = table.concat(ident, " ")
     if rec.guild then lines[#lines + 1] = "<" .. rec.guild .. ">" end
     if rec.realm then lines[#lines + 1] = "|cff777777" .. rec.realm .. "|r" end
+    -- Arena ratings from Commander Muster (an OptionalDep). For an enemy only
+    -- the Commander Ladder web feed can know them: the client never inspects one.
+    local ratings = CommanderMuster and CommanderMuster.RatingsLine
+        and CommanderMuster.RatingsLine(rec.key or rec.name)
+    if ratings then lines[#lines + 1] = "|cff777777Arena|r " .. ratings end
     lines[#lines + 1] = " "
     lines[#lines + 1] = SpecText(rec)
     local spec = E.SpecOf(rec)

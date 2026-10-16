@@ -923,6 +923,15 @@ CHECK(TextMatching("Subtlety") ~= nil, "W: the detail pane names the spec")
 CHECK(TextMatching("strongest tell") ~= nil, "W: and names the strongest tell")
 CHECK(TextMatching("Nightfall") ~= nil, "W: the guild is shown")
 CHECK(TextMatching("Witnessed") ~= nil, "W: witnessed spells are listed")
+CHECK(TextMatching("Arena|r ") == nil, "W: without Commander_Muster there is no arena line")
+
+-- Arena ratings from Commander_Muster (OptionalDep): for an enemy, the web feed's
+CommanderMuster = { RatingsLine = function(who) if who == "Vexa-Blackrock" then return "2s 2200" end end }
+for _, row in ipairs(window.rowFrames) do
+    if row.key == "Vexa-Blackrock" and row.__scripts.OnClick then row.__scripts.OnClick(row) end
+end
+CHECK(TextMatching("Arena|r 2s 2200") ~= nil, "W: the detail pane shows their arena ratings from Muster")
+CommanderMuster = nil
 CHECK(TextMatching("Hemorrhage") ~= nil, "W: including the one seen most")
 
 -- The note field commits and protects the record from pruning
