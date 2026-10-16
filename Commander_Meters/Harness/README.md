@@ -11,7 +11,7 @@ Run with the compile-gate luajit:
     /opt/homebrew/bin/luajit meters_ui_harness.lua   # UI smoke under a WoW mock, loading
                                                      # the REAL Commander_Events framework,
                                                      # incl. the Arena Report and a live
-                                                     # match through the event path, the spectator replay, the sidebar, match mode, the trinket badge and its client source, a live feign, the dispel log drawer and the DISPELS split (399 checks)
+                                                     # match through the event path, the spectator replay, the sidebar, match mode, the trinket badge and its client source, a live feign, the dispel log drawer and the DISPELS split, arena ratings on bar and seat tooltips (403 checks)
 
 Paths to the AddOns dir are absolute at the top of each file — adjust if the
 install moves. All three must exit 0 before any engine or UI change ships. Then:

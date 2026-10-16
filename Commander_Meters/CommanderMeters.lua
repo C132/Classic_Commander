@@ -574,6 +574,16 @@ end
 
 local ArenaSeatTooltip -- forward: defined with the arena pane painter
 
+-- A player's arena ratings from Commander Muster (an OptionalDep), which
+-- merges what it has seen with the Commander Ladder web feed (D30). Players
+-- only: a pet or a creature has none, and its name must never reach the feed
+-- as a player's.
+local function ArenaRatings(guid, name)
+    if type(guid) ~= "string" or not guid:match("^Player%-") then return nil end
+    if not (CommanderMuster and CommanderMuster.RatingsLine) then return nil end
+    return CommanderMuster.RatingsLine(guid) or (name and CommanderMuster.RatingsLine(name)) or nil
+end
+
 local function BarTooltip(row)
     if not row.guid then return end
     if PaneMode(row.paneIndex).arena then
@@ -591,6 +601,10 @@ local function BarTooltip(row)
     local td, tf = THEME.tipDim, THEME.tipFaint
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     GameTooltip:SetText(ShortName(actor.name), c[1], c[2], c[3])
+    local ratings = ArenaRatings(row.guid, actor.name)
+    if ratings then
+        GameTooltip:AddDoubleLine("ARENA", ratings, td[1], td[2], td[3], 1, 1, 1)
+    end
     -- Label/value column pairs: dim labels left, mode-colored numbers right
     GameTooltip:AddDoubleLine(mode.valueLabel or mode.label, FmtNum(value),
         td[1], td[2], td[3], mc[1], mc[2], mc[3])
@@ -939,6 +953,9 @@ ArenaSeatTooltip = function(row, matchOverride)
         color = color or tf
         GameTooltip:AddDoubleLine(label, value, td[1], td[2], td[3], color[1], color[2], color[3])
     end
+    -- Their ratings now, not in this match: the newest Muster knows, with its age
+    local ratings = ArenaRatings(row.guid, seat.name)
+    if ratings then line("ARENA", ratings) end
     local dur = A.DurationAt(m, A.Live() == m and (time() - m.tsStart) or nil)
     line("DAMAGE", format("%s  (%s DPS)", FmtNum(seat.dmg), FmtNum(seat.dmg / dur)), THEME.statDmg)
     line("HEALING", format("%s  (%s HPS)", FmtNum(seat.heal + seat.absorb), FmtNum((seat.heal + seat.absorb) / dur)), THEME.statHeal)

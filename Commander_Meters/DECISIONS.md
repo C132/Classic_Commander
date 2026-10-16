@@ -1503,3 +1503,20 @@ and both detail lists). The canned arena match gained a Mass Dispel
 resisted Devour Magic; the canned fight a purge. Unverified in game — A40
 to A42.
 
+## D30. Arena ratings on bar and seat tooltips, from Commander Muster (2026-10-16)
+
+Devin wants a player's 2v2/3v3/5v5 ratings wherever their name shows. Meters
+asks `CommanderMuster.RatingsLine` (an OptionalDep), the suite's one rating
+source. It merges what Muster has inspected with the Commander Ladder web
+feed, which is the only way to know an enemy's rating.
+
+- **Placement:** an ARENA line second on the bar tooltip, and after the
+  team line on the arena seat tooltip, which the Arena Report portraits
+  open too.
+- **Players only:** a pet's or creature's GUID never asks, so its name never
+  reaches the feed as a player's.
+- **Current, not historical:** these are the player's ratings now, with
+  their age, not what they had in the match. That is why the report cards
+  carry no rating suffix: on a replayed match it would read as the match's
+  number.
+

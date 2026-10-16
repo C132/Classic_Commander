@@ -1339,6 +1339,21 @@ do
     if barRow then
         barRow.__scripts.OnEnter(barRow)
         barRow.__scripts.OnLeave(barRow)
+        -- Arena ratings from Commander_Muster (OptionalDep) for a player's bar
+        local lines, asked = {}, {}
+        local realAdd = GameTooltip.AddDoubleLine
+        GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = tostring(l) .. "=" .. tostring(r) end
+        CommanderMuster = { RatingsLine = function(who) asked[#asked + 1] = who; return "2s 1534" end }
+        barRow.__scripts.OnEnter(barRow)
+        local isPlayer = type(barRow.guid) == "string" and barRow.guid:match("^Player%-")
+        if isPlayer then
+            CHECK(lines[1] == "ARENA=2s 1534", "C: a player's bar tooltip leads with their arena ratings", lines[1])
+        else
+            CHECK(#asked == 0, "C: a non-player bar never asks Muster")
+        end
+        barRow.__scripts.OnLeave(barRow)
+        GameTooltip.AddDoubleLine = realAdd
+        CommanderMuster = nil
     end
     local abilityRow
     for _, f in ipairs(frames) do
@@ -1642,6 +1657,28 @@ do
         card.__scripts.OnEnter(card)
         Errors("ARENA: portrait tooltip clean")
         card.__scripts.OnLeave(card)
+        -- The seat tooltip carries their arena ratings when Commander_Muster knows them
+        local lines = {}
+        local realAdd = GameTooltip.AddDoubleLine
+        GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = tostring(l) .. "=" .. tostring(r) end
+        card.__scripts.OnEnter(card)
+        local without = table.concat(lines, "|")
+        CHECK(not without:find("ARENA="), "ARENA: no ratings line without Commander_Muster")
+        lines = {}
+        CommanderMuster = { RatingsLine = function(who)
+            if who == "Player-1-CMARENA11" then return "3s 2210  13h" end
+        end }
+        card.__scripts.OnEnter(card)
+        CHECK(table.concat(lines, "|"):find("ARENA=3s 2210  13h", 1, true),
+            "ARENA: the enemy's seat tooltip shows their ratings with the feed's age", table.concat(lines, "|"))
+        card.__scripts.OnLeave(card)
+        lines = {}
+        CommanderMuster = { RatingsLine = function() return nil end }
+        card.__scripts.OnEnter(card)
+        CHECK(not table.concat(lines, "|"):find("ARENA="), "ARENA: and none when Muster knows nothing")
+        card.__scripts.OnLeave(card)
+        GameTooltip.AddDoubleLine = realAdd
+        CommanderMuster = nil
     end
     -- Meters table: six columns per team, values as of the cursor
     CHECK(fsMatching("^K/D$") and fsMatching("^KICK$"), "ARENA: meters table columns painted")
