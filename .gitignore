@@ -116,3 +116,5 @@
 /Commander_Quartermaster/Harness/.cache/
 __pycache__/
 /ArenaArmory
+# Commander_Ladder: written by Tools/ladder_feed.py from the web API, never committed
+/Commander_Ladder/CommanderLadderData.lua
