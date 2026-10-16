@@ -469,9 +469,36 @@ local function Fire(event, ...)
     end
 end
 
+-- `luajit meters_ui_harness.lua arena-login`: log in (or /reload) while
+-- already inside an arena, with the meter on an arena mode. Login's zone
+-- check starts the match, and the match start repaints the meter; that
+-- repaint must find the pane's rows built. Devin's BugSack, 2026-10-16:
+-- CommanderMeters.lua:931 "attempt to perform indexed assignment on local
+-- 'row' (a nil value)", because the rows were only built by the Apply()
+-- that ran after the zone check.
+local ARENA_LOGIN = arg and arg[1] == "arena-login"
+if ARENA_LOGIN then
+    instState.inInstance, instState.itype, instState.id = true, "arena", 559
+    CommanderMetersDB.ViewMode = "ARENA_DMG"
+end
+
 -- Login sequence
 Fire("ADDON_LOADED", "Commander_Meters")
-Fire("PLAYER_LOGIN")
+local loginOk, loginErr = pcall(Fire, "PLAYER_LOGIN")
+CHECK(loginOk, "C: login raised nothing", loginErr)
+
+if ARENA_LOGIN then
+    CHECK(#harnessFailedErrors == 0, "AL: login inside an arena is clean", harnessFailedErrors[1])
+    CHECK(_G.CommanderMetersFrame and _G.CommanderMetersFrame:IsShown(), "AL: the meter window is up")
+    local painted = 0
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.paneIndex == 1 and f.rank then painted = painted + 1 end
+    end
+    CHECK(painted >= CommanderMetersDB.MaxRows, "AL: pane 1 has its rows", painted)
+    io.write(string.format("[arena-login] %d checks, %d failures\n", checks, fails))
+    for _, e in ipairs(harnessFailedErrors) do io.write("ERR: ", e, "\n") end
+    os.exit(fails == 0 and 0 or 1)
+end
 
 CHECK(#harnessFailedErrors == 0, "C: login clean", harnessFailedErrors[1])
 CHECK(CommanderMetersDB.EnableMeters == true, "C: defaults applied")
@@ -2076,6 +2103,9 @@ do
         { "Rime", 0, 0, 1, 0, 0, 0, "Undead", "Mage", "MAGE", 8000, 0, -9, 1650 },
         -- An enemy the log never saw: seated from the scoreboard alone
         { "Wraith", 0, 0, 0, 0, 0, 0, "Orc", "Warlock", "WARLOCK", 3000, 0, -9, 1640 },
+        -- Not a player: the client has answered 1 where the name goes
+        -- (ArenaArmory's StripRealm crash, 2026-10-16). It must seat no one.
+        { 1, 0, 0, 0, 0, 0, 0, "", "", "", 0, 0, 0, 0 },
     }
     function GetNumBattlefieldScores() return #scoreRows end
     function GetBattlefieldScore(i) return unpack(scoreRows[i]) end
@@ -2231,6 +2261,7 @@ do
     CHECK(wraith and wraith.team == "them" and wraith.fromScoreboard and wraith.class == "WARLOCK",
         "ARENA: an unseen enemy on the scoreboard took a seat on THEM")
     CHECK(done.bracket == 3, "ARENA: bracket grows to 3 once a third enemy is seated from the scoreboard", done.bracket)
+    CHECK(done.seats["Score-1"] == nil, "ARENA: a scoreboard row with a number for a name seats no one")
     CHECK(view.sel == done.id, "ARENA: report switched to the finished match")
     report.__scripts.OnUpdate(report, 0.6)
     Errors("ARENA: finished report repaint clean")

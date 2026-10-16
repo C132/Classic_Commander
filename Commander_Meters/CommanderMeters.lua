@@ -3308,7 +3308,11 @@ local function ArenaReadScoreboard()
     for index = 1, count do
         local okRow, name, kb, hk, deaths, honor, faction, _, race, _, classToken, dmg, heal, ratingChange, mmr =
             pcall(GetBattlefieldScore, index)
-        if okRow and name then
+        -- A row whose first value is not a name is not a player. The client
+        -- has been seen to answer 1 there (ArenaArmory's StripRealm crash,
+        -- 2026-10-16), and a number seated as a name breaks every string
+        -- read of it downstream.
+        if okRow and type(name) == "string" and name ~= "" then
             scoreRows[#scoreRows + 1] = { name = name, kb = kb, hk = hk, deaths = deaths, honor = honor,
                 faction = faction, race = race, classToken = classToken, dmg = dmg, heal = heal,
                 ratingChange = ratingChange, mmr = mmr }
@@ -3931,9 +3935,13 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
                 ArenaReadTrinkets()
             end
         end)
-        ArenaZoneCheck()
         Commander.AddListener(COMMANDER_METERS_EVENTS.UPDATE, Apply)
         Apply()
+        -- After Apply, never before: Apply is what builds the panes' rows, and
+        -- a login or /reload INSIDE an arena starts the match right here,
+        -- whose start repaints the meter. Before 2.5.1 this ran first and
+        -- that repaint indexed rows that did not exist yet.
+        ArenaZoneCheck()
         return
     end
     if event == "PLAYER_LOGOUT" then

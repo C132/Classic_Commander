@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Meters
 ## Author: Devin
-## Version: 2.5.0
+## Version: 2.5.1
 ## Notes: The battle report — a damage meter with per-fight segments, an ability and target breakdown per actor, a multi-actor throughput graph, an SC2-style APM board, a death log, and an Arena Report that records both teams of every match with a replayable timeline and a dispel log (every purge, cleanse and Mass Dispel, cast by cast).
 ## IconTexture: Interface\Icons\Ability_DualWield
 ## SavedVariables: CommanderMetersDB, CommanderMetersLog, CommanderMetersSession, CommanderMetersArenaLog
