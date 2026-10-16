@@ -22,6 +22,13 @@ local DefaultSettings = {
     HeaderIconSize = 12,          -- one readout segment's icon edge
     HeaderSegmentGap = 8,         -- space between one segment and the next
     HeaderChromeScale = 1,        -- size of the gear / rows / refresh buttons
+
+    -- Board scale by group size, you included: 1-3 (solo, 2s, 3s), 4-5
+    -- (5s, a dungeon) and 6+ (raids, battlegrounds). These replace the HUD
+    -- chrome's single HudScale; party vs raid is deliberately not a factor.
+    HudScaleSmall = 1,
+    HudScaleParty = 1,
+    HudScaleLarge = 1,
     HeaderFont = "DEFAULT",       -- DEFAULT | NARROW | RUNE | ROMAN
     HeaderFontSize = 10,
     HeaderFontOutline = "NONE",   -- NONE | OUTLINE | THICK
@@ -136,7 +143,16 @@ local DefaultSettings = {
     SoundExpose = "WARNING",
     SoundLBLate = "QUEST",
     SoundPoMSpent = "TOLL_HI",
+    -- A Mending that ended with charges thrown away -- expired, purged, or
+    -- healed with nobody in range to jump to. The holy fizzle: small, and
+    -- nothing else on the client sounds like it.
+    SoundPoMWasted = "FIZZLE",
     SoundPoMLost = "TOLL_LO",
+    -- Team Shields: the priest's block of dials, one per seat (you and your
+    -- party), each carrying that teammate's Power Word: Shield and Weakened
+    -- Soul, and the Mending badge with its bounce reach.
+    TeamDials = true,
+    TeamDialsSelf = true,       -- your own seat leads the line
     PoMTrack = true,            -- master gate: the tracker, the pips, the hop and the alert
     PoMAlert = true,            -- flash + sound when your Mending ENDS (never on a bounce)
     PoMAlertSound = true,       -- the sound half; spent and lost get different ones
@@ -275,6 +291,7 @@ local DefaultSettings = {
     AbilityTrack = {},          -- per-ability overrides ("CLASS:KEY" -> bool; absent = book default)
     TrackManaShield = true,     -- Mana Shield row in the self-shield extra
     TrackWards = true,          -- Fire Ward / Frost Ward rows in the extra
+    TrackIceBlock = true,       -- the Ice Block tracker: Hypothermia > Block > Cold Snap > the shorter wait
 
     -- Dispellable-debuff strip (right of the frame)
     ShowDispels = false,        -- master switch for the strip
@@ -1417,7 +1434,8 @@ local function BuildAbilityWindow()
         local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         label:SetPoint("LEFT", icon, "RIGHT", 8, 0)
         if classToken == "SHARED" then
-            icon:SetTexture("Interface\\Icons\\INV_Jewelry_TrinketPVP_01")
+            icon:SetTexture(Commander.TrinketIcon and Commander.TrinketIcon("player")
+                or "Interface\\Icons\\INV_Jewelry_TrinketPVP_01")
             icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
             label:SetText("Everyone — racials & trinket")
         else
@@ -1511,6 +1529,9 @@ local function AddAlertSoundsSection(panel, layerKey)
         SoundPoMSpent = {
             get = function() return CommanderPartyFramesDB.SoundPoMSpent end,
             set = function(v) CommanderPartyFramesDB.SoundPoMSpent = v end },
+        SoundPoMWasted = {
+            get = function() return CommanderPartyFramesDB.SoundPoMWasted end,
+            set = function(v) CommanderPartyFramesDB.SoundPoMWasted = v end },
         SoundPoMLost = {
             get = function() return CommanderPartyFramesDB.SoundPoMLost end,
             set = function(v) CommanderPartyFramesDB.SoundPoMLost = v end },
@@ -1619,7 +1640,19 @@ end
 -- the shared framework's scroll child to whatever was actually built).
 local function FinishPanel(panel)
     -- Chrome last, per the suite convention
+    local live = CommanderPartyFrames_ScaleKey and CommanderPartyFrames_ScaleKey()
+    local function Note(key)
+        return key == live and "\n\n|cff66ff66This is the bracket you are in right now.|r" or ""
+    end
     Commander.UI.AddHudChromeOptions(panel, CommanderPartyFramesDB, "Hud", {
+        scaleSliders = {
+            { key = "HudScaleSmall", label = "Scale: 1-3 Players",
+              tooltip = "Size of the board while your group is three or fewer, you included: solo, 2v2 and 3v3." .. Note("HudScaleSmall") },
+            { key = "HudScaleParty", label = "Scale: 4-5 Players",
+              tooltip = "Size of the board while your group is four or five, you included: 5v5 and a dungeon party." .. Note("HudScaleParty") },
+            { key = "HudScaleLarge", label = "Scale: 6+ Players",
+              tooltip = "Size of the board while your group is six or more, you included: raids and battlegrounds. Party or raid makes no difference, only the head count." .. Note("HudScaleLarge") },
+        },
         isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         onChanged = function() Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE) end,
     })
@@ -2106,7 +2139,7 @@ end
 -- that has already put three settings on some pages and not others (see the
 -- note at the top of Harness/settings_reach.py).
 local function AddClickSection(panel)
-    panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Besides spells, a cell can target the ally, assist them, or point the Commander Orders arrow at them (Arrow to them: it follows them as they move; /cpf arrow does the same for your target on any board). Enabling needs a /reload and fixes the roster order.")
+    panel:AddSection("Mouseover & Click", "Every modifier and button the client delivers. Click a cell to bind it, right-click to clear. Besides spells, a cell can target the ally, assist them, or point the Commander Orders arrow at them (Arrow to them: it follows them as they move; /cpf arrow and the key binding Arrow to My Target do the same for your target on any board). Enabling needs a /reload and fixes the roster order.")
     panel:AddCheckbox({
         label = "Enable Row Clicks",
         tooltip = "Make each row a secure unit button bound to a fixed roster slot: hovering it targets that ally for your @mouseover cast macros, and each bound click casts its spell. Because secure frames cannot change in combat, the board uses a fixed roster order (no urgency sort) while this is on. Takes effect after a /reload.",
@@ -3009,7 +3042,7 @@ local function CreateCorePanel()
 
         AddDispelSection(panel, LAYER_UI.INT)
 
-        panel:AddSection("My Shields", "Your own Ice Barrier, Mana Shield and wards, and the Water Elemental, in the block that leads the board — the one between the banner and the first ally. Drawn as a line of dials in the radial nameplates' language: the spell is the face, the absorb left is the band round it, the time left is the thin arc outside that, and a cooldown is a clock wipe across the face with its seconds written on it. A shield that is not up is a dark face, so nothing ever moves. Works on both the sorted and the Click-Cast boards.")
+        panel:AddSection("My Shields", "Your own Ice Barrier, Mana Shield and wards, the Water Elemental, and the Ice Block tracker, in the block that leads the board — the one between the banner and the first ally. Drawn as a line of dials in the radial nameplates' language: the spell is the face, the absorb left is the band round it, the time left is the thin arc outside that, and a cooldown is a clock wipe across the face with its seconds written on it. A shield that is not up is a dark face, so nothing ever moves. Works on both the sorted and the Click-Cast boards.")
         panel:AddDropdown({
             label = "Draw As",
             tooltip = "Dials puts every tracker on ONE line as a disc: icon, absorb band, clock, and the number on the face. The block is the same height whether you track one shield or five.\n\nRows is the original: a half-height bar per tracker with its name beside it, stacked, so four shields is four rows.",
@@ -3093,12 +3126,18 @@ local function CreateCorePanel()
             set = function(value) CommanderPartyFramesDB.TrackManaShield = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.SelfShieldRows end,
         })
-        panel:AddCheckbox({
+        panel:AddCheckboxPair({
             label = "Track Wards",
             tooltip = "Give Fire Ward and Frost Ward rows in the extra (only the ones you know). Their 30s cooldown shows as the red drain, so you can pre-ward the moment it matters.",
             get = function() return CommanderPartyFramesDB.TrackWards end,
             set = function(value) CommanderPartyFramesDB.TrackWards = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.SelfShieldRows end,
+        }, {
+            label = "Ice Block Tracker",
+            tooltip = "One more seat in the block, last in the line (a dial, or a row when Draw As is Rows), answering the one question there is never time to look for: can I Block? It shows whichever answer is true, highest first:\n\n1. Hypothermia -- you cannot, whatever else is ready: dark, wiped for what is left, red rim. While you are inside the Block its ten seconds run the thin clock outside.\n2. Ice Block ready -- the lit Ice Block.\n3. Cold Snap ready -- Block is cooling but Snap can refund it: the lit Cold Snap, gold rim.\n4. Both cooling -- whichever comes back first, wiped with its time on the face.\n\nWithout Cold Snap (fire, arcane) step 3 never appears. Shown whether or not Show My Shields is on.",
+            get = function() return CommanderPartyFramesDB.TrackIceBlock end,
+            set = function(value) CommanderPartyFramesDB.TrackIceBlock = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
 
         AddAlertSoundsSection(panel, "INT")
@@ -3344,6 +3383,69 @@ local function CreateCorePanel()
         isEnabled = BannerCdsOn,
     })
 
+    panel:AddSection("Team Shields", "A dial for you and each of your party — your subgroup in a raid — in the block between the banner and the first ally, in the radial nameplates' language. The face is who it is: lit while a shield is on them, dark while they are bare. The band round it is the shield's absorb left and the thin arc outside that its thirty seconds. Weakened Soul is a clock wipe across the face, with its seconds written on it, so a dark wedge retreating is your next shield coming back. The rim says what to do: red, no shield and still locked (you cannot help with a shield yet); yellow, bare and unlocked in a fight (shield them); blue, a low shield you can replace; orange, a low shield you cannot yet. Your Prayer of Mending sits on the four o'clock badge of whoever is holding it, with its charges on it and a ring for whether it can bounce on: green, someone is within twenty yards of them; red, nobody is, so their next hit spends the heal and wastes the rest; no ring where the client gives no positions. The seats hold still, so nothing ever shuffles, and they work on both the sorted and the Click-Cast boards.")
+    local function TeamOn()
+        return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.TeamDials
+    end
+    panel:AddCheckboxPair({
+        label = "Team Shield Dials",
+        tooltip = "The line of dials above the board: one per teammate, carrying their Power Word: Shield and their Weakened Soul. The space is held whether the group is two people or five, so the rows under it never move.",
+        get = function() return CommanderPartyFramesDB.TeamDials end,
+        set = function(value) CommanderPartyFramesDB.TeamDials = value end,
+        isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+    }, {
+        label = "Include Yourself",
+        tooltip = "Your own dial leads the line. Off, the line is your party alone.",
+        get = function() return CommanderPartyFramesDB.TeamDialsSelf end,
+        set = function(value) CommanderPartyFramesDB.TeamDialsSelf = value end,
+        isEnabled = TeamOn,
+    })
+    panel:AddSliderPair({
+        label = "Dial Size",
+        tooltip = "A dial's diameter in pixels. The block is this tall plus a few pixels of air. Five dials have to fit across the frame, so at a narrow width they shrink until they do. Shared with the mage's dials.",
+        min = 20, max = 44, step = 1,
+        format = "%.0f",
+        get = function() return CommanderPartyFramesDB.DialSize end,
+        set = function(value) CommanderPartyFramesDB.DialSize = value end,
+        isEnabled = TeamOn,
+    }, {
+        label = "Number Size",
+        tooltip = "The font size of the number on each face — the absorb left, or Weakened Soul's seconds. Auto sizes it off the dial.",
+        min = 0, max = 18, step = 1,
+        format = function(v) return v == 0 and "Auto" or string.format("%dpt", v) end,
+        get = function() return CommanderPartyFramesDB.DialTextSize end,
+        set = function(value)
+            CommanderPartyFramesDB.DialTextSize = (value > 0 and value < 7) and 7 or value
+        end,
+        isEnabled = TeamOn,
+    })
+    panel:AddDropdown({
+        label = "Band Style",
+        tooltip = "What the absorb band round each dial is drawn with. Same As The Bars follows Bar Texture, so the dials and the rows under them match.",
+        options = {
+            { text = "Same as the bars", value = "MATCH" },
+            { text = "Flat", value = "FLAT" },
+            { text = "Blizzard", value = "BLIZZARD" },
+            { text = "Gloss", value = "GLOSS" },
+            { text = "Bevel", value = "BEVEL" },
+            { text = "Ridge", value = "RIDGE" },
+            { text = "Glass", value = "GLASS" },
+        },
+        width = 180,
+        get = function() return CommanderPartyFramesDB.DialTexture end,
+        set = function(value) CommanderPartyFramesDB.DialTexture = value end,
+        isEnabled = TeamOn,
+    })
+    panel:AddSlider({
+        label = "Darken Face Under Text",
+        tooltip = "How far a lit face darkens while the absorb number is written across it, so the number reads over a bright class icon. 0 leaves the face untouched.",
+        min = 0, max = 0.8, step = 0.05,
+        format = function(v) return v == 0 and "Off" or string.format("%d%%", v * 100 + 0.5) end,
+        get = function() return CommanderPartyFramesDB.DialTextShade end,
+        set = function(value) CommanderPartyFramesDB.DialTextShade = value end,
+        isEnabled = TeamOn,
+    })
+
     panel:AddSection("Your Hots", "Renew and Prayer of Mending on each ally, one fixed slot each on the left of the row, timed by a radial sweep — the same strip a druid's hots ride. Which of them get a slot is set in the Ally Buffs grid above. The row's state stays what it has always been: the shield and the Weakened Soul lockout, because no hot outranks those on this board.")
     panel:AddCheckbox({
         label = "Refresh Flash",
@@ -3402,13 +3504,13 @@ local function CreateCorePanel()
     })
     panel:AddCheckboxPair({
         label = "End Alert",
-        tooltip = "Flash and sound when your Mending ENDS — the fifth charge spent, the thirty seconds run out, a dispel taking it, or the holder dying with it. Never on a bounce: when the aura leaves someone the board waits a beat to see whether it reappears on anyone else, and a bounce cancels the warning before it can fire. The flash lands on whoever was holding it, coloured by which of the four it was — green for spent, amber for expired, violet for dispelled, red for simply gone.",
+        tooltip = "Flash and sound when your Mending ENDS — the last charge spent, the thirty seconds run out, a purge or dispel taking it, a heal with nobody within twenty yards to jump to, or the holder dying with it. Never on a bounce: when the aura leaves someone the board waits a beat to see whether it reappears on anyone else, and a bounce cancels the warning before it can fire. The flash lands on whoever was holding it, coloured by which it was — green for spent, amber for expired, violet for dispelled, orange for nobody in range, red for simply gone.",
         get = function() return CommanderPartyFramesDB.PoMAlert end,
         set = function(value) CommanderPartyFramesDB.PoMAlert = value end,
         isEnabled = PoMOn,
     }, {
         label = "End Sound",
-        tooltip = "Also play a sound with it, and two different ones: a spent Mending did exactly what you cast it for and only the cooldown is left to wait on, while an expired or dispelled one is a recast you owe right now. Worth it if you are watching the enemy team rather than the board, which is most of an arena — and the sound is the half that still reaches you when the holder has died off the board entirely.",
+        tooltip = "Also play a sound with it, and three different ones. Spent: it did exactly what you cast it for and only the cooldown is left to wait on (a high bell). Wasted: it ended without bouncing on — it sat out its thirty seconds, a purge took it, or it healed with nobody in range to jump to — and the recast is yours to make now (the holy fizzle, small and unlike anything else). Lost: it went with a holder who died (a low bell). Worth it if you are watching the enemy team rather than the board, which is most of an arena — and the sound is the half that still reaches you when the holder has died off the board entirely. Each sound is picked under Alert Sounds below.",
         get = function() return CommanderPartyFramesDB.PoMAlertSound end,
         set = function(value) CommanderPartyFramesDB.PoMAlertSound = value end,
         isEnabled = function() return PoMOn() and CommanderPartyFramesDB.PoMAlert end,
@@ -3452,6 +3554,15 @@ local function OnEvent(self, event, addonName)
                 CommanderPartyFramesDB.PowerBar = "OFF"
             end
             CommanderPartyFramesDB.PFRev = 3
+        end
+        -- Rev 4: one Frame Scale became three group-size brackets. Each
+        -- starts at the scale you had, so nothing moves until you tune one.
+        if (CommanderPartyFramesDB.PFRev or 0) < 4 then
+            local was = tonumber(CommanderPartyFramesDB.HudScale) or 1
+            for _, key in ipairs({ "HudScaleSmall", "HudScaleParty", "HudScaleLarge" }) do
+                if CommanderPartyFramesDB[key] == nil then CommanderPartyFramesDB[key] = was end
+            end
+            CommanderPartyFramesDB.PFRev = 4
         end
         Commander.UI.ApplyDefaults(CommanderPartyFramesDB, DefaultSettings)
         self:UnregisterEvent("ADDON_LOADED")

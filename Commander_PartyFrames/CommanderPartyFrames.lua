@@ -871,35 +871,45 @@ SDATA.CHARGE_LAST = { 1.00, 0.38, 0.26 }   -- one: the next tick spends it
 -- looking, and that means the board has to make FEWER kinds of noise, each
 -- one distinct, and let you pick which is which.
 --
--- Two channels, tried in order, because neither is universally safe: a
+-- Three channels, tried in order, because none is universally safe: a
 -- SOUNDKIT constant is the sanctioned route but the table is client-version
--- dependent, and a file path is stable across those versions but only for
--- files that actually shipped. Every play is pcall'd, so an entry this client
--- does not have degrades to silence rather than to an error — and the Test
--- buttons in the settings page are how you find that out in ten seconds
--- instead of mid-arena.
+-- dependent; a FileDataID names the file itself and is what this engine
+-- actually indexes by; and a file path is the last resort. The paths are
+-- the pre-Legion `.wav` names, and on this engine every one of those files
+-- is an `.ogg` under the same name (wowdev's community listfile, 2026-10-16)
+-- -- so a path-only entry can be a sound that never plays. Each `fileID`
+-- below is that file's id in the same listfile. Every play is pcall'd, so an
+-- entry this client does not have degrades to silence rather than to an
+-- error — and the Test buttons in the settings page are how you find that
+-- out in ten seconds instead of mid-arena.
 SDATA.ALERT_SOUNDS = {
     { key = "WARNING", label = "Raid Warning",
-      kit = "RAID_WARNING", id = 8959, file = "Sound\\Interface\\RaidWarning.wav" },
+      kit = "RAID_WARNING", id = 8959, fileID = 567397, file = "Sound\\Interface\\RaidWarning.ogg" },
     { key = "READY",   label = "Ready Check",
-      kit = "READY_CHECK", id = 8960, file = "Sound\\Interface\\ReadyCheck.wav" },
+      kit = "READY_CHECK", id = 8960, fileID = 567409, file = "Sound\\Interface\\ReadyCheck.ogg" },
     { key = "QUEST",   label = "Quest Chime",
       kit = "IG_QUEST_LIST_COMPLETE", id = 883 },
     -- The two tolls are the Mending pair. Same instrument, two pitches: one
     -- object, two outcomes, and you can tell which without looking at the
     -- board — which is the entire reason the alert exists.
     { key = "TOLL_HI", label = "Bell — High",
-      file = "Sound\\Doodad\\BellTollAlliance.wav" },
+      fileID = 566564, file = "Sound\\Doodad\\BellTollAlliance.ogg" },
     { key = "TOLL_LO", label = "Bell — Low",
-      file = "Sound\\Doodad\\BellTollHorde.wav" },
+      fileID = 565853, file = "Sound\\Doodad\\BellTollHorde.ogg" },
+    -- The holy school's own fizzle: the sound a holy spell makes when it
+    -- comes to nothing, which is exactly what a wasted Mending is. Short and
+    -- quiet beside the bells -- a note, not an alarm -- and nothing else on
+    -- the board uses it.
+    { key = "FIZZLE",  label = "Holy Fizzle",
+      fileID = 569772, file = "Sound\\Spells\\Fizzle\\FizzleHolyA.ogg" },
     { key = "DOCK",    label = "Docking Bell",
-      file = "Sound\\Doodad\\BoatDockedWarning.wav" },
+      fileID = 566652, file = "Sound\\Doodad\\BoatDockedWarning.ogg" },
     { key = "PING",    label = "Map Ping",
-      file = "Sound\\Interface\\MapPing.wav" },
+      fileID = 567416, file = "Sound\\Interface\\MapPing.ogg" },
     { key = "OPEN",    label = "Window Open",
-      file = "Sound\\Interface\\AuctionWindowOpen.wav" },
+      fileID = 567482, file = "Sound\\Interface\\AuctionWindowOpen.ogg" },
     { key = "LEVEL",   label = "Level Up",
-      file = "Sound\\Interface\\LevelUp.wav" },
+      fileID = 567431, file = "Sound\\Interface\\LevelUp.ogg" },
     { key = "NONE",    label = "Silent", silent = true },
 }
 SDATA.ALERT_SOUND_BY_KEY = {}
@@ -910,10 +920,11 @@ for _, e in ipairs(SDATA.ALERT_SOUNDS) do SDATA.ALERT_SOUND_BY_KEY[e.key] = e en
 -- variable at a call site, and the settings-reach check can read this and
 -- know these four are real reads.
 SDATA.ALERT_SOUND_KEY = {
-    EXPOSE   = "SoundExpose",
-    LBLATE   = "SoundLBLate",
-    POMSPENT = "SoundPoMSpent",
-    POMLOST  = "SoundPoMLost",
+    EXPOSE    = "SoundExpose",
+    LBLATE    = "SoundLBLate",
+    POMSPENT  = "SoundPoMSpent",
+    POMWASTED = "SoundPoMWasted",
+    POMLOST   = "SoundPoMLost",
 }
 
 -- The alerts themselves, in the order the settings page lists them.
@@ -932,9 +943,12 @@ SDATA.ALERT_LINES = {
     { key = "POMSPENT", label = "Mending Spent", default = "TOLL_HI", layer = "PWS",
       onKey = "PoMAlertSound",
       tip = "Your Prayer of Mending spending its last charge. It did the job it was cast for, and only the cooldown is left to wait on." },
+    { key = "POMWASTED", label = "Mending Wasted", default = "FIZZLE", layer = "PWS",
+      onKey = "PoMAlertSound",
+      tip = "Your Prayer of Mending ending without bouncing on: the thirty seconds ran out before anyone took a hit, a purge or dispel took it, or it healed and had nobody within twenty yards to jump to. Charges thrown away, and a recast you owe now." },
     { key = "POMLOST", label = "Mending Lost", default = "TOLL_LO", layer = "PWS",
       onKey = "PoMAlertSound",
-      tip = "Your Prayer of Mending ending early — the thirty seconds run out, a dispel taking it, or the holder dying with it. A recast you owe now." },
+      tip = "Your Prayer of Mending gone with its holder — they died carrying it — or gone somewhere the board could not follow." },
 }
 SDATA.ALERT_BY_KEY = {}
 for _, e in ipairs(SDATA.ALERT_LINES) do
@@ -949,15 +963,24 @@ SDATA.POM_HOP_HOLD = 0.55       -- how long the arrival flare and the departure 
 -- Why it ended, and how each one reads. `alert` is whether it earns a sound:
 -- BOUNCE and RECAST never do, and they are the two that end a session
 -- without anything having gone wrong.
+-- `sound` is which alert line an ending plays. Three, because there are
+-- three different things to do next: SPENT did its job (wait out the
+-- cooldown); the WASTED endings threw charges away -- it sat out its thirty
+-- seconds, was purged, or healed with nobody in range to jump to -- and want
+-- a recast now; LOST went with its holder.
 SDATA.POM_REASONS = {
-    SPENT    = { label = "spent",     alert = true,  tint = { 0.55, 0.95, 0.70 } },
-    EXPIRED  = { label = "expired",   alert = true,  tint = { 1.00, 0.72, 0.20 } },
-    DISPELLED= { label = "dispelled", alert = true,  tint = { 0.85, 0.55, 1.00 } },
-    DIED     = { label = "lost",      alert = true,  tint = { 0.80, 0.80, 0.85 } },
-    LOST     = { label = "lost",      alert = true,  tint = { 1.00, 0.38, 0.26 } },
+    SPENT    = { label = "spent",     alert = true,  sound = "POMSPENT",  tint = { 0.55, 0.95, 0.70 } },
+    EXPIRED  = { label = "expired",   alert = true,  sound = "POMWASTED", tint = { 1.00, 0.72, 0.20 } },
+    DISPELLED= { label = "dispelled", alert = true,  sound = "POMWASTED", tint = { 0.85, 0.55, 1.00 } },
+    NOJUMP   = { label = "no one in range", alert = true, sound = "POMWASTED", tint = { 1.00, 0.55, 0.15 } },
+    DIED     = { label = "lost",      alert = true,  sound = "POMLOST",   tint = { 0.80, 0.80, 0.85 } },
+    LOST     = { label = "lost",      alert = true,  sound = "POMLOST",   tint = { 1.00, 0.38, 0.26 } },
     BOUNCE   = { label = "bounced",   alert = false },
     RECAST   = { label = "recast",    alert = false },
 }
+-- How far Mending can jump: a party or raid member within this many yards
+-- of whoever it just healed
+SDATA.POM_JUMP = 20
 SDATA.STRIP_REFRESH_KEY = {
     PWS   = "RenewRefreshAt",
     HOT   = "HotRefreshAt",
@@ -3208,6 +3231,8 @@ local function ResolveAbilityBook()
         if entry.id and GetSpellInfo then n, _, ic = GetSpellInfo(entry.id) end
         entry.dispName = n or entry.name
         entry.dispIcon = ic or entry.icon
+        -- The medallion of your own faction in lists; rows pick per member
+        if entry.key == "TRINKET" and Commander.TrinketIcon then entry.dispIcon = Commander.TrinketIcon("player") end
         register(entry.dispName, "*", entry)
         if entry.names then
             for _, alias in ipairs(entry.names) do register(alias, "*", entry) end
@@ -3246,6 +3271,49 @@ local function NoteAbilityCast(guid, class, spellName, now)
     -- The reset link is literal: Cold Snap/Preparation REFUND the linked CDs
     if entry.resets then
         for _, tk in ipairs(entry.resets) do st[tk] = nil end
+    end
+end
+
+-- A new arena match hands everyone's cooldowns back, so the strips have to
+-- give them back too: a Blind spent in the last game is NOT on cooldown in
+-- this one, and a strip that says it is costs the opener it was saved for.
+--
+-- The rule is the server's, read from the mangos-tbc source rather than
+-- remembered: BattleGround::AddPlayer calls RemoveArenaSpellCooldowns as
+-- each player zones in, which clears every cooldown of FIFTEEN MINUTES OR
+-- LESS (spell and category recovery both). So the long ones carry into the
+-- arena exactly as they were -- Lay on Hands, Divine Intervention, the
+-- warrior's thirty-minute three, Rebirth, the elemental totems -- and are
+-- kept here. Cooldowns are BASE values in the book, which is also what the
+-- server compares, so the cut needs no talent arithmetic.
+--
+-- On OUR zone-in, for the whole group at once: whoever is already inside was
+-- reset on the way in, and whoever is still outside will be when they follow,
+-- and nothing they press out there reaches our combat log from in here.
+--
+-- Lockouts are NOT touched. Hypothermia and Forbearance are debuffs read off
+-- the unit, and entering an arena strips positive auras, not negative ones
+-- (Unit::RemoveArenaAuras), so whatever the next aura scan finds is the truth.
+SDATA.ARENA_RESET_MAX = 15 * 60
+function util.InArena()
+    if not IsInInstance then return false end
+    local _, kind = IsInInstance()
+    return kind == "arena"
+end
+function util.ResetArenaCooldowns()
+    local keep = {}
+    local function mark(list)
+        for _, e in ipairs(list) do
+            if (e.cd or 0) > SDATA.ARENA_RESET_MAX then keep[e.key] = true end
+        end
+    end
+    for _, list in pairs(SDATA.ABILITY_BOOK) do mark(list) end
+    mark(SDATA.ABILITY_SHARED)
+    for guid, st in pairs(abilityState) do
+        for key in pairs(st) do
+            if not keep[key] then st[key] = nil end
+        end
+        if not next(st) then abilityState[guid] = nil end
     end
 end
 
@@ -3831,6 +3899,179 @@ local function ResolveEleInfo()
     local eleName = GetSpellInfo(SDATA.WATER_ELE_ID)
     eleKnown = (eleName and knownSpells[eleName])
         or (IsSpellKnown and IsSpellKnown(SDATA.WATER_ELE_ID)) or false
+end
+
+-- ---------------------------------------------------------------------------
+-- The Ice Block tracker (INT layer): ONE seat in the personal block for the
+-- question a mage asks with no time to look anywhere -- can I Block? -- and
+-- it shows whichever answer is true, in the order they outrank each other:
+--
+--   1. Hypothermia   you cannot, whatever else is ready. Ice Block lays it on
+--                    you for 30s as it lands, Cold Snap does not lift it, and
+--                    a Snap pressed under it refunds a Block you still cannot
+--                    cast. Dark face, wiped for what is left, red rim; while
+--                    you are standing in the Block itself, the thin clock
+--                    outside it runs the Block's own ten seconds.
+--   2. Ice Block     ready: the lit Ice Block.
+--   3. Cold Snap     Block is cooling but Snap is ready: the lit Cold Snap,
+--                    with the gold rim the ability strip's refund pip wears.
+--   4. Cooling       both down: whichever comes back FIRST, wiped, with its
+--                    time on the face and a red rim. A Snap that returns
+--                    before the Block is a Block that returns early.
+--
+-- Ice Block is trained (level 30 on this client) and Cold Snap is a frost
+-- talent, so a fire or arcane mage gets the same seat without step 3 -- and a
+-- mage without Ice Block gets no seat at all: the seat is the Block's.
+-- ---------------------------------------------------------------------------
+SDATA.BLOCK_ID, SDATA.COLDSNAP_ID = 45438, 11958
+SDATA.HYPO_DURATION = 30
+SDATA.BLOCK_LABEL = "Ice Block"
+util.block = {}
+
+function util.ResolveBlockInfo()
+    local b = util.block
+    b.known, b.snapKnown = false, false
+    if layer ~= "INT" or not GetSpellInfo then return end
+    -- The banner's knowledge test: the spellbook scan, with IsSpellKnown as
+    -- the backstop for a rank not indexed yet
+    local function learn(id, fallback)
+        local n, _, ic = GetSpellInfo(id)
+        local known = n and (knownSpells[n] or (IsSpellKnown and IsSpellKnown(id))) and true or false
+        return n, ic or fallback, known
+    end
+    b.name, b.icon, b.known = learn(SDATA.BLOCK_ID, "Interface\\Icons\\Spell_Frost_Frost")
+    b.snapName, b.snapIcon, b.snapKnown = learn(SDATA.COLDSNAP_ID, "Interface\\Icons\\Spell_Frost_WizardMark")
+    local hn, _, hic = GetSpellInfo(SDATA.HYPO_ID)
+    b.hypoName, b.hypoIcon = hn or "Hypothermia", hic or "Interface\\Icons\\Spell_Fire_BlueImmolation"
+end
+
+function util.BlockOn()
+    return layer == "INT" and util.block.known and DB("TrackIceBlock", true) and true or false
+end
+
+-- Hypothermia, and the Block you may be standing in, off your own auras.
+-- Rides ScanSelfShields (UNIT_AURA on the player), so a draw reads the cached
+-- answer instead of walking eighty auras a frame.
+function util.ScanBlockAuras()
+    local b = util.block
+    b.hypoExp, b.hypoDur, b.iceExp, b.iceDur = nil, nil, nil, nil
+    if not (b.known and C_UnitAuras) then return end
+    if C_UnitAuras.GetDebuffDataByIndex then
+        for i = 1, 40 do
+            local a = C_UnitAuras.GetDebuffDataByIndex("player", i, "HARMFUL")
+            if not a then break end
+            if a.spellId == SDATA.HYPO_ID or a.name == b.hypoName then
+                b.hypoExp, b.hypoDur = a.expirationTime, a.duration
+                break
+            end
+        end
+    end
+    -- Ice Block always lays Hypothermia, so no Hypothermia is no Block
+    if b.hypoExp and C_UnitAuras.GetBuffDataByIndex then
+        for i = 1, 40 do
+            local a = C_UnitAuras.GetBuffDataByIndex("player", i, "HELPFUL")
+            if not a then break end
+            if a.spellId == SDATA.BLOCK_ID or (b.name and a.name == b.name) then
+                b.iceExp, b.iceDur = a.expirationTime, a.duration
+                break
+            end
+        end
+    end
+end
+
+-- A wait as the board writes it: seconds under a minute and a half, minutes
+-- above (the ability strip's rule)
+function util.BlockTime(left)
+    if left >= 90 then return string.format("%dm", math.floor(left / 60 + 0.5)) end
+    return tostring(math.ceil(left))
+end
+
+-- When a spell you know comes back: its absolute end and full length, or
+-- nil when it is ready. Anything 1.5s or under is the global cooldown.
+function util.BlockCooldown(name, now)
+    if not (name and GetSpellCooldown) then return nil end
+    local start, dur = GetSpellCooldown(name)
+    if start and dur and start > 0 and dur > 1.5 and start + dur > now then
+        return start + dur, dur
+    end
+    return nil
+end
+
+-- The tracker resolved into a row, which is BOTH of the block's shapes at
+-- once: state / word / bar / red drain for Rows, face / wipe / clock / rim
+-- for Dials. `s` is the facts: live from util.BlockRow, or the test board's.
+--   s.hypoExp, s.hypoDur     Hypothermia (absolute end, length)
+--   s.iceExp, s.iceDur       the Block you are standing in
+--   s.blockStop, s.blockDur  Ice Block's cooldown; nil when it is ready
+--   s.snapKnown              ...and Cold Snap's, when you have it
+--   s.snapStop, s.snapDur
+-- Never shieldUp: a Block coming off cooldown is not a shield breaking, and
+-- the Expose Alert listens for exactly that edge. `blockLit` lights the face.
+function util.BlockRowFrom(s, now)
+    local b = util.block
+    local r = {
+        guid = "cselfBLOCK",
+        unit = "player",
+        name = SDATA.BLOCK_LABEL,
+        class = playerClass,
+        isSelf = true,
+        selfSpell = true,
+        blockRow = true,
+        dispelKey = playerGUID,
+        tgtKey = playerGUID,
+        mainText = "",
+        rightText = "",
+        wsLeft = 0,
+    }
+    -- A dark face waiting on something: wiped for it, its time on the face,
+    -- the red rim, and on the row the red drain and the seconds
+    local function Wait(icon, stop, dur, word)
+        local left = stop - now
+        r.icon, r.blockLit = icon, false
+        r.state, r.mainText, r.mainKind = "EXPOSED", word, "LOCK"
+        r.wsLeft, r.lockMax = left, math.max(dur, left)
+        r.rightText = left >= 90 and util.BlockTime(left) or string.format("%ds", math.ceil(left))
+        r.wipeStop, r.wipeDur = stop, math.max(dur, left)
+        r.rim = STATES.EXPOSED.color
+    end
+    local snapReady = s.snapKnown and not s.snapStop
+    if s.hypoExp and s.hypoExp > now then
+        r.blockState = "HYPO"
+        local dur = (s.hypoDur and s.hypoDur > 0) and s.hypoDur or SDATA.HYPO_DURATION
+        Wait(b.hypoIcon, s.hypoExp, dur, (b.hypoName or "Hypothermia"):upper())
+        if s.iceExp and s.iceExp > now then
+            r.clockStop = s.iceExp
+            r.clockDur = (s.iceDur and s.iceDur > 0) and s.iceDur or (s.iceExp - now)
+        end
+    elseif not s.blockStop then
+        r.blockState = "BLOCK"
+        r.icon, r.blockLit = b.icon, true
+        r.state, r.mainText, r.mainKind, r.ratio = "SHIELDED", "READY", "LOCK", 1
+    elseif snapReady then
+        r.blockState = "SNAP"
+        r.icon, r.blockLit = b.snapIcon, true
+        r.state, r.mainText, r.mainKind, r.ratio = "REFRESH", (b.snapName or "Cold Snap"):upper(), "LOCK", 1
+        r.rim = SDATA.DIAL_GOLD
+    elseif s.snapKnown and s.snapStop < s.blockStop then
+        r.blockState = "COOLING"
+        Wait(b.snapIcon, s.snapStop, s.snapDur or (s.snapStop - now), (b.snapName or "Cold Snap"):upper())
+    else
+        r.blockState = "COOLING"
+        Wait(b.icon, s.blockStop, s.blockDur or (s.blockStop - now), "COOLDOWN")
+    end
+    return r
+end
+
+function util.BlockRow(now)
+    local b = util.block
+    local f = util.blockFacts or {}
+    util.blockFacts = f
+    f.hypoExp, f.hypoDur, f.iceExp, f.iceDur = b.hypoExp, b.hypoDur, b.iceExp, b.iceDur
+    f.blockStop, f.blockDur = util.BlockCooldown(b.name, now)
+    f.snapKnown = b.snapKnown
+    f.snapStop, f.snapDur = nil, nil
+    if b.snapKnown then f.snapStop, f.snapDur = util.BlockCooldown(b.snapName, now) end
+    return util.BlockRowFrom(f, now)
 end
 
 -- Freeze's cooldown off the pet action bar (only meaningful while the
@@ -5388,6 +5629,8 @@ end
 
 local function ScanSelfShields()
     if not (C_UnitAuras and C_UnitAuras.GetBuffDataByIndex) then return end
+    -- The Ice Block tracker reads its Hypothermia off the same aura event
+    util.ScanBlockAuras()
     local found = {}   -- def -> { expire, spellId, index }; player auras are always reliable
     for i = 1, 40 do
         local aura = C_UnitAuras.GetBuffDataByIndex("player", i, "HELPFUL")
@@ -6807,6 +7050,12 @@ function util.NotePoMApplied(guid, now, expire, duration, stacks)
     if not p.guid then
         p.castAt, p.hops, p.fromGuid = now, 0, nil
         p.stacks = stacks or SDATA.POM_CHARGES
+    elseif bounced and not (stacks and stacks > 0) then
+        -- A hop spends a charge. The combat log does not say how many are
+        -- left, so count it down here and let the next aura scan of the new
+        -- holder overwrite it with the real number. Getting this right is
+        -- what tells a heal that SHOULD have jumped from the last one.
+        p.stacks = math.max(1, (p.stacks or SDATA.POM_CHARGES) - 1)
     end
     if p.guid ~= guid then p.hopAt, p.hopGuid = now, guid end
     p.guid = guid
@@ -6864,14 +7113,85 @@ function util.NotePoMRemoved(guid, now)
         reason = "EXPIRED"
     elseif p.healAt and (now - p.healAt) <= 0.5 then
         -- A charge fired and the aura went with it. If it bounced, the next
-        -- half second says so and this is thrown away; if it does not, that
-        -- was the fifth charge and the spell finished its job.
-        reason = "SPENT"
+        -- half second says so and this is thrown away. If it does not, either
+        -- that was the last charge and the spell finished its job, or there
+        -- were charges left and nobody within twenty yards to take them --
+        -- the heal landed and the rest of the Mending fizzled. Alone there is
+        -- nobody to jump to by definition, so a solo Mending is always spent.
+        if (p.stacks or 1) > 1 and util.PoMHasJumpers() then
+            reason = "NOJUMP"
+        else
+            reason = "SPENT"
+        end
     else
         reason = "LOST"
     end
     p.pendingAt, p.pendingReason = now + SDATA.POM_GRACE, reason
     p.fromGuid = guid
+end
+
+-- Is there anyone in the group Mending could ever jump to? (Range is a
+-- different question; this is only whether the group has another player.)
+function util.PoMHasJumpers()
+    if IsInGroup then return IsInGroup() and true or false end
+    return UnitExists and UnitExists("party1") and true or false
+end
+
+-- Group members Mending can land on: players, alive and online, not the
+-- holder. Pets are not counted -- whether a jump can pick one is not
+-- something this client has shown, and an empty answer is the safe one.
+function util.PoMJumpUnits(out)
+    wipe(out)
+    if IsInRaid and IsInRaid() then
+        local n = GetNumGroupMembers and GetNumGroupMembers() or 0
+        for i = 1, math.min(n, 40) do out[#out + 1] = "raid" .. i end
+    else
+        out[1] = "player"
+        for i = 1, 4 do out[#out + 1] = "party" .. i end
+    end
+    return out
+end
+
+-- Could the Mending on `holder` bounce right now: is any other group member
+-- within twenty yards of them? "YES" (with how many), "NO", or nil when it
+-- cannot be measured. The one source is UnitPosition, pairwise, and it
+-- answers only where the client gives group positions (the open world and
+-- battlegrounds; arenas unverified, see ASSUMPTIONS). "NO" is only said when
+-- every candidate was actually measured -- one we could not place might be
+-- standing right next to them. Throttled: a holder's answer is held for a
+-- fifth of a second.
+util.pomReach = { units = {} }
+function util.PoMReach(holder, now)
+    local c = util.pomReach
+    if c.holder == holder and c.at and now - c.at < 0.2 then return c.state, c.count end
+    c.holder, c.at, c.state, c.count = holder, now, nil, 0
+    -- Alone there is nobody to ask about, and a red ring on every solo
+    -- Mending would be a ring that means nothing
+    if not util.PoMHasJumpers() then return nil, 0 end
+    if not (holder and UnitPosition and UnitExists and UnitExists(holder)) then return nil, 0 end
+    local hy, hx, _, hInst = UnitPosition(holder)
+    if not hx then return nil, 0 end
+    local n, blind = 0, false
+    local reach2 = SDATA.POM_JUMP * SDATA.POM_JUMP
+    for _, u in ipairs(util.PoMJumpUnits(c.units)) do
+        if UnitExists(u) and not UnitIsUnit(u, holder)
+            and not (UnitIsDeadOrGhost and UnitIsDeadOrGhost(u))
+            and not (UnitIsConnected and not UnitIsConnected(u)) then
+            local uy, ux, _, uInst = UnitPosition(u)
+            if ux and uInst == hInst then
+                local dx, dy = ux - hx, uy - hy
+                if dx * dx + dy * dy <= reach2 then n = n + 1 end
+            else
+                blind = true
+            end
+        end
+    end
+    if n > 0 then
+        c.state, c.count = "YES", n
+    elseif not blind then
+        c.state = "NO"
+    end
+    return c.state, c.count
 end
 
 -- What the aura scan saw on one unit. A second, independent channel: it
@@ -8893,6 +9213,11 @@ end
 -- keeps Click-Cast legal, since moving a secure row in combat is a protected
 -- call we would be forced to skip.
 local function PersonalReserve()
+    -- The priest's block is the team's shields, one dial a seat. Reserved at
+    -- the full five whatever the group size, so a teammate joining or leaving
+    -- never moves the rows under it (and so the Click-Cast board, whose rows
+    -- only move out of combat, is never asked to).
+    if layer == "PWS" then return util.TeamDialsOn() and SDATA.TEAM_SEATS or 0 end
     if layer ~= "INT" then return 0 end
     local n = eleKnown and 1 or 0
     if DB("SelfShieldRows", true) then
@@ -8900,6 +9225,7 @@ local function PersonalReserve()
             if SelfTrackEnabled(def) then n = n + 1 end
         end
     end
+    if util.BlockOn() then n = n + 1 end
     return n
 end
 
@@ -8913,6 +9239,16 @@ end
 SDATA.DIAL_GAP = 4
 function util.DialsOn()
     return DB("PersonalStyle", "DIALS") == "DIALS" and CommanderPartyFrames_Dial ~= nil
+end
+
+-- The priest's block (PWS layer): Team Shields, a dial for you and each of
+-- your party -- your subgroup in a raid -- with their Power Word: Shield and
+-- their Weakened Soul on one disc each. Always dials: as rows it would be
+-- the ally board drawn a second time.
+SDATA.TEAM_SEATS = 5
+function util.TeamDialsOn()
+    return layer == "PWS" and DB("TeamDials", true) and CommanderPartyFrames_Dial ~= nil
+        and true or false
 end
 
 -- The art a dial's band is drawn with. MATCH follows the board's own Bar
@@ -8943,7 +9279,7 @@ end
 function util.PersonalBlockH(live)
     local count = math.max(PersonalReserve(), live or 0)
     if count == 0 then return 0 end
-    if util.DialsOn() then
+    if layer == "PWS" or util.DialsOn() then
         return util.DialSize(FrameWidth(), count) + SDATA.ROW_GAP + 2
     end
     return count * PersonalStride()
@@ -9172,7 +9508,9 @@ local function PaintRow(row, r, now, index)
                 row.inShield:Hide(); row.inShieldCd:Hide()
             end
         else
-            if r.shieldUp and r.mine then
+            -- (blockLit: the Ice Block tracker's Block or Snap in hand, lit
+            -- without claiming a shield the Expose Alert would miss)
+            if (r.shieldUp and r.mine) or r.blockLit then
                 row.spellIcon:SetTexture(r.icon or SDATA.PWS_ICON)
                 row.spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
                 row.spellIcon:SetVertexColor(1, 1, 1, 1)
@@ -10153,6 +10491,10 @@ function util.PlayAlert(alertKey)
             if ok and played ~= false then return end
         end
     end
+    if snd.fileID and PlaySoundFile then
+        local ok, played = pcall(PlaySoundFile, snd.fileID, "Master")
+        if ok and played ~= false then return end
+    end
     if snd.file and PlaySoundFile then
         pcall(PlaySoundFile, snd.file, "Master")
     end
@@ -10237,14 +10579,18 @@ function util.CheckPoMEnd(now)
     local p = util.pom
     p.flashGuid, p.flashReason, p.flashUntil = guid, reason, now + 0.9
     if DB("PoMAlertSound", true) then
-        -- Two sounds, because the two outcomes are opposite instructions.
+        -- Three sounds, because the outcomes are different instructions.
         -- SPENT means the spell finished its job and the cooldown is the only
-        -- thing you are waiting on; every other reason means it was taken off
-        -- you early and the recast is the next thing you do. They default to
-        -- the two bell tolls — one instrument, two pitches — so Mending has a
-        -- voice of its own rather than borrowing the raid-warning every other
-        -- addon on the client is already using.
-        util.PlayAlert(reason == "SPENT" and "POMSPENT" or "POMLOST")
+        -- thing you are waiting on. WASTED -- it ran out its thirty seconds,
+        -- was purged, or healed with nobody in range to jump to -- threw
+        -- charges away and the recast is the next thing you do; it defaults
+        -- to the holy fizzle, small and unlike anything else on the client.
+        -- LOST went with a holder who died. Spent and lost default to the two
+        -- bell tolls — one instrument, two pitches — so Mending has a voice of
+        -- its own rather than borrowing the raid-warning every other addon on
+        -- the client is already using.
+        local info = SDATA.POM_REASONS[reason]
+        util.PlayAlert(info and info.sound or "POMLOST")
     end
 end
 
@@ -10365,6 +10711,18 @@ end
 -- ally's current /way line when the client can place them, so it is never a
 -- dead button. Everything is pcall'd: a click handler that errors would hand
 -- a secure button's click to the error frame mid-fight.
+--
+-- 5.42.0 (Commander Orders 3.1, its SPEC 5 and S6). The follow goes through
+-- Orders' one way in, CommanderOrders.GoTo, BY GUID ({ kind = "unit", guid,
+-- unit }): Orders itself now finds the member again after a roster change and
+-- never clears a follow on arrival, and it speaks for the click: "Waypoint
+-- set: <name>" (behind its Announce In Chat) or its ONE refusal line in its
+-- own words, so this board's own confirmation and refusal words are gone
+-- (Orders' DECISIONS, the 3.1 "Go to" words). The board still re-points its
+-- one follow after a roster change (silently) and unfollows someone who left,
+-- which Orders, keeping a lost member's token, does not. A key binding,
+-- "Arrow to My Target" (Bindings.xml, unbound until you bind it), is the
+-- discoverable way in on the sorted board, where rows take no clicks.
 -- ---------------------------------------------------------------------------
 util.ARROW_ACTION = "cpfarrow"
 util.ARROW_SOURCE, util.ARROW_KEY = "PartyFrames", "follow"
@@ -10400,6 +10758,16 @@ end
 -- (on util, not a chunk local: this file lives near the 200-local cap)
 function util.ArrowSay(msg) print("|cff66ccffCommander Party Frames|r: " .. msg) end
 
+-- Orders 3.1's API (GoTo is the one way in), or nil
+function util.ArrowOrders()
+    local O = CommanderOrders
+    if type(O) == "table" and type(O.GoTo) == "function" then return O end
+    return nil
+end
+
+BINDING_HEADER_COMMANDERPARTYFRAMES = "Commander Party Frames"
+BINDING_NAME_COMMANDERPARTYFRAMES_ARROW = "Arrow to My Target"
+
 -- Ask Commander Orders to follow `unit`. Returns true, uid; or false, reason
 -- ("self" | "notgroup" | "absent" | Orders' own refusal | "error").
 function util.ArrowTo(unit)
@@ -10413,8 +10781,8 @@ function util.ArrowTo(unit)
         return false, why
     end
     local name = UnitName and UnitName(token) or token
-    local O = CommanderOrders
-    if type(O) ~= "table" or type(O.Add) ~= "function" then
+    local O = util.ArrowOrders()
+    if not O then
         -- No Orders: where they are now, as a line to paste, when the client says
         local line
         if C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
@@ -10433,19 +10801,17 @@ function util.ArrowTo(unit)
         util.ArrowSay("Commander Orders is not loaded" .. (line and (", so here is where " .. tostring(name) .. " is now: " .. line) or ""))
         return false, "absent"
     end
-    local ok, uid, refused = pcall(O.Add, {
-        kind = "unit", unit = token, title = name,
-        source = util.ARROW_SOURCE, key = util.ARROW_KEY, setArrow = true,
+    -- By GUID (Orders 3.1): Orders finds the member again after a roster
+    -- change; not silent, so Orders says "Waypoint set" or why not, once
+    local guid = UnitGUID and UnitGUID(token) or nil
+    local ok, uid, refused = pcall(O.GoTo, { kind = "unit", unit = token, guid = guid }, {
+        title = name, source = util.ARROW_SOURCE, key = util.ARROW_KEY, icon = "UNIT", setArrow = true,
     })
     if ok and uid then
-        util.arrowFollow = { uid = uid, guid = UnitGUID and UnitGUID(token), unit = token, name = name }
-        util.ArrowSay("the arrow follows " .. tostring(name))
+        util.arrowFollow = { uid = uid, guid = guid, unit = token, name = name }
         return true, uid
     end
-    refused = ok and refused or "error"
-    util.ArrowSay(refused == "disabled" and "Commander Orders is switched off"
-        or ("Commander Orders refused it (" .. tostring(refused) .. ")"))
-    return false, refused
+    return false, ok and refused or "error"
 end
 
 -- The row's custom action (rawget(row, "cpfarrow") in the secure template):
@@ -10467,8 +10833,8 @@ end
 function util.ArrowRoster()
     local f = util.arrowFollow
     if not f then return end
-    local O = CommanderOrders
-    if type(O) ~= "table" or type(O.Get) ~= "function" then util.arrowFollow = nil return end
+    local O = util.ArrowOrders()
+    if not (O and type(O.Get) == "function") then util.arrowFollow = nil return end
     local ok, wp = pcall(O.Get, f.uid)
     -- Gone (removed, arrived, replaced by a new follow under another uid) or
     -- no longer a follow: nothing of ours to keep up to date
@@ -10482,9 +10848,9 @@ function util.ArrowRoster()
         return
     end
     f.unit = token
-    pcall(O.Add, {
-        kind = "unit", unit = token, title = f.name,
-        source = util.ARROW_SOURCE, key = util.ARROW_KEY, setArrow = false,
+    pcall(O.GoTo, { kind = "unit", unit = token, guid = f.guid }, {
+        title = f.name, source = util.ARROW_SOURCE, key = util.ARROW_KEY, icon = "UNIT",
+        setArrow = false, silent = true,
     })
 end
 
@@ -11435,9 +11801,9 @@ local function AppendLivePersonalRows(now)
     if UnitExists and UnitExists("pet") then
         personalRows[#personalRows + 1] = EleRow(now)
     end
-    if DB("SelfShieldRows", true)
-        and not (UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")) then
-        local alertsOnly = DB("OnlyAlerts", false)
+    local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
+    local alertsOnly = DB("OnlyAlerts", false)
+    if DB("SelfShieldRows", true) and not dead then
         for _, def in ipairs(trackedSpells) do
             if SelfTrackEnabled(def) then
                 local sr = SelfRow(def, now)
@@ -11445,6 +11811,14 @@ local function AppendLivePersonalRows(now)
                     personalRows[#personalRows + 1] = sr
                 end
             end
+        end
+    end
+    -- The Ice Block tracker closes the block, under the same Alerts Only
+    -- rule: a Block in hand is the healthy state, the rest want an eye
+    if util.BlockOn() and not dead then
+        local br = util.BlockRow(now)
+        if not (alertsOnly and not ALERT_STATES[br.state]) then
+            personalRows[#personalRows + 1] = br
         end
     end
 end
@@ -11482,11 +11856,28 @@ function util.DialModel(r, def, index, now)
     wipe(m)
     if not r then
         m.ghost = true
-        m.icon = (def == "ELE") and eleIcon or (type(def) == "table" and def.icon) or nil
+        m.icon = (def == "ELE") and eleIcon or (def == "BLOCK") and util.block.icon
+            or (type(def) == "table" and def.icon) or nil
         return m
     end
 
-    if r.eleRow then
+    if r.blockRow then
+        -- The Ice Block tracker (util.BlockRowFrom decided which answer is
+        -- true): a lit face is a Block you can have, a dark wiped one is how
+        -- long until you can, and the clock outside is the Block you are in.
+        -- The number is read off the wipe every paint, so it counts down with
+        -- the face rather than standing still beside it.
+        m.icon = r.icon
+        m.ghost = not r.blockLit
+        if r.wipeStop and r.wipeStop > now then
+            m.wipeStop, m.wipeDur = r.wipeStop, r.wipeDur
+            m.text = util.BlockTime(r.wipeStop - now)
+        end
+        if r.clockStop and r.clockStop > now then
+            m.timeStop, m.timeDur = r.clockStop, r.clockDur
+        end
+        m.rim = r.rim
+    elseif r.eleRow then
         -- The elemental: its face, its health round the band, its lifespan
         -- on the clock with the seconds left across the face, and Freeze on
         -- the rim. The planner mark rides the clock exactly as it rode the
@@ -11566,8 +11957,8 @@ function util.PaintDials(now, shownPlayers, topOffset, grow, width, allyBody)
             n = n + 1
             list[n], defs[n] = ele or false, "ELE"
         end
+        local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
         if DB("SelfShieldRows", true) then
-            local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")
             for _, def in ipairs(trackedSpells) do
                 if SelfTrackEnabled(def) then
                     n = n + 1
@@ -11577,6 +11968,11 @@ function util.PaintDials(now, shownPlayers, topOffset, grow, width, allyBody)
                     list[n], defs[n] = (not dead) and SelfRow(def, now) or false, def
                 end
             end
+        end
+        -- The Ice Block tracker takes the last seat, whatever it is saying
+        if util.BlockOn() then
+            n = n + 1
+            list[n], defs[n] = (not dead) and util.BlockRow(now) or false, "BLOCK"
         end
     end
 
@@ -11618,9 +12014,266 @@ function util.PaintDials(now, shownPlayers, topOffset, grow, width, allyBody)
     for i = count + 1, #pool do pool[i]:Hide() end
 end
 
+-- ---------------------------------------------------------------------------
+-- Team Shields (PWS layer): the mage's dials turned outward. One disc per
+-- seat -- you, then party1..4 in token order (your subgroup in a raid) --
+-- answering the two questions a disc priest asks about a teammate without
+-- reading a row: is my shield on them, and can I put another one on.
+--
+--      .-- the shield's thirty seconds (thin, outermost) --.
+--     |  .-- the absorb it has left (the band) --.          |
+--     |  |    WHO (class icon or portrait)        |         |
+--     |  |    lit = shielded, dark = bare         |         |
+--     |  |    wiped = Weakened Soul, seconds on it|         |
+--     |  '-----------------------------------------'        |
+--      '----------------------------------------------------'
+--
+-- The wipe is the lockout -- Weakened Soul, or the shield's own cooldown if
+-- the client ever gives it one, whichever ends later -- so a dark wedge
+-- retreating across a face is a shield coming back, the way a cooldown
+-- reads on every action button. The rim says which of three things is true:
+--
+--   red     EXPOSED: no shield and Weakened Soul still on them. You cannot
+--           help with a shield; the seconds on the face say for how long.
+--   yellow  READY: no shield and no lockout -- shield them. Only lit in
+--           combat or while they are hurt, so a quiet board is not five
+--           yellow rings.
+--   blue    the shield is low (or nearly out of time) and they can take a
+--           fresh one; orange when it is low but still locked.
+--
+-- Shield and lockout are read from the board's own books (shieldState,
+-- wsState) rather than off the row, because a row's drain is borrowed by a
+-- dispel or a CC timer when one outranks it -- the dial always means the
+-- shield. Your Mending rides the four o'clock badge of whoever holds it,
+-- with its charges on it and a ring for whether it can bounce on: green,
+-- someone within twenty yards of them; red, nobody; no ring, no way to tell.
+-- ---------------------------------------------------------------------------
+util.teamRows = {}           -- guid -> the row resolved this draw
+util.teamSeats = {}
+util.teamFlash = {}          -- guid -> { until_, tint }
+util.teamPrevShield = {}     -- guid -> whether YOUR shield was on them last paint
+SDATA.POM_REACH_YES = { 0.30, 1.00, 0.40 }
+SDATA.POM_REACH_NO = { 1.00, 0.22, 0.18 }
+
+-- The seats, in a fixed order: who the dials are about, never what they say
+function util.TeamSeatUnits(out)
+    wipe(out)
+    if DB("TeamDialsSelf", true) then out[1] = "player" end
+    if IsInRaid and IsInRaid() and GetRaidRosterInfo then
+        local n = math.min(GetNumGroupMembers and GetNumGroupMembers() or 0, 40)
+        local mine
+        for i = 1, n do
+            if UnitIsUnit("raid" .. i, "player") then
+                mine = select(3, GetRaidRosterInfo(i))
+                break
+            end
+        end
+        if mine then
+            for i = 1, n do
+                local unit = "raid" .. i
+                if select(3, GetRaidRosterInfo(i)) == mine and not UnitIsUnit(unit, "player") then
+                    out[#out + 1] = unit
+                end
+            end
+        end
+    else
+        for i = 1, 4 do
+            if UnitExists("party" .. i) then out[#out + 1] = "party" .. i end
+        end
+    end
+    for i = #out, SDATA.TEAM_SEATS + 1, -1 do out[i] = nil end
+    return out
+end
+
+-- Whose Mending, and how many charges, if this seat is holding it. Live it
+-- is the tracker's object; on the test board it is the strip sample.
+function util.TeamPoM(r, now)
+    if testUntil > 0 then
+        local rec = strip.state[r.guid]
+        local h = rec and rec.POM
+        if h and h.expire and h.expire > now then return h.stacks, true end
+        return nil
+    end
+    local p = util.pom
+    if util.PoMOn() and p.guid and p.guid == r.guid and not p.pendingAt then
+        return p.stacks, true
+    end
+    return nil
+end
+
+function util.TeamDialModel(r, index, now)
+    local m = util.dialModel
+    wipe(m)
+    if not r then
+        m.ghost = true
+        m.icon = SDATA.PWS_ICON
+        return m
+    end
+
+    -- The face is the person. A class icon by default, the portrait when
+    -- the board is set to portraits: the same identity the rows use.
+    local display = DB("UnitDisplay", "CLASS_ICON")
+    local coords = r.class and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[r.class]
+    if (display == "PORTRAIT" or display == "ICON_PORTRAIT") and r.unit and UnitExists(r.unit) then
+        m.portrait, m.portraitKey = r.unit, r.guid
+    elseif coords then
+        m.icon, m.coords = CLASS_ICON_TEXTURE, coords
+    else
+        m.icon = SDATA.PWS_ICON
+    end
+    if r.outOfCastRange or r.outOfRange then m.alpha = 0.45 end
+
+    if r.dead then
+        m.ghost = true
+        util.teamPrevShield[r.guid] = nil
+        return m
+    end
+
+    local guid = r.guid
+    local ws = wsState[guid]
+    if ws and ws <= now then ws = nil end
+    local st = shieldState[guid]
+    if st and st.expire and st.expire <= now then st = nil end
+
+    -- The lockout: Weakened Soul, or the shield's own cooldown, whichever
+    -- ends later -- both are "not yet" for the same button
+    local lockStop, lockDur
+    if ws then lockStop, lockDur = ws, math.max(SDATA.WEAKENED_SOUL_MAX, ws - now) end
+    local cdLeft = util.pwsCdLeft or 0
+    if cdLeft > 0 and (not lockStop or now + cdLeft > lockStop) then
+        lockStop, lockDur = now + cdLeft, math.max(util.pwsCdDur or cdLeft, cdLeft)
+    end
+    local locked = lockStop and lockStop > now
+    if locked then m.wipeStop, m.wipeDur = lockStop, lockDur end
+
+    if st then
+        local cap = st.capacity or 0
+        local remaining = (st.mine and cap > 0) and math.max(0, cap - (st.absorbed or 0)) or nil
+        m.absorb = remaining and (remaining / cap) or 1
+        local tLeft = st.expire and (st.expire - now) or nil
+        if tLeft and tLeft > 0 then
+            m.timeStop = st.expire
+            m.timeDur = math.max(SDATA.SHIELD_DURATION, tLeft)
+        end
+        local low = (remaining and m.absorb <= DB("LowAbsorbPct", 25) / 100)
+            or (tLeft and tLeft <= DB("LowTimeSecs", 5))
+        if low then
+            local state = locked and "FADING" or "REFRESH"
+            m.absorbColor = STATES[state].color
+            m.rim = STATES[state].color
+        else
+            m.absorbColor = st.mine and STATES.SHIELDED.color or STATES.OTHER.color
+        end
+        m.text = remaining and FormatAmount(remaining) or ""
+        m.shade = DB("DialTextShade", 0.45)
+    else
+        m.ghost = true
+        if locked then
+            m.text = tostring(math.ceil(lockStop - now))
+            m.rim = STATES.EXPOSED.color
+        elseif InCombat() or (r.health or 1) < 0.95 then
+            m.rim = STATES.READY.color
+        end
+    end
+
+    -- Your Mending, if this is who is holding it
+    local stacks, holds = util.TeamPoM(r, now)
+    if holds then
+        m.badgeIcon = (util.pomDef and util.pomDef.icon) or "Interface\\Icons\\Spell_Holy_PrayerOfMendingtga"
+        m.badgeText = (stacks and stacks > 0) and tostring(stacks) or nil
+        local reach
+        if testUntil > 0 then
+            reach = (stacks or 0) > 2 and "YES" or "NO"
+        else
+            reach = util.PoMReach(r.unit, now)
+        end
+        m.badgeRim = (reach == "YES" and SDATA.POM_REACH_YES)
+            or (reach == "NO" and SDATA.POM_REACH_NO) or nil
+    end
+
+    -- The flash: your shield coming off them (the Shield Break edge, seen
+    -- from the dial's side so the row keeps its own), or your Mending ending
+    -- on them
+    local mineNow = st and st.mine and true or false
+    if util.teamPrevShield[guid] and not mineNow and DB("ExposeAlert", false) then
+        util.teamFlash[guid] = { until_ = now + 0.9 }
+    end
+    util.teamPrevShield[guid] = mineNow
+    local p = util.pom
+    if p.endedGuid == guid and p.endedAt and now - p.endedAt < 0.9
+        and DB("PoMAlert", true) and not util.teamFlash[guid] then
+        local info = SDATA.POM_REASONS[p.endedReason or ""]
+        util.teamFlash[guid] = { until_ = p.endedAt + 0.9, tint = info and info.tint }
+    end
+    local f = util.teamFlash[guid]
+    if f then
+        if f.until_ > now then
+            m.flash = (f.until_ - now) / 0.9
+            m.flashColor = f.tint
+        else
+            util.teamFlash[guid] = nil
+        end
+    end
+    return m
+end
+
+function util.PaintTeamDials(now, topOffset, grow, width, allyBody)
+    local Dial = CommanderPartyFrames_Dial
+    local list = util.dialList
+    wipe(list)
+    if not util.TeamDialsOn() then util.HideDials() return end
+    if testUntil > 0 then
+        -- The test board's own rows are the seats
+        for _, r in ipairs(rowData) do
+            if not r.isPet and not r.selfSpell and #list < SDATA.TEAM_SEATS then list[#list + 1] = r end
+        end
+    else
+        for i, unit in ipairs(util.TeamSeatUnits(util.teamSeats)) do
+            local guid = UnitGUID(unit)
+            list[i] = guid and (util.teamRows[guid] or ResolveRow(unit, now)) or false
+        end
+    end
+
+    local count = #list
+    local pool = util.dialPool
+    if count == 0 then util.HideDials() return end
+    local size = util.DialSize(width, SDATA.TEAM_SEATS)
+    local band = util.DialBand()
+    for i = 1, count do
+        local w = pool[i]
+        if not w then
+            w = Dial.New(root)
+            pool[i] = w
+        end
+        Dial.Layout(w, size, DB("DialTextSize", 0))
+        Dial.SetBand(w, band)
+        local x = SDATA.STRIPE_W + 3 + (i - 1) * (size + SDATA.DIAL_GAP)
+        local y = (grow == "UP") and ((allyBody or 0) + 1) or (-topOffset - 1)
+        if w._x ~= x or w._y ~= y or w._grow ~= grow then
+            w._x, w._y, w._grow = x, y, grow
+            w:ClearAllPoints()
+            if grow == "UP" then
+                w:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", x, y)
+            else
+                w:SetPoint("TOPLEFT", root, "TOPLEFT", x, y)
+            end
+        end
+        local r = list[i] or nil
+        w._row = r
+        Dial.Paint(w, util.TeamDialModel(r, i, now), now)
+        w:Show()
+    end
+    for i = count + 1, #pool do pool[i]:Hide() end
+end
+
 -- Personal rows lead the board: your own upkeep on top, at half an ally
 -- row's height, with the party rows below it.
 local function PaintPersonalRows(now, shownPlayers, topOffset, grow, width, sig, allyBody)
+    if layer == "PWS" then
+        for i = 1, #personalPool do personalPool[i]:Hide() end
+        util.PaintTeamDials(now, topOffset, grow, width, allyBody)
+        return
+    end
     if util.DialsOn() then
         for i = 1, #personalPool do personalPool[i]:Hide() end
         util.PaintDials(now, shownPlayers, topOffset, grow, width, allyBody)
@@ -11744,7 +12397,10 @@ local function PaintAbilityStrip(arow, r, now)
             local cell = arow.cells[n]
             local s = stripScratch[i]
             local e = s.e
-            cell.icon:SetTexture(e.dispIcon)
+            -- The PvP trinket wears the member's own faction medallion, not
+            -- one faction's art for everybody (Commander_Events picks it)
+            cell.icon:SetTexture(e.key == "TRINKET" and Commander.TrinketIcon
+                and Commander.TrinketIcon(r.unit, nil, false) or e.dispIcon)
             local effEnd, effDur = s.cdEnd, e.cd
             if s.lockExp and (not effEnd or s.lockExp > effEnd) then
                 effEnd = s.lockExp
@@ -11812,6 +12468,9 @@ local function Draw()
     if util.PoMOn() then util.CheckPoMEnd(now) end
     util.ReadSpellRings(now)
     ScanTargeters(now)
+    -- Every row this pass resolves, by GUID, so the Team Shields dials read
+    -- the same answer the rows do rather than resolving everyone twice
+    wipe(util.teamRows)
     -- Buff-layer header tallies rebuild as this pass resolves rows
     if layer then intCurses, intCCs = 0, 0 end
     local showHeader = DB("ShowHeader", true)
@@ -11848,6 +12507,7 @@ local function Draw()
             if row then
                 local r = UnitExists(token) and ResolveRow(token, now) or { state = "EMPTY" }
                 if r.guid then
+                    util.teamRows[r.guid] = r
                     CheckExposeAlert(r, i, now)
                     util.CheckRollAlert(r, i, now)
                     util.CheckPoMAlert(r, i, now)
@@ -11901,8 +12561,9 @@ local function Draw()
     wipe(rowData)
     if testUntil > 0 then
         for _, tr in ipairs(testRows) do
-            if tr.eleRow then
-                -- Prebuilt static sample (the elemental row resolves nothing)
+            if tr.eleRow or tr.blockRow then
+                -- Prebuilt static sample (the elemental row and the Ice Block
+                -- tracker resolve nothing)
                 rowData[#rowData + 1] = tr
             else
                 local r = { guid = tr.guid, name = tr.name, class = tr.class, isSelf = tr.isSelf, unit = tr.unit,
@@ -11923,7 +12584,10 @@ local function Draw()
         BuildRoster(rosterUnits)
         for _, unit in ipairs(rosterUnits) do
             local r = ResolveRow(unit, now)
-            if r then rowData[#rowData + 1] = r end
+            if r then
+                rowData[#rowData + 1] = r
+                util.teamRows[r.guid] = r
+            end
         end
     end
 
@@ -12171,6 +12835,15 @@ function CommanderPartyFrames_Test()
             wsLeft = 31, lockMax = 45, rightText = "31s", mainText = "",
             freezeMark = 22 / 45, freezeMarkNext = true,
             freezeCd = 9, freezeDur = 25, freezeStart = now - 16 }
+        -- Ice Block tracker sample: the top of its ladder, which is also the
+        -- most it ever draws -- standing in a fresh Block, so Hypothermia is
+        -- the face (wiped, red) and the Block's own seconds run the clock
+        if util.BlockOn() then
+            testRows[#testRows + 1] = util.BlockRowFrom({
+                hypoExp = now + 24, hypoDur = 30, iceExp = now + 4, iceDur = 10,
+                blockStop = now + 294, blockDur = 300, snapKnown = util.block.snapKnown,
+            }, now)
+        end
         Draw()
         print("Commander Party Frames: test board injected — rows drain and clear themselves")
         return
@@ -12781,6 +13454,33 @@ end)
 -- ---------------------------------------------------------------------------
 -- Wiring
 -- ---------------------------------------------------------------------------
+-- The board's scale follows the group's head count, you included: 1-3, 4-5,
+-- 6+. Party vs raid is not a factor. Solo reports 0 members, so it floors at 1.
+function CommanderPartyFrames_ScaleKey()
+    local n = math.max(1, (GetNumGroupMembers and GetNumGroupMembers()) or 0)
+    if n <= 3 then return "HudScaleSmall" end
+    if n <= 5 then return "HudScaleParty" end
+    return "HudScaleLarge"
+end
+
+util.chromeOpts = {
+    title = "Party",
+    defaultPoint = { point = "LEFT", x = 14, y = 40 },
+    scaleKey = CommanderPartyFrames_ScaleKey,
+}
+
+-- A roster change that crosses a bracket rescales the board. Root parents
+-- the secure click-cast rows, so its SetScale waits for combat to end
+-- (PLAYER_REGEN_ENABLED re-runs this); SyncCluster carries the new scale to
+-- the banner's sibling popouts on the next draw.
+function util.ApplyBracketScale()
+    local want = tonumber(CommanderPartyFramesDB[CommanderPartyFrames_ScaleKey()]) or 1
+    if (root:GetScale() or 1) == want then util.scaleDirty = false; return end
+    if InCombat() then util.scaleDirty = true; return end
+    util.scaleDirty = false
+    Commander.UI.ApplyHudChrome(root, CommanderPartyFramesDB, "Hud", util.chromeOpts)
+end
+
 local function Apply()
     -- Ahead of the enabled check: switching the module off must give the
     -- default party frames back (blizz.Hidden reads EnableShield too)
@@ -12789,10 +13489,7 @@ local function Apply()
         if not DB("ShowDispels", false) then wipe(dispelState) end
         if not DB("OverhealGlow", true) then wipe(util.overheal) end
         if not DB("ShowTargeters", true) then wipe(targeters) end
-        Commander.UI.ApplyHudChrome(root, CommanderPartyFramesDB, "Hud", {
-            title = "Party",
-            defaultPoint = { point = "LEFT", x = 14, y = 40 },
-        })
+        Commander.UI.ApplyHudChrome(root, CommanderPartyFramesDB, "Hud", util.chromeOpts)
         -- Toggling Click-Cast changes the row frame type, which cannot be
         -- swapped live — ask for a reload if it differs from what we built.
         if securePool ~= (DB("ClickCast", false) and true or false) then
@@ -12925,8 +13622,8 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
             end
         end
         -- The Water Elemental is the mage's alone; it rode the armor block
-        -- until Inner Fire moved in there
-        if layer == "INT" then ResolveEleInfo() end
+        -- until Inner Fire moved in there; the Ice Block tracker beside it
+        if layer == "INT" then ResolveEleInfo(); util.ResolveBlockInfo() end
         -- Strip / form / aura / seal / banner-cooldown names, per layer
         ResolveStripInfo()
         -- The switcher popouts offer what you have TRAINED, so they are
@@ -13071,6 +13768,9 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
             -- own, so leaving the battleground is what ends it. Nobody from
             -- the last one is carrying anything into this zone.
             wipe(util.bgState)
+            -- A new arena match: the server has just handed every short
+            -- cooldown back, so every strip on the board does the same
+            if util.InArena() then util.ResetArenaCooldowns() end
             -- The spell data can still be cold at login; a battleground is
             -- the moment it stops being optional
             if not next(SDATA.BG_BY_NAME) then util.ResolveBGBook() end
@@ -13082,6 +13782,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
         -- nobody's old slot means anything in a battleground you just zoned
         -- into, so those go too and the next pick sorts from scratch.
         near.Invalidate()
+        util.ApplyBracketScale()
         -- A follow is a person, the token only where they sit today
         util.ArrowRoster()
         if event == "PLAYER_ENTERING_WORLD" then
@@ -13102,6 +13803,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
         if near.pending then near.pending = false; near.PaintButton() end
         if mageBtnsDirty then BindMageUtilityButtons() end
         if util.switchersDirty then util.BindSwitchers() end
+        if util.scaleDirty then util.ApplyBracketScale() end
         if testUntil == 0 then Draw() end
     elseif event == "PLAYER_REGEN_DISABLED" then
         -- Entering combat: wake a board that Combat Only kept hidden
@@ -13143,6 +13845,9 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
         if layer == "INT" then
             ResolveTrackedSpells()
             ResolveEleInfo()
+            -- A respec into or out of frost brings Cold Snap or takes it
+            util.ResolveBlockInfo()
+            util.ScanBlockAuras()
         end
         -- A respec can hand a druid Nature's Swiftness (or take it away), so
         -- the banner's cooldown segments re-filter with the spellbook

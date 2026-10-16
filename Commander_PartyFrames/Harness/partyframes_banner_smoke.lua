@@ -922,11 +922,18 @@ local function WithGroup(members, raid, body)
     if not ok then CHECK(false, "arrow: the scenario ran", err) end
 end
 
+-- Since 5.42.0 (Commander Orders 3.1) the follow is GoTo(target, opts):
+-- recorded as the spec the real GoTo hands its Add (target and opts merged),
+-- so the checks read the same fields (kind, unit, title, source, key,
+-- setArrow) plus the GUID
 local function ArrowStub()
     local log = { adds = {}, removes = {}, answer = { "w9" } }
     local live = {}
     CommanderOrders = {
-        Add = function(spec)
+        GoTo = function(target, opts)
+            local spec = {}
+            for k, v in pairs(target or {}) do spec[k] = v end
+            for k, v in pairs(opts or {}) do spec[k] = v end
             log.adds[#log.adds + 1] = spec
             local uid = log.answer[1]
             if uid then live[uid] = { uid = uid, kind = spec.kind, unit = spec.unit, title = spec.title } end
@@ -962,6 +969,7 @@ local function CheckArrowSorted()
         -- /cpf arrow follows the target, by its group token
         local slash = SlashCmdList["COMMANDERUI_PARTYFRAMES"]
         CHECK(type(slash) == "function", "arrow: /cpf is registered")
+        local printedBefore = #printLog
         if slash then slash("arrow") end
         local s = log.adds[#log.adds]
         CHECK(s ~= nil, "arrow: /cpf arrow hands Orders a follow")
@@ -971,8 +979,14 @@ local function CheckArrowSorted()
             CHECK(s.title == "Bob", "arrow: titled with their name", tostring(s.title))
             CHECK(s.source == "PartyFrames" and s.key == "follow", "arrow: one follow, owned by the board")
             CHECK(s.setArrow == true, "arrow: asking takes the arrow")
+            -- 5.42.0 (Orders 3.1): by GUID, so Orders finds Bob again itself
+            CHECK(s.guid == "g-bob", "arrow: the follow names the member by GUID", tostring(s.guid))
+            CHECK(s.icon == "UNIT", "arrow: in the group-member tint", tostring(s.icon))
         end
-        CHECK(LastPrintLine():find("the arrow follows Bob", 1, true), "arrow: one line says so", LastPrintLine())
+        -- Orders 3.1 (SPEC 5): the one line is Orders' own ("Waypoint set",
+        -- GoTo not silent); the board says nothing of its own
+        CHECK(s and not s.silent and #printLog == printedBefore,
+            "arrow: one line says so (Orders' own)", LastPrintLine())
 
         -- The roster reshuffles: Bob is party1 now. The follow moves with
         -- him, without taking the arrow back
@@ -984,6 +998,7 @@ local function CheckArrowSorted()
         CHECK(#log.adds == n + 1 and s.unit == "party1" and s.key == "follow" and s.setArrow == false,
             "arrow: a reshuffle re-points the follow at the same person, never re-taking the arrow",
             s and tostring(s.unit) .. " " .. tostring(s.setArrow))
+        CHECK(s and s.silent == true and s.guid == "g-bob", "arrow: ...silently, by the same GUID")
         -- A roster update that changes nothing about him adds nothing
         n = #log.adds
         WithGroup({ party1 = { "Bob", "g-bob" }, party2 = { "Alice", "g-alice" } }, false, function()
@@ -1013,10 +1028,14 @@ local function CheckArrowSorted()
         ok, why = CommanderPartyFrames_ArrowTo("mouseover")
         CHECK(ok == false and why == "notgroup", "arrow: a unit outside the group is refused", tostring(why))
         log.answer = { nil, "disabled" }
+        local refusedBefore = #printLog
         ok, why = CommanderPartyFrames_ArrowTo("party1")
         CHECK(ok == false and why == "disabled", "arrow: Orders switched off is a refusal", tostring(why))
-        CHECK(LastPrintLine():find("Commander Orders is switched off", 1, true), "arrow: ...in words", LastPrintLine())
-        CommanderOrders.Add = function() error("orders blew up") end
+        -- Orders 3.1: the refusal is Orders' one line in its words (GoTo not
+        -- silent); the board adds none of its own
+        CHECK(not log.adds[#log.adds].silent and #printLog == refusedBefore,
+            "arrow: ...in words (Orders' own)", LastPrintLine())
+        CommanderOrders.GoTo = function() error("orders blew up") end
         ok, why = CommanderPartyFrames_ArrowTo("party1")
         CHECK(ok == false and why == "error", "arrow: a throwing Add is caught", tostring(why))
 
@@ -1414,7 +1433,7 @@ if SECURE then
             end
             -- A throwing Orders never escapes the click
             local errs = #caughtErrors
-            CommanderOrders.Add = function() error("orders blew up") end
+            CommanderOrders.GoTo = function() error("orders blew up") end
             handler(bobRow, "party2", "RightButton", false, false)
             CHECK(#caughtErrors == errs, "arrow: a throwing Orders is caught inside the click")
             -- Anything else that throws is reported, never raised through
@@ -1464,17 +1483,41 @@ if SECURE then
                     (#log.adds - adds) .. " adds")
                 CHECK(askedIn == (keyDown and "AnyDown" or "AnyUp"),
                     "arrow: ...on the phase ActionButtonUseKeyDown names (" .. tag .. ")", askedIn)
-                local said = 0
-                for i = lines + 1, #printLog do
-                    if tostring(printLog[i]):find("the arrow follows", 1, true) then said = said + 1 end
+                -- Orders 3.1: the one chat line is Orders' own, said once per
+                -- GoTo (not silent): one follow asked is one line
+                local said, own = 0, 0
+                for i = adds + 1, #log.adds do
+                    if not log.adds[i].silent then said = said + 1 end
                 end
-                CHECK(said == 1, "arrow: ...and ONE chat line (" .. tag .. ")", said)
+                for i = lines + 1, #printLog do
+                    if tostring(printLog[i]):find("Commander Party Frames", 1, true) then own = own + 1 end
+                end
+                CHECK(said == 1 and own == 0, "arrow: ...and ONE chat line (" .. tag .. ")", said .. "/" .. own)
             end
             GetCVarBool = keepCVar
         end)
         CommanderPartyFramesDB.ClickBinds = keepBinds or {}
         CommanderOrders = nil
         Fire("GROUP_ROSTER_UPDATE")
+    end
+
+    -- Team Shields on the Click-Cast board (5.44.0): the priest's block is
+    -- insecure dials, drawn from the rows the secure pass already resolved,
+    -- and the bound rows sit under the space it reserves -- the reserve is
+    -- the full five seats, so a teammate joining never moves a secure row.
+    if CLASS == "PRIEST" then
+        local shown = {}
+        for _, f in ipairs(allFrames) do
+            if f.dial and f.__shown then shown[#shown + 1] = f end
+        end
+        CHECK(#shown == 3, "click-cast: the priest board draws a dial per seat", #shown)
+        local dialY = shown[1] and shown[1].__points and shown[1].__points[#shown[1].__points].y
+        local row1 = _G.CommanderPartyFramesRow1
+        local rowY = row1 and row1.__points and row1.__points[#row1.__points]
+            and row1.__points[#row1.__points].y
+        CHECK(dialY and rowY and rowY < dialY - 20,
+            "click-cast: ...and the secure rows start under the dial line",
+            tostring(dialY) .. " / " .. tostring(rowY))
     end
 
     CHECK(#caughtErrors == 0, "no errors on the click-cast board", caughtErrors[1])
@@ -3590,6 +3633,243 @@ if CLASS == "PRIEST" then
     Advance(1)
     CHECK(#__sounds == 1, "and the very next cast tracks normally", tostring(#__sounds))
 
+    -- =====================================================================
+    -- Mending that ends with charges thrown away (5.44.0). Three endings,
+    -- three sounds: SPENT did its job (the high bell); WASTED -- it sat out
+    -- its thirty seconds, was purged, or healed with nobody within twenty
+    -- yards to jump to -- threw charges away (the holy fizzle); LOST went
+    -- with a holder who died (the low bell). Every sound is asked for by
+    -- its FileDataID first: on this engine the old .wav paths are .ogg files.
+    -- =====================================================================
+    WithGroup({ party1 = { "Rogue", "party1-guid" } }, false, function()
+        local FIZZLE, HIGH, LOW = 569772, 566564, 565853
+        playerBuffs = {}
+        __clearSounds()
+        PoM("SPELL_AURA_APPLIED", "party1-guid")
+        Advance(2)
+        PoM("SPELL_HEAL", "party1-guid")
+        PoM("SPELL_AURA_REMOVED", "party1-guid")
+        Advance(0.4)
+        CHECK(#__sounds == 0, "wasted: a heal that might still bounce waits out the grace",
+            tostring(#__sounds))
+        Advance(0.6)
+        CHECK(#__sounds == 1, "a five-charge Mending that heals and jumps nowhere alerts",
+            tostring(#__sounds))
+        CHECK(__sounds[1] == FIZZLE, "...with the holy fizzle, by its file id", tostring(__sounds[1]))
+        CHECK(__sounds[1] ~= 8959, "...which is not the raid warning")
+
+        -- The countdown across hops: four bounces leave one charge, and the
+        -- heal that spends it is the spell finishing, not a fizzle
+        __clearSounds()
+        PoM("SPELL_AURA_APPLIED", "party1-guid")
+        Advance(1)
+        Hop("party1-guid", "player-guid"); Advance(1)
+        Hop("player-guid", "party1-guid"); Advance(1)
+        Hop("party1-guid", "player-guid"); Advance(1)
+        Hop("player-guid", "party1-guid"); Advance(1)
+        CHECK(#__sounds == 0, "wasted: four grouped hops are silent", tostring(#__sounds))
+        PoM("SPELL_HEAL", "party1-guid")
+        PoM("SPELL_AURA_REMOVED", "party1-guid")
+        Advance(1)
+        CHECK(#__sounds == 1 and __sounds[1] == HIGH,
+            "the fifth charge is SPENT: the high bell, not the fizzle", tostring(__sounds[1]))
+
+        -- Two hops in, three charges left, and nobody near: a fizzle
+        __clearSounds()
+        PoM("SPELL_AURA_APPLIED", "party1-guid")
+        Advance(1)
+        Hop("party1-guid", "player-guid"); Advance(1)
+        Hop("player-guid", "party1-guid"); Advance(1)
+        PoM("SPELL_HEAL", "party1-guid")
+        PoM("SPELL_AURA_REMOVED", "party1-guid")
+        Advance(1)
+        CHECK(#__sounds == 1 and __sounds[1] == FIZZLE,
+            "a mid-chain heal with nowhere to jump fizzles", tostring(__sounds[1]))
+
+        -- Sat out its thirty seconds without a hit
+        __clearSounds()
+        PoM("SPELL_AURA_APPLIED", "party1-guid")
+        Advance(31)
+        CHECK(#__sounds == 1 and __sounds[1] == FIZZLE,
+            "one that never bounced before it expired fizzles", tostring(__sounds[1]))
+
+        -- Purged before it could bounce
+        __clearSounds()
+        PoM("SPELL_AURA_APPLIED", "party1-guid")
+        Advance(2)
+        PoM("SPELL_DISPEL", "party1-guid")
+        PoM("SPELL_AURA_REMOVED", "party1-guid")
+        Advance(1)
+        CHECK(#__sounds == 1 and __sounds[1] == FIZZLE,
+            "a purged one fizzles", tostring(__sounds[1]))
+
+        -- Died with it: the low bell, a different instruction
+        __clearSounds()
+        PoM("SPELL_AURA_APPLIED", "party1-guid")
+        Advance(2)
+        PoM("UNIT_DIED", "party1-guid")
+        PoM("SPELL_AURA_REMOVED", "party1-guid")
+        Advance(1)
+        CHECK(#__sounds == 1 and __sounds[1] == LOW,
+            "one that died with its holder is the low bell", tostring(__sounds[1]))
+
+        -- The new line is its own setting
+        CommanderPartyFramesDB.SoundPoMWasted = "NONE"
+        __clearSounds()
+        PoM("SPELL_AURA_APPLIED", "party1-guid")
+        Advance(2)
+        PoM("SPELL_HEAL", "party1-guid")
+        PoM("SPELL_AURA_REMOVED", "party1-guid")
+        Advance(1)
+        CHECK(#__sounds == 0, "Mending Wasted set to Silent plays nothing", tostring(#__sounds))
+        CommanderPartyFramesDB.SoundPoMWasted = "FIZZLE"
+        local lines = CommanderPartyFrames_GetAlertLines("PWS")
+        local seen = {}
+        for _, l in ipairs(lines) do seen[l.key] = l.dbKey end
+        CHECK(seen.POMWASTED == "SoundPoMWasted",
+            "Mending Wasted is a line on the priest's Alert Sounds", tostring(seen.POMWASTED))
+    end)
+
+    -- =====================================================================
+    -- Team Shields (5.44.0): the mage's dials turned outward, one per seat.
+    -- =====================================================================
+    do
+        local db = CommanderPartyFramesDB
+        local keepPos = UnitPosition
+        local function Dials()
+            local out = {}
+            for _, f in ipairs(allFrames) do
+                if f.dial and f.__shown then out[#out + 1] = f end
+            end
+            table.sort(out, function(a, b) return a._x < b._x end)
+            return out
+        end
+        local WS = { name = "Weakened Soul", expirationTime = 0, duration = 15, spellId = 6788,
+            icon = "Interface\\Icons\\Spell_Holy_AshesToAshes" }
+        WithGroup({ party1 = { "Rogue", "party1-guid" }, party2 = { "Mage", "party2-guid" } }, false, function()
+            db.TeamDials, db.TeamDialsSelf = true, true
+            playerBuffs, unitDebuffs = {}, {}
+            Fire("GROUP_ROSTER_UPDATE")
+            Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+            Tick()
+            local dials = Dials()
+            CHECK(#dials == 3, "team: a dial for you and each of two teammates", #dials)
+            local me, p1, p2 = dials[1], dials[2], dials[3]
+            CHECK(me and me.core.__texture == "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES",
+                "team: the face is the class icon, the identity the rows use",
+                me and tostring(me.core.__texture))
+            CHECK(me and me.ghost == true and p1.ghost == true, "team: a bare teammate is a dark face")
+            CHECK(me and not me.wipe.__shown, "team: no Weakened Soul, no wipe")
+
+            -- Weakened Soul on party1, no shield: EXPOSED -- red rim, the
+            -- lockout wiped across the face with its seconds on it
+            WS.expirationTime = now + 10.2
+            unitDebuffs["party1"] = { WS }
+            Fire("UNIT_AURA", "party1")
+            Tick()
+            p1 = Dials()[2]
+            CHECK(p1.wipe.__shown == true, "team: Weakened Soul is a clock wipe across the face")
+            CHECK(p1.wipe.__cdDur and p1.wipe.__cdDur >= 15,
+                "team: ...scaled to Weakened Soul's fifteen seconds", tostring(p1.wipe.__cdDur))
+            local secs = tonumber(p1.text.__text or "")
+            CHECK(secs and secs >= 8 and secs <= 10, "team: ...with its seconds on the face",
+                tostring(p1.text.__text))
+            local rc = p1.rim.__color or {}
+            CHECK(rc[1] and rc[1] > 0.9 and rc[2] < 0.4, "team: ...and the red EXPOSED rim",
+                string.format("%s %s", tostring(rc[1]), tostring(rc[2])))
+
+            -- Your shield on party2: a lit face, the band, the clock
+            _G.__setUnitBuffs("party2", { { name = "Power Word: Shield", expirationTime = now + 28,
+                duration = 30, spellId = 25218, sourceUnit = "player",
+                icon = "Interface\\Icons\\Spell_Holy_PowerWordShield" } })
+            unitDebuffs["party2"] = { { name = "Weakened Soul", expirationTime = now + 13, duration = 15,
+                spellId = 6788, icon = "Interface\\Icons\\Spell_Holy_AshesToAshes" } }
+            Fire("UNIT_AURA", "party2")
+            Tick()
+            p2 = Dials()[3]
+            CHECK(p2.ghost == false, "team: a shielded teammate is a lit face")
+            CHECK(p2.absorb.full.__shown == true or p2.absorb.cd.__shown == true,
+                "team: ...the absorb band round it")
+            CHECK(p2.time.cd.__shown == true, "team: ...the shield's thirty seconds outside that")
+            CHECK(p2.wipe.__shown == true, "team: ...and the Weakened Soul under it still wipes the face")
+
+            -- Hurt and bare, no lockout: the yellow READY rim
+            playerHealth = 60
+            Tick()
+            me = Dials()[1]
+            local yc = me.rim.__color or {}
+            CHECK(yc[1] and yc[1] > 0.9 and yc[2] > 0.8 and yc[3] < 0.4,
+                "team: a hurt, bare, unlocked teammate gets the yellow shield-them rim",
+                string.format("%s %s %s", tostring(yc[1]), tostring(yc[2]), tostring(yc[3])))
+            playerHealth = 100
+            Tick()
+            me = Dials()[1]
+            local qc = me.rim.__color or {}
+            CHECK(qc[1] == 0 and qc[2] == 0, "team: ...and a full one out of combat is left quiet")
+
+            -- Your Mending on party2, with somebody within twenty yards
+            UnitPosition = function(u)
+                if u == "player" then return 0, 12, 0, 1 end
+                if u == "party1" then return 0, 300, 0, 1 end
+                if u == "party2" then return 0, 0, 0, 1 end
+                return nil
+            end
+            PoM("SPELL_AURA_APPLIED", "party2-guid")
+            Advance(0.3)
+            p2 = Dials()[3]
+            CHECK(p2.badge.__shown == true, "team: your Mending rides the holder's badge")
+            CHECK(p2.badge.text.__text == "5", "team: ...with its charges on it", tostring(p2.badge.text.__text))
+            local gc = p2.badge.back.__color or {}
+            CHECK(gc[2] and gc[2] > 0.9 and gc[1] < 0.5, "team: ...and a green ring: someone is in jump range",
+                string.format("%s %s", tostring(gc[1]), tostring(gc[2])))
+            CHECK(not Dials()[1].badge.__shown, "team: ...and nobody else's dial carries it")
+
+            -- Everyone walks off: the ring turns red
+            UnitPosition = function(u)
+                if u == "player" then return 0, 60, 0, 1 end
+                if u == "party1" then return 0, 300, 0, 1 end
+                if u == "party2" then return 0, 0, 0, 1 end
+                return nil
+            end
+            Advance(0.3)
+            local nc = Dials()[3].badge.back.__color or {}
+            CHECK(nc[1] and nc[1] > 0.9 and nc[2] < 0.4, "team: nobody within twenty yards is a red ring",
+                string.format("%s %s", tostring(nc[1]), tostring(nc[2])))
+
+            -- One we cannot place might be standing next to them: no claim
+            UnitPosition = function(u)
+                if u == "player" then return 0, 60, 0, 1 end
+                if u == "party2" then return 0, 0, 0, 1 end
+                return nil
+            end
+            Advance(0.3)
+            local uc = Dials()[3].badge.back.__color or {}
+            CHECK(uc[1] == 0 and uc[2] == 0, "team: an unmeasured teammate means no ring, never red")
+            PoM("SPELL_DISPEL", "party2-guid")
+            PoM("SPELL_AURA_REMOVED", "party2-guid")
+            Advance(1)
+            CHECK(not Dials()[3].badge.__shown, "team: the badge goes with the Mending")
+            UnitPosition = keepPos
+
+            -- Include Yourself off: the line is the party alone
+            db.TeamDialsSelf = false
+            Tick()
+            CHECK(#Dials() == 2, "team: Include Yourself off drops your seat", #Dials())
+            db.TeamDialsSelf = true
+            db.TeamDials = false
+            Tick()
+            CHECK(#Dials() == 0, "team: Team Shield Dials off clears the line", #Dials())
+            db.TeamDials = true
+            Tick()
+            _G.__setUnitBuffs("party2", nil)
+            unitDebuffs = {}
+        end)
+        UnitPosition = keepPos
+        Fire("GROUP_ROSTER_UPDATE")
+        Tick()
+        CHECK(#caughtErrors == 0, "no errors across Team Shields", caughtErrors[1])
+    end
+
     playerBuffs = {}
     CommanderPartyFramesDB.BuffTrack["PWS:POM"] = nil
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
@@ -4016,6 +4296,106 @@ local function CheckAbilityScope()
     partyUp = {}
     CommanderPartyFramesDB.ShowAbilityBar, CommanderPartyFramesDB.AbilityBarSelf,
         CommanderPartyFramesDB.AbilityBarOnlySelf, CommanderPartyFramesDB.IncludeSelf =
+        keep[1], keep[2], keep[3], keep[4]
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); Pump()
+end
+
+-- A new arena match hands everyone's cooldowns back (5.43.0). The server does
+-- it as each player zones in -- every cooldown of fifteen minutes or less
+-- (mangos-tbc, BattleGround::AddPlayer -> RemoveArenaSpellCooldowns) -- so
+-- the strips do it on the zone-in too: a party member's Intimidating Shout and
+-- your own Will of the Forsaken come back, a thirty-minute Shield Wall does
+-- not, and a battleground or the open world hands nothing back at all.
+-- Chassis, so it runs on every class's board.
+local function CheckArenaReset()
+    local db = CommanderPartyFramesDB
+    local keep = { db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf }
+    local baseExists, baseGUID, baseClass, baseInGroup = UnitExists, UnitGUID, UnitClass, IsInGroup
+    local baseKind = instanceKind
+    IsInGroup = function() return true end
+    partyUp = { party1 = true }
+    UnitExists = function(unit)
+        if unit and unit:find("^party") then return partyUp[unit] == true end
+        return baseExists(unit)
+    end
+    UnitGUID = function(unit)
+        if unit and unit:find("^party") then return unit .. "-guid" end
+        return baseGUID(unit)
+    end
+    UnitClass = function(unit)
+        if unit == "party1" then return "Warrior", "WARRIOR" end
+        return baseClass(unit)
+    end
+    db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf = true, true, false, true
+    local function Pump()
+        now = now + 1
+        for _, f in ipairs(allFrames) do PumpFrame(f, 10) end
+    end
+    local function Zone(kind)
+        instanceKind = kind
+        Fire("PLAYER_ENTERING_WORLD"); Pump()
+    end
+    -- The live cell carrying a book entry, by the tooltip payload it rides
+    local function Cell(tok)
+        for _, f in ipairs(allFrames) do
+            if f.cells and f.__shown then
+                for _, cell in ipairs(f.cells) do
+                    local e = cell.frame.__shown and cell.frame._e
+                    if e and e.tok == tok then return cell end
+                end
+            end
+        end
+    end
+    local function Cooling(tok)
+        local cell = Cell(tok)
+        return cell ~= nil and cell.cd.__shown == true
+    end
+    local function Cast(guid, name)
+        clogEvent = { now, "SPELL_CAST_SUCCESS", false, guid, "Caster", 0, 0,
+            "target-guid", "Somebody", 0, 0, 0, name }
+        Fire("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Fire("GROUP_ROSTER_UPDATE"); Pump()
+
+    CHECK(Cell("WARRIOR:INTIM") ~= nil and not Cooling("WARRIOR:INTIM"),
+        "arena reset: the warrior's strip is on the board, Intimidating Shout ready")
+    Cast("party1-guid", "Intimidating Shout")
+    Cast("party1-guid", "Shield Wall")
+    Cast("player-guid", "Will of the Forsaken")
+    Pump()
+    CHECK(Cooling("WARRIOR:INTIM"), "arena reset: their Intimidating Shout is cooling")
+    CHECK(Cooling("WARRIOR:SWALL"), "arena reset: ...and their Shield Wall")
+    CHECK(Cooling("*:WOTF"), "arena reset: ...and your own Will of the Forsaken")
+
+    Zone("pvp")
+    CHECK(Cooling("WARRIOR:INTIM") and Cooling("*:WOTF"),
+        "arena reset: a battleground hands nothing back")
+    Zone("none")
+    CHECK(Cooling("WARRIOR:INTIM") and Cooling("*:WOTF"),
+        "arena reset: nor does the open world")
+
+    Zone("arena")
+    CHECK(Cell("WARRIOR:INTIM") ~= nil and not Cooling("WARRIOR:INTIM"),
+        "arena reset: into an arena, their Intimidating Shout is back")
+    CHECK(Cell("*:WOTF") == nil,
+        "arena reset: ...and your Will of the Forsaken, off a strip that only shows it cooling")
+    CHECK(Cooling("WARRIOR:SWALL"),
+        "arena reset: a thirty-minute Shield Wall is past the fifteen-minute cut and carries in")
+
+    -- The next game: whatever was pressed in this one is handed back again
+    Cast("party1-guid", "Intimidating Shout")
+    Pump()
+    CHECK(Cooling("WARRIOR:INTIM"), "arena reset: pressed in this game, it cools again")
+    Zone("arena")
+    CHECK(not Cooling("WARRIOR:INTIM"), "arena reset: ...and the next arena hands it back too")
+
+    instanceKind = baseKind
+    Fire("PLAYER_ENTERING_WORLD")
+    UnitExists, UnitGUID, UnitClass, IsInGroup = baseExists, baseGUID, baseClass, baseInGroup
+    partyUp = {}
+    db.ShowAbilityBar, db.AbilityBarSelf, db.AbilityBarOnlySelf, db.IncludeSelf =
         keep[1], keep[2], keep[3], keep[4]
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Fire("GROUP_ROSTER_UPDATE"); Pump()
@@ -6455,6 +6835,7 @@ if CLASS ~= "MAGE" then
     CheckRowFit()
     CheckBuffStrip()
     CheckAbilityScope()
+    CheckArenaReset()
     CheckClickMatrix()
     CheckBuffGrid()
     CheckBlessAssign()
@@ -6890,8 +7271,11 @@ Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
 do
     local db = CommanderPartyFramesDB
     local board = _G.CommanderPartyFramesFrame
-    local keep = { db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize }
+    local keep = { db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize, db.TrackIceBlock }
     db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize = true, true, true, 28
+    -- This section counts SHIELD seats; the Ice Block tracker (5.43.0) has
+    -- its own section below and sits this one out
+    db.TrackIceBlock = false
     local baseCd = GetSpellCooldown
     playerBuffs = {}
     Fire("UNIT_AURA", "player")
@@ -7130,10 +7514,244 @@ do
     CHECK(last.__w >= 16, "but never below the size an icon is still a picture", last.__w)
 
     db.FrameWidth = 214
-    db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize =
-        keep[1], keep[2], keep[3], keep[4]
+    db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize, db.TrackIceBlock =
+        keep[1], keep[2], keep[3], keep[4], keep[5]
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     DrawOnce()
+end
+
+-- ===========================================================================
+-- The Ice Block tracker (5.43.0)
+-- ===========================================================================
+-- One more seat in the personal block, answering "can I Block?" with
+-- whichever answer is true, highest first: Hypothermia, then Ice Block ready,
+-- then Cold Snap ready, then whichever of the two cooldowns ends first.
+do
+    local db = CommanderPartyFramesDB
+    local board = _G.CommanderPartyFramesFrame
+    local keep = { db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize,
+        db.TrackIceBlock, db.PersonalStyle, db.ExposeAlert, db.OnlyAlerts }
+    db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize = true, true, true, 28
+    db.TrackIceBlock, db.PersonalStyle, db.ExposeAlert, db.OnlyAlerts = true, "DIALS", true, false
+    local baseCd = GetSpellCooldown
+    local cds = {}          -- spell name -> { start, duration }
+    GetSpellCooldown = function(name)
+        local c = cds[name]
+        if c then return c[1], c[2], 1 end
+        return 0, 0, 1
+    end
+    local ICE = "Interface\\Icons\\Spell_45438"
+    local SNAP = "Interface\\Icons\\Spell_11958"
+    -- Hypothermia has no name in the mock's client: the literal icon it falls back to
+    local HYPO = "Interface\\Icons\\Spell_Fire_BlueImmolation"
+    local function Hypo(left)
+        unitDebuffs.player = { { name = "Hypothermia", spellId = 41425,
+            expirationTime = now + left, duration = 30 } }
+    end
+    local function InBlock(left)
+        playerBuffs = { { name = "Ice Block", spellId = 45438, expirationTime = now + left,
+            duration = 10, icon = ICE, sourceUnit = "player" } }
+    end
+    local function Refresh()
+        Fire("UNIT_AURA", "player")
+        Fire("SPELL_UPDATE_COOLDOWN")
+        DrawOnce()
+    end
+    local function Dials()
+        local out = {}
+        for _, f in ipairs(allFrames) do
+            if f.dial and f.__shown then out[#out + 1] = f end
+        end
+        table.sort(out, function(x, y) return x._x < y._x end)
+        return out
+    end
+    local function Block() local d = Dials(); return d[#d] end
+    local function Face(d) return d and d.core.__texture end
+    local function Red(d) return d.rimColor and d.rimColor[1] > 0.9 and d.rimColor[2] < 0.3 end
+    local function Secs(d) return tonumber(d.text.__text or "") end
+    playerBuffs, unitDebuffs.player = {}, {}
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+
+    -- The seat: last, after the shields, on the same line
+    local dials = Dials()
+    CHECK(#dials == 3, "ice block: one more dial beside the two shields", #dials)
+    local b = Block()
+    CHECK(b._x > dials[2]._x and b.__points[#b.__points].y == dials[1].__points[#dials[1].__points].y,
+        "ice block: the last seat, on the shields' line")
+
+    -- 2) Everything ready: the lit Ice Block, and nothing else on it
+    CHECK(Face(b) == ICE and b.ghost == false, "ice block: ready, the face is the lit Ice Block", Face(b))
+    CHECK(b.wipe.__shown == false and (b.text.__text or "") == "" and b.rimColor == nil,
+        "ice block: ...with no wipe, no number and no rim")
+    CHECK(not b.absorb.cd.__shown and not b.absorb.full.__shown and not b.time.cd.__shown,
+        "ice block: ...and no band or clock: it is not a shield")
+
+    -- 1) Pressed: in the Block, Hypothermia on, Cold Snap still ready. The
+    -- Snap outranks nothing here -- Hypothermia blocks the Block it refunds
+    cds["Ice Block"] = { now, 300 }
+    Hypo(30); InBlock(10)
+    Refresh()
+    b = Block()
+    CHECK(Face(b) == HYPO and b.ghost == true,
+        "ice block: Hypothermia outranks a ready Cold Snap: its face, dark", Face(b))
+    CHECK(b.wipe.__shown and b.wipe.__cdDur == 30, "ice block: ...wiped for its thirty seconds",
+        tostring(b.wipe.__cdDur))
+    CHECK(Secs(b) and math.abs(Secs(b) - 29) <= 1, "ice block: ...with its seconds on the face", b.text.__text)
+    CHECK(Red(b), "ice block: ...and the red rim")
+    CHECK(b.time.cd.__shown and b.time.cd.__cdDur == 10,
+        "ice block: standing in the Block, its ten seconds run the clock outside",
+        tostring(b.time.cd.__cdDur))
+    CHECK(b.flash.__shown == false,
+        "ice block: a Block coming off ready is not a shield breaking: no Expose flash")
+    local sets = b.wipe.__cdSets
+    DrawOnce()
+    CHECK(Block().wipe.__cdSets == sets, "ice block: the wipe is not restarted by a repaint")
+    local before = Secs(Block())
+    now = now + 5
+    DrawOnce()
+    CHECK(Secs(Block()) and before and Secs(Block()) < before,
+        "ice block: the number counts down with the wipe", tostring(before) .. " -> " .. tostring(Block().text.__text))
+
+    -- Out of the Block, still under Hypothermia: the clock goes, the wipe stays
+    playerBuffs = {}
+    Hypo(18)
+    Refresh()
+    b = Block()
+    CHECK(Face(b) == HYPO and not b.time.cd.__shown and b.wipe.__shown,
+        "ice block: out of the Block, the clock goes and Hypothermia stays")
+
+    -- 3) Hypothermia gone, Block still cooling, Cold Snap ready: the lit Snap
+    unitDebuffs.player = {}
+    Refresh()
+    b = Block()
+    CHECK(Face(b) == SNAP and b.ghost == false, "ice block: Block cooling, Snap ready: the lit Cold Snap", Face(b))
+    CHECK(b.rimColor and b.rimColor[1] == 1 and b.rimColor[2] > 0.8 and b.rimColor[3] < 0.3,
+        "ice block: ...in the gold the refund pip wears")
+    CHECK(b.wipe.__shown == false and (b.text.__text or "") == "", "ice block: ...and nothing to wait for")
+
+    -- Snapped: Cold Snap finishes Ice Block's cooldown, and the Block is back
+    cds["Ice Block"] = nil
+    cds["Cold Snap"] = { now, 480 }
+    Refresh()
+    b = Block()
+    CHECK(Face(b) == ICE and b.ghost == false and b.rimColor == nil,
+        "ice block: snapped, the Block is back and lit", Face(b))
+
+    -- 4) Both cooling: whichever is back first. Snap first...
+    cds["Ice Block"] = { now, 300 }
+    cds["Cold Snap"] = { now - 200, 480 }    -- 280s left against the Block's 300
+    Refresh()
+    b = Block()
+    CHECK(Face(b) == SNAP and b.ghost == true and b.wipe.__cdDur == 480,
+        "ice block: both cooling, Snap back first: the Snap, wiped by its cooldown", Face(b))
+    CHECK(b.text.__text == "5m" and Red(b), "ice block: ...minutes past ninety seconds, red rim",
+        b.text.__text)
+    -- ...and Block first
+    cds["Cold Snap"] = { now, 480 }
+    cds["Ice Block"] = { now - 250, 300 }    -- 50s left
+    Refresh()
+    b = Block()
+    CHECK(Face(b) == ICE and b.ghost == true and b.wipe.__cdDur == 300,
+        "ice block: Block back first: the Block, wiped", Face(b))
+    CHECK(Secs(b) and math.abs(Secs(b) - 49) <= 1, "ice block: ...with its seconds", b.text.__text)
+
+    -- A global cooldown is not a cooldown
+    cds["Ice Block"] = { now, 1.5 }
+    cds["Cold Snap"] = { now, 1.5 }
+    Refresh()
+    CHECK(Face(Block()) == ICE and Block().ghost == false, "ice block: the global cooldown is ignored")
+
+    -- No Cold Snap (a fire or arcane mage): step 3 never happens
+    knownIds[11958] = nil
+    Fire("SPELLS_CHANGED")
+    cds["Ice Block"] = { now, 300 }
+    cds["Cold Snap"] = nil
+    Refresh()
+    b = Block()
+    CHECK(Face(b) == ICE and b.ghost == true and b.wipe.__shown,
+        "ice block: without Cold Snap, a cooling Block is just a cooling Block", Face(b))
+    knownIds[11958] = true
+    Fire("SPELLS_CHANGED")
+    cds = {}
+    Refresh()
+
+    -- Its own switch, and the block stays one line either way
+    local tall = board.__h
+    db.TrackIceBlock = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    CHECK(#Dials() == 2 and Face(Block()) ~= ICE, "ice block: switched off, its seat goes", #Dials())
+    CHECK(board.__h == tall, "ice block: ...and the board keeps its height", board.__h .. " vs " .. tall)
+    db.TrackIceBlock = true
+    -- ...and the shields' switch is not its switch
+    db.SelfShieldRows = false
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    CHECK(#Dials() == 1 and Face(Block()) == ICE,
+        "ice block: My Shields off leaves the tracker on its own", #Dials())
+    db.SelfShieldRows = true
+
+    -- A mage who never trained it has no seat for it
+    knownIds[45438] = nil
+    Fire("SPELLS_CHANGED")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    CHECK(#Dials() == 2, "ice block: untrained, no seat", #Dials())
+    knownIds[45438] = true
+    Fire("SPELLS_CHANGED")
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+
+    -- Rows: the same answer as a row, its word on the bar and its wait on the
+    -- red drain
+    local function PersonalRowList()
+        local out = {}
+        for _, f in ipairs(allFrames) do
+            if f.personal and f.__shown then out[#out + 1] = f end
+        end
+        table.sort(out, function(x, y)
+            return x.__points[#x.__points].y > y.__points[#y.__points].y
+        end)
+        return out
+    end
+    db.PersonalStyle = "ROWS"
+    cds["Ice Block"] = { now, 300 }
+    Hypo(20)
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+    local rows = PersonalRowList()
+    local row = rows[#rows]
+    CHECK(#rows == 3 and #Dials() == 0, "ice block rows: a row of its own, last", #rows)
+    CHECK(row and row.name.__text == "Ice Block" and row.left.__text == "HYPOTHERMIA",
+        "ice block rows: named for the Block, Hypothermia's word on the bar",
+        row and (tostring(row.name.__text) .. " / " .. tostring(row.left.__text)))
+    CHECK(row and row.wsBar.__shown and row.spellIcon.__texture == HYPO,
+        "ice block rows: ...the red drain, and Hypothermia's icon")
+    unitDebuffs.player = {}
+    cds = {}
+    Refresh()
+    row = PersonalRowList()[3]
+    CHECK(row and row.left.__text == "READY" and not row.wsBar.__shown
+        and row.spellIcon.__texture == ICE and row.spellIcon.__desat ~= true,
+        "ice block rows: ready, the lit Ice Block and READY",
+        row and tostring(row.left.__text))
+    -- Alerts Only keeps the rows that want an eye: a Block in hand does not
+    db.OnlyAlerts = true
+    Refresh()
+    CHECK(#PersonalRowList() < 3, "ice block rows: Alerts Only leaves a ready Block out", #PersonalRowList())
+    db.OnlyAlerts = false
+    db.PersonalStyle = "DIALS"
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
+
+    GetSpellCooldown = baseCd
+    playerBuffs, unitDebuffs.player = {}, {}
+    db.SelfShieldRows, db.TrackManaShield, db.TrackWards, db.DialSize,
+        db.TrackIceBlock, db.PersonalStyle, db.ExposeAlert, db.OnlyAlerts =
+        keep[1], keep[2], keep[3], keep[4], keep[5], keep[6], keep[7], keep[8]
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    Refresh()
 end
 
 -- ===========================================================================
@@ -7917,6 +8535,7 @@ CheckSectionSizing()
 CheckRowFit()
 CheckBuffStrip()
 CheckAbilityScope()
+CheckArenaReset()
 if CLASS == "MAGE" then CheckSpecGating() end
 CheckViperOption()
 CheckClickMatrix()
@@ -7979,6 +8598,32 @@ end
 CheckBlueprint()
 CheckProductionEmbed()
 CheckArrowSorted()
+
+-- The preview board (/cpf test) carries an Ice Block tracker too, at the top
+-- of its ladder: in the Block, under Hypothermia. Last in the run, because
+-- the preview builds rows a pool check above counts on being new.
+do
+    local db = CommanderPartyFramesDB
+    local keepStyle, keepTrack = db.PersonalStyle, db.TrackIceBlock
+    db.PersonalStyle, db.TrackIceBlock = "DIALS", true
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    CommanderPartyFrames_Test()
+    DrawOnce()
+    local hypo
+    for _, f in ipairs(allFrames) do
+        if f.dial and f.__shown and f.core.__texture == "Interface\\Icons\\Spell_Fire_BlueImmolation" then
+            hypo = f
+        end
+    end
+    CHECK(hypo ~= nil and hypo.ghost == true and hypo.wipe.__shown and hypo.time.cd.__shown
+        and hypo.rimColor and hypo.rimColor[1] > 0.9,
+        "ice block: the test board previews it in the Block, under Hypothermia")
+    now = now + 31
+    DrawOnce()
+    db.PersonalStyle, db.TrackIceBlock = keepStyle, keepTrack
+    Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
+    DrawOnce()
+end
 
 CHECK(#caughtErrors == 0, "no errors across the run", caughtErrors[1])
 

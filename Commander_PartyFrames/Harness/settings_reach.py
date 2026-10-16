@@ -75,13 +75,17 @@ LAYER_SCOPED = {
     "SelfShieldRows": {"INT"},
     "TrackManaShield": {"INT"},
     "TrackWards": {"INT"},
-    # How the personal block is drawn. Only the mage layer has one: every
-    # personal row is a self-shield or the Water Elemental.
+    "TrackIceBlock": {"INT"},
+    # How the personal block is drawn. The mage's is self-shields and the
+    # Water Elemental (rows or dials); the priest's is Team Shields, always
+    # dials, so the dial's own look is shared by both and the style is not.
     "PersonalStyle": {"INT"},
-    "DialSize": {"INT"},
-    "DialTexture": {"INT"},
-    "DialTextShade": {"INT"},
-    "DialTextSize": {"INT"},
+    "DialSize": {"INT", "PWS"},
+    "DialTexture": {"INT", "PWS"},
+    "DialTextShade": {"INT", "PWS"},
+    "DialTextSize": {"INT", "PWS"},
+    "TeamDials": {"PWS"},
+    "TeamDialsSelf": {"PWS"},
     "MageUtilityButtons": {"INT"},
     "ShowGemButton": {"INT"},
     "ShowPortalButton": {"INT"},

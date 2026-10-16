@@ -212,6 +212,15 @@ function D.New(parent)
     w.badge.cd:SetPoint("CENTER", w.badge, "CENTER")
     if w.badge.cd.SetReverse then w.badge.cd:SetReverse(false) end
     if w.badge.cd.SetSwipeColor then w.badge.cd:SetSwipeColor(0, 0, 0, 0.7) end
+    -- A count on the badge (Mending's charges), above its wipe
+    local badgeOver = CreateFrame("Frame", nil, w.badge)
+    badgeOver:SetAllPoints(w.badge)
+    badgeOver:SetFrameLevel(base + 8)
+    w.badge.text = badgeOver:CreateFontString(nil, "OVERLAY")
+    w.badge.text:SetFont(FONT, 8, "OUTLINE")
+    w.badge.text:SetPoint("CENTER", w.badge, "CENTER", 0, 0)
+    w.badge.text:SetShadowColor(0, 0, 0, 1)
+    w.badge.text:SetShadowOffset(1, -1)
     w.badge:Hide()
 
     w:Hide()
@@ -276,6 +285,8 @@ function D.Layout(w, size, textSize)
     local badge = math.max(9, math.floor(size * 0.4 + 0.5))
     w.badge:SetSize(badge, badge)
     w.badge.back:SetSize(badge + 2, badge + 2)
+    w.badge.size, w.badgeRimOn = badge, nil
+    w.badge.text:SetFont(FONT, math.max(7, math.floor(badge * 0.62 + 0.5)), "OUTLINE")
     local badgeFace = w.badge.masked and badge or badge * 0.7071
     w.badge.icon:SetSize(badgeFace, badgeFace)
     w.badge.cd:SetSize(badge, badge)
@@ -347,7 +358,11 @@ end
 -- Paint. `m` is the model:
 --
 --   icon                the face (a texture path)
+--   coords              { l, r, t, b } of `icon` when it is one cell of an
+--                       atlas (a class icon), else the icon's own crop
 --   portrait            ...or a unit whose portrait is the face
+--   portraitKey         who that portrait is (a GUID): it is drawn again
+--                       only when this changes, or every couple of seconds
 --   ghost               the face drained dark: this is not up
 --   absorb              0..1 round the band, or nil for an empty track
 --   absorbColor         { r, g, b }
@@ -359,16 +374,37 @@ end
 --   mark, markColor     a planner mark on the clock, as a fraction of it
 --   badgeIcon           a second spell on the rim...
 --   badgeStop, badgeDur ...and its cooldown
+--   badgeText           a count on it (Mending's charges)
+--   badgeRim            { r, g, b }: a coloured ring round it, else black
 --   flash, flashColor   0..1 alert wash over the whole dial
+--   alpha               the whole dial's opacity (out of range), else 1
 -- ---------------------------------------------------------------------------
+local PORTRAIT_EVERY = 2     -- a portrait re-read this often even unchanged
+
 function D.Paint(w, m, now)
-    -- The face
+    -- The face. A portrait is a texture the client renders for us, which is
+    -- not free, so it is drawn once per person rather than once per paint --
+    -- and again every couple of seconds, since a portrait that has not loaded
+    -- yet draws as a blank and loads later.
     if m.portrait and SetPortraitTexture then
-        SetPortraitTexture(w.core, m.portrait)
+        local key = m.portraitKey or m.portrait
+        if w.portraitKey ~= key or not w.portraitAt or now - w.portraitAt > PORTRAIT_EVERY then
+            SetPortraitTexture(w.core, m.portrait)
+            w.portraitKey, w.portraitAt = key, now
+        end
         w.core:SetTexCoord(0.12, 0.88, 0.12, 0.88)
     else
+        w.portraitKey, w.portraitAt = nil, nil
         w.core:SetTexture(m.icon)
-        w.core:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local c = m.coords
+        if c then
+            -- One cell of an atlas: pulled in a little so the cell's own
+            -- border does not ring the disc
+            local inX, inY = (c[2] - c[1]) * 0.06, (c[4] - c[3]) * 0.06
+            w.core:SetTexCoord(c[1] + inX, c[2] - inX, c[3] + inY, c[4] - inY)
+        else
+            w.core:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        end
     end
     if w.core.SetDesaturated then w.core:SetDesaturated(m.ghost and true or false) end
     if m.ghost then
@@ -451,10 +487,30 @@ function D.Paint(w, m, now)
             w.badgeStop = nil
             w.badge.cd:Hide()
         end
+        w.badge.text:SetText(m.badgeText or "")
+        -- The ring: the badge's black floor grown by a pixel each side and
+        -- tinted, so it reads as an edge rather than as a second disc
+        local br = m.badgeRim
+        local size = w.badge.size or 9
+        if br then
+            w.badge.back:SetVertexColor(br[1], br[2], br[3], 1)
+            if not w.badgeRimOn then w.badge.back:SetSize(size + 4, size + 4) end
+            w.badgeRimOn = true
+        else
+            w.badge.back:SetVertexColor(0, 0, 0, 1)
+            if w.badgeRimOn ~= false then w.badge.back:SetSize(size + 2, size + 2) end
+            w.badgeRimOn = false
+        end
         w.badge:Show()
     else
         w.badgeStop = nil
         w.badge:Hide()
+    end
+
+    local alpha = m.alpha or 1
+    if w.alphaAt ~= alpha then
+        w.alphaAt = alpha
+        w:SetAlpha(alpha)
     end
 
     -- The alert

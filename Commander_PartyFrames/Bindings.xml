@@ -1,0 +1,13 @@
+<Bindings>
+    <!-- Auto-loaded from the addon folder, never listed in the TOC (listing it
+         loads it twice). A new file: the client reads it only at start-up, so
+         restart the client, not /reload. No double hyphen inside an XML
+         comment: the parser rejects the whole file on one.
+
+         Arrow to My Target asks Commander Orders to follow your target when
+         they are in your party or raid: the same follow as the click-cast
+         board's "Arrow to them" and /cpf arrow, reachable on any board. -->
+    <Binding name="COMMANDERPARTYFRAMES_ARROW" header="COMMANDERPARTYFRAMES" category="ADDONS" runOnUp="false">
+        if CommanderPartyFrames_ArrowTo then CommanderPartyFrames_ArrowTo("target") end
+    </Binding>
+</Bindings>
