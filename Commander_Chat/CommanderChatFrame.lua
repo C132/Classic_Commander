@@ -58,12 +58,29 @@ local function BuildWindow()
     body:SetScript("OnHyperlinkClick", function(self, link, text, button)
         if SetItemRef then SetItemRef(link, text, button, self) end
     end)
-    body:SetScript("OnHyperlinkEnter", function(self, link)
+    -- An addon link (Commander Orders' [Go]) has no tooltip SetHyperlink can
+    -- show: its owner draws one from EventRegistry's chat-frame hover, which
+    -- only Blizzard's ChatFrameMixin fires, and ChatFrame1 is parked with its
+    -- mouse off. So the hover is fired here, the way that mixin fires it
+    -- (Blizzard_ChatFrameBase/Shared/ChatFrame.lua 27-33); nothing of
+    -- Blizzard's listens to it. Everything else is the tooltip's own.
+    body:SetScript("OnHyperlinkEnter", function(self, link, text)
+        if type(link) == "string" and link:sub(1, 6) == "addon:" then
+            if EventRegistry and EventRegistry.TriggerEvent then
+                pcall(EventRegistry.TriggerEvent, EventRegistry, "ChatFrame.OnHyperlinkEnter", self, link, text)
+            end
+            return
+        end
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, link)
         if ok then GameTooltip:Show() else GameTooltip:Hide() end
     end)
-    body:SetScript("OnHyperlinkLeave", function() GameTooltip:Hide() end)
+    body:SetScript("OnHyperlinkLeave", function(self)
+        if EventRegistry and EventRegistry.TriggerEvent then
+            pcall(EventRegistry.TriggerEvent, EventRegistry, "ChatFrame.OnHyperlinkLeave", self)
+        end
+        GameTooltip:Hide()
+    end)
 
     body:EnableMouseWheel(true)
     body:SetScript("OnMouseWheel", function(self, delta)

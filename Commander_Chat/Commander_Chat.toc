@@ -3,7 +3,7 @@
 ## Title: Commander Chat
 ## Notes: Shrink chat to a footnote: size, scale, and font controls, mouseover-only fading, tab hiding, world-channel muting, plus visibility toggles and sound pings.
 ## Author: Devin
-## Version: 2.1.0
+## Version: 2.1.1
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderChatDB
 ## RequiredDeps: Commander_Events

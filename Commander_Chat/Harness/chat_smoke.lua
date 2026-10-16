@@ -5,6 +5,14 @@
 -- mouseover alpha driver, background opacity seeding, channel muting through
 -- the CHAT_MSG_CHANNEL filter, and the quick layout presets. Mock modeled on
 -- Commander_PartyFrames/Harness.
+--
+-- The replacement window's links (2.1.1): a click goes to SetItemRef with the
+-- window as its frame; hovering an addon link (Commander Orders' [Go]) fires
+-- EventRegistry "ChatFrame.OnHyperlinkEnter" (window, link, text) and never
+-- SetHyperlink, leaving fires "ChatFrame.OnHyperlinkLeave" (window) and hides
+-- the tooltip, an item link is still the tooltip's own, and a client with no
+-- EventRegistry hovers quietly. chat_orders_smoke.lua checks the same hover
+-- against the REAL Commander Orders: its card shows in the window.
 
 local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
@@ -246,9 +254,27 @@ function LeaveChannelByName(name) leftChannels[#leftChannels + 1] = name end
 
 ChatFontNormal = NewWidget("Font")
 ChatFontNormal.GetFont = function() return "Fonts\\FRIZQT__.TTF", 14, "" end
-function SetItemRef() end
+local itemRefs = {}
+function SetItemRef(link, text, button, frame)
+    itemRefs[#itemRefs + 1] = { link = link, text = text, button = button, frame = frame }
+end
 function IsShiftKeyDown() return false end
 GameTooltip = NewWidget("GameTooltip", "GameTooltip")
+-- What a hover asked of the tooltip: SetHyperlink errors on an addon link,
+-- as the client's does (it has no tooltip for one)
+local tooltipLinks = {}
+GameTooltip.SetHyperlink = function(_, link)
+    tooltipLinks[#tooltipLinks + 1] = link
+    if type(link) == "string" and link:sub(1, 6) == "addon:" then error("Unknown link type") end
+end
+-- EventRegistry (CallbackRegistryMixin): only what the window fires is
+-- recorded; Blizzard's ChatFrameMixin fires the same two hover events
+local triggered = {}
+EventRegistry = {
+    TriggerEvent = function(self, event, ...)
+        triggered[#triggered + 1] = { self = self, event = event, n = select("#", ...), ... }
+    end,
+}
 
 -- ===========================================================================
 -- Load the real framework + addon
@@ -571,6 +597,42 @@ CHECK(mirrored.__lastMessage == "|cff00ff00[Guild]|r Ally: pull in 5",
     "the formatted line is mirrored verbatim", mirrored.__lastMessage)
 CHECK(chat1.__lastMessage == "|cff00ff00[Guild]|r Ally: pull in 5",
     "and still reaches Blizzard's frame underneath")
+
+-- A mirrored line's links: a click goes to SetItemRef with the window as
+-- its frame; hovering an addon link (Commander Orders' [Go]) fires the chat
+-- frame's hover on EventRegistry, the only place its owner draws a tooltip
+-- from, since the parked ChatFrame1 never sees the mouse
+local GO = "addon:CommanderOrders:w:1429:0.425:0.612:Rare"
+GameTooltip.__shown = false
+mirrored.__scripts.OnHyperlinkClick(mirrored, GO, "[Go]", "LeftButton")
+CHECK(itemRefs[#itemRefs] and itemRefs[#itemRefs].link == GO and itemRefs[#itemRefs].frame == mirrored,
+    "a link click reaches SetItemRef from the window")
+triggered, tooltipLinks = {}, {}
+mirrored.__scripts.OnHyperlinkEnter(mirrored, GO, "[Go]")
+CHECK(#triggered == 1 and triggered[1].event == "ChatFrame.OnHyperlinkEnter",
+    "hovering an addon link fires the chat frame's hover", triggered[1] and triggered[1].event)
+CHECK(triggered[1] and triggered[1].self == EventRegistry and triggered[1][1] == mirrored
+    and triggered[1][2] == GO and triggered[1][3] == "[Go]",
+    "with the window, the link and its text, as ChatFrameMixin passes them")
+CHECK(#tooltipLinks == 0, "and never hands an addon link to SetHyperlink", tooltipLinks[1])
+triggered = {}
+GameTooltip.__shown = true
+mirrored.__scripts.OnHyperlinkLeave(mirrored, GO, "[Go]")
+CHECK(#triggered == 1 and triggered[1].event == "ChatFrame.OnHyperlinkLeave" and triggered[1][1] == mirrored,
+    "leaving it fires the chat frame's leave with the window", triggered[1] and triggered[1].event)
+CHECK(GameTooltip.__shown == false, "and the tooltip goes")
+-- Any other link is still the tooltip's own
+triggered, tooltipLinks = {}, {}
+mirrored.__scripts.OnHyperlinkEnter(mirrored, "item:19019", "[Thunderfury]")
+CHECK(tooltipLinks[1] == "item:19019" and GameTooltip.__shown == true, "an item link shows the item tooltip")
+CHECK(#triggered == 0, "and fires no chat-frame hover")
+-- A client with no EventRegistry: the hover is quiet, never an error
+local registry = EventRegistry
+EventRegistry = nil
+local okEnter = pcall(mirrored.__scripts.OnHyperlinkEnter, mirrored, GO, "[Go]")
+local okLeave = pcall(mirrored.__scripts.OnHyperlinkLeave, mirrored, GO, "[Go]")
+CHECK(okEnter and okLeave, "no EventRegistry: hovering raises nothing")
+EventRegistry = registry
 
 -- The Blizzard-path driver must stand down so the two never both write alpha
 DB.MouseoverOnly = true
