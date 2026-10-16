@@ -151,3 +151,18 @@ EventRegistry's `ChatFrame.OnHyperlinkEnter` / `ChatFrame.OnHyperlinkLeave` with
 chat frame does, and Orders shows its tooltip (A14). Clicks already reached Orders through
 `SetItemRef`.
 
+## D13 - Arena ratings beside every name, from Commander Muster (1.2.0)
+
+Devin wants a player's 2v2/3v3/5v5 ratings wherever their name shows.
+Contacts asks `CommanderMuster.RatingsLine` (already an OptionalDep), the
+suite's one rating source. It merges what Muster has inspected with the
+Commander Ladder web feed, so an offline friend or a whisperer from far away
+still shows a number, with its age.
+
+The ratings lead three lines: a friend's row in the sidebar, the friend
+card's subtitle, and the subtitle of a whisper thread with a person. They
+come first so a long zone truncates and they do not. Group threads and
+message previews are left alone. The Scout's own `Performers[...].ratings`
+stay as they are: they rank strangers for suggestions by the highest rating
+seen, which is a different question from what someone is rated now.
+

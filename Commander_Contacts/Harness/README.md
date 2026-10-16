@@ -5,7 +5,7 @@ Five luajit checks, all in-addon. Run **all five** before any change.
 ```bash
 /opt/homebrew/bin/luajit contacts_store_smoke.lua   # store fixture - 131 checks
 /opt/homebrew/bin/luajit contacts_scout_smoke.lua   # scout fixture - 70 checks
-/opt/homebrew/bin/luajit contacts_ui_harness.lua    # UI + host     - 305 checks
+/opt/homebrew/bin/luajit contacts_ui_harness.lua    # UI + host     - 309 checks
 /opt/homebrew/bin/luajit contacts_orders_smoke.lua  # the REAL Commander Orders - 34 checks
 /opt/homebrew/bin/luajit globals_lint.lua           # 5 files, 0 undeclared globals
 ```

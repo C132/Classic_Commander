@@ -1169,6 +1169,17 @@ CommanderContactsDB.ShowBattleNet = true
 Commander.Notify(COMMANDER_CONTACTS_EVENTS.UPDATE)
 CHECK(RowFor("bn:77") ~= nil, "E3c and back")
 
+-- Arena ratings from Commander_Muster lead the friend's line and card (D13)
+CommanderMuster.RatingsLine = function(name) if name == "Miralei" then return "2s 1534" end end
+Commander.Notify(COMMANDER_CONTACTS_EVENTS.UPDATE)
+EQ(RowFor("friend:Miralei").entry.sub, "2s 1534  ·  Level 70 Mage · Shattrath City", "E3d ratings lead the friend's line")
+EQ(RowFor("friend:Brakk").entry.sub:find("2s", 1, true), nil, "E3d a friend Muster knows nothing about keeps the plain line")
+Click(RowFor("friend:Miralei"))
+CHECK(frame.currentView.subtitle:find("2s 1534  ·  Online", 1, true) == 1, "E3d and the friend card's subtitle", frame.currentView.subtitle)
+CommanderMuster.RatingsLine = nil
+Commander.Notify(COMMANDER_CONTACTS_EVENTS.UPDATE)
+EQ(RowFor("friend:Miralei").entry.sub, "Level 70 Mage · Shattrath City", "E3d without RatingsLine the line is unchanged")
+
 Click(RowFor("friend:Miralei"))
 EQ(frame.currentView.title, "Miralei", "E4 the friend card")
 CHECK(frame.currentView.subtitle:find("Online · Level 70 Mage", 1, true) ~= nil, "E4 status", frame.currentView.subtitle)

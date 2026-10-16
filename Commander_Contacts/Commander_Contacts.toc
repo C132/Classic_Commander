@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Contacts
 ## Author: Devin
-## Version: 1.1.0
+## Version: 1.2.0
 ## Notes: Your friends list, your ignore list, and every whisper and party line you have received, kept. Three tabs across the top and a Slack-shaped window under them: the people or threads down the left, the one you picked on the right. Friends and Ignore are the game's own lists with more room and a notes box. Activity is the part the game never had: a thread per person who has ever whispered you, friend or stranger, and a thread per party you have been in, with what everyone said, and a box at the bottom to answer from. Under the friends, a Suggested section: the players from your realm who stood out in your battlegrounds -- top of the damage, healing or killing-blow table, or wearing a Gladiator title -- each with a sentence saying why. With Commander Orders, a grouped person's menu offers Arrow To Them, and a place someone sent you carries a [Go] link.
 ## IconTexture: Interface\Icons\INV_Letter_15
 ## SavedVariables: CommanderContactsDB

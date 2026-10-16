@@ -139,6 +139,18 @@ local SKIN = {
     hover     = 0.12,
 }
 
+-- A player's arena ratings from Commander Muster (an OptionalDep): what it
+-- has seen merged with the Commander Ladder web feed, newest first (D13).
+-- They lead the line they join, so a long zone truncates and they do not.
+local function WithRatings(name, text)
+    local muster = _G.CommanderMuster
+    if not (name and muster and type(muster.RatingsLine) == "function") then return text end
+    local ok, ratings = pcall(muster.RatingsLine, name)
+    if not (ok and ratings) then return text end
+    if text and text ~= "" then return ratings .. "  ·  " .. text end
+    return ratings
+end
+
 local function Ink(fontString, shade)
     local color = SKIN[shade or "ink"] or SKIN.ink
     fontString:SetTextColor(color[1], color[2], color[3])
@@ -510,6 +522,7 @@ local function BuildFriendEntries(needle)
         local sub = string.format("Level %d %s", friend.level, friend.className or "")
         if friend.area and friend.area ~= "" then sub = sub .. " · " .. friend.area end
         if friend.afk then sub = "Away · " .. sub elseif friend.dnd then sub = "Busy · " .. sub end
+        sub = WithRatings(friend.name, sub)
         Add({ kind = "friend", id = "friend:" .. friend.name, label = short, sub = sub,
             class = friend.class, online = true, unread = conv and conv.unread or 0,
             friend = friend })
@@ -519,7 +532,7 @@ local function BuildFriendEntries(needle)
         for _, friend in ipairs(offline) do
             local short = H.Shorten(friend.name)
             local conv = S.Conversation(S.DMKey(short))
-            local sub = friend.notes and friend.notes ~= "" and friend.notes or "Offline"
+            local sub = WithRatings(friend.name, friend.notes and friend.notes ~= "" and friend.notes or "Offline")
             Add({ kind = "friend", id = "friend:" .. friend.name, label = short, sub = sub,
                 class = friend.class, online = false, unread = conv and conv.unread or 0,
                 friend = friend })
@@ -1249,7 +1262,7 @@ function ResolveSelection()
             local conv = S.Conversation(S.DMKey(short))
             view.title = short
             view.class = friend.connected and friend.class or (conv and conv.class)
-            view.subtitle = FriendStatus(friend)
+            view.subtitle = WithRatings(friend.name, FriendStatus(friend))
             view.notes = friend.notes or ""
             view.notesName = friend.name
             view.conv = conv
@@ -1388,7 +1401,7 @@ function ResolveSelection()
                 if friend.area and friend.area ~= "" then pieces[#pieces + 1] = friend.area end
             end
             pieces[#pieces + 1] = "last " .. Ago(conv.updated)
-            view.subtitle = table.concat(pieces, " · ")
+            view.subtitle = WithRatings(conv.target or conv.name, table.concat(pieces, " · "))
             view.canCompose = not ignored
             view.composeHint = ignored and ("You are ignoring " .. conv.name .. ".") or ("Message " .. conv.name)
             view.send = function(text) return H.Send(conv, text) end
