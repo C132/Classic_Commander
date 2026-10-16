@@ -2582,6 +2582,14 @@ function ShowRowTooltip(frame)
         local r, g, b = ClassTint(entry.class)
         GameTooltip:AddLine(string.format("%s%s", entry.class or "?",
             entry.spec and (" / " .. entry.spec) or ""), r, g, b)
+        -- Their arena ratings, from Commander Muster (an OptionalDep). An enemy
+        -- is never inspected, so this is the Commander Ladder web feed's number,
+        -- with its age. FULL gets the same line through SetUnit.
+        if CommanderMuster and CommanderMuster.RatingsLine then
+            local ratings = CommanderMuster.RatingsLine(entry.guid)
+                or (entry.name and CommanderMuster.RatingsLine(entry.name))
+            if ratings then GameTooltip:AddDoubleLine("Arena", ratings, 1, 0.82, 0, 1, 1, 1) end
+        end
     end
 
     if not entry.spec then

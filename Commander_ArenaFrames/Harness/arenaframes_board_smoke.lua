@@ -1378,6 +1378,38 @@ CHECK(Row(1):IsShown(), "K: the stealthed opener keeps the top row")
 CHECK(Row(1).state:IsShown() and Row(1).state.label:GetText() == "STEALTHED",
       "K: and it says why there is nobody on it", Row(1).state.label:GetText())
 EQ(#blockedCalls, 0, "K: none of that asked the client for anything protected")
+
+-- ===========================================================================
+-- M. The row tooltip: arena ratings from Commander_Muster (OptionalDep)
+-- ===========================================================================
+
+do
+    local row = Row(2)
+    local guid = row and row._entry and row._entry.guid
+    CHECK(guid ~= nil and row.__scripts.OnEnter ~= nil, "M: a painted enemy row has a hover")
+    if guid and row.__scripts.OnEnter then
+        local lines = {}
+        local realAdd = GameTooltip.AddDoubleLine
+        GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = tostring(l) .. "=" .. tostring(r) end
+        local savedMode = CommanderArenaFramesDB.RowTooltip
+        CommanderArenaFramesDB.RowTooltip = "EXTRAS"
+        CommanderMuster = { RatingsLine = function(who) if who == guid then return "3s 2210  13h" end end }
+        row.__scripts.OnEnter(row)
+        local found = false
+        for _, l in ipairs(lines) do if l == "Arena=3s 2210  13h" then found = true end end
+        CHECK(found, "M: the enemy's tooltip shows their ratings from the feed, with its age",
+              table.concat(lines, " | "))
+        lines = {}
+        CommanderMuster = nil
+        row.__scripts.OnEnter(row)
+        local none = true
+        for _, l in ipairs(lines) do if l:find("^Arena=") then none = false end end
+        CHECK(none, "M: and none without Commander_Muster")
+        CommanderArenaFramesDB.RowTooltip = savedMode
+        GameTooltip.AddDoubleLine = realAdd
+    end
+end
+
 if #blockedCalls > 0 then io.write("      blocked: ", table.concat(blockedCalls, ", "), "\n") end
 
 -- A class learned mid-fight gets its cooldown book now, not when the fight
