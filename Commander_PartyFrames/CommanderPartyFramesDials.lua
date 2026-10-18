@@ -368,6 +368,8 @@ end
 --   absorbColor         { r, g, b }
 --   timeStop, timeDur   the clock: when it ends, and how long it is in all
 --   wipeStop, wipeDur   a cooldown wiped across the face
+--   wipeColor           { r, g, b, a } of that wipe, else the black 0.7 of a
+--                       cooldown (Team Shields draws Weakened Soul in red)
 --   text, textColor     the number on the face
 --   shade               0..1: how far a lit face darkens under that number
 --   rim                 { r, g, b } for a state worth a colour, else nil
@@ -414,7 +416,19 @@ function D.Paint(w, m, now)
     end
     w.ghost = m.ghost and true or false
 
-    -- The cooldown across it
+    -- The cooldown across it, in its own colour when it has one
+    local wc = m.wipeColor
+    local wkey = wc and (wc[1] * 1e9 + wc[2] * 1e6 + wc[3] * 1e3 + (wc[4] or 1)) or 0
+    if w.wipeColorKey ~= wkey then
+        w.wipeColorKey = wkey
+        if w.wipe.SetSwipeColor then
+            if wc then
+                w.wipe:SetSwipeColor(wc[1], wc[2], wc[3], wc[4] or 0.75)
+            else
+                w.wipe:SetSwipeColor(0, 0, 0, 0.7)
+            end
+        end
+    end
     if m.wipeStop and m.wipeDur and m.wipeDur > 0 and m.wipeStop > now then
         if not (w.wipeStop and math.abs(w.wipeStop - m.wipeStop) < 0.25 and w.wipe:IsShown()) then
             w.wipeStop = m.wipeStop

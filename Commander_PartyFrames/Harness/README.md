@@ -9,7 +9,7 @@ Frames change ships:
 ```bash
 cd Commander_PartyFrames/Harness    # or name the files by full path
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE              # 764 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PRIEST            # 550 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PRIEST            # 557 checks
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID             # 496 checks
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua PALADIN           # 509 checks
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE clickcast    # 58 checks
@@ -41,7 +41,7 @@ failures each that are PRE-EXISTING (the same 5 on the last commit's files,
 checked on a `git archive` copy, 2026-10-05): their expected class order is
 the mage's; they are not documented runs. Since 5.44.0 the PRIEST clickcast
 run also checks Team Shields on the secure board (a dial per seat, the bound
-rows under the dial line): 57 checks, the same 5 pre-existing failures.
+rows under the dial line): 60 checks since 5.45.0, the same 5 pre-existing failures.
 
 **Team Shields and Mending Wasted (5.44.0).** The PRIEST run adds two
 sections at the end of the Mending tracker. Mending Wasted, in a mock party:
@@ -57,6 +57,13 @@ when hurt or fighting, the Mending badge with its charges and a green ring
 inside twenty yards (UnitPosition stub), red when everyone walks off, no
 ring when a teammate cannot be placed, and Include Yourself / Team Shield
 Dials switching seats off.
+
+**5.45.1: no numbers, Weakened Soul in red.** The team dials write nothing on
+the face or the Mending badge (checked), and Weakened Soul is a RED wipe
+(the mock records SetSwipeColor as `__swipe`) on a bare dial and a shielded
+one alike. Your own seat is checked under your own shield with your own
+Weakened Soul — the case that read as "not tracked" in game — and follows
+the expiry read straight off your auras.
 
 **Arrow to them (5.41.0, Commander Orders) and 5.42.0 (Orders 3.1).** Every
 run drives `/cpf arrow`, Orders' refusals, the no-Orders `/way` line and the

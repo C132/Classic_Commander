@@ -82,8 +82,9 @@ LAYER_SCOPED = {
     "PersonalStyle": {"INT"},
     "DialSize": {"INT", "PWS"},
     "DialTexture": {"INT", "PWS"},
-    "DialTextShade": {"INT", "PWS"},
-    "DialTextSize": {"INT", "PWS"},
+    # ...but the numbers are the mage's alone: Team Shields writes none
+    "DialTextShade": {"INT"},
+    "DialTextSize": {"INT"},
     "TeamDials": {"PWS"},
     "TeamDialsSelf": {"PWS"},
     "MageUtilityButtons": {"INT"},

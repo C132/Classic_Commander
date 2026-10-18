@@ -3383,7 +3383,7 @@ local function CreateCorePanel()
         isEnabled = BannerCdsOn,
     })
 
-    panel:AddSection("Team Shields", "A dial for you and each of your party — your subgroup in a raid — in the block between the banner and the first ally, in the radial nameplates' language. The face is who it is: lit while a shield is on them, dark while they are bare. The band round it is the shield's absorb left and the thin arc outside that its thirty seconds. Weakened Soul is a clock wipe across the face, with its seconds written on it, so a dark wedge retreating is your next shield coming back. The rim says what to do: red, no shield and still locked (you cannot help with a shield yet); yellow, bare and unlocked in a fight (shield them); blue, a low shield you can replace; orange, a low shield you cannot yet. Your Prayer of Mending sits on the four o'clock badge of whoever is holding it, with its charges on it and a ring for whether it can bounce on: green, someone is within twenty yards of them; red, nobody is, so their next hit spends the heal and wastes the rest; no ring where the client gives no positions. The seats hold still, so nothing ever shuffles, and they work on both the sorted and the Click-Cast boards.")
+    panel:AddSection("Team Shields", "A dial for you and each of your party — your subgroup in a raid — in the block between the banner and the first ally, in the radial nameplates' language. The face is who it is: lit while a shield is on them, dark while they are bare. The band round it is the shield's absorb left and the thin arc outside that its thirty seconds. Weakened Soul is a red clock wipe across the face — yours too — so a red wedge retreating is your next shield coming back, whether the face under it is lit or dark. No numbers: lit or dark, how much band, how much red. The rim says what to do: red, no shield and still locked (you cannot help with a shield yet); yellow, bare and unlocked in a fight (shield them); blue, a low shield you can replace; orange, a low shield you cannot yet. Your Prayer of Mending sits on the four o'clock badge of whoever is holding it, with a ring for whether it can bounce on: green, someone is within twenty yards of them; red, nobody is, so their next hit spends the heal and wastes the rest; no ring where the client gives no positions. The seats hold still, so nothing ever shuffles, and they work on both the sorted and the Click-Cast boards.")
     local function TeamOn()
         return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.TeamDials
     end
@@ -3400,23 +3400,13 @@ local function CreateCorePanel()
         set = function(value) CommanderPartyFramesDB.TeamDialsSelf = value end,
         isEnabled = TeamOn,
     })
-    panel:AddSliderPair({
+    panel:AddSlider({
         label = "Dial Size",
         tooltip = "A dial's diameter in pixels. The block is this tall plus a few pixels of air. Five dials have to fit across the frame, so at a narrow width they shrink until they do. Shared with the mage's dials.",
         min = 20, max = 44, step = 1,
         format = "%.0f",
         get = function() return CommanderPartyFramesDB.DialSize end,
         set = function(value) CommanderPartyFramesDB.DialSize = value end,
-        isEnabled = TeamOn,
-    }, {
-        label = "Number Size",
-        tooltip = "The font size of the number on each face — the absorb left, or Weakened Soul's seconds. Auto sizes it off the dial.",
-        min = 0, max = 18, step = 1,
-        format = function(v) return v == 0 and "Auto" or string.format("%dpt", v) end,
-        get = function() return CommanderPartyFramesDB.DialTextSize end,
-        set = function(value)
-            CommanderPartyFramesDB.DialTextSize = (value > 0 and value < 7) and 7 or value
-        end,
         isEnabled = TeamOn,
     })
     panel:AddDropdown({
@@ -3434,15 +3424,6 @@ local function CreateCorePanel()
         width = 180,
         get = function() return CommanderPartyFramesDB.DialTexture end,
         set = function(value) CommanderPartyFramesDB.DialTexture = value end,
-        isEnabled = TeamOn,
-    })
-    panel:AddSlider({
-        label = "Darken Face Under Text",
-        tooltip = "How far a lit face darkens while the absorb number is written across it, so the number reads over a bright class icon. 0 leaves the face untouched.",
-        min = 0, max = 0.8, step = 0.05,
-        format = function(v) return v == 0 and "Off" or string.format("%d%%", v * 100 + 0.5) end,
-        get = function() return CommanderPartyFramesDB.DialTextShade end,
-        set = function(value) CommanderPartyFramesDB.DialTextShade = value end,
         isEnabled = TeamOn,
     })
 

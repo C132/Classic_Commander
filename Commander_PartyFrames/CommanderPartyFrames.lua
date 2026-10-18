@@ -12031,17 +12031,20 @@ end
 --     |  .-- the absorb it has left (the band) --.          |
 --     |  |    WHO (class icon or portrait)        |         |
 --     |  |    lit = shielded, dark = bare         |         |
---     |  |    wiped = Weakened Soul, seconds on it|         |
+--     |  |    wiped red = Weakened Soul           |         |
 --     |  '-----------------------------------------'        |
 --      '----------------------------------------------------'
 --
 -- The wipe is the lockout -- Weakened Soul, or the shield's own cooldown if
--- the client ever gives it one, whichever ends later -- so a dark wedge
--- retreating across a face is a shield coming back, the way a cooldown
--- reads on every action button. The rim says which of three things is true:
+-- the client ever gives it one, whichever ends later -- drawn in red, so a
+-- red wedge retreating across a face is a shield coming back, lit face or
+-- dark. No numbers: the first version wrote the absorb (or the lockout's
+-- seconds) across the face, and on a shielded dial that number sat over a
+-- black wedge on a bright icon and hid the one thing the dial is for. The
+-- rim says which of three things is true:
 --
 --   red     EXPOSED: no shield and Weakened Soul still on them. You cannot
---           help with a shield; the seconds on the face say for how long.
+--           help with a shield; the red wedge says for how long.
 --   yellow  READY: no shield and no lockout -- shield them. Only lit in
 --           combat or while they are hurt, so a quiet board is not five
 --           yellow rings.
@@ -12052,7 +12055,7 @@ end
 -- wsState) rather than off the row, because a row's drain is borrowed by a
 -- dispel or a CC timer when one outranks it -- the dial always means the
 -- shield. Your Mending rides the four o'clock badge of whoever holds it,
--- with its charges on it and a ring for whether it can bounce on: green,
+-- with a ring for whether it can bounce on: green,
 -- someone within twenty yards of them; red, nobody; no ring, no way to tell.
 -- ---------------------------------------------------------------------------
 util.teamRows = {}           -- guid -> the row resolved this draw
@@ -12061,6 +12064,28 @@ util.teamFlash = {}          -- guid -> { until_, tint }
 util.teamPrevShield = {}     -- guid -> whether YOUR shield was on them last paint
 SDATA.POM_REACH_YES = { 0.30, 1.00, 0.40 }
 SDATA.POM_REACH_NO = { 1.00, 0.22, 0.18 }
+-- Weakened Soul's wipe: a deep red, so it reads over a lit face as plainly
+-- as over a dark one. A black wedge under a bright class icon and an absorb
+-- number was the version that went unseen on a shielded dial.
+SDATA.TEAM_WS_WIPE = { 0.78, 0.06, 0.05, 0.72 }
+
+-- Your own Weakened Soul, straight off your auras at paint time. The board's
+-- book (wsState) is filled by the same scan for you as for everyone, so this
+-- should always agree with it; it is read directly because it is one unit,
+-- cheap, and the seat you can least afford to have wrong.
+function util.PlayerWeakenedSoul(now)
+    if not (C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex) then return nil end
+    for i = 1, 40 do
+        local a = C_UnitAuras.GetDebuffDataByIndex("player", i, "HARMFUL")
+        if not a then break end
+        if a.name == WS_NAME or a.spellId == 6788 then
+            local stop = a.expirationTime
+            if stop and stop > now then return stop, a.duration end
+            return nil
+        end
+    end
+    return nil
+end
 
 -- The seats, in a fixed order: who the dials are about, never what they say
 function util.TeamSeatUnits(out)
@@ -12139,19 +12164,30 @@ function util.TeamDialModel(r, index, now)
     local guid = r.guid
     local ws = wsState[guid]
     if ws and ws <= now then ws = nil end
+    local wsDur
+    if r.isSelf or guid == playerGUID then
+        local mine, dur = util.PlayerWeakenedSoul(now)
+        if mine then ws, wsDur = mine, dur end
+    end
     local st = shieldState[guid]
     if st and st.expire and st.expire <= now then st = nil end
 
     -- The lockout: Weakened Soul, or the shield's own cooldown, whichever
     -- ends later -- both are "not yet" for the same button
     local lockStop, lockDur
-    if ws then lockStop, lockDur = ws, math.max(SDATA.WEAKENED_SOUL_MAX, ws - now) end
+    if ws then lockStop, lockDur = ws, math.max(wsDur or SDATA.WEAKENED_SOUL_MAX, ws - now) end
     local cdLeft = util.pwsCdLeft or 0
     if cdLeft > 0 and (not lockStop or now + cdLeft > lockStop) then
         lockStop, lockDur = now + cdLeft, math.max(util.pwsCdDur or cdLeft, cdLeft)
     end
     local locked = lockStop and lockStop > now
-    if locked then m.wipeStop, m.wipeDur = lockStop, lockDur end
+    if locked then
+        m.wipeStop, m.wipeDur = lockStop, lockDur
+        m.wipeColor = SDATA.TEAM_WS_WIPE
+    end
+    -- No numbers on these. The dial is read at a glance -- lit or dark, how
+    -- much band, how much red -- and a number across the face was one more
+    -- thing to read and the thing that hid the wipe under it.
 
     if st then
         local cap = st.capacity or 0
@@ -12171,12 +12207,9 @@ function util.TeamDialModel(r, index, now)
         else
             m.absorbColor = st.mine and STATES.SHIELDED.color or STATES.OTHER.color
         end
-        m.text = remaining and FormatAmount(remaining) or ""
-        m.shade = DB("DialTextShade", 0.45)
     else
         m.ghost = true
         if locked then
-            m.text = tostring(math.ceil(lockStop - now))
             m.rim = STATES.EXPOSED.color
         elseif InCombat() or (r.health or 1) < 0.95 then
             m.rim = STATES.READY.color
@@ -12187,7 +12220,6 @@ function util.TeamDialModel(r, index, now)
     local stacks, holds = util.TeamPoM(r, now)
     if holds then
         m.badgeIcon = (util.pomDef and util.pomDef.icon) or "Interface\\Icons\\Spell_Holy_PrayerOfMendingtga"
-        m.badgeText = (stacks and stacks > 0) and tostring(stacks) or nil
         local reach
         if testUntil > 0 then
             reach = (stacks or 0) > 2 and "YES" or "NO"
@@ -12252,7 +12284,7 @@ function util.PaintTeamDials(now, topOffset, grow, width, allyBody)
             w = Dial.New(root)
             pool[i] = w
         end
-        Dial.Layout(w, size, DB("DialTextSize", 0))
+        Dial.Layout(w, size, 0)
         Dial.SetBand(w, band)
         local x = SDATA.STRIPE_W + 3 + (i - 1) * (size + SDATA.DIAL_GAP)
         local y = (grow == "UP") and ((allyBody or 0) + 1) or (-topOffset - 1)

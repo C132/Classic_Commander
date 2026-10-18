@@ -228,6 +228,12 @@ WidgetMT.__index = function(self, key)
         local fn = function(s, rev) s.__reverse = rev and true or false end
         rawset(self, key, fn); return fn
     end
+    -- Recorded: a red wipe and a black one are different readings (Team
+    -- Shields draws Weakened Soul in red so it shows over a lit face)
+    if key == "SetSwipeColor" then
+        local fn = function(s, r, g, b, a) s.__swipe = { r, g, b, a } end
+        rawset(self, key, fn); return fn
+    end
     if key == "SetCooldown" then
         local fn = function(s, start, dur)
             s.__cdStart, s.__cdDur = start, dur
@@ -3792,9 +3798,11 @@ if CLASS == "PRIEST" then
             CHECK(p1.wipe.__shown == true, "team: Weakened Soul is a clock wipe across the face")
             CHECK(p1.wipe.__cdDur and p1.wipe.__cdDur >= 15,
                 "team: ...scaled to Weakened Soul's fifteen seconds", tostring(p1.wipe.__cdDur))
-            local secs = tonumber(p1.text.__text or "")
-            CHECK(secs and secs >= 8 and secs <= 10, "team: ...with its seconds on the face",
+            CHECK((p1.text.__text or "") == "", "team: ...and no number written on it",
                 tostring(p1.text.__text))
+            local wc = p1.wipe.__swipe or {}
+            CHECK(wc[1] and wc[1] > 0.6 and wc[2] < 0.2, "team: ...in red, so it reads over any face",
+                string.format("%s %s", tostring(wc[1]), tostring(wc[2])))
             local rc = p1.rim.__color or {}
             CHECK(rc[1] and rc[1] > 0.9 and rc[2] < 0.4, "team: ...and the red EXPOSED rim",
                 string.format("%s %s", tostring(rc[1]), tostring(rc[2])))
@@ -3813,6 +3821,38 @@ if CLASS == "PRIEST" then
                 "team: ...the absorb band round it")
             CHECK(p2.time.cd.__shown == true, "team: ...the shield's thirty seconds outside that")
             CHECK(p2.wipe.__shown == true, "team: ...and the Weakened Soul under it still wipes the face")
+            CHECK((p2.text.__text or "") == "", "team: ...with no absorb number over it", tostring(p2.text.__text))
+            local lc = p2.wipe.__swipe or {}
+            CHECK(lc[1] and lc[1] > 0.6, "team: ...red on a lit face too", tostring(lc[1]))
+
+            -- Yours: the seat you shield yourself on. Your own Weakened Soul
+            -- under your own shield is the case that was going unseen.
+            playerBuffs = { { name = "Power Word: Shield", expirationTime = now + 27, duration = 30,
+                spellId = 25218, sourceUnit = "player", icon = "Interface\\Icons\\Spell_Holy_PowerWordShield" } }
+            unitDebuffs["player"] = { { name = "Weakened Soul", expirationTime = now + 14, duration = 15,
+                spellId = 6788, icon = "Interface\\Icons\\Spell_Holy_AshesToAshes" } }
+            Fire("UNIT_AURA", "player")
+            Tick()
+            me = Dials()[1]
+            CHECK(me.ghost == false and me.wipe.__shown == true,
+                "team: your own shield and your own Weakened Soul are both on your dial")
+            local sc = me.wipe.__swipe or {}
+            CHECK(sc[1] and sc[1] > 0.6 and (me.text.__text or "") == "",
+                "team: ...as the red wipe, with nothing written over it")
+            -- ...and read straight off your auras, whatever the board's book says
+            unitDebuffs["player"] = { { name = "Weakened Soul", expirationTime = now + 9, duration = 15,
+                spellId = 6788, icon = "Interface\\Icons\\Spell_Holy_AshesToAshes" } }
+            Tick()
+            me = Dials()[1]
+            CHECK(me.wipe.__shown == true and me.wipe.__cdStart and me.wipe.__cdDur
+                and math.abs((me.wipe.__cdStart + me.wipe.__cdDur) - (now + 9 - 1)) < 1.5,
+                "team: your dial follows your Weakened Soul off your own auras",
+                tostring(me.wipe.__cdStart) .. " + " .. tostring(me.wipe.__cdDur))
+            playerBuffs, unitDebuffs["player"] = {}, nil
+            Fire("UNIT_AURA", "player")
+            Tick()
+            me = Dials()[1]
+            CHECK(not me.wipe.__shown, "team: gone from you, gone from your dial")
 
             -- Hurt and bare, no lockout: the yellow READY rim
             playerHealth = 60
@@ -3839,7 +3879,7 @@ if CLASS == "PRIEST" then
             Advance(0.3)
             p2 = Dials()[3]
             CHECK(p2.badge.__shown == true, "team: your Mending rides the holder's badge")
-            CHECK(p2.badge.text.__text == "5", "team: ...with its charges on it", tostring(p2.badge.text.__text))
+            CHECK((p2.badge.text.__text or "") == "", "team: ...with no number on it", tostring(p2.badge.text.__text))
             local gc = p2.badge.back.__color or {}
             CHECK(gc[2] and gc[2] > 0.9 and gc[1] < 0.5, "team: ...and a green ring: someone is in jump range",
                 string.format("%s %s", tostring(gc[1]), tostring(gc[2])))
