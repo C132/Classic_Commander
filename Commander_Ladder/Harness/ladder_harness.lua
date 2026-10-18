@@ -467,7 +467,7 @@ CommanderLadderData = {
     generated = now - 3600, region = "us", namespace = "dynamic-classicann-us", season = 3,
     players = {
         ["Bootii-Dreamscythe"] = { [2] = { 1512, 11, 10 }, [5] = { 1840, 30, 20 },
-            w = { "H", "ROGUE", "BloodElf", now - 86400, "Gank Squad" }, t = now },
+            w = { "H", "ROGUE", "BloodElf", now - 86400, "Gank Squad", sex = "F", spec = "SUBTLETY" }, t = now },
         ["Loner-Dreamscythe"] = { [3] = { 1700, 4, 4 }, w = { "A", "PRIEST", "NightElf", 0 }, t = now },
         ["Bare-Dreamscythe"] = { [2] = { 1600, 1, 1 }, t = now },
         ["Zed-LivingFlame"] = { [5] = { 1888, 10, 2 }, w = { "H", "MAGE", "Troll", now, "Elsewhere" }, t = now },
@@ -481,7 +481,9 @@ do
         and boot.class == "ROGUE" and boot.race == "BloodElf" and boot.guild == "Gank Squad"
         and boot.last == now - 86400, "every field of w, by name")
     CHECK(boot and boot.best == 1840, "best is the highest bracket", boot and boot.best)
-    CHECK(loner and loner.guild == nil and loner.last == nil, "no guild and no login are nil")
+    CHECK(boot and boot.sex == "F" and boot.spec == "SUBTLETY", "sex and talent tree by name (L10)")
+    CHECK(loner and loner.guild == nil and loner.last == nil and loner.sex == nil and loner.spec == nil,
+        "no guild, login, sex or tree are nil")
     CHECK(CommanderLadder.Roster() == roster, "built once per data file")
     local other = CommanderLadder.Roster("Living Flame")
     CHECK(#other == 1 and other[1].name == "Zed", "another realm by name, spaces dropped")

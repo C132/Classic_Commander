@@ -3,8 +3,8 @@
 Three offline checks. Run all three before any change:
 
 ```bash
-python3 -I ../Tools/test_ladder_feed.py          # the feed script, fixtures only — 31 tests
-/opt/homebrew/bin/luajit ladder_harness.lua      # the addon under the WoW mock — 50 checks
+python3 -I ../Tools/test_ladder_feed.py          # the feed script, fixtures only — 38 tests
+/opt/homebrew/bin/luajit ladder_harness.lua      # the addon under the WoW mock — 51 checks
 /opt/homebrew/bin/luajit globals_lint.lua        # 2 files, 0 undeclared globals
 ```
 
@@ -30,6 +30,13 @@ None of them touch the network or the Keychain.
   login raised when the record moved; the line loads back through luajit with the ratings
   unchanged; a full run describes the home realm and the next day fetches nothing; `fields`
   prints names and never values. Every test points the cache at a temp folder.
+- **Talents and sex (L10):** the active group's tree with the most points, letters only, none for
+  no talents or a 404; one talents request per described player; a record from before them is
+  fetched again at once while a gone one waits its week; the line writes `sex` and `spec` by name
+  and loads back.
+- **Network failures (L11):** a timeout, a DNS failure, or a timeout while reading an error's body
+  comes back as a status and is retried; failing wanted-name lookups still let the ladder be
+  written.
 
 ## `ladder_harness.lua`: the addon
 

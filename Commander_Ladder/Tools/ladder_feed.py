@@ -24,6 +24,7 @@ Standard library only. Run with `python3 -I` so nothing beside this file is impo
 
 import base64
 import glob
+import http.client
 import json
 import os
 import subprocess
@@ -56,6 +57,7 @@ BRACKETS = {"2v2": 2, "3v3": 3, "5v5": 5}
 KEYCHAIN_ID = "commander-battlenet-client-id"
 KEYCHAIN_SECRET = "commander-battlenet-client-secret"
 
+NETWORK_ERROR = 599          # urlopen_fetch's status for a timeout, reset or DNS failure: retried like a 5xx
 REQUESTS_PER_SECOND = 20     # the API allows 100/s
 REQUESTS_PER_HOUR = 30000    # the API allows 36,000/h
 MAX_WANTED_PER_RUN = 800     # names looked up by profile in one run (3 requests each)
@@ -74,7 +76,8 @@ PROFILE_MAX_AGE = 7 * 86400      # a summary older than this is fetched again...
 PROFILE_SPREAD = 2 * 86400       # ...or up to this much sooner, fixed per name, so the first fill's
                                  # ~1,600 do not all come due on the same morning
 PROFILE_FORGET = 30 * 86400      # a cached summary for someone off the data this long is dropped
-MAX_PROFILES_PER_RUN = 2500      # one request each; the first run fetches ~1,600
+MAX_PROFILES_PER_RUN = 2500      # two requests each (summary, talents); the first run ~2,000
+PROFILE_SCHEMA = 2               # a cached record older than this shape is fetched again (2: sex, spec)
 
 # The game's own tokens (UnitClass / UnitRace file names), by the API's ids. 6 (death knight) and
 # the later races are not TBC: a summary naming one describes nobody Recruit can /who.
@@ -127,13 +130,21 @@ def redact(text, secrets):
 # ---------------------------------------------------------------------------
 
 def urlopen_fetch(url, headers, data=None, timeout=30):
-    """(status, headers, body bytes) for one request. Never raises on an HTTP status."""
+    """(status, headers, body bytes) for one request. Never raises: an HTTP status comes back as
+    itself, and a network failure -- a timeout, a reset, DNS, even while reading an error's body
+    (it once killed a whole run, 2026-10-18) -- as NETWORK_ERROR, which Api.get retries."""
     request = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.status, dict(response.headers), response.read()
     except urllib.error.HTTPError as err:
-        return err.code, dict(err.headers or {}), err.read() or b""
+        try:
+            body = err.read() or b""
+        except (OSError, http.client.HTTPException):
+            body = b""
+        return err.code, dict(err.headers or {}), body
+    except (OSError, http.client.HTTPException):   # URLError and TimeoutError are OSErrors
+        return NETWORK_ERROR, {}, b""
 
 
 class Api:
@@ -212,7 +223,7 @@ class Api:
                 delay = min(delay * 2, 60)
                 continue
             raise FeedError(redact(f"{path} ({namespace}): HTTP {status}", self._secrets()))
-        raise FeedError(f"{path} ({namespace}): gave up after repeated throttling")
+        raise FeedError(f"{path} ({namespace}): gave up after repeated throttling or network failures")
 
 
 # ---------------------------------------------------------------------------
@@ -386,10 +397,15 @@ def render_lua(data):
             continue
         who = entry.get("w")
         if who:
-            # faction, class, race, last login, guild (L9); the guild is left off when there is none
+            # faction, class, race, last login, guild (L9); the guild is left off when there is none.
+            # Sex and talent tree by name (L10), each left off when not known
             fields = [lua_string(who[0]), lua_string(who[1]), lua_string(who[2]), str(int(who[3]))]
             if len(who) > 4 and who[4]:
                 fields.append(lua_string(who[4]))
+            if len(who) > 5 and who[5]:
+                fields.append(f"sex = {lua_string(who[5])}")
+            if len(who) > 6 and who[6]:
+                fields.append(f"spec = {lua_string(who[6])}")
             parts.append(f"w = {{ {', '.join(fields)} }}")
         parts.append(f"t = {int(entry['t'])}")
         lines.append(f"        [{lua_string(key)}] = {{ {', '.join(parts)} }},")
@@ -447,9 +463,9 @@ def carry_over(previous, players, now, season):
 # ---------------------------------------------------------------------------
 
 def parse_summary(summary):
-    """{f, c, r, g, l} from a character profile summary: faction letter, class and race tokens as
-    the game spells them, guild name ("" for none) and last login in epoch seconds (0 unknown).
-    None when the class or race is missing or not a TBC one."""
+    """{f, c, r, g, l, x} from a character profile summary: faction letter, class and race tokens
+    as the game spells them, guild name ("" for none), last login in epoch seconds (0 unknown) and
+    sex ("M", "F" or ""). None when the class or race is missing or not a TBC one."""
     if not isinstance(summary, dict):
         return None
     cls = CLASS_TOKENS.get((summary.get("character_class") or {}).get("id"))
@@ -464,7 +480,27 @@ def parse_summary(summary):
         login = 0
     if login > 10 ** 11:
         login //= 1000   # the retail layout sends milliseconds
-    return {"f": faction or RACE_FACTION[race], "c": cls, "r": race, "g": str(guild), "l": login}
+    sex = {"MALE": "M", "FEMALE": "F"}.get(str((summary.get("gender") or {}).get("type") or "").upper(), "")
+    return {"f": faction or RACE_FACTION[race], "c": cls, "r": race, "g": str(guild), "l": login, "x": sex}
+
+
+def parse_specs(payload):
+    """The talent tree a character spends most in, from the /specializations payload (L10), as the
+    en_US tree name's letters in capitals ("SUBTLETY", "BEASTMASTERY", "FERALCOMBAT"); "" when it
+    has none. The active group of a dual spec is read, else the first; a tree with no points is
+    not listed at all."""
+    groups = (payload or {}).get("specialization_groups") or []
+    group = next((g for g in groups if g.get("is_active")), groups[0] if groups else None)
+    best, most = "", 0
+    for tree in (group or {}).get("specializations") or []:
+        try:
+            points = int(tree.get("spent_points") or 0)
+        except (TypeError, ValueError):
+            points = 0
+        name = tree.get("specialization_name") or ""
+        if points > most and name:
+            best, most = "".join(ch for ch in str(name).upper() if "A" <= ch <= "Z"), points
+    return best
 
 
 def load_cache(path=None):
@@ -494,22 +530,35 @@ def refresh_profiles(api, namespace, keys, by_name, cache, now, limit=None, say=
     moved, deleted) is cached as gone and asked again in a week. A spent request budget stops the
     fetching but keeps what came. Returns how many were fetched."""
     limit = MAX_PROFILES_PER_RUN if limit is None else limit
-    due = [k for k in keys if now - int((cache.get(k) or {}).get("at") or 0) >= profile_max_age(k)]
+
+    def stale(rec):
+        # a described record from before PROFILE_SCHEMA lacks fields: fetched again now
+        return bool(rec) and not rec.get("gone") and int(rec.get("v") or 1) < PROFILE_SCHEMA
+
+    due = [k for k in keys if now - int((cache.get(k) or {}).get("at") or 0) >= profile_max_age(k)
+           or stale(cache.get(k))]
     due.sort(key=lambda k: (int((cache.get(k) or {}).get("at") or 0), k))
     fetched = 0
     for key in due[:limit]:
         name, _, realm = key.partition("-")
-        slug = by_name.get(realm) or realm.lower()
+        base = f"/profile/wow/character/{urllib.parse.quote(slug_for(realm, by_name))}/{urllib.parse.quote(name.lower())}"
         try:
-            summary = api.get(f"/profile/wow/character/{urllib.parse.quote(slug)}/"
-                              f"{urllib.parse.quote(name.lower())}", namespace)
+            summary = api.get(base, namespace)
+            record = parse_summary(summary) if summary else None
+            if record:
+                # Their talents too (L10): one more request, a 404 is no spec
+                record["s"] = parse_specs(api.get(f"{base}/specializations", namespace))
+                record["v"] = PROFILE_SCHEMA
         except FeedError as err:
             say(f"Commander Ladder: profiles stopped after {fetched}: {err}")
             break
-        record = parse_summary(summary) if summary else None
         cache[key] = dict(record or {"gone": 1}, at=now)
         fetched += 1
     return fetched
+
+
+def slug_for(realm, by_name):
+    return by_name.get(realm) or realm.lower()
 
 
 def prune_cache(cache, keep, now):
@@ -552,7 +601,7 @@ def attach_profiles(players, cache, previous):
                                         for s in (2, 3, 5)):
             last = max(last, prev_time)
         entry["w"] = (rec.get("f") or RACE_FACTION.get(rec.get("r"), ""), rec["c"], rec["r"], last,
-                      rec.get("g") or "")
+                      rec.get("g") or "", rec.get("x") or "", rec.get("s") or "")
         described += 1
     return described
 
@@ -717,9 +766,21 @@ def fields(say=print):
     for line in field_paths(summary):
         say(f"    {line}")
     tops = set(summary)
-    for want in ("faction", "character_class", "race", "guild", "last_login_timestamp"):
+    for want in ("faction", "character_class", "race", "gender", "guild", "last_login_timestamp"):
         say(f"  {want}: {'present' if want in tops else 'MISSING'}"
             + (" (also on the leaderboard entry)" if want in entry else ""))
+    # The talent trees (L10): field names, and the trees' names -- game data, not the player's
+    specs = api.get(f"/profile/wow/character/{home}/{urllib.parse.quote(name.lower())}/specializations", ns_used)
+    if not specs:
+        say("  specializations: nothing")
+    else:
+        say("  specializations:")
+        for line in field_paths(specs):
+            say(f"    {line}")
+        trees = [t.get("specialization_name") or (t.get("specialization") or {}).get("name")
+                 for group in specs.get("specialization_groups") or []
+                 for t in group.get("specializations") or []]
+        say(f"  tree names: {', '.join(str(t) for t in trees if t) or 'none found'}")
     say(f"  requests made: {api.requests}")
     return 0
 
@@ -781,36 +842,40 @@ def run(say=print):
             return entry if len(entry) > 1 else None
 
         # Newest wishes first; names already on the ladder need no profile call
-        for key, _ in sorted(wanted.items(), key=lambda kv: -kv[1]):
-            if looked_up >= MAX_WANTED_PER_RUN:
-                break
-            if key in players:
-                continue
-            name, _, realm = key.partition("-")
-            if realm.startswith("*"):
-                # One realm's ladder already has the name: the game matches it by name
-                if on_ladder.get(name.lower()) == 1:
+        # A request that keeps failing stops the lookups, not the run: the ladder is written
+        try:
+            for key, _ in sorted(wanted.items(), key=lambda kv: -kv[1]):
+                if looked_up >= MAX_WANTED_PER_RUN:
+                    break
+                if key in players:
                     continue
-                looked_up += 1
-                # "*Dreamscythe": the game's own realm is asked first, as the game asks it first
-                home = realm[1:]
-                order = ([home] if home else []) + [r for r in any_realms if r != home]
-                for candidate in order:
-                    slug = by_name.get(candidate) or candidate.lower()
-                    if api.get(f"/profile/wow/character/{urllib.parse.quote(slug)}/"
-                               f"{urllib.parse.quote(name.lower())}", profile_ns) is None:
+                name, _, realm = key.partition("-")
+                if realm.startswith("*"):
+                    # One realm's ladder already has the name: the game matches it by name
+                    if on_ladder.get(name.lower()) == 1:
                         continue
-                    entry = look(name, candidate)
-                    if entry:
-                        players[f"{name}-{candidate}"] = entry
-                        break
-                    # Lives here but unrated: someone of that name elsewhere may be the
-                    # one the game saw (a bare name could be either)
-                continue
-            entry = look(name, realm)
-            looked_up += 1
-            if entry:
-                players[key] = entry
+                    looked_up += 1
+                    # "*Dreamscythe": the game's own realm is asked first, as the game asks it first
+                    home = realm[1:]
+                    order = ([home] if home else []) + [r for r in any_realms if r != home]
+                    for candidate in order:
+                        slug = by_name.get(candidate) or candidate.lower()
+                        if api.get(f"/profile/wow/character/{urllib.parse.quote(slug)}/"
+                                   f"{urllib.parse.quote(name.lower())}", profile_ns) is None:
+                            continue
+                        entry = look(name, candidate)
+                        if entry:
+                            players[f"{name}-{candidate}"] = entry
+                            break
+                        # Lives here but unrated: someone of that name elsewhere may be the
+                        # one the game saw (a bare name could be either)
+                    continue
+                entry = look(name, realm)
+                looked_up += 1
+                if entry:
+                    players[key] = entry
+        except FeedError as err:
+            say(f"Commander Ladder: wanted names stopped after {looked_up}: {err}")
 
     previous = read_previous()
     carried = carry_over(previous, players, now, season)

@@ -60,8 +60,8 @@ be imported in its place. The SavedVariables and old data files are read by
 
 Devin asked for the feed to run itself. A user LaunchAgent,
 `~/Library/LaunchAgents/com.commander.ladder-feed.plist` (outside this repo, on his Mac
-only), runs `/opt/homebrew/bin/python3 -I Tools/ladder_feed.py run` at 06:00 every day;
-launchd runs a missed time once on wake. Output goes to
+only), runs `/opt/homebrew/bin/python3 -I Tools/ladder_feed.py run` at 06:00 every day (since
+2026-10-18 also 18:00 and once at each login, L11); launchd runs a missed time once on wake. Output goes to
 `~/Library/Logs/CommanderLadder.log` (one line a run; errors pass through `redact()`).
 It reads the Keychain from his login session, which a LaunchAgent has. The game still only
 sees new data at login or `/reload`. Off: `launchctl bootout gui/$(id -u)/com.commander.ladder-feed`;
@@ -119,3 +119,31 @@ field names checked live first with `ladder_feed.py fields`).
   `{ key, name, faction, class, race, last, guild, best }`, built once per data file. It is the
   second caller-facing purpose after ratings (L2 still holds for ratings: they go through
   Muster); Recruit is its one caller.
+
+## L10 — Sex and talent tree too (1.3.0, 2026-10-18)
+
+For Recruit's race and tree icons (its R22). The summary already carried `gender.type`; the tree
+needs one more request per player, `/profile/wow/character/{realm}/{name}/specializations` (B8):
+the active group of a dual spec (else the first), the tree with the most `spent_points`, written
+as the en_US name's letters in capitals (`"SUBTLETY"`, `"BEASTMASTERY"`, `"FERALCOMBAT"`); no
+talents, or a 404, is no tree.
+
+- `w` gains named fields, each left off when unknown: `sex = "M"|"F"`, `spec = "SUBTLETY"`.
+  Named, so the positional five keep their places and older readers ignore them.
+- The cache records carry `x` (sex), `s` (tree) and `v = 2`; a described record without `v = 2`
+  is fetched again on the next run whatever its age, so the cache filled on 2026-10-17 was redone
+  once: the LaunchAgent's first run at load, 2026-10-18, exit 0, 2,318 Dreamscythe players described,
+  every one with sex and a tree, 9,501 requests in about 45 minutes (most of them wanted names, L8). A spent budget mid-player keeps the players before it.
+- Two requests a player now: the weekly spread (L9) is ~2,000 summaries and ~2,000 trees.
+- `Roster()` adds `sex` and `spec`.
+
+## L11 — A flaky network does not end a run (1.3.0, 2026-10-18)
+
+The first run after L10 died 25 minutes in: a read timed out while `urlopen_fetch` was reading a
+404's body, and only `HTTPError` was caught, so the TimeoutError ended the run and nothing was
+written. Now every network failure (a timeout, a reset, DNS, also inside an error's body) comes back
+as status 599 and `Api.get` retries it like a 5xx, with the same backoff. If a request still fails
+six times, the wanted-name lookups stop there (as the profile refresh already did) and the ladder
+is written anyway. This matters more now that the LaunchAgent runs at 06:00, 18:00 and at each
+login (Devin's ask, 2026-10-18; L7's plist, outside the repo).
+

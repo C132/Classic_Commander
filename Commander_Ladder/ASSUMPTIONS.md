@@ -78,3 +78,10 @@ maps class and race by id to the game's tokens (L9), so the locale of `.name` do
 Not yet checked: that `last_login_timestamp` is milliseconds as on retail (the feed divides
 anything past 10^11 by 1000, so either works), and how quickly a guild change reaches the
 summary (a week-old cache makes that moot).
+
+## B8 — The specializations endpoint names the talent trees — CONFIRMED 2026-10-18
+
+`ladder_feed.py fields` now also reads `/profile/wow/character/{realm}/{name}/specializations` for
+its sample: `specialization_groups[]` (two of them: Anniversary has dual spec) each with
+`is_active` and `specializations[]` of `specialization_name`, `spent_points` and `talents[]`. A tree
+with no points is not listed. The summary carries `gender.type` (`MALE`/`FEMALE`).

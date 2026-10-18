@@ -15,7 +15,8 @@
 -- A fourth call is for Commander_Recruit, which aims its /who sweep with it
 -- (L9): who the home realm's rated players are.
 --   CommanderLadder.Roster(realm) -> { { key, name, faction = "A"|"H", class, race,
---                                        last = epoch|nil, guild = name|nil, best = rating }, ... }
+--                                        last = epoch|nil, guild = name|nil, best = rating,
+--                                        sex = "M"|"F"|nil, spec = "SUBTLETY"|nil }, ... }
 -- Only players the feed described (a `w` on their line) are listed; a file
 -- written before L9 gives an empty list.
 --
@@ -106,7 +107,8 @@ function L.Generated()
 end
 
 -- The rated players of `realm` (ours by default) the feed described: each
--- line's w = { faction, class, race, last login, guild }. Built once per data
+-- line's w = { faction, class, race, last login, guild, sex = "M"|"F",
+-- spec = the en_US talent tree in capitals } (L9, L10). Built once per data
 -- file and realm; callers must not change the tables.
 function L.Roster(realm)
     if not IsOn() then return {} end
@@ -132,6 +134,8 @@ function L.Roster(realm)
                 last = last and last > 0 and last or nil,
                 guild = type(w[5]) == "string" and w[5] ~= "" and w[5] or nil,
                 best = best,
+                sex = (w.sex == "M" or w.sex == "F") and w.sex or nil,
+                spec = type(w.spec) == "string" and w.spec ~= "" and w.spec or nil,
             }
         end
     end
