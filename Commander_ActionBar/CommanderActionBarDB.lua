@@ -55,17 +55,20 @@ local DefaultSettings = {
     -- starts with "numpad": the numpad page's Restore Defaults resets by that.
     numpadEnabled = false,
     numpadBindKeys = true,
-    numpadLayout = "STANDARD",     -- STANDARD (PC) | APPLE (extended Mac keypad)
+    numpadLayout = "APPLE",        -- APPLE (Mac keypad) | STANDARD (PC)
     numpadAnchor = "RIGHT",        -- RIGHT | LEFT of the grid card, or FREE
+    numpadScale = 1.0,             -- times Card Scale: 1 = the grid's own key size
     numpadPosition = {             -- only used while FREE
         point = "CENTER",
         relativePoint = "CENTER",
         xOfs = 320,
-        yOfs = 0
+        yOfs = 0,
+        scale = 1,                 -- the card's scale when saved (offsets are in its units)
     },
     numpadDigitsBar = "BOTTOMRIGHT",   -- the 12 number-block keys: a whole bar
-    numpadOpsBar = "LEFT",             -- the operators: first 5 slots of a bar
-    numpadNumLock = false,
+    numpadOpsBar = "LEFT",             -- operators + F16-F19: first 9 slots of a bar
+    numpadNumLock = false,             -- Clear on the Mac pad
+    numpadFunctionRow = false,         -- the Mac pad's F16-F19 row
 }
 
 local frame = CreateFrame("FRAME");
@@ -167,7 +170,7 @@ local function CreateOptionsPanel()
     })
     panel:AddSliderPair({
         label = "Card Scale",
-        tooltip = "Overall size of the card and its buttons.",
+        tooltip = "Overall size of the card and its buttons. The numpad card follows it; Numpad Scale on the numpad page sizes it against this.",
         min = 0.6, max = 1.5, step = 0.05,
         format = Commander.UI.FormatPercent,
         get = function() return db().cardScale end,
@@ -417,7 +420,7 @@ local function CreateNumpadPanel()
         key = "ActionBarNumpad",
         title = "Action Bar Numpad",
         addonName = "Commander_ActionBar",
-        description = "An optional second command card, laid out like your numeric keypad and docked beside the grid: 7 8 9 across the top, 1 2 3 at the bottom, 0 two keys wide, the operators where the keypad has them. While it is up each key is bound to the numpad key it mirrors, so the keypad becomes a second bank of binds beside the grid's. Size, spacing, framing, fade and every button option follow the main card. Enter is never bound: the game cannot tell the keypad's Enter from the main one, which opens chat.",
+        description = "An optional second command card, laid out like your Mac's numeric keypad (or a PC one) and docked beside the grid: 7 8 9 above 4 5 6 above 1 2 3, 0 two keys wide, Clear = / * and the - + column where the keypad has them, and optionally the F16-F19 row on top. While it is up each key is bound to the numpad key it mirrors, so the keypad becomes a second bank of binds beside the grid's. Spacing, framing, fade and every button option follow the main card, and so does its size unless Numpad Scale says otherwise. Enter is never bound: the game cannot tell the keypad's Enter from the main one, which opens chat.",
         event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
     })
 
@@ -435,10 +438,10 @@ local function CreateNumpadPanel()
     })
     panel:AddDropdownPair({
         label = "Keypad",
-        tooltip = "Which keypad the card mirrors. Standard is the PC keypad: Num Lock / * - across the top and a tall + on the right. Apple Extended is the Mac keypad: Clear = / * across the top, with - and + down the right.",
+        tooltip = "Which keypad the card mirrors. Mac is Apple's keypad: F16-F19 on top (see F16-F19 Row), then Clear = / *, with - and + down the right. PC is the standard keypad: Num Lock / * - across the top and a tall + on the right. Each key keeps its action when you switch.",
         options = {
-            { text = "Standard", value = "STANDARD" },
-            { text = "Apple Extended", value = "APPLE" },
+            { text = "Mac", value = "APPLE" },
+            { text = "PC", value = "STANDARD" },
         },
         get = function() return db().numpadLayout end,
         set = function(value) db().numpadLayout = value end,
@@ -455,6 +458,15 @@ local function CreateNumpadPanel()
         set = function(value) db().numpadAnchor = value end,
         isEnabled = NumpadOn,
     })
+    panel:AddSlider({
+        label = "Numpad Scale",
+        tooltip = "Size of the numpad against the command card: 100% gives it the grid's own key size, and it follows Card Scale either way. Docked, it keeps sharing the card's bottom edge; free-standing, it keeps its place.",
+        min = 0.5, max = 1.5, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return db().numpadScale end,
+        set = function(value) db().numpadScale = value end,
+        isEnabled = NumpadOn,
+    })
     panel:AddDropdownPair({
         label = "Number Keys",
         tooltip = "Which bar's twelve action slots the number block uses: 1-9 are its first nine, 0 the tenth, . the eleventh, + the twelfth. That bar's own buttons are hidden while the numpad is up, since its actions live here now (unless the grid already folds that bar in). Bottom Right Bar is slots 49-60, Right Bar 25-36, Right Bar 2 37-48, Action Page 2 13-24 (the main bar's second page). Choosing the operator keys' bar swaps the two.",
@@ -467,7 +479,7 @@ local function CreateNumpadPanel()
         isEnabled = NumpadOn,
     }, {
         label = "Operator Keys",
-        tooltip = "Which bar's first five action slots the operator keys use: / first, then *, -, = and Num Lock. The rest of that bar is left alone and its buttons stay where they are. Choosing the number keys' bar swaps the two.",
+        tooltip = "Which bar's first nine action slots the other keys use: / first, then *, -, =, Clear (Num Lock), and F16 to F19 as slots six to nine. The rest of that bar is left alone and its buttons stay where they are. Choosing the number keys' bar swaps the two.",
         options = NUMPAD_BAR_OPTIONS,
         get = function() return db().numpadOpsBar end,
         set = function(value)
@@ -476,12 +488,18 @@ local function CreateNumpadPanel()
         end,
         isEnabled = NumpadOn,
     })
-    panel:AddCheckbox({
-        label = "Num Lock Key",
-        tooltip = "Add the Num Lock key (Clear on an Apple keypad) to the card. Off by default because it is Autorun in the default bindings; with key binding on, the numpad takes it over while shown.",
+    panel:AddCheckboxPair({
+        label = "Clear Key",
+        tooltip = "Add the Clear key (Num Lock on a PC keypad; the game sees one key) to the card. Off by default because it is Autorun in the default bindings; with key binding on, the numpad takes it over while shown.",
         get = function() return db().numpadNumLock end,
         set = function(value) db().numpadNumLock = value end,
         isEnabled = NumpadOn,
+    }, {
+        label = "F16-F19 Row",
+        tooltip = "Add the Mac keypad's top row, F16 to F19, to the card. Off by default: those keys often hold binds of your own (gear-set swaps and the like), and with key binding on the numpad takes them over while shown, giving them back when it is not.",
+        get = function() return db().numpadFunctionRow end,
+        set = function(value) db().numpadFunctionRow = value end,
+        isEnabled = function() return db().numpadEnabled and db().numpadLayout == "APPLE" end,
     })
 
     panel:Finalize({

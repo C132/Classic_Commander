@@ -144,16 +144,17 @@ end
 -- it is shown each one is bound to the numpad key it mirrors, so the keypad
 -- becomes a second bank of binds next to the grid's.
 --
--- Cells are on a 4-wide, 5-tall keypad; w/h are spans (0 is two cells wide,
--- + two tall on the standard pad). A spanning key stays a square button,
--- centered in its span the way the keycap is.
+-- Cells are on a 4-wide keypad; w/h are spans (0 is two cells wide, + two
+-- tall on the standard pad). A spanning key stays a square button, centered
+-- in its span the way the keycap is. Rows nobody uses are trimmed off the
+-- top, so the Mac pad without its F16-F19 row is five keys tall, not six.
 --
 -- ENTER is absent from both pads on purpose. The client has no NUMPADENTER:
 -- the key names in the binary run NUMPAD0-9, PLUS, MINUS, MULTIPLY, DIVIDE,
 -- DECIMAL and EQUALS, so the keypad's Enter IS the main Enter, and binding it
 -- would take the chat box away. Its cells are left empty.
 -- ---------------------------------------------------------------------------
-local NUMPAD_COLS, NUMPAD_ROWS = 4, 5
+local NUMPAD_COLS = 4
 
 local NUMPAD_LAYOUTS = {
     -- The conventional (PC) keypad
@@ -175,33 +176,38 @@ local NUMPAD_LAYOUTS = {
         { key = "NUMPAD0", col = 1, row = 5, w = 2 },
         { key = "NUMPADDECIMAL", col = 3, row = 5 },
     },
-    -- Apple's extended keypad: Clear where Num Lock is (same key to the
-    -- client), an = key, and the operators shifted one cell right
+    -- The Mac keypad (Apple's Magic Keyboard with Numeric Keypad): F16-F19
+    -- across the very top, then Clear (NUMLOCK to the client) = / *, with
+    -- - and + down the right and a tall Enter at the bottom
     APPLE = {
-        { key = "NUMLOCK", col = 1, row = 1, label = "Clr" },
-        { key = "NUMPADEQUALS", col = 2, row = 1 },
-        { key = "NUMPADDIVIDE", col = 3, row = 1 },
-        { key = "NUMPADMULTIPLY", col = 4, row = 1 },
-        { key = "NUMPAD7", col = 1, row = 2 },
-        { key = "NUMPAD8", col = 2, row = 2 },
-        { key = "NUMPAD9", col = 3, row = 2 },
-        { key = "NUMPADMINUS", col = 4, row = 2 },
-        { key = "NUMPAD4", col = 1, row = 3 },
-        { key = "NUMPAD5", col = 2, row = 3 },
-        { key = "NUMPAD6", col = 3, row = 3 },
-        { key = "NUMPADPLUS", col = 4, row = 3 },
-        { key = "NUMPAD1", col = 1, row = 4 },
-        { key = "NUMPAD2", col = 2, row = 4 },
-        { key = "NUMPAD3", col = 3, row = 4 },
-        { key = "NUMPAD0", col = 1, row = 5, w = 2 },
-        { key = "NUMPADDECIMAL", col = 3, row = 5 },
+        { key = "F16", col = 1, row = 1 },
+        { key = "F17", col = 2, row = 1 },
+        { key = "F18", col = 3, row = 1 },
+        { key = "F19", col = 4, row = 1 },
+        { key = "NUMLOCK", col = 1, row = 2, label = "Clr" },
+        { key = "NUMPADEQUALS", col = 2, row = 2 },
+        { key = "NUMPADDIVIDE", col = 3, row = 2 },
+        { key = "NUMPADMULTIPLY", col = 4, row = 2 },
+        { key = "NUMPAD7", col = 1, row = 3 },
+        { key = "NUMPAD8", col = 2, row = 3 },
+        { key = "NUMPAD9", col = 3, row = 3 },
+        { key = "NUMPADMINUS", col = 4, row = 3 },
+        { key = "NUMPAD4", col = 1, row = 4 },
+        { key = "NUMPAD5", col = 2, row = 4 },
+        { key = "NUMPAD6", col = 3, row = 4 },
+        { key = "NUMPADPLUS", col = 4, row = 4 },
+        { key = "NUMPAD1", col = 1, row = 5 },
+        { key = "NUMPAD2", col = 2, row = 5 },
+        { key = "NUMPAD3", col = 3, row = 5 },
+        { key = "NUMPAD0", col = 1, row = 6, w = 2 },
+        { key = "NUMPADDECIMAL", col = 3, row = 6 },
     },
 }
 
 -- What each key is: its cap label and which slot it takes. Fixed per KEY, not
 -- per cell, so switching pads never moves an action from one key to another.
--- The twelve number-block keys fill one whole bar; the operators take the
--- first five slots of a second bar.
+-- The twelve number-block keys fill one whole bar; the operators (and the Mac
+-- pad's F16-F19) take the first nine slots of a second bar.
 local NUMPAD_KEYS = {
     NUMPAD1 = { label = "1", block = "digits", index = 1 },
     NUMPAD2 = { label = "2", block = "digits", index = 2 },
@@ -220,12 +226,17 @@ local NUMPAD_KEYS = {
     NUMPADMINUS = { label = "-", block = "ops", index = 3 },
     NUMPADEQUALS = { label = "=", block = "ops", index = 4 },
     NUMLOCK = { label = "Num", block = "ops", index = 5 },
+    F16 = { label = "F16", block = "ops", index = 6 },
+    F17 = { label = "F17", block = "ops", index = 7 },
+    F18 = { label = "F18", block = "ops", index = 8 },
+    F19 = { label = "F19", block = "ops", index = 9 },
 }
 -- Creation order, so button names and the bind list come out the same every session
 local NUMPAD_KEY_ORDER = {
     "NUMPAD1", "NUMPAD2", "NUMPAD3", "NUMPAD4", "NUMPAD5", "NUMPAD6",
     "NUMPAD7", "NUMPAD8", "NUMPAD9", "NUMPAD0", "NUMPADDECIMAL", "NUMPADPLUS",
     "NUMPADDIVIDE", "NUMPADMULTIPLY", "NUMPADMINUS", "NUMPADEQUALS", "NUMLOCK",
+    "F16", "F17", "F18", "F19",
 }
 
 -- The Blizzard bars a numpad block can take: whole bars only, and never the
@@ -250,12 +261,17 @@ local function NumpadSlot(key)
 end
 
 local function NumpadLayout()
-    return NUMPAD_LAYOUTS[DB().numpadLayout] or NUMPAD_LAYOUTS.STANDARD
+    return NUMPAD_LAYOUTS[DB().numpadLayout] or NUMPAD_LAYOUTS.APPLE
 end
 
--- Num Lock is opt-in: it is Autorun in the default bindings
+-- The keys that take something over are opt-in: Num Lock / Clear is Autorun
+-- in the default bindings, and F16-F19 are where people park their own binds
+-- (gear-set swaps, for one)
+local FUNCTION_ROW = { F16 = true, F17 = true, F18 = true, F19 = true }
 local function NumpadKeyUsed(key)
-    return key ~= "NUMLOCK" or DB().numpadNumLock and true or false
+    if key == "NUMLOCK" then return DB().numpadNumLock and true or false end
+    if FUNCTION_ROW[key] then return DB().numpadFunctionRow and true or false end
+    return true
 end
 
 -- Is the numpad up and docked on this side of the grid? The satellites that
@@ -1112,7 +1128,7 @@ end
 -- Everything here is protected once the buttons exist (the card parents
 -- them), so it is all built, moved and bound out of combat only, deferring
 -- through pendingUpdate like the grid. The card is only created the first
--- time the numpad is switched on: nobody who never uses it carries 34 secure
+-- time the numpad is switched on: nobody who never uses it carries 42 secure
 -- buttons around.
 -- ---------------------------------------------------------------------------
 local NUMPAD_GAP = 2   -- between the docked numpad and the grid card
@@ -1211,7 +1227,10 @@ local function EnsureNumpad()
         self.__cmdMoving = nil
         self:StopMovingOrSizing()
         local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
-        DB().numpadPosition = { point = point, relativePoint = relativePoint, xOfs = xOfs, yOfs = yOfs }
+        -- Offsets are in the card's own scaled units, so the scale they were
+        -- taken at travels with them (see AnchorNumpad)
+        DB().numpadPosition = { point = point, relativePoint = relativePoint,
+            xOfs = xOfs, yOfs = yOfs, scale = self:GetScale() }
         Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
     end)
     for _, key in ipairs(NUMPAD_KEY_ORDER) do
@@ -1220,15 +1239,27 @@ local function EnsureNumpad()
     return numpadCard
 end
 
+-- Numpad Scale is relative: the numpad follows Card Scale, so by default its
+-- keys are the grid's keys and the pair stays matched
+local function NumpadScale()
+    return (DB().cardScale or 1) * (DB().numpadScale or 1)
+end
+
 local function AnchorNumpad()
     local mode = DB().numpadAnchor or "RIGHT"
     if mode == "FREE" or not backdrop then
         local pos = DB().numpadPosition
+        -- A point's offsets are multiplied by the frame's own scale on screen.
+        -- Re-express them at today's scale so a free numpad grows and shrinks
+        -- about its anchor instead of sliding across the screen. A position
+        -- saved without its scale is taken as already at this one.
+        local current = numpadCard:GetScale()
+        local factor = (pos and pos.scale and current > 0) and (pos.scale / current) or 1
         if pos and pos.point then
             SetAnchor(numpadCard, pos.point, UIParent, pos.relativePoint or pos.point,
-                pos.xOfs or 0, pos.yOfs or 0)
+                (pos.xOfs or 0) * factor, (pos.yOfs or 0) * factor)
         else
-            SetAnchor(numpadCard, "CENTER", UIParent, "CENTER", 320, 0)
+            SetAnchor(numpadCard, "CENTER", UIParent, "CENTER", 320 * factor, 0)
         end
     elseif mode == "LEFT" then
         -- Bottoms level with the grid's: the numpad is a row taller, and the
@@ -1263,15 +1294,24 @@ local function LayoutNumpad()
     local spacing = db.buttonSpacing or 10
     local pad = db.gridPadding or 14
     local cell = size + spacing
-    SetScaleIfNeeded(numpadCard, db.cardScale or 1)
+    -- Before AnchorNumpad below: a free position is converted at this scale
+    SetScaleIfNeeded(numpadCard, NumpadScale())
+
+    -- Only the rows something sits in: a pad with its top row switched off
+    -- loses the row rather than wearing a gap
+    local placed = {}
+    local topRow, bottomRow = math.huge, 0
+    for _, entry in ipairs(NumpadLayout()) do
+        if NumpadKeyUsed(entry.key) then
+            placed[entry.key] = entry
+            topRow = math.min(topRow, entry.row)
+            bottomRow = math.max(bottomRow, entry.row + (entry.h or 1) - 1)
+        end
+    end
+    local rows = math.max(bottomRow - topRow + 1, 1)
     numpadCard:SetSize(
         NUMPAD_COLS * cell - spacing + pad * 2,
-        NUMPAD_ROWS * cell - spacing + pad * 2)
-
-    local placed = {}
-    for _, entry in ipairs(NumpadLayout()) do
-        if NumpadKeyUsed(entry.key) then placed[entry.key] = entry end
-    end
+        rows * cell - spacing + pad * 2)
     local r, g, b, a = PushedColor()
     for _, button in ipairs(numpadButtons) do
         local key = button.__cmdKey
@@ -1294,7 +1334,7 @@ local function LayoutNumpad()
             NormalizeButtonArt(button, size)
             -- A spanning key sits centered in its span, like the keycap
             local x = pad + (entry.col - 1) * cell + ((entry.w or 1) - 1) * cell / 2
-            local y = pad + (entry.row - 1) * cell + ((entry.h or 1) - 1) * cell / 2
+            local y = pad + (entry.row - topRow) * cell + ((entry.h or 1) - 1) * cell / 2
             SetAnchor(button, "TOPLEFT", numpadCard, "TOPLEFT", x, -y)
             local pushed = button:GetPushedTexture()
             local press = NumpadPressFor(button)

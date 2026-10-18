@@ -553,7 +553,8 @@ end
 CHECK(#luaErrors == 0, "login clean", luaErrors[1])
 CHECK(#violations == 0, "login: no protected calls in combat", violations[1])
 CHECK(backdrop ~= nil, "grid card exists")
-CHECK(db.numpadEnabled == false and db.numpadBindKeys == true and db.numpadLayout == "STANDARD"
+CHECK(db.numpadEnabled == false and db.numpadBindKeys == true and db.numpadLayout == "APPLE"
+    and db.numpadFunctionRow == false and db.numpadScale == 1
     and db.numpadAnchor == "RIGHT" and db.numpadDigitsBar == "BOTTOMRIGHT"
     and db.numpadOpsBar == "LEFT" and db.numpadNumLock == false, "numpad defaults applied")
 CHECK(_G.CommanderActionBarNumpad == nil, "numpad card not built while off")
@@ -596,26 +597,31 @@ CHECK(#violations == 0, "build after combat: no violations", violations[1])
 CHECK(#luaErrors == 0, "build clean", luaErrors[1])
 
 -- ===========================================================================
--- C. The standard keypad: shape, slots, binds, caps
+-- C. The default keypad is the Mac's: shape, slots, binds, caps
 -- ===========================================================================
 local KEYS = {
     NUMPAD1 = "1", NUMPAD2 = "2", NUMPAD3 = "3", NUMPAD4 = "4", NUMPAD5 = "5",
     NUMPAD6 = "6", NUMPAD7 = "7", NUMPAD8 = "8", NUMPAD9 = "9", NUMPAD0 = "0",
     NUMPADDECIMAL = "DECIMAL", NUMPADPLUS = "PLUS", NUMPADDIVIDE = "DIVIDE",
     NUMPADMULTIPLY = "MULTIPLY", NUMPADMINUS = "MINUS", NUMPADEQUALS = "EQUALS", NUMLOCK = "NUMLOCK",
+    F16 = "F16", F17 = "F17", F18 = "F18", F19 = "F19",
 }
 local function Face(key) return _G["CommanderNumpadButton" .. KEYS[key]] end
 local function Shown(key) local f = Face(key) return f and f:IsShown() end
+local function ShownCount()
+    local n = 0
+    for key in pairs(KEYS) do if Shown(key) then n = n + 1 end end
+    return n
+end
+local function Tall(rows) return rows * 42 - 10 + 28 end
 
 local created = 0
 for key in pairs(KEYS) do if Face(key) then created = created + 1 end end
-CHECK(created == 17, "every keypad key built once", created)
-CHECK(card.__w == 4 * 42 - 10 + 28 and card.__h == 5 * 42 - 10 + 28, "card is 4x5 keys at grid pitch", card.__w .. "x" .. card.__h)
-
-local shownCount = 0
-for key in pairs(KEYS) do if Shown(key) then shownCount = shownCount + 1 end end
-CHECK(shownCount == 15, "standard pad shows 15 keys", shownCount)
-CHECK(not Shown("NUMLOCK") and not Shown("NUMPADEQUALS"), "no Num Lock (opt-in) and no = on the PC pad")
+CHECK(created == 21, "every keypad key built once", created)
+CHECK(card.__w == 4 * 42 - 10 + 28 and card.__h == Tall(5),
+    "Mac pad without its F row is 4x5 keys at grid pitch", card.__w .. "x" .. card.__h)
+CHECK(ShownCount() == 16, "Mac pad shows 16 keys", ShownCount())
+CHECK(not Shown("NUMLOCK") and not Shown("F16") and not Shown("F19"), "Clear and F16-F19 are opt-in")
 
 -- Cell (col,row) -> TOPLEFT offset at pad 14, pitch 42; spans centre the key
 local function At(key, x, y)
@@ -623,10 +629,10 @@ local function At(key, x, y)
     CHECK(p.rel == card and p.point == "TOPLEFT" and NEAR(p.x, x) and NEAR(p.y, -y),
         key .. " sits at its keypad cell", tostring(p.x) .. "," .. tostring(p.y))
 end
-At("NUMPADDIVIDE", 56, 14); At("NUMPADMULTIPLY", 98, 14); At("NUMPADMINUS", 140, 14)
-At("NUMPAD7", 14, 56); At("NUMPAD8", 56, 56); At("NUMPAD9", 98, 56)
-At("NUMPADPLUS", 140, 56 + 21)              -- two tall: centred across 7-row and 4-row
-At("NUMPAD4", 14, 98); At("NUMPAD5", 56, 98); At("NUMPAD6", 98, 98)
+-- The unused F row is trimmed off: Clear's row is the top one
+At("NUMPADEQUALS", 56, 14); At("NUMPADDIVIDE", 98, 14); At("NUMPADMULTIPLY", 140, 14)
+At("NUMPAD7", 14, 56); At("NUMPAD8", 56, 56); At("NUMPAD9", 98, 56); At("NUMPADMINUS", 140, 56)
+At("NUMPAD4", 14, 98); At("NUMPAD5", 56, 98); At("NUMPAD6", 98, 98); At("NUMPADPLUS", 140, 98)
 At("NUMPAD1", 14, 140); At("NUMPAD2", 56, 140); At("NUMPAD3", 98, 140)
 At("NUMPAD0", 14 + 21, 182)                 -- two wide: centred under 1 and 2
 At("NUMPADDECIMAL", 98, 182)
@@ -640,7 +646,7 @@ local function SlotOf(key)
 end
 local expectSlots = {
     NUMPAD1 = 49, NUMPAD5 = 53, NUMPAD9 = 57, NUMPAD0 = 58, NUMPADDECIMAL = 59, NUMPADPLUS = 60,
-    NUMPADDIVIDE = 37, NUMPADMULTIPLY = 38, NUMPADMINUS = 39,
+    NUMPADDIVIDE = 37, NUMPADMULTIPLY = 38, NUMPADMINUS = 39, NUMPADEQUALS = 40,
 }
 for key, slot in pairs(expectSlots) do
     local face, proxy, live = SlotOf(key)
@@ -651,8 +657,9 @@ end
 -- Binds: exactly the shown keys, each to its key proxy, never Enter or Num Lock
 do
     local bound = BoundKeys()
-    CHECK(#bound == 15, "15 keys bound", #bound)
-    CHECK(overrideBindings.ENTER == nil and overrideBindings.NUMLOCK == nil, "Enter and Num Lock untouched")
+    CHECK(#bound == 16, "16 keys bound", #bound)
+    CHECK(overrideBindings.ENTER == nil and overrideBindings.NUMLOCK == nil, "Enter and Clear untouched")
+    CHECK(overrideBindings.F16 == nil and overrideBindings.F19 == nil, "F16-F19 untouched by default")
     local b7 = overrideBindings.NUMPAD7
     CHECK(b7 and b7.button == "CommanderNumpadButton7Key" and b7.mouse == "LeftButton", "7 clicks its proxy", b7 and b7.button)
     local proxy = _G.CommanderNumpadButton7Key
@@ -666,7 +673,8 @@ end
 -- Caps on the faces, and they survive Blizzard re-running UpdateHotkeys
 Tick()
 CHECK(Face("NUMPAD7").HotKey.__text == "7" and Face("NUMPAD7").HotKey.__shown, "7 wears its cap")
-CHECK(Face("NUMPADPLUS").HotKey.__text == "+" and Face("NUMPADDIVIDE").HotKey.__text == "/", "operator caps")
+CHECK(Face("NUMPADPLUS").HotKey.__text == "+" and Face("NUMPADDIVIDE").HotKey.__text == "/"
+    and Face("NUMPADEQUALS").HotKey.__text == "=", "operator caps")
 Face("NUMPAD7"):UpdateHotkeys()
 CHECK(Face("NUMPAD7").HotKey.__text == "7" and Face("NUMPAD7").HotKey.__shown, "cap restored after UPDATE_BINDINGS")
 
@@ -730,39 +738,64 @@ db.oocFade = false; db.hideEmptySlots = false
 Tick()
 
 -- ===========================================================================
--- E. Apple keypad and Num Lock: shape changes, actions stay on their keys
+-- E. The Mac pad's F16-F19 row and Clear, then the PC pad: shapes change,
+-- actions stay on their keys
 -- ===========================================================================
-local layoutDrop = FindDropdowns(numpadPanel, "APPLE")[1]
+local fRowBox = FindCheckbox(numpadPanel, "F16-F19 Row")
+CHECK(fRowBox ~= nil, "F16-F19 Row checkbox")
+ClickCheckbox(fRowBox)
+Tick()
+CHECK(db.numpadFunctionRow == true, "F row opted in")
+CHECK(card.__h == Tall(6) and ShownCount() == 20, "F row adds a sixth row of four keys", card.__h)
+At("F16", 14, 14); At("F17", 56, 14); At("F18", 98, 14); At("F19", 140, 14)
+At("NUMPADEQUALS", 56, 56); At("NUMPAD7", 14, 98); At("NUMPAD0", 14 + 21, 224)
+CHECK(select(1, SlotOf("F16")) == 42 and select(1, SlotOf("F19")) == 45, "F16-F19 on the operator bar's slots 6-9")
+CHECK(select(1, SlotOf("NUMPAD7")) == 55, "7 keeps its slot when the row arrives")
+CHECK(#BoundKeys() == 20 and overrideBindings.F16 and overrideBindings.F16.button == "CommanderNumpadButtonF16Key",
+    "F16-F19 bound to their proxies", #BoundKeys())
+CHECK(Face("F17").HotKey.__text == "F17", "F17 cap")
+ClickCheckbox(fRowBox)
+Tick()
+CHECK(card.__h == Tall(5) and overrideBindings.F16 == nil and not Shown("F16"),
+    "F row off: row trimmed, keys given back")
+
+local clearBox = FindCheckbox(numpadPanel, "Clear Key")
+ClickCheckbox(clearBox)
+Tick()
+CHECK(Shown("NUMLOCK") and select(1, SlotOf("NUMLOCK")) == 41, "Clear shown on slot 41")
+At("NUMLOCK", 14, 14)
+CHECK(overrideBindings.NUMLOCK ~= nil and overrideBindings.ENTER == nil, "Clear bound when opted in; Enter never")
+CHECK(Face("NUMLOCK").HotKey.__text == "Clr", "the Mac pad calls it Clear")
+
+local layoutDrop = FindDropdowns(numpadPanel, "STANDARD")[1]
 CHECK(layoutDrop ~= nil, "keypad dropdown found")
+do
+    local first = OpenDropdown(layoutDrop)[1]
+    CHECK(first and first.value == "APPLE" and first.text == "Mac", "Mac listed first", first and first.text)
+end
+ClickCheckbox(fRowBox)          -- on, to prove the PC pad ignores it
 EnterCombat()
-PickOption(layoutDrop, "APPLE")
-CHECK(db.numpadLayout == "APPLE", "keypad choice written")
-CHECK(Point(Face("NUMPADDIVIDE")).x == 56, "nothing moves in combat")
-CHECK(overrideBindings.NUMPADEQUALS == nil, "nothing rebinds in combat")
+PickOption(layoutDrop, "STANDARD")
+CHECK(db.numpadLayout == "STANDARD", "keypad choice written")
+CHECK(Point(Face("NUMPADDIVIDE")).x == 98, "nothing moves in combat")
+CHECK(overrideBindings.NUMPADEQUALS ~= nil, "nothing rebinds in combat")
 CHECK(#violations == 0, "layout change in combat: no violations", violations[1])
 LeaveCombat()
 Tick()
-At("NUMPADEQUALS", 56, 14); At("NUMPADDIVIDE", 98, 14); At("NUMPADMULTIPLY", 140, 14)
-At("NUMPADMINUS", 140, 56); At("NUMPADPLUS", 140, 98)
-CHECK(Shown("NUMPADEQUALS") and select(1, SlotOf("NUMPADEQUALS")) == 40, "= shown on slot 40")
-CHECK(select(1, SlotOf("NUMPADDIVIDE")) == 37, "/ keeps its slot across pads")
-CHECK(#BoundKeys() == 16 and overrideBindings.NUMPADEQUALS ~= nil, "Apple pad binds 16 keys", #BoundKeys())
-CHECK(Face("NUMPADEQUALS").HotKey.__text == "=", "= cap")
-
-local numLockBox = FindCheckbox(numpadPanel, "Num Lock Key")
-ClickCheckbox(numLockBox)
+CHECK(card.__h == Tall(5) and not Shown("F16") and overrideBindings.F16 == nil, "the PC pad has no F row")
+At("NUMLOCK", 14, 14); At("NUMPADDIVIDE", 56, 14); At("NUMPADMULTIPLY", 98, 14); At("NUMPADMINUS", 140, 14)
+At("NUMPAD7", 14, 56); At("NUMPAD8", 56, 56); At("NUMPAD9", 98, 56)
+At("NUMPADPLUS", 140, 56 + 21)              -- two tall: centred across 7-row and 4-row
+At("NUMPAD4", 14, 98); At("NUMPAD1", 14, 140); At("NUMPAD0", 14 + 21, 182); At("NUMPADDECIMAL", 98, 182)
+CHECK(not Shown("NUMPADEQUALS") and overrideBindings.NUMPADEQUALS == nil, "no = on the PC pad")
+CHECK(select(1, SlotOf("NUMPADDIVIDE")) == 37 and select(1, SlotOf("NUMPADPLUS")) == 60, "/ and + keep their slots across pads")
+CHECK(Face("NUMLOCK").HotKey.__text == "Num", "the PC pad calls it Num")
+ClickCheckbox(clearBox)
+ClickCheckbox(fRowBox)
+PickOption(layoutDrop, "APPLE")
 Tick()
-CHECK(Shown("NUMLOCK") and select(1, SlotOf("NUMLOCK")) == 41, "Num Lock key shown on slot 41")
-At("NUMLOCK", 14, 14)
-CHECK(overrideBindings.NUMLOCK ~= nil and overrideBindings.ENTER == nil, "Num Lock bound when opted in; Enter never")
-CHECK(Face("NUMLOCK").HotKey.__text == "Clr", "Apple pad calls it Clear")
-PickOption(layoutDrop, "STANDARD")
-Tick()
-CHECK(Face("NUMLOCK").HotKey.__text == "Num" and not Shown("NUMPADEQUALS") and overrideBindings.NUMPADEQUALS == nil,
-    "back on the PC pad: Num cap, = gone and unbound")
-ClickCheckbox(numLockBox)
-Tick()
-CHECK(not Shown("NUMLOCK") and overrideBindings.NUMLOCK == nil, "Num Lock released when opted out")
+CHECK(not Shown("NUMLOCK") and overrideBindings.NUMLOCK == nil and #BoundKeys() == 16,
+    "back to the default Mac pad, Clear given back", #BoundKeys())
 
 -- ===========================================================================
 -- F. Bar choices swap rather than collide
@@ -839,6 +872,78 @@ Notify(); Tick()
 CHECK(card.__mouse == false and Point(card).rel == backdrop, "docked again, mouse off")
 
 -- ===========================================================================
+-- G2. Numpad Scale: relative to Card Scale, deferred in combat, and a free
+-- numpad grows and shrinks about its anchor instead of sliding away
+-- ===========================================================================
+-- Sliders notify through a trailing-edge C_Timer throttle
+local function RunTimers()
+    while #timers > 0 do
+        table.remove(timers, 1)()
+    end
+end
+local function FindSlider(panel)
+    for _, f in ipairs(allFrames) do
+        if f.__kind == "Slider" and f.__scripts.OnValueChanged and Descends(f, panel) then return f end
+    end
+end
+local scaleSlider = FindSlider(numpadPanel)
+CHECK(scaleSlider ~= nil, "Numpad Scale slider on the numpad page")
+local function Slide(value)
+    scaleSlider.__scripts.OnValueChanged(scaleSlider, value)
+    RunTimers()
+    Tick()
+end
+CHECK(db.numpadScale == 1 and NEAR(card.__scale, db.cardScale), "default: numpad matches Card Scale")
+db.cardScale = 1.2
+Notify(); Tick()
+CHECK(NEAR(card.__scale, 1.2), "numpad follows Card Scale", card.__scale)
+Slide(0.8)
+CHECK(db.numpadScale == 0.8, "slider writes Numpad Scale", db.numpadScale)
+CHECK(NEAR(card.__scale, 0.96), "numpad = Card Scale x Numpad Scale", card.__scale)
+CHECK(NEAR(backdrop.__scale, 1.2), "the grid card keeps its own scale", backdrop.__scale)
+CHECK(Face("NUMPAD7").__w == 32 and NEAR(Face("NUMPAD7").__scale, 1),
+    "keys inherit the card's scale, not rescaled one by one")
+do
+    local p = Point(card)
+    CHECK(p.point == "BOTTOMLEFT" and p.rel == backdrop and p.relPoint == "BOTTOMRIGHT",
+        "still docked on the card's bottom edge")
+end
+EnterCombat()
+Slide(1.3)
+CHECK(db.numpadScale == 1.3 and NEAR(card.__scale, 0.96), "scale change waits out combat", card.__scale)
+CHECK(#violations == 0, "scale change in combat: no violations", violations[1])
+LeaveCombat()
+Tick()
+CHECK(NEAR(card.__scale, 1.56), "applied when combat drops", card.__scale)
+
+-- Free: the position dragged at scale 1 (700, -400) stays put on screen
+PickOption(posDrop, "FREE")
+Tick()
+do
+    local p = Point(card)
+    CHECK(p.point == "TOPLEFT" and NEAR(p.x * card.__scale, 700) and NEAR(p.y * card.__scale, -400),
+        "free position saved at scale 1 lands in the same place at 156%", p.x)
+    Slide(0.6)
+    local q = Point(card)
+    CHECK(NEAR(card.__scale, 0.72) and NEAR(q.x * card.__scale, 700) and NEAR(q.y * card.__scale, -400),
+        "rescaling a free numpad keeps its place", q.x)
+    -- Dragged at this scale: saved with it, and re-applied without a jump
+    db.locked = false
+    Notify(); Tick()
+    card.__scripts.OnDragStart(card)
+    card.__scripts.OnDragStop(card)
+    db.locked = true
+    CHECK(NEAR(db.numpadPosition.scale, 0.72), "a drag saves the scale it was taken at", db.numpadPosition.scale)
+    Tick()
+    local r = Point(card)
+    CHECK(NEAR(r.x, q.x) and NEAR(r.y, q.y), "and re-applies it without moving", r.x)
+end
+PickOption(posDrop, "RIGHT")
+db.cardScale = 1.0
+Slide(1.0)
+CHECK(NEAR(card.__scale, 1) and Point(card).rel == backdrop, "back to matched and docked")
+
+-- ===========================================================================
 -- H. Binding off, numpad off, slash toggle, page reset
 -- ===========================================================================
 local bindBox = FindCheckbox(numpadPanel, "Bind Numpad Keys")
@@ -849,7 +954,7 @@ CHECK(Face("NUMPAD7").HotKey.__text ~= "7", "no cap on a key that is not bound",
 CHECK(not PressKey("NUMPAD7", true), "the key no longer reaches the numpad")
 ClickCheckbox(bindBox)
 Tick()
-CHECK(#BoundKeys() == 15 and Face("NUMPAD7").HotKey.__text == "7", "binding back on: keys and caps return")
+CHECK(#BoundKeys() == 16 and Face("NUMPAD7").HotKey.__text == "7", "binding back on: keys and caps return")
 
 do  -- no rebinding (and no UPDATE_BINDINGS storm) when nothing changed
     local before = bindWrites
@@ -861,7 +966,7 @@ EnterCombat()
 SlashCmdList.COMMANDERUI_ACTIONBAR("numpad")
 Tick()
 CHECK(db.numpadEnabled == false, "/cab numpad toggles off")
-CHECK(card:IsShown() and #BoundKeys() == 15, "still up and bound until combat drops")
+CHECK(card:IsShown() and #BoundKeys() == 16, "still up and bound until combat drops")
 CHECK(#violations == 0, "toggle in combat: no violations", violations[1])
 LeaveCombat()
 Tick()
@@ -870,18 +975,22 @@ CHECK(#BoundKeys() == 0, "numpad off: keys given back")
 CHECK(MultiBarBottomRight:GetParent() == UIParent, "bottom-right bar restored")
 SlashCmdList.COMMANDERUI_ACTIONBAR("numpad")
 Tick()
-CHECK(card:IsShown() and #BoundKeys() == 15, "/cab numpad toggles back on, same card")
+CHECK(card:IsShown() and #BoundKeys() == 16, "/cab numpad toggles back on, same card")
 CHECK(_G.CommanderActionBarNumpad == card, "card reused, not rebuilt")
 
 do  -- the numpad page resets only numpad options
     db.cardStyle = "DARK"
-    db.numpadLayout = "APPLE"
+    db.numpadLayout = "STANDARD"
+    db.numpadFunctionRow = true
     db.numpadAnchor = "LEFT"
+    db.numpadScale = 0.7
     local reset = FindButton(numpadPanel, "Restore Defaults")
     CHECK(reset ~= nil, "numpad page has Restore Defaults")
     if reset then reset.__scripts.OnClick(reset) end
     Tick()
-    CHECK(db.numpadLayout == "STANDARD" and db.numpadAnchor == "RIGHT", "numpad options reset")
+    CHECK(db.numpadLayout == "APPLE" and db.numpadFunctionRow == false and db.numpadAnchor == "RIGHT"
+        and db.numpadScale == 1,
+        "numpad options reset")
     CHECK(db.cardStyle == "DARK", "the card's own options untouched")
     CHECK(card.__backdrop == backdrop.__backdrop, "numpad picks up the dark panel with the grid")
     CHECK(db.numpadEnabled == false and not card:IsShown(), "reset turns the numpad back off (its default)")
