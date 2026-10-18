@@ -51,6 +51,21 @@ local DefaultSettings = {
     petBarScale = 0.7,
     showKeyring = false,
     extraBars = "DEFAULT",
+    -- Numpad card (a second grid laid out like a keypad). Every key here
+    -- starts with "numpad": the numpad page's Restore Defaults resets by that.
+    numpadEnabled = false,
+    numpadBindKeys = true,
+    numpadLayout = "STANDARD",     -- STANDARD (PC) | APPLE (extended Mac keypad)
+    numpadAnchor = "RIGHT",        -- RIGHT | LEFT of the grid card, or FREE
+    numpadPosition = {             -- only used while FREE
+        point = "CENTER",
+        relativePoint = "CENTER",
+        xOfs = 320,
+        yOfs = 0
+    },
+    numpadDigitsBar = "BOTTOMRIGHT",   -- the 12 number-block keys: a whole bar
+    numpadOpsBar = "LEFT",             -- the operators: first 5 slots of a bar
+    numpadNumLock = false,
 }
 
 local frame = CreateFrame("FRAME");
@@ -74,6 +89,23 @@ local function SetLocked(locked)
     print("Commander Action Bar " .. (locked and "locked" or "unlocked"))
 end
 
+-- The numpad page resets only its own options, as its button says
+local function ResetNumpad()
+    for key, value in pairs(DefaultSettings) do
+        if key:match("^numpad") then
+            CommanderActionBarDB[key] = Commander.UI.CopyValue(value)
+        end
+    end
+    Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    print("Commander Action Bar: numpad settings restored to defaults")
+end
+
+local function ToggleNumpad()
+    CommanderActionBarDB.numpadEnabled = not CommanderActionBarDB.numpadEnabled
+    Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    print("Commander Action Bar: numpad " .. (CommanderActionBarDB.numpadEnabled and "on" or "off"))
+end
+
 local db = function() return CommanderActionBarDB end
 
 local function CreateOptionsPanel()
@@ -81,13 +113,14 @@ local function CreateOptionsPanel()
         key = "ActionBar",
         title = "Action Bar",
         addonName = "Commander_ActionBar",
-        description = "Replaces the sprawling default action bars with a single compact command card: an RTS-style grid of your actions on a movable armored plate. This page shapes the card itself; button behavior, bags, and the satellite bars live on the Action Bar Buttons page.",
+        description = "Replaces the sprawling default action bars with a single compact command card: an RTS-style grid of your actions on a movable armored plate. This page shapes the card itself; button behavior, bags, and the satellite bars live on the Action Bar Buttons page, and the optional numpad card beside it on Action Bar Numpad.",
         event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
         slash = { "/cab" },
         slashHandlers = {
             lock = function() SetLocked(true) end,
             unlock = function() SetLocked(false) end,
             center = ResetPosition,
+            numpad = ToggleNumpad,
         },
     })
 
@@ -340,7 +373,7 @@ local function CreateButtonsPanel()
         set = function(value) db().petBarPosition = value end,
     }, {
         label = "Extra Bars",
-        tooltip = "The action bars the grid does not fold in — the bottom-right bar, plus the two side bars when Include Right Bars is off. Leave them at their default UI position, or hide them entirely.",
+        tooltip = "The action bars the grid does not fold in — the bottom-right bar, plus the two side bars when Include Right Bars is off. Leave them at their default UI position, or hide them entirely. The bar the numpad's number keys use is hidden either way while the numpad is up.",
         options = {
             { text = "Leave Default", value = "DEFAULT" },
             { text = "Hidden", value = "HIDDEN" },
@@ -367,6 +400,94 @@ local function CreateButtonsPanel()
     })
 
     panel:Finalize({ onDefaults = Reset })
+end
+
+-- Third subcategory: the numpad card
+local NUMPAD_BAR_OPTIONS = {
+    { text = "Bottom Right Bar", value = "BOTTOMRIGHT" },
+    { text = "Right Bar", value = "RIGHT" },
+    { text = "Right Bar 2", value = "LEFT" },
+    { text = "Action Page 2", value = "PAGE2" },
+}
+
+local function NumpadOn() return db().numpadEnabled end
+
+local function CreateNumpadPanel()
+    local panel = Commander.UI.NewPanel({
+        key = "ActionBarNumpad",
+        title = "Action Bar Numpad",
+        addonName = "Commander_ActionBar",
+        description = "An optional second command card, laid out like your numeric keypad and docked beside the grid: 7 8 9 across the top, 1 2 3 at the bottom, 0 two keys wide, the operators where the keypad has them. While it is up each key is bound to the numpad key it mirrors, so the keypad becomes a second bank of binds beside the grid's. Size, spacing, framing, fade and every button option follow the main card. Enter is never bound: the game cannot tell the keypad's Enter from the main one, which opens chat.",
+        event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
+    })
+
+    panel:AddCheckboxPair({
+        label = "Show Numpad Bar",
+        tooltip = "Add the numpad card beside the command card. /cab numpad toggles it.",
+        get = function() return db().numpadEnabled end,
+        set = function(value) db().numpadEnabled = value end,
+    }, {
+        label = "Bind Numpad Keys",
+        tooltip = "While the numpad is shown, each keypad key presses the button it mirrors, and the button wears that key's cap. These are override bindings: your saved key bindings are not touched, and switching this or the numpad off gives every key straight back to whatever it did before. Off, the numpad is click-only.",
+        get = function() return db().numpadBindKeys end,
+        set = function(value) db().numpadBindKeys = value end,
+        isEnabled = NumpadOn,
+    })
+    panel:AddDropdownPair({
+        label = "Keypad",
+        tooltip = "Which keypad the card mirrors. Standard is the PC keypad: Num Lock / * - across the top and a tall + on the right. Apple Extended is the Mac keypad: Clear = / * across the top, with - and + down the right.",
+        options = {
+            { text = "Standard", value = "STANDARD" },
+            { text = "Apple Extended", value = "APPLE" },
+        },
+        get = function() return db().numpadLayout end,
+        set = function(value) db().numpadLayout = value end,
+        isEnabled = NumpadOn,
+    }, {
+        label = "Numpad Position",
+        tooltip = "Docked beside the command card, sharing its bottom edge and moving with it; or free-standing, when it drags on its own while Lock Action Bar is off. Bags placed Beside the Card and a pet bar Left of the Card step out past a docked numpad.",
+        options = {
+            { text = "Right of the Card", value = "RIGHT" },
+            { text = "Left of the Card", value = "LEFT" },
+            { text = "Free", value = "FREE" },
+        },
+        get = function() return db().numpadAnchor end,
+        set = function(value) db().numpadAnchor = value end,
+        isEnabled = NumpadOn,
+    })
+    panel:AddDropdownPair({
+        label = "Number Keys",
+        tooltip = "Which bar's twelve action slots the number block uses: 1-9 are its first nine, 0 the tenth, . the eleventh, + the twelfth. That bar's own buttons are hidden while the numpad is up, since its actions live here now (unless the grid already folds that bar in). Bottom Right Bar is slots 49-60, Right Bar 25-36, Right Bar 2 37-48, Action Page 2 13-24 (the main bar's second page). Choosing the operator keys' bar swaps the two.",
+        options = NUMPAD_BAR_OPTIONS,
+        get = function() return db().numpadDigitsBar end,
+        set = function(value)
+            if value == db().numpadOpsBar then db().numpadOpsBar = db().numpadDigitsBar end
+            db().numpadDigitsBar = value
+        end,
+        isEnabled = NumpadOn,
+    }, {
+        label = "Operator Keys",
+        tooltip = "Which bar's first five action slots the operator keys use: / first, then *, -, = and Num Lock. The rest of that bar is left alone and its buttons stay where they are. Choosing the number keys' bar swaps the two.",
+        options = NUMPAD_BAR_OPTIONS,
+        get = function() return db().numpadOpsBar end,
+        set = function(value)
+            if value == db().numpadDigitsBar then db().numpadDigitsBar = db().numpadOpsBar end
+            db().numpadOpsBar = value
+        end,
+        isEnabled = NumpadOn,
+    })
+    panel:AddCheckbox({
+        label = "Num Lock Key",
+        tooltip = "Add the Num Lock key (Clear on an Apple keypad) to the card. Off by default because it is Autorun in the default bindings; with key binding on, the numpad takes it over while shown.",
+        get = function() return db().numpadNumLock end,
+        set = function(value) db().numpadNumLock = value end,
+        isEnabled = NumpadOn,
+    })
+
+    panel:Finalize({
+        onDefaults = ResetNumpad,
+        defaultsTooltip = "Reset the numpad options on this page. The command card's own options are left alone.",
+    })
 end
 
 -- Set when a bag button update is skipped due to combat lockdown; applied on
@@ -396,6 +517,7 @@ end
 local function OnAwake()
     CreateOptionsPanel()
     CreateButtonsPanel()
+    CreateNumpadPanel()
     Commander.AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, OnUpdate)
 end
 

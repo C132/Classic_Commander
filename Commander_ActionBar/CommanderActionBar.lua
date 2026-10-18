@@ -12,6 +12,11 @@ local loaded = false
 local inCombat = false
 
 local backdrop
+-- The optional numpad card and its buttons (see "Numpad card" below). Declared
+-- up here because the bag, pet-bar, framing and fade passes all read them.
+local numpadCard
+local numpadButtons = {}   -- every numpad button ever created, in NUMPAD_KEY_ORDER
+local numpadByKey = {}     -- binding key name -> button
 -- Set when a layout pass is skipped due to combat lockdown; applied on PLAYER_REGEN_ENABLED
 local pendingUpdate = false
 
@@ -131,6 +136,135 @@ local function ReleaseFromPositionManager(frame)
     end
 end
 
+-- ---------------------------------------------------------------------------
+-- Numpad card: the data
+--
+-- An optional second command card shaped like a numeric keypad, sitting beside
+-- the grid. Its buttons draw on action slots the grid does not page, and while
+-- it is shown each one is bound to the numpad key it mirrors, so the keypad
+-- becomes a second bank of binds next to the grid's.
+--
+-- Cells are on a 4-wide, 5-tall keypad; w/h are spans (0 is two cells wide,
+-- + two tall on the standard pad). A spanning key stays a square button,
+-- centered in its span the way the keycap is.
+--
+-- ENTER is absent from both pads on purpose. The client has no NUMPADENTER:
+-- the key names in the binary run NUMPAD0-9, PLUS, MINUS, MULTIPLY, DIVIDE,
+-- DECIMAL and EQUALS, so the keypad's Enter IS the main Enter, and binding it
+-- would take the chat box away. Its cells are left empty.
+-- ---------------------------------------------------------------------------
+local NUMPAD_COLS, NUMPAD_ROWS = 4, 5
+
+local NUMPAD_LAYOUTS = {
+    -- The conventional (PC) keypad
+    STANDARD = {
+        { key = "NUMLOCK", col = 1, row = 1 },
+        { key = "NUMPADDIVIDE", col = 2, row = 1 },
+        { key = "NUMPADMULTIPLY", col = 3, row = 1 },
+        { key = "NUMPADMINUS", col = 4, row = 1 },
+        { key = "NUMPAD7", col = 1, row = 2 },
+        { key = "NUMPAD8", col = 2, row = 2 },
+        { key = "NUMPAD9", col = 3, row = 2 },
+        { key = "NUMPADPLUS", col = 4, row = 2, h = 2 },
+        { key = "NUMPAD4", col = 1, row = 3 },
+        { key = "NUMPAD5", col = 2, row = 3 },
+        { key = "NUMPAD6", col = 3, row = 3 },
+        { key = "NUMPAD1", col = 1, row = 4 },
+        { key = "NUMPAD2", col = 2, row = 4 },
+        { key = "NUMPAD3", col = 3, row = 4 },
+        { key = "NUMPAD0", col = 1, row = 5, w = 2 },
+        { key = "NUMPADDECIMAL", col = 3, row = 5 },
+    },
+    -- Apple's extended keypad: Clear where Num Lock is (same key to the
+    -- client), an = key, and the operators shifted one cell right
+    APPLE = {
+        { key = "NUMLOCK", col = 1, row = 1, label = "Clr" },
+        { key = "NUMPADEQUALS", col = 2, row = 1 },
+        { key = "NUMPADDIVIDE", col = 3, row = 1 },
+        { key = "NUMPADMULTIPLY", col = 4, row = 1 },
+        { key = "NUMPAD7", col = 1, row = 2 },
+        { key = "NUMPAD8", col = 2, row = 2 },
+        { key = "NUMPAD9", col = 3, row = 2 },
+        { key = "NUMPADMINUS", col = 4, row = 2 },
+        { key = "NUMPAD4", col = 1, row = 3 },
+        { key = "NUMPAD5", col = 2, row = 3 },
+        { key = "NUMPAD6", col = 3, row = 3 },
+        { key = "NUMPADPLUS", col = 4, row = 3 },
+        { key = "NUMPAD1", col = 1, row = 4 },
+        { key = "NUMPAD2", col = 2, row = 4 },
+        { key = "NUMPAD3", col = 3, row = 4 },
+        { key = "NUMPAD0", col = 1, row = 5, w = 2 },
+        { key = "NUMPADDECIMAL", col = 3, row = 5 },
+    },
+}
+
+-- What each key is: its cap label and which slot it takes. Fixed per KEY, not
+-- per cell, so switching pads never moves an action from one key to another.
+-- The twelve number-block keys fill one whole bar; the operators take the
+-- first five slots of a second bar.
+local NUMPAD_KEYS = {
+    NUMPAD1 = { label = "1", block = "digits", index = 1 },
+    NUMPAD2 = { label = "2", block = "digits", index = 2 },
+    NUMPAD3 = { label = "3", block = "digits", index = 3 },
+    NUMPAD4 = { label = "4", block = "digits", index = 4 },
+    NUMPAD5 = { label = "5", block = "digits", index = 5 },
+    NUMPAD6 = { label = "6", block = "digits", index = 6 },
+    NUMPAD7 = { label = "7", block = "digits", index = 7 },
+    NUMPAD8 = { label = "8", block = "digits", index = 8 },
+    NUMPAD9 = { label = "9", block = "digits", index = 9 },
+    NUMPAD0 = { label = "0", block = "digits", index = 10 },
+    NUMPADDECIMAL = { label = ".", block = "digits", index = 11 },
+    NUMPADPLUS = { label = "+", block = "digits", index = 12 },
+    NUMPADDIVIDE = { label = "/", block = "ops", index = 1 },
+    NUMPADMULTIPLY = { label = "*", block = "ops", index = 2 },
+    NUMPADMINUS = { label = "-", block = "ops", index = 3 },
+    NUMPADEQUALS = { label = "=", block = "ops", index = 4 },
+    NUMLOCK = { label = "Num", block = "ops", index = 5 },
+}
+-- Creation order, so button names and the bind list come out the same every session
+local NUMPAD_KEY_ORDER = {
+    "NUMPAD1", "NUMPAD2", "NUMPAD3", "NUMPAD4", "NUMPAD5", "NUMPAD6",
+    "NUMPAD7", "NUMPAD8", "NUMPAD9", "NUMPAD0", "NUMPADDECIMAL", "NUMPADPLUS",
+    "NUMPADDIVIDE", "NUMPADMULTIPLY", "NUMPADMINUS", "NUMPADEQUALS", "NUMLOCK",
+}
+
+-- The Blizzard bars a numpad block can take: whole bars only, and never the
+-- grid's own (the main bar and the bottom-left bar). Action Page 2 is the main
+-- bar's second page, which only shows when the main bar is paged.
+local NUMPAD_BARS = {
+    BOTTOMRIGHT = { first = 49, frame = "MultiBarBottomRight" },
+    RIGHT = { first = 25, frame = "MultiBarRight" },
+    LEFT = { first = 37, frame = "MultiBarLeft" },
+    PAGE2 = { first = 13 },
+}
+local NUMPAD_BAR_DEFAULTS = { digits = "BOTTOMRIGHT", ops = "LEFT" }
+
+local function NumpadBar(block)
+    local key = (block == "digits") and DB().numpadDigitsBar or DB().numpadOpsBar
+    return NUMPAD_BARS[key] or NUMPAD_BARS[NUMPAD_BAR_DEFAULTS[block]]
+end
+
+local function NumpadSlot(key)
+    local spec = NUMPAD_KEYS[key]
+    return NumpadBar(spec.block).first + spec.index - 1
+end
+
+local function NumpadLayout()
+    return NUMPAD_LAYOUTS[DB().numpadLayout] or NUMPAD_LAYOUTS.STANDARD
+end
+
+-- Num Lock is opt-in: it is Autorun in the default bindings
+local function NumpadKeyUsed(key)
+    return key ~= "NUMLOCK" or DB().numpadNumLock and true or false
+end
+
+-- Is the numpad up and docked on this side of the grid? The satellites that
+-- sit "beside the card" (bags right, pet bar left) move out past it.
+local function NumpadAttached(side)
+    return numpadCard ~= nil and numpadCard:IsShown() and DB().numpadEnabled
+        and (DB().numpadAnchor or "RIGHT") == side
+end
+
 local function ApplyMicroMenu()
     if DB().showMicroMenu then
         local previous
@@ -184,7 +318,9 @@ local function ApplyBagButtons()
                 if mode == "BOTTOMLEFT" then
                     SetAnchor(bagButton, "BOTTOMLEFT", UIParent, "BOTTOMLEFT", 300 + slide, 8 + step)
                 elseif mode == "CARD" and backdrop then
-                    SetAnchor(bagButton, "BOTTOMLEFT", backdrop, "BOTTOMRIGHT", 6 + slide, 4 + step)
+                    -- Beside the whole console: past the numpad when it is docked on the right
+                    local card = NumpadAttached("RIGHT") and numpadCard or backdrop
+                    SetAnchor(bagButton, "BOTTOMLEFT", card, "BOTTOMRIGHT", 6 + slide, 4 + step)
                 else
                     SetAnchor(bagButton, "BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -300 - slide, 8 + step)
                 end
@@ -225,6 +361,13 @@ local function BarIsGridOwned(name)
     end
     return false  -- the bottom-right bar is never folded into the grid
 end
+-- The bar whose twelve slots the numpad's number keys took. Its actions now
+-- live on the numpad, so its own buttons would only show them a second time.
+-- The operator bar is NOT folded: the numpad uses five of its twelve slots.
+local function BarIsNumpadOwned(name)
+    if not DB().numpadEnabled then return false end
+    return NumpadBar("digits").frame == name
+end
 local function ApplyExtraBars()
     local hide = (DB().extraBars == "HIDDEN")
     for _, name in ipairs(EXTRA_BARS) do
@@ -235,7 +378,7 @@ local function ApplyExtraBars()
             if bar.__cmdOrigParent == nil then
                 bar.__cmdOrigParent = bar:GetParent() or UIParent
             end
-            if hide and not gridOwned then
+            if (hide or BarIsNumpadOwned(name)) and not gridOwned then
                 if bar:GetParent() ~= hiddenHolder then
                     bar:SetParent(hiddenHolder)
                 end
@@ -310,23 +453,30 @@ local function BorderColor()
     return rgb[1], rgb[2], rgb[3]
 end
 
-local function ApplyCardStyle()
-    if not backdrop then return end
-    local style = CARD_STYLES[DB().cardStyle or "CLASSIC"]
-    if backdrop._appliedStyle ~= (DB().cardStyle or "CLASSIC") then
-        backdrop._appliedStyle = DB().cardStyle or "CLASSIC"
-        backdrop:SetBackdrop(style)  -- nil clears for NONE
+-- One framing for both cards, so the numpad reads as the grid's other half
+local function StyleCard(card)
+    if not card then return end
+    local key = DB().cardStyle or "CLASSIC"
+    local style = CARD_STYLES[key]
+    if card._appliedStyle ~= key then
+        card._appliedStyle = key
+        card:SetBackdrop(style)  -- nil clears for NONE
     end
     if style then
         local opacity = DB().cardOpacity or 1
-        if backdrop._appliedStyle == "DARK" then
-            backdrop:SetBackdropColor(0, 0, 0, 0.7 * opacity)
+        if key == "DARK" then
+            card:SetBackdropColor(0, 0, 0, 0.7 * opacity)
         else
-            backdrop:SetBackdropColor(0.5, 0.5, 0.5, opacity)
+            card:SetBackdropColor(0.5, 0.5, 0.5, opacity)
         end
         local r, g, b = BorderColor()
-        backdrop:SetBackdropBorderColor(r, g, b, opacity)
+        card:SetBackdropBorderColor(r, g, b, opacity)
     end
+end
+
+local function ApplyCardStyle()
+    StyleCard(backdrop)
+    StyleCard(numpadCard)
 end
 
 -- Is the cursor carrying something a slot could take? Placing an icon is a
@@ -338,6 +488,13 @@ local function CursorHoldsAction()
 end
 
 local function SetLockState()
+    -- The card is in the protected buttons' anchor family (see ApplyLayering),
+    -- so EnableMouse on it is a protected call in combat: a settings change
+    -- mid-fight defers this with the rest of the layout
+    if InCombatLockdown() then
+        pendingUpdate = true
+        return
+    end
     if not DB().locked then
         backdrop:SetMovable(true)
         backdrop:EnableMouse(true)
@@ -422,6 +579,19 @@ local PUSHED_COLORS = {
     GREEN = { 0.3, 1, 0.4, 0.3 },
     RED = { 1, 0.25, 0.2, 0.35 },
 }
+
+-- r, g, b, a of the press flash, or nil for an unknown setting
+local function PushedColor()
+    local flashKey = DB().pushedFlash or "CYAN"
+    if flashKey == "CLASS" and Commander.GetClassInfo then
+        local c = Commander.GetClassInfo().color
+        return c[1], c[2], c[3], 0.35
+    end
+    local flash = PUSHED_COLORS[flashKey]
+    if flash then
+        return flash[1], flash[2], flash[3], flash[4]
+    end
+end
 
 -- Keep a button's art tracking its size. Classic action buttons draw their
 -- slot border (the NormalTexture, UI-Quickslot2) at a FIXED ~66px anchored by
@@ -572,6 +742,18 @@ local function ApplyLayering()
     if backdrop:GetFrameLevel() ~= level then
         backdrop:SetFrameLevel(level)
     end
+    -- The numpad stacks with the grid card. Its buttons are its own children,
+    -- so they ride one level above it with no floor to clear; the console
+    -- clearance above is the part it needs. Same combat rule: the card parents
+    -- secure buttons, so restacking it is protected (deferred at the top).
+    if numpadCard then
+        if numpadCard:GetFrameStrata() ~= stratumName then
+            numpadCard:SetFrameStrata(stratumName)
+        end
+        if numpadCard:GetFrameLevel() ~= level then
+            numpadCard:SetFrameLevel(level)
+        end
+    end
 end
 
 local function MoveActionButtons()
@@ -623,17 +805,9 @@ local function MoveActionButtons()
             button:SetPoint("TOPLEFT", backdrop, "TOPLEFT", xOffset, -yOffset)
             button:Show()
             local pushedTexture = button:GetPushedTexture()
-            if pushedTexture then
-                local flashKey = DB().pushedFlash or "CYAN"
-                if flashKey == "CLASS" and Commander.GetClassInfo then
-                    local c = Commander.GetClassInfo().color
-                    pushedTexture:SetColorTexture(c[1], c[2], c[3], 0.35)
-                else
-                    local flash = PUSHED_COLORS[flashKey]
-                    if flash then
-                        pushedTexture:SetColorTexture(flash[1], flash[2], flash[3], flash[4])
-                    end
-                end
+            local r, g, b, a = PushedColor()
+            if pushedTexture and r then
+                pushedTexture:SetColorTexture(r, g, b, a)
             end
         end
     end
@@ -672,7 +846,9 @@ local function MovePetBar()
     -- SetScale *after* ours multiplied our offsets by 1/scale.
     SetScaleIfNeeded(PetActionBar, DB().petBarScale or 0.7)
     if mode == "LEFT" then
-        SetAnchor(PetActionBar, "RIGHT", backdrop, "LEFT", -6, 0)
+        -- Left of the whole console: past the numpad when it is docked on the left
+        local card = NumpadAttached("LEFT") and numpadCard or backdrop
+        SetAnchor(PetActionBar, "RIGHT", card, "LEFT", -6, 0)
     else
         SetAnchor(PetActionBar, "BOTTOM", backdrop, "TOP", 10, 5)
     end
@@ -735,6 +911,127 @@ local function AbbreviateHotkey(text)
     return text
 end
 
+-- The numpad's key-cap label for one of its buttons, or nil while the keys are
+-- not bound -- then the button keeps whatever Blizzard's own hotkey logic shows,
+-- because a "7" on a button the 7 key does not press is a lie.
+local function NumpadLabel(button)
+    if not (DB().numpadBindKeys and DB().numpadEnabled) then return nil end
+    return button.__cmdLabel
+end
+
+-- One button's per-tick cosmetics. The grid's buttons and the numpad's share
+-- every rule; the numpad's hotkey shows its key cap rather than the binding
+-- text, since the cap IS the binding there.
+local function StyleButton(button, db, now, placing, isNumpad)
+    local name = button:GetName()
+    -- Macro name and hotkey text
+    local macroText = button.Name or (name and _G[name .. "Name"])
+    if macroText then
+        macroText:SetShown(not db.hideMacroText)
+    end
+    local hotkey = button.HotKey or (name and _G[name .. "HotKey"])
+    local keyLabel = isNumpad and NumpadLabel(button)
+    if hotkey then
+        if db.hideHotkeys then
+            hotkey:Hide()
+        elseif keyLabel then
+            if hotkey:GetText() ~= keyLabel then
+                hotkey:SetText(keyLabel)
+            end
+            hotkey:Show()
+        elseif not isNumpad then
+            -- An unbound numpad key is left to Blizzard, which shows its
+            -- hotkey only as the range dot, and only when range applies
+            hotkey:Show()
+            if db.abbrevHotkeys then
+                local current = hotkey:GetText()
+                local shortened = AbbreviateHotkey(current)
+                if shortened ~= current then
+                    hotkey:SetText(shortened)
+                end
+            end
+        end
+    end
+
+    local slot = button.action
+    local icon = button.icon or (name and _G[name .. "Icon"])
+    -- Empty slot fading
+    local hasAction = slot and HasAction and HasAction(slot)
+    if db.hideEmptySlots and slot and HasAction then
+        button:SetAlpha((hasAction or placing) and 1 or 0.15)
+    end
+
+    -- Range / mana tinting, restored to white when off or fine
+    if icon and slot then
+        local r, g, b = 1, 1, 1
+        if hasAction then
+            if db.manaTint and IsUsableAction then
+                local usable, noMana = IsUsableAction(slot)
+                if noMana then
+                    r, g, b = 0.35, 0.5, 1
+                elseif not usable then
+                    r, g, b = 0.45, 0.45, 0.45
+                end
+            end
+            if db.rangeTint and IsActionInRange and IsActionInRange(slot) == false then
+                r, g, b = 1, 0.3, 0.25
+            end
+        end
+        icon:SetVertexColor(r, g, b)
+    end
+
+    -- Icon recess, from the suite's shared art. These are BLIZZARD's
+    -- icon textures, so the shading is created in manual mode -- its
+    -- visibility is driven from here rather than by wrapping a
+    -- Blizzard texture's Show/Hide, which would put addon code inside
+    -- an action button's own paths. Re-created only when the setting
+    -- actually changes; this loop runs on a throttle, not once.
+    if icon and Commander.DebossIcon then
+        local recess = db.iconRecess or "SOFT"
+        if button.__cmdRecess ~= recess then
+            button.__cmdRecess = recess
+            button.__cmdShade = Commander.DebossIcon(
+                icon, recess ~= "OFF" and recess or nil, false, true)
+        end
+        local shade = button.__cmdShade
+        if shade then
+            shade:SetShown(recess ~= "OFF" and icon:IsShown() and true or false)
+        end
+    end
+
+    -- Cooldown countdown text + ready flash
+    if slot and GetActionCooldown then
+        local start, duration = GetActionCooldown(slot)
+        local remaining = (start and duration and duration > 1.5)
+            and (start + duration - now) or 0
+        if db.cooldownText and remaining > 0 then
+            local text = CooldownTextFor(button)
+            -- Signed key (-minutes vs +seconds) is bijective with
+            -- the displayed string, so unchanged ticks skip both
+            -- the format allocation and the SetText relayout
+            local key = remaining >= 60 and -math.ceil(remaining / 60)
+                or math.ceil(remaining)
+            if text._last ~= key then
+                text._last = key
+                text:SetText(FormatCooldown(remaining))
+            end
+            text:Show()
+        elseif cooldownTexts[button] then
+            cooldownTexts[button]:Hide()
+        end
+        if db.readyFlash then
+            if remaining > 0.5 then
+                readyAt[button] = true
+            elseif readyAt[button] and remaining <= 0 then
+                readyAt[button] = nil
+                local flash = FlashFor(button)
+                flash:Show()
+                C_Timer.After(0.35, flash._hide)
+            end
+        end
+    end
+end
+
 local function ApplyButtonCosmetics()
     local db = DB()
     local now = GetTime()
@@ -745,106 +1042,11 @@ local function ApplyButtonCosmetics()
     -- at it. Hold every slot at full alpha for as long as the cursor is armed.
     local placing = CursorHoldsAction()
     for _, button in ipairs(managedButtons) do
-        if button then
-            local name = button:GetName()
-            -- Macro name and hotkey text
-            local macroText = button.Name or (name and _G[name .. "Name"])
-            if macroText then
-                macroText:SetShown(not db.hideMacroText)
-            end
-            local hotkey = button.HotKey or (name and _G[name .. "HotKey"])
-            if hotkey then
-                if db.hideHotkeys then
-                    hotkey:Hide()
-                else
-                    hotkey:Show()
-                    if db.abbrevHotkeys then
-                        local current = hotkey:GetText()
-                        local shortened = AbbreviateHotkey(current)
-                        if shortened ~= current then
-                            hotkey:SetText(shortened)
-                        end
-                    end
-                end
-            end
-
-            local slot = button.action
-            local icon = button.icon or (name and _G[name .. "Icon"])
-            -- Empty slot fading
-            local hasAction = slot and HasAction and HasAction(slot)
-            if db.hideEmptySlots and slot and HasAction then
-                button:SetAlpha((hasAction or placing) and 1 or 0.15)
-            end
-
-            -- Range / mana tinting, restored to white when off or fine
-            if icon and slot then
-                local r, g, b = 1, 1, 1
-                if hasAction then
-                    if db.manaTint and IsUsableAction then
-                        local usable, noMana = IsUsableAction(slot)
-                        if noMana then
-                            r, g, b = 0.35, 0.5, 1
-                        elseif not usable then
-                            r, g, b = 0.45, 0.45, 0.45
-                        end
-                    end
-                    if db.rangeTint and IsActionInRange and IsActionInRange(slot) == false then
-                        r, g, b = 1, 0.3, 0.25
-                    end
-                end
-                icon:SetVertexColor(r, g, b)
-            end
-
-            -- Icon recess, from the suite's shared art. These are BLIZZARD's
-            -- icon textures, so the shading is created in manual mode -- its
-            -- visibility is driven from here rather than by wrapping a
-            -- Blizzard texture's Show/Hide, which would put addon code inside
-            -- an action button's own paths. Re-created only when the setting
-            -- actually changes; this loop runs on a throttle, not once.
-            if icon and Commander.DebossIcon then
-                local recess = db.iconRecess or "SOFT"
-                if button.__cmdRecess ~= recess then
-                    button.__cmdRecess = recess
-                    button.__cmdShade = Commander.DebossIcon(
-                        icon, recess ~= "OFF" and recess or nil, false, true)
-                end
-                local shade = button.__cmdShade
-                if shade then
-                    shade:SetShown(recess ~= "OFF" and icon:IsShown() and true or false)
-                end
-            end
-
-            -- Cooldown countdown text + ready flash
-            if slot and GetActionCooldown then
-                local start, duration = GetActionCooldown(slot)
-                local remaining = (start and duration and duration > 1.5)
-                    and (start + duration - now) or 0
-                if db.cooldownText and remaining > 0 then
-                    local text = CooldownTextFor(button)
-                    -- Signed key (-minutes vs +seconds) is bijective with
-                    -- the displayed string, so unchanged ticks skip both
-                    -- the format allocation and the SetText relayout
-                    local key = remaining >= 60 and -math.ceil(remaining / 60)
-                        or math.ceil(remaining)
-                    if text._last ~= key then
-                        text._last = key
-                        text:SetText(FormatCooldown(remaining))
-                    end
-                    text:Show()
-                elseif cooldownTexts[button] then
-                    cooldownTexts[button]:Hide()
-                end
-                if db.readyFlash then
-                    if remaining > 0.5 then
-                        readyAt[button] = true
-                    elseif readyAt[button] and remaining <= 0 then
-                        readyAt[button] = nil
-                        local flash = FlashFor(button)
-                        flash:Show()
-                        C_Timer.After(0.35, flash._hide)
-                    end
-                end
-            end
+        if button then StyleButton(button, db, now, placing, false) end
+    end
+    if numpadCard and numpadCard:IsShown() then
+        for _, button in ipairs(numpadButtons) do
+            if button:IsShown() then StyleButton(button, db, now, placing, true) end
         end
     end
 end
@@ -854,10 +1056,13 @@ end
 local function ApplyFade()
     if not backdrop then return end
     local db = DB()
+    local numpadUp = numpadCard ~= nil and numpadCard:IsShown()
     local alpha = 1
     if db.oocFade and not inCombat then
         alpha = db.fadeOpacity or 0.4
-        if db.mouseoverReveal and MouseIsOver and MouseIsOver(backdrop) then
+        -- The two cards are one console: hovering either one wakes both
+        if db.mouseoverReveal and MouseIsOver
+            and (MouseIsOver(backdrop) or (numpadUp and MouseIsOver(numpadCard))) then
             alpha = 1
         end
     end
@@ -871,6 +1076,278 @@ local function ApplyFade()
                 and button.action and HasAction and not HasAction(button.action))
                 and math.min(alpha, 0.15) or alpha)
         end
+    end
+    if numpadUp then
+        -- The numpad's buttons are its children, so its alpha already reaches
+        -- them; theirs is relative. Dimmed, a slot lands where a grid slot does.
+        numpadCard:SetAlpha(alpha)
+        local dim = alpha > 0 and math.min(1, 0.15 / alpha) or 1
+        for _, button in ipairs(numpadButtons) do
+            if button:IsShown() then
+                button:SetAlpha((db.hideEmptySlots and not placing
+                    and button.action and HasAction and not HasAction(button.action))
+                    and dim or 1)
+            end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Numpad card: the frames (data at "Numpad card: the data" up top)
+--
+-- Each key is TWO secure buttons, because one cannot do both jobs:
+--
+--   * the face is an ActionBarButtonTemplate button -- Blizzard's own action
+--     button, so icon, cooldown, count, usable/range tint, checked state,
+--     tooltip, drag-off and drop-on all come with it, driven by the `action`
+--     attribute (an ID-0 button reads its slot from there, see
+--     SecureActionButtonMixin:CalculateAction);
+--   * the key is a bare SecureActionButtonTemplate proxy, and the binding
+--     clicks THAT. A key bound straight to the face would cast on key UP no
+--     matter what: the template's OnClick hands SecureActionButton_OnClick
+--     isSecureAction with no isKeyPress, which reads as a mouse press and
+--     ignores ActionButtonUseKeyDown. The bare template's OnClick passes
+--     neither flag, so the proxy honours the CVar like Blizzard's own binds.
+--
+-- Everything here is protected once the buttons exist (the card parents
+-- them), so it is all built, moved and bound out of combat only, deferring
+-- through pendingUpdate like the grid. The card is only created the first
+-- time the numpad is switched on: nobody who never uses it carries 34 secure
+-- buttons around.
+-- ---------------------------------------------------------------------------
+local NUMPAD_GAP = 2   -- between the docked numpad and the grid card
+
+-- A plain frame owns the override bindings: never protected, never hidden
+local numpadBindOwner = CreateFrame("Frame")
+local appliedNumpadBinds = ""   -- signature of the keys bound right now
+
+-- The numpad's hotkey shows its cap. Blizzard's UpdateHotkeys runs on every
+-- UPDATE_BINDINGS and blanks it -- an ID-0 button has no binding command of
+-- its own to find -- so put the cap straight back. A post-hook on our own
+-- button: Blizzard's code runs untouched first.
+local function RelabelNumpadButton(button)
+    local label = NumpadLabel(button)
+    local hotkey = button.HotKey
+    if not (label and hotkey) or DB().hideHotkeys then return end
+    if hotkey:GetText() ~= label then hotkey:SetText(label) end
+    hotkey:Show()
+end
+
+-- The face's own pushed state only answers the mouse; this overlay answers
+-- the key, lit by the proxy's PostClick (down = pressed, up = released).
+-- A texture, so it is free to show and hide mid-fight.
+local function NumpadPressFor(button)
+    local press = button.__cmdPress
+    if not press then
+        press = button:CreateTexture(nil, "OVERLAY")
+        press:SetAllPoints(button)
+        press:Hide()
+        button.__cmdPress = press
+    end
+    return press
+end
+
+local function CreateNumpadButton(key)
+    local name = "CommanderNumpadButton" .. (key:gsub("^NUMPAD", ""))
+    local button = CreateFrame("CheckButton", name, numpadCard, "ActionBarButtonTemplate")
+    button.__cmdKey = key
+    -- Same attributes Blizzard puts on its action buttons, so self-cast,
+    -- focus-cast and mouseover modifiers behave identically from the key.
+    -- Not its "typerelease": that is retail press-and-hold, and the
+    -- ReleaseAction it calls is not in this client's binary.
+    local proxy = CreateFrame("Button", name .. "Key", button, "SecureActionButtonTemplate")
+    proxy:SetAttribute("type", "action")
+    proxy:SetAttribute("checkselfcast", true)
+    proxy:SetAttribute("checkfocuscast", true)
+    proxy:SetAttribute("checkmouseovercast", true)
+    -- Both phases: the secure gate fires on exactly one of them, per the CVar
+    proxy:RegisterForClicks("AnyDown", "AnyUp")
+    -- Never in the mouse's way: it exists to be clicked by the binding only
+    proxy:EnableMouse(false)
+    proxy:SetSize(1, 1)
+    proxy:SetPoint("CENTER", button, "CENTER", 0, 0)
+    proxy:HookScript("PostClick", function(_, _, down)
+        NumpadPressFor(button):SetShown(down and true or false)
+    end)
+    button.__cmdProxy = proxy
+    hooksecurefunc(button, "UpdateHotkeys", RelabelNumpadButton)
+    numpadButtons[#numpadButtons + 1] = button
+    numpadByKey[key] = button
+    return button
+end
+
+local function SetNumpadLockState()
+    -- Draggable only when it is free-standing; docked, it moves with the grid
+    local free = not DB().locked and DB().numpadAnchor == "FREE"
+    if numpadCard:IsMouseEnabled() ~= free then
+        numpadCard:EnableMouse(free)
+    end
+end
+
+local function EnsureNumpad()
+    if numpadCard then return numpadCard end
+    -- CreateFrame from a secure template runs its OnLoad under our taint, and
+    -- that OnLoad sets attributes: illegal on a secure frame in combat
+    if InCombatLockdown() then
+        pendingUpdate = true
+        return nil
+    end
+    numpadCard = CreateFrame("Frame", "CommanderActionBarNumpad", UIParent, "BackdropTemplate")
+    numpadCard:SetSize(1, 1)
+    numpadCard:SetClampedToScreen(true)
+    numpadCard:SetMovable(true)
+    numpadCard:EnableMouse(false)
+    numpadCard:RegisterForDrag("LeftButton")
+    -- Same drop guard as the grid card: with an icon on the cursor the drag is
+    -- a drop in progress, not a move
+    numpadCard:SetScript("OnDragStart", function(self)
+        if DB().locked or DB().numpadAnchor ~= "FREE"
+            or CursorHoldsAction() or InCombatLockdown() then return end
+        self.__cmdMoving = true
+        self:StartMoving()
+    end)
+    numpadCard:SetScript("OnDragStop", function(self)
+        if not self.__cmdMoving then return end
+        self.__cmdMoving = nil
+        self:StopMovingOrSizing()
+        local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
+        DB().numpadPosition = { point = point, relativePoint = relativePoint, xOfs = xOfs, yOfs = yOfs }
+        Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    end)
+    for _, key in ipairs(NUMPAD_KEY_ORDER) do
+        CreateNumpadButton(key)
+    end
+    return numpadCard
+end
+
+local function AnchorNumpad()
+    local mode = DB().numpadAnchor or "RIGHT"
+    if mode == "FREE" or not backdrop then
+        local pos = DB().numpadPosition
+        if pos and pos.point then
+            SetAnchor(numpadCard, pos.point, UIParent, pos.relativePoint or pos.point,
+                pos.xOfs or 0, pos.yOfs or 0)
+        else
+            SetAnchor(numpadCard, "CENTER", UIParent, "CENTER", 320, 0)
+        end
+    elseif mode == "LEFT" then
+        -- Bottoms level with the grid's: the numpad is a row taller, and the
+        -- two read as one console when they share a baseline
+        SetAnchor(numpadCard, "BOTTOMRIGHT", backdrop, "BOTTOMLEFT", -NUMPAD_GAP, 0)
+    else
+        SetAnchor(numpadCard, "BOTTOMLEFT", backdrop, "BOTTOMRIGHT", NUMPAD_GAP, 0)
+    end
+end
+
+local function LayoutNumpad()
+    local db = DB()
+    if not db.numpadEnabled then
+        if numpadCard and numpadCard:IsShown() then
+            if InCombatLockdown() then
+                pendingUpdate = true
+                return
+            end
+            numpadCard:Hide()
+        end
+        return
+    end
+    if InCombatLockdown() then
+        pendingUpdate = true
+        return
+    end
+    if not EnsureNumpad() then return end
+
+    -- The grid's measurements, so a numpad key is the size of a grid key and
+    -- the two cards share a pitch
+    local size = db.buttonSize or 32
+    local spacing = db.buttonSpacing or 10
+    local pad = db.gridPadding or 14
+    local cell = size + spacing
+    SetScaleIfNeeded(numpadCard, db.cardScale or 1)
+    numpadCard:SetSize(
+        NUMPAD_COLS * cell - spacing + pad * 2,
+        NUMPAD_ROWS * cell - spacing + pad * 2)
+
+    local placed = {}
+    for _, entry in ipairs(NumpadLayout()) do
+        if NumpadKeyUsed(entry.key) then placed[entry.key] = entry end
+    end
+    local r, g, b, a = PushedColor()
+    for _, button in ipairs(numpadButtons) do
+        local key = button.__cmdKey
+        local entry = placed[key]
+        if entry then
+            button.__cmdLabel = entry.label or NUMPAD_KEYS[key].label
+            local slot = NumpadSlot(key)
+            if button:GetAttribute("action") ~= slot then
+                button:SetAttribute("action", slot)
+            end
+            local proxy = button.__cmdProxy
+            if proxy:GetAttribute("action") ~= slot then
+                proxy:SetAttribute("action", slot)
+            end
+            if button.__cmdNativeSize == nil then
+                local w = (button.GetWidth and button:GetWidth()) or 0
+                button.__cmdNativeSize = (w > 0) and w or 36
+            end
+            button:SetSize(size, size)
+            NormalizeButtonArt(button, size)
+            -- A spanning key sits centered in its span, like the keycap
+            local x = pad + (entry.col - 1) * cell + ((entry.w or 1) - 1) * cell / 2
+            local y = pad + (entry.row - 1) * cell + ((entry.h or 1) - 1) * cell / 2
+            SetAnchor(button, "TOPLEFT", numpadCard, "TOPLEFT", x, -y)
+            local pushed = button:GetPushedTexture()
+            local press = NumpadPressFor(button)
+            if r then
+                if pushed then pushed:SetColorTexture(r, g, b, a) end
+                press:SetColorTexture(r, g, b, a)
+            end
+            press:Hide()
+            if not button:IsShown() then button:Show() end
+            RelabelNumpadButton(button)
+        elseif button:IsShown() then
+            button:Hide()
+        end
+    end
+
+    AnchorNumpad()
+    if not numpadCard:IsShown() then numpadCard:Show() end
+    StyleCard(numpadCard)
+    SetNumpadLockState()
+    -- A card built just now has never been stacked
+    ApplyLayering()
+end
+
+-- Bind each shown key to its proxy while the numpad is up, and give every key
+-- back the moment it is not. Override bindings sit on top of the saved set
+-- without touching it: switching the numpad off restores whatever those keys
+-- did before (movement, autorun, your own binds), with nothing to undo.
+-- Protected in combat, so deferred; the signature keeps it from rebinding --
+-- and firing UPDATE_BINDINGS -- when nothing changed.
+local function ApplyNumpadBindings()
+    local db = DB()
+    local keys = {}
+    if db.numpadEnabled and db.numpadBindKeys and numpadCard then
+        for _, entry in ipairs(NumpadLayout()) do
+            if NumpadKeyUsed(entry.key) then keys[#keys + 1] = entry.key end
+        end
+    end
+    local signature = table.concat(keys, " ")
+    if signature == appliedNumpadBinds then return end
+    if InCombatLockdown() then
+        pendingUpdate = true
+        return
+    end
+    ClearOverrideBindings(numpadBindOwner)
+    for _, key in ipairs(keys) do
+        SetOverrideBindingClick(numpadBindOwner, false, key,
+            numpadByKey[key].__cmdProxy:GetName(), "LeftButton")
+    end
+    appliedNumpadBinds = signature
+    -- Let Blizzard recompute every face's hotkey (blank on an unbound one),
+    -- then the post-hook lays the cap back on the bound ones
+    for _, button in ipairs(numpadButtons) do
+        button:UpdateHotkeys(button.buttonType)
     end
 end
 
@@ -921,6 +1398,8 @@ local function OnSettingsUpdate()
     end
     ApplyPosition()
     MoveActionButtons()
+    LayoutNumpad()
+    ApplyNumpadBindings()
     ApplyCardStyle()
     OnUpdate()
 end
@@ -928,6 +1407,8 @@ end
 local function OnAwake()
     CreateRTSBackdrop()
     MoveActionButtons()
+    LayoutNumpad()
+    ApplyNumpadBindings()
     frame:SetScript("OnUpdate", OnUpdateThrottled)
     Commander.AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, OnSettingsUpdate)
 end
@@ -948,8 +1429,11 @@ local function OnEvent(self, event)
         -- Apply any layout work that was deferred during combat lockdown
         if loaded and pendingUpdate then
             pendingUpdate = false
+            SetLockState()
             ApplyPosition()
             MoveActionButtons()
+            LayoutNumpad()
+            ApplyNumpadBindings()
             OnUpdate()
         end
     elseif loaded then
@@ -989,6 +1473,8 @@ do
         "PetActionBar",
         "MainActionBar", "MultiBarBottomLeft",
         "ActionButton1", "MultiBarBottomLeftButton1",
+        -- The numpad card and one of its keys, when it has been switched on
+        "CommanderActionBarNumpad", "CommanderNumpadButton7",
     }
     local HOOK_METHODS = {
         "SetPoint", "ClearAllPoints", "SetParent", "SetScale",
