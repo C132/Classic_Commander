@@ -81,6 +81,12 @@ allow [[
 UnitFactionGroup GetFactionInfoByID
 ]]
 
+-- The modifier keys: a Go button's Shift / Ctrl, and a reagent row's
+-- Ctrl+Right-click (CommanderTradecraft.lua's Waypoints section, 3.1)
+allow [[
+IsShiftKeyDown IsControlKeyDown
+]]
+
 -- Optional neighbours, read only when present (CommanderOrders: the Go
 -- buttons and Route This Trip, CommanderTradecraft.lua's Waypoints section)
 allow [[

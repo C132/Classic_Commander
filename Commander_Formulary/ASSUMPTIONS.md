@@ -74,3 +74,21 @@ ignored by name, the way Beast Training is on the craft frame.
 
 Symptom if wrong: opening First Aid shows both windows, or the Formulary opens on Enchanting, or
 `/cfm status` on First Aid says "seen in the profession window: 0". Test: open First Aid.
+
+## A10 — The Go buttons behave as Commander Orders' one Go button (1.2.0, D15)
+
+Every Go is `Commander.UI.GoButton` from Commander_Events; a creature inside an instance goes to
+its door through Commander Orders' door table, and "any trainer" through Orders' locator from
+Questie's lists. None of it has run in the client. Test: restart the client (not /reload: Commander
+Events and Commander Orders gained files). Select Enchant Weapon - Mongoose and press Go on
+Moroes: the arrow points at Karazhan's door in Deadwind Pass, titled "Moroes (Karazhan entrance)".
+Select a recipe a trainer would teach you now and press its Go: the nearest Enchanting trainer.
+With First Aid on screen at 225 or more, Ctrl+Right-click the rank readout: the arrow points at the
+Triage giver of your faction. Shift-click a vendor's Go in a group: the readable line lands in party
+chat. No Lua error in BugSack. Select Enchant Chest - Minor Mana: its column of Go buttons sits edge
+to edge, no button's bevel over the next, and the lowest pixels of each Go light that Go, not the
+one under it (D15, 2026-10-05). With Commander Orders turned off (`/corder off`), hover a vendor's
+Go: it is greyed, the red "Commander Orders is turned off (/corder)" is the only word on what a
+press does (no "Prints the coordinates" line), and clicking it prints nothing; `/corder on` after
+(D15, review round 2).
+

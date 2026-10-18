@@ -193,3 +193,58 @@ the wizard in Old Hillsbrad) gets no stop: no arrow can go there. Each stop is t
 and the first recipe bought there ("Lorelae Wintersong: Enchant Cloak - Superior Defense (+1)").
 Asking again replaces the route. Without Orders, the stops' `/way` lines are printed. UI harness B3
 and C8.
+
+## D15 — Every Go is the suite's one Go button; instance creatures go to their door
+
+1.2.0, 2026-10-05 (Commander Orders 3.1). Orders 3.1 made "Go to" one widget and one API for every
+Commander module, and its DECISIONS carry the one words-and-gestures rule every consumer cites (D31):
+"Go" on a row button, "Go to <Thing>" on a standalone one; click Go, Shift-click share the place in
+chat, Ctrl-click copy its `/way` line; a list row with no room for a button takes Ctrl+Right-click
+with `Commander.UI.GoRowHint` in its tooltip. So:
+
+- Every Go in the briefing is a `Commander.UI.GoButton` (pooled with the briefing's other widgets,
+  its options filled afresh at every paint). D14's own `SetWaypoint` and lookup are gone; the
+  success line is Orders' own "Waypoint set: <title> (Zone x, y)", behind Orders' Announce
+  setting. Sources, keys ("place:<name>@<map>"), titles and "takes the arrow" are D14's. A
+  trainer's Go names the TRAINER icon (the navigator's trainer foot used to name none). A Trips
+  route of one stop goes through `CommanderOrders.GoTo` too; the routes are D14's.
+- **Creatures inside an instance go to its door.** The generator now emits `instance = <id>`, the
+  creature's Map.db2 ID (the client's instanceMapID), where it wrote `instance = true`
+  (`make_formulary.py`, `add_npc`); a boss with no spawn row ("(summoned)") keeps `true`. The
+  data was regenerated (Enchanting 113 rows, First Aid 3; nothing else in either file moved; a
+  fresh run on the Quartermaster cache's DB2 CSVs and CMaNGOS dump reproduced the old files byte
+  for byte before the change). Their Go asks Orders' locator for `{ entrance = { instance = id } }`
+  (Orders' shipped door table, then the client's), titled "<creature> (<dungeon> entrance)", key
+  "door:<id>": every creature of one dungeon moves the same waypoint. All 30 instance ids the
+  data names (Shadowfang Keep 33 to Zul'Aman 568) have a door in Orders' table. The critic's first
+  idea, a dungeon NAME through Orders' zone resolver, could not work: the zone index holds zones
+  and continents only, and the names are Map.db2's ("Magister's Terrace", sic).
+- **"Any trainer will teach it now"** has a Go to the nearest trainer of the profession, through
+  the locator (`{ townsfolk = "<Profession> Trainer" }`, "Nearest <profession> trainer").
+- **The next rank.** The rank readout's tooltip already said how the next rank comes (a trainer, a
+  book's vendor, Triage's giver); Ctrl+Right-click on the readout now goes there (key
+  "rank:<profession>"): the first placed vendor or giver of the rank route, else Outland's trainers
+  for a rank only they teach (one waypoint, the arrow on the nearest), else the nearest trainer of
+  any kind. Plain right-click stays nothing and left-click still switches the profession; the
+  tooltip ends with the hint ("Ctrl+Right-click: Go to Doctor Gregory Victor").
+
+The locator Gos need Questie for trainers; the doors do not (Orders ships its door table). Without
+Orders a placed Go prints its `/way` line and a locator Go says it needs Commander Orders. UI
+harness B3b, B4b, B4c and G3b.
+
+The row Go is 18 high and anchored 1 above its row, and a single-line row is only 12 + 3 high, so
+stacked Gos (a formula's vendors and droppers, Outland's trainers) overlapped by 3 px: the lower
+button's bevel covered the upper's edge, and those 3 px clicked the next row's place. Since the
+2026-10-05 review `GoRow` keeps the next row 18 below the row's top (the Quest Log's LINE_GO_H rule):
+the buttons sit edge to edge. A wrapped row is taller than that already and does not move (B7).
+
+**A greyed Go promises no press** (the review's round 2, 2026-10-05). Since Orders turned the
+GoButton's motion scripts on (its D31), a greyed Go shows its tooltip, and the briefing's line read
+"Prints the coordinates and a /way line to chat (Commander Orders is turned off)" above the red "Commander
+Orders is turned off (/corder)"; a door or trainer Go without Orders said it would print above "Needs
+Commander Orders". 2.5.6 delivers no OnClick to a disabled Button, so nothing printed. A briefing Go's
+line is now `GoWords(button)`: nil while Orders is turned off, nil for a locator Go (door, trainer)
+without Orders, and only an enabled Go is worded (the arrow, or a placed Go's `/way` line without
+Orders). D14's "turned off: the place is printed" now holds for the Trips route and Route All Trips
+only (plain buttons, still enabled, whose words stay `WaypointWords`). UI harness B3c and B4d.
+

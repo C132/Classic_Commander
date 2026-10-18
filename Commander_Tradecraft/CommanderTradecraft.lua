@@ -468,8 +468,10 @@ bar.bg:SetTexture("Interface\\Buttons\\WHITE8X8")
 bar.bg:SetVertexColor(0, 0, 0, 0.5)
 
 -- Pools
-local pools = { text = {}, icon = {}, button = {}, hover = {} }
-local used = { text = 0, icon = 0, button = 0, hover = 0 }
+local GoQuery -- a locator Go from a list row (defined with the waypoints below)
+
+local pools = { text = {}, icon = {}, button = {}, hover = {}, go = {} }
+local used = { text = 0, icon = 0, button = 0, hover = 0, go = 0 }
 
 local function ReleaseAll()
     for kind, list in pairs(pools) do
@@ -542,7 +544,11 @@ local function NewButton(text, width, onClick, tooltip)
     return b
 end
 
--- An invisible mouse surface over a row, for its tooltip
+-- An invisible mouse surface over a row, for its tooltip. Pooled, so every
+-- reuse puts back the default left-click: a reagent row registers its
+-- hover for the right button only (Ctrl+Right-click: Go), and a later paint
+-- may hand that same hover to an option row that is clicked with the left
+-- (a Button keeps its click registration until it is changed again)
 local function NewHover()
     used.hover = used.hover + 1
     local h = pools.hover[used.hover]
@@ -552,6 +558,7 @@ local function NewHover()
     end
     h:ClearAllPoints()
     h:SetScript("OnClick", nil)
+    h:RegisterForClicks("LeftButtonUp")
     h:Show()
     return h
 end
@@ -804,13 +811,31 @@ local function ReagentRow(line, alpha)
     rfs:SetJustifyH("RIGHT")
     rfs:SetText(right)
     if alpha then rfs:SetAlpha(alpha) end
-    -- Hover anywhere on the row for the item tooltip
+    -- Hover anywhere on the row for the item tooltip; a reagent the trade
+    -- vendors sell goes to the nearest one on Ctrl+Right-click (Orders 3.1:
+    -- a list row with no room for a button)
     local hover = NewHover()
     hover:SetPoint("TOPLEFT", guide, "TOPLEFT", 8, rowY + 1)
     hover:SetPoint("RIGHT", guide, "RIGHT", 0, 0)
     hover:SetHeight(rowY - y - 1)
+    local item = D.ITEMS[line.id]
+    local sold = item and item.vendor
+    if sold then
+        local id = line.id
+        hover:RegisterForClicks("RightButtonUp")
+        hover:SetScript("OnClick", function(_, button)
+            if button == "RightButton" and IsControlKeyDown and IsControlKeyDown() then
+                GoQuery({ itemVendor = id }, name .. " vendor", "item:" .. id, "VENDOR")
+            end
+        end)
+    end
     AttachTooltip(hover, function(tip)
         tip:SetHyperlink("item:" .. line.id)
+        if sold then
+            tip:AddLine(item.note or "Sold by trade-supply vendors", 0.8, 0.8, 0.8, true)
+            tip:AddLine((Commander.UI and Commander.UI.GoRowHint or "Ctrl+Right-click: Go") .. " to the nearest vendor",
+                0.6, 0.8, 1, true)
+        end
     end)
 end
 
@@ -855,15 +880,26 @@ end
 -- ---------------------------------------------------------------------------
 -- Waypoints: the Commander Orders arrow, else the place and its /way line
 --
--- Commander Orders 3.0 is the suite's navigation; TomTom is gone. A Go
--- button is the player asking for the arrow, so the waypoint takes it, and
--- each place owns ONE waypoint (source "Tradecraft", key "place:<name>@<zone>"),
--- so pressing Go again moves nothing and stacks nothing. It is session only,
--- Orders' default for a consumer: an errand, not a place to keep. With Set
--- Waypoints off, Orders absent, turned off or refusing, or a zone missing
--- from D.ZONES, the place is printed with a /way line (the zone by name when
--- there is no map id: /way reads names too) -- a Go button never does
--- nothing, and the tooltip says which it will be before it is pressed.
+-- Commander Orders is the suite's navigation, and since 3.1 its "Go to" is
+-- one widget and one API for every Commander module (Orders' DECISIONS, the
+-- 3.1 words and gestures entry): each Go here is a Commander.UI.GoButton.
+-- Click goes (CommanderOrders.GoTo: the waypoint takes the arrow, and Orders
+-- says "Waypoint set: ..."), Shift-click shares the place in chat, Ctrl-click
+-- copies its /way line; the button greys out with the reason, and reads
+-- "Going" while the arrow follows it. Each place owns ONE waypoint (source
+-- "Tradecraft", key "place:<name>@<zone>"), so pressing Go again moves
+-- nothing and stacks nothing; it is session only, Orders' default for a
+-- consumer: an errand, not a place to keep. Without Orders a place's Go
+-- prints its /way line; with Set Waypoints off it prints the place and its
+-- /way line instead of going (the option keeps its key, UseWaypoints).
+-- Orders turned off greys every Go, Set Waypoints or not: a greyed Button
+-- gets no click on 2.5.6, so its tooltip promises none (GoWords).
+--
+-- 3.1 adds Gos that Orders' locator answers: "any trainer" goes to the
+-- nearest trainer of the profession ({ townsfolk = "<Profession> Trainer" }),
+-- and a vendor-bought reagent row goes to the nearest vendor of that item on
+-- Ctrl+Right-click ({ itemVendor = id }; a list row has no room for a
+-- button, Commander.UI.GoRowHint says so in its tooltip).
 --
 -- "Route this trip" hands Orders the vendors of every formula the current
 -- trainer bracket still has to buy as ONE nearest-first route (see TripStops).
@@ -875,9 +911,8 @@ local function OrdersApi()
     return nil
 end
 
--- "ORDERS" | "OPTION" (Set Waypoints off) | "OFF" (Orders turned off) | "ABSENT"
-local function WaypointPath()
-    if not db.UseWaypoints then return "OPTION" end
+-- Orders' own state: "ORDERS" | "OFF" (Orders turned off) | "ABSENT"
+local function OrdersPath()
     local api = OrdersApi()
     if not api then return "ABSENT" end
     if type(api.IsAvailable) == "function" then
@@ -885,6 +920,12 @@ local function WaypointPath()
         if ok and not available then return "OFF" end
     end
     return "ORDERS"
+end
+
+-- "ORDERS" | "OPTION" (Set Waypoints off) | "OFF" (Orders turned off) | "ABSENT"
+local function WaypointPath()
+    if not db.UseWaypoints then return "OPTION" end
+    return OrdersPath()
 end
 
 local WAYPOINT_WORDS = {
@@ -898,14 +939,38 @@ local function WaypointWords()
     return WAYPOINT_WORDS[WaypointPath()]
 end
 
+-- A Go's line on what a press does (its GoButton's extra tooltip line). A
+-- greyed Go gets no click at all (2.5.6 delivers no OnClick to a disabled
+-- Button, so GoClicked never runs) and the GoButton's own red line says
+-- why, so it promises nothing: Orders turned off greys every Go, Set
+-- Waypoints or not; Orders absent greys a locator Go (a trainer); a place
+-- with no map id has nowhere to go. Only a Go that will take the press is
+-- worded: the arrow, or the printed place (Set Waypoints off, or a placed
+-- Go without Orders).
+local function GoWords(b)
+    local o = type(b) == "table" and b._tcOpts or nil
+    if type(o) ~= "table" then return nil end
+    local placed = type(o.spec) == "table"
+    if not placed and type(o.query) ~= "table" then return nil end
+    local orders = OrdersPath()
+    if orders == "OFF" or (orders == "ABSENT" and not placed) then return nil end
+    return WAYPOINT_WORDS[WaypointPath()]
+end
+
 local function PlaceKey(place)
     return "place:" .. tostring(place.name) .. "@" .. tostring(place.zone)
 end
 
--- The command that puts a place on anybody's arrow (Orders' /way and
--- TomTom's both read it), x and y in 0..100
+-- The command that puts a place on anybody's arrow: Orders' own /way line,
+-- else the same shape (the zone by name when there is no map id: /way reads
+-- names too); x and y in 0..100
 local function WayLine(place, title)
     local mapID = D.ZONES[place.zone]
+    local api = CommanderOrders
+    if mapID and type(api) == "table" and type(api.WayLineFor) == "function" then
+        local ok, line = pcall(api.WayLineFor, mapID, place.x / 100, place.y / 100, title or place.name)
+        if ok and type(line) == "string" then return line end
+    end
     return ("/way %s %.2f %.2f %s"):format(mapID and ("#" .. mapID) or tostring(place.zone),
         place.x, place.y, title or place.name)
 end
@@ -917,24 +982,102 @@ local function PlacePosition(place)
     return { map = mapID, x = place.x / 100, y = place.y / 100 }
 end
 
-local function SetWaypoint(place, title, icon)
-    title = title or place.name
-    local pos = PlacePosition(place)
-    if pos and WaypointPath() == "ORDERS" then
-        -- Orders answers nil and a reason rather than raising; the pcall is
-        -- for a stranger's table
-        local ok, uid = pcall(OrdersApi().Add, {
-            map = pos.map, x = pos.x, y = pos.y, title = title, icon = icon,
-            source = "Tradecraft", key = PlaceKey(place), setArrow = true,
-        })
-        if ok and uid then
-            Announce(("Waypoint set: %s — %s (%.1f, %.1f)"):format(place.name, place.zone, place.x, place.y))
-            return true
-        end
+-- With Set Waypoints off (or no Go button to be had): the place and its
+-- /way line in chat, nothing sent. A locator query needs Orders to have a
+-- place at all.
+local function PrintPlace(place, title, query)
+    if place then
+        Announce(("%s - %s, %s (%.1f, %.1f)   %s"):format(place.name, place.where or "", place.zone, place.x, place.y,
+            WayLine(place, title)))
+        return
     end
-    Announce(("%s — %s, %s (%.1f, %.1f)   %s"):format(place.name, place.where or "", place.zone, place.x, place.y,
-        WayLine(place, title)))
-    return false
+    local api = CommanderOrders
+    if type(api) ~= "table" or type(api.PlaceFor) ~= "function" then
+        Announce(tostring(title) .. ": needs Commander Orders to find one")
+        return
+    end
+    local p, why = api.PlaceFor(query)
+    if type(p) ~= "table" then
+        Announce(tostring(title) .. ": " .. (api.Reason and api.Reason(why) or tostring(why)))
+        return
+    end
+    Announce(("%s   %s"):format(tostring(title), api.WayLineFor(p.map, p.x, p.y, title)))
+end
+
+-- A Go button's click, or the printed place while Set Waypoints is off
+-- (Shift and Ctrl share and copy either way: they send no waypoint)
+local function GoClicked(self, button)
+    local shift = IsShiftKeyDown and IsShiftKeyDown()
+    local ctrl = IsControlKeyDown and IsControlKeyDown()
+    if not db.UseWaypoints and not shift and not ctrl then
+        PrintPlace(self._tcPlace, self._tcTitle, self._tcQuery)
+        return
+    end
+    return self._tcGoClick(self, button)
+end
+
+-- A pooled Go button: Commander.UI.GoButton, whose options table is the
+-- button's own and is filled afresh at every paint
+local function NewGo()
+    used.go = used.go + 1
+    local b = pools.go[used.go]
+    if not b then
+        local o = { label = "Go", width = 44, height = 18, source = "Tradecraft", setArrow = true }
+        if Commander.UI and Commander.UI.GoButton then
+            b = Commander.UI.GoButton(guide, o)
+            b._tcGoClick = b:GetScript("OnClick")
+            b:SetScript("OnClick", GoClicked)
+        else
+            -- An older Commander_Events: a plain button that prints the place
+            b = CreateFrame("Button", nil, guide, "UIPanelButtonTemplate")
+            b:SetSize(44, 18)
+            b:SetText("Go")
+            b:SetScript("OnClick", function(self) PrintPlace(self._tcPlace, self._tcTitle, self._tcQuery) end)
+        end
+        b._tcOpts = o
+        pools.go[used.go] = b
+    end
+    return b
+end
+
+-- A Go at the right of the row that starts at rowY. opts: place (a data
+-- place: name, zone, x, y in 0..100) or query (Orders' locator), title,
+-- key, icon.
+local function GoRow(rowY, opts)
+    local b = NewGo()
+    local o = b._tcOpts
+    o.spec, o.query = nil, nil
+    if opts.place then
+        o.spec = PlacePosition(opts.place) or false
+    else
+        o.query = opts.query
+    end
+    o.title, o.key, o.icon = opts.title, opts.key, opts.icon
+    o.tooltip = GoWords
+    b._tcPlace, b._tcTitle, b._tcQuery = opts.place, opts.title, opts.query
+    b:ClearAllPoints()
+    b:SetPoint("TOPRIGHT", guide, "TOPRIGHT", 0, rowY + 2)
+    b:SetHeight(18)
+    -- The button reaches 16 below the row's top, a single line only 14 + 2:
+    -- keep the next row clear of it, so stacked Gos never overlap
+    if y > rowY - 18 then y = rowY - 18 end
+    b:Show()
+    if b.Refresh then b:Refresh() end
+    return b
+end
+
+-- A locator Go from a list row (Ctrl+Right-click), worded by Orders
+GoQuery = function(query, title, key, icon)
+    local api = CommanderOrders
+    if type(api) ~= "table" or type(api.GoTo) ~= "function" then
+        Announce(tostring(title) .. ": needs Commander Orders to find one")
+        return
+    end
+    if not db.UseWaypoints then
+        PrintPlace(nil, title, query)
+        return
+    end
+    api.GoTo(query, { source = "Tradecraft", key = key, title = title, icon = icon })
 end
 
 -- The trip: the vendors of every formula the current trainer bracket still
@@ -1236,9 +1379,16 @@ local function PaintTrainBanner(p)
     if not t then return end
     local prof = p.profession
     local text
+    -- The nearest trainer of the profession, through Orders' locator
+    local function TrainerGo(rowY)
+        GoRow(rowY, { query = { townsfolk = prof.name .. " Trainer" }, title = "Nearest " .. prof.name .. " trainer",
+                      key = "trainer:" .. tostring(prof.key), icon = "TRAINER" })
+    end
     if not p.hasProfession then
+        local rowY = y
         text = ("%sLearn %s|r from any %s trainer — every capital city has one."):format(HEX.title, prof.name, prof.name)
-        Line(text, { color = C.warn })
+        Line(text, { color = C.warn, rightPad = 50 })
+        TrainerGo(rowY)
     else
         local rankName = t.rank.name
         if t.urgent then
@@ -1251,13 +1401,7 @@ local function PaintTrainBanner(p)
             local rowY = y
             Line(("%s — %s (%.1f, %.1f)"):format(place.name, place.where, place.x, place.y),
                 { indent = 10, color = C.dim, rightPad = 50 })
-            local b = NewButton("Go", 44, function() SetWaypoint(place, place.name, icon) end,
-                function(tip)
-                    tip:AddLine("Waypoint to " .. place.name)
-                    tip:AddLine(WaypointWords(), 1, 1, 1, true)
-                end)
-            b:SetPoint("TOPRIGHT", guide, "TOPRIGHT", 0, rowY + 2)
-            b:SetHeight(18)
+            GoRow(rowY, { place = place, title = place.name, key = PlaceKey(place), icon = icon })
         end
         -- A rank no trainer teaches: the book to buy, or the quest to do,
         -- in place of "train" -- the trainer will not have it
@@ -1290,7 +1434,9 @@ local function PaintTrainBanner(p)
                     if not trainer.faction or not faction or trainer.faction == faction then PlaceRow(trainer, "TRAINER") end
                 end
             else
-                Line("Any " .. prof.name .. " trainer in a capital city.", { indent = 10, color = C.dim })
+                local rowY = y
+                Line("Any " .. prof.name .. " trainer in a capital city.", { indent = 10, color = C.dim, rightPad = 50 })
+                TrainerGo(rowY)
             end
         end
     end
@@ -1431,13 +1577,7 @@ local function PaintBuyStep(step, p)
     for _, v in ipairs(step.vendors) do
         local rowY = y
         Line(("%s%s|r — %s, %s (%.1f, %.1f)"):format(HEX.white, v.name, v.where or "", v.zone, v.x, v.y), { indent = 8, color = C.text, rightPad = 50 })
-        local b = NewButton("Go", 44, function() SetWaypoint(v, name, "VENDOR") end,
-            function(tip)
-                tip:AddLine("Waypoint to " .. v.name)
-                tip:AddLine(WaypointWords(), 1, 1, 1, true)
-            end)
-        b:SetPoint("TOPRIGHT", guide, "TOPRIGHT", 0, rowY + 2)
-        b:SetHeight(18)
+        GoRow(rowY, { place = v, title = name, key = PlaceKey(v), icon = "VENDOR" })
     end
     Gap(3)
     if step.holding then

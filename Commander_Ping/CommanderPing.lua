@@ -6,14 +6,27 @@
 -- ---------------------------------------------------------------------------
 -- A ping you can walk to (Commander Orders)
 -- ---------------------------------------------------------------------------
--- With Commander Orders loaded, the callout carries a [Waypoint] link: click
--- it and the arrow points at the pinged spot. The opt-in setting "Waypoint on
--- Group Pings" does it for every ping without the click. Either way it is ONE
+-- With Commander Orders loaded, the callout carries a [Go] link: click it and
+-- the arrow points at the pinged spot. The opt-in setting "Waypoint on Group
+-- Pings" does it for every ping without the click. Either way it is ONE
 -- waypoint (source "Ping", key "ping"): each new ping moves it, it is
--- session-only, and it clears on arrival. The automatic one is temporary in
+-- session-only, and it clears on arrival. The link is Orders' own chat link
+-- (Orders 3.1: CommanderOrders.ChatLink, answered by CommanderOrdersChat.lua):
+-- the place rides in the link itself, so it still goes somewhere after a
+-- /reload; while this session lasts Ping claims its plain click
+-- (CommanderOrders.ClaimChatLink) to move the one Ping waypoint, and Shift,
+-- Ctrl and Right are Orders' (share, copy the /way line, menu). A reloaded
+-- or long-forgotten ping link is Orders' plain Go: a waypoint of yours
+-- there. Without Orders' chat file there is no link at all (no link that
+-- would do nothing). The words and gestures are Orders' (its DECISIONS,
+-- the 3.1 "Go to" entry): "[Go]" in chat, "Waypoint" only the noun.
+-- The waypoint goes through CommanderOrders.GoTo (Orders 3.1): a clicked
+-- ping says "Waypoint set: ..." or Orders' one refusal line, in Orders'
+-- words (CommanderOrders.Reason), so Ping keeps no refusal table of its own;
+-- the automatic one says nothing (silent). The automatic one is temporary in
 -- Orders' sense and never asks for the arrow: Orders refuses a temporary pin
--- only over a pinned waypoint, so asking would still re-pin the arrow away
--- from a running route, from a waypoint of yours followed as the closest and
+-- over a pinned waypoint and over a running route, and asking would still
+-- re-pin the arrow away from a waypoint of yours followed as the closest and
 -- out of a Clear. Unasked, Follow the Closest points at it only when nothing
 -- of yours is left on the landmass. The clicked one was asked for, so it is
 -- pinned outright.
@@ -47,13 +60,12 @@
 -- The link is an `addon:` hyperlink, which this client routes through
 -- SetItemRef to EventRegistry's "SetItemRef" callback for addon code
 -- (Blizzard_UIPanels_Game/Shared/ItemRefHandlersShared.lua), so no chat frame
--- is hooked and no Blizzard function is replaced.
+-- is hooked and no Blizzard function is replaced. Orders' chat file owns that
+-- callback; this file registers none of its own.
 
 local FLASH_STEPS = 24
 local FLASH_INTERVAL = 0.04
-local LINK_PREFIX = "addon:CommanderPing:"   -- |Haddon:CommanderPing:<n>|h[Waypoint]|h
-local LINK_COLOUR = "|cff71d5ff"
-local PINGS_KEPT = 20                        -- recent pings a chat link can still reach
+local LINK_TEXT = "Go"                       -- the callout's [Go] (Orders' word for a chat link)
 local MAP_CLIMB = 4                          -- parent maps tried past a zone's edge
 local MAP_WORLD = 1                          -- Enum.UIMapType.World: never placed on
 local MAP_ZONE = 3                           -- Enum.UIMapType.Zone
@@ -118,9 +130,10 @@ end
 -- ---------------------------------------------------------------------------
 -- Where a ping is (see the header for the traps)
 -- ---------------------------------------------------------------------------
+-- Orders 3.1's API (GoTo is the one way in), or nil
 local function Orders()
     local api = CommanderOrders
-    if type(api) == "table" and type(api.Add) == "function" then return api end
+    if type(api) == "table" and type(api.GoTo) == "function" then return api end
     return nil
 end
 
@@ -214,54 +227,37 @@ end
 -- ---------------------------------------------------------------------------
 -- The waypoint, and the chat link that asks for it
 -- ---------------------------------------------------------------------------
-local pings, pingSerial = {}, 0
-
-local function Remember(mapID, x, y, name)
-    pingSerial = pingSerial + 1
-    pings[pingSerial] = { map = mapID, x = x, y = y, name = name }
-    pings[pingSerial - PINGS_KEPT] = nil
-    return pingSerial
-end
-
 -- explicit: the user clicked the link, so the arrow goes there (SetArrow,
--- below). Otherwise (the automatic setting) the waypoint is temporary, never
--- asks for the arrow and waits its turn behind everything of yours.
+-- below) and Orders says so, or says in its own words why not. Otherwise
+-- (the automatic setting) the waypoint is temporary, never asks for the
+-- arrow, waits its turn behind everything of yours and says nothing.
 local function SetWaypoint(ping, explicit)
     local api = Orders()
-    if not api then return nil, "not loaded" end
-    local uid, why = api.Add({
-        map = ping.map, x = ping.x, y = ping.y, title = ping.name .. "'s ping",
+    if not api then return nil, "needsorders" end
+    local uid, why = api.GoTo({ map = ping.map, x = ping.x, y = ping.y, title = ping.name .. "'s ping" }, {
         source = "Ping", key = "ping", temporary = true, persistent = false,
-        setArrow = false,
+        setArrow = false, silent = not explicit,
     })
     if uid and explicit and api.SetArrow then api.SetArrow(uid) end
     return uid, why
 end
 
-local REASONS = {
-    disabled = "Commander Orders is turned off (/corder to turn it on)",
-    loading = "Commander Orders is still loading",
-    ["not loaded"] = "Commander Orders is not loaded",
-}
-
-local function OnLink(_, link)
-    if type(link) ~= "string" or link:sub(1, #LINK_PREFIX) ~= LINK_PREFIX then return end
-    local ping = pings[tonumber(link:sub(#LINK_PREFIX + 1))]
-    if not ping then
-        print("|cff40c0ffCommander Ping:|r that ping is too old to follow")
-        return
+-- The callout's [Go]: Orders' chat link for the ping's place, its plain
+-- click claimed for this session (see the header). nil when Orders cannot
+-- answer a click on it. A refused click is said by Orders (GoTo, not
+-- silent), once.
+local function CalloutLink(ping)
+    local api = Orders()
+    if not (api and type(api.ChatLink) == "function" and type(api.ClaimChatLink) == "function") then
+        return nil
     end
-    local uid, why = SetWaypoint(ping, true)
-    if not uid then
-        print("|cff40c0ffCommander Ping:|r no waypoint: " .. (REASONS[why] or tostring(why)))
-    end
+    local link = api.ChatLink(ping.map, ping.x, ping.y, ping.name .. "'s ping", LINK_TEXT)
+    if type(link) ~= "string" then return nil end
+    api.ClaimChatLink(link, function() SetWaypoint(ping, true) end)
+    return link
 end
 
-if EventRegistry and EventRegistry.RegisterCallback then
-    EventRegistry:RegisterCallback("SetItemRef", OnLink, {})
-end
-
--- MINIMAP_PING payload is (unitTarget, x, y) — normalized offsets from the
+-- MINIMAP_PING payload is (unitTarget, x, y): normalized offsets from the
 -- minimap center. (An earlier build assumed y-first; in-game testing showed
 -- bottom-right clicks flashing top-left, the signature of swapped axes.)
 local function OnPing(unit, x, y)
@@ -275,18 +271,18 @@ local function OnPing(unit, x, y)
     end
     local name = UnitName(unit) or "Someone"
     -- Only where Orders could act on it: no link that would do nothing
-    local id
+    local ping
     local api = Orders()
     if api and api.IsAvailable and api.IsAvailable() then
         local mapID, mx, my = Locate(x, y)
-        if mapID then id = Remember(mapID, mx, my, name) end
+        if mapID then ping = { map = mapID, x = mx, y = my, name = name } end
     end
     if CommanderPingDB.PingCallout then
-        local link = id and string.format(" %s|H%s%d|h[Waypoint]|h|r", LINK_COLOUR, LINK_PREFIX, id) or ""
-        print(string.format("|cff40c0ffCommander Ping:|r %s pinged the minimap%s", name, link))
+        local link = ping and CalloutLink(ping)
+        print(string.format("|cff40c0ffCommander Ping:|r %s pinged the minimap%s", name, link and (" " .. link) or ""))
     end
-    if id and CommanderPingDB.PingWaypoint then
-        SetWaypoint(pings[id], false)
+    if ping and CommanderPingDB.PingWaypoint then
+        SetWaypoint(ping, false)
     end
 end
 

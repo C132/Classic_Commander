@@ -6,7 +6,8 @@ three Commander_Spoils files under a permissive WoW mock. It must exit 0 before
 any change ships.
 
 ```
-/opt/homebrew/bin/luajit spoils_harness.lua      # 314 checks
+/opt/homebrew/bin/luajit spoils_harness.lua      # 326 checks
+/opt/homebrew/bin/luajit spoils_orders_smoke.lua # 92 checks, over the REAL Commander Orders
 /opt/homebrew/bin/luajit globals_lint.lua        # 0 undeclared globals
 ```
 
@@ -57,6 +58,37 @@ throwing Add; the header glyph's right-click sets it without ending the farm
 while left-click still ends it; `/cspoils back` reaches it. The real Orders
 runtime accepting the same spec shape is checked in
 `Commander_Logistics/Harness/logistics_orders_smoke.lua` section G.
+
+Since 3.2.0 (Commander Orders 3.1, D24) the stub is Orders 3.1's surface
+(`GoTo`, `IsAvailable`, `IsGoing`, `Reason`, `FormatCoords`): the press goes
+through `CommanderOrders.GoTo`, so the spec it records is the target and the
+options merged, as the real GoTo hands them to its Add. Two existing checks
+changed for the SPEC's one-voice rule only: "one line of confirmation" and
+"...said in words, with the line" now pass when Spoils says nothing itself and
+GoTo was not silent (Orders prints "Waypoint set: ..." and its one refusal
+line, with the [Go] link, in its own words). New in section 15: the farm icon,
+and Go to Farm on the settings page as Commander Orders' Go button (source,
+key, icon, the click, the lit "Going to Farm", greyed with no farm). The
+harness loads `Commander_Events/CommanderGoButton.lua` in its TOC slot.
+
+## spoils_orders_smoke.lua (92 checks)
+
+The same farm against the REAL Commander Orders, booted over
+`Commander_Orders/Harness/orders_mock.lua` with Spoils' three files loaded
+after Orders: A loads clean and writes only Spoils' globals; B `/cspoils back`
+makes ONE waypoint (Spoils, farm) at the farm's start in the FARM tint with
+the arrow on it, Orders' "Waypoint set" line once and no line of Spoils', a
+second press the same record, session-only; C the refusals: no farm and no
+position are Spoils' own sentence with nothing asked, Orders switched off is
+Orders' ONE line in its words with the farm named and a [Go] link; D Go to
+Farm on the settings page: greyed with the reason in its tooltip, its tooltip
+naming where it goes and the gestures, click = GoTo under (Spoils, farm), lit
+"Going to Farm", Ctrl-click the /way line in Orders' copy box, Shift-click the
+readable line in /say, back to its words when the arrow leaves; E Orders
+absent: the /way line; F the farm code is plain ASCII.
+`SPOILS_RUNTIME=/path/copy.lua` loads a mutated `CommanderSpoils.lua` (section
+A then checks fewer writes). Mutants killed: the press made silent, the FARM
+icon dropped, a confirmation line of Spoils' own.
 
 The frame names the harness addresses are the shipped ones:
 `CommanderSpoilsFrame` and its bands `CommanderSpoilsPickups`,

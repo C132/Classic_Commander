@@ -384,3 +384,19 @@ protected here. Anything the Quartermaster's loadout names is skipped
 whatever its class: a bulk deposit must never undo a "carry this". The button
 widened the toolbar's fixed content, so `MIN_W` moved from 600 to 680 by the
 D46 rule.
+
+**D48 - A remembered vault offers Go to Bank.** 1.2.0, 2026-10-05 (Commander Orders 3.1, its SPEC
+5). Away from a banker the window shows your vault as it was when you last stood at one, and the
+footer says "remembered N ago"; the next thing the player wants is usually a banker. So while the
+window shows YOUR vault remembered (not an alt's, which is a picture you cannot open from here), the
+footer line's left end holds **Go to Bank**, Commander Orders' own Go button
+(`Commander.UI.GoButton`, from Commander_Events): it asks Orders' locator for the nearest banker
+(`{ townsfolk = "Banker" }`: your faction, your landmass, the arrow taking the nearest), owned as
+(source `Vault`, key `bank`) in the BANK tint; click goes, Shift-click shares the place, Ctrl-click
+copies the `/way` line, it greys with Orders' reason while Orders cannot answer (off, loading, no
+Questie), and reads "Going to Bank" while the arrow goes there. The words and gestures are Orders'
+(its DECISIONS D31, the 3.1 "Go to" entry). It sits on the summary line above the bag rack, re-anchored
+with the footer by ApplyFraming, so the toolbar's `MIN_W` (D46) is untouched. A guild vault gets no
+"Go to Guild Vault": nothing the locator reads lists guild bank vaults (Questie's townsfolk have no
+such kind), and inventing a place is the one thing a Go-to must not do.
+

@@ -23,6 +23,11 @@
 --              a route offers Start / Previous / Next / Reverse / Optimise
 --              order / Export / Remove route. Remove stands apart, bottom
 --              right, where a quick click along the row cannot land on it.
+--              3.1 (S8): "Add at..." on the toolbar and "Move..." on a
+--              waypoint take typed coordinates ("Zone 45 66 Title", "#1944
+--              45.2 66.8", or "45 66" on your map) through the runtime's
+--              coordinate box (Geo.ParseWay, then Add or Update), and
+--              "Save as place" keeps a waypoint as a named place.
 --              The arrival time shows for the arrow's own target only: the
 --              speed filter behind it is the arrow's, and a guess for every
 --              row would be a guess. "Add here" and "Clear..." sit on the
@@ -1145,6 +1150,25 @@ function Detail.ShareMenu(uid, anchor)
     ShowMenu(entries, anchor)
 end
 
+-- Typed coordinates (3.1, S8): the runtime's coordinate box moves it
+function Detail.Move(uid)
+    local fn = R().AskCoords
+    if fn and fn(uid) then
+        Status("Type where it goes, then press Enter.", "secondary")
+    else
+        Status("Cannot ask for coordinates here.", "warn")
+    end
+end
+
+function Detail.SaveAsPlace(uid)
+    local index, err = O.SaveAsPlace(uid)
+    if index then
+        Status("Kept as a place (see the Places tab).", "good")
+    else
+        Status(Reason(err), "warn")
+    end
+end
+
 function Detail.Rename()
     local box = W.titleBox
     if not (box and box:IsShown()) then return end
@@ -1166,9 +1190,15 @@ local function WaypointActions(wp, route)
           tip = "Type a new title in the box above, then press Enter." },
         { key = "share", label = "Share", width = 64, disabled = not wp.map,
           onClick = function(self) Detail.ShareMenu(uid, self) end,
-          tip = "Send it to your group, or post it in chat as a /way line for players without addons." },
+          tip = "Send it to your group, or post it in chat as a readable line with its /way (\"Title - Zone 45.2, 66.8 (/way ...)\") for players without addons." },
         { key = "copy", label = "Copy /way", width = 80, disabled = not wp.map,
           onClick = function() Copy(O.WayLine(uid)) end, tip = "A /way line to copy and paste anywhere." },
+        { key = "move", label = "Move...", width = 70, disabled = not wp.map or wp.kind == "corpse" or wp.kind == "unit",
+          onClick = function() Detail.Move(uid) end,
+          tip = "Type new coordinates for it: \"Zone 45 66\", \"#1944 45.2 66.8\", or \"45 66\" on the map you are on." },
+        { key = "place", label = "Save as place", width = 104, disabled = not wp.map or wp.kind == "corpse" or wp.kind == "unit",
+          onClick = function() Detail.SaveAsPlace(uid) end,
+          tip = "Keep it as a named place, for every character on this account (at the spot the arrow follows)." },
         { key = "remove", label = "Remove", width = 70, danger = true, onClick = function()
             local title = Title(wp)
             if O.Remove(uid) then
@@ -1580,6 +1610,14 @@ end
 -- ---------------------------------------------------------------------------
 -- Toolbar actions
 -- ---------------------------------------------------------------------------
+-- "Add at...": a waypoint by typed coordinates (3.1, S8)
+function UIM.AddAt()
+    local fn = R().AskCoords
+    if fn and fn(nil) then
+        Status("Type where it goes (zone x y title), then press Enter.", "secondary")
+    end
+end
+
 function UIM.AddHere()
     local uid, err = O.Here()
     if uid then
@@ -1978,6 +2016,7 @@ function Tabs.Paint()
     W.search:SetShown(not paste)
     W.addHere:SetShown(state.tab == "WAYPOINTS")
     W.clear:SetShown(state.tab == "WAYPOINTS")
+    W.addAt:SetShown(state.tab == "WAYPOINTS")
     W.markPlace:SetShown(state.tab == "PLACES")
     local grouped = state.tab == "WAYPOINTS"
     W.groupStrip:SetShown(grouped)
@@ -2136,6 +2175,9 @@ function Build.Toolbar()
     W.clear = PanelButton(bar, "Clear...", 70, function(self) UIM.ClearMenu(self) end,
         "Clear", "Remove the waypoints you have reached, everything one addon set, or everything.")
     W.clear:SetPoint("LEFT", W.addHere, "RIGHT", 4, 0)
+    W.addAt = PanelButton(bar, "Add at...", 76, function() UIM.AddAt() end,
+        "Add at", "A waypoint by typed coordinates: \"Hellfire Peninsula 45.2 66.8 Nazgrel\", \"#1944 45.2 66.8\", or \"45 66\" on the map you are on.")
+    W.addAt:SetPoint("LEFT", W.clear, "RIGHT", 4, 0)
     W.markPlace = PanelButton(bar, "Mark place here", 118, function() Places.Mark() end,
         "Mark place here", "Keep where you stand as a place, for every character on this account. Name it in the box on the right.")
     W.markPlace:SetPoint("LEFT", previous, "RIGHT", 14, 0)

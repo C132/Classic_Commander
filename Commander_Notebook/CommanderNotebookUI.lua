@@ -15,13 +15,20 @@
 --
 -- A stamp is also a way back (1.1.0). Since this version a stamp written
 -- where the map has a position keeps the map id with it (note.context, see
--- the store), and a note that has one offers Go and "Waypoint To This Note":
+-- the store), and a note that has one offers Go and "Go To This Note":
 -- Commander Orders' arrow to that exact spot. Stamps written before 1.1.0
 -- are text only, "Subzone, Zone 45.2, 63.1", and carry no map id; those go
 -- through Orders' /way zone resolver by name (CommanderOrders.Import), the
 -- same one /way uses, so an ambiguous name is listed rather than guessed.
 -- Without Commander Orders the spot is printed as a /way line, so the button
 -- never silently does nothing.
+--
+-- 1.2.0 (Commander Orders 3.1, DECISIONS D11): a map-stamped note's Go is
+-- Orders' own Go button (Commander.UI.GoButton: click Go, Shift-click share,
+-- Ctrl-click copy the /way line, "Going" while the arrow points there) and
+-- the press goes through CommanderOrders.GoTo, so the confirmation ("Waypoint
+-- set: ...") and every refusal are Orders' own words; the words and gestures
+-- are Orders' (its DECISIONS, the 3.1 "Go to" entry).
 --
 -- Chrome is drawn, not borrowed: selection bars, chevrons, rules and the pin
 -- are quads cut from WHITE8X8 and tinted, for the reasons Quest Log and Bags
@@ -362,16 +369,43 @@ end
 -- Waypoint to this note (Commander Orders)
 -- ---------------------------------------------------------------------------
 
+-- Orders 3.1's API (GoTo is the one way in), or nil
 local function Orders()
     local api = CommanderOrders
-    if type(api) == "table" and type(api.Add) == "function" then return api end
+    if type(api) == "table" and type(api.GoTo) == "function" then return api end
     return nil
 end
 
-local ORDERS_REASONS = {
-    disabled = "Commander Orders is turned off (/corder to turn it on)",
-    loading = "Commander Orders is still loading",
-}
+-- Orders' words for a refusal code (CommanderOrders.Reason), the code itself
+-- when Orders cannot say
+local function Reason(why)
+    local api = Orders()
+    if api and type(api.Reason) == "function" then
+        local text = api.Reason(why)
+        if type(text) == "string" then return text end
+    end
+    return tostring(why)
+end
+
+-- A Commander Orders "Go" button: Commander_Events' Commander.UI.GoButton.
+-- The client reads a NEW addon file only at start-up, so after an update
+-- and a /reload the button's file may not be loaded yet: then a plain
+-- button that still asks Orders to go.
+local function GoButton(parent, opts)
+    local UI = Commander and Commander.UI
+    if UI and type(UI.GoButton) == "function" then return UI.GoButton(parent, opts) end
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(opts.width or 44, opts.height or 21)
+    button:SetText(opts.label or "Go")
+    button:SetScript("OnClick", function()
+        local spec, api = opts.spec(button), Orders()
+        if spec and api then
+            api.GoTo(spec, { source = opts.source, key = opts.key, icon = opts.icon, setArrow = opts.setArrow })
+        end
+    end)
+    button.Refresh = function() end
+    return button
+end
 
 local function Place(loc)
     local place = loc.zone or "?"
@@ -396,22 +430,17 @@ local function NoteWaypoint(note)
         return false
     end
     local title = S.TitleFor(note)
-    local line = WayLine(loc, title)
     local api = Orders()
     if not api then
-        print("Commander Notebook: Commander Orders is not loaded; the spot is " .. line)
+        print("Commander Notebook: Commander Orders is not loaded; the spot is " .. WayLine(loc, title))
         return false
     end
     if loc.map then
-        local uid, why = api.Add({
-            map = loc.map, x = loc.x, y = loc.y, title = title,
-            source = "Notebook", key = "note:" .. note.id, setArrow = true,
-        })
-        if not uid then
-            print("Commander Notebook: no waypoint: " .. (ORDERS_REASONS[why] or tostring(why)))
-            return false
-        end
+        -- Orders says "Waypoint set" or its one refusal line (GoTo, not silent)
+        return api.GoTo({ map = loc.map, x = loc.x, y = loc.y, title = title },
+            { source = "Notebook", key = "note:" .. note.id, icon = "NOTE", setArrow = true }) ~= nil
     else
+        local line = WayLine(loc, title)
         -- An old stamp knows its zone only by name: Orders' /way resolver
         -- reads it, and lists the candidates when the name is not one zone
         if not api.Import then
@@ -422,7 +451,7 @@ local function NoteWaypoint(note)
         if not (added and added > 0) then
             local err = type(errors) == "table" and errors[1] or {}
             print("Commander Notebook: no waypoint for \"" .. (loc.zone or "?") .. "\": "
-                .. (ORDERS_REASONS[err.message] or tostring(err.message or "the zone was not recognised")))
+                .. (err.message and Reason(err.message) or "the zone was not recognised"))
             for i, candidate in ipairs(type(err.candidates) == "table" and err.candidates or {}) do
                 if i > 6 then break end
                 print("  " .. tostring(candidate.line))
@@ -430,7 +459,13 @@ local function NoteWaypoint(note)
             return false
         end
     end
-    print("Commander Notebook: waypoint to " .. title .. " (" .. Place(loc) .. ")")
+    -- Orders' own words for it, as GoTo says them for a map-stamped note, and
+    -- under Orders' own switch: Import from the Notebook says nothing itself,
+    -- and with Orders' Announce In Chat off no Go says "Waypoint set"
+    local orders = CommanderOrdersDB
+    if type(orders) ~= "table" or orders.Announce then
+        print("Commander Notebook: Waypoint set: " .. title .. " (" .. Place(loc) .. ")")
+    end
     return true
 end
 
@@ -793,7 +828,7 @@ local function NoteMenu(note)
         end },
     }
     if S.Location(note) then
-        entries[#entries + 1] = { text = "Waypoint To This Note", func = function() NoteWaypoint(note) end }
+        entries[#entries + 1] = { text = "Go To This Note", func = function() NoteWaypoint(note) end }
     end
     local more = {
         { text = "Duplicate", func = function()
@@ -1150,6 +1185,7 @@ function RefreshEditor(keepText)
         infoText:SetText("")
         attachStrip:Hide()
         for _, button in ipairs(actionRow.buttons) do button:Hide() end
+        if actionRow.goButton then actionRow.goButton:Hide() end
         frame.emptyText:SetText(state.scope == "trash"
             and "The trash is empty."
             or "No note selected.\n\nPick one from the list, or press New Note.")
@@ -1246,12 +1282,18 @@ function RefreshEditor(keepText)
         }
         -- Only for a note that has somewhere to go, right after Stamp. The
         -- row has room for one short verb (456 px less 400 used), and Go is
-        -- the suite's word for a waypoint button.
+        -- the suite's word for a waypoint button (Orders' DECISIONS). A
+        -- map-stamped note's Go is Orders' own Go button (D11); an old,
+        -- name-only stamp keeps the plain one, which asks Orders' /way
+        -- resolver by name and lists an ambiguous name's candidates.
         local loc = S.Location(note)
-        if loc then
+        if loc and loc.map then
+            table.insert(specs, 3, { label = "Go", width = 44, go = true, noteId = note.id, tooltip =
+                "Where this note was stamped: " .. Place(loc) .. "." })
+        elseif loc then
             table.insert(specs, 3, { label = "Go", width = 44, tooltip =
-                "Waypoint to where this note was stamped: " .. Place(loc)
-                .. ". The arrow is Commander Orders'; without it the spot is printed as a /way line.",
+                "Where this note was stamped: " .. Place(loc)
+                .. ". An old stamp knows its zone by name only: Commander Orders' /way finds it by that name; without Commander Orders the spot is printed as a /way line.",
                 onClick = function()
                     Flush()
                     NoteWaypoint(S.Note(note.id) or note)
@@ -1259,34 +1301,66 @@ function RefreshEditor(keepText)
         end
     end
 
-    for index, spec in ipairs(specs) do
-        local button = actionRow.buttons[index]
-        if not button then
-            button = CreateFrame("Button", nil, actionRow, "UIPanelButtonTemplate")
-            button:SetHeight(21)
-            actionRow.buttons[index] = button
+    local previous, plain, usedGo = nil, 0, false
+    for _, spec in ipairs(specs) do
+        local button
+        if spec.go then
+            button = actionRow.goButton
+            if not button then
+                -- One Go button, re-pointed at whichever note is open: the
+                -- opts table is the button's, so the key follows the note
+                local opts = { label = "Go", width = 44, height = 21, source = "Notebook", icon = "NOTE",
+                    setArrow = true, anchor = "ANCHOR_TOP" }
+                opts.spec = function()
+                    local open = actionRow.goNoteId and S.Note(actionRow.goNoteId)
+                    local at = open and S.Location(open)
+                    if not (at and at.map) then return nil end
+                    local typed = titleBox and dirty and state.selected == open.id and titleBox:GetText() or ""
+                    typed = typed:gsub("^%s+", ""):gsub("%s+$", "")
+                    return { map = at.map, x = at.x, y = at.y, title = typed ~= "" and typed or S.TitleFor(open) }
+                end
+                button = GoButton(actionRow, opts)
+                button:SetHeight(21)
+                actionRow.goButton, actionRow.goOpts = button, opts
+            end
+            actionRow.goNoteId = spec.noteId
+            local opts = actionRow.goOpts
+            opts.key = "note:" .. tostring(spec.noteId)
+            opts.tooltip = spec.tooltip
+            usedGo = true
+        else
+            plain = plain + 1
+            button = actionRow.buttons[plain]
+            if not button then
+                button = CreateFrame("Button", nil, actionRow, "UIPanelButtonTemplate")
+                button:SetHeight(21)
+                actionRow.buttons[plain] = button
+            end
+            button:SetText(spec.label)
+            button:SetScript("OnClick", spec.onClick)
+            button:SetScript("OnEnter", spec.tooltip and function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(spec.label, 1, 1, 1)
+                GameTooltip:AddLine(spec.tooltip, nil, nil, nil, true)
+                GameTooltip:Show()
+            end or nil)
+            button:SetScript("OnLeave", function() GameTooltip:Hide() end)
         end
-        button:SetText(spec.label)
         button:SetWidth(spec.width)
         button:ClearAllPoints()
-        if index == 1 then
-            button:SetPoint("LEFT", actionRow, "LEFT", 0, 0)
+        if previous then
+            button:SetPoint("LEFT", previous, "RIGHT", 5, 0)
         else
-            button:SetPoint("LEFT", actionRow.buttons[index - 1], "RIGHT", 5, 0)
+            button:SetPoint("LEFT", actionRow, "LEFT", 0, 0)
         end
-        button:SetScript("OnClick", spec.onClick)
-        button:SetScript("OnEnter", spec.tooltip and function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(spec.label, 1, 1, 1)
-            GameTooltip:AddLine(spec.tooltip, nil, nil, nil, true)
-            GameTooltip:Show()
-        end or nil)
-        button:SetScript("OnLeave", function() GameTooltip:Hide() end)
         button:Show()
+        if spec.go and button.Refresh then button:Refresh() end
+        previous = button
     end
-    for index = #specs + 1, #actionRow.buttons do
+    for index = plain + 1, #actionRow.buttons do
         actionRow.buttons[index]:Hide()
     end
+    if actionRow.goButton and not usedGo then actionRow.goButton:Hide() end
 end
 
 function RefreshAll()

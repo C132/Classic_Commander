@@ -15,6 +15,7 @@ local DefaultSettings = {
     BoardHold = 6,
     CompleteEmotes = false,
     EnabledObjectives = {},
+    TurnInOffer = false,      -- mark a completed quest's turn-in (Commander Orders + Quest Log)
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Board", "DARK")) do
     DefaultSettings[key] = value
@@ -78,6 +79,20 @@ local function CreateOptionsPanel()
         tooltip = "In dungeons and raids, run the instance as a mission: MISSION START on entry, banners at kill-count milestones (10, 25, 50...), PRIMARY TARGET ELIMINATED on boss kills, and a run tally when you leave. Feedback the quest system never gives a dungeon group.",
         get = function() return CommanderObjectivesDB.DungeonMissions end,
         set = function(value) CommanderObjectivesDB.DungeonMissions = value end,
+        isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
+    })
+    panel:AddCheckbox({
+        label = "Turn-in Offer",
+        tooltip = function()
+            local text = "When a quest in your log turns complete, mark where to hand it in: a quiet Commander Orders waypoint at the quest's finisher. It never takes the arrow from anything of yours, is never placed in combat, and goes when the quest is turned in, abandoned or no longer complete. Off by default: quests finish often."
+            local missing = {}
+            if not (CommanderOrders and CommanderOrders.GoTo) then missing[#missing + 1] = "Commander Orders" end
+            if not (CommanderQuestLog and CommanderQuestLog.Questie) then missing[#missing + 1] = "Commander Quest Log (with Questie)" end
+            if #missing > 0 then text = text .. "\n\nNeeds " .. table.concat(missing, " and ") .. ", which is not loaded." end
+            return text
+        end,
+        get = function() return CommanderObjectivesDB.TurnInOffer end,
+        set = function(value) CommanderObjectivesDB.TurnInOffer = value end,
         isEnabled = function() return CommanderObjectivesDB.EnableObjectives end,
     })
     panel:AddSlider({

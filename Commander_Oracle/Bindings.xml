@@ -1,0 +1,12 @@
+<Bindings>
+    <!-- Auto-loaded from the addon folder, never listed in the TOC (listing it
+         loads it twice). A new file: the client reads it only at start-up, so
+         restart the client, not /reload. No double hyphen inside an XML
+         comment: the parser rejects the whole file on one.
+
+         Go to the Flag points the Commander Orders arrow at a battleground
+         flag the map shows (Warsong Gulch, Eye of the Storm) and follows it. -->
+    <Binding name="COMMANDERORACLE_FLAG" header="COMMANDERORACLE" category="ADDONS" runOnUp="false">
+        if CommanderOracle_GoToFlag then CommanderOracle_GoToFlag() end
+    </Binding>
+</Bindings>

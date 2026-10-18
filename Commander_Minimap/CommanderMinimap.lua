@@ -59,6 +59,115 @@ local function UpdateZoneText()
     zoneText:SetText(GetMinimapZoneText())
 end
 
+-- ---------------------------------------------------------------------------
+-- Your coordinates under the zone name, and Ctrl+Right-click for a waypoint
+-- (Commander Orders 3.1: Minimap Coordinates and Ctrl+Right-Click the
+-- Minimap, in its Map & Minimap settings). Orders loads after this addon, so
+-- it is looked up when used, never at load; without it the label stays
+-- hidden and the minimap clicks exactly as before.
+--   * The label is a second FontString under the zone name, refreshed five
+--     times a second by an unnamed child of the Minimap (a hidden minimap
+--     costs nothing; taxis and boats move you without any movement event)
+--     and written only when its text changes. Orders reads the position
+--     without allocating (CommanderOrdersCoords.lua) and says "--" where
+--     the game gives none.
+--   * Its click surface is a Button over the text only, so the rest of the
+--     map's top edge keeps its pings and its drag. The gestures are Orders'
+--     one rule for coordinates: click a waypoint where you stand, Shift-click
+--     share it, Ctrl-click copy a /way line, right-click a menu.
+--   * Blizzard's Minimap_OnClick pings for ANY button (Classic Minimap.lua
+--     130-141), so a hook could not take Ctrl+Right-click: the ping would
+--     still reach the group, and Commander Ping would echo a second waypoint.
+--     The handler is wrapped instead: Ctrl+Right-click (Ctrl alone) goes to
+--     Orders and never pings; every other click runs the handler that was
+--     there before.
+--   * Nothing here is named, so the button tidy below (it collects by name)
+--     never fades any of it.
+local COORDS_INTERVAL = 0.2
+
+local function OrdersCoords()
+    local orders = CommanderOrders
+    local coords = type(orders) == "table" and orders.Coords
+    if type(coords) == "table" and type(coords.MinimapText) == "function" then return coords end
+    return nil
+end
+
+local coordText = Minimap:CreateFontString(nil, "OVERLAY")
+coordText:SetFontObject(GameFontHighlightSmall)
+coordText:SetPoint("TOP", zoneText, "BOTTOM", 0, -1)
+coordText:Hide()
+
+local coordHit = CreateFrame("Button", nil, Minimap)
+coordHit:SetPoint("TOPLEFT", coordText, "TOPLEFT", -6, 2)
+coordHit:SetPoint("BOTTOMRIGHT", coordText, "BOTTOMRIGHT", 6, -2)
+coordHit:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 2)
+coordHit:EnableMouse(true)
+coordHit:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+coordHit:SetScript("OnClick", function(self, button)
+    local coords = OrdersCoords()
+    if coords and coords.Gesture then pcall(coords.Gesture, button, { surface = "minimap", anchor = "cursor" }) end
+end)
+coordHit:SetScript("OnEnter", function(self)
+    local coords = OrdersCoords()
+    if coords and coords.Tooltip then pcall(coords.Tooltip, self, { surface = "minimap" }) end
+end)
+coordHit:SetScript("OnLeave", function(self)
+    if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+end)
+coordHit:Hide()
+
+local lastCoords
+local function UpdateCoords()
+    local coords = OrdersCoords()
+    local text
+    if coords then
+        local ok, answer = pcall(coords.MinimapText)
+        if ok and type(answer) == "string" then text = answer end
+    end
+    if text then
+        if text ~= lastCoords then
+            lastCoords = text
+            coordText:SetText(text)
+        end
+        if not coordText:IsShown() then
+            coordText:Show()
+            coordHit:Show()
+        end
+    elseif coordText:IsShown() then
+        lastCoords = nil
+        coordText:Hide()
+        coordHit:Hide()
+    end
+end
+
+local coordDriver = CreateFrame("Frame", nil, Minimap)
+local coordAcc = COORDS_INTERVAL
+coordDriver:SetScript("OnUpdate", function(_, elapsed)
+    coordAcc = coordAcc + (elapsed or 0)
+    if coordAcc < COORDS_INTERVAL then return end
+    coordAcc = 0
+    UpdateCoords()
+end)
+
+-- The wrapper (see above). The handler that was there is kept, whatever it
+-- is; Minimap_OnClick by name only if there was none.
+local baseMouseUp = Minimap:GetScript("OnMouseUp")
+Minimap:SetScript("OnMouseUp", function(self, button, ...)
+    if button == "RightButton" and IsControlKeyDown and IsControlKeyDown()
+        and not (IsShiftKeyDown and IsShiftKeyDown()) and not (IsAltKeyDown and IsAltKeyDown()) then
+        local coords = OrdersCoords()
+        if coords and coords.WantsMinimapClick then
+            local ok, wants = pcall(coords.WantsMinimapClick)
+            if ok and wants then
+                pcall(coords.MinimapClick, self)
+                return
+            end
+        end
+    end
+    local base = baseMouseUp or Minimap_OnClick
+    if base then return base(self, button, ...) end
+end)
+
 local function PositionLFGButton()
     if LFGMinimapFrame then
         LFGMinimapFrame:ClearAllPoints()

@@ -9,6 +9,7 @@ local DefaultSettings = {
     PromotionFlash = true,
     PromotionSound = true,
     StatReadout = true,
+    TrainerOffer = true,      -- name the nearest class trainer, and mark it quietly (Commander Orders)
 }
 
 local frame = CreateFrame("FRAME");
@@ -32,6 +33,10 @@ local function CreateOptionsPanel()
         slashHandlers = {
             test = function()
                 if CommanderPromotion_Test then CommanderPromotion_Test() end
+            end,
+            -- Commander Orders 3.1: the arrow to the nearest class trainer
+            trainer = function()
+                if CommanderPromotion_GoToTrainer then CommanderPromotion_GoToTrainer() end
             end,
         },
     })
@@ -61,6 +66,19 @@ local function CreateOptionsPanel()
         tooltip = "Show the attribute and resource gains under the banner.",
         get = function() return CommanderPromotionDB.StatReadout end,
         set = function(value) CommanderPromotionDB.StatReadout = value end,
+        isEnabled = function() return CommanderPromotionDB.EnablePromotion end,
+    })
+    panel:AddCheckbox({
+        label = "Trainer Offer",
+        tooltip = function()
+            local text = "New ranks wait at your class trainer. On a level-up below the cap, the banner names the nearest one, and a quiet Commander Orders waypoint marks it: it never takes the arrow from anything of yours, is never placed in combat, moves on the next level-up and is taken down when you open a class trainer. /cpromo trainer points the arrow there whenever you ask."
+            if not (CommanderOrders and CommanderOrders.GoTo) then
+                text = text .. "\n\nNeeds Commander Orders, which is not loaded."
+            end
+            return text
+        end,
+        get = function() return CommanderPromotionDB.TrainerOffer end,
+        set = function(value) CommanderPromotionDB.TrainerOffer = value end,
         isEnabled = function() return CommanderPromotionDB.EnablePromotion end,
     })
     panel:AddButtonRow({

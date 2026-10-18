@@ -102,6 +102,99 @@
 -- Nav segment, SharePoint(spec, channel) for "Rally on me" and the TopBar's
 -- Shift-click, and the route, place, paste and manager functions the pins
 -- and the manager use. DECISIONS.md D21 lists them all.
+--
+-- ---------------------------------------------------------------------------
+-- 3.1: the "Go to" API every Commander module calls (SPEC 1, critic D1)
+-- ---------------------------------------------------------------------------
+-- Words: "Go" on a row button, "Go to <Thing>" on a standalone button,
+-- "[Go]" in a chat link; "Waypoint" is only the noun for the record.
+--
+--   CommanderOrders.GoTo(target, opts) -> uid | nil, reason
+--       target: a PLACE { map, x, y [, title] [, alternatives] } (0..1
+--       coordinates; a continent point lands on its zone, as Add does), a
+--       unit follow { kind = "unit", unit = "party1" | guid = "Player-..." },
+--       or a QUERY for CommanderOrders.Locate: { npc = id | "Name" },
+--       { object = id }, { townsfolk = "Repair" ... }, { entrance = uiMap |
+--       { instance = id } }, { itemVendor = itemId }, { itemSource = itemId }
+--       (the kinds are the locator's, CommanderOrdersLocate.lua). Many places
+--       become ONE waypoint: measured from you (inside an instance, from its
+--       door), the ones on your landmass or the island beside it, nearest
+--       first, at most 256, as `alternatives` (the arrow follows the
+--       nearest); with none there, landmass by landmass (Go.FromPlaces).
+--       opts: source (default "user"), key, title, icon, note, setArrow
+--       (default true), persistent, temporary, clearOnArrive, arrive,
+--       silent. Not silent: "Waypoint set: <title> (Zone x, y)" when it
+--       worked (behind the Announce setting, the user's own chat lines),
+--       and on a refusal ONE line: Reason(why), plus the place and its
+--       ChatLink when the coordinates are known. silent says nothing either
+--       way; the caller words it with Reason(reason).
+--   CommanderOrders.IsGoing(source[, key]) -> bool: the arrow's target
+--       belongs to (source, key) (a route stop answers for its route's
+--       owner). A nil key matches any key of that source. GoButton lights
+--       with it.
+--   CommanderOrders.Locate(query) -> places | nil, reason. CommanderOrders
+--       .lua only holds a stand-in answering nil, "loading" until
+--       CommanderOrdersLocate.lua (loaded after this file) replaces it:
+--       assign CommanderOrders.Locate = function(query) ... end there.
+--       places = { { map, x, y, title, kind, npc, zoneName }, ...,
+--       title = "words for the whole list" (optional) }.
+--   CommanderOrders.PlaceFor(target) -> { map, x, y, title, alternatives
+--       [, elsewhere] } | nil, reason: the spot GoTo would point at first
+--       (the nearest of many), for a Shift-click share, a Ctrl-click copy and
+--       the tooltips. A "nearest <townsfolk>" with none on your landmass is
+--       nil, "elsewhere" (D32).
+--   CommanderOrders.Reason(why) -> sentence: the ONE refusal vocabulary
+--       (Data.REASONS): "disabled", "loading", "nowhere", "nomap",
+--       "nocoords", "instance", "otherside", "elsewhere", "noquestie", "notready",
+--       "needsorders", "noquery", "unknown", "error", and every word the
+--       3.0 API answers with. An unknown code comes back capitalised.
+--   CommanderOrders.FormatCoords(x01, y01[, decimals]) -> "45.2, 66.8";
+--       decimals default to the CoordDecimals setting (0..2, default 1).
+--   CommanderOrders.WayLineFor(map, x01, y01, title) -> "/way #1944 45.20
+--       66.80 Title" (always 2 dp; no "#id" when map is nil).
+--   CommanderOrders.ChatText(map, x01, y01, title) -> "Title - Hellfire
+--       Peninsula 45.2, 66.8 (/way #1944 45.20 66.80)": what goes into chat
+--       for players without addons. Never starts with "/".
+--   CommanderOrders.ChatLink(map, x01, y01, title[, text]) -> the LOCAL
+--       link "|cff71d5ff|Haddon:CommanderOrders:w:<map>:<x %.4f>:<y %.4f>:
+--       <title %XX>|h[<text or Go>]|h|r" for print lines; never send it.
+--       CommanderOrders.ParseChatLink(link or payload) -> map, x, y, title.
+--   CommanderOrders.CopyText(text): the copy box (COMMANDER_ORDERS_COPY,
+--       255 letters, "Ctrl+C to copy").
+--   CommanderOrders.ParseCoords(text) -> { map, x, y, title } | nil,
+--       message: what /way would make of a typed line ("Zone 45 66 Title",
+--       "#1944 45.2 66.8", "45 66" on the player's map).
+--   CommanderOrders.SaveAsPlace(uid[, title]) -> place index: a waypoint
+--       kept as a named place; MarkPlace(title[, at]) takes a spot too.
+--   CommanderOrders.Entrance(uiMap | { instance = id }) -> a door:
+--       R.DoorLookup (CommanderOrdersLocate.lua's shipped door table, when it
+--       sets one) first, then the registered resolvers for a uiMap it does
+--       not know, then the client's list (D37).
+--   Commander.UI.GoButton / GoRowHint live in Commander_Events
+--   (CommanderGoButton.lua) and call the functions above.
+--   For the other 3.1 files: R.Decimals() (CoordDecimals, 0..2),
+--   R.AskCoords(uid | nil) (the typed-coordinates box), R.DoorLookup (the
+--   locator's door table, theirs to set), O.Coords.Command(rest) answers
+--   "/corder coords ..." when CommanderOrdersCoords.lua defines it, and the
+--   settings they read are all in CommanderOrdersDB.lua's defaults.
+--
+-- Gestures (one rule, cited by every consumer): on a coordinate surface
+-- (the coordinate block, the TopBar's coordinates, the minimap label, a chat
+-- link) Left = Go, Shift = share, Ctrl = copy /way, Right = menu. A list row
+-- with no room for a button: Ctrl+Right-click = Go, with GoRowHint in its
+-- tooltip. A GoButton: click Go, Shift-click share, Ctrl-click copy.
+--
+-- 3.1 also: Update moves through the same zone and world checks as Add; the
+-- record the arrow is pinned to and the active route survive a /reload
+-- (D5); in a battleground with no UnitPosition the arrow measures from the
+-- map position (D6); Follow the Closest keeps to your zone and to your own
+-- and shared waypoints by default (ClosestScope, ClosestMineOnly); a unit
+-- follow finds its member again by GUID after a roster change and does not
+-- clear on arrival; the CHAT and SAY shares post ChatText through
+-- C_ChatInfo.SendChatMessage; shares stack (multiple = true); Orphan-typed
+-- instance maps (Black Morass, Old Hillsbrad, Hyjal, Zul'Aman) get the
+-- entrance hint. New files in the TOC need a full client restart, not a
+-- /reload.
 
 CommanderOrders = CommanderOrders or {}
 local O = CommanderOrders
@@ -152,6 +245,7 @@ local A = {
     inCombat = false, mapShown = false, pulse = 0,
     hintKey = nil, resolverGen = 0,
     unitPos = {},                       -- { map } of a followed unit, reused every pass
+    unitGuid = {},                      -- uid -> GUID of a followed member (3.1)
 }
 
 -- ---------------------------------------------------------------------------
@@ -280,6 +374,7 @@ local function Env()
         env.mapInfoAtPosition = function(m, x, y) return C_Map.GetMapInfoAtPosition(m, x, y) end
         env.mapChildren = function(id) return C_Map.GetMapChildrenInfo(id) end
     end
+    env.islands = D.ISLANDS
     return env
 end
 
@@ -331,12 +426,38 @@ local function PlayerMapPos()
     return UnitMapPos("player")
 end
 
+-- The battleground hedge (3.1, critic D6): UnitPosition may answer nothing
+-- inside a battleground (ASSUMPTIONS A1, unproven either way), while the map
+-- position does. There the player's world position is derived from the map
+-- position through Geo, at most ten times a second (the map position
+-- allocates a Vector2D a call and the arrow turns every frame).
+local hedge = { at = -1 }
+local function PvPWorld()
+    if not IsInInstance then return nil end
+    local inside, kind = IsInInstance()
+    if not (inside and kind == "pvp") then return nil end
+    local now = Clock()
+    if not (now >= hedge.at and now - hedge.at < 0.1) then
+        hedge.at = now
+        hedge.n, hedge.w, hedge.inst = nil, nil, nil
+        local map, x, y = PlayerMapPos()
+        if map then
+            local inst, n, w = G.ToWorld(Env(), map, x, y)
+            if inst ~= nil then hedge.n, hedge.w, hedge.inst = n, w, inst end
+        end
+    end
+    return hedge.n, hedge.w, hedge.inst
+end
+
 -- north, west, instance of a unit (the player by default), nil when the
--- client has none (instances, loading)
+-- client has none (instances, loading). The player in a battleground falls
+-- back to the hedge above.
 local function UnitWorld(unit)
-    if not UnitPosition then return nil end
-    local ok, north, west, _, inst = pcall(UnitPosition, unit or "player")
-    if ok and IsNum(north) and IsNum(west) and inst ~= nil then return north, west, inst end
+    if UnitPosition then
+        local ok, north, west, _, inst = pcall(UnitPosition, unit or "player")
+        if ok and IsNum(north) and IsNum(west) and inst ~= nil then return north, west, inst end
+    end
+    if unit == nil or unit == "player" then return PvPWorld() end
     return nil
 end
 
@@ -347,15 +468,47 @@ local function Facing()
     return nil
 end
 
+-- instance, north, west of a point on a map. A zone, dungeon, micro or
+-- orphan map (mapType 3 and up) is linear in north and west across its face
+-- (every UiMapAssignment row of such a map in build 69795 shares one
+-- transform; CommanderOrdersCoords.lua's C.Rect reads them the same way), so
+-- two GetWorldPosFromMapPos probes per map, kept for the session, turn any
+-- point on it into yards by arithmetic. GetWorldPosFromMapPos takes a fresh
+-- Vector2D and hands back another (a CreateFromMixins copy each): a nearest-
+-- of-600 hover made 1,200 of them (review: perf). The World and continent
+-- maps hold several frames and go through Geo every time.
+local mapRects = {}
+local function WorldOf(map, x, y)
+    if type(map) ~= "number" or not (IsNum(x) and IsNum(y)) then return nil end
+    local r = mapRects[map]
+    if r == nil then
+        r = false
+        local info = MapInfo(map)
+        if info and type(info.mapType) == "number" and info.mapType >= 3 then
+            local e = Env()
+            local i1, n1, w1 = G.ToWorld(e, map, 0.25, 0.25)
+            local i2, n2, w2 = G.ToWorld(e, map, 0.75, 0.75)
+            if i1 ~= nil and i1 == i2 and n1 ~= n2 and w1 ~= w2 then
+                local dn, dw = (n2 - n1) / 0.5, (w2 - w1) / 0.5
+                r = { inst = i1, n0 = n1 - 0.25 * dn, w0 = w1 - 0.25 * dw, dn = dn, dw = dw }
+            end
+        end
+        -- a map the client knows nothing about yet is asked again next time
+        if info then mapRects[map] = r end
+    end
+    if r then return r.inst, r.n0 + y * r.dn, r.w0 + x * r.dw end
+    return G.ToWorld(Env(), map, x, y)
+end
+
 -- World position of any {map, x, y} table, cached on the table and checked
 -- against its numbers (records, alternatives and the player table all reuse
--- their tables; GetWorldPosFromMapPos allocates)
+-- their tables)
 local worldCache = setmetatable({}, { __mode = "k" })
 local function PosWorld(p)
     if type(p) ~= "table" or type(p.map) ~= "number" then return nil end
     local c = worldCache[p]
     if not (c and c.map == p.map and c.x == p.x and c.y == p.y) then
-        local inst, n, w = G.ToWorld(Env(), p.map, p.x, p.y)
+        local inst, n, w = WorldOf(p.map, p.x, p.y)
         c = { map = p.map, x = p.x, y = p.y, inst = inst, n = n, w = w }
         worldCache[p] = c
     end
@@ -431,6 +584,20 @@ local function SamplePlayer(now)
 end
 
 ctx.sameLandmass = function(a, b) return G.SameLandmass(Env(), a, b) end
+-- Follow the Closest's "my zone" scope (3.1). A capital counts as part of
+-- the zone around it (Data.CITY_ZONES, D35): a mark just outside the
+-- Stormwind gate is in scope from the Trade District, and the other way
+-- round. Geo.Zone itself is left alone: it is the coordinate frame the
+-- block and the chat links read.
+local function ScopeZone(map)
+    local z = G.Zone(Env(), map)
+    local fold = z and D.CITY_ZONES and D.CITY_ZONES[z]
+    return fold or z
+end
+ctx.sameZone = function(a, b)
+    local za = ScopeZone(a)
+    return za ~= nil and za == ScopeZone(b)
+end
 
 ctx.distance = function(a, b)
     if type(a) ~= "table" or type(b) ~= "table" then return nil end
@@ -492,6 +659,8 @@ local function BuildCtx(now, force)
     ctx.corpseArrow = db.CorpseArrow ~= false
     ctx.autoClosest = db.AutoClosest ~= false
     ctx.arriveYards = db.ArriveYards
+    ctx.closestScope = db.ClosestScope
+    ctx.closestMine = db.ClosestMineOnly ~= false
     ctx.onTaxi = (UnitOnTaxi and UnitOnTaxi("player")) and true or false
     ctx.now = now
     SamplePlayer(now)
@@ -553,6 +722,15 @@ local function LoadStore()
             if not ok then Report(err) end
         end
     end
+    -- A "Guide me" hop that held the arrow at the save holds it again, and
+    -- so does its link to the target: crossing without walking onto the hop
+    -- (a hearth, a portal, the other boat) still hands the arrow back
+    -- instead of pointing across the crossing just made. A target that did
+    -- not survive leaves the hop to be dropped on that crossing.
+    local hop = store:Pinned()
+    if hop and hop.source == "guide" and type(hop.guideFor) == "string" then
+        A.guide = { uid = hop.uid, target = store:Get(hop.guideFor) and hop.guideFor or nil }
+    end
     seenVersion = store.version
     return store
 end
@@ -566,8 +744,11 @@ end
 -- ---------------------------------------------------------------------------
 -- Words about a waypoint
 -- ---------------------------------------------------------------------------
+-- At the CoordDecimals setting (3.1; 0..2, default 1), like every readout
 local function Coords(x, y)
-    return G.FormatCoords(x, y, 1) or ""
+    local d = tonumber(DB().CoordDecimals) or 1
+    if d < 0 then d = 0 elseif d > 2 then d = 2 end
+    return G.FormatCoords(x, y, floor(d)) or ""
 end
 
 local function Where(wp)
@@ -641,7 +822,15 @@ local function PrepareSpec(spec)
         s.clearOnArrive = false
     end
     if s.kind == "unit" then
+        -- 3.1: a member may be named by GUID; the token is looked up now
+        -- and again after every roster change (A.unitGuid)
+        if type(s.guid) == "string" and s.guid ~= "" then
+            local token = R.UnitForGuid(s.guid)
+            if token then s.unit = token end
+        end
         if type(s.unit) ~= "string" or not D.FOLLOW_UNITS[s.unit] then return nil, "invalid unit" end
+        -- following someone never ends by catching up with them
+        if s.clearOnArrive == nil then s.clearOnArrive = false end
         return s
     end
     -- A point on a world or continent map becomes the zone under it: the
@@ -687,7 +876,12 @@ function API.Add(spec)
     end
     if s.setArrow and store:Pinned() == wp and not s.silent then
         Cue("SET")
-        if UserSource(s.source) then Announce("waypoint set: " .. Describe(wp)) end
+        if UserSource(s.source) and not s.noAnnounce then Announce("waypoint set: " .. Describe(wp)) end
+    end
+    if wp.kind == "unit" then
+        local guid = (type(s.guid) == "string" and s.guid ~= "") and s.guid
+            or (UnitGUID and wp.unit and UnitGUID(wp.unit)) or nil
+        A.unitGuid[wp.uid] = guid
     end
     Changed("add")
     return wp.uid, nil, status
@@ -867,9 +1061,29 @@ local function Resolve(kind, ...)
     return nil
 end
 
+-- A move goes through what an Add goes through (3.1, critic C11): a point
+-- on a world or continent map lands on the zone under it, and a spot with
+-- no world position is refused, never stored where the arrow cannot point.
 function API.Update(uid, fields)
     if not store then return nil, "loading" end
     if type(fields) ~= "table" then return nil, "no fields" end
+    if fields.map ~= nil or fields.x ~= nil or fields.y ~= nil then
+        local wp = store:Get(UidOf(uid))
+        if not wp then return nil, "unknown" end
+        local f = {}
+        for k, v in pairs(fields) do f[k] = v end
+        local m, x, y = f.map, f.x, f.y
+        if m == nil then m = wp.map end
+        if x == nil then x = wp.x end
+        if y == nil then y = wp.y end
+        if type(m) == "number" and IsNum(x) and IsNum(y) and S.ValidPosition(m, x, y) then
+            m, x, y = OnZone(m, x, y)
+            local e = Env()
+            if e.worldPos and G.ToWorld(e, m, x, y) == nil then return nil, "no world position" end
+            f.map, f.x, f.y = m, x, y
+        end
+        fields = f
+    end
     local wp, err = store:Update(UidOf(uid), fields)
     if not wp then return nil, err end
     Changed("update")
@@ -997,39 +1211,58 @@ end
 -- ---------------------------------------------------------------------------
 -- Landmass hints: "In Outland, via the Dark Portal in the Blasted Lands"
 -- ---------------------------------------------------------------------------
+-- A dungeon or raid map: mapType 4, or 6 (Orphan) for the TBC instance
+-- maps the client files that way (The Black Morass 273, Old Hillsbrad 274,
+-- Hyjal 329, Zul'Aman 333; UiMap.csv). 3.1, critic D4 / deferred H4.
+local function InstanceMap(info)
+    return info ~= nil and (info.mapType == 4 or info.mapType == 6)
+end
+
 local function LandmassName(key, pos)
     if key and D.LANDMASS_NAMES[key] then return D.LANDMASS_NAMES[key] end
     local info = pos and MapInfo(pos.map)
-    if info and info.mapType == 4 then return MapName(pos.map) end
+    if InstanceMap(info) then return MapName(pos.map) end
     local cont = pos and G.Continent(Env(), pos.map)
     return MapName(cont) or (pos and MapName(pos.map)) or "another land"
 end
 
--- The first connection on the way from one landmass to another (breadth
--- first over Data.CONNECTIONS, this faction's and everyone's; the first
--- listed of equal length wins, which is why the spots with coordinates come
--- first in the table)
+-- The first connection on the way from one landmass to another, over
+-- Data.CONNECTIONS (this faction's and everyone's). Among the first hops of
+-- every SHORTEST way there (3.1, deferred H3), the one whose departure is
+-- nearest the player wins; a text-only hop (no place to go to) only when
+-- nothing with a place ties with it; then the table's order. A Horde player
+-- in the Ghostlands bound for the Plaguelands is no longer sent to the Orb.
 local function FirstHop(fromKey, toKey)
     if not fromKey or not toKey or fromKey == toKey then return nil end
     local faction = Faction()
-    local via = { [fromKey] = false }
-    local queue, head = { fromKey }, 1
+    -- hops still to go from each landmass (breadth first over the reversed legs)
+    local left = { [toKey] = 0 }
+    local queue, head = { toKey }, 1
     while queue[head] do
         local here = queue[head]
         head = head + 1
         for _, c in ipairs(D.CONNECTIONS) do
-            if c.from == here and via[c.to] == nil and (not c.faction or c.faction == faction) then
-                via[c.to] = c
-                if c.to == toKey then
-                    local step = c
-                    while via[step.from] do step = via[step.from] end
-                    return step
-                end
-                queue[#queue + 1] = c.to
+            if c.to == here and left[c.from] == nil and (not c.faction or c.faction == faction) then
+                left[c.from] = left[here] + 1
+                queue[#queue + 1] = c.from
             end
         end
     end
-    return nil
+    local need = left[fromKey]
+    if not need then return nil end
+    local pn, pw, pinst = playerNow.n, playerNow.w, playerNow.inst
+    local best, bestD
+    for _, c in ipairs(D.CONNECTIONS) do
+        if c.from == fromKey and left[c.to] == need - 1 and (not c.faction or c.faction == faction) then
+            local d
+            if c.map and pn then
+                local ci, cn, cw = PosWorld(c)
+                if ci ~= nil and ci == pinst then d = G.Distance(pn, pw, cn, cw) end
+            end
+            if not best or (d and (not bestD or d < bestD)) then best, bestD = c, d end
+        end
+    end
+    return best
 end
 
 -- The built-in entrance resolver of last resort: the client's own dungeon
@@ -1037,13 +1270,13 @@ end
 -- it may hold nothing (ASSUMPTIONS A8, probe P9); then it simply answers nil.
 local function ClientEntrance(map)
     local info = MapInfo(map)
-    if not (info and info.mapType == 4 and info.name) then return nil end
+    if not (InstanceMap(info) and info.name) then return nil end
     local ej = C_EncounterJournal
     if not (ej and ej.GetDungeonEntrancesForMap) then return nil end
     local zone = info.parentMapID
     for _ = 1, 4 do
         local zinfo = MapInfo(zone)
-        if not zinfo or zinfo.mapType ~= 4 then break end
+        if not InstanceMap(zinfo) then break end
         zone = zinfo.parentMapID
     end
     local ok, list = pcall(ej.GetDungeonEntrancesForMap, zone)
@@ -1057,23 +1290,69 @@ local function ClientEntrance(map)
     return nil
 end
 
-local function Entrance(map)
-    local e = Resolve("entrance", map)
-    if type(e) ~= "table" then e = ClientEntrance(map) end
+local function GoodDoor(e)
     if type(e) == "table" and type(e.map) == "number" and S.ValidPosition(e.map, e.x, e.y) then return e end
     return nil
 end
 
--- The door of a dungeon or raid uiMap, found the way the arrow's own
--- dungeon hint finds it: the registered "entrance" resolvers first (QuestLog
--- registers one from Questie's dungeon table), then the client's list.
--- Commander_Guide asks this before its own cited raid table. A copy: a
--- resolver's table is never handed out (the runtime caches a world
--- position on the tables it is given).
+-- arg: a dungeon uiMap, or (3.1) { instance = instanceMapID }. The shipped
+-- door table first (R.DoorLookup, set by CommanderOrdersLocate.lua, pcall'd;
+-- it answers both shapes, every door of a several-door instance as
+-- alternatives): it is reviewed door by door (D37). The registered "entrance"
+-- resolvers answer only a uiMap the table does not know (QuestLog's, from
+-- Questie's dungeon list, keeps working for those), then the client's own
+-- list.
+local function Entrance(map)
+    local e
+    if type(R.DoorLookup) == "function" then
+        local ok, door = pcall(R.DoorLookup, map)
+        if ok then e = GoodDoor(door) end
+    end
+    if not e and type(map) == "number" then e = GoodDoor(Resolve("entrance", map)) end
+    if not e and type(map) == "number" then e = GoodDoor(ClientEntrance(map)) end
+    return e
+end
+
+-- The dungeon or raid you stand in, by the client's instance map id (the
+-- 8th value of GetInstanceInfo, read the way 2.5.6's AdventureGuideUtil.lua
+-- and Questie's GetCurrentZoneId read it); nil outside one, and in a
+-- battleground or an arena. The uiMap chain cannot always name it:
+-- Magisters' Terrace (585) has no uiMap on 2.5.6 (no UiMap row, no
+-- UiMapAssignment row for 585), so GetBestMapForUnit answers nil in there
+-- and only this finds its door (review-r2; ASSUMPTIONS A64).
+local function InstanceIdOf(ok, ...)
+    if not ok then return nil end
+    local id = select(8, ...)
+    if type(id) == "number" then return id end
+    return nil
+end
+
+local function CurrentInstanceID()
+    if not (IsInInstance and GetInstanceInfo) then return nil end
+    local inside, kind = IsInInstance()
+    if not (inside and (kind == "party" or kind == "raid")) then return nil end
+    return InstanceIdOf(pcall(GetInstanceInfo))
+end
+
+-- The door of a dungeon or raid uiMap (or { instance = id }), found the way
+-- the arrow's own dungeon hint finds it: the shipped door table first, then
+-- the registered "entrance" resolvers for what it lacks (QuestLog registers
+-- one from Questie's dungeon table), then the client's list. Commander_Guide
+-- asks this before its own cited raid table. A copy: a resolver's table is
+-- never handed out (the runtime caches a world position on the tables it is
+-- given); a door with several spots keeps them as alternatives.
 function API.Entrance(map)
     local e = Entrance(map)
     if type(e) ~= "table" then return nil end
-    return { map = e.map, x = e.x, y = e.y, title = e.title }
+    local out = { map = e.map, x = e.x, y = e.y, title = e.title }
+    if type(e.alternatives) == "table" then
+        local alts = {}
+        for i, a in ipairs(e.alternatives) do
+            if type(a) == "table" then alts[i] = { map = a.map or a[1], x = a.x or a[2], y = a.y or a[3] } end
+        end
+        out.alternatives = alts
+    end
+    return out
 end
 
 -- What to tell a player whose target is not on their landmass:
@@ -1081,7 +1360,7 @@ end
 local function Hint(playerKey, pos, targetKey)
     local landName = LandmassName(targetKey, pos)
     local info = MapInfo(pos.map)
-    if info and info.mapType == 4 then
+    if InstanceMap(info) then
         local e = Entrance(pos.map)
         if e then
             local ei = PosWorld(e)
@@ -1402,8 +1681,10 @@ function Arrow.Compose(c, dt)
                 v.mode = "OTHER"
                 -- worked out once per pair of landmasses (and target map),
                 -- not ten times a second
-                local key = format("%s|%s|%s|%s|%d", tostring(pKey), tostring(tKey),
-                    tostring(pos and pos.map), tostring(Faction()), A.resolverGen)
+                -- the player's map too: the nearest departure (FirstHop)
+                -- is worked out again in each zone
+                local key = format("%s|%s|%s|%s|%d|%s", tostring(pKey), tostring(tKey),
+                    tostring(pos and pos.map), tostring(Faction()), A.resolverGen, tostring(c.player.map))
                 if A.hintKey ~= key then
                     A.hintKey = key
                     A.hintLand, A.hintHop = Hint(pKey, pos or wp, tKey)
@@ -1598,6 +1879,12 @@ local function WaypointMenu(uid)
     if wp.map then
         entries[#entries + 1] = { text = "Copy /way line", func = function() CopyLine(O.WayLine(id)) end }
     end
+    -- 3.1 (deferred A1): what the arrow's menu offers, on every pin and row
+    entries[#entries + 1] = { text = "Mark arrived", func = function() O.MarkArrived(id) end }
+    if wp.map and wp.kind ~= "corpse" and wp.kind ~= "unit" then
+        entries[#entries + 1] = { text = "Save as place", func = function() O.SaveAsPlace(id) end }
+    end
+    entries[#entries + 1] = { text = "Point at the closest", func = function() O.Command("closest") end }
     entries[#entries + 1] = { text = "Remove", func = function() O.Remove(id) end }
     return entries
 end
@@ -1610,10 +1897,13 @@ function API.Guide()
     local hop = v.mode == "OTHER" and v.hop
     if not (hop and hop.map) then return nil, "no guide" end
     local target = v.wp and v.wp.uid
+    -- guideFor: the hop names its target on the record, so the link
+    -- survives a reload with it (D33: the pinned hop is kept, and the
+    -- Store keeps the target beside it); LoadStore restores A.guide
     local uid, err = API.Add({
         map = hop.map, x = hop.x, y = hop.y, title = Cut("To " .. (v.landName or "there"), 60),
         source = "guide", key = "hop", setArrow = true, persistent = false, clearOnArrive = true,
-        note = "via " .. hop.name, icon = "ROUTE",
+        note = "via " .. hop.name, icon = "ROUTE", guideFor = target,
     })
     if uid then A.guide = { uid = uid, target = target } end
     return uid, err
@@ -1641,8 +1931,12 @@ function Arrow.Menu()
         end
         if wp.map then
             entries[#entries + 1] = { text = "Copy /way line", func = function() CopyLine(O.WayLine(id)) end }
+            if wp.kind ~= "corpse" and wp.kind ~= "unit" then
+                entries[#entries + 1] = { text = "Save as place", func = function() O.SaveAsPlace(id) end }
+            end
         end
     end
+    entries[#entries + 1] = { text = "Point at the closest", func = function() O.Command("closest") end }
     entries[#entries + 1] = { text = "Open manager", func = function() O.OpenManager(wp and wp.uid) end }
     entries[#entries + 1] = { text = Unlocked() and "Lock arrow" or "Unlock arrow",
         func = function() O.Command(Unlocked() and "lock" or "unlock") end }
@@ -1907,7 +2201,9 @@ function Way.Closest()
     if not store then return end
     local wp = store:Closest(BuildCtx(Clock(), true))
     if not wp then
-        Say("no waypoint on this landmass")
+        -- the same scope Follow the Closest uses (3.1, ClosestScope)
+        Say(DB().ClosestScope == "ZONE" and "no waypoint in this zone (Closest Within, /corder)"
+            or "no waypoint on this landmass")
         return
     end
     store:SetPinned(wp.uid)
@@ -2158,15 +2454,17 @@ function SHIM.IsCrazyArrowEmpty()
     return API.Active() == nil
 end
 
+-- The bridge's callers ask for the closest of everything, their own
+-- waypoints included (ClosestMineOnly is the arrow's rule, not theirs)
 function SHIM.GetClosestWaypoint()
     if not store then return nil end
-    local wp = store:Closest(BuildCtx(Clock(), true))
+    local wp = store:Closest(BuildCtx(Clock(), true), true)
     return wp and ShimUid(wp) or nil
 end
 
 function SHIM.SetClosestWaypoint(verbose)
     if not store then return nil end
-    local wp = store:Closest(BuildCtx(Clock(), true))
+    local wp = store:Closest(BuildCtx(Clock(), true), true)
     if not wp then
         if verbose then Say("no waypoint on this landmass") end
         return nil
@@ -2262,19 +2560,34 @@ local function GroupChannel()
     return nil
 end
 
+-- The CoordDecimals setting, 0..2 (default 1)
+local function Decimals()
+    local d = tonumber(DB().CoordDecimals)
+    if not d then return 1 end
+    d = floor(d)
+    if d < 0 then return 0 elseif d > 2 then return 2 end
+    return d
+end
+
 -- One spot ({ map, x, y, title }) onto the wire or into chat. channel:
 -- nil/"GROUP" (your group, the right channel for it), "PARTY", "RAID",
--- "INSTANCE_CHAT", "GUILD", "CHAT" (the /way line as a chat message, for
--- players without addons: your group's chat, else /say) or "SAY". The chat
--- forms need a hardware event (a click or a key), so they come from menus.
+-- "INSTANCE_CHAT", "GUILD", "CHAT" (a readable line for players without
+-- addons: your group's chat, else /say) or "SAY". The chat forms need a
+-- hardware event (a click or a key), so they come from menus and buttons.
+-- 3.1 (critic D11): the line is ChatText, "Title - Zone 45.2, 66.8 (/way
+-- #id 45.20 66.80)" (a line starting with /way is run on the reader's
+-- side, not shown), sent through C_ChatInfo.SendChatMessage (the bare
+-- SendChatMessage is the deprecation shim, kept as the fallback).
 -- quiet skips the Announce line (a caller whose own chat line says it).
 function Share.Send(rec, channel, quiet)
     if type(channel) == "string" then channel = channel:upper() end
     if channel == "CHAT" or channel == "SAY" then
-        local line = G.WayLine(rec.map, rec.x, rec.y, rec.title)
+        local line = G.ChatText(rec.map, rec.x, rec.y, rec.title, MapName(rec.map), Decimals())
+        if not line then return nil, "invalid position" end
         local chatType = channel == "SAY" and "SAY" or (GroupChannel() or "SAY")
-        if not SendChatMessage then return nil, "no chat" end
-        local sent, err = pcall(SendChatMessage, line, chatType)
+        local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+        if type(send) ~= "function" then return nil, "no chat" end
+        local sent, err = pcall(send, line, chatType)
         if not sent then return nil, tostring(err) end
         return true
     end
@@ -2421,7 +2734,10 @@ function Share.OnMessage(prefix, text, channel, sender)
     if StaticPopup_Show and StaticPopupDialogs and StaticPopupDialogs.COMMANDER_ORDERS_SHARE then
         StaticPopup_Show("COMMANDER_ORDERS_SHARE", rec.sender, rec.text, rec)
     else
-        Say(rec.sender .. " shared a waypoint: " .. rec.text .. " (/corder manager to add it)")
+        -- no dialog to ask with: the line itself carries the way to add it
+        -- (there is no inbox to point at; 3.1, critic D13)
+        local link = G.ChatLink(map, x, y, rec.title ~= "" and rec.title or nil)
+        Say(rec.sender .. " shared a waypoint: " .. rec.text .. (link and (" " .. link) or ""))
     end
 end
 
@@ -2459,9 +2775,12 @@ function Corpse.OnDead()
     if not char then return end
     local inside, kind = false, nil
     if IsInInstance then inside, kind = IsInInstance() end
+    -- instanceID: the dungeon's own id, for one with no uiMap at all
+    -- (Magisters' Terrace), where map is nil and only the id finds its door
     char.Corpse = {
         map = PlayerMap(), at = Epoch(),
         instance = inside and kind or nil,
+        instanceID = CurrentInstanceID(),
         pvp = (kind == "pvp" or kind == "arena") or nil,
     }
     A.corpse = { reached = false }
@@ -2512,16 +2831,34 @@ function Corpse.Resolve()
     -- it on the zone under it, never in a continent map's two frames
     if map then map, x, y = OnZone(map, x, y) end
     local title = "Your corpse"
-    if not map and death and type(death.map) == "number" then
-        local e = Entrance(death.map)
+    local doors
+    if not map and death then
+        local e, where
+        if type(death.map) == "number" then
+            e = Entrance(death.map)
+            where = e and MapName(death.map)
+        end
+        -- a dungeon with no uiMap (Magisters' Terrace): by its instance id,
+        -- named by the door (a zone map the client may answer in there is
+        -- not the dungeon's name)
+        if not e and type(death.instanceID) == "number" then e = Entrance({ instance = death.instanceID }) end
         if e then
             map, x, y = e.map, e.x, e.y
-            title = "Your corpse: " .. (MapName(death.map) or "instance") .. " entrance"
+            if where then
+                title = "Your corpse: " .. where .. " entrance"
+            elseif type(e.title) == "string" and e.title ~= "" then
+                title = "Your corpse: " .. e.title
+            else
+                title = "Your corpse: instance entrance"
+            end
+            -- every door of a several-door instance (Karazhan, Blackrock
+            -- Depths, the Coilfang approach): the arrow takes the nearest
+            if type(e.alternatives) == "table" then doors = e.alternatives end
         end
     end
     if not map then return end
     local wp = store:Add({
-        kind = "corpse", source = "corpse", title = title, map = map, x = x, y = y,
+        kind = "corpse", source = "corpse", title = title, map = map, x = x, y = y, alternatives = doors,
         persistent = true, clearOnArrive = true, setArrow = false, icon = "CORPSE",
     })
     if wp then
@@ -2594,10 +2931,18 @@ local function FindPlace(ref)
     return nil
 end
 
-function API.MarkPlace(title)
+-- at (3.1, optional): { map, x, y } to keep instead of where you stand (a
+-- waypoint's "Save as place", a map click)
+function API.MarkPlace(title, at)
     local ok, why = Available()
     if not ok then return nil, why end
-    local map, x, y = PlayerMapPos()
+    local map, x, y
+    if type(at) == "table" then
+        if not S.ValidPosition(at.map, at.x, at.y) then return nil, "invalid position" end
+        map, x, y = OnZone(at.map, at.x, at.y)
+    else
+        map, x, y = PlayerMapPos()
+    end
     if not map then return nil, "no position" end
     if not G.ToWorld(Env(), map, x, y) then return nil, "no world position" end
     local list = PlaceList()
@@ -2909,6 +3254,17 @@ function COMMANDS.set(rest)
     if not Rally("set", rest) then Say("usage: /corder set 1-4 (or /corder mark <name>)") end
 end
 
+-- /corder coords [...]: the coordinate block's (3.1). CommanderOrdersCoords.lua
+-- answers through O.Coords.Command(rest) when it is in.
+function COMMANDS.coords(rest)
+    local c = O.Coords
+    if type(c) == "table" and type(c.Command) == "function" then
+        c.Command(rest)
+    else
+        Say("the coordinate block is not loaded (a new file needs a full client restart)")
+    end
+end
+
 function API.Command(word, rest)
     word = strlower(Trim(word))
     local fn = COMMANDS[word]
@@ -2934,6 +3290,450 @@ local BINDINGS = {
 function API.Binding(action)
     local fn = BINDINGS[action]
     if fn then fn() end
+end
+
+-- ---------------------------------------------------------------------------
+-- 3.1: Go to (SPEC 1). The words and gestures are in the header.
+-- ---------------------------------------------------------------------------
+local Go = { QUERY_KINDS = { "npc", "object", "townsfolk", "entrance", "itemVendor", "itemSource" } }
+
+-- A query for Locate, as opposed to a place or a unit follow
+function Go.IsQuery(t)
+    if type(t) ~= "table" then return false end
+    if t.map ~= nil or t.alternatives ~= nil or t.kind == "unit" then return false end
+    for _, k in ipairs(Go.QUERY_KINDS) do
+        if t[k] ~= nil then return true end
+    end
+    return false
+end
+
+-- A position out of a place in either shape ({ map, x, y } or { m, x, y })
+function Go.Pos(p)
+    if type(p) ~= "table" then return nil end
+    local m, x, y = p.map, p.x, p.y
+    if m == nil then m, x, y = p[1], p[2], p[3] end
+    if S.ValidPosition(m, x, y) then return m, x, y end
+    return nil
+end
+
+-- Where "nearest" is measured from: north, west, instance and landmass key
+-- of the player; inside a dungeon or raid, where the client gives no world
+-- position, of the instance's door (its first spot, the door table first:
+-- Entrance), which is where you come out, so a Go made inside picks what is
+-- nearest the door, never Questie's first entry (review: locator). The
+-- door is found by your dungeon uiMap, else by the instance's own id (the
+-- 8th of GetInstanceInfo), for the dungeon with no uiMap at all: Magisters'
+-- Terrace, where a "nearest repair" was otherwise cut to Questie's first 256
+-- and named a smith in Elwynn (review-r2). nil when neither answers (a
+-- loading screen, an instance with no known door).
+function Go.Origin()
+    local c = BuildCtx(Clock(), true)
+    local pn, pw, pinst = playerNow.n, playerNow.w, playerNow.inst
+    if c.player and pinst ~= nil and pn then
+        local key = Landmass(c.player.map, pinst)
+        if key then return pn, pw, pinst, key end
+    end
+    local map = PlayerMap()
+    local e
+    if map and InstanceMap(MapInfo(map)) then e = Entrance(map) end
+    if not e then
+        local id = CurrentInstanceID()
+        if id then e = Entrance({ instance = id }) end
+    end
+    if e then
+        local ei, en, ew = WorldOf(e.map, e.x, e.y)
+        local key = ei ~= nil and Landmass(e.map, ei)
+        if key then return en, ew, ei, key, true end
+    end
+    return nil
+end
+
+-- "1414:1:teldrassil" -> "1414:1": the continent frame an island lies in
+local function BaseKey(key)
+    if type(key) ~= "string" then return nil end
+    return key:match("^([^:]+:[^:]+)") or key
+end
+
+-- The landmasses one cited leg away from `fromKey` for this faction
+-- (Data.CONNECTIONS), as a set
+local function LegsFrom(fromKey)
+    local out, faction = {}, Faction()
+    for _, c in ipairs(D.CONNECTIONS) do
+        if c.from == fromKey and (not c.faction or c.faction == faction) then out[c.to] = true end
+    end
+    return out
+end
+
+-- Many places as ONE spec. Measured from Go.Origin(), the candidates are the
+-- places on its landmass AND on an island of the same continent frame (D40:
+-- Data.ISLANDS splits Teldrassil off Kalimdor so the arrow names the boat;
+-- the nearest bank from Auberdine is still Darnassus, one boat away, never
+-- Everlook through Felwood). The nearest candidate wins, and the places on
+-- ITS landmass, nearest first, are the alternatives the arrow follows (an
+-- island winner shows OTHER with the boat until you cross). reach = "here"
+-- (on your landmass), "island" (the island beside it), "elsewhere" (none on
+-- either: the places come landmass by landmass, those one cited leg away
+-- first, each in the order given) or "unknown" (no origin: the places on
+-- the continent you are on first). Never cut at S.MAX_ALTERNATIVES before
+-- that ordering. title: the caller's words, else the list's own
+-- (places.title), else the shared title, else the first one's.
+function Go.FromPlaces(places, title)
+    local list = {}
+    for _, p in ipairs(places) do
+        local m, x, y = Go.Pos(p)
+        if m then list[#list + 1] = { map = m, x = x, y = y, title = type(p) == "table" and p.title or nil } end
+    end
+    if #list == 0 then return nil, "nowhere" end
+    local on, ow, oinst, oKey = Go.Origin()
+    local reach
+    if oKey then
+        local oBase = BaseKey(oKey)
+        -- instance -> map -> landmass key, worked out once a call (a
+        -- continent map holds two instances' frames, so both levels)
+        local keyOf = {}
+        local best
+        local near = {}
+        for i, p in ipairs(list) do
+            p.i = i
+            local pi, n, w = WorldOf(p.map, p.x, p.y)
+            local key
+            if pi ~= nil then
+                local byMap = keyOf[pi]
+                if not byMap then
+                    byMap = {}
+                    keyOf[pi] = byMap
+                end
+                local k = byMap[p.map]
+                if k == nil then
+                    k = Landmass(p.map, pi) or false
+                    byMap[p.map] = k
+                end
+                key = k or nil
+            end
+            p.lm = key
+            if key and pi == oinst and (key == oKey or BaseKey(key) == oBase) then
+                local d = G.Distance(on, ow, n, w)
+                if d then
+                    -- whole centimetres: two places the same distance away
+                    -- keep the list's order, whatever the last bits of the
+                    -- arithmetic say
+                    p.d = floor(d * 100 + 0.5)
+                    near[#near + 1] = p
+                    if not best or p.d < best.d or (p.d == best.d and p.i < best.i) then best = p end
+                end
+            end
+        end
+        if best then
+            local keep = {}
+            for _, p in ipairs(near) do
+                if p.lm == best.lm then keep[#keep + 1] = p end
+            end
+            table.sort(keep, function(a, b)
+                if a.d ~= b.d then return a.d < b.d end
+                return a.i < b.i
+            end)
+            list = keep
+            reach = (best.lm == oKey) and "here" or "island"
+        else
+            reach = "elsewhere"
+            local legs = LegsFrom(oKey)
+            local firstAt = {}          -- landmass -> where it first appears
+            for _, p in ipairs(list) do
+                local k = p.lm or false
+                if not firstAt[k] then firstAt[k] = p.i end
+            end
+            table.sort(list, function(a, b)
+                local ra = (a.lm and legs[a.lm]) and 1 or 2
+                local rb = (b.lm and legs[b.lm]) and 1 or 2
+                if ra ~= rb then return ra < rb end
+                local fa, fb = firstAt[a.lm or false], firstAt[b.lm or false]
+                if fa ~= fb then return fa < fb end
+                return a.i < b.i
+            end)
+        end
+    else
+        reach = "unknown"
+        local cont = G.Continent(Env(), PlayerMap() or 0)
+        if cont then
+            for i, p in ipairs(list) do
+                p.i = i
+                p.mine = G.Continent(Env(), p.map) == cont
+            end
+            table.sort(list, function(a, b)
+                if a.mine ~= b.mine then return a.mine end
+                return a.i < b.i
+            end)
+        end
+    end
+    for i = #list, S.MAX_ALTERNATIVES + 1, -1 do list[i] = nil end
+    local first = list[1]
+    local same = true
+    for i = 2, #list do
+        if list[i].title ~= first.title then same = false break end
+    end
+    local words = title
+    if words == nil and type(places.title) == "string" then words = places.title end
+    if words == nil then words = first.title end
+    local spec = { map = first.map, x = first.x, y = first.y, title = words }
+    if #list > 1 then
+        local alts = {}
+        for i, p in ipairs(list) do alts[i] = { map = p.map, x = p.x, y = p.y } end
+        spec.alternatives = alts
+    end
+    spec.allSame = same
+    spec.reach = reach
+    return spec
+end
+
+-- A target as a spec the Store can take: a query through Locate (whose
+-- stand-in answers "loading" until CommanderOrdersLocate.lua replaces it),
+-- a place or a unit follow as given.
+function Go.Resolve(target, title)
+    if type(target) ~= "table" then return nil, "nowhere" end
+    if Go.IsQuery(target) then
+        local fn = O.Locate
+        if type(fn) ~= "function" then return nil, "loading" end
+        local places, why = fn(target)
+        if type(places) ~= "table" or #places == 0 then return nil, why or "nowhere" end
+        return Go.FromPlaces(places, title or target.title)
+    end
+    if target.kind == "unit" then return target end
+    if Go.Pos(target) or type(target.alternatives) == "table" then return target end
+    if target.map ~= nil then return nil, "nocoords" end
+    return nil, "noquery"
+end
+
+-- The one line a refused Go says: the reason, and when the coordinates are
+-- known the place and its [Go] link (copyable with a Ctrl-click once the
+-- chat file is in)
+function Go.Refuse(why, spec, opts)
+    if opts.silent then return end
+    local line = API.Reason(why)
+    local m, x, y
+    if type(spec) == "table" then
+        m, x, y = Go.Pos(spec)
+        if not m and type(spec.alternatives) == "table" then m, x, y = Go.Pos(spec.alternatives[1]) end
+    end
+    if m then
+        local title = opts.title or spec.title
+        local where = (MapName(m) or ("map #" .. m)) .. " " .. Coords(x, y)
+        line = line .. ": " .. ((title and title ~= "") and (title .. " (" .. where .. ")") or where)
+        local link = G.ChatLink(m, x, y, title)
+        if link then line = line .. " " .. link end
+    end
+    if line:sub(1, 16) == "Commander Orders" then print(line) else Say(line) end
+end
+
+-- A followed member's token from a GUID (party first, then raid)
+function R.UnitForGuid(guid)
+    if type(guid) ~= "string" or not UnitGUID then return nil end
+    for i = 1, 4 do
+        if UnitGUID("party" .. i) == guid then return "party" .. i end
+    end
+    for i = 1, 40 do
+        if UnitGUID("raid" .. i) == guid then return "raid" .. i end
+    end
+    return nil
+end
+
+-- After a roster change every follow finds its member again (the tokens
+-- renumber; S6). A member who left keeps the old token: UNIT_LOST says so.
+function R.RemapUnits()
+    if not store then return end
+    local moved = false
+    for uid, guid in pairs(A.unitGuid) do
+        local wp = store:Get(uid)
+        if not (wp and wp.kind == "unit") then
+            A.unitGuid[uid] = nil
+        elseif guid and not (UnitGUID and UnitGUID(wp.unit) == guid) then
+            local token = R.UnitForGuid(guid)
+            if token and store:Retarget(uid, token) then moved = true end
+        end
+    end
+    if moved then Changed("unit") end
+end
+
+-- A typed coordinate line from the COMMANDER_ORDERS_COORDS box: a new
+-- waypoint, or the waypoint data.uid moved there (S8)
+function R.TypedCoords(text, data)
+    local spec, err = API.ParseCoords(text)
+    if not spec then
+        Say(err)
+        return nil
+    end
+    local uid = type(data) == "table" and data.uid
+    if uid then
+        local fields = { map = spec.map, x = spec.x, y = spec.y }
+        if spec.title then fields.title = spec.title end
+        local wp, why = API.Update(uid, fields)
+        if not wp then Say("could not move it: " .. API.Reason(why)) return nil end
+        Announce("moved to " .. Where(wp))
+        return uid
+    end
+    local added, why = API.Add({ map = spec.map, x = spec.x, y = spec.y, title = spec.title,
+                                 source = "user", setArrow = true })
+    if not added then Say("could not set that waypoint: " .. API.Reason(why)) end
+    return added
+end
+
+-- Ask for a coordinate line: a new waypoint (uid nil) or a move
+function R.AskCoords(uid)
+    if not (StaticPopup_Show and StaticPopupDialogs and StaticPopupDialogs.COMMANDER_ORDERS_COORDS) then return false end
+    local wp = uid and store and store:Get(UidOf(uid))
+    local data, prompt
+    if wp and wp.map then
+        data = { uid = wp.uid, text = G.WayLine(wp.map, wp.x, wp.y) }
+        prompt = "Move " .. Cut(Title(wp), 40) .. " to (zone x y, or #map x y):"
+    else
+        data = { text = "" }
+        prompt = "Waypoint at (zone x y title, or #map x y):"
+    end
+    StaticPopup_Show("COMMANDER_ORDERS_COORDS", prompt, nil, data)
+    return true
+end
+
+function API.Reason(why)
+    if why == nil then return "Not available" end
+    local words = D.REASONS and D.REASONS[why]
+    if words then return words end
+    local text = tostring(why)
+    return (text:gsub("^%l", string.upper))
+end
+
+-- The stand-in until CommanderOrdersLocate.lua assigns the real one
+function API.Locate()
+    return nil, "loading"
+end
+
+function API.GoTo(target, opts)
+    opts = type(opts) == "table" and opts or {}
+    local ok, why = Available()
+    if not ok then
+        Go.Refuse(why, (type(target) == "table" and not Go.IsQuery(target)) and target or nil, opts)
+        return nil, why
+    end
+    local resolved, err = Go.Resolve(target, opts.title)
+    if not resolved then
+        Go.Refuse(err, nil, opts)
+        return nil, err
+    end
+    local s = {}
+    for k, v in pairs(resolved) do s[k] = v end
+    s.allSame, s.reach = nil, nil
+    for _, f in ipairs({ "source", "key", "title", "icon", "note", "persistent", "temporary",
+            "clearOnArrive", "arrive", "colour" }) do
+        if opts[f] ~= nil then s[f] = opts[f] end
+    end
+    s.setArrow = opts.setArrow ~= false
+    s.silent = nil
+    s.noAnnounce = true
+    local uid, addErr = API.Add(s)
+    if not uid then
+        Go.Refuse(addErr, s, opts)
+        return nil, addErr
+    end
+    if not opts.silent then
+        local wp = store:Get(uid)
+        if wp then Announce("Waypoint set: " .. Describe(wp)) end
+    end
+    return uid
+end
+
+-- The spot GoTo would point at first. A query's places come back from
+-- Go.Resolve already measured and nearest first (FromPlaces): they are not
+-- measured again. "The nearest <townsfolk>" with none on your landmass (nor
+-- on the island beside it) is nil, "elsewhere", never an arbitrary one from
+-- the far side of the world (Promotion's and Vitals' lines stay quiet, as
+-- their comments promise; review: locator); with no position to measure
+-- from at all, nil, "instance" or "no position". Any other target answers
+-- its first place, with elsewhere = true when it is not on your landmass.
+function API.PlaceFor(target)
+    local ok, why = Available()
+    if not ok then return nil, why end
+    local spec, err = Go.Resolve(target)
+    if not spec then return nil, err end
+    if spec.kind == "unit" then return nil, "nocoords" end
+    local query = Go.IsQuery(target)
+    local reach = spec.reach
+    local out = { title = spec.title }
+    local m, x, y = Go.Pos(spec)
+    if type(spec.alternatives) == "table" then
+        if not query then
+            local near = Go.FromPlaces(spec.alternatives, spec.title)
+            if near then m, x, y, reach = near.map, near.x, near.y, near.reach end
+        end
+        out.alternatives = spec.alternatives
+    end
+    if not m then return nil, "nocoords" end
+    if query and target.townsfolk ~= nil then
+        if reach == "elsewhere" then return nil, "elsewhere" end
+        if reach == "unknown" then
+            local inside = IsInInstance and IsInInstance()
+            return nil, inside and "instance" or "no position"
+        end
+    end
+    if reach == "elsewhere" then out.elsewhere = true end
+    out.map, out.x, out.y = OnZone(m, x, y)
+    return out
+end
+
+function API.IsGoing(source, key)
+    if not store or not DB().EnableOrders or source == nil then return false end
+    local wp = store:ActiveTarget(BuildCtx(Clock()))
+    if not wp then return false end
+    -- a route stop is the route's: (source, key) is the route's own
+    local owner = (wp.routeId and store:GetRoute(wp.routeId)) or wp
+    if owner.source ~= source then return false end
+    return key == nil or owner.key == key
+end
+
+function API.FormatCoords(x01, y01, decimals)
+    local d = tonumber(decimals)
+    if d == nil then d = Decimals() end
+    return G.FormatCoords(x01, y01, d)
+end
+
+function API.WayLineFor(map, x01, y01, title)
+    return G.WayLine(map, x01, y01, title)
+end
+
+function API.ChatText(map, x01, y01, title)
+    return G.ChatText(map, x01, y01, title, MapName(map), Decimals())
+end
+
+function API.ChatLink(map, x01, y01, title, text)
+    return G.ChatLink(map, x01, y01, title, text)
+end
+
+function API.ParseChatLink(link)
+    return G.ParseChatLink(link)
+end
+
+function API.CopyText(text)
+    return CopyLine(text)
+end
+
+function API.ParseCoords(text)
+    local cmd = G.ParseWay(type(text) == "string" and text or "", Way.Resolver())
+    if cmd.kind ~= "ADD" then
+        if cmd.kind == "ERROR" and cmd.message then return nil, cmd.message end
+        return nil, "not a place: try \"Hellfire Peninsula 45.2 66.8\" or \"#1944 45.2 66.8\""
+    end
+    local map = cmd.map or PlayerMap()
+    if not map then return nil, "there is no map here to put a waypoint on" end
+    if cmd.byId and not MapInfo(map) then return nil, "there is no map #" .. map end
+    return { map = map, x = cmd.x, y = cmd.y, title = cmd.title }
+end
+
+function API.SaveAsPlace(uid, title)
+    local ok, why = Available()
+    if not ok then return nil, why end
+    local wp = store:Get(UidOf(uid))
+    local pos = ShownPos(wp)
+    if not (pos and pos.map) then return nil, "unknown waypoint" end
+    title = Trim(title)
+    if title == "" then title = wp.title or "" end
+    return API.MarkPlace(title, { map = pos.map, x = pos.x, y = pos.y })
 end
 
 -- ---------------------------------------------------------------------------
@@ -2998,11 +3798,16 @@ R.Unlocked = Unlocked
 R.OnRemove = function(fn)
     if type(fn) == "function" then removeListeners[#removeListeners + 1] = fn end
 end
+-- 3.1: the coordinate precision setting (0..2), and the waypoint-by-
+-- coordinates box (R.AskCoords(uid | nil); R.TypedCoords(text, data) is
+-- what it runs). R.DoorLookup is CommanderOrdersLocate.lua's to set.
+R.Decimals = Decimals
 R.Arrow = function() return A.root end
 -- For the harnesses: the arrow's regions and state, and the driver frame
 R.ArrowState = function() return A end
 R.Driver = function() return driver end
 removeListeners[#removeListeners + 1] = ShimForget
+removeListeners[#removeListeners + 1] = function(wp) if wp and wp.uid then A.unitGuid[wp.uid] = nil end end
 
 -- ---------------------------------------------------------------------------
 -- Legacy globals (documented wrappers; keep working for old callers)
@@ -3066,10 +3871,13 @@ end
 
 local function DefinePopups()
     if type(StaticPopupDialogs) ~= "table" then return end
+    -- multiple: a second share no longer cancels the first one on screen
+    -- (StaticPopup_Show hides a visible dialog of the same kind otherwise;
+    -- 3.1, critic D13). Each dialog carries its own share as its data.
     StaticPopupDialogs.COMMANDER_ORDERS_SHARE = {
         text = "%s shared a waypoint:\n%s",
         button1 = "Add", button2 = "Ignore", button3 = "Add and go",
-        selectCallbackByIndex = true,
+        selectCallbackByIndex = true, multiple = true,
         OnButton1 = function(_, data) Share.Accept(data, false) end,
         OnButton2 = function() end,
         OnButton3 = function(_, data) Share.Accept(data, true) end,
@@ -3077,20 +3885,52 @@ local function DefinePopups()
         OnShow = RaisePopup,
         timeout = 60, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
+    -- 3.1 (critic D12): the pooled edit box keeps the last dialog's letter
+    -- limit (24 or 40) unless this one names its own, and a pasted /way
+    -- line is run, not sent, so the words no longer say "paste it in chat"
     StaticPopupDialogs.COMMANDER_ORDERS_COPY = {
-        text = "Copy this /way line (Ctrl-C), then paste it in chat:",
+        text = "Ctrl+C to copy",
         button1 = OKAY or "Okay",
-        hasEditBox = true, editBoxWidth = 320,
+        hasEditBox = true, editBoxWidth = 320, maxLetters = 255,
         OnShow = function(self)
             RaisePopup(self)
             local box = PopupEditBox(self)
             if box then
+                if box.SetMaxLetters then box:SetMaxLetters(255) end
                 box:SetText(A.copyText or "")
                 box:HighlightText()
                 box:SetFocus()
             end
         end,
         EditBoxOnEnterPressed = function(self) self:GetParent():Hide() end,
+        EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+    -- 3.1 (S8): a waypoint by typed coordinates, or one moved to them. data
+    -- = { uid = <the waypoint to move> | nil, text = what the box starts with }
+    StaticPopupDialogs.COMMANDER_ORDERS_COORDS = {
+        text = "%s",
+        button1 = OKAY or "Okay", button2 = CANCEL or "Cancel",
+        hasEditBox = true, editBoxWidth = 320, maxLetters = 255,
+        OnAccept = function(self, data)
+            local box = PopupEditBox(self)
+            R.TypedCoords(box and box:GetText() or "", data)
+        end,
+        OnShow = function(self, data)
+            RaisePopup(self)
+            local box = PopupEditBox(self)
+            if box then
+                if box.SetMaxLetters then box:SetMaxLetters(255) end
+                box:SetText(type(data) == "table" and data.text or "")
+                box:HighlightText()
+                box:SetFocus()
+            end
+        end,
+        EditBoxOnEnterPressed = function(self)
+            local dialog = self:GetParent()
+            R.TypedCoords(self:GetText() or "", dialog and dialog.data)
+            if dialog then dialog:Hide() end
+        end,
         EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
@@ -3185,7 +4025,7 @@ end
 HANDLERS.ZONE_CHANGED_NEW_AREA = function() Corpse.Check(); Wake() end
 HANDLERS.ZONE_CHANGED = function() Wake() end
 HANDLERS.ZONE_CHANGED_INDOORS = function() Wake() end
-HANDLERS.GROUP_ROSTER_UPDATE = function() Wake() end
+HANDLERS.GROUP_ROSTER_UPDATE = function() R.RemapUnits(); Wake() end
 HANDLERS.PLAYER_DEAD = function() Corpse.OnDead() end
 HANDLERS.PLAYER_ALIVE = function() Corpse.OnAlive(); Wake() end
 HANDLERS.PLAYER_UNGHOST = function() Corpse.Clear(); Wake() end

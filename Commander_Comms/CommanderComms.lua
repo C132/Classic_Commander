@@ -340,6 +340,14 @@ end
 -- point, and an arrow to your own feet would only be noise. Silent, because
 -- the chat line already says it. Inside an instance there is no map position,
 -- so the call is the words alone and nothing is shared.
+--
+-- 2.11.0 (Commander Orders 3.1): the coordinates in the line are Orders'
+-- (CommanderOrders.FormatCoords, at the player's Coordinate Decimals), so the
+-- rally reads like every other Commander place, and a Commander reader's chat
+-- turns "Zone 42.1, 65.5" into a [Go] link. A share Orders refuses for any
+-- reason but "you are not in a group" (the solo case, where the line went to
+-- /say and there is nobody to hand a waypoint to) is said in Orders' words
+-- (CommanderOrders.Reason), never swallowed.
 -- ---------------------------------------------------------------------------
 local RALLY = { label = "Rally on Me", msg = "Rally on me!" }
 local RALLY_Y = -58           -- under the centre preview, inside the inner ring
@@ -362,7 +370,10 @@ local function RallyMessage(mapID, x, y)
     local info = C_Map.GetMapInfo and C_Map.GetMapInfo(mapID)
     local zone = info and info.name
     if not zone then return RALLY.msg end
-    local where = string.format("%s %.1f, %.1f", zone, x * 100, y * 100)
+    local api = CommanderOrders
+    local coords = type(api) == "table" and type(api.FormatCoords) == "function" and api.FormatCoords(x, y)
+    if type(coords) ~= "string" then coords = string.format("%.1f, %.1f", x * 100, y * 100) end
+    local where = zone .. " " .. coords
     local sub = GetSubZoneText and GetSubZoneText() or ""
     if sub ~= "" and sub ~= zone then where = sub .. ", " .. where end
     return RALLY.msg .. " " .. where
@@ -381,7 +392,11 @@ local function SendRally()
     local api = OrdersShare()
     if mapID and api and CommanderCommsDB.RallyWaypoint ~= false then
         local name = UnitName("player")
-        api.SharePoint({ map = mapID, x = x, y = y, title = "Rally on " .. (name or "me"), silent = true })
+        local ok, why = api.SharePoint({ map = mapID, x = x, y = y, title = "Rally on " .. (name or "me"), silent = true })
+        if not ok and why ~= "not in a group" then
+            local words = type(api.Reason) == "function" and api.Reason(why) or tostring(why)
+            print("Commander Comms: the rally waypoint did not go out: " .. tostring(words))
+        end
     end
     ClickSound()
     wheel:Hide()

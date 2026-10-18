@@ -1,41 +1,76 @@
 # Commander_Orders harnesses
 
-Five luajit harnesses and one Python art check, none of them loaded by the
+Eight luajit harnesses and two Python checks, none of them loaded by the
 client (nothing here is in the TOC). Run them from the AddOns root; each one
 also finds the root from its own path, so it works from `Harness/`, from any
 other directory and from a git worktree. Every one exits non-zero on a single
-failed check. Run all six before touching anything in the module:
+failed check. Run all of them before touching anything in the module:
 
 ```bash
-/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_geo_smoke.lua    # 679 checks (Geo alone, sealed)
-/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_store_smoke.lua  # 569 checks (Store alone, sealed)
-/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_harness.lua      # 779 checks (the runtime, end to end)
-/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_pins_harness.lua # 523 checks (minimap + world map)
-/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_ui_harness.lua   # 490 checks (the manager window)
-python3 Commander_Orders/Harness/make_art.py --check                      # 8 textures x 4 rules = 32 checks
+/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_geo_smoke.lua     # 728 checks (Geo alone, sealed)
+/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_store_smoke.lua   # 614 checks (Store alone, sealed)
+/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_harness.lua       # 996 checks (the runtime, end to end)
+/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_pins_harness.lua  # 561 checks (minimap + world map)
+/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_ui_harness.lua    # 514 checks (the manager window)
+/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_coords_harness.lua # 392 checks (the coordinates, 3.1)
+/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_chat_harness.lua  # 648 checks (chat links, 3.1)
+/opt/homebrew/bin/luajit Commander_Orders/Harness/orders_locate_smoke.lua  # 487 checks (the locator, 3.1; see below)
+python3 Commander_Orders/Harness/make_art.py --check                       # 8 textures x 4 rules = 32 checks
+COMMANDER_DB2=<dir> python3 Commander_Orders/Harness/make_entrances.py --check  # the door table is current
 ```
 
-Then the suite's own settings smoke, because the settings page and the arrow's
-HUD chrome are the framework's code:
+`orders_locate_smoke.lua` counts 339 checks on the committed fixture, 148
+more when the session's real-Questie boot tooling is present (it SKIPS
+cleanly otherwise), and one more with `COMMANDER_DB2` set (it re-runs the
+generator's `--check`). `make_entrances.py --check` exits 2 when an input is
+missing: `AreaTrigger.csv` is not in the Quartermaster cache, so it needs
+`--fetch --db2 DIR` once (below).
+
+Then the suite's own harnesses in Commander_Events, because the settings page,
+the HUD chrome and the Go button are the framework's code:
 
 ```bash
 /opt/homebrew/bin/luajit Commander_Events/Harness/settings_ui_smoke.lua    # 89 checks
+/opt/homebrew/bin/luajit Commander_Events/Harness/gobutton_smoke.lua       # 99 checks (Commander.UI.GoButton, 3.1)
+/opt/homebrew/bin/luajit Commander_Events/Harness/health_smoke.lua         # 41 checks
 ```
 
-And, after any change to the public API, the R surface or `orders_mock.lua`,
-the consumers' contract harnesses, which boot the REAL Orders through this
-folder's mock and drive it from the consumer's side:
+And, after any change to the public API, the R surface, the Go button or
+`orders_mock.lua`, the consumers' contract harnesses, which boot the REAL
+Orders through this folder's mock (or the real Go button over the module's
+own mock) and drive it from the consumer's side:
 
 ```bash
-/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_orders_contract.lua  # 25 checks
-/opt/homebrew/bin/luajit Commander_Recovery/Harness/recovery_orders_smoke.lua     # 54 checks
-/opt/homebrew/bin/luajit Commander_TopBar/Harness/topbar_orders_smoke.lua         # 163 checks
-/opt/homebrew/bin/luajit Commander_Ping/Harness/ping_orders_smoke.lua             # 242 checks
-/opt/homebrew/bin/luajit Commander_Logistics/Harness/logistics_orders_smoke.lua   # 159 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_orders_contract.lua  # 60 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_goto_harness.lua     # 72 checks
+/opt/homebrew/bin/luajit Commander_Recovery/Harness/recovery_orders_smoke.lua     # 68 checks
+/opt/homebrew/bin/luajit Commander_Guide/Harness/guide_orders_smoke.lua           # 81 checks
+/opt/homebrew/bin/luajit Commander_TopBar/Harness/topbar_orders_smoke.lua         # 210 checks
+/opt/homebrew/bin/luajit Commander_Ping/Harness/ping_orders_smoke.lua             # 300 checks
+/opt/homebrew/bin/luajit Commander_Logistics/Harness/logistics_orders_smoke.lua   # 236 checks
+/opt/homebrew/bin/luajit Commander_Adjutant/Harness/adjutant_queue_smoke.lua      # 106 checks (stub Logistics)
+/opt/homebrew/bin/luajit Commander_Oracle/Harness/oracle_orders_smoke.lua         # 120 checks
+/opt/homebrew/bin/luajit Commander_Notebook/Harness/notebook_orders_smoke.lua     # 55 checks
+/opt/homebrew/bin/luajit Commander_Chat/Harness/chat_orders_smoke.lua             # 25 checks (the [Go] hover card)
+/opt/homebrew/bin/luajit Commander_Spoils/Harness/spoils_orders_smoke.lua         # 92 checks
+/opt/homebrew/bin/luajit Commander_Contacts/Harness/contacts_orders_smoke.lua     # 34 checks
+/opt/homebrew/bin/luajit Commander_Bags/Harness/bags_orders_smoke.lua             # 33 checks
+/opt/homebrew/bin/luajit Commander_Vitals/Harness/vitals_orders_smoke.lua         # 29 checks
+/opt/homebrew/bin/luajit Commander_Objectives/Harness/objectives_orders_smoke.lua # 42 checks
+/opt/homebrew/bin/luajit Commander_Promotion/Harness/promotion_orders_smoke.lua   # 46 checks
+/opt/homebrew/bin/luajit Commander_Minimap/Harness/minimap_coords_harness.lua     # 51 checks (sandbox)
 ```
 
+Every other harness of a module with a Go (the coverage table at the end)
+loads the Go button or a recording Orders stand-in and must pass too; each
+module's own Harness/README lists them. Comms and PartyFrames have READMEs
+of their own since 3.1.
+
 `orders_mock.lua` is not a harness: it is the WoW client the runtime, pins,
-manager and contract harnesses share (see "The mock" below).
+manager, coordinates, chat, locator and contract harnesses share (see "The
+mock" below). `fake_questiedb.lua` is the locator's committed QuestieDB /
+Questie fixture: real rows from the installed QuestieDB, four marked
+synthetic, and the real public surface.
 
 ---
 
@@ -53,7 +88,19 @@ ORDERS_PINS=... ORDERS_UI=...                                  #   and Pins/UI i
 ORDERS_PINS=/path/copy.lua  luajit .../orders_pins_harness.lua # the pins harness loads that copy itself
 ORDERS_UI=/path/copy.lua    luajit .../orders_ui_harness.lua   # the manager harness loads that copy itself
 ORDERS_UI_PINS=1            luajit .../orders_ui_harness.lua   # the manager with the pins file loaded too
+ORDERS_COORDS=/path/copy.lua luajit .../orders_coords_harness.lua  # a mutated CommanderOrdersCoords.lua
+MINIMAP_FILE=/path/copy.lua  luajit .../orders_coords_harness.lua  # a mutated CommanderMinimap.lua (G, H)
+ORDERS_CHAT=/path/copy.lua   luajit .../orders_chat_harness.lua    # a mutated CommanderOrdersChat.lua
+ORDERS_LOCATE=/path/copy.lua luajit .../orders_locate_smoke.lua    # a mutated CommanderOrdersLocate.lua
+ORDERS_REALDATA_BOOT=<boot.lua> luajit .../orders_locate_smoke.lua # where section R's real-Questie boot lives
+ORDERS_GOBUTTON=/path/copy.lua  luajit Commander_Events/Harness/gobutton_smoke.lua  # the mock loads that
+                                                                   #   Go button in every boot
 ```
+
+The consumers' harnesses carry hooks of their own (CQL_ADAPTER, GUIDE_RUNTIME,
+PING_RUNTIME, ORACLE_RUNTIME, SPOILS_RUNTIME, CONTACTS_UI, ARMORY_UI, VAULT_UI,
+BAGS_DB, VITALS_RUNTIME, OBJECTIVES_RUNTIME, PROMOTION_RUNTIME, COMMS_RUNTIME,
+...): see each module's Harness/README.
 
 Mutation sweeps run while building (scripts in the session scratchpad, not
 kept here): Geo about 35 hand-made mutants, all killed but one equivalent
@@ -75,9 +122,41 @@ on the code before it: the whole running route lifted over QuestLog's
 drawer (pins L, 6 failures), and a unit's position copied a tick (store F
 and H, runtime R: 2 each).
 
+3.1's sweeps, all killed unless noted: the runtime 14, the Store 11, Geo 6
+(the new API and the core fixes); the locator 29; the coordinates 53 over
+Coords, Pins and Commander_Minimap, and 9 over the minimap sandbox; the chat
+file 41, 40 killed and one equivalent (pair values over 100: Geo.ChatLink
+refuses x > 1 itself); Ping's link fold-in 7; the Go button 5 (integration:
+the query's own title in the tooltip, a spec function's reason, the late
+listener, the reason dropped by Value, Listen not asked by Refresh). Each
+consumer's sweep is in its own README.
+
+The 3.1 review's fixes (2026-10-05) were checked the same way: 22 mutants,
+one per fix, all killed. The runtime 13 (the capital folded into its zone;
+the resolver asked before the door table; no door standing in for you inside
+an instance; no island beside the landmass; the island's winner mixed with
+mainland choices; PlaceFor naming a far townsfolk; a query measured twice; a
+Vector2D pair a place; ties broken by float noise; a continent map's two
+frames given one landmass; the corpse with one door; the guide link not
+restored, not recorded), the Store 2 (the guided target
+not kept, guideFor not persisted), the settings 1 (the block on by default),
+the coordinates 2 (the old spot on the quest tracker, the minimap's menu not
+offering the block), the chat file 2 (OpenWorldMap, no ToggleWorldMap) and the
+Go button 2 (no motion scripts while disabled, an enabled query's lookup
+reason dropped).
+
+The second review's fixes (review-r2) likewise: the runtime 4, all killed
+(Go.Origin without the instance-id door: 6 failures in K, 3 in R; the death
+not recording its instance id: 5; the corpse not looked up by it: 4; the
+corpse named by a zone map that found no door: 1), and
+one equivalent (dropping the dungeon-or-raid gate on the id: the door table
+holds only dungeons and raids, so a battleground's or a continent's id finds
+no door either way); the Go button 2, both killed (the module's line kept
+under Orders' state: 3 failures; left out for every reason: 1).
+
 ---
 
-## orders_geo_smoke.lua (679 checks)
+## orders_geo_smoke.lua (728 checks)
 
 `CommanderOrdersGeo.lua` ALONE in a SEALED environment: reading any global but
 Lua's own libraries and `CommanderOrders` raises, and so does writing any
@@ -109,8 +188,13 @@ and `GetMapChildrenInfo`.
 - **L** the zone index and matcher: tiers, aliases, what is left out.
 - **M** an 80-row /way grammar table, TomTom B12, B13, B18 and B23 fixed.
 - **N** WayLine -> ParseWay round trips; plain ASCII everywhere.
+- **O** (3.1) islands (Teldrassil's key, its maps and the shore's), Geo.Zone
+  (dungeon, micro and orphan maps climb to their zone; continents have none),
+  PlainText, ChatText (never starting with "/", the 255-byte cap, the title cut
+  first), ChatLink / ParseChatLink (the escapes, a 200-link round trip within
+  5e-5, other links refused).
 
-## orders_store_smoke.lua (569 checks)
+## orders_store_smoke.lua (606 checks)
 
 `CommanderOrdersStore.lua` alone, sealed the same way, over a FAKE world:
 maps with a yard origin and a landmass tag, map 20 overlapping map 10's
@@ -142,13 +226,21 @@ only ever sees the functions its ctx hands it. Each section runs under pcall.
 - **J** Serialize / Load: plain data only, the 16-digit round trip, counters,
   tolerant matching afterwards, garbage in.
 - **K** the sealed environment saw nothing it should not have.
+- **L** (3.1) persistence of the pinned record and the active route (D33:
+  a temporary offer and a unit follow excluded, kept records still
+  session-only after the load); a pinned "Guide me" hop keeps the record its
+  `guideFor` names, and the link (never a unit follow); Follow the Closest's
+  zone scope, "mine only" and `anyOwner`; `Retarget`.
 
-## orders_harness.lua (779 checks)
+## orders_harness.lua (996 checks)
 
 The RUNTIME end to end over `orders_mock.lua`, with the real
-`CommanderSettingsUI.lua` and `CommanderEvents.lua` loaded and every Orders
-file in TOC order except Pins and UI (their harnesses load them; section P
-loads the full TOC). Each section boots a fresh client.
+`CommanderSettingsUI.lua`, `CommanderGoButton.lua` and `CommanderEvents.lua`
+loaded and every Orders file in TOC order except Pins, UI and Locate (their
+harnesses load them; the locator's door table would answer entrances that D
+and Q expect to be unknown; sections P and S24 load the full TOC). Section S
+boots without Locate, Coords and Chat too, so it answers for the runtime
+alone. Each section boots a fresh client.
 
 - **A** boot: a quiet login, the public API, the globals written, TOC,
   bindings, defaults, the arrow built and chromed out of combat, asleep with
@@ -182,8 +274,8 @@ loads the full TOC). Each section boots a fresh client.
 - **O** the driver sleeps; places, paste / export, routes on the arrow,
   bindings.
 - **P** every TOC file that exists loads with the runtime.
-- **Q** what the consumers asked for: Entrance (resolvers first, a copy,
-  a raising resolver passed over), Status (the arrow's own words, nil for a
+- **Q** what the consumers asked for: Entrance (with no door table loaded,
+  the resolvers; a copy; a raising resolver passed over), Status (the arrow's own words, nil for a
   removed target), SharePoint (shared, never added or pinned, one send path
   with Share), OpenPaste(text); and the arrow's distance font on a client
   without `GameFontNormalLargeOutline`.
@@ -196,7 +288,9 @@ loads the full TOC). Each section boots a fresh client.
   without "go" stays behind your own waypoints in Follow the Closest; Mark
   arrived on a kept mark moves the arrow on; a temporary offer leaves a
   running route; Guide me hands back through a portal, on removal, on Mark
-  arrived, and lets go when you pick something else; a unit follow costs
+  arrived, and lets go when you pick something else, and after a /reload
+  still does (the hop's `guideFor` and its session-only target kept: review
+  core); a unit follow costs
   about one map position a second (the player's) and no copies of the
   arrival state, on another landmass hands the Store's position on as one
   reused table, and with UnitPosition blind (the map position kept) does no
@@ -204,8 +298,22 @@ loads the full TOC). Each section boots a fresh client.
   Window-style arrow is not re-shown every pass and Reset Position reopens
   it; Status, WayLine, Share, `/corder arrow` and the tooltip at the chosen
   spawn; Import numbers lines as the box does.
+- **S** (3.1, SPEC 1-2) S1 the API; S2 the words for a place; S3 one refusal
+  vocabulary; S4 the copy box; S5 GoTo a place; S6 a refusal while off (one
+  line with the place and its link); S7 a query before the locator; S8 many
+  places, one waypoint; S9 IsGoing answers for a route's owner; S10 Update
+  through Add's checks; S11 the pinned Go and the active route across a
+  reload; S12 the battleground hedge; S13 the closest scope; S14 a unit
+  follow by GUID (S13 also: a capital is part of the zone around it,
+  Stormwind City and Elwynn either way, Westfall still not); S15 shares stack, chat through C_ChatInfo, no inbox; S16
+  an Orphan map's hint; S17 the nearest departure; S18 Teldrassil's island;
+  S19 the menus; S20 typed coordinates; S21 the settings of the round and
+  the MapCoords repair (CoordsBlock now defaults off); S22 doors by instance
+  id, the door table over a registered resolver, which answers what the
+  table lacks; S23
+  the mock's 3.1 surface; S24 the full TOC with every 3.1 file.
 
-## orders_pins_harness.lua (523 checks)
+## orders_pins_harness.lua (561 checks)
 
 `CommanderOrdersPins.lua` over the mock with the real runtime, Geo and Store;
 the manager is left out so this answers for the pins alone. The harness
@@ -246,6 +354,11 @@ extends the widget metatable to record Line anchors, thickness and
 - **K** the real `Commander_Minimap/CommanderMinimap.lua`: GetMinimapShape is
   SQUARE once its mask is on, its button tidy never fades an Orders pin, pins
   clamp to the square (the top under its zone name).
+- (3.1) **I** gained World Map Coordinates AUTO / ON / OFF (a dungeon
+  included) and Coordinate Decimals; **E** M7, every spawn pin naming its own
+  spot and distance (the others never claim the arrow) and the minimap card
+  naming the followed spawn; **C** the top strip under Minimap Coordinates
+  (38, the old 48 still asserted with the label off).
 - **L** Commander_QuestLog's drawer, built from QuestLog's own OnShow hook:
   the arrow's target over it, alone (the running route's other badges stay
   under it, and the next stop takes the target's place), everything else
@@ -254,7 +367,7 @@ extends the widget metatable to record Line anchors, thickness and
   cleared with the map) as well as in chat; two-digit minimap badges; "Copy
   /way line" from a pin's menu over the maximized map.
 
-## orders_ui_harness.lua (490 checks)
+## orders_ui_harness.lua (514 checks)
 
 `CommanderOrdersUI.lua` over the mock with every other Orders file; the
 manager file is loaded by the harness itself, last, in its TOC slot (so
@@ -290,6 +403,144 @@ manager file is loaded by the harness itself, last, in its TOC slot (so
   open and while hidden, disabling Orders.
 - **L** hygiene: the named globals, D11 (no byte above 127 in any text), no
   "nil" in any text, no protected call.
+- **M** (3.1, S8) "Add at..." and "Move..." through the typed-coordinates box,
+  "Save as place", the row menu's new entries.
+
+## orders_coords_harness.lua (392 checks, 3.1)
+
+`CommanderOrdersCoords.lua` over the mock with the real settings framework
+and HUD chrome, the runtime, Geo, Store and pins, and in G and H the REAL
+`Commander_Minimap/CommanderMinimap.lua`, loaded before Orders as the client
+loads it. The manager, the chat links and the locator are left out.
+
+- **A** load: `CommanderOrders.Coords`, the block built at login, unnamed, no
+  new global, a quiet login; OFF by default (the lead's decision, D39: the
+  minimap's coordinates default on and their menu offers the block), a
+  saved true kept; the Solid plate under the Orders arrow's default box, out
+  of the quest tracker's right column (review: render); the click surface
+  under the drag overlay; a login in combat waits to chrome. Every other
+  section boots with a saved settings table that turned the block on.
+- **B** reading: zone numbers from UnitPosition with no Vector2D (no map
+  position asked in ten seconds, two world probes per map), a cave's map
+  climbs to its zone, an other-instance map refused, "--", the battleground
+  hedge, the taxi, the 0.2 s throttle and write-on-change, decimals 0..2.
+- **C** the block's words and size: subzone over zone, the zone alone, the
+  unlocked block, zone events, D11.
+- **D** gestures: click, Shift (into the chat box, else posted), Ctrl, Right
+  and every menu entry, the tooltip, no position, Orders off.
+- **E** settings and chrome; combat changes and refuses nothing.
+- **F** `/corder coords` through the real slash wrapper.
+- **G** Commander_Minimap's label: under the zone name, written on change,
+  hidden by its switch or with Orders off, its click surface over the text.
+- **H** Ctrl+Right-click on the minimap: no ping; every other click pings as
+  before; the placement round trip against Geo.MinimapPlace (north up,
+  rotated, zoom, indoors, scale 1.37 and 1); square corners vs round; outside
+  the face; Elwynn's edge to Duskwood, Eversong to Ghostlands (530); an
+  instance; the switches; Orders raising.
+
+## orders_chat_harness.lua (648 checks, 3.1)
+
+The REAL Orders with `CommanderOrdersChat.lua` on top, fed chat lines the way
+ChatFrameFilters.lua does (the mock runs ChatFrameUtil's filter chain the
+2.5.6 way and routes addon links SetItemRef -> EventRegistry).
+
+- **A** loads clean: no global, one filter per event, the callbacks under an
+  owner table of its own.
+- **B** plain-text stretches: links, colours, textures, {...} skipped.
+- **C** tier A, /way lines: every spelling, a bare /way's context (yours, a
+  group member's, nearby, nobody's), refusals, punctuation.
+- **D** tier B, "Zone x, y": exact names and long aliases only; times, money,
+  ranges, percents, decimal commas and bare pairs never linked.
+- **E** Orders' own shared line: ONE link, the title back, every precision.
+- **F** the filter's contract: fourteen arguments, a bare false, the lineID
+  cache, the switches, errors contained.
+- **G** Blizzard's formatting after the filters (simulated) leaves the link.
+- **H** the click: Go, Ctrl, Shift (typed or posted), Right and every entry;
+  other links ignored; a refused Go's own printed link. The mock's world map
+  is 2.5.6's: `OpenWorldMap` raises (HandleUserActionOpenSelf is a Wrath
+  method), so "Open the map here" must go through ToggleWorldMap and
+  SetMapID (review: blizzard).
+- **I** hover, and only our own tooltip hidden on leave.
+- **J** ClaimChatLink: 64 kept, newest wins, errors contained, gone after a
+  reload. **K** Linkify. **L** globals (static). **M** the full TOC.
+
+## orders_locate_smoke.lua (487 checks, 3.1)
+
+`CommanderOrdersLocate.lua` and the generated door table over the mock, with
+`fake_questiedb.lua` installed before the files load.
+
+- **A** boot: the real Locate replaces the stand-in, the hooks, no global, a
+  client with no Questie at all.
+- **B** the door table: shape, every spot valid and on a zone, the keys, spot
+  checks against the generator's sources (and its `--check` with
+  `COMMANDER_DB2`).
+- **C** doors by uiMap, instance and areaId; approaches; several doors; the
+  world-position fallback; Entrance()'s order; the arrow's dungeon hint.
+- **D** npc and object queries; instance-only NPCs answer their doors.
+- **E** townsfolk: every kind, aliases, faction filter, blacklist, otherside,
+  class and profession trainers, the vendor lists and their union, caching.
+- **F** Questie's states (Stage 0 / 1 / 3, QuestieDB alone, nothing, a
+  contract mismatch, a broken Townsfolk), the ready hook, the pre-warm (never
+  in combat).
+- **G** items: itemVendor, itemSource. **H** registered resolvers (townsfolk
+  merge, npc first, a raising one, the runtime's kinds untouched). **I** GoTo,
+  PlaceFor, IsGoing and a GoButton with a query. **J** robustness.
+- **K** the 3.1 review's fixes: inside Serpentshrine (no UnitPosition) the
+  door stands in for you and the list is sorted before the 256 cap (the
+  smith by the door is the 260th in the locator's order), and walking out
+  the arrow is on him; no position, or an instance with no door: no nearest
+  townsfolk named; a nearest-of-300 PlaceFor costs two world probes per map
+  and one measuring pass; ties keep the list's order; a continent map's
+  two frames (Quel'Thalas, 530) told apart; Darnassus' bank from
+  Auberdine (the island beside the landmass), its choices the island's
+  alone; PlaceFor's "elsewhere" from Honor Hold (a named NPC flagged
+  instead); a death in Karazhan carries both doors. Review-r2: inside
+  Magisters' Terrace, which has no uiMap on 2.5.6 (`M.SetNoMap`), the
+  instance id (`M.SetInstance("party", 585)`, GetInstanceInfo's 8th) finds
+  the door: the Isle's smith, 260th in the locator's order, is the Go, and
+  out of the door a straight arrow; with no id, the old "instance" answer;
+  a death in there is remembered by the id and the ghost's arrow goes to
+  its door; and should the client answer the Isle's zone map in there, the
+  id still finds the door, the corpse named by the door, not the zone.
+- **R** the REAL Questie 12.0.3 / QuestieDB 1.0.4 booted inside the mock in a
+  child process per faction (148 checks; review-r2: inside Magisters'
+  Terrace a Repair and a Vendor Go keep Smith Hauthaa and Sereth
+  Duskbringer); SKIPS cleanly without the session's boot tooling (339
+  checks then).
+
+## make_entrances.py (the door table)
+
+```bash
+python3 Commander_Orders/Harness/make_entrances.py --fetch --db2 DIR --check  # download the 5 DB2 CSVs (build
+                                                                              #   2.5.6.69795) into DIR, then check
+python3 Commander_Orders/Harness/make_entrances.py --db2 DIR --check   # 0 current, 1 differs, 2 an input is missing
+python3 Commander_Orders/Harness/make_entrances.py --db2 DIR           # regenerate CommanderOrdersEntrances.lua
+```
+
+Inputs: the client's AreaTrigger, Map, UiMap, UiMapAssignment and AreaPOI
+DB2s (wago.tools; it sends a curl User-Agent, urllib's gets a 403), the
+CMaNGOS TBC world dump in the Quartermaster cache (`tbcdb.sql.gz`), and the
+installed QuestieDB (dungeons.lua and the zone tables; regenerating without
+it exits 2). `--db2` defaults to `$COMMANDER_DB2`, else
+`Commander_Quartermaster/Harness/.cache` (git-ignored). It never writes
+bytecode into Formulary's folder (it borrows Formulary's boundary rule).
+
+## Commander_Events/Harness/gobutton_smoke.lua (99 checks, 3.1)
+
+`Commander.UI.GoButton` over this mock: **A** the file alone (only
+`Commander` written, its TOC slot); **B** with Orders (click = GoTo under
+(source, key), lit "Going" and its refresh on CHANGED and OnShow, Shift and
+Ctrl, the tooltip, greyed while off or with no place, a query through
+Locate, onGo); **C** without Orders (a spec prints its /way line, a query
+greys out); **D** hygiene; **E** integration (a query's own list title in
+the tooltip, a spec or query function's `nil, reason`, a button made before
+Orders loaded still hearing CHANGED; review: a greyed button runs its
+motion scripts while disabled, so its red reason shows, and takes no click;
+an enabled query whose lookup answers nothing says why in red, with no
+"Go to:" line and no click hints; review-r2: greyed by Orders' own state,
+turned off (B), absent for a query (C) or loading (E), the module's extra
+line is left out, since it says what a press does, and a reason of the
+spec's own keeps it (E)).
 
 ## make_art.py (32 checks)
 
@@ -324,11 +575,17 @@ API is documented at the top of the file; the parts other harnesses rely on:
 - **Boot options:** `saved`, `loaded` (what `C_AddOns.IsAddOnLoaded` answers),
   `before(M, W)` (after the client is installed, before any file; globals are
   served through `_G`'s `__index`, so `rawset(_G, name, false)` hides one),
-  `afterFiles(M, W)`, `combat`, `player`, `faction`, `files`, `skipFiles`.
+  `afterFiles(M, W)`, `combat`, `player`, `faction`, `files`, `skipFiles`,
+  and (3.1) `addons`: consumer addons loaded after Orders' files, each by
+  name (its TOC's .lua files that exist) or `{ name, files }`, with
+  `ADDON_LOADED` fired for each after Orders'.
 - **Time and events:** `M.Advance(seconds)`, `M.Frame(dt)`, `M.Fire(event, ...)`.
 - **The world:** `M.SetPlayer`, `M.SetPlayerWorld`, `M.SetFacing`,
   `M.SetSpeed`, `M.SetTaxi`, `M.SetIndoors`, `M.SetNoPosition`, `M.SetLife`,
-  `M.SetInstance`, `M.SetCombat`, `M.SetModifier`, `M.SetGroup`, `M.SetUnit`,
+  `M.SetInstance(kind, id)` (id: GetInstanceInfo's 8th value while inside;
+  outside it answers the continent frame's id), `M.SetNoMap` (review-r2:
+  GetBestMapForUnit answers nil, as inside Magisters' Terrace),
+  `M.SetCombat`, `M.SetModifier`, `M.SetGroup`, `M.SetUnit`,
   `M.SetUnitNoWorld` (UnitPosition blind for one member, its map position
   kept), `M.SetCorpse`, `M.SetEntrances`, `M.SetMinimapShape`, `M.SetZoom`,
   `M.Receive`, `M.World`, `M.MapPos`, `W.cvars`, `W.sendResult`.
@@ -337,6 +594,21 @@ API is documented at the top of the file; the parts other harnesses rely on:
   wiring (OnMouseUp calls `pin:OnMouseUp(button)` and then `pin:OnClick` only
   when the release is inside; OnMouseDown is the mixin's own), 2.5.6's secure
   `CreateFramePool` proxy beside `CreateUnsecuredRegionPoolInstance`.
+- **3.1 additions** (additive, but for one fidelity fix: `M.Click` delivers
+  nothing to a disabled Button, and `M.Hover` runs a disabled Button's
+  OnEnter only after `SetMotionScriptsWhileDisabled(true)`, both returning
+  false when the client would not; recorded as `__motionWhileDisabled`. The
+  mock used to deliver both, which hid the greyed GoButton whose reason no
+  player could see; every contract harness was re-run after it): the Go button
+  loaded in its Events TOC slot (`ORDERS_GOBUTTON` swaps in a copy);
+  `C_ChatInfo.SendChatMessage` recorded into `M.chat`; a dialog's
+  `maxLetters` applied to its edit box; `UnitGUID` for group members
+  ("Player-1-<name>"); `EventRegistry` (callbacks called as fn(owner, ...));
+  `SetItemRef` routing `addon:` links to EventRegistry "SetItemRef", others
+  into `M.itemRefs`; `M.ClickLink(text, button)`;
+  `ChatFrameUtil.AddMessageEventFilter` and `M.RunChatFilters(event,
+  arg1..arg14)` with ProcessFilters' fourteen-argument semantics,
+  `M.filterCalls`.
 - **What came out:** `M.prints`, `M.errors`, `M.sounds`, `M.sent`, `M.chat`,
   `M.popups`, `M.menu`, `M.tooltip`, `M.blocked` (protected calls refused in
   combat), `M.writes` (every new global), `M.loadErrors`; `M.Click`, `M.Hover`,
@@ -349,13 +621,109 @@ API is documented at the top of the file; the parts other harnesses rely on:
   the map at FULLSCREEN (TBC's SynchronizeDisplayState), compared with
   `M.StrataOver`; `SetWordWrap` / `SetMaxLines` are recorded.
 
-The consumers' contract harnesses (QuestLog, Recovery, TopBar, Ping,
-Logistics) load it with `dofile` and use `M.Boot{ files, skipFiles, player,
-saved, before, afterFiles }`, `M.Fire`, `M.Advance`, `M.Click`, `M.Hover`,
-`M.World`, the setters above, `M.W.cvars / .mods / .minimap / .widgets`,
-`M.sent / prints / tooltip / blocked / writes / errors / loadErrors`,
-`M.Reload` and `CommanderOrders.R.View()`. Keep those stable, or run the five
-contract harnesses after changing them. Boot fires `ADDON_LOADED` only for
-`Commander_Events` and `Commander_Orders`; a consumer loaded on top registers
-for Orders' `ADDON_LOADED` from a hook frame (see
-`recovery_orders_smoke.lua`) until the mock grows an `opts.addons` list.
+The consumers' contract harnesses (the list at the top) load it with
+`dofile` and use `M.Boot{ files, skipFiles, player, saved, before,
+afterFiles, addons }`, `M.Fire`, `M.Advance`, `M.Click`, `M.Hover`,
+`M.ClickLink`, `M.RunChatFilters`, `M.World`, the setters above,
+`M.W.cvars / .mods / .minimap / .widgets`, `M.sent / prints / chat / popups /
+tooltip / blocked / writes / errors / loadErrors`, `M.Reload` and
+`CommanderOrders.R.View()`. Keep those stable, or run every contract harness
+after changing them. Boot fires `ADDON_LOADED` for `Commander_Events`,
+`Commander_Orders` and then each of `opts.addons`; the older harnesses that
+register for Orders' `ADDON_LOADED` from a hook frame (see
+`recovery_orders_smoke.lua`) still work.
+
+---
+
+## "Go to" coverage: all 60 Commander modules (3.1, DECISIONS D41)
+
+`ls -d Commander_*/ | wc -l` is 60. Every module is a row: its Go surfaces
+(the words and gestures are DECISIONS D31; "source" is the waypoint's owner
+in `Data.SOURCE_ICONS` / `SOURCE_WORDS`), or why it has none. 24 consumers,
+2 infrastructure, 34 N/A. The harness that proves each consumer's surfaces is
+named in its module's Harness/README.
+
+| Module | Go surfaces | N/A reason |
+|---|---|---|
+| ActionBar | | Action bars only; no place data. |
+| Adjutant | Repair alert: quiet, temporary waypoint at the nearest repair (asks Logistics' "Repair" line). Bags full: the banner names the nearest vendor and a quiet, temporary waypoint (Logistics' "Vendor" line; Mark the Nearest Vendor). Both parked in combat, withdrawn when solved. | |
+| Advisor | | Combat rules engine; knows only the instance type. |
+| Afflictions | | Auras; no place data. |
+| ArenaFrames | | Arena enemies; no positions, and no arrow inside an arena. |
+| Armory | "Go to Bank" GoButton in the set pane when a set's item is in the bank (`{ townsfolk = "Banker" }`, source Armory, key bank, BANK); the flyout's banked-row line names it. | |
+| Bags | "Go to Vendor" and "Go to Repair" GoButtons on its settings page (Vendor and Repair), `/cb vendor`, `/cb repair` (source Bags, VENDOR). | |
+| Buffs | | Auras; no place data. |
+| Camera | | Camera settings; no place data. |
+| Casting | | Cast bars; no place data. |
+| Chat | Orders' chat filter puts a [Go] after `/way` lines and "Zone x, y" in every chat frame; its mirror window fires the same EventRegistry SetItemRef and hyperlink hover events as Blizzard's chat frame, so a [Go] click reaches Orders and Orders' hover card shows there too (Commander_Chat 2.1.1, D41; `chat_smoke.lua`, `chat_orders_smoke.lua`). | |
+| Comms | Rally on Me: the spot shared to the group through `SharePoint` (never a waypoint of your own), its chat line at Coordinate Decimals, a refused share in Orders' words. | |
+| Console | | The command console; no place data. |
+| Contacts | "Arrow To Them" on friend rows and whisper threads while the person is in your group (a unit follow by GUID, source Contacts, key follow, UNIT); [Go] links in logged lines (`Linkify`) with Orders' hover tooltip. "Go to their zone" is N/A: a zone is not a place. | |
+| Debug | | Diagnostics dump; no place to walk to. |
+| Diminish | | Diminishing returns; no positions. |
+| Dossier | | An enemy's last-seen zone name is not a destination. |
+| Economy | | Instance segment names, recorded where you already are. |
+| Events | Infrastructure: `Commander.UI.GoButton`, `GoRowHint`, `RefreshGoButtons` (CommanderGoButton.lua). | |
+| Forecast | | Spell output on action bars; no place data. |
+| Formulary | Every source row is a GoButton (vendors, droppers, trainers, quest givers; source Formulary, `place:<name>@<map>`); a creature inside an instance goes to its dungeon's door (`instance = <id>`, key `door:<instance>`); "any trainer" goes to the nearest trainer; the rank readout's Ctrl+Right-click goes to the next rank's source (key `rank:<profession>`); the Trips' routes. | |
+| Gladiator | | Queue minigame; no place data. |
+| Guide | "Go to Entrance" GoButton in the window (Orders' door table through `{ entrance = { instance = id } }`, source Guide, key `entrance:<RAID>`), the settings button, `/cguide entrance`, a key binding. Greyed inside the raid ("You are already inside"). | |
+| Idle | | Names service frames only, to stay quiet while you use them. |
+| Impact | | Kill feedback; no place data. |
+| Inventory | | Usable items; the hearthstone's bind spot is not a walk target. |
+| Kicks | | Enemy interrupt cooldowns; no positions. |
+| Logistics | "Go to Nearest Repair" and "Go to Nearest Vendor" on its settings page are `Commander.UI.GoButton`s (source Logistics, keys repair and vendor, the spot from `CommanderLogistics_SupplySpec`), `/clog repair`, `/clog vendor`; its learned repair book is a "townsfolk" resolver for Repair and Vendor (merged with Questie's lists); the supply waypoints Adjutant's offers use (source Logistics, keys repair, vendor). | |
+| Meters | | Damage segments named by zone; no place to go. |
+| Minimap | Your coordinates under its zone name (Orders' gestures) and Ctrl+Right-click on the map for a waypoint that never pings (Orders' MinimapCoords, MinimapClick). | |
+| Momentum | | Best chains per zone name; no place. |
+| Muster | | Gear score and ratings; no place data. |
+| Nameplate | | Nameplates; no place data. |
+| Notebook | A Go button (GoButton) on map-stamped notes and the menu's "Go To This Note" (source Notebook, `note:<id>`, NOTE); old name-only stamps keep a plain Go through Orders' `/way` resolver. | |
+| Objectives | Turn-in Offer (off by default): a quiet, temporary waypoint at the finisher when a quest turns complete (QuestLog's adapter; source Objectives, `turnin:<id>`, QUEST). | |
+| Oracle | Arathi Basin flag pips (source Oracle, key node, PVP); "Go to the Flag" (a key binding and `/coracle flag`, WSG and EotS, following the carrier); `/coracle nodes` prints every place the battleground map names with a claimed [Go]. | |
+| Orders | Infrastructure and provider: the arrow and its menu, the pins, the manager (Add at..., Move..., Save as place), the coordinate block, the map's Ctrl+Right-click, `/way`, `/cway`, the chat links, the corpse run, the TomTom bridge. | |
+| PartyFrames | Click-cast "Arrow to them", `/cpf arrow`, and the binding "Arrow to My Target" (unbound until you set it): a unit follow by GUID that keeps the member through roster changes (source PartyFrames, key follow, UNIT). | |
+| Ping | The callout's [Go] link (Orders' link, claimed so a click moves its one "Ping" waypoint); Waypoint on Group Pings (automatic, silent, temporary). | |
+| Plates | | Nameplates; no place data. |
+| Production | | Cooldown queue; no place data. |
+| Promotion | Level-up banner names the nearest class trainer; Trainer Offer (on): a quiet, temporary waypoint there out of combat, removed at a class trainer; `/cpromo trainer` (source Promotion, key trainer, TRAINER). | |
+| Quartermaster | Browser rows: Ctrl+Right-click (and the tooltip's hint) goes to where the item comes from: the nearest auctioneer, its vendors (your faction's first), the trainer, a dropper (an instance dropper's door), the quest giver, the container (source Quartermaster, VENDOR). Plain right-click stays the restock target. | |
+| QuestLog | "Go to Turn-in" on the Log's bar, "Go" on the Zones and Reputations bars, a row "Go" per objective Questie can place, "Go" on REQUIRES / LEADS TO lines (the quest's starter), Ctrl+Right-click on Log rows, right-click on Zones, Reputations and drawer rows, Route Zone (source QuestLog, keys `quest:<id>` and `quest:<id>:<n>`, QUEST; every key removed at turn-in or abandon). | |
+| Radar | | A minimap overlay; no place data of its own. |
+| RankCheck | | Spell ranks on bars; no place data. |
+| Recovery | A [Go] link ("Where you fell") on the death report and `/crec test`; the corpse arrow itself is Orders' (D24). | |
+| Resources | | Resource bars; no place data. |
+| Reticle | | A screen reticle; no place data. |
+| Spoils | "Go to Farm" GoButton on its settings page, the header glyph's right-click and `/cspoils back` (source Spoils, key farm, FARM). | |
+| Suite | | The suite dashboard; no place data. |
+| Talents | | Builds and consumable picks; a consumable's source is Quartermaster's Go. |
+| Threat | | Threat meter; no place data. |
+| Tooltip | | Vendor prices and item levels; no place data. |
+| TopBar | The coordinates are Orders' coordinate surface (click, Shift, Ctrl, Right; Coordinate Decimals); the durability, bags and ammo readouts go to the nearest repair, vendor and ammo vendor (Go from the Readouts; source TopBar, keys repair, vendor, ammo, VENDOR); the Nav segment opens the manager. | |
+| Tracer | | Floating combat text; no place data. |
+| Tradecraft | Every place row is a GoButton (vendors, trainers, book vendors, quest givers), "any trainer" lines go to the nearest trainer, Ctrl+Right-click on a trade-supply reagent row goes to the nearest vendor of it, Route This Trip (source Tradecraft); its Set Waypoints switch is kept. | |
+| Vault | "Go to Bank" GoButton on the footer line while your own vault is shown away from the bank (source Vault, key bank, BANK). The guild vault has none: no locator kind lists guild vaults. | |
+| Vitals | A worn slot's tooltip names the nearest repairer; `/cvitals repair` goes there (rows stay hover-only, so the HUD keeps passing clicks through). | |
+| Who | | A stranger's zone is not a destination. |
+
+**New globals written by the consumers this round** (each a documented
+entry point in its module): `CommanderLogistics_Nearest`,
+`CommanderLogistics_SupplyWaypoint`, `CommanderLogistics_ClearSupplyWaypoint`,
+`CommanderLogistics_SupplySpec` (the settings GoButtons' spot)
+(Logistics; NearestRepair, RepairWaypoint and ClearRepairWaypoint stay as
+wrappers); `CommanderOracle_GoToFlag`, `CommanderOracle_Nodes`,
+`BINDING_HEADER_COMMANDERORACLE`, `BINDING_NAME_COMMANDERORACLE_FLAG`
+(Oracle, with its new Bindings.xml); `BINDING_HEADER_COMMANDERPARTYFRAMES`,
+`BINDING_NAME_COMMANDERPARTYFRAMES_ARROW` (PartyFrames, with its new
+Bindings.xml); `CommanderPromotion_GoToTrainer`; `CommanderVitals_GoToRepair`.
+Orders and Events write none (Orders adds one dialog,
+`COMMANDER_ORDERS_COORDS`). Checked with luajit's bytecode listing (GSET)
+against HEAD for every changed file.
+
+**Restart the client, not /reload.** New files this round:
+Commander_Orders/CommanderOrdersEntrances.lua, CommanderOrdersLocate.lua,
+CommanderOrdersCoords.lua, CommanderOrdersChat.lua;
+Commander_Events/CommanderGoButton.lua; Commander_Oracle/Bindings.xml;
+Commander_PartyFrames/Bindings.xml. A /reload leaves them unloaded ("Error
+loading" in BugSack, no coordinate block, no [Go] links, every "nearest" Go
+answering "still loading"); ASSUMPTIONS A61.

@@ -64,6 +64,14 @@
 --   ctx.arriveYards      setting ArriveYards, for records without .arrive
 --   ctx.onTaxi           UnitOnTaxi("player")
 --   ctx.now              monotonic seconds for the rescan throttle
+--   ctx.closestScope     3.1, setting ClosestScope: "ZONE" keeps Follow the
+--                        Closest (and Closest) to waypoints in the player's
+--                        zone, through ctx.sameZone(mapA, mapB) -> bool;
+--                        anything else (nil included) is the whole landmass
+--   ctx.closestMine      3.1, setting ClosestMineOnly: Follow the Closest
+--                        leaves out what other addons asked for through the
+--                        TomTom bridge (source "TomTom:*"); the bridge's own
+--                        GetClosestWaypoint passes anyOwner and still sees them
 --
 -- Clocks. S.New(clock, epoch): clock() is monotonic seconds (GetTime) and is
 -- the fallback for Tick's now and ctx.now; epoch() is wall seconds (time) for
@@ -95,7 +103,8 @@
 --   store:Clear([filter[, reason]]) -> n
 --   store:ActiveTarget(ctx) -> wp, why    :Position(wp|uid, ctx) -> pos, altIndex
 --         (pos is READ ONLY: the record, a candidate, or ctx.unitPosition's table)
---   store:Distance(wp|uid, ctx) -> yards  :Closest(ctx) -> wp, yards (no hysteresis)
+--   store:Distance(wp|uid, ctx) -> yards  :Closest(ctx[, anyOwner]) -> wp, yards (no hysteresis)
+--   store:Retarget(uid, unit) (3.1: a unit follow moves to the member's new token)
 --   store:ChosenAlternative(uid) -> index
 --   store:SetPinned(uid) -> ok, reason    :ClearPinned([dismiss])  :Pinned()
 --   store:Suppressed()   :MarkReached(uid) ("Mark arrived" on a kept mark)
@@ -107,7 +116,13 @@
 --   store:GetRoute(id)   :Routes()   :ActiveRoute()   :FindRoute(source, key)
 --   store:Tick(ctx, distance, now) -> events (S.NO_EVENTS when none)
 --   store:State()   :ArrivalState() -> uid, state   :NeedsTick(ctx)
---   store:Serialize() -> plain table (CommanderOrdersChar.Store)
+--   store:Serialize() -> plain table (CommanderOrdersChar.Store): persistent
+--         records and routes, plus (3.1, SPEC D5) the record the arrow is
+--         PINNED to (not a unit follow, not a temporary offer) and the
+--         ACTIVE route, session-only or not, so a Go pressed before a
+--         /reload still points after it, and the record a pinned "Guide
+--         me" hop names in guideFor (its target); everything else a
+--         consumer made stays session-only
 --   store.version (bumped by every mutation)   store.onRemove = fn(wp, reason)
 --   store.rescanInterval, store.arriveHold (tunable; the harness pins them)
 -- Records and routes handed out are the live ones: read them, change them
@@ -226,7 +241,7 @@ local MODES = { ORDERED = true, NEAREST = true }
 local PERSIST_FIELDS = {
     "uid", "map", "x", "y", "title", "note", "source", "key", "kind", "unit",
     "icon", "colour", "arrive", "clearOnArrive", "persistent", "temporary",
-    "routeId", "routeIndex", "created", "reached",
+    "routeId", "routeIndex", "created", "reached", "guideFor",
 }
 
 local EMPTY = {}
@@ -418,6 +433,8 @@ local function BuildRecord(spec, asStop)
         persistent = spec.persistent ~= false,
         temporary = spec.temporary == true,
         callbacks = NormCallbacks(spec.callbacks, spec.handle),
+        -- a "Guide me" hop: the uid of the record it leads to (3.1)
+        guideFor = SeqOf(spec.guideFor, "w") and spec.guideFor or nil,
     }
 end
 
@@ -659,7 +676,7 @@ end
 
 local MOVE_FIELDS = {
     "map", "x", "y", "title", "note", "kind", "unit", "alternatives", "icon", "colour",
-    "arrive", "clearOnArrive", "persistent", "temporary", "callbacks",
+    "arrive", "clearOnArrive", "persistent", "temporary", "callbacks", "guideFor",
 }
 
 -- ---------------------------------------------------------------------------
@@ -1030,14 +1047,33 @@ local function ClosestEligible(wp)
     return wp.routeId == nil and wp.kind ~= "corpse" and wp.kind ~= "unit" and not wp.reached
 end
 
+-- 3.1: what another addon asked for through the TomTom bridge
+local function ThirdParty(wp)
+    local src = wp.source
+    return type(src) == "string" and src:sub(1, 7) == "TomTom:"
+end
+
+-- 3.1 scope and ownership (ctx.closestScope, ctx.closestMine): may this
+-- record be the closest at all? The zone test reads the spot the arrow would
+-- use (a nearest-of-N waypoint's chosen spawn).
+local function InClosestScope(self, wp, ctx, now, anyOwner)
+    if ctx.closestMine and not anyOwner and ThirdParty(wp) then return false end
+    if ctx.closestScope == "ZONE" and type(ctx.sameZone) == "function" then
+        local player = ctx.player
+        local pos = PositionFor(self, wp, ctx, now)
+        if not (pos and player and SafeCall(ctx.sameZone, player.map, pos.map)) then return false end
+    end
+    return true
+end
+
 -- One pass: the nearest non-temporary and nearest temporary candidates, and
 -- the distance of `want` when it is a candidate.
-local function ScanClosest(self, ctx, now, want)
+local function ScanClosest(self, ctx, now, want, anyOwner)
     local player = ctx.player
     local b1, d1, b2, d2, wantD
     for _, uid in ipairs(self.order) do
         local wp = self.byUid[uid]
-        if ClosestEligible(wp) then
+        if ClosestEligible(wp) and InClosestScope(self, wp, ctx, now, anyOwner) then
             local d = DistanceFor(self, wp, ctx, now)
             if d then
                 if wp == want then wantD = d end
@@ -1054,10 +1090,11 @@ local function ScanClosest(self, ctx, now, want)
 end
 
 -- No hysteresis, no cache: what /cway and TomTom:GetClosestWaypoint want.
--- Returns wp, yards.
-function Store:Closest(ctx)
+-- Returns wp, yards. anyOwner: leave ctx.closestMine out of it (the TomTom
+-- bridge asking for its callers' closest).
+function Store:Closest(ctx, anyOwner)
     if not (ctx and ctx.player and ctx.player.map) then return nil end
-    local wp, d = ScanClosest(self, ctx, Now(self, ctx, nil), nil)
+    local wp, d = ScanClosest(self, ctx, Now(self, ctx, nil), nil, anyOwner)
     return wp, d
 end
 
@@ -1066,7 +1103,7 @@ local function StickyClosest(self, ctx, now)
     if not (player and player.map and ctx.distance) then return nil end
     local c = self._closest
     local cur = c and c.uid and self.byUid[c.uid]
-    if cur and not ClosestEligible(cur) then cur = nil end
+    if cur and not (ClosestEligible(cur) and InClosestScope(self, cur, ctx, now)) then cur = nil end
     if c and Fresh(self, c, now, self.version) then
         if not c.uid then return nil end
         if cur then
@@ -1166,6 +1203,19 @@ function Store:Claim(uid, source)
     source = NormSource(source)
     if not wp or wp.routeId ~= nil or wp.key ~= nil or wp.source == source then return false end
     wp.source = source
+    Bump(self)
+    return true
+end
+
+-- A unit follow re-pointed at the member's new unit token (3.1: a roster
+-- change renumbers party1..4 and raid1..40; the runtime finds the member
+-- again by GUID). Identity stays: the uid, the (source, key), the pin.
+function Store:Retarget(uid, unit)
+    local wp = self.byUid[uid]
+    unit = NormString(unit)
+    if not wp or wp.kind ~= "unit" or not unit then return false end
+    if wp.unit == unit then return true end
+    wp.unit = unit
     Bump(self)
     return true
 end
@@ -1743,6 +1793,16 @@ end
 -- A plain table for CommanderOrdersChar.Store: session-only records (and
 -- non-persistent routes) are left out, callbacks never go in, the counters
 -- always do.
+-- 3.1 (SPEC D5): the record the arrow is pinned to and the active route
+-- are kept even when session-only, so a Go pressed before a /reload still
+-- points after it. They come back still session-only: the next save keeps
+-- them only while they hold the arrow. A unit follow is never kept this way
+-- (a unit token means another member after a relog), nor a temporary offer
+-- (a group ping, a battleground node, a repair offer: the moment is gone).
+local function KeptRoute(self, route)
+    return route.persistent or route.id == self.activeRoute
+end
+
 function Store:Serialize()
     local out = {
         Schema = SCHEMA, NextUid = self.nextUid, NextRoute = self.nextRoute,
@@ -1753,15 +1813,29 @@ function Store:Serialize()
         local wp = self.byUid[uid]
         local route = wp.routeId and self.routes[wp.routeId]
         local keep
-        if route then keep = route.persistent else keep = wp.persistent ~= false end
+        if route then
+            keep = KeptRoute(self, route)
+        else
+            keep = wp.persistent ~= false or (uid == self.pinned and wp.kind ~= "unit" and not wp.temporary)
+        end
         if keep then
             out.Waypoints[#out.Waypoints + 1] = PlainRecord(wp, false)
             kept[uid] = true
         end
     end
+    -- A pinned "Guide me" hop keeps the record it leads to, session-only or
+    -- not (the same two exclusions; a route stop goes with its route), so
+    -- the hand-back after the crossing still has somewhere to point
+    local hop = self.pinned and kept[self.pinned] and self.byUid[self.pinned]
+    local target = hop and hop.guideFor and self.byUid[hop.guideFor]
+    if target and not kept[target.uid] and not target.routeId and target.kind ~= "unit"
+        and not target.temporary then
+        out.Waypoints[#out.Waypoints + 1] = PlainRecord(target, false)
+        kept[target.uid] = true
+    end
     for _, id in ipairs(self.routeOrder) do
         local r = self.routes[id]
-        if r.persistent then
+        if KeptRoute(self, r) then
             local stops, before = {}, 0
             for i, uid in ipairs(r.stops) do
                 if kept[uid] then
@@ -1776,13 +1850,14 @@ function Store:Serialize()
                     id = r.id, title = r.title, source = r.source,
                     key = (type(r.key) == "string" or type(r.key) == "number") and r.key or nil,
                     mode = r.mode, loop = r.loop, index = index, stops = stops,
-                    persistent = true, created = IsNumber(r.created) and r.created or nil,
+                    persistent = r.persistent and true or false,
+                    created = IsNumber(r.created) and r.created or nil,
                 }
             end
         end
     end
     if self.pinned and kept[self.pinned] then out.Pinned = self.pinned end
-    if self.activeRoute and self.routes[self.activeRoute] and self.routes[self.activeRoute].persistent then
+    if self.activeRoute and self.routes[self.activeRoute] then
         out.ActiveRoute = self.activeRoute
     end
     if self.suppressed then out.Suppressed = true end
@@ -1841,7 +1916,7 @@ function S.Load(plain, clock, epoch)
                 local route = {
                     id = t.id, title = NormTitle(t.title), source = NormSource(t.source), key = NormKey(t.key),
                     mode = MODES[t.mode] and t.mode or "ORDERED", loop = t.loop == true,
-                    index = index, stops = stops, persistent = true,
+                    index = index, stops = stops, persistent = t.persistent ~= false,
                     created = IsNumber(t.created) and t.created or nil,
                 }
                 self.routes[t.id] = route

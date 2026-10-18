@@ -1924,9 +1924,15 @@ do
         active = pinned
         records = { w1 = true, w5 = true }
     end
+    -- Since Oracle 1.9.0 (Commander Orders 3.1) a click is GoTo(target,
+    -- opts): recorded as the spec the real GoTo hands its Add (the target and
+    -- the options merged), so the checks below read the same fields
     local orders
     orders = {
-        Add = function(spec)
+        GoTo = function(target, opts)
+            local spec = {}
+            for k, v in pairs(target or {}) do spec[k] = v end
+            for k, v in pairs(opts or {}) do spec[k] = v end
             calls.add[#calls.add + 1] = spec
             if orders.refuse then return nil, orders.refuse end
             records.w9 = true
@@ -2003,7 +2009,7 @@ do
     local tip = table.concat(tipLines, "\n")
     CHECK(tip:find("Blacksmith", 1, true) ~= nil, "W: the tooltip names the flag", tip)
     CHECK(tip:find("Alliance assaulting", 1, true) ~= nil, "W: and that it is being assaulted", tip)
-    CHECK(tip:find("Click: point the arrow at the Blacksmith (Commander Orders)", 1, true) ~= nil,
+    CHECK(tip:find("Click: Go to the Blacksmith (the Commander Orders arrow)", 1, true) ~= nil,
         "W: and what a click does", tip)
     pips[2].__scripts.OnEnter(pips[2])
     CHECK(table.concat(tipLines, "\n"):find("Held by the Horde", 1, true) ~= nil, "W: a held flag says who holds it")
@@ -2114,13 +2120,16 @@ do
         "W: and it says so", printLog[#printLog])
     placed = true
 
-    -- Orders switched off: says so, pins nothing
+    -- Orders switched off: says so, pins nothing. Since 1.9.0 the saying is
+    -- Orders' own (GoTo, not silent, prints its one refusal line in its
+    -- words); the Oracle adds no line of its own
     orders.refuse = "disabled"
     Reset(nil)
+    local printedBefore = #printLog
     ClickPip(3)
     CHECK(#calls.arrow == 0, "W: Orders off: nothing pinned")
-    CHECK(printLog[#printLog] and printLog[#printLog]:find("turned off", 1, true) ~= nil,
-        "W: and it says Orders is off", printLog[#printLog])
+    CHECK(#printLog == printedBefore and calls.add[#calls.add] and not calls.add[#calls.add].silent,
+        "W: and it says Orders is off (Orders' own line: GoTo not silent)", printLog[#printLog])
     orders.refuse = nil
 
     -- Orders not loaded: the place as a /way line, so a click is never nothing

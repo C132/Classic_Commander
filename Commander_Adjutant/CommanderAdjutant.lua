@@ -17,6 +17,15 @@
 -- layout change); an alert that fires in combat marks the vendor when combat
 -- ends. Both Logistics and Orders are optional and looked up when the alert
 -- fires.
+--
+-- 2.4.0 (Commander Orders 3.1) does the same for full bags: "Storage at full
+-- capacity: Innkeeper Grosk, 120 yd" names the nearest vendor (Logistics'
+-- learned repair vendors merged with Questie's vendors through Orders'
+-- locator) and, with Mark the Nearest Vendor on, offers a temporary waypoint
+-- there under (Logistics, "vendor"): never in combat, never asking for the
+-- arrow, taken down by the first merchant you open or the first free slot.
+-- Both offers go through Logistics' supply lines, which call Orders' GoTo, so
+-- the words and the waypoint are the suite's one Go-to (Orders' DECISIONS).
 
 local BANNER_HOLD = 3.0
 local BANNER_FADE_STEP = 0.06
@@ -60,6 +69,11 @@ local function StopFade()
 end
 
 local function ShowBanner(text, r, g, b)
+    -- Commander Tracer draws centre-screen text in its own lanes when it
+    -- runs; the sound is Announce's and still plays
+    if CommanderTracer_Notice and CommanderTracer_Notice({ text = text, r = r or 1, g = g or 0.85, b = b or 0.2 }) then
+        return
+    end
     StopFade()
     -- Generation token invalidates hold callbacks from earlier banners:
     -- without it, banner A's uncancellable After() would start fading
@@ -166,12 +180,14 @@ local function OfferRepair()
     if ok and placed then repairOffered = true end
 end
 
+-- Takes down the offer only: a waypoint you asked for on the same line
+-- (/clog repair, Logistics' button) is the same record and is yours now
 local function WithdrawRepairOffer()
     repairOfferPending = false
     if not repairOffered then return end
     repairOffered = false
     local fn = CommanderLogistics_ClearRepairWaypoint
-    if type(fn) == "function" then pcall(fn) end
+    if type(fn) == "function" then pcall(fn, { offerOnly = true }) end
 end
 
 local function CheckDurability()
@@ -204,6 +220,42 @@ local function CheckDurability()
     end
 end
 
+-- The vendor offer for full bags: the same shape as the repair offer, on
+-- Logistics' "Vendor" supply line (any merchant buys your junk)
+local vendorOfferPending, vendorOffered = false, false
+
+local function NearestVendor()
+    local fn = CommanderLogistics_Nearest
+    if type(fn) ~= "function" then return nil end
+    local ok, vendor = pcall(fn, "Vendor")
+    if ok and type(vendor) == "table" and type(vendor.name) == "string" then return vendor end
+    return nil
+end
+
+local function OfferVendor()
+    vendorOfferPending = false
+    if not (CommanderAdjutantDB.EnableAdjutant and CommanderAdjutantDB.VendorWaypoint) then return end
+    if InCombatLockdown and InCombatLockdown() then
+        vendorOfferPending = true
+        return
+    end
+    local fn = CommanderLogistics_SupplyWaypoint
+    if type(fn) ~= "function" then return end
+    local ok, placed = pcall(fn, "Vendor", { temporary = true, quiet = true })
+    if ok and placed then vendorOffered = true end
+end
+
+-- Takes down the offer only: once you ask for the nearest vendor yourself
+-- (/clog vendor, Logistics' button) the same record is yours, and a slot
+-- freed on the way there must not take it from under the arrow
+local function WithdrawVendorOffer()
+    vendorOfferPending = false
+    if not vendorOffered then return end
+    vendorOffered = false
+    local fn = CommanderLogistics_ClearSupplyWaypoint
+    if type(fn) == "function" then pcall(fn, "Vendor", { offerOnly = true }) end
+end
+
 local function CheckBags()
     if not CommanderAdjutantDB.AlertBagsFull then return end
     local free = 0
@@ -215,9 +267,19 @@ local function CheckBags()
     if free == 0 then
         if not bagsFullAnnounced then
             bagsFullAnnounced = true
-            Announce("BAGS_FULL", "Storage at full capacity", 1, 0.85, 0.2)
+            local text = "Storage at full capacity"
+            local vendor = NearestVendor()
+            if vendor then
+                local yards = type(CommanderLogistics_FormatYards) == "function"
+                    and CommanderLogistics_FormatYards(vendor.yards)
+                text = text .. ": " .. vendor.name .. (yards and (", " .. yards) or "")
+            end
+            Announce("BAGS_FULL", text, 1, 0.85, 0.2)
+            if vendor then OfferVendor() end
         end
     else
+        -- A free slot (sold, used, banked): the offer has done its job
+        if bagsFullAnnounced then WithdrawVendorOffer() end
         bagsFullAnnounced = false
     end
 end
@@ -250,8 +312,9 @@ events:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         lastCombatEnd = GetTime()
-        -- A repair alert that fired mid-fight marks its vendor now
+        -- A repair (or full-bags) alert that fired mid-fight marks its vendor now
         if repairOfferPending and repairAnnounced then OfferRepair() end
+        if vendorOfferPending and bagsFullAnnounced then OfferVendor() end
         -- lowHealthAnnounced deliberately NOT cleared here; CheckLowHealth's
         -- hysteresis re-arms it once health recovers above 35%
     elseif event == "UNIT_HEALTH" then

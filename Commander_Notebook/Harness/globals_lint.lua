@@ -54,9 +54,9 @@ SLASH_COMMANDERNOTEBOOKCAPTURE1 SLASH_COMMANDERNOTEBOOKCAPTURE2
 ]]
 
 -- WoW client API this module deliberately touches.
--- Commander Orders, for "Waypoint To This Note" (optional: every use is guarded)
+-- Commander Orders, for a note's Go and its Announce In Chat switch (optional: every use is guarded)
 allow[[
-CommanderOrders
+CommanderOrders CommanderOrdersDB
 ]]
 
 allow[[

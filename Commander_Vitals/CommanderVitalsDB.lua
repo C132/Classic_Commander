@@ -33,7 +33,10 @@ local function CreateOptionsPanel()
         description = "An RTS unit wireframe for your equipment. Each armor and weapon slot gets a small condition bar — green fading to red as durability drops. Stays out of the way until something needs attention, then sits at the right edge of the screen until you repair.",
         event = COMMANDER_VITALS_EVENTS.UPDATE,
         slash = { "/cvitals" },
-        slashHandlers = {},
+        slashHandlers = {
+            -- Commander Orders 3.1: the arrow to the nearest repairer
+            repair = function() if CommanderVitals_GoToRepair then CommanderVitals_GoToRepair() end end,
+        },
     })
 
     panel:AddSection("Unit Condition")

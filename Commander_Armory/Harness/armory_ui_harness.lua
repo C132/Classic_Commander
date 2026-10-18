@@ -1168,12 +1168,15 @@ CommanderArmoryDB = { AccentColor = "FEL", DBVersion = 1 }
 CommanderArmorySets = {}
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
+-- Commander_Events' TOC loads its Go button between the two (Orders 3.1)
+Load(ADDONS .. "/Commander_Events/CommanderGoButton.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 Load(ADDONS .. "/Commander_Armory/CommanderArmoryData.lua")
 Load(ADDONS .. "/Commander_Armory/CommanderArmoryEngine.lua")
 Load(ADDONS .. "/Commander_Armory/CommanderArmoryDB.lua")
 Load(ADDONS .. "/Commander_Armory/CommanderArmory.lua")
-Load(ADDONS .. "/Commander_Armory/CommanderArmoryUI.lua")
+-- Mutation hook (Orders 3.1 work): ARMORY_UI=/path of a copy to load instead
+Load(os.getenv("ARMORY_UI") or (ADDONS .. "/Commander_Armory/CommanderArmoryUI.lua"))
 
 local D = CommanderArmoryData
 local E = CommanderArmoryEngine
@@ -2035,6 +2038,41 @@ CHECK(bankText:find("Legplates of Light is in your bank"),
 CHECK(not bankText:find("not in your bags"),
     "M: and never calls a banked item missing", bankText)
 
+-- Go to Bank (1.1.0, Commander Orders 3.1): the idle run bar's slot offers
+-- Orders' Go button to the nearest banker, only while the set wants the bank
+local goBank = _G.CommanderArmoryPane.goBank
+CHECK(goBank ~= nil, "M: the pane has Go to Bank")
+CHECK(goBank and goBank:IsShown(), "M: shown while the set wants something from the bank")
+CHECK(goBank and goBank.__text == "Go to Bank", "M: in the suite's words (Go to <Thing>)", goBank and goBank.__text)
+local goOpts = goBank and rawget(goBank, "_goOpts")
+CHECK(goOpts ~= nil, "M: as Commander Orders' Go button")
+CHECK(goOpts and goOpts.query and goOpts.query.townsfolk == "Banker", "M: asking Orders' locator for the nearest banker")
+CHECK(goOpts and goOpts.source == "Armory" and goOpts.key == "bank" and goOpts.icon == "BANK",
+    "M: one waypoint (Armory, bank) in the bank tint")
+local asked
+CommanderOrders = {
+    GoTo = function(target, opts) asked = { target = target, opts = opts } return "w1" end,
+    IsAvailable = function() return true end,
+}
+if goBank then goBank.__scripts.OnClick(goBank, "LeftButton") end
+CHECK(asked and asked.target.townsfolk == "Banker" and asked.opts.source == "Armory",
+    "M: a click asks Orders to go there")
+CommanderOrders = nil
+BankReadable(true)
+Fire("BANKFRAME_OPENED")
+CommanderArmoryUI.Refresh()
+CHECK(not _G.CommanderArmoryPane.goBank:IsShown(), "M: standing at the bank, nothing to go to")
+Fire("BANKFRAME_CLOSED")
+BankReadable(false)
+WorldChanged()
+CommanderArmoryUI.Refresh()
+CHECK(_G.CommanderArmoryPane.goBank:IsShown(), "M: ...and back once you walk away")
+CommanderArmory.SelectSet(2)   -- Head Kit: missing, not banked
+CommanderArmoryUI.Refresh()
+CHECK(not _G.CommanderArmoryPane.goBank:IsShown(), "M: a missing item offers no bank to go to")
+CommanderArmory.SelectSet(3)
+CommanderArmoryUI.Refresh()
+
 -- The same distinction has to survive into the chat listing.
 ClearPrintLog()
 CommanderArmory_ListSets()
@@ -2089,6 +2127,7 @@ CHECK(Strip(_G.CommanderArmoryPane.progressText.__text):find("Queued"),
     "N: the pane shows the queued swap", _G.CommanderArmoryPane.progressText.__text)
 CHECK(_G.CommanderArmoryPane.cancelBtn:IsShown(),
     "N: with the cancel affordance the queue is worthless without")
+CHECK(not _G.CommanderArmoryPane.goBank:IsShown(), "N: and no Go to Bank on top of it")
 
 -- The ticker must not sneak the swap through while combat is still on.
 DriveRun(2)

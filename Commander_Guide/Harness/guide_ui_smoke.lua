@@ -676,7 +676,7 @@ Fire("PLAYER_ENTERING_WORLD")
 CommanderGuide_Show("KARAZHAN", "MOROES")
 local g = CommanderGuideFrame
 CHECK(g.entrance ~= nil, "J: the window carries the entrance button")
-EQ(g.entrance and g.entrance.__text, "Waypoint to Entrance", "J: labelled")
+EQ(g.entrance and g.entrance.__text, "Go to Entrance", "J: labelled")
 CHECK(g.entrance and g.entrance.__points and g.entrance.__points[1].rel == g.list,
     "J: it sits on the boss list, the raid's column")
 EQ(g.entrance and g.entrance.__enabled, false, "J: greyed out inside Karazhan")
@@ -730,7 +730,7 @@ EQ(#orderAdds, nBefore + 1, "J: the button sets the waypoint")
 local slashJ = SlashCmdList["COMMANDERUI_GUIDE"]
 if slashJ then slashJ("entrance") end
 EQ(#orderAdds, nBefore + 2, "J: /cguide entrance sets it too")
-EQ(BINDING_NAME_COMMANDERGUIDE_ENTRANCE, "Waypoint to the raid's entrance", "J: the key binding is named")
+EQ(BINDING_NAME_COMMANDERGUIDE_ENTRANCE, "Go to the raid's entrance", "J: the key binding is named")
 local bx = io.open(ADDONS .. "/Commander_Guide/Bindings.xml", "r")
 local bindingsXml = bx and bx:read("*a") or ""
 if bx then bx:close() end
@@ -746,9 +746,9 @@ ordersAnswer = { nil, "disabled" }
 ok, why = CommanderGuide_Entrance()
 EQ(ok, false, "J: a refusal is not a success")
 EQ(why, "disabled", "J: ...and keeps Orders' reason")
-CHECK(LastPrint():find("Commander Orders is switched off", 1, true)
+CHECK(LastPrint():find("Commander Orders is turned off (/corder)", 1, true)
     and LastPrint():find("/way #1430 46.70 70.20 Karazhan entrance", 1, true),
-    "J: switched off: says so and prints the /way line", LastPrint())
+    "J: turned off: says so and prints the /way line", LastPrint())
 -- Orders throws: still never an error out of the guide
 CommanderOrders.Add = function() error("orders blew up") end
 local errsBefore = #caughtErrors
@@ -784,14 +784,14 @@ CommanderGuideDB.Enable = true
 local found
 local function FindButton(w)
     for _, c in ipairs(w.__children or {}) do
-        if c.__text == "Waypoint to Entrance" and c.__kind == "Button" then found = c end
+        if c.__text == "Go to Entrance" and c.__kind == "Button" then found = c end
         FindButton(c)
     end
 end
 for _, cat in ipairs(categories) do
     if cat.__panel and cat.__panel._key == "Guide" then FindButton(cat.__panel) end
 end
-CHECK(found ~= nil, "J: the settings page has a Waypoint to Entrance button")
+CHECK(found ~= nil, "J: the settings page has a Go to Entrance button")
 if found then
     nBefore = #orderAdds
     found.__scripts.OnClick(found)

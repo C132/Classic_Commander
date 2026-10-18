@@ -1624,6 +1624,123 @@ Section(function()
 end)
 
 -- ===========================================================================
+-- L: 3.1 (SPEC 2): the pinned consumer record and the active route are
+-- saved (D5); Follow the Closest's zone scope and ownership (S3); Retarget
+-- ===========================================================================
+Section(function()
+    -- D5: what Serialize keeps
+    local st = S.New(clock, epoch)
+    local go = st:Add({ map = 10, x = 0.5, y = 0.5, title = "Go", source = "QuestLog", key = "quest:1",
+        persistent = false, setArrow = true })
+    local other = st:Add({ map = 10, x = 0.6, y = 0.5, title = "Other", source = "QuestLog", key = "quest:2",
+        persistent = false })
+    local plain = RoundTrip(st:Serialize())
+    EQ(#plain.Waypoints, 1, "L: the pinned session-only record is saved, the other is not (D5)")
+    EQ(plain.Waypoints[1] and plain.Waypoints[1].uid, go.uid, "L: ...the pinned one")
+    EQ(plain.Pinned, go.uid, "L: ...and the pin with it")
+    local ld = S.Load(plain, clock, epoch)
+    EQ(ld:Pinned() and ld:Pinned().uid, go.uid, "L: after a load the arrow is on it again")
+    EQ(ld:Get(go.uid).persistent, false, "L: ...still session-only")
+    ld:ClearPinned(true)
+    EQ(#RoundTrip(ld:Serialize()).Waypoints, 0, "L: let go of, it is no longer saved")
+    -- a pinned temporary offer or unit follow is not
+    local st2 = S.New(clock, epoch)
+    st2:Add({ map = 10, x = 0.5, y = 0.5, title = "Ping", source = "Ping", key = "ping", persistent = false,
+        temporary = true, setArrow = true })
+    EQ(#RoundTrip(st2:Serialize()).Waypoints, 0, "L: a pinned temporary offer is not saved")
+    local st3 = S.New(clock, epoch)
+    local u = st3:Add({ kind = "unit", unit = "party1", title = "Bob", persistent = false, setArrow = true })
+    EQ(st3:Pinned(), u, "L: (a unit follow pinned)")
+    EQ(#RoundTrip(st3:Serialize()).Waypoints, 0, "L: ...is not saved")
+    -- the active route, session-only, with its stops
+    local st4 = S.New(clock, epoch)
+    local r = st4:AddRoute({ title = "Trip", source = "Tradecraft", key = "trip", persistent = false,
+        stops = { { map = 10, x = 0.1, y = 0.1 }, { map = 10, x = 0.2, y = 0.1 } } })
+    st4:AddRoute({ title = "Idle", source = "Tradecraft", key = "idle", persistent = false, start = false,
+        stops = { { map = 10, x = 0.3, y = 0.1 } } })
+    local p4 = RoundTrip(st4:Serialize())
+    EQ(#p4.Routes, 1, "L: the active route is saved, the idle one is not")
+    EQ(#p4.Waypoints, 2, "L: ...with its stops")
+    EQ(p4.Routes[1].persistent, false, "L: ...marked session-only")
+    EQ(p4.ActiveRoute, r.id, "L: ...and still the active one")
+    local l4 = S.Load(p4, clock, epoch)
+    EQ(l4:GetRoute(r.id) and l4:GetRoute(r.id).persistent, false, "L: loaded, it stays session-only")
+    EQ(l4:ActiveRoute() and l4:ActiveRoute().id, r.id, "L: ...and running")
+    l4:RemoveRoute(r.id)
+    -- review (core): a pinned "Guide me" hop keeps the record it names in
+    -- guideFor, session-only or not, and the link itself
+    local sg = S.New(clock, epoch)
+    local tgt = sg:Add({ map = 11, x = 0.5, y = 0.5, title = "Bank", source = "Armory", key = "bank",
+        persistent = false, setArrow = true })
+    local hop = sg:Add({ map = 10, x = 0.2, y = 0.2, title = "To Outland", source = "guide", key = "hop",
+        persistent = false, setArrow = true, guideFor = tgt.uid })
+    EQ(hop.guideFor, tgt.uid, "L: a hop records guideFor")
+    EQ(sg:Pinned(), hop, "L: (the hop holds the arrow)")
+    local pg = RoundTrip(sg:Serialize())
+    EQ(#pg.Waypoints, 2, "L: the pinned hop AND the session-only record it leads to are saved")
+    local lg = S.Load(pg, clock, epoch)
+    EQ(lg:Pinned() and lg:Pinned().guideFor, tgt.uid, "L: ...the link loads with the hop")
+    CHECK(lg:Get(tgt.uid) ~= nil and lg:Get(tgt.uid).persistent == false, "L: ...the target loads, still session-only")
+    lg:Remove(hop.uid)
+    EQ(#RoundTrip(lg:Serialize()).Waypoints, 0, "L: with the hop gone, neither is kept")
+    local sg2 = S.New(clock, epoch)
+    local ut = sg2:Add({ kind = "unit", unit = "party1", title = "Bob", persistent = false })
+    sg2:Add({ map = 10, x = 0.2, y = 0.2, title = "To Bob", source = "guide", key = "hop", persistent = false,
+        setArrow = true, guideFor = ut.uid })
+    EQ(#RoundTrip(sg2:Serialize()).Waypoints, 1, "L: ...but never a unit follow (D33's exclusion)")
+    EQ(sg2:Add({ map = 10, x = 0.3, y = 0.3, guideFor = "nonsense" }).guideFor, nil, "L: guideFor must be a uid")
+    -- a 3.0 save (persistent = true on every route) still loads persistent
+    local old = { Schema = 1, NextUid = 3, NextRoute = 2, Waypoints = { { uid = "w1", map = 10, x = 0.1, y = 0.1,
+        kind = "stop", routeId = "r1", routeIndex = 1, source = "user" } },
+        Routes = { { id = "r1", title = "Old", source = "user", stops = { "w1" }, index = 1, persistent = true } } }
+    EQ(S.Load(old, clock, epoch):GetRoute("r1").persistent, true, "L: a 3.0 route loads persistent")
+
+    -- S3: the zone scope through ctx.sameZone, and ownership
+    local zone = { [10] = "A", [11] = "B", [12] = "A" }
+    local function SameZone(a, b) return zone[a] ~= nil and zone[a] == zone[b] end
+    local sc = S.New(clock, epoch)
+    sc.rescanInterval = 0
+    local far = sc:Add({ map = 11, x = 0.05, y = 0.05, title = "Next zone" })
+    local mine = sc:Add({ map = 12, x = 0.9, y = 0.9, title = "My zone, farther" })
+    local ctxL = Ctx(10, 0.95, 0.05)
+    EQ(sc:ActiveTarget(ctxL), far, "L: landmass-wide: the nearest anywhere")
+    local ctxZ = Ctx(10, 0.95, 0.05, { closestScope = "ZONE", sameZone = SameZone })
+    EQ(sc:ActiveTarget(ctxZ), mine, "L: ZONE: the nearest in my zone")
+    EQ(sc:Closest(ctxZ), mine, "L: Closest keeps the scope too")
+    sc:Remove(mine.uid)
+    EQ(sc:ActiveTarget(ctxZ), nil, "L: ZONE with nothing in my zone: nothing")
+    EQ(sc:ActiveTarget(Ctx(10, 0.95, 0.05, { closestScope = "ZONE" })), far, "L: no sameZone given: landmass-wide")
+    local sk = S.New(clock, epoch)
+    local kfar = sk:Add({ map = 11, x = 0.05, y = 0.05, title = "Next zone" })
+    local kmine = sk:Add({ map = 12, x = 0.9, y = 0.9, title = "Mine" })
+    EQ(sk:ActiveTarget(Ctx(10, 0.95, 0.05)), kfar, "L: (landmass-wide, remembered: the next zone's)")
+    EQ(sk:ActiveTarget(Ctx(10, 0.95, 0.05, { closestScope = "ZONE", sameZone = SameZone })), kmine,
+        "L: switched to ZONE, a remembered pick out of scope is dropped at once")
+    local tt = sc:Add({ map = 10, x = 0.9, y = 0.05, title = "Questie's", source = "TomTom:Questie" })
+    local ctxM = Ctx(10, 0.95, 0.05, { closestMine = true })
+    EQ(sc:ActiveTarget(ctxM), far, "L: ClosestMineOnly leaves the TomTom bridge's out")
+    EQ(sc:Closest(ctxM), far, "L: ...in Closest too")
+    EQ(sc:Closest(ctxM, true), tt, "L: ...unless the bridge asks for its callers (anyOwner)")
+    EQ(sc:ActiveTarget(Ctx(10, 0.95, 0.05)), tt, "L: ownership off: it is the nearest")
+    sc:SetPinned(tt.uid)
+    EQ(sc:ActiveTarget(ctxM), tt, "L: a pin is never filtered")
+
+    -- Retarget: a follow moves to the member's new token
+    local rt = S.New(clock, epoch)
+    local f = rt:Add({ kind = "unit", unit = "party2", title = "Bob", source = "PartyFrames", key = "follow" })
+    local v = rt.version
+    EQ(rt:Retarget(f.uid, "party1"), true, "L: Retarget")
+    EQ(f.unit, "party1", "L: ...the token moved")
+    CHECK(rt.version > v, "L: ...a change")
+    EQ(rt:ByKey("PartyFrames", "follow"), f, "L: ...the same record by its key")
+    EQ(rt:Retarget(f.uid, "party1"), true, "L: the same token again is no change")
+    local p = rt:Add({ map = 10, x = 0.5, y = 0.5 })
+    EQ(rt:Retarget(p.uid, "party1"), false, "L: a place is not a follow")
+    EQ(rt:Retarget("w999", "party1"), false, "L: nor an unknown uid")
+    EQ(rt:Retarget(f.uid, ""), false, "L: nor an empty token")
+end)
+
+-- ===========================================================================
 -- K: the sealed environment
 -- ===========================================================================
 EQ(#strayReads, 0, "K: the store read no global outside the standard set" ..

@@ -472,8 +472,11 @@ CommanderConsole_Colors = {
 }
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
+-- Commander_Events' TOC loads its Go button between the two (Orders 3.1)
+Load(ADDONS .. "/Commander_Events/CommanderGoButton.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
-Load(ADDONS .. "/Commander_Bags/CommanderBagsDB.lua")
+-- Mutation hook (Orders 3.1 work): BAGS_DB=/path of a copy to load instead
+Load(os.getenv("BAGS_DB") or (ADDONS .. "/Commander_Bags/CommanderBagsDB.lua"))
 Load(ADDONS .. "/Commander_Bags/CommanderBagsSort.lua")
 Load(ADDONS .. "/Commander_Bags/CommanderBags.lua")
 
@@ -708,6 +711,43 @@ Settle()
 local perBurst = scanCount - before
 CHECK(perBurst <= 8, "a settled refresh burst scans each BoE slot once, not once per pass", perBurst)
 io.write(("  (settled burst cost: %d tooltip scans across 16 slots)\n"):format(perBurst))
+
+-- Go to Vendor / Go to Repair (2.3.0, Commander Orders 3.1): Orders' Go
+-- buttons on the settings page and /cb vendor, /cb repair; Orders is a
+-- recording stand-in here (bags_orders_smoke.lua drives the real one)
+local asked = {}
+CommanderOrders = {
+    GoTo = function(target, opts) asked[#asked + 1] = { target = target, opts = opts } return "w1" end,
+    IsAvailable = function() return true end,
+}
+local goButtons = {}
+for _, f in ipairs(frames) do
+    local label = rawget(f, "_goLabel")
+    if label then goButtons[label] = f end
+end
+CHECK(goButtons["Go to Vendor"] ~= nil, "the settings page has Go to Vendor, Orders' Go button")
+CHECK(goButtons["Go to Repair"] ~= nil, "and Go to Repair")
+local gv, gr = goButtons["Go to Vendor"], goButtons["Go to Repair"]
+CHECK(gv and gv._goOpts.query.townsfolk == "Vendor" and gv._goOpts.source == "Bags" and gv._goOpts.key == "vendor"
+    and gv._goOpts.icon == "VENDOR", "Go to Vendor asks for the nearest merchant as (Bags, vendor)")
+CHECK(gr and gr._goOpts.query.townsfolk == "Repair" and gr._goOpts.key == "repair",
+    "Go to Repair asks for the nearest repairer as (Bags, repair)")
+if gv then gv.__scripts.OnClick(gv, "LeftButton") end
+CHECK(asked[1] and asked[1].target.townsfolk == "Vendor" and asked[1].opts.source == "Bags",
+    "a click asks Orders to go")
+asked = {}
+SlashCmdList["COMMANDERUI_BAGS"]("vendor")
+SlashCmdList["COMMANDERUI_BAGS"]("repair")
+CHECK(#asked == 2 and asked[1].target.townsfolk == "Vendor" and asked[2].target.townsfolk == "Repair"
+    and asked[2].opts.key == "repair", "/cb vendor and /cb repair ask the same", #asked)
+CHECK(asked[1] and not asked[1].opts.silent, "not silent: Orders says Waypoint set or why not")
+CommanderOrders = nil
+local printed = {}
+local keepPrint = print
+print = function(text) printed[#printed + 1] = tostring(text) end
+SlashCmdList["COMMANDERUI_BAGS"]("vendor")
+print = keepPrint
+CHECK(printed[1] and printed[1]:find("needs Commander Orders", 1, true), "without Orders /cb vendor says so", printed[1])
 
 CHECK(#caughtErrors == 0, "nothing errored across the whole run", caughtErrors[1])
 

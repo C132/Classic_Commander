@@ -58,6 +58,7 @@ allow [[
 CreateFrame UIParent GameTooltip GameFontNormal GameFontNormalSmall GameFontNormalLarge
 GameFontHighlightSmall GameFontDisableSmall
 C_Timer GetTime UISpecialFrames InCombatLockdown HideUIPanel ItemRefTooltip IsShiftKeyDown ITEM_SOULBOUND
+IsControlKeyDown
 UIDropDownMenu_Initialize UIDropDownMenu_CreateInfo UIDropDownMenu_AddButton
 UIDropDownMenu_SetWidth UIDropDownMenu_SetSelectedValue UIDropDownMenu_SetText
 ChatEdit_InsertLink GetSpellLink

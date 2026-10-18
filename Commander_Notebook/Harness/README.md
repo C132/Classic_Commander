@@ -1,11 +1,12 @@
 # Commander_Notebook harnesses
 
-Three luajit checks, all in-addon. Run **all three** before any change.
+Four luajit checks, all in-addon. Run **all four** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit notebook_harness.lua      # store fixture — 235 checks
-/opt/homebrew/bin/luajit notebook_ui_harness.lua   # UI + host      — 177 checks
-/opt/homebrew/bin/luajit globals_lint.lua          # 3 files, 0 undeclared globals
+/opt/homebrew/bin/luajit notebook_harness.lua         # store fixture - 235 checks
+/opt/homebrew/bin/luajit notebook_ui_harness.lua      # UI + host     - 190 checks
+/opt/homebrew/bin/luajit notebook_orders_smoke.lua    # the REAL Commander Orders - 55 checks
+/opt/homebrew/bin/luajit globals_lint.lua             # 3 files, 0 undeclared globals
 ```
 
 All three resolve the AddOns root from their own file location, so they work in a git worktree as
@@ -80,8 +81,41 @@ The checks worth naming:
   candidates; a note with no place offers neither; Orders off says so; Orders missing prints the
   `/way` line; Stamp New Notes keeps the place too.
 
+- **L10** - (1.2.0, Commander Orders 3.1, DECISIONS D11) one Go button follows whichever note is
+  open (its key and its place), an old name-only stamp keeps the plain Go, a note with no place hides
+  it, and Orders off greys it with the reason.
+
+Since 1.2.0 the stub is Orders 3.1's surface: a map-stamped Go goes through `GoTo(target, opts)`
+(recorded as the target and opts merged, the spec the real GoTo hands its Add), `IsAvailable` and
+`Reason` answer the Go button, and the harness loads `Commander_Events/CommanderGoButton.lua` in its
+TOC slot. Checks changed for the SPEC's words only: L4/L6 read the menu entry **Go To This Note**
+(was "Waypoint To This Note"), and L2's "a one-line confirmation" now passes when the Notebook
+prints nothing itself and GoTo was not silent (the line is Orders' "Waypoint set: ..."). L2 gained
+the NOTE icon and "the Go is Commander Orders' Go button".
+
 Mutation hooks: `NOTEBOOK_STORE=/path` (both harnesses) and `NOTEBOOK_UI=/path` load a copy in place of
-the real file. Twenty-two hand-made mutants of the 1.1.0 code are all killed.
+the real file. Twenty-two hand-made mutants of the 1.1.0 code are all killed; of the 1.2.0 ones, the
+UI harness kills the Go key not following the note, a name-only stamp given the Go button and the
+Go button left showing on a note with no place, and the contract harness kills the NOTE icon
+dropped (on the button and on the menu's path), the old "waypoint to" words and the old menu words.
+L5 (and the real-Orders E) also read a name-only stamp's "Waypoint set" against Orders' Announce In
+Chat: said while on or with no Orders settings, never while off; the line printed always, never,
+or only with an Orders settings table are each killed.
+
+## `notebook_orders_smoke.lua` - the way back against the real Commander Orders
+
+Boots the real Orders over `Commander_Orders/Harness/orders_mock.lua` (this build's map rows, the
+real settings framework and Go button) and loads the Notebook's three files after it, as the client
+does. A: loads clean. B: a map-stamped note's Go is Orders' Go button; a click makes ONE waypoint
+(Notebook, `note:<id>`) at the stamp's exact spot in the NOTE tint with the arrow on it, Orders'
+"Waypoint set" line once and none of the Notebook's, lit "Going" while the arrow is there, the same
+record on a second press, and another note its own waypoint through the same button. C: the menu's
+**Go To This Note** asks for the same record. D: Orders switched off greys the button with the
+reason, a click says Orders' words once, and the menu's press says Orders' ONE refusal line with the
+place and a [Go] link. E: an old stamp still goes by name through Orders' `/way` resolver
+(`Import`) and says "Waypoint set"; with Orders' Announce In Chat off the waypoint is made and no
+line is printed by anyone, from the button, the menu or a map-stamped note alike. F: without
+Orders, the `/way` line from the button and the menu.
 
 ## `globals_lint.lua` — scoping
 

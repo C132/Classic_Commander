@@ -83,7 +83,7 @@ ASSUMPTIONS.md.
 **D11. The guide gets you to the door, through Commander Orders (1.1.0).**
 Getting to the raid was the one part of a raid night the guide could not
 help with, and Commander Orders is the suite's arrow. "Waypoint to
-Entrance" (under the boss list, on the settings page, `/cguide entrance`
+Entrance" ("Go to Entrance" since D12; under the boss list, on the settings page, `/cguide entrance`
 and a key binding) hands Orders one waypoint per raid under
 (source `Guide`, key `entrance:<RAID>`), so pressing it twice moves one
 waypoint rather than stacking two, and it clears itself on arrival like any
@@ -114,3 +114,46 @@ is behind you and there is no position for an arrow anyway. Rejected: a
 "walk me through the raid" route of boss waypoints (no position inside
 instances), and a table of every dungeon (QuestLog's resolver already
 answers dungeons from Questie; the guide only needs its raids).
+
+**D12. "Go to Entrance": Commander Orders' door, Orders' words (1.2.0).**
+Commander Orders 3.1 made "go to" one thing across the suite (its SPEC 1 and
+the words-and-gestures rule in Orders' DECISIONS, D31: "Go to <Thing>" on a
+standalone button, "Go" on a row, "[Go]" in chat; click Go, Shift-click
+share, Ctrl-click copy the /way line; one refusal vocabulary,
+`CommanderOrders.Reason`), and shipped a door table for every dungeon and
+raid (the client's AreaTrigger rows joined with CMaNGOS, Orders' locator).
+So the button is **Go to Entrance**, and the window's copy is the suite's
+`Commander.UI.GoButton` (lit "Going to Entrance" while the arrow is on the
+door, its tooltip naming the door and its zone, Shift-click putting the
+readable line "Karazhan entrance - Deadwind Pass 46.6, 74.1 (/way ...)" in
+group chat or /say, Ctrl-click Orders' copy box with the /way line). With
+Orders 3.1 a press is `CommanderOrders.GoTo({ entrance = { instance = id } },
+{ source = "Guide", key = "entrance:<RAID>", title = "<Raid> entrance" })`:
+the door is Orders' own -- Karazhan's two portals as alternatives, the
+Coilfang Reservoir's mouth for Serpentshrine rather than a portal under the
+lake, the Caverns of Time's mouth for Hyjal -- and Orders words the outcome,
+"Waypoint set: Karazhan entrance (...)" or its one refusal line with the
+door's [Go] link, so the guide no longer prints a line of its own. The
+guide's raid table is retired as the answer and kept as the fallback: when
+Orders cannot look a door up (an install without the locator), the table's
+spec goes through the same GoTo, and without Orders the button prints its
+/way line as before. The table is not registered as an entrance resolver:
+resolvers outrank Orders' door table for every consumer, and Questie's
+portal spots (the table's source) would replace better data for Formulary's
+and Quartermaster's raid drops too. An Orders 3.0 without GoTo still gets
+D11's spec through Add, worded with "Commander Orders is turned off
+(/corder)" like every other module. Inside the raid both answers are nil,
+"You are already inside" (the GoButton's nil-and-reason form, Orders 3.1
+integration), and the button greys out with that as its red line under the
+tooltip's "the door is behind you", not Orders' generic "No known location".
+`guide_orders_smoke.lua` runs all of it on the real Orders; the UI smoke's
+section J keeps D11's path against a 3.0 stand-in. The settings page's Go to
+Entrance stays a plain button calling `CommanderGuide_Entrance`, the slash
+word's path (the same GoTo, Orders' words and refusal line), without the
+GoButton's Shift and Ctrl gestures, lit state or grey-out, and its tooltip
+says so ("The window's button is greyed out while you are inside that raid,
+and its Shift-click shares the door in chat"): the door it means is the raid
+the WINDOW shows, so the window's button is the one that carries the full
+behaviour. (The 2026-10-05 review set it beside Logistics', Bags' and
+Spoils' settings-page Go buttons, which are GoButtons; this one is kept as
+it is on purpose.)

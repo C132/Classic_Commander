@@ -2,12 +2,13 @@
 ## Category: Commander
 ## Title: Commander Events
 ## Author: Devin
-## Version: 2.5.0
-## Notes: Event system for Commander
+## Version: 2.6.0
+## Notes: Event system for Commander, with the suite's settings framework, HUD chrome and the one Go to button every module uses.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderTelemetryDB, CommanderHealthDB, CommanderUIDB
 
 CommanderSettingsUI.lua
+CommanderGoButton.lua
 CommanderEvents.lua
 CommanderHealth.lua
 CommanderTelemetry.lua

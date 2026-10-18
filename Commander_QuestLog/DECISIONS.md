@@ -990,6 +990,131 @@ Reputation on Zone Rows and Reputation in the Quest Dialog are read as
 surfaces, plain, under the Wickerman and calibrated), quest-dialog harness,
 map harness O; adapter harness R13 (the zone totals and the waypoint note).
 
+**D45 — "Go to": the suite's Go buttons, Orders' words, a Go per
+objective, and the quest's waypoint gone at the turn-in.** (1.7.0, with
+Commander Orders 3.1.) Orders 3.1 made a waypoint press one thing across the
+suite: its `GoTo` (a place, or a query for its locator), the suite's
+`Commander.UI.GoButton` in Commander_Events, and one words-and-gestures rule
+written in Orders' DECISIONS (D31) -- "Go to <Thing>" on a standalone button,
+"Go" on a row, "[Go]" in chat, "Waypoint" only the noun; click Go,
+Shift-click share the place in chat, Ctrl-click copy its /way line, and on a
+list row with no room for a button Ctrl+Right-click Go, hinted in its
+tooltip. This module follows it:
+
+- **The buttons.** The Log's action bar has **Go to Turn-in** (was
+  Waypoint, 120 px for "Going to Turn-in"); the Zones and Reputations tabs'
+  bar has **Go** (it acts on the selected quest, like Track and Share; their
+  bar has no room for "Go to Quest" beside Watch Faction). Both are the
+  suite's GoButton: lit "Going" while the arrow is on their target, greyed
+  with Orders' own reason (`CommanderOrders.Reason`) when it cannot go, its
+  tooltip naming the place. Without the GoButton file (an older
+  Commander_Events) they are plain buttons on the 1.5.0 path.
+- **One call, Orders' words.** Every press goes through `A.GoSpec` ->
+  `CommanderOrders.GoTo(place, { source = "QuestLog", key, icon = "QUEST" })`.
+  Orders says what happened -- "Waypoint set: ..." behind its Announce
+  setting, or ONE refusal line with the place and its [Go] link (whose
+  Ctrl-click is the /way line) -- so the adapter no longer prints a /way
+  line of its own when Orders is there; its D27 line is now only the
+  fallback with no Orders (or an Orders 3.0 without GoTo, which still gets
+  D35's spec through Add).
+- **Objectives (S2).** Each objective of a log quest that Questie can place
+  gets a row **Go** at its line's right end, on the Log's briefing and on
+  the Zones tab's briefing of an in-log quest: a creature or kill-credit
+  objective to the creature's spawns, an object to its spawns, an item to
+  the creatures and objects Questie says drop it (quest items, the one kind
+  QuestieDB keeps drops for), an explore objective to its trigger's spot; a
+  spawn inside a dungeon is its entrance, as for givers; the player's zone's
+  spawns first, at most 48, the arrow taking the nearest. Objective n of the
+  log is objective n of Questie's list because the adapter lines Questie's
+  objectives up the way Questie's own `GetQuest` does (creatures, objects,
+  items, reputation, kill credit, spells, then the explore trigger, each
+  put first where Questie's `*ObjectiveFirst` tables name the quest), which
+  is how Questie itself matches them against the client's. A finished
+  objective, a reputation goal and a spell objective get none.
+- **Prerequisites and follow-ups.** A REQUIRES or LEADS TO row still to do
+  gets a **Go** to where that quest starts (`A.StarterSpec`, the player's
+  zone's giver first).
+- **The Log's rows.** Ctrl+Right-click goes to the row's turn-in (the same
+  Go as the action bar's); a plain right-click still tracks (D2's Log
+  gesture), so the row gesture is the suite's without taking Track away.
+  The Zones and Reputations rows and the map drawer's keep their plain
+  right-click Go (the drawer's hint now reads "Right-click: Go").
+- **One waypoint per quest, four kinds of target.** D35's rule holds across
+  start, turn-in, objectives and a follow-up's giver: start and turn-in keep
+  the key `quest:<id>`, objective n is `quest:<id>:<n>` (so each button
+  lights only for its own target), and a Go that lands drops the quest's
+  other keys (`A.NoteGo` -> `A.ClearQuestWaypoints(id, keep)`).
+- **Turned in or abandoned, it goes.** Orders 3.1 keeps the waypoint the
+  arrow is pinned to across a /reload (its D33, the critic's D5), so a turn-in
+  waypoint could outlive its quest. On `QUEST_TURNED_IN` and
+  `QUEST_REMOVED` (payload: the quest id) every key of the quest is removed
+  through `CommanderOrders.RemoveBy("QuestLog", key)`; keys match whole, so
+  quest 900's turn-in never touches 9005's.
+- **Another module reads the adapter.** Commander_Objectives' Turn-in Offer
+  (3.1, off by default) asks `CommanderQuestLog.Questie.Finisher(questID)`
+  (pcall'd) for `{ name, uiMapId, x, y (0..100), spawns = { { uiMapId, x, y },
+  ... } }`. Keep that shape, or publish a stable global for it and tell
+  Objectives' owner (Orders' DECISIONS D41: Objectives owns the turn-in
+  offer).
+
+The window harness (`questlog_harness.lua`) still loads no GoButton, so its
+checks keep proving the plain path; `questlog_goto_harness.lua` loads it over
+a recording Orders 3.1 and the GoWorld fixture (quest 9005 with an objective
+of every kind), and the contract harness's sections F-K run GoTo, the
+objectives, one waypoint per quest, the turn-in cleanup across a /reload and
+a follow-up's Go on the real Orders. Rejected: an objective Go through
+Orders' locator (`{ npc = id }` queries): the objectives are quest data, the
+spawn conversion, the dungeon-door rule and the zone preference are already
+this adapter's for givers, and a Go must answer the same way as the giver's
+next to it; and a Go on every objective line by matching its text against
+Questie's names (the index is how Questie does it).
+
+**D46 — A creature inside an instance goes to Orders' door; a greyed Go
+promises no press.** (1.7.0, the Go-to review's round 2, 2026-10-05.) Two
+fixes Orders' DECISIONS (D37, D42) had left to this module:
+
+- **The door is Orders'.** The suite's lead decision made Orders' shipped
+  door table the one way into a dungeon: the arrow's dungeon hint, the
+  corpse run, Quartermaster's and Formulary's Gos all use it. `GiverRecords`
+  still turned Questie's `{-1, -1}` "inside an instance" spawn into Questie's
+  own dungeon spot (`ZoneDB:GetDungeonLocation`), so one dungeon had two ways
+  in depending on which Go was pressed: Murmur's objective Go (quest 10095)
+  stopped on Terokkar 39.6, 71.0, 100 yd short of the Shadow Labyrinth portal
+  in the Auchindoun tunnel, where every other Go lands on 39.63, 73.78; the
+  Auchenai Crypts, Sethekk Halls and Mana-Tombs the same (99-103 yd), Gruul's
+  and Magtheridon's Lairs 45 and 60 yd. Givers, finishers and every monster,
+  kill-credit, object and item-drop objective go through that branch. Now it
+  asks Orders' locator first, through its public, documented query
+  `CommanderOrders.Locate({ entrance = { area = <Questie's instance area> } })`
+  (`OrdersDoorSpots`, pcall'd, cached per generation): every spot it answers
+  (the approach where the table has one, every door of a several-door
+  instance) becomes a record on its own uiMap. Questie's spot is the fallback
+  when Orders is absent, its locator still the stand-in ("loading"), raising,
+  or knowing no door. Which zone LISTS the quest stays Questie's: a door keeps
+  the area and zone of Questie's entrance drawn on the same map; a door on a
+  map none of Questie's entrances is on is a spot for the arrow only (zone
+  nil: never counted, never "starts here"). On the real data the two always
+  share maps (113 instance areas, none without a shared map, none with an
+  extra one), and the zone lists of 17 zones, Searing Gorge, Burning Steppes,
+  Tanaris, the Barrens and Thousand Needles among them, came out identical
+  before and after; Murmur's and Exarch Maladaar's Gos moved from 100 and
+  103 yd off to 0. Rejected: `CommanderOrders.Entrance({ area = id })`, which
+  works today (Orders' door lookup takes the shape) but is not the documented
+  argument of `Entrance`; reading Orders' door table directly (its private
+  data). Contract L, adapter Q2.
+- **A greyed Go promises no press.** Since Orders turned the GoButton's
+  motion scripts on (its D31), a greyed Go shows its tooltip, and the Go to
+  Turn-in's and the Zones and Reputations Go's said "Goes to Commander
+  Orders, which is turned off (/corder): a press says so in chat" above the
+  red "Commander Orders is turned off (/corder)". 2.5.6 delivers no OnClick
+  to a disabled Button, so nothing was said. With the suite's GoButton and
+  Orders turned off (`GoGreyedOff`, in the Kit) both now read "Greyed out
+  while Commander Orders is turned off (/corder); <the row's gesture> then
+  says so in chat, with the place and its [Go] link": the row's gesture is
+  `A.Waypoint`, which Orders' `GoTo` refuses in exactly those words. The
+  plain button that stands in without the GoButton is not greyed by Orders'
+  state and keeps the ORDERS_OFF words, which are true for it. Go harness F.
+
 ## Assumptions worth re-checking in game
 
 The Zones tab, the Questie adapter and the map drawer keep theirs in

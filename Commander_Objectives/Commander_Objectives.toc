@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Objectives
 ## Author: Devin
-## Version: 2.1.0
-## Notes: RTS mission-objective announcements: progress toasts as you work quest objectives, a banner when one is secured.
+## Version: 2.2.0
+## Notes: RTS mission-objective announcements: progress toasts as you work quest objectives, a banner when one is secured. With Commander Orders and Commander Quest Log, the Turn-in Offer can mark where to hand in a quest that just turned complete.
 ## IconTexture: Interface\Icons\INV_Misc_Note_06
 ## SavedVariables: CommanderObjectivesDB
 ## RequiredDeps: Commander_Events

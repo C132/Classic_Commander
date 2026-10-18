@@ -28,10 +28,19 @@
 --      pretends to (the continent's own frame is instance 0)
 --   H  no position (inside an instance): a plain callout, no link, no waypoint
 --   I  the link: pinned on click, one Ping waypoint that each ping moves,
---      session-only, too-old links refused, other addons' links ignored
+--      session-only, an old link still knows its spot, other addons' links
+--      ignored
 --   J  "Waypoint on Group Pings": automatic, temporary, never steals your arrow
 --   K  Orders off or missing: the callout is the old one and nothing errors
 --   L  globals (static): the module writes only its own
+--   M  the link is Orders' own (Orders 3.1 fold-in): ChatLink's format, its
+--      plain click claimed by Ping, Shift/Ctrl/Right Orders', no SetItemRef
+--      callback of Ping's, still a place after a reload, and no link at all
+--      without Orders' chat file
+--   N  the Go-to migration (Orders 3.1 SPEC 5): the link reads [Go], a click
+--      goes through CommanderOrders.GoTo (Orders' "Waypoint set" line once,
+--      Orders' one refusal line in Orders' words, nothing of Ping's own), the
+--      automatic waypoint says nothing, and Ping keeps no refusal table
 
 local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]+$")) or "."
 if HERE:sub(1, 1) ~= "/" then
@@ -90,51 +99,56 @@ end
 
 -- What SetItemRef does with an addon: link on this client
 -- (ItemRefHandlersShared.lua: EventRegistry:TriggerEvent("SetItemRef", ...))
-local function ClickLink(link)
+local function ClickLink(link, button)
     for _, cb in ipairs(linkCallbacks) do
-        if cb.event == "SetItemRef" then cb.fn(cb.owner, link, "[Waypoint]", "LeftButton", nil) end
+        if cb.event == "SetItemRef" then cb.fn(cb.owner, link, "[Go]", button or "LeftButton", nil) end
     end
 end
 
 local SKIP = { CommanderOrdersPins = true, CommanderOrdersUI = true }
 local GOLDSHIRE = { 1429, 0.42, 0.655 }
 
+-- Ping's two files on top of Orders, its saved settings, its ADDON_LOADED
+local function LoadPing(saved)
+    return function(m, w)
+        w.phase = "ping"
+        for _, file in ipairs({ "CommanderPingDB.lua", "CommanderPing.lua" }) do
+            local path = (file == "CommanderPing.lua" and os.getenv("PING_RUNTIME")) or (PING .. "/" .. file)
+            local chunk, err = loadfile(path)
+            if not chunk then
+                m.loadErrors[#m.loadErrors + 1] = file .. ": " .. tostring(err)
+            else
+                local ok, runErr = pcall(chunk)
+                if not ok then m.loadErrors[#m.loadErrors + 1] = file .. ": " .. tostring(runErr) end
+            end
+        end
+        local copy = {}
+        for k, v in pairs(saved) do copy[k] = v end
+        rawset(_G, "CommanderPingDB", copy)
+        m.Fire("ADDON_LOADED", "Commander_Ping")
+        w.phase = "orders"
+    end
+end
+
 local function Boot(opts)
     opts = opts or {}
-    local saved = opts.ping or {}
     return M.Boot({
         files = opts.noOrders and {} or nil,
-        skipFiles = SKIP,
+        skipFiles = opts.skipFiles or SKIP,
         player = opts.player or GOLDSHIRE,
         before = function() ClientStubs() end,
-        afterFiles = function(m, w)
-            w.phase = "ping"
-            for _, file in ipairs({ "CommanderPingDB.lua", "CommanderPing.lua" }) do
-                local path = (file == "CommanderPing.lua" and os.getenv("PING_RUNTIME")) or (PING .. "/" .. file)
-                local chunk, err = loadfile(path)
-                if not chunk then
-                    m.loadErrors[#m.loadErrors + 1] = file .. ": " .. tostring(err)
-                else
-                    local ok, runErr = pcall(chunk)
-                    if not ok then m.loadErrors[#m.loadErrors + 1] = file .. ": " .. tostring(runErr) end
-                end
-            end
-            local copy = {}
-            for k, v in pairs(saved) do copy[k] = v end
-            rawset(_G, "CommanderPingDB", copy)
-            m.Fire("ADDON_LOADED", "Commander_Ping")
-            w.phase = "orders"
-        end,
+        afterFiles = LoadPing(opts.ping or {}),
     })
 end
 
 local function O() return CommanderOrders end
 local function G() return CommanderOrders.Geo end
 
--- The last callout's link payload, or nil
+-- The last callout's link payload, or nil (Orders' ChatLink since the 3.1
+-- fold-in: addon:CommanderOrders:w:<map>:<x>:<y>:<title>)
 local function LastLink()
     for i = #M.prints, 1, -1 do
-        local payload = M.prints[i]:match("|H(addon:CommanderPing:%d+)|h%[Waypoint%]|h")
+        local payload = M.prints[i]:match("|H(addon:CommanderOrders:w:[^|]+)|h%[Go%]|h")
         if payload then return payload end
         if M.prints[i]:find("pinged the minimap", 1, true) then return nil end
     end
@@ -225,7 +239,7 @@ Section("B", function()
     NEAR(G().MinimapRadius(0, false), R, 1e-9, "B: Orders' radius at zoom 0 outdoors is the table's")
 
     local wp, link = PingAndFollow(0.25, 0)
-    CHECK(link ~= nil, "B: the callout carries a [Waypoint] link")
+    CHECK(link ~= nil, "B: the callout carries a [Go] link")
     local n, w = Expected(0.25, 0, R)
     CheckAt(wp, n, w, "B east")
     NEAR(w, M.W.player.west - R / 2, 1e-9, "B: a quarter of the width east is half the radius east (west falls)")
@@ -475,14 +489,17 @@ Section("I", function()
     EQ(wp and wp.uid, first, "I: the next ping moves the same waypoint")
     EQ(#O().List({ source = "Ping" }), 1, "I: still one")
 
-    -- A link from long ago
+    -- A link from long ago still knows its spot (Orders 3.1: the place rides
+    -- in Orders' link; the old 20-ping list and its "too old" are gone)
     M.ClearLog()
     M.Fire("MINIMAP_PING", "party1", 0.1, 0.1)
     local old = LastLink()
-    for _ = 1, 25 do M.Fire("MINIMAP_PING", "party1", 0.1, 0.1) end
+    for _ = 1, 25 do M.Fire("MINIMAP_PING", "party1", -0.1, 0.2) end
     M.ClearLog()
     ClickLink(old)
-    CHECK(M.Has(M.prints, "too old"), "I: a link 25 pings old says so", M.prints[1])
+    M.Advance(0.1)
+    local oldN, oldW = Expected(0.1, 0.1, DIAMETERS.outdoor[1] / 2)
+    CheckAt(PingWaypoint(), oldN, oldW, "I: a link 25 pings old still moves the Ping waypoint to its own spot")
 
     -- Somebody else's addon: link: not ours to answer
     M.ClearLog()
@@ -616,6 +633,170 @@ Section("L", function()
             end
         end
         pipe:close()
+    end
+end)
+
+-- ---------------------------------------------------------------------------
+-- M  the link is Orders' own (the Orders 3.1 fold-in)
+-- ---------------------------------------------------------------------------
+Section("M", function()
+    Boot()
+    NOERR("M: boot")
+    M.SetGroup("party", { "Zuljin" })
+    -- one SetItemRef callback, Orders' chat file's: Ping registers none
+    local n, ordersOwn = 0, false
+    for _, cb in ipairs(linkCallbacks) do
+        if cb.event == "SetItemRef" then
+            n = n + 1
+            ordersOwn = ordersOwn or (type(O().Chat) == "table" and cb.fn == O().Chat.OnLink)
+        end
+    end
+    EQ(n, 1, "M: one SetItemRef callback")
+    CHECK(ordersOwn, "M: ...Orders' chat file's (Ping registers none of its own)")
+
+    local R = DIAMETERS.outdoor[1] / 2
+    local wp, link = PingAndFollow(0.25, 0)
+    CHECK(link ~= nil and wp ~= nil, "M: (a ping, its link, its waypoint)")
+    if not (link and wp) then return end
+    local callout
+    for i = #M.prints, 1, -1 do
+        if M.prints[i]:find("pinged the minimap", 1, true) then callout = M.prints[i] break end
+    end
+    local map, x, y, title = O().ParseChatLink(link)
+    EQ(map, wp.map, "M: the link carries the ping's map")
+    NEAR(x, wp.x, 1e-4, "M: ...its x")
+    NEAR(y, wp.y, 1e-4, "M: ...its y")
+    EQ(title, "Zuljin's ping", "M: ...and the waypoint's title")
+    EQ(callout and callout:match("|cff71d5ff|H.-|h%[Go%]|h|r"), O().ChatLink(map, x, y, title, "Go"),
+        "M: the callout's link is CommanderOrders.ChatLink's, reading [Go]")
+
+    -- Ctrl: Orders' copy box, the Ping waypoint left where it is
+    M.W.mods.CTRL = true
+    ClickLink(link)
+    M.W.mods.CTRL = false
+    EQ(O().R.ArrowState().copyText, O().WayLineFor(map, x, y, title), "M: Ctrl-click: Orders' copy box, the /way line")
+    -- Right: Orders' menu, whose Go is Ping's (the one Ping waypoint moves back)
+    PingAndFollow(-0.25, 0)
+    ClickLink(link, "RightButton")
+    CHECK(M.ClickMenu("Go"), "M: right-click: Orders' menu, with Go")
+    M.Advance(0.1)
+    local en, ew = Expected(0.25, 0, R)
+    CheckAt(PingWaypoint(), en, ew, "M: ...whose Go moves the one Ping waypoint back")
+    EQ(#O().List({ source = "Ping" }), 1, "M: still one Ping waypoint")
+    EQ(#O().List({ source = "user" }), 0, "M: and nothing of yours")
+
+    -- After a reload Ping's claim is gone, the link is Orders' plain Go
+    M.Reload({ skipFiles = SKIP, before = function() ClientStubs() end, afterFiles = LoadPing({}) })
+    NOERR("M: reloaded")
+    EQ(#O().List({ source = "Ping" }), 0, "M: (the Ping waypoint did not survive the reload)")
+    M.ClearLog()
+    ClickLink(link)
+    M.Advance(0.1)
+    local mine = O().List({ source = "user" })[1]
+    CHECK(mine ~= nil, "M: after a reload the old link still makes a waypoint")
+    EQ(mine and mine.map, map, "M: ...on the ping's map")
+    NEAR(mine and mine.x, x, 1e-9, "M: ...at its x")
+    NEAR(mine and mine.y, y, 1e-9, "M: ...and y")
+    EQ(mine and mine.title, "Zuljin's ping", "M: ...with its title")
+    EQ(O().Active() and O().Active().uid, mine and mine.uid, "M: ...and the arrow on it")
+    CHECK(not M.Has(M.prints, "too old"), "M: ...never \"too old\"")
+
+    -- Orders without its chat file (a /reload after the update, before the
+    -- client restart a new file needs): no link that would do nothing
+    Boot({ skipFiles = { CommanderOrdersPins = true, CommanderOrdersUI = true, CommanderOrdersChat = true },
+           ping = { PingWaypoint = true } })
+    NOERR("M: Orders without its chat file")
+    M.SetGroup("party", { "Zuljin" })
+    M.ClearLog()
+    M.Fire("MINIMAP_PING", "party1", 0.2, 0)
+    M.Advance(0.2)
+    CHECK(M.Has(M.prints, "Zuljin pinged the minimap"), "M: no chat file: the callout", M.prints[1])
+    EQ(LastLink(), nil, "M: ...with no link")
+    CHECK(PingWaypoint() ~= nil, "M: ...and Waypoint on Group Pings still works")
+    NOERR("M")
+end)
+
+-- ---------------------------------------------------------------------------
+-- N  the Go-to migration (Orders 3.1, SPEC 5)
+-- ---------------------------------------------------------------------------
+local function Count(needle)
+    local n = 0
+    for _, line in ipairs(M.prints) do
+        if tostring(line):find(needle, 1, true) then n = n + 1 end
+    end
+    return n
+end
+
+Section("N", function()
+    Boot()
+    NOERR("N: boot")
+    M.SetGroup("party", { "Zuljin" })
+    -- A clicked ping: Orders' own "Waypoint set" line, once, and nothing of Ping's
+    M.ClearLog()
+    M.Fire("MINIMAP_PING", "party1", 0.2, 0)
+    M.Advance(0.1)
+    local link = LastLink()
+    CHECK(link ~= nil, "N: the callout's link")
+    local callout = M.prints[#M.prints] or ""
+    CHECK(callout:find("|h[Go]|h", 1, true) ~= nil, "N: the callout's link reads [Go] (Orders' word)", callout)
+    CHECK(callout:find("[Waypoint]", 1, true) == nil, "N: ...never [Waypoint] (the noun, not the verb)", callout)
+    M.ClearLog()
+    ClickLink(link)
+    M.Advance(0.1)
+    EQ(Count("Waypoint set: Zuljin's ping"), 1, "N: a click says Orders' \"Waypoint set\" line, once")
+    EQ(Count("Commander Ping"), 0, "N: ...and nothing of Ping's own")
+    local wp = PingWaypoint()
+    CHECK(wp ~= nil and wp.temporary == true and wp.persistent == false,
+        "N: still the one temporary, session-only Ping waypoint")
+    EQ(O().Active() and O().Active().uid, wp and wp.uid, "N: pinned: the click asked for the arrow")
+    CHECK(O().IsGoing("Ping", "ping"), "N: Orders says the arrow is going to the ping (IsGoing)")
+    -- Announce off: the click is quiet, the waypoint is still set
+    CommanderOrdersDB.Announce = false
+    M.Fire("MINIMAP_PING", "party1", -0.2, 0)
+    M.Advance(0.1)
+    link = LastLink()
+    M.ClearLog()
+    ClickLink(link)
+    M.Advance(0.1)
+    EQ(#M.prints, 0, "N: with Orders' Announce off a click prints nothing")
+    CommanderOrdersDB.Announce = true
+
+    -- Orders switched off after the ping: Orders' one refusal line, in its words
+    M.Fire("MINIMAP_PING", "party1", 0.1, 0.1)
+    M.Advance(0.1)
+    link = LastLink()
+    CommanderOrdersDB.EnableOrders = false
+    M.ClearLog()
+    ClickLink(link)
+    M.Advance(0.1)
+    EQ(Count(O().Reason("disabled")), 1, "N: Orders off at the click: Orders' refusal line, once")
+    CHECK(M.prints[1] and M.prints[1]:find("Zuljin's ping", 1, true) ~= nil,
+        "N: ...naming the ping's place", M.prints[1])
+    EQ(Count("Commander Ping"), 0, "N: ...and no second line of Ping's")
+    CommanderOrdersDB.EnableOrders = true
+
+    -- The automatic waypoint never says anything
+    Boot({ ping = { PingWaypoint = true } })
+    M.SetGroup("party", { "Zuljin" })
+    M.ClearLog()
+    M.Fire("MINIMAP_PING", "party1", 0.25, 0)
+    M.Advance(0.2)
+    CHECK(PingWaypoint() ~= nil, "N: Waypoint on Group Pings still makes the waypoint")
+    EQ(Count("Waypoint set"), 0, "N: ...silently (no \"Waypoint set\" line for a waypoint you did not ask for)")
+    NOERR("N")
+
+    -- Static: no refusal table of Ping's own, no hand-made /way line
+    local f = io.open(os.getenv("PING_RUNTIME") or (PING .. "/CommanderPing.lua"), "r")
+    local src = f and f:read("*a") or ""
+    if f then f:close() end
+    CHECK(src:find("/corder to turn it on", 1, true) == nil, "N: Ping keeps no refusal words of its own")
+    CHECK(src:find("/way #", 1, true) == nil, "N: ...and formats no /way line")
+    CHECK(src:find("GoTo(", 1, true) ~= nil, "N: the waypoint goes through CommanderOrders.GoTo")
+    for i = 1, #src do
+        if src:byte(i) > 127 then
+            CHECK(false, "N: CommanderPing.lua is plain ASCII (D11)", "byte " .. i)
+            break
+        end
     end
 end)
 

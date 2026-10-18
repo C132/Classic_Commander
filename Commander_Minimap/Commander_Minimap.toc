@@ -1,9 +1,9 @@
 ## Interface: 20506
 ## Category: Commander
 ## Title: Commander Minimap
-## Notes: Minimap module for Commander
+## Notes: Minimap module for Commander. With Commander Orders, your coordinates under the zone name (click for a waypoint, Shift-click to share, Ctrl-click to copy a /way line) and Ctrl+Right-click on the map for a waypoint that never pings your group.
 ## Author: Devin
-## Version: 2.4.0
+## Version: 2.5.0
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderMinimapDB
 ## RequiredDeps: Commander_Events

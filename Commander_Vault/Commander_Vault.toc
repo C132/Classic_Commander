@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Vault
 ## Author: Devin
-## Version: 1.1.0
+## Version: 1.2.0
 ## Notes: The bank, commanded — one unified window over every bank slot and bank bag, grouped into sections, searchable by quality, slot, item level and how long a thing has been sitting there, sortable in a pass that gives slots back rather than merely tidying, and browsable from anywhere in the world. It keeps a standing report on what is dead weight, what should be on your belt and what is quietly costing you space; it remembers every character's vault, so any item tooltip in the game can tell you that you already own four and three of them are on your alt.
 ## IconTexture: Interface\Icons\INV_Misc_Bag_08
 ## SavedVariables: CommanderVaultDB, CommanderVaultCache

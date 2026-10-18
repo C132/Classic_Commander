@@ -2185,6 +2185,124 @@ world.bags[1] = nil
 Sync()
 browser.viewBrowse.__scripts.OnClick(browser.viewBrowse)
 
+-- ===========================================================================
+-- V: a row goes to where its thing comes from (2.4.0, Commander Orders 3.1)
+-- ===========================================================================
+-- Orders is a recording stand-in: GoTo keeps what it was handed, PlaceFor
+-- answers from `placeAnswers` (a query key -> true), so the fallback from an
+-- item's vendors to the generator's NPCs can be steered.
+do
+    local ctrlDown = false
+    IsControlKeyDown = function() return ctrlDown end
+    local gone, placeAnswers = {}, {}
+    local function QKey(t)
+        if t.townsfolk then return "tf:" .. t.townsfolk end
+        if t.itemVendor then return "iv:" .. t.itemVendor end
+        if t.itemSource then return "is:" .. t.itemSource end
+        if t.npc then return "npc:" .. (type(t.npc) == "table" and table.concat(t.npc, ",") or tostring(t.npc)) end
+        if t.object then return "obj:" .. t.object end
+        return "?"
+    end
+    CommanderOrders = {
+        GoTo = function(target, opts) gone[#gone + 1] = { target = target, opts = opts } return "w" .. #gone end,
+        PlaceFor = function(target)
+            if placeAnswers[QKey(target)] then return { map = 1955, x = 0.5, y = 0.5 } end
+            return nil, "nowhere"
+        end,
+    }
+    local function CtrlRight(row)
+        ctrlDown = true
+        row.__scripts.OnMouseUp(row, "RightButton")
+        ctrlDown = false
+    end
+
+    -- A flask the auction house sells: the nearest auctioneer
+    sidebarByKey("FLASKS").onClick()
+    local flaskRow
+    for _, row in ipairs(rows) do
+        if row.item and row.item.kind == "item" and row.item.id == 22851 then flaskRow = row end
+    end
+    CHECK(flaskRow ~= nil, "V: (the Flask of Fortification row)")
+    local pops = #popupLog
+    CtrlRight(flaskRow)
+    local g = gone[#gone]
+    CHECK(g and g.target.townsfolk == "Auctioneer" and g.opts.source == "Quartermaster" and g.opts.key == "src:22851"
+        and g.opts.title == "Nearest auctioneer", "V: Ctrl+Right-click on an AH flask goes to the nearest auctioneer",
+        g and g.opts.key)
+    CHECK(#popupLog == pops, "V: ...and opens no restock popup")
+    flaskRow.__scripts.OnMouseUp(flaskRow, "RightButton")
+    CHECK(#popupLog == pops + 1 and popupLog[#popupLog].which == "COMMANDER_QM_TARGET" and #gone == 1,
+        "V: a plain right-click is still the restock target, and goes nowhere")
+    GameTooltip.__lines = {}
+    flaskRow.__scripts.OnEnter(flaskRow)
+    local tip = table.concat(GameTooltip.__lines, "\n")
+    CHECK(tip:find("Ctrl+Right-click: Go to the nearest auctioneer", 1, true), "V: its tooltip says where Ctrl+Right-click goes", tip)
+    flaskRow.__scripts.OnLeave(flaskRow)
+
+    -- A flask a vendor sells: that item's nearest vendor
+    local shatt
+    for _, row in ipairs(rows) do
+        if row.item and row.item.kind == "item" and row.item.entry and row.item.entry.src == "VENDOR" then shatt = row break end
+    end
+    if shatt then
+        CtrlRight(shatt)
+        g = gone[#gone]
+        CHECK(g and g.target.itemVendor == shatt.item.id and g.opts.title == shatt.item.entry.name .. " vendor",
+            "V: a vendor flask goes to the nearest vendor of it", g and g.opts.title)
+    else
+        CHECK(false, "V: (a vendor flask row on the page)")
+    end
+
+    -- Enhancements: the best source's NPCs, a quest's giver, a dropper
+    local E = CommanderQuartermasterEnhance
+    local row = rows[1]
+    local saved = row.item
+    local power = E.EntryForItem(29191)
+    row.item = { kind = "enh", entry = power }
+    CtrlRight(row)
+    g = gone[#gone]
+    CHECK(g and g.target.npc == 21432 and g.opts.title == "Almaador" and g.opts.key == "src:29191",
+        "V: Glyph of Power: its vendor, Almaador, when the item's vendors are not known", g and tostring(g.target.npc))
+    placeAnswers["iv:29191"] = true
+    CtrlRight(row)
+    g = gone[#gone]
+    CHECK(g and g.target.itemVendor == 29191 and g.opts.title == "Almaador" and g.opts.icon == "VENDOR",
+        "V: ...and the item's own (faction-filtered) vendors when they are (a vendor pin)", g and tostring(g.target.itemVendor))
+    local quest, drop
+    for _, e in ipairs(CommanderQuartermasterEnhanceData.Entries) do
+        local src = e.src and e.src[1]
+        if src and src.k == "QUEST" and src.giver == "Zanza the Restless" and not quest then quest = e end
+        if src and src.k == "DROP" and src.npc == 15989 and not drop then drop = e end
+    end
+    row.item = { kind = "enh", entry = quest }
+    CtrlRight(row)
+    g = gone[#gone]
+    CHECK(quest and g and g.target.npc == "Zanza the Restless" and g.opts.title:find("^Zanza the Restless %(") ~= nil
+        and g.opts.icon == "QUEST", "V: a quest reward goes to its giver (a quest pin)", g and g.opts.title)
+    row.item = { kind = "enh", entry = drop }
+    CtrlRight(row)
+    g = gone[#gone]
+    CHECK(drop and g and g.target.npc == 15989 and g.opts.title == "Sapphiron", "V: a drop goes to its dropper", g and g.opts.title)
+    GameTooltip.__lines = {}
+    row.item = { kind = "enh", entry = power }
+    row.__scripts.OnEnter(row)
+    CHECK(table.concat(GameTooltip.__lines, "\n"):find("Ctrl+Right-click: Go to Almaador", 1, true),
+        "V: an enhancement's tooltip names where it goes")
+    row.__scripts.OnLeave(row)
+
+    -- Without Orders: says what is missing, and no hint
+    CommanderOrders = nil
+    local mark = #printLog
+    CtrlRight(row)
+    CHECK(FindPrint("needs Commander Orders", mark), "V: without Commander Orders a Ctrl+Right-click says what is missing")
+    GameTooltip.__lines = {}
+    row.__scripts.OnEnter(row)
+    CHECK(not table.concat(GameTooltip.__lines, "\n"):find("Ctrl+Right-click", 1, true), "V: ...and the tooltip offers nothing")
+    row.__scripts.OnLeave(row)
+    row.item = saved
+    IsControlKeyDown = nil
+end
+
 CHECK(#harnessFailedErrors == 0, "Z: no listener errors anywhere", harnessFailedErrors[1])
 
 io.write(("quartermaster_harness: %d checks, %d failures\n"):format(checks, fails))

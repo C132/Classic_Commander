@@ -700,6 +700,15 @@ function E.FarmHome()
     return { map = farm.mapID, x = farm.x, y = farm.y, label = farm.label or "Farm" }
 end
 
+-- The farm's start as Commander Orders takes a place ({ map, x, y, title }),
+-- or nil and FarmHome's reason: one shape for the "Go to Farm" button, the
+-- header glyph and /cspoils back (D23, D24)
+function E.FarmSpot()
+    local home, why = E.FarmHome()
+    if not home then return nil, why end
+    return { map = home.map, x = home.x, y = home.y, title = "Farm: " .. home.label }
+end
+
 local function ZoneName()
     return (GetRealZoneText and GetRealZoneText()) or (GetZoneText and GetZoneText()) or "?"
 end

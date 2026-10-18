@@ -72,9 +72,9 @@ D.FIRSTAID = {
     },
     npcs = {
         [2805] = { name = "Deneb Walker", zone = "Arathi Highlands", map = 1417, x = 27.0, y = 58.8, faction = "Alliance" },
-        [4440] = { name = "Razorfen Totemic", zone = "Razorfen Kraul", instance = true, level = { 25, 26 } },
-        [4512] = { name = "Rotting Agam'ar", zone = "Razorfen Kraul", instance = true, level = { 26, 26 } },
-        [4821] = { name = "Skittering Crustacean", zone = "Blackfathom Deeps", instance = true, level = { 22, 22 } },
+        [4440] = { name = "Razorfen Totemic", zone = "Razorfen Kraul", instance = 47, level = { 25, 26 } },
+        [4512] = { name = "Rotting Agam'ar", zone = "Razorfen Kraul", instance = 47, level = { 26, 26 } },
+        [4821] = { name = "Skittering Crustacean", zone = "Blackfathom Deeps", instance = 48, level = { 22, 22 } },
         [6209] = { name = "Caverndeep Looter", zone = "Dun Morogh", map = 1426, x = 18.7, y = 38.7, level = { 26, 26 } },
         [8518] = { name = "Rynthariel the Keymaster", zone = "Stonetalon Mountains", map = 1442, x = 29.7, y = 16.9, level = { 29, 29 } },
         [10856] = { name = "Argent Quartermaster Hasana", zone = "Western Plaguelands", map = 1422, x = 26.6, y = 55.2 },

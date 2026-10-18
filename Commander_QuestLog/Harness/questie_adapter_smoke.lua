@@ -1578,6 +1578,78 @@ do
 end
 
 -- ===========================================================================
+-- Q2. A creature inside an instance: Orders' door first (2026-10-05 review)
+-- ===========================================================================
+-- Orders' shipped door table is the suite's one way in, so a {-1, -1} spawn
+-- asks Orders' locator ({ entrance = { area = <Questie's instance area> } })
+-- before Questie's own dungeon spot. Which zone lists the quest stays
+-- Questie's: a door keeps the zone of Questie's entrance on the same map; a
+-- door on a map none of Questie's entrances is on only adds a spot for the
+-- arrow (zone nil). The questlog_orders_contract harness runs the same
+-- against the real Orders (section L: Murmur, 100 yd).
+
+do
+    local savedOrders = rawget(_G, "CommanderOrders")
+    local asked = {}
+    local function Locator(fn)
+        return function(world)
+            rawset(_G, "CommanderOrders", { Locate = fn })
+        end
+    end
+    -- The Blood Furnace's door on Hellfire (Questie's own spot is 46.0,
+    -- 51.8 there); the Underbog's on Zangarmarsh, as Questie's, plus a
+    -- second spot on Hellfire, a map none of Questie's Underbog entrances is on
+    Fresh(Locator(function(query)
+        local area = type(query) == "table" and type(query.entrance) == "table" and query.entrance.area
+        asked[#asked + 1] = area
+        if area == 3713 then
+            return { { map = 1944, x = 0.4587, y = 0.5193, kind = "entrance" }, title = "The Blood Furnace entrance" }
+        end
+        if area == 3716 then
+            return { { map = 1946, x = 0.5036, y = 0.4081, kind = "entrance" },
+                     { map = 1944, x = 0.10, y = 0.10, kind = "entrance" }, title = "The Underbog entrance" }
+        end
+        return nil, "nowhere"
+    end))
+    Q.Completion = Stub
+    local hellfire, zangar = {}, {}
+    for _, fact in ipairs(A._Facts(3483) or {}) do hellfire[fact.id] = fact end
+    for _, fact in ipairs(A._Facts(3521) or {}) do zangar[fact.id] = fact end
+    local s = hellfire[9017] and hellfire[9017].starters[1]
+    CHECK(s and s.uiMapId == 1944 and NEAR(s.x, 45.87) and NEAR(s.y, 51.93) and s.dungeonAreaId == 3713,
+        "Q2: the Blood Furnace sentinel is Orders' door, not Questie's spot", s and (tostring(s.x) .. "," .. tostring(s.y)))
+    CHECK(s and s.areaId == 3483 and s.zone == 3483 and hellfire[9017].layer == "EXTRA" and hellfire[9017].startsHere == true,
+        "Q2: ...and Hellfire still lists the quest, as Questie's entrance there did", s and tostring(s.zone))
+    CHECK(Contains(asked, 3713), "Q2: Orders was asked for the instance area's way in", table.concat(asked, ","))
+    local u = zangar[9031] and zangar[9031].starters
+    CHECK(u and #u == 2 and u[1].uiMapId == 1946 and NEAR(u[1].x, 50.36) and u[1].zone == 3521,
+        "Q2: the Underbog's door on Zangarmarsh keeps Zangarmarsh's zone", u and #u)
+    CHECK(u and u[2] and u[2].uiMapId == 1944 and NEAR(u[2].x, 10) and u[2].zone == nil and u[2].areaId == 3483,
+        "Q2: a door on a map no Questie entrance is on is a spot for the arrow only", u and u[2] and tostring(u[2].zone))
+    CHECK(hellfire[9031] == nil, "Q2: ...so Hellfire does not start listing the Underbog's quest")
+    local finisher = A.Finisher(9017)
+    CHECK(finisher and finisher.uiMapId == 1944 and NEAR(finisher.x, 45.87), "Q2: the turn-in Go is the door too",
+        finisher and tostring(finisher.x))
+
+    -- Orders absent, or a locator that raises: Questie's spot, as before
+    Fresh(Locator(function() error("locator boom") end))
+    Q.Completion = Stub
+    local f = {}
+    for _, fact in ipairs(A._Facts(3483) or {}) do f[fact.id] = fact end
+    s = f[9017] and f[9017].starters[1]
+    CHECK(s and s.x == 46.0 and s.y == 51.8 and s.zone == 3483, "Q2: a locator that raises: Questie's entrance",
+        s and tostring(s.x))
+    Fresh(Locator(function() return nil, "loading" end))
+    Q.Completion = Stub
+    f = {}
+    for _, fact in ipairs(A._Facts(3483) or {}) do f[fact.id] = fact end
+    s = f[9017] and f[9017].starters[1]
+    CHECK(s and s.x == 46.0 and s.y == 51.8, "Q2: Orders' stand-in locator (loading): Questie's entrance", s and tostring(s.x))
+    CHECK(A._LastError() == nil, "Q2: no adapter error across the section", A._LastError())
+    rawset(_G, "CommanderOrders", savedOrders)
+end
+
+-- ===========================================================================
 -- R. Reputation (1.6.0) over Fake.RepWorld(), with the REAL rules engine and
 --    the generated data. The two are loaded for this section only and taken
 --    away after it, so every other section runs as it always did. Each

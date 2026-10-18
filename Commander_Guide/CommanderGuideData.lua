@@ -602,11 +602,17 @@ D.NPC_NAMES = {
 }
 
 -- ---------------------------------------------------------------------------
--- Raid entrances: the "Waypoint to Entrance" action (DECISIONS D11)
+-- Raid entrances: the "Go to Entrance" action (DECISIONS D11, D12)
 -- ---------------------------------------------------------------------------
 -- Keyed by the instanceMapID GetInstanceInfo reports, like RAIDS, so a raid
 -- page written later finds its door without touching this table. All nine
 -- TBC raids are here for that reason; only the ones in RAIDS are reachable.
+--
+-- Since 1.2.0 (D12) the door a Go hands Commander Orders 3.1 is Orders' own:
+-- the door table it ships for every dungeon and raid, asked by instance id.
+-- This table is what the button falls back on when Orders cannot look a door
+-- up, and what it prints as a /way line without Orders; the harness keeps
+-- it honest against Questie's rows either way.
 --
 -- Nothing in it is remembered or guessed. Every point is Questie's own
 -- dungeon table (QuestieDB/support/Zones/dungeons.lua, field [4], the

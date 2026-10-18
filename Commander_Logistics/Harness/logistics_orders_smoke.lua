@@ -34,6 +34,11 @@
 --      without a resolver's one-door answer; CommanderOrders.Entrance),
 --      Spoils' farm, PartyFrames' unit follow, against the real Orders
 --   H  one pass with every Orders file loaded (its pins and manager too)
+--   I  supply lines through Orders' locator (2.3.0): the learned book as a
+--      "townsfolk" resolver merged with another source, the nearest of all
+--      on the landmass, the waypoint through GoTo and worded by Orders, the
+--      vendor line and its merchant clear, the vendor's own spawn stored,
+--      Adjutant's full-bags offer, /clog vendor
 
 local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]+$")) or "."
 if HERE:sub(1, 1) ~= "/" then HERE = (os.getenv("PWD") or ".") .. "/" .. HERE end
@@ -121,7 +126,9 @@ local CONSUMER_FILES = {
     "Commander_Adjutant/CommanderAdjutant.lua",
 }
 
-local SKIP = { CommanderOrdersPins = true, CommanderOrdersUI = true }
+-- The locator (3.1) is left out too: its shipped door table answers the
+-- entrances section G expects to be unknown; section I boots it
+local SKIP = { CommanderOrdersPins = true, CommanderOrdersUI = true, CommanderOrdersLocate = true }
 local function Boot(opts)
     opts = opts or {}
     opts.skipFiles = opts.skipFiles or SKIP
@@ -366,7 +373,7 @@ do
         EQ(wp.temporary, false, "D: asked for, so not temporary")
         EQ(wp.persistent, false, "D: a consumer mark, session only")
     end
-    HAS(LastPrint(), "the arrow points to Goldshire Smith", "D: one line says so")
+    HAS(LastPrint(), "Waypoint set: Repair: Goldshire Smith", "D: one line says so")
     local active = O().Active()
     EQ(active and active.uid, uid, "D: it has the arrow")
     Pass(3)
@@ -396,7 +403,7 @@ do
     local okOff, why = CommanderLogistics_RepairWaypoint()
     EQ(okOff, false, "D: Orders switched off refuses")
     EQ(why, "disabled", "D: ...with Orders' reason")
-    HAS(LastPrint(), "Commander Orders is switched off", "D: ...in words")
+    HAS(LastPrint(), "Commander Orders is turned off", "D: ...in words")
     HAS(LastPrint(), "/way #1429 42.00 66.00 Repair: Goldshire Smith", "D: ...with the line to paste")
     CommanderOrdersDB.EnableOrders = true
     local keep = CommanderOrders
@@ -465,10 +472,10 @@ do
     CommanderAdjutantDB.RepairWaypoint = true
 
     -- The offer never ASKS for the arrow. Orders refuses a temporary pin
-    -- only over a pinned waypoint (Store PinFromAdd), so an offer that asked
-    -- re-pinned the arrow away from a running route (StartRoute clears the
-    -- pin), from a waypoint of yours followed as the closest, and out of a
-    -- Clear. Each case: drop the gear, the offer lands, the arrow stays put.
+    -- over a pinned waypoint and over a running route (Store PinFromAdd),
+    -- but an offer that asked would still re-pin the arrow away from a
+    -- waypoint of yours followed as the closest, and out of a Clear. Each
+    -- case: drop the gear, the offer lands, the arrow stays put.
     local function Offer()
         world.durability = 0.1
         M.Fire("UPDATE_INVENTORY_DURABILITY")
@@ -528,7 +535,37 @@ do
     -- A temporary offer that is not quiet says "marked", never that the arrow points there
     local okT = CommanderLogistics_RepairWaypoint({ temporary = true })
     EQ(okT, true, "E: a loud temporary offer is placed")
-    HAS(LastPrint(), "marked Goldshire Smith", "E: ...and says it was marked, not that it took the arrow")
+    HAS(LastPrint(), "Waypoint set: Repair: Goldshire Smith", "E: ...and says it was marked, not that it took the arrow")
+    CommanderLogistics_ClearRepairWaypoint()
+
+    -- The offer and a request share (Logistics, repair): one record. An
+    -- offer you then ask for yourself is yours, so the offer's withdrawal
+    -- (mended by a repair bot, a guildmate) leaves it; a repair merchant
+    -- still takes it down (review 2026-10-05)
+    Offer()
+    local okMine, uidMine = CommanderLogistics_RepairWaypoint()
+    EQ(okMine, true, "E: asking for the nearest repair over the offer")
+    local rec = uidMine and O().Get(uidMine)
+    CHECK(rec and not rec.temporary, "E: ...makes the record yours, no longer an offer", rec and tostring(rec.temporary))
+    Mend()
+    EQ(#O().List({ source = "Logistics" }), 1, "E: mended gear leaves a repair waypoint you asked for")
+    OpenMerchant(SMITH_GOLDSHIRE, true, 1429, 0.42, 0.66)
+    CloseMerchant()
+    Pass(1)
+    EQ(#O().List({ source = "Logistics" }), 0, "E: ...a repair merchant takes it down")
+    -- The other order: yours first, then the alert. The offer is refused
+    -- and your waypoint is left exactly as it was
+    okMine, uidMine = CommanderLogistics_RepairWaypoint()
+    world.durability = 0.1
+    M.Fire("UPDATE_INVENTORY_DURABILITY")
+    Pass(1)
+    rec = uidMine and O().Get(uidMine)
+    CHECK(rec and not rec.temporary, "E: an alert over your own repair waypoint leaves it yours", rec and tostring(rec.temporary))
+    EQ(#O().List({ source = "Logistics" }), 1, "E: ...one record still")
+    local refusedOk, refusedWhy = CommanderLogistics_RepairWaypoint({ temporary = true, quiet = true })
+    CHECK(refusedOk == false and refusedWhy == "yours", "E: ...the offer is refused as yours", tostring(refusedWhy))
+    Mend()
+    EQ(#O().List({ source = "Logistics" }), 1, "E: ...and mending does not take it down")
     CommanderLogistics_ClearRepairWaypoint()
     CHECK(#M.errors == 0, "E: no errors", M.errors[1])
 end
@@ -564,6 +601,59 @@ do
     end
     if adjutant then
         CHECK(FindRow(adjutant, "Mark the Nearest Repair") ~= nil, "F: Adjutant offers Mark the Nearest Repair")
+    end
+    -- The settings page's Go buttons are the suite's Commander.UI.GoButton
+    -- (Orders D31, review 2026-10-05: they were plain buttons, so Shift- and
+    -- Ctrl-click only set a waypoint, never lit "Going", never greyed out)
+    local goRepair, goVendor
+    local function WalkGo(w)
+        for _, c in ipairs(w.__children or {}) do
+            local o = rawget(c, "_goOpts")
+            if o and o.key == "repair" then goRepair = c end
+            if o and o.key == "vendor" then goVendor = c end
+            WalkGo(c)
+        end
+    end
+    if logistics then WalkGo(logistics) end
+    CHECK(goRepair ~= nil and goVendor ~= nil, "F: Go to Nearest Repair and Go to Nearest Vendor are GoButtons")
+    if goRepair and goVendor then
+        EQ(goRepair._goOpts.source == "Logistics" and goVendor._goOpts.source, "Logistics", "F: ...owned by Logistics")
+        M.SetPlayer(1429, 0.47, 0.60)
+        goRepair:Refresh()
+        EQ(goRepair:IsEnabled(), true, "F: with a repair vendor known the button is lit")
+        M.ClearLog()
+        goRepair.__scripts.OnClick(goRepair, "LeftButton")
+        local list = O().List({ source = "Logistics" })
+        CHECK(#list == 1 and list[1].key == "repair" and not list[1].temporary and list[1].title == "Repair: Goldshire Smith",
+            "F: a click is the request /clog repair makes: (Logistics, repair), yours", list[1] and list[1].title)
+        EQ(O().Active() and O().Active().uid, list[1] and list[1].uid, "F: ...the arrow on it")
+        HAS(LastPrint(), "Waypoint set: Repair: Goldshire Smith", "F: ...worded once by Orders")
+        Pass(1)
+        goRepair:Refresh()
+        EQ(goRepair.__text, "Going to Nearest Repair", "F: ...and the button reads Going while the arrow is there")
+        M.SetModifier("CTRL", true)
+        goRepair.__scripts.OnClick(goRepair, "LeftButton")
+        M.SetModifier("CTRL", false)
+        local pop = M.popups[#M.popups]
+        EQ(pop and pop.which, "COMMANDER_ORDERS_COPY", "F: Ctrl-click opens Orders' copy box")
+        HAS(pop and pop.dialog.editBox.__text, "/way #1429 ", "F: ...with the vendor's /way line")
+        local chats = #M.chat
+        M.SetModifier("SHIFT", true)
+        goVendor.__scripts.OnClick(goVendor, "LeftButton")
+        M.SetModifier("SHIFT", false)
+        CHECK(#M.chat == chats + 1 and M.chat[#M.chat].text:find("Vendor: ", 1, true),
+            "F: Shift-click shares the nearest vendor in chat", M.chat[#M.chat] and M.chat[#M.chat].text)
+        EQ(#O().List({ source = "Logistics" }), 1, "F: ...neither gesture sets a waypoint")
+        CommanderLogistics_ClearRepairWaypoint()
+        -- Nowhere to go from Durotar (no repair learned on Kalimdor): greyed,
+        -- the line's own sentence in red
+        M.SetPlayer(1411, 0.5, 0.5)
+        goRepair:Refresh()
+        EQ(goRepair:IsEnabled(), false, "F: with no repair on this continent the button is greyed")
+        M.Hover(goRepair)
+        HAS(table.concat(M.tooltip, "\n"), "o repair vendor learned on this continent yet", "F: ...its tooltip says why, in Logistics' words")
+        M.SetPlayer(1429, 0.47, 0.60)
+        goRepair:Refresh()
     end
     M.SetPlayer(1429, 0.47, 0.60)
     local slash = SlashCmdList.COMMANDERUI_LOGISTICS
@@ -708,6 +798,221 @@ do
     Pass(1)
     EQ(#O().List({ source = "Logistics" }), 0, "H: ...and gone once mended")
     CHECK(#M.errors == 0, "H: no errors", M.errors[1])
+end
+
+-- ===========================================================================
+-- I  supply lines through Orders' locator (2.3.0, Orders 3.1)
+-- ===========================================================================
+-- The locator (CommanderOrdersLocate.lua) loaded: Logistics' learned book is
+-- a "townsfolk" resolver for Repair and Vendor, merged with what else answers
+-- (here a harness resolver stands in for Questie's lists), the nearest on the
+-- landmass wins, the vendor's own spawn is stored instead of the player's
+-- spot, and Adjutant's full-bags alert offers the nearest vendor.
+do
+    Boot({ skipFiles = { CommanderOrdersPins = true, CommanderOrdersUI = true } })
+    CHECK(#M.loadErrors == 0, "I: Orders with its locator loads beside Logistics", M.loadErrors[1])
+    CHECK(type(O().Locate) == "function", "I: (the locator is in)")
+    world.free = 3
+    rawset(_G, "C_Container", {
+        GetContainerNumSlots = function(bag) return bag == 0 and 16 or 0 end,
+        GetContainerNumFreeSlots = function(bag) return bag == 0 and world.free or 0 end,
+        GetContainerItemInfo = function() return nil end,
+        UseContainerItem = function() end,
+    })
+    OpenMerchant(SMITH_GOLDSHIRE, true, 1429, 0.42, 0.66)
+    CloseMerchant()
+    OpenMerchant(SMITH_HELLFIRE, true, 1944, 0.567, 0.375)
+    CloseMerchant()
+
+    -- The learned book answers the locator
+    local places, why = O().Locate({ townsfolk = "Repair" })
+    EQ(type(places) == "table" and #places, 2, "I: the locator's Repair list is the learned book (no Questie here)")
+    local goldshire
+    for _, p in ipairs(places or {}) do
+        if p.title == "Goldshire Smith" then goldshire = p end
+    end
+    CHECK(goldshire and goldshire.learned == true and goldshire.npc == 90001 and goldshire.map == 1429,
+        "I: ...each place named, its npc, learned", goldshire and goldshire.title)
+    places = O().Locate({ townsfolk = "Vendor" })
+    EQ(type(places) == "table" and #places, 2, "I: a repair vendor is a vendor too")
+    places, why = O().Locate({ townsfolk = "Innkeeper" })
+    EQ(places, nil, "I: other kinds are not the book's")
+    EQ(why, "noquestie", "I: ...and the locator says why")
+    CommanderLogisticsDB.EnableLogistics = false
+    places = O().Locate({ townsfolk = "Repair" })
+    EQ(places, nil, "I: Logistics switched off lends nothing")
+    CommanderLogisticsDB.EnableLogistics = true
+
+    -- A second source (Questie's place in the client): merged, nearest wins
+    O().RegisterResolver("townsfolk", function(kind)
+        if kind == "Repair" or kind == "Vendor" then
+            local out = {
+                { map = 1429, x = 0.46, y = 0.61, title = "Questie Smith", npc = 90100 },
+                { map = 1944, x = 0.40, y = 0.40, title = "Far Smith", npc = 90101 },
+            }
+            if kind == "Vendor" then out[#out + 1] = { map = 1429, x = 0.47, y = 0.605, title = "Questie Grocer", npc = 90102 } end
+            return out
+        end
+    end)
+    M.SetPlayer(1429, 0.47, 0.60)
+    local v = CommanderLogistics_NearestRepair()
+    EQ(v and v.name, "Questie Smith", "I: the nearest of every known repair, not only the learned ones")
+    if v then
+        local _, pn, pw = M.World(1429, 0.47, 0.60)
+        local _, vn, vw = M.World(1429, 0.46, 0.61)
+        NEAR(v.yards, math.sqrt((pn - vn) ^ 2 + (pw - vw) ^ 2), 0.01, "I: ...by straight-line yards")
+        EQ(v.zone, "Elwynn Forest", "I: ...named with its zone")
+    end
+    M.SetPlayer(1944, 0.55, 0.40)
+    v = CommanderLogistics_NearestRepair()
+    CHECK(v and v.name == "Thrallmar Smith", "I: in Hellfire the Outland ones only", v and v.name)
+    M.SetPlayer(1941, 0.5, 0.5)
+    v, why = CommanderLogistics_NearestRepair()
+    EQ(why, "elsewhere", "I: from Eversong none is near (530, another landmass)")
+
+    -- The waypoint is Orders' GoTo, worded by Orders
+    M.SetPlayer(1429, 0.47, 0.60)
+    M.ClearLog()
+    local ok, uid = CommanderLogistics_RepairWaypoint()
+    EQ(ok, true, "I: the repair waypoint is set")
+    local wp = uid and O().Get(uid)
+    EQ(wp and wp.title, "Repair: Questie Smith", "I: ...at the nearest of all")
+    NEAR(wp and wp.x, 0.46, 1e-9, "I: ...where it stands")
+    EQ(wp and wp.key, "repair", "I: ...on Logistics' one repair key")
+    HAS(LastPrint(), "Waypoint set: Repair: Questie Smith (Elwynn Forest", "I: Orders words it once")
+
+    -- The vendor line: its own key, cleared by any merchant
+    local okV, uidV = CommanderLogistics_SupplyWaypoint("Vendor")
+    EQ(okV, true, "I: the vendor waypoint is set")
+    local wv = uidV and O().Get(uidV)
+    EQ(wv and wv.title, "Vendor: Questie Grocer", "I: ...at the nearest vendor of any kind")
+    EQ(wv and wv.key, "vendor", "I: ...on its own key")
+    CHECK(uidV ~= uid, "I: ...a second waypoint, not the repair one moved")
+    v = CommanderLogistics_Nearest("Vendor")
+    EQ(v and v.name, "Questie Grocer", "I: CommanderLogistics_Nearest('Vendor') agrees")
+    OpenMerchant(GROCER, false)
+    CloseMerchant()
+    Pass(1)
+    EQ(O().Get(uidV), nil, "I: any merchant takes the vendor waypoint down")
+    CHECK(O().Get(uid) ~= nil, "I: ...and leaves the repair one to a repair merchant")
+    CommanderLogistics_ClearRepairWaypoint()
+
+    -- Learning stores the VENDOR'S spawn when the locator knows it near you
+    O().RegisterResolver("npc", function(id)
+        if id == 90001 then return { { map = 1429, x = 0.4172, y = 0.6560 } } end
+        if id == 90002 then return { { map = 1429, x = 0.30, y = 0.30 } } end
+    end)
+    OpenMerchant(SMITH_GOLDSHIRE, true, 1429, 0.4165, 0.6551)
+    CloseMerchant()
+    local rec = Book()["90001"]
+    NEAR(rec and rec.x, 0.4172, 1e-9, "I: a learned vendor is stored where its spawn stands")
+    NEAR(rec and rec.y, 0.6560, 1e-9, "I: ...x and y")
+    EQ(rec and rec.spawn, true, "I: ...and marked as the spawn")
+    if rec then
+        local _, sn, sw = M.World(1429, 0.4172, 0.6560)
+        NEAR(rec.north, sn, 1e-6, "I: ...its world north is the spawn's")
+        NEAR(rec.west, sw, 1e-6, "I: ...and its west")
+    end
+    OpenMerchant(SMITH_STORMWIND, true, 1453, 0.6, 0.7)
+    CloseMerchant()
+    rec = Book()["90002"]
+    NEAR(rec and rec.x, 0.6, 1e-9, "I: a spawn far from you is not this vendor: your spot is kept")
+    EQ(rec and rec.spawn, nil, "I: ...unmarked")
+
+    -- Adjutant: full bags name and offer the nearest vendor
+    M.SetPlayer(1429, 0.47, 0.60)
+    world.free = 0
+    M.Fire("BAG_UPDATE_DELAYED")
+    Pass(1)
+    HAS(BannerText(), "Storage at full capacity: Questie Grocer, ", "I: full bags name the nearest vendor")
+    local marks = O().List({ source = "Logistics" })
+    EQ(#marks, 1, "I: ...and offer it")
+    EQ(marks[1] and marks[1].key, "vendor", "I: ...on the vendor key")
+    EQ(marks[1] and marks[1].temporary, true, "I: ...as a temporary offer")
+    world.free = 2
+    M.Fire("BAG_UPDATE_DELAYED")
+    Pass(1)
+    EQ(#O().List({ source = "Logistics" }), 0, "I: a free slot takes the offer down")
+    M.SetCombat(true)
+    world.free = 0
+    M.Fire("BAG_UPDATE_DELAYED")
+    Pass(1)
+    EQ(#O().List({ source = "Logistics" }), 0, "I: in combat nothing is marked")
+    M.SetCombat(false)
+    Pass(1)
+    EQ(#O().List({ source = "Logistics" }), 1, "I: ...it lands when combat ends")
+    OpenMerchant(GROCER, false)
+    CloseMerchant()
+    Pass(1)
+    EQ(#O().List({ source = "Logistics" }), 0, "I: opening a merchant takes it down")
+    world.free = 2
+    M.Fire("BAG_UPDATE_DELAYED")
+    CommanderAdjutantDB.VendorWaypoint = false
+    world.free = 0
+    M.Fire("BAG_UPDATE_DELAYED")
+    Pass(1)
+    HAS(BannerText(), "Questie Grocer", "I: Mark the Nearest Vendor off still names it")
+    EQ(#O().List({ source = "Logistics" }), 0, "I: ...but marks nothing")
+    CommanderAdjutantDB.VendorWaypoint = true
+    world.free = 2
+    M.Fire("BAG_UPDATE_DELAYED")
+
+    -- /clog vendor
+    local slash = SlashCmdList.COMMANDERUI_LOGISTICS
+    if slash then
+        slash("vendor")
+        local list = O().List({ source = "Logistics" })
+        EQ(#list == 1 and list[1].key, "vendor", "I: /clog vendor sets the vendor waypoint")
+
+        -- The full-bags offer and /clog vendor share (Logistics, vendor):
+        -- one record. Yours first, then full bags: the offer is refused and
+        -- your waypoint left as it was; a freed slot does not take it down
+        -- (review 2026-10-05: it did, from under the arrow)
+        local uidMine = list[1] and list[1].uid
+        world.free = 0
+        M.Fire("BAG_UPDATE_DELAYED")
+        Pass(1)
+        HAS(BannerText(), "Storage at full capacity: ", "I: (full bags over your own vendor waypoint)")
+        local rec = uidMine and O().Get(uidMine)
+        CHECK(rec and not rec.temporary, "I: ...your waypoint stays yours, not an offer", rec and tostring(rec.temporary))
+        world.free = 2
+        M.Fire("BAG_UPDATE_DELAYED")
+        Pass(1)
+        CHECK(uidMine and O().Get(uidMine) ~= nil, "I: ...and a freed slot leaves it")
+        CommanderLogistics_ClearSupplyWaypoint("Vendor")
+        -- The offer first, then you ask: the record is yours, the arrow on
+        -- it, and a slot freed on the way there leaves it under the arrow
+        world.free = 0
+        M.Fire("BAG_UPDATE_DELAYED")
+        Pass(1)
+        list = O().List({ source = "Logistics" })
+        EQ(#list == 1 and list[1].temporary, true, "I: (the full-bags offer is on the map)")
+        slash("vendor")
+        Pass(1)
+        list = O().List({ source = "Logistics" })
+        CHECK(#list == 1 and not list[1].temporary, "I: /clog vendor over the offer makes it yours", #list)
+        uidMine = list[1] and list[1].uid
+        EQ(O().Active() and O().Active().uid, uidMine, "I: ...the arrow on it")
+        world.free = 1
+        M.Fire("BAG_UPDATE_DELAYED")
+        Pass(1)
+        CHECK(uidMine and O().Get(uidMine) ~= nil, "I: a slot freed on the way leaves the waypoint you asked for")
+        EQ(O().Active() and O().Active().uid, uidMine, "I: ...under the arrow")
+        OpenMerchant(GROCER, false)
+        CloseMerchant()
+        Pass(1)
+        EQ(#O().List({ source = "Logistics" }), 0, "I: ...and a merchant takes it down")
+        -- An offer nobody took over is still withdrawn by a free slot
+        world.free = 0
+        M.Fire("BAG_UPDATE_DELAYED")
+        Pass(1)
+        EQ(#O().List({ source = "Logistics" }), 1, "I: (a fresh offer)")
+        world.free = 2
+        M.Fire("BAG_UPDATE_DELAYED")
+        Pass(1)
+        EQ(#O().List({ source = "Logistics" }), 0, "I: ...still withdrawn by a free slot")
+    end
+    CHECK(#M.errors == 0, "I: no errors", M.errors[1])
 end
 
 CHECK(#loadErrors == 0, "no load errors anywhere", loadErrors[1])

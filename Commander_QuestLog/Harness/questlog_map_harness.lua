@@ -1093,7 +1093,7 @@ CHECK(tooltipLines[1] == "[62] The Legion Reborn", "D: row tooltip title with le
 CHECK(TooltipHas(reason9004), "D: row tooltip carries the reason sentence", AllTooltipText())
 CHECK(TooltipHas("Starts: Force Commander Danath \226\128\148 Hellfire Peninsula 56.6, 66.4"),
     "D: row tooltip carries the giver line", AllTooltipText())
-CHECK(TooltipHas("Right-click: waypoint") and TooltipHas("Ctrl-click"), "D: row tooltip hints")
+CHECK(TooltipHas("Right-click: Go") and TooltipHas("Ctrl-click"), "D: row tooltip hints")
 CHECK(GameTooltip.__anchor == "ANCHOR_LEFT", "D: tooltips open away from the right edge")
 Hover(QuestRow(9023))
 CHECK(TooltipHas("Starts: Terokkar Exile \226\128\148 Terokkar Forest 40.0, 30.0"),

@@ -15,7 +15,7 @@ python3 crosscheck_atlasloot.py         # verify sourcing against AtlasLoot
 ## In-addon check
 
 ```bash
-/opt/homebrew/bin/luajit Harness/quartermaster_harness.lua   # 332 checks
+/opt/homebrew/bin/luajit Harness/quartermaster_harness.lua   # 345 checks
 /opt/homebrew/bin/luajit Harness/globals_lint.lua            # 6 files, 0 undeclared globals
 ```
 
@@ -71,7 +71,7 @@ Quartermaster files, and Commander_Inventory (for the crate-button integration)
 under a permissive WoW mock. Run both modes before shipping any change:
 
 ```
-/opt/homebrew/bin/luajit quartermaster_harness.lua        # full run (~120 checks)
+/opt/homebrew/bin/luajit quartermaster_harness.lua        # full run (345 checks)
 /opt/homebrew/bin/luajit quartermaster_harness.lua noqm   # Inventory without Quartermaster
 ```
 
@@ -122,29 +122,46 @@ read nil unless the template mock provides them; `HookScript` CHAINS handlers
 `C_Timer.After` feeds an executable queue because every scan and browser
 refresh coalesces through it.
 
-## Follow-up: waypoints to sources (Commander Orders 3.0) — not done, on purpose
+## Going to sources (2.4.0, Commander Orders 3.1) — at runtime, no regeneration
 
 Commander Orders 3.0 wired every Commander module that holds a map position
-into its arrow. Quartermaster was assessed (2026-10-04) and deliberately left
-out, because neither its data nor its generator yields a map position today:
+into its arrow, and Quartermaster was left out (2026-10-04) because neither
+its data nor its generator yields a map position: the source records carry an
+npc id and a zone NAME (2,021 `npc =`, zero `x =`), and `qm_worlddb.py`
+throws the spawn positions away.
 
-- `CommanderQuartermasterEnhanceData.lua` source records carry an npc id and a
-  zone NAME, never coordinates (2,021 `npc =` references, zero `x =`).
-- `qm_worlddb.py` reads every spawn's world position, but only to pick the
-  zone name (`_spawn_zones`: the smallest UiMapAssignment box containing the
-  spawn wins, then the box's uiMap NAME is counted). The position and the
-  uiMap id are thrown away; nothing converts world to map x, y.
+Orders 3.1 has a locator (`CommanderOrders.Locate`, reading Questie's NPC,
+object and item data at runtime), so the data stays as it is and a browser
+row goes to its source on **Ctrl+Right-click** (Orders' gesture for a list
+row with no room for a button; plain right-click stays the restock target),
+with "Ctrl+Right-click: Go to ..." in the row's tooltip whenever Orders is
+loaded. What it asks Orders for (`GoTarget` in CommanderQuartermaster.lua):
 
-Doing it means: in `_spawn_zones`, keep the winning box's UiMapID and turn the
-spawn into 0..1 on it (Region_0..2 and Region_3..5 are the zone's world box
-with x = north and y = west, mapped through UiMin/UiMax; map x grows as world
-west falls and map y as world north falls, the pairing Commander Orders' D1
-got wrong once), emit
-`map, x, y` (or a short list per npc, for Orders' nearest-of-N
-`alternatives`) on VENDOR, TRAINER, DROP and QUEST source records, regenerate
-the 900 KB data file, re-run `crosscheck_enhancements.py` and
-`crosscheck_atlasloot.py`, and add a Go affordance on the detail pane's
-Sources lines calling `CommanderOrders.Add{ map, x, y, title, source =
-"Quartermaster", key = "src:<npc>" }` with the `/way` line as the fallback.
-The spec said not to regenerate large data blindly, so that is its own change,
-with the cross-checks run and the diff reviewed.
+- a consumable the auction house sells (`src = "AH"`): the nearest auctioneer,
+  `{ townsfolk = "Auctioneer" }`; one vendors sell: `{ itemVendor = id }`;
+  anything else: `{ itemSource = id }` (vendors, then the open world's
+  droppers, then doors);
+- an enhancement: its best source with an NPC (sources are stored best
+  first). Vendors ask `{ itemVendor = item }` first, which Questie filters to
+  your faction, and fall back to the vendors' npc ids from our data when that
+  finds nothing; trainers and droppers are `{ npc = ids }` (a dropper inside an
+  instance answers its door); a quest is its giver by name; a container is
+  `{ object = id }`; with none of those, `{ itemSource = item }`. Crafted-only
+  and reputation-only enhancements have nowhere to go and say so.
+
+The waypoint is (source "Quartermaster", key "src:<item or spell>"), titled
+with the NPC when there is one ("Almaador") or "<thing> vendor/trainer/drop/
+source", and Orders words it. Without Orders a Ctrl+Right-click says it needs
+Commander Orders. The generator recipe (keep the UiMapAssignment box, emit
+`map, x, y` per source) remains the way to make this work without Questie;
+it is not needed while the locator answers.
+
+Section **V** of `quartermaster_harness.lua` (13 checks) drives it against a
+recording Commander Orders: the AH flask to the nearest auctioneer with no
+restock popup, a plain right-click still the restock target, the tooltip
+hint, a vendor flask to its vendors, Glyph of Power to Almaador (and to the
+item's own vendors when Questie knows them), a ZG arcanum to Zanza, Fortitude
+of the Scourge to Sapphiron, and the no-Orders words. Mutation sweep
+(2026-10-05): the Ctrl gate, the vendor fallback, the AH branch, the quest
+branch, the tooltip hint and the single-NPC title, all killed. The lint allows
+`CommanderOrders` and `IsControlKeyDown` for it.

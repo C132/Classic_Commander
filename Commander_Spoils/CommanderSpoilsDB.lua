@@ -452,6 +452,29 @@ local function Enabled()
     return CommanderSpoilsDB.EnableSpoils
 end
 
+-- A Commander Orders "Go" button: Commander_Events' Commander.UI.GoButton
+-- (click Go, Shift-click share, Ctrl-click copy the /way line, lit "Going"
+-- while the arrow points there; the words and gestures are Commander Orders'
+-- DECISIONS, the 3.1 "Go to" entry). The client reads a NEW addon file only
+-- at start-up, so after an update and a /reload GoButton may not exist yet:
+-- then a plain button that still asks Orders to go.
+local function GoButton(parent, opts)
+    local UI = Commander and Commander.UI
+    if UI and type(UI.GoButton) == "function" then return UI.GoButton(parent, opts) end
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(opts.width or 120, opts.height or 22)
+    button:SetText(opts.label or "Go")
+    button:SetScript("OnClick", function()
+        local spec = opts.spec and opts.spec(button)
+        local orders = CommanderOrders
+        if spec and type(orders) == "table" and type(orders.GoTo) == "function" then
+            orders.GoTo(spec, { source = opts.source, key = opts.key, icon = opts.icon })
+        end
+    end)
+    button.Refresh = function() end
+    return button
+end
+
 local function Reset()
     Commander.UI.ResetToDefaults(CommanderSpoilsDB, DefaultSettings)
     Suppression.Sync()
@@ -896,8 +919,8 @@ local function CreateOptionsPanel()
     -- Actions, not preferences (D20 counts preferences): the farm segment and
     -- the way back to it (D23) had no home on this page until now.
     panel:AddSection("Farm",
-        "A farm is a named segment of the ledger that survives a client restart: start it where you farm and the FARM scope shows only what it earned. It remembers where it started, so after a vendor run Back to the Farm points the Commander Orders arrow there (without Commander Orders it prints the /way line). The Farm button in the window's header does both: click to start or stop, right-click for the way back.")
-    panel:AddButtonRow({
+        "A farm is a named segment of the ledger that survives a client restart: start it where you farm and the FARM scope shows only what it earned. It remembers where it started, so after a vendor run Go to Farm points the Commander Orders arrow there (without Commander Orders it prints the /way line). The Farm button in the window's header does both: click to start or stop, right-click to go back.")
+    local farmButtons = panel:AddButtonRow({
         {
             label = "Start or Stop Farm",
             width = 150,
@@ -907,19 +930,23 @@ local function CreateOptionsPanel()
             end,
             isEnabled = Enabled,
         },
-        {
-            label = "Back to the Farm",
-            width = 150,
-            tooltip = "A waypoint back to where the running farm started (also: /cspoils back).",
-            onClick = function()
-                if CommanderSpoils_BackToFarm then CommanderSpoils_BackToFarm() end
-            end,
-            isEnabled = function()
-                return Enabled() and CommanderSpoilsEngine ~= nil and CommanderSpoilsEngine.FarmHome ~= nil
-                    and CommanderSpoilsEngine.FarmHome() ~= nil
-            end,
-        },
     })
+    -- Go to Farm is Commander Orders' Go button (D24): greyed with the reason
+    -- while no farm with a place is running, lit while the arrow goes there
+    local startStop = farmButtons[1]
+    local goFarm = GoButton(startStop:GetParent(), {
+        label = "Go to Farm", width = 150,
+        spec = function()
+            local E = CommanderSpoilsEngine
+            if not (Enabled() and E and E.FarmSpot) then return nil end
+            return (E.FarmSpot())
+        end,
+        source = "Spoils", key = "farm", icon = "FARM",
+        tooltip = "Commander Orders' arrow back to where the running farm started (also: /cspoils back, or right-click the Farm button in the window's header). Needs a running farm started where the map has a position.",
+    })
+    goFarm:SetPoint("LEFT", startStop, "RIGHT", 8, 0)
+    panel:TagRow(startStop:GetParent(), "Go to Farm", "Commander Orders' arrow back to where the running farm started")
+    panel:AddRefresher(function() if goFarm.Refresh then goFarm:Refresh() end end)
 
     -- ---- Try it -----------------------------------------------------------
     panel:AddSection("Try It",

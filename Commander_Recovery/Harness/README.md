@@ -4,7 +4,7 @@ Run with the compile-gate luajit, from anywhere (each resolves the AddOns root
 from its own path, so a worktree works too):
 
     /opt/homebrew/bin/luajit Commander_Recovery/Harness/recovery_release_smoke.lua   # 63 checks
-    /opt/homebrew/bin/luajit Commander_Recovery/Harness/recovery_orders_smoke.lua    # 54 checks
+    /opt/homebrew/bin/luajit Commander_Recovery/Harness/recovery_orders_smoke.lua    # 68 checks
 
 Both must exit 0 before any Recovery change ships.
 
@@ -62,10 +62,17 @@ read back between them.
   none.
 - **F** the settings checkbox reads and writes Orders' setting; Recovery's
   globals are its own.
+- **G** (2.4.0, Commander Orders 3.1) the death line's numbers are Orders'
+  `FormatCoords` at the player's Coordinate Decimals (1, then 2, then 0 on
+  the tester's line) and the line ends in Orders' `[Go]` chat link, titled
+  "Where you fell", whose payload reads back to the death spot; a click on
+  it (the chat file's handler) puts a waypoint there. Without Orders the
+  line carries the numbers alone at one decimal and no link.
 
 Mutation hooks: `RECOVERY_RUNTIME=/path/copy.lua` and `RECOVERY_DB=/path/copy.lua`
 load a broken copy in place of the live file. Eight hand-made mutants (no
 frame's delay before the release line, the legacy order put back, the Feign
 Death guard dropped, the line said whatever Orders holds, the "off" dropped
 when Orders is absent, no migration, the checkbox writing Recovery's own key,
-"on" migrated as "off") each fail at least one check.
+"on" migrated as "off") each fail at least one check. Two more for G (the old
+`%.0f` line with no link; the link without a title) each fail G.

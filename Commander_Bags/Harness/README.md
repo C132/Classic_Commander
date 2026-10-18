@@ -1,9 +1,10 @@
 # Commander_Bags harness
 
-One luajit check. Run it before any change to the bag painter.
+Two luajit checks. Run both before any change to the bag painter or the settings page.
 
 ```bash
-/opt/homebrew/bin/luajit bags_harness.lua   # 47 checks
+/opt/homebrew/bin/luajit bags_harness.lua         # 55 checks
+/opt/homebrew/bin/luajit bags_orders_smoke.lua    # 33 checks, over the REAL Commander Orders
 ```
 
 It resolves the AddOns root from its own file location, so it works in a git
@@ -56,3 +57,30 @@ Lessons already paid for, so the next run does not re-learn them:
 - `GetID` is auto-generated as a constant by the widget mock, so container
   frames and item buttons `rawset` their own — a bag is not always the frame
   with the matching number.
+
+## Go to Vendor / Go to Repair (2.3.0, Commander Orders 3.1)
+
+A full bag wants a merchant and broken gear a repairer. The settings page gains a "Vendor and
+Repair" section with two Commander Orders Go buttons (`Commander.UI.GoButton`, from
+Commander_Events), and the slash words `/cb vendor` and `/cb repair` do the same: each asks Orders'
+locator for the nearest one (`{ townsfolk = "Vendor" | "Repair" }`), one waypoint each (source
+`Bags`, key `vendor` | `repair`) in the VENDOR tint. The words and gestures are Orders' (its
+DECISIONS D31, the 3.1 "Go to" entry): click Go, Shift-click share, Ctrl-click copy the `/way` line, lit
+"Going to Vendor" while the arrow goes there; Orders speaks for the press. Nothing here is a
+preference, and no Blizzard bag button is touched.
+
+`bags_harness.lua` loads `Commander_Events/CommanderGoButton.lua` in its TOC slot and checks the two
+buttons (labels, queries, source, keys, icon), a click and both slash words asking Orders (not
+silent), and `/cb vendor` saying it needs Commander Orders without it. `BAGS_DB=/path` loads a copy
+of `CommanderBagsDB.lua` (added for this round); mutants (the slash word dropped, a silent press, the
+wrong source) are killed.
+
+`bags_orders_smoke.lua` boots the REAL Commander Orders over
+`Commander_Orders/Harness/orders_mock.lua` with Bags' three files after it. With no Questie in the
+mock, the "nearest" lists come from a townsfolk resolver registered the way Commander Logistics
+registers its learned repair book. A loads clean; B Go to Vendor is ONE waypoint (Bags, vendor)
+whose alternatives are every vendor on the landmass, titled with the list's words ("Nearest vendor", which the button's tooltip names too), the arrow on the nearest, Orders' "Waypoint
+set" line once and none of Bags', lit while the arrow goes there; Go to Repair its own; C the slash
+words move the same records; D with nothing to ask (no Questie, no resolver) Orders' ONE refusal
+line in its words, and Orders switched off greys the button with the reason.
+

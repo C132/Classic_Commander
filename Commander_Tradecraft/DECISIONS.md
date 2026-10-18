@@ -293,3 +293,56 @@ replaces it. The button only appears while the bracket has a vendor to visit. Wi
 trip prints each stop's `/way` line rather than nothing. The shopping list's button sits in the
 title strip because the foot of that window is already full when Auctionator is loaded. UI harness
 C3 and E1/E3.
+
+## D18 — Every Go is the suite's one Go button (Commander Orders 3.1)
+
+1.3.0, 2026-10-05. Commander Orders 3.1 made "Go to" one widget and one API for every Commander
+module, and its DECISIONS carry the one words-and-gestures rule every consumer cites (D31): "Go" on a
+row button, "Go to <Thing>" on a standalone one, "[Go]" in a chat link; click Go, Shift-click share
+the place in chat, Ctrl-click copy its `/way` line; a list row with no room for a button takes
+Ctrl+Right-click, with `Commander.UI.GoRowHint` in its tooltip. So every Go on the guide is now a
+`Commander.UI.GoButton` (pooled like the guide's other widgets: a reused one gets its options
+filled afresh and is refreshed), D17's own lookup and `SetWaypoint` are gone, and the success line
+is Orders' own "Waypoint set: <title> (Zone x, y)", behind Orders' Announce setting, rather than
+ours. The source, keys, titles and "takes the arrow" of D17 are unchanged; the button now greys out
+with Orders' reason, and reads "Going" while the arrow is on its place.
+
+Set Waypoints stays (Orders' critic D7 asked to keep one per-module switch or none; this one
+predates the round and costs nothing): with it off a click prints the place and its `/way` line,
+and Shift and Ctrl still share and copy, since they send no waypoint. Without Orders a Go prints the
+place's `/way` line, the GoButton's own fallback.
+
+Two Gos are new, both answered at runtime by Orders' locator, never by our data:
+
+- "Learn <profession> from any trainer" and "Any <profession> trainer in a capital city" get a Go
+  to the nearest trainer of the profession, `{ townsfolk = "<Profession> Trainer" }`, titled
+  "Nearest <profession> trainer", key "trainer:<guide>". Where there are several, the waypoint
+  carries them all and the arrow follows the nearest.
+- A reagent that ordinary trade-supply vendors sell (`D.ITEMS[id].vendor`: Copper Rod, Simple
+  Wood, the vials) goes to the nearest vendor of that item on Ctrl+Right-click of its row
+  (`{ itemVendor = id }`, key "item:<id>"); its tooltip says so. A plain right-click does nothing.
+
+Neither works without Questie (the locator says "Needs Questie to look that up", in Orders' words).
+UI harness C3c, D4b and I1. The Trip route (D17) is unchanged, except that its printed `/way` lines
+are Orders' `WayLineFor` when Orders is loaded.
+
+Two layout rules came out of the 2026-10-05 review. The reagent row's Ctrl+Right-click registers
+its pooled hover for the right button only, and a Button keeps its click registration until it is
+changed again, so `NewHover` puts back `LeftButtonUp` on every reuse: otherwise a later paint that
+hands that hover to a two-ways option row (the 110-135 segment after Greater Magic Wand) left the
+"take this way instead" click unanswered until a /reload (UI harness I2). And a row Go is 18 high
+anchored 2 above a line that may be only 14 + 2 high, so `GoRow` keeps the next row 18 below the
+row's top: stacked Gos (Master trainers, a formula's vendors) no longer overlap by 2 px (D3b).
+
+
+**A greyed Go promises no press** (the review's round 2, 2026-10-05). Since Orders turned the
+GoButton's motion scripts on (its D31), a greyed Go shows its tooltip, and the Go's line read
+"Prints the coordinates and a /way line to chat (Commander Orders is turned off)", or "(Set
+Waypoints is off)" with Set Waypoints off while Orders was turned off, above the red "Commander
+Orders is turned off (/corder)"; the trainer Go without Orders said it would print above "Needs
+Commander Orders". 2.5.6 delivers no OnClick to a disabled Button, so `GoClicked` never ran and
+nothing printed: Set Waypoints off prints only while the button is live. A Go's line is now
+`GoWords(button)`: nil while Orders is turned off (Set Waypoints or not), nil for a locator Go
+without Orders, nil for a place with no map id; a live Go is worded as before (the arrow, Set
+Waypoints off's print, a placed Go's `/way` line without Orders). The Trip button keeps
+`WaypointWords`: a plain button, live, whose press does print. UI harness C3d and D4c.

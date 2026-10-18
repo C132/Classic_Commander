@@ -490,9 +490,25 @@ function StaticPopup_Hide(which) if popup == which then popup = nil end end
 function ReplaceEnchant() replaced = replaced + 1; error("ADDON_ACTION_FORBIDDEN: ReplaceEnchant()") end
 
 -- Neighbours
--- Commander Orders 3.0: a recording stand-in for its public table (Add
--- answers a uid, AddRoute a route id). TomTom is gone from the suite.
-local waypoints, routes = {}, {}
+-- Commander Orders: a recording stand-in for its public table (Add answers
+-- a uid, AddRoute a route id). TomTom is gone from the suite. 3.1's Go-to
+-- (GoTo, PlaceFor, IsGoing, Reason, WayLineFor, SharePoint, CopyText,
+-- FormatCoords) records the same way: a GoTo lands in `waypoints` with the
+-- target's fields and the options merged, as Orders' GoTo hands Add, and
+-- says "Waypoint set: <title>" as Orders does when it is not silent; a
+-- locator query (no map) is answered by `locatorAnswers`, keyed by the
+-- townsfolk name or "door:<instance>".
+local waypoints, routes, shares, copies = {}, {}, {}, {}
+local locatorAnswers = {}
+local function QueryKey(target)
+    if type(target) ~= "table" then return nil end
+    if target.townsfolk then return target.townsfolk end
+    if type(target.entrance) == "table" and target.entrance.instance then return "door:" .. target.entrance.instance end
+    return nil
+end
+local function StubIsQuery(target) return type(target) == "table" and target.map == nil end
+local IsControlDown = false
+IsControlKeyDown = function() return IsControlDown end
 CommanderOrders = {
     IsAvailable = function() return true end,
     Add = function(spec)
@@ -503,6 +519,40 @@ CommanderOrders = {
         routes[#routes + 1] = spec
         return "r" .. #routes
     end,
+    GoTo = function(target, opts)
+        opts = opts or {}
+        local spec = {}
+        if StubIsQuery(target) then
+            local a = locatorAnswers[QueryKey(target) or "?"]
+            if not a then
+                if not opts.silent then print("Commander Orders: Needs Questie to look that up") end
+                return nil, "noquestie"
+            end
+            for k, v in pairs(a) do spec[k] = v end
+            spec.query = target
+        else
+            for k, v in pairs(target) do spec[k] = v end
+        end
+        for k, v in pairs(opts) do spec[k] = v end
+        spec.setArrow = opts.setArrow ~= false
+        waypoints[#waypoints + 1] = { map = spec.map, x = spec.x, y = spec.y, title = spec.title, spec = spec }
+        if not opts.silent then print("Commander Orders: Waypoint set: " .. tostring(spec.title)) end
+        return "w" .. #waypoints
+    end,
+    PlaceFor = function(target)
+        if StubIsQuery(target) then
+            local a = locatorAnswers[QueryKey(target) or "?"]
+            if not a then return nil, "noquestie" end
+            return { map = a.map, x = a.x, y = a.y, title = a.title }
+        end
+        return { map = target.map, x = target.x, y = target.y, title = target.title }
+    end,
+    IsGoing = function() return false end,
+    Reason = function(why) return why == "noquestie" and "Needs Questie to look that up" or tostring(why) end,
+    WayLineFor = function(m, x, y, t) return ("/way #%d %.2f %.2f%s"):format(m, x * 100, y * 100, t and (" " .. t) or "") end,
+    FormatCoords = function(x, y) return ("%.1f, %.1f"):format(x * 100, y * 100) end,
+    SharePoint = function(spec, channel) shares[#shares + 1] = { spec = spec, channel = channel } return true end,
+    CopyText = function(text) copies[#copies + 1] = text return true end,
 }
 local aucLists = {}
 Auctionator = { API = { v1 = {
@@ -611,6 +661,12 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    -- The last anchor is recorded, so stacked rows can be checked for overlap
+    if key == "SetPoint" then
+        local fn = function(s, point, rel, relPoint, x, y) s.__point = { point, rel, relPoint, x, y } end
+        rawset(self, key, fn)
+        return fn
+    end
     return baseIndex2(self, key)
 end
 me.standing = { [989] = 5 }
@@ -630,6 +686,7 @@ local function Load(path)
 end
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
+Load(ADDONS .. "/Commander_Events/CommanderGoButton.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 Load(ADDONS .. "/Commander_Formulary/CommanderFormularyData_Enchanting.lua")
 Load(ADDONS .. "/Commander_Formulary/CommanderFormularyData_FirstAid.lua")
@@ -772,11 +829,143 @@ do
         "B3 Go on a vendor: one owned Commander Orders waypoint, taking the arrow", kulwia and kulwia.spec.key)
 end
 CHECK(craftBtn.__parent.__shown == false, "B3 no craft button for an unknown recipe")
+-- B3b (3.1) the Go is the suite's Commander.UI.GoButton: Shift-click shares
+-- the place in chat, Ctrl-click copies its /way line, neither sends anything
+do
+    local go
+    for _, f in ipairs(frames) do
+        local o = rawget(f, "_fmOpts")
+        if o and f.__shown ~= false and o.key == "place:Kulwia@1442" and Under(frame.detailPane, f) then go = f end
+    end
+    CHECK(go and rawget(go, "_goOpts") == rawget(go, "_fmOpts"), "B3b the vendor's Go is a Commander.UI.GoButton")
+    if go then
+        local before = #waypoints
+        IsShiftKeyDown = function() return true end
+        go.__scripts.OnClick(go)
+        IsShiftKeyDown = function() return false end
+        local sh = shares[#shares]
+        CHECK(sh and sh.channel == "CHAT" and sh.spec.map == 1442 and sh.spec.title == "Kulwia", "B3b Shift-click shares Kulwia in chat")
+        IsControlDown = true
+        go.__scripts.OnClick(go)
+        IsControlDown = false
+        CHECK(copies[#copies] == "/way #1442 45.40 59.30 Kulwia", "B3b Ctrl-click copies the /way line", copies[#copies])
+        CHECK(#waypoints == before, "B3b ...and neither sends a waypoint")
+        IsShiftKeyDown = nil
+        GameTooltip.__lines = {}
+        go.__scripts.OnEnter(go)
+        local tipText = table.concat(GameTooltip.__lines, " | ")
+        CHECK(tipText:find("Go to: Kulwia", 1, true) and tipText:find("Points the Commander Orders arrow there.", 1, true)
+            and tipText:find("Shift-click: share in chat", 1, true), "B3b its tooltip: where, what a press does, the gestures", tipText)
+        -- B3c (2026-10-05 review) a greyed Go promises no press: 2.5.6
+        -- delivers no OnClick to a disabled Button, so with Orders turned
+        -- off the tooltip keeps the place and the red reason and drops the
+        -- "Prints ..." line; without Orders a placed Go stays live, and its
+        -- tooltip says the press prints the /way line
+        local available = CommanderOrders.IsAvailable
+        CommanderOrders.IsAvailable = function() return false, "disabled" end
+        go:Refresh()
+        GameTooltip.__lines = {}
+        go.__scripts.OnEnter(go)
+        tipText = table.concat(GameTooltip.__lines, " | ")
+        CHECK(rawget(go, "_goReason") ~= nil and tipText:find("Go to: Kulwia", 1, true)
+            and not tipText:find("Prints", 1, true) and not tipText:find("a press", 1, true),
+            "B3c Orders turned off: the greyed Go promises no press", tipText)
+        -- the Formulary's own line, whatever the GoButton chooses to show
+        CHECK(rawget(go, "_fmOpts").tooltip(go) == nil, "B3c ...and the Go's own line is nil while Orders is off")
+        CommanderOrders.IsAvailable = available
+        local saved = CommanderOrders
+        CommanderOrders = nil
+        go:Refresh()
+        GameTooltip.__lines = {}
+        go.__scripts.OnEnter(go)
+        tipText = table.concat(GameTooltip.__lines, " | ")
+        CHECK(rawget(go, "_goReason") == nil
+            and tipText:find("Prints the coordinates and a /way line to chat (Commander Orders is not loaded).", 1, true),
+            "B3c without Orders the placed Go stays live and says it prints its /way line", tipText)
+        CommanderOrders = saved
+        go:Refresh()
+        GameTooltip.__lines = {}
+    end
+end
 
 CommanderFormulary_Select(27984)
 Settle()
 detail = TextUnder(frame.detailPane)
 CHECK(detail:find("Drops from Moroes", 1, true) and detail:find("Karazhan", 1, true) and detail:find("5%", 1, true), "B4 Moroes at 5%", detail)
+-- B4b (3.1, D18) a creature inside an instance carries the instance's map
+-- id, and its Go is the instance's door through Orders' locator
+do
+    local moroes
+    for npc, n in pairs(CommanderFormulary_Data.ENCHANTING.npcs) do
+        if n.name == "Moroes" then moroes = n end
+    end
+    CHECK(moroes and moroes.instance == 532 and moroes.x == nil, "B4b the data names Moroes' instance: Karazhan, 532",
+        moroes and tostring(moroes.instance))
+    local go
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.__text == "Go" and f.__shown ~= false and Under(frame.detailPane, f) then go = f end
+    end
+    local o = go and rawget(go, "_fmOpts")
+    CHECK(o and o.query and o.query.entrance and o.query.entrance.instance == 532 and o.key == "door:532"
+        and o.title == "Moroes (Karazhan entrance)", "B4b the drop has a Go to Karazhan's door", o and o.key)
+    if go then
+        local before = #waypoints
+        locatorAnswers["door:532"] = { map = 1430, x = 0.4659, y = 0.7411, title = "Karazhan" }
+        go.__scripts.OnClick(go)
+        local spec = waypoints[#waypoints] and waypoints[#waypoints].spec
+        CHECK(#waypoints == before + 1 and spec.query.entrance.instance == 532 and spec.source == "Formulary"
+            and spec.title == "Moroes (Karazhan entrance)" and spec.setArrow == true,
+            "B4b ...one owned waypoint at the door, taking the arrow", spec and spec.title)
+        locatorAnswers["door:532"] = nil
+        -- B4d (2026-10-05 review) without Orders the door's Go is greyed,
+        -- "Needs Commander Orders", and promises no print: a query has no
+        -- place of its own to print
+        local saved = CommanderOrders
+        CommanderOrders = nil
+        go:Refresh()
+        GameTooltip.__lines = {}
+        go.__scripts.OnEnter(go)
+        local tip = table.concat(GameTooltip.__lines, " | ")
+        CHECK(rawget(go, "_goReason") == "needsorders" and tip:find("Needs Commander Orders", 1, true)
+            and not tip:find("Prints", 1, true), "B4d without Orders the door's Go is greyed and promises no print", tip)
+        CHECK(rawget(go, "_fmOpts").tooltip(go) == nil, "B4d ...and the Go's own line is nil for a query without Orders")
+        CommanderOrders = saved
+        go:Refresh()
+        GameTooltip.__lines = {}
+    end
+end
+
+-- B4c (3.1) "any trainer will teach it now" goes to the nearest trainer
+do
+    local v = CommanderFormulary_View()
+    local pick
+    for spell, e in pairs(v.entries) do
+        if not e.known and e.learnable == "trainer" and not e.rec.trainer.outland and (not pick or spell < pick) then pick = spell end
+    end
+    CHECK(pick ~= nil, "B4c (a recipe any trainer teaches now)")
+    if pick then
+        CommanderFormulary_Select(pick)
+        Settle()
+        CHECK(TextUnder(frame.detailPane):find("any trainer will teach it now", 1, true), "B4c (the line is there)")
+        local go
+        for _, f in ipairs(frames) do
+            local o = rawget(f, "_fmOpts")
+            if o and f.__shown ~= false and o.query and o.query.townsfolk and Under(frame.detailPane, f) then go = f end
+        end
+        local o = go and rawget(go, "_fmOpts")
+        CHECK(o and o.query.townsfolk == "Enchanting Trainer" and o.title == "Nearest Enchanting trainer"
+            and o.key == "trainer:ENCHANTING" and o.icon == "TRAINER", "B4c ...with a Go to the nearest Enchanting trainer", o and o.key)
+        if go then
+            local before = #waypoints
+            locatorAnswers["Enchanting Trainer"] = { map = 1454, x = 0.53, y = 0.38, title = "Nearest Enchanting trainer" }
+            go.__scripts.OnClick(go)
+            local spec = waypoints[#waypoints] and waypoints[#waypoints].spec
+            CHECK(#waypoints == before + 1 and spec.query.townsfolk == "Enchanting Trainer" and spec.setArrow == true,
+                "B4c ...one waypoint, the arrow on it", spec and spec.key)
+            locatorAnswers["Enchanting Trainer"] = nil
+        end
+    end
+end
 
 CommanderFormulary_Select(27924)
 Settle()
@@ -789,6 +978,39 @@ Settle()
 detail = TextUnder(frame.detailPane)
 CHECK(detail:find("Outland trainers at 310", 1, true), "B6 outland trainer line", detail)
 CHECK(detail:find("Felannia", 1, true) and not detail:find("Johan Barnes", 1, true), "B6 faction trainers only")
+
+-- B7 stacked Go buttons never overlap: a single-line row is 12 + 3 high and
+-- its Go 18 (review 2026-10-05: each sat 3 px inside the one above, so those
+-- clicks went to the next row's place). Minor Mana has the longest column
+-- of vendors and droppers, Minor Agility two vendors and the droppers, Major
+-- Armor the Outland trainers.
+local function GoColumn(spell)
+    CommanderFormulary_Select(spell)
+    Settle()
+    local stack = {}
+    for _, f in ipairs(frames) do
+        local p = f.__point
+        if rawget(f, "_fmOpts") and f.__shown ~= false and p and type(p[5]) == "number" and Under(frame.detailPane, f) then
+            stack[#stack + 1] = { top = p[5], h = f.__h or 0 }
+        end
+    end
+    table.sort(stack, function(a, b) return a.top > b.top end)
+    local pairsOver, worst = 0, 0
+    for i = 2, #stack do
+        local over = stack[i].top - (stack[i - 1].top - stack[i - 1].h)
+        if over > 0 then
+            pairsOver = pairsOver + 1
+            if over > worst then worst = over end
+        end
+    end
+    return #stack, pairsOver, worst, stack[1] and stack[1].h
+end
+for _, case in ipairs({ { 7443, "Minor Mana", 10 }, { 13419, "Minor Agility", 3 }, { 27961, "Major Armor", 2 } }) do
+    local n, over, worst, h = GoColumn(case[1])
+    CHECK(n >= case[3], "B7 " .. case[2] .. ": a column of Go buttons", n)
+    CHECK(over == 0, "B7 " .. case[2] .. ": ...none overlapping the one above", over .. " pairs, " .. worst .. " px")
+    CHECK(h == 18, "B7 " .. case[2] .. ": (each Go is 18 high)", h)
+end
 
 -- ===========================================================================
 -- C. Filters, search, sort, collapse
@@ -1179,6 +1401,22 @@ local tip = table.concat(GameTooltip.__lines, "\n")
 CHECK(tip:find("Enchanting 146 / 150", 1, true) and tip:find("First Aid 200 / 225", 1, true), "G3 both professions in the tooltip", tip)
 CHECK(tip:find("Triage", 1, true) and tip:find("Gregory Victor", 1, true) and not tip:find("VanHowzen", 1, true), "G3 Artisan First Aid is the Horde doctor's quest", tip)
 CHECK(tip:find("Expert Enchanting is taught by any Enchanting trainers", 1, true), "G3 Expert Enchanting from a trainer", tip)
+-- G3b (3.1) Ctrl+Right-click on the readout goes where the next rank comes
+-- from (Orders' list-row gesture, its hint in the tooltip): the quest giver
+CHECK(tip:find("Ctrl+Right-click: Go to Doctor Gregory Victor", 1, true), "G3b the readout's tooltip offers the next rank's Go", tip)
+do
+    local before = #waypoints
+    frame.rankButton.__scripts.OnClick(frame.rankButton, "RightButton")
+    CHECK(#waypoints == before and CommanderFormularyChar.profession == "FIRSTAID", "G3b a plain right-click does nothing")
+    IsControlDown = true
+    frame.rankButton.__scripts.OnClick(frame.rankButton, "RightButton")
+    IsControlDown = false
+    local spec = waypoints[#waypoints] and waypoints[#waypoints].spec
+    CHECK(#waypoints == before + 1 and spec.map == 1417 and math.abs(spec.x - 0.734) < 1e-9 and spec.title == "Doctor Gregory Victor"
+        and spec.key == "rank:FIRSTAID" and spec.icon == "QUEST" and spec.source == "Formulary",
+        "G3b Ctrl+Right-click: the Triage giver, the arrow on him", spec and (tostring(spec.map) .. " " .. tostring(spec.title)))
+    CHECK(CommanderFormularyChar.profession == "FIRSTAID", "G3b ...and the profession did not switch")
+end
 GameTooltip.__lines = {}
 -- the Read Recipes button now casts First Aid
 local openBtn = _G.CommanderFormularyOpen

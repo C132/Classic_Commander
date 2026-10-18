@@ -1,6 +1,6 @@
 # Headless harness (never loaded by the client — not in the TOC)
 
-Run all four with the compile-gate luajit. All must exit 0 before any Oracle
+Run all five with the compile-gate luajit. All must exit 0 before any Oracle
 change ships.
 
     /opt/homebrew/bin/luajit globals_lint.lua          # 5 files, 0 undeclared globals
@@ -12,6 +12,9 @@ change ships.
                                                        # client mock, loading the
                                                        # REAL Commander_Events
                                                        # framework (301 checks)
+    /opt/homebrew/bin/luajit oracle_orders_smoke.lua   # the Go-tos against the
+                                                       # REAL Commander Orders
+                                                       # (120 checks)
 
 `oracle_roster_smoke.lua` needs no mock either, for the same reason as the
 engine: `CommanderOracleRoster.lua` is rows in, ranking out. It checks that the
@@ -126,6 +129,73 @@ hook: `ORACLE_RUNTIME=/path/copy.lua`; seventeen hand-made mutants of the
 flag code (key, flags, pinning, the clean-up and the restore rules, the
 reached-flag restore and its pin/route guard, the button, the axis order, the
 basin gate, the fallback) are all killed.
+
+Since 1.9.0 (Commander Orders 3.1) a click goes through `CommanderOrders.GoTo`
+and the stub records the target and the options merged (the spec the real
+GoTo hands its Add), so the W checks read the same fields. Two W checks changed
+for the SPEC's words only: the tooltip reads "Click: Go to the Blacksmith (the
+Commander Orders arrow)" (was "point the arrow at"), and "it says Orders is
+off" now passes when the Oracle prints nothing itself and GoTo was not silent
+(the refusal is Orders' one line, in Orders' words).
+
+`oracle_orders_smoke.lua` (1.9.0) boots the REAL Commander Orders over
+`Commander_Orders/Harness/orders_mock.lua` (whose map rows include the
+battleground maps 1459, 1460, 1461 and 1956) and loads the Oracle's five files
+after it, in a mock battleground whose UnitPosition answers nothing for the
+player, the case Orders' battleground hedge (its D6) exists for. A loads clean;
+B Arathi: a pip click is ONE waypoint (Oracle, node) where the POI puts the
+flag, PVP tint, temporary, pinned, Orders' "Waypoint set" line once and none of
+the Oracle's, the arrow NAVigating to it with no UnitPosition, another flag
+moving the same record; C Warsong Gulch, Go to the Flag: their flag alone, our
+flag first when both are out, the waypoint (Oracle, flag) following the
+carrier about once a second (not on a shuffle under 0.002), gone when the flag
+leaves the map, a flag of no faction "The flag", no flag nothing asked; D
+`/coracle nodes` in the Eye lists the map's places and the flag, each with
+Orders' [Go] link, and a click is the Oracle's one node waypoint (its claim,
+never a waypoint of yours); E outside a battleground both say so and ask
+nothing; F Orders off: Orders' ONE refusal line naming the flag, none of the
+Oracle's; G leaving takes the Oracle's waypoints (a followed flag and a listed
+place) and hands the arrow back to the pin it took; H Bindings.xml, the
+binding's words, the slash words, no refusal words of the Oracle's own, plain
+ASCII; I the flag art as a FileDataID: a number matched against the two flag
+textures' file ids (`GetFileIDFromPath`) still puts our flag first and names
+theirs, a file id written as a string reads the same, and two flags whose art
+names neither side are NEVER a guess at index 1 -- Go to the Flag asks nothing,
+says the map does not tell whose flag is whose and lists "Flag 1" and "Flag 2"
+each with a [Go] whose click is the Oracle's flag waypoint at the flag's
+position at click time (not the printed one) and follows that carrier; a flag
+gone by the click says so; `/coracle nodes` lists the two as "Flag 1" /
+"Flag 2", never two alike; one flag of no known side is still "The flag";
+and a client with no `GetFileIDFromPath` lists rather than guesses. Mutants
+killed: the follow not moving the waypoint, the flag order reversed, a silent
+press, the link click unclaimed, the follow never called, the exit clean-up
+dropped, the move threshold dropped; and (I) numbers ignored as art, the
+two-flag guard dropped, the "Flag N" titles dropped, the listed [Go] going to
+the printed position, the digit-string art unread, the listed [Go] not
+following its carrier, both file ids read as one side.
+
+Assumption it cannot settle offline: the third answer of
+`GetBattlefieldFlagPosition` names the flag's faction. 2.5.6's only consumer
+(Blizzard_SharedMapDataProviders/BattlefieldFlagDataProvider.lua:43-44) hands
+it straight to `SetTexture`, and the 2.5.6.69795 binary holds no
+"WorldStateFrame", "AllianceFlag" or "HordeFlag" string, so it is most likely
+a FileDataID (a number); a path naming "Alliance" / "Horde" is read as before.
+The number is matched against the file ids of the two flag textures,
+`Interface\WorldStateFrame\AllianceFlag` and `...\HordeFlag`, read once with
+`GetFileIDFromPath`. Symptom if wrong: in Warsong Gulch with both flags
+carried, Go to the Flag prints "the map does not say whose flag is whose" and
+lists Flag 1 and Flag 2 instead of pointing at our flag (safe: never the wrong
+carrier), and `/coracle nodes` names them Flag 1 / Flag 2. A flag whose art
+names neither side, alone on the map, is "The flag".
+
+Test: in Warsong Gulch with both flags carried, type
+
+    /dump GetBattlefieldFlagPosition(1)
+    /dump GetFileIDFromPath("Interface\\WorldStateFrame\\AllianceFlag"), GetFileIDFromPath("Interface\\WorldStateFrame\\HordeFlag")
+
+The third value of the first should equal one of the two file ids of the
+second (or be a path naming the faction); then `/coracle flag` points at
+"Our flag".
 
 The UI smoke's `P` and `Q` sections cover the tabs and the scoreboard reader:
 the BATTLE tab is offered in Arathi and *gone* in a Warsong Gulch (an Arathi

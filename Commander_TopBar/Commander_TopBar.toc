@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Top Bar
 ## Author: Devin
-## Version: 2.2.0
-## Notes: RTS-style resource strip across the top of the screen: gold, bag supply, durability, XP rate, and performance. With Commander Orders, click your coordinates for a waypoint where you stand or Shift-click them to share where you stand with your group, and an optional readout shows the distance and arrival time to the waypoint the arrow is following.
+## Version: 2.3.0
+## Notes: RTS-style resource strip across the top of the screen: gold, bag supply, durability, XP rate, and performance. With Commander Orders, your coordinates are its coordinate surface (click a waypoint, Shift-click share, Ctrl-click copy the /way line, right-click a menu), durability, bags and ammo go to the nearest repair, vendor and ammo vendor, and an optional readout shows the distance and arrival time to the waypoint the arrow is following.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderTopBarDB
 ## RequiredDeps: Commander_Events

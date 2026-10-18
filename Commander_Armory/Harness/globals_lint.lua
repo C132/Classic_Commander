@@ -68,6 +68,11 @@ CommanderArmory_WipeSets CommanderArmory_SetItemIDs
 CommanderConsole_Colors
 ]]
 
+-- Commander Orders 3.1 (optional): Go to Bank's fallback button asks it to go
+allow [[
+CommanderOrders
+]]
+
 -- OptionalDeps. Every one of these is read behind an existence check, and a
 -- missing addon costs a feature rather than erroring (the suite's guarding rule).
 allow [[

@@ -554,9 +554,21 @@ function StaticPopup_Hide(which) if popup == which then popup = nil end end
 function ReplaceEnchant() replaced = replaced + 1; error("ADDON_ACTION_FORBIDDEN: ReplaceEnchant()") end
 
 -- Neighbours
--- Commander Orders 3.0: a recording stand-in for its public table (Add
--- answers a uid, AddRoute a route id). TomTom is gone from the suite.
-local waypoints, tripRoutes = {}, {}
+-- Commander Orders: a recording stand-in for its public table (Add answers
+-- a uid, AddRoute a route id). TomTom is gone from the suite. 3.1's Go-to
+-- (GoTo, PlaceFor, IsGoing, Reason, WayLineFor, SharePoint, CopyText,
+-- FormatCoords) records the same way: a GoTo lands in `waypoints` with the
+-- target's fields and the options merged, as Orders' GoTo hands Add, and
+-- says "Waypoint set: <title>" as Orders does when it is not silent; a
+-- locator query (no map) is answered by `locatorAnswers`.
+local waypoints, tripRoutes, shares, copies = {}, {}, {}, {}
+local locatorAnswers = {}   -- [townsfolk name or "item:<id>"] = { map, x, y, title } | nil (nil: "noquestie")
+local function QueryKey(target)
+    if type(target) ~= "table" then return nil end
+    if target.townsfolk then return target.townsfolk end
+    if target.itemVendor then return "item:" .. target.itemVendor end
+    return nil
+end
 CommanderOrders = {
     IsAvailable = function() return true end,
     Add = function(spec)
@@ -567,7 +579,46 @@ CommanderOrders = {
         tripRoutes[#tripRoutes + 1] = spec
         return "r" .. #tripRoutes
     end,
+    GoTo = function(target, opts)
+        opts = opts or {}
+        local spec = {}
+        local key = QueryKey(target)
+        if key then
+            local a = locatorAnswers[key]
+            if not a then
+                if not opts.silent then print("Commander Orders: Needs Questie to look that up") end
+                return nil, "noquestie"
+            end
+            for k, v in pairs(a) do spec[k] = v end
+            spec.query = target
+        else
+            for k, v in pairs(target) do spec[k] = v end
+        end
+        for k, v in pairs(opts) do spec[k] = v end
+        spec.setArrow = opts.setArrow ~= false
+        waypoints[#waypoints + 1] = { map = spec.map, x = spec.x, y = spec.y, title = spec.title, spec = spec }
+        if not opts.silent then print("Commander Orders: Waypoint set: " .. tostring(spec.title)) end
+        return "w" .. #waypoints
+    end,
+    PlaceFor = function(target)
+        local key = QueryKey(target)
+        if key then
+            local a = locatorAnswers[key]
+            if not a then return nil, "noquestie" end
+            return { map = a.map, x = a.x, y = a.y, title = a.title }
+        end
+        return { map = target.map, x = target.x, y = target.y, title = target.title }
+    end,
+    IsGoing = function() return false end,
+    Reason = function(why) return why == "noquestie" and "Needs Questie to look that up" or tostring(why) end,
+    WayLineFor = function(m, x, y, t) return ("/way #%d %.2f %.2f%s"):format(m, x * 100, y * 100, t and (" " .. t) or "") end,
+    FormatCoords = function(x, y) return ("%.1f, %.1f"):format(x * 100, y * 100) end,
+    SharePoint = function(spec, channel) shares[#shares + 1] = { spec = spec, channel = channel } return true end,
+    CopyText = function(text) copies[#copies + 1] = text return true end,
 }
+local mods = {}
+function IsShiftKeyDown() return mods.shift end
+function IsControlKeyDown() return mods.ctrl end
 local aucLists = {}
 local PRICES = { [11083] = 300, [11137] = 400, [22445] = 2000, [22446] = 15000, [16204] = 5000, [11176] = 800,
     [22522] = 8000, [20747] = 1200, [11288] = 4000, [10939] = 1500, [11128] = 2000, [5500] = 3000, [11082] = 9000 }
@@ -631,6 +682,12 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    -- The height is recorded, so stacked rows can be checked for overlap
+    if key == "SetHeight" then
+        local fn = function(s, h) s.__h = h end
+        rawset(self, key, fn)
+        return fn
+    end
     if key == "SetAttribute" then
         local fn = function(s, name, value)
             if me.combat then error("attribute written in combat") end
@@ -665,6 +722,7 @@ local function Load(path)
 end
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
+Load(ADDONS .. "/Commander_Events/CommanderGoButton.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 Load(ADDONS .. "/Commander_Tradecraft/CommanderTradecraftData.lua")
 Load(ADDONS .. "/Commander_Tradecraft/CommanderTradecraftEngine.lua")
@@ -733,6 +791,34 @@ local function GuideOptions()
             out[#out + 1] = f
         end
     end
+    return out
+end
+-- A click the way the client delivers it: only to a shown, enabled button,
+-- and only for a button it is registered for (a Button that never called
+-- RegisterForClicks takes the left button's up edge). Returns whether the
+-- click arrived.
+local function ClickAs(f, button)
+    button = button or "LeftButton"
+    if not f or f.__shown == false or f.__enabled == false or not f.__scripts.OnClick then return false end
+    local registered = f.__clicks or { "LeftButtonUp" }
+    local wanted = false
+    for _, which in ipairs(registered) do
+        if which == button .. "Up" or which == "AnyUp" then wanted = true end
+    end
+    if not wanted then return false end
+    f.__scripts.OnClick(f, button)
+    return true
+end
+-- The Go buttons on the guide, top first, with where each one reaches
+local function GoStack()
+    local out = {}
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.__parent == guide and f.__shown ~= false and rawget(f, "_tcOpts")
+            and f.__point and type(f.__point[5]) == "number" then
+            out[#out + 1] = { top = f.__point[5], h = f.__h or 0, b = f }
+        end
+    end
+    table.sort(out, function(a, b) return a.top > b.top end)
     return out
 end
 -- The mock's CreateFrame does not record parents; patch it to
@@ -953,7 +1039,7 @@ do
     CHECK(spec and spec.source == "Tradecraft" and spec.key == "place:Kulwia@Stonetalon Mountains" and spec.setArrow == true
         and spec.icon == "VENDOR" and spec.title == "Formula: Enchant Bracer - Lesser Strength",
         "C3 the vendor owns one waypoint, titled with the formula, and it takes the arrow", spec and spec.key)
-    CHECK(printLog[#printLog]:find("Waypoint set: Kulwia", 1, true), "C3 and says so", printLog[#printLog])
+    CHECK(printLog[#printLog]:find("Waypoint set: Formula: Enchant Bracer - Lesser Strength", 1, true), "C3 and says so", printLog[#printLog])
     b["Go"].__scripts.OnClick(b["Go"])
     CHECK(#waypoints == 2 and waypoints[2].spec.key == spec.key, "C3 Go again is the same key: Orders moves it, nothing stacks")
     GameTooltip.__lines = {}
@@ -1009,7 +1095,76 @@ do
     CommanderTradecraftDB.UseWaypoints = false
     b["Go"].__scripts.OnClick(b["Go"])
     CHECK(#waypoints == 2 and printLog[#printLog]:find("/way #1442", 1, true), "C3 Set Waypoints off: printed, not sent")
+    -- C3d (2026-10-05 review) the tooltip says what a press does only on a
+    -- Go that takes the press: Set Waypoints off with Orders on is live and
+    -- prints; Orders turned off greys the Go (2.5.6 delivers no OnClick to a
+    -- disabled Button, GoClicked never runs), with Set Waypoints off or on,
+    -- and the greyed Go promises no print
+    local go = b["Go"]
+    local function Tip()
+        go:Refresh()
+        GameTooltip.__lines = {}
+        go.__scripts.OnEnter(go)
+        return table.concat(GameTooltip.__lines, " | ")
+    end
+    local tip = Tip()
+    CHECK(rawget(go, "_goReason") == nil and tip:find("Prints the coordinates and a /way line to chat (Set Waypoints is off).", 1, true),
+        "C3d Set Waypoints off, Orders on: the live Go says it prints", tip)
+    local available = CommanderOrders.IsAvailable
+    CommanderOrders.IsAvailable = function() return false, "disabled" end
+    tip = Tip()
+    CHECK(rawget(go, "_goReason") ~= nil and tip:find("Go to: Formula: Enchant Bracer - Lesser Strength", 1, true)
+        and not tip:find("Prints", 1, true), "C3d Set Waypoints off, Orders turned off: the greyed Go promises no print", tip)
+    -- the guide's own line, whatever the GoButton chooses to show
+    CHECK(rawget(go, "_tcOpts").tooltip(go) == nil, "C3d ...and the Go's own line is nil (Set Waypoints off)")
     CommanderTradecraftDB.UseWaypoints = true
+    tip = Tip()
+    CHECK(rawget(go, "_goReason") ~= nil and not tip:find("Prints", 1, true),
+        "C3d Orders turned off: the greyed Go promises no print", tip)
+    CHECK(rawget(go, "_tcOpts").tooltip(go) == nil, "C3d ...and the Go's own line is nil (Set Waypoints on)")
+    CommanderOrders.IsAvailable = available
+    tip = Tip()
+    CHECK(rawget(go, "_goReason") == nil and tip:find("Points the Commander Orders arrow there.", 1, true),
+        "C3d ...and Orders back on: the arrow again", tip)
+    GameTooltip.__lines = {}
+end
+-- C3c (Orders 3.1) the Go is the suite's Commander.UI.GoButton: Shift-click
+-- shares the place in chat, Ctrl-click copies its /way line, neither sends a
+-- waypoint (also with Set Waypoints off), and it lights while the arrow is on
+-- its place
+do
+    local go = Buttons()["Go"]
+    CHECK(go and rawget(go, "_goOpts") ~= nil and rawget(go, "_goOpts") == rawget(go, "_tcOpts"),
+        "C3c the Go is a Commander.UI.GoButton, filled by the guide")
+    if go then
+        local before = #waypoints
+        mods.shift = true
+        go.__scripts.OnClick(go, "LeftButton")
+        mods.shift = false
+        local sh = shares[#shares]
+        CHECK(sh and sh.channel == "CHAT" and sh.spec.map == 1442 and math.abs(sh.spec.x - 0.454) < 1e-9
+            and sh.spec.title == "Formula: Enchant Bracer - Lesser Strength", "C3c Shift-click shares the place in chat")
+        mods.ctrl = true
+        go.__scripts.OnClick(go, "LeftButton")
+        mods.ctrl = false
+        CHECK(copies[#copies] == "/way #1442 45.40 59.40 Formula: Enchant Bracer - Lesser Strength",
+            "C3c Ctrl-click copies the /way line", copies[#copies])
+        CHECK(#waypoints == before, "C3c ...and neither sends a waypoint")
+        CommanderTradecraftDB.UseWaypoints = false
+        mods.shift = true
+        go.__scripts.OnClick(go, "LeftButton")
+        mods.shift = false
+        CHECK(#shares == 2 and #waypoints == before, "C3c Set Waypoints off still shares (it sends no waypoint)")
+        CommanderTradecraftDB.UseWaypoints = true
+        CommanderOrders.IsGoing = function(source, key)
+            return source == "Tradecraft" and key == "place:Kulwia@Stonetalon Mountains"
+        end
+        go:Refresh()
+        CHECK(go.__text == "Going", "C3c it reads Going while the arrow is on its place", go.__text)
+        CommanderOrders.IsGoing = function() return false end
+        go:Refresh()
+        CHECK(go.__text == "Go", "C3c ...and Go again after", go.__text)
+    end
 end
 -- The two ways are rows under the step: two option rows, the chosen one lit
 CHECK(Has("TWO WAYS THROUGH 156 – 185"), "C3 options header on a two-way segment")
@@ -1092,6 +1247,20 @@ Fire("SKILL_LINES_CHANGED")
 Settle()
 CHECK(Has("Master") and Has("Felannia") and not Has("Johan Barnes"), "D3 master trainers for the faction")
 CHECK(Has("High Enchanter Bardolan"), "D3 neutral trainer listed")
+-- D3b the trainers' Go buttons stack without overlapping: a single-line row
+-- is 14 + 2 high and its Go 18 (review 2026-10-05: 2 px of each button sat
+-- under the next one, sending those clicks to the other trainer)
+do
+    local stack = GoStack()
+    CHECK(#stack >= 2, "D3b two trainer rows, two Go buttons", #stack)
+    local worst
+    for i = 2, #stack do
+        local over = stack[i].top - (stack[i - 1].top - stack[i - 1].h)
+        if over > 0 and (not worst or over > worst) then worst = over end
+    end
+    CHECK(worst == nil, "D3b ...stacked with no overlap", worst and (worst .. " px"))
+    CHECK(stack[1] and stack[1].h == 18, "D3b (each Go is 18 high)", stack[1] and stack[1].h)
+end
 
 -- D4 no profession at all
 me.rank, me.maxRank = 0, 0
@@ -1104,6 +1273,50 @@ CommanderTradecraft_Show()
 Settle()
 CHECK(guide.__shown == true, "D4 but shown when asked")
 CHECK(Has("Learn Enchanting"), "D4 learn banner")
+-- D4b (Orders 3.1) "any trainer": a Go to the nearest trainer of the
+-- profession, through Orders' locator ({ townsfolk = "Enchanting Trainer" })
+do
+    local go = Buttons()["Go"]
+    local o = go and rawget(go, "_tcOpts")
+    CHECK(o and o.query and o.query.townsfolk == "Enchanting Trainer" and o.title == "Nearest Enchanting trainer"
+        and o.key == "trainer:ENCHANTING" and o.icon == "TRAINER", "D4b the learn banner has a Go to the nearest trainer",
+        o and o.key)
+    if go then
+        printLog = {}
+        local before = #waypoints
+        go.__scripts.OnClick(go, "LeftButton")
+        CHECK(#waypoints == before and printLog[#printLog] and printLog[#printLog]:find("Needs Questie", 1, true),
+            "D4b nobody known: nothing set, Orders says why", printLog[#printLog])
+        locatorAnswers["Enchanting Trainer"] = { map = 1454, x = 0.53, y = 0.38, title = "Nearest Enchanting trainer" }
+        go.__scripts.OnClick(go, "LeftButton")
+        local spec = waypoints[#waypoints] and waypoints[#waypoints].spec
+        CHECK(#waypoints == before + 1 and spec.query.townsfolk == "Enchanting Trainer" and spec.source == "Tradecraft"
+            and spec.key == "trainer:ENCHANTING" and spec.setArrow == true, "D4b the nearest trainer, the arrow on it",
+            spec and spec.key)
+        CommanderTradecraftDB.UseWaypoints = false
+        printLog = {}
+        go.__scripts.OnClick(go, "LeftButton")
+        CHECK(#waypoints == before + 1 and printLog[#printLog] and printLog[#printLog]:find("/way #1454 53.00 38.00", 1, true),
+            "D4b Set Waypoints off: the nearest trainer's /way line, nothing sent", printLog[#printLog])
+        CommanderTradecraftDB.UseWaypoints = true
+        locatorAnswers["Enchanting Trainer"] = nil
+        -- D4c (2026-10-05 review) without Orders the trainer's Go is greyed,
+        -- "Needs Commander Orders", and promises no print: a query has no
+        -- place of its own to print
+        local saved = CommanderOrders
+        CommanderOrders = nil
+        go:Refresh()
+        GameTooltip.__lines = {}
+        go.__scripts.OnEnter(go)
+        local tip = table.concat(GameTooltip.__lines, " | ")
+        CHECK(rawget(go, "_goReason") == "needsorders" and tip:find("Needs Commander Orders", 1, true)
+            and not tip:find("Prints", 1, true), "D4c without Orders the trainer's Go is greyed and promises no print", tip)
+        CHECK(rawget(go, "_tcOpts").tooltip(go) == nil, "D4c ...and the Go's own line is nil for a query without Orders")
+        CommanderOrders = saved
+        go:Refresh()
+        GameTooltip.__lines = {}
+    end
+end
 b = Buttons()
 CHECK(b["Craft"] == nil and b["Route"] == nil, "D4 no step buttons without a profession")
 me.rank, me.maxRank = 285, 300
@@ -1672,6 +1885,83 @@ do
     db.LedgerScale = 1
     Refresh()
     ledger:Hide()
+end
+
+-- ===========================================================================
+-- I. Orders 3.1: a vendor-bought reagent row goes to the nearest vendor of
+-- that item on Ctrl+Right-click (a list row has no room for a Go button)
+-- ===========================================================================
+do
+    CommanderTradecraft_Guide("enchanting")
+    me.rank, me.maxRank = 103, 150
+    Fire("SKILL_LINES_CHANGED")
+    Settle()
+    CommanderTradecraft_Show()
+    Settle()
+    local row
+    for _, f in ipairs(frames) do
+        if f.__kind == "Button" and f.__parent == guide and f.__shown ~= false and f.__clicks
+            and f.__clicks[1] == "RightButtonUp" and f.__scripts.OnClick then row = f end
+    end
+    CHECK(row ~= nil, "I1 a trade-supply reagent row takes Ctrl+Right-click",
+        CommanderTradecraft_Plan().current and CommanderTradecraft_Plan().current.key)
+    if row then
+        GameTooltip.__lines = {}
+        row.__scripts.OnEnter(row)
+        local tip = table.concat(GameTooltip.__lines, " | ")
+        CHECK(tip:find("Trade-supply vendors", 1, true) and tip:find("Ctrl+Right-click: Go to the nearest vendor", 1, true),
+            "I1 ...and its tooltip says so", tip)
+        local before = #waypoints
+        locatorAnswers["item:4470"] = { map = 1454, x = 0.51, y = 0.63, title = "Simple Wood vendor" }
+        row.__scripts.OnClick(row, "RightButton")
+        CHECK(#waypoints == before, "I1 a plain right-click does nothing")
+        mods.ctrl = true
+        row.__scripts.OnClick(row, "RightButton")
+        mods.ctrl = false
+        local spec = waypoints[#waypoints] and waypoints[#waypoints].spec
+        CHECK(#waypoints == before + 1 and spec.query and spec.query.itemVendor == 4470 and spec.source == "Tradecraft"
+            and spec.key == "item:4470" and spec.title == "Simple Wood vendor" and spec.icon == "VENDOR",
+            "I1 Ctrl+Right-click goes to the nearest vendor of the item", spec and spec.key)
+        locatorAnswers["item:4470"] = nil
+    end
+    -- I2 the hover pool hands that right-click-only surface on: at 110 the
+    -- 110-135 segment's two ways are option rows on the same pool slots, and
+    -- the other way must still take a LEFT click (review 2026-10-05: a
+    -- pooled hover kept its RightButtonUp registration, so choosing the
+    -- other way did nothing until a /reload)
+    -- The shipped route's own path: the Minor Agility formula not bought
+    -- yet, so the step at 110 is its buy step (which paints no hover) and
+    -- the option rows take the first two pool slots, the second being the
+    -- Simple Wood row's
+    local saved = CommanderTradecraftChar.choices["110-135"]
+    local savedKnown, savedMemory = me.known[13419], CommanderTradecraftChar.knownRecipes[13419]
+    CommanderTradecraftChar.choices["110-135"] = nil
+    me.known[13419], CommanderTradecraftChar.knownRecipes[13419] = nil, nil
+    me.rank = 110
+    Fire("SKILL_LINES_CHANGED")
+    Settle()
+    local opts = GuideOptions()
+    CHECK(#opts == 2 and Has("TWO WAYS") and Has("Buy Formula: Enchant Cloak - Minor Agility"),
+        "I2 at 110 the buy step, and the segment's two ways as option rows", #opts)
+    local pooledRight = false
+    for _, o in ipairs(opts) do
+        if row and o == row then pooledRight = true end
+    end
+    CHECK(pooledRight, "I2 (one of them reuses the reagent row's hover)")
+    local before = CommanderTradecraftChar.choices["110-135"]
+    local arrived = opts[2] and ClickAs(opts[2], "LeftButton")
+    Settle()
+    CHECK(arrived and CommanderTradecraftChar.choices["110-135"] == "alt" and before ~= "alt",
+        "I2 a left click on the other way reaches it and chooses it", tostring(arrived) .. " " .. tostring(CommanderTradecraftChar.choices["110-135"]))
+    opts = GuideOptions()
+    arrived = opts[1] and ClickAs(opts[1], "LeftButton")
+    Settle()
+    CHECK(arrived and CommanderTradecraftChar.choices["110-135"] == "main", "I2 ...and back", tostring(arrived))
+    CommanderTradecraftChar.choices["110-135"] = saved
+    me.known[13419], CommanderTradecraftChar.knownRecipes[13419] = savedKnown, savedMemory
+    me.rank, me.maxRank = 285, 300
+    Fire("SKILL_LINES_CHANGED")
+    Settle()
 end
 
 CHECK(#harnessFailedErrors == 0, "Z no errors were swallowed", harnessFailedErrors[1])

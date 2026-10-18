@@ -19,6 +19,13 @@
 -- container -- it is a sibling the host mirrors onto us. That is also why the
 -- set manager is a plain content pane that gets re-parented between the
 -- character tab and its own window rather than two copies of the same UI.
+--
+-- 1.1.0 (Commander Orders 3.1, DECISIONS D18): when the selected set wants
+-- something that is in your bank and you are not at it, the pane's idle run
+-- bar becomes "Go to Bank", Commander Orders' Go button (Commander_Events'
+-- Commander.UI.GoButton) asking Orders' locator for the nearest banker
+-- ({ townsfolk = "Banker" }, source "Armory", key "bank"). It is a plain
+-- Button, never secure, so it changes nothing about the combat rule above.
 
 local D = CommanderArmoryData
 local E = CommanderArmoryEngine
@@ -836,7 +843,7 @@ local function FlyoutRowClick(self)
 
     local snapshot = Snapshot()
     if not RowIsReachable(row, snapshot) then
-        print(format("|cff66ccffCommander Armory|r: %s is in your bank — open a banker and this one click wears it.",
+        print(format("|cff66ccffCommander Armory|r: %s is in your bank: open a banker and this one click wears it (Go to Bank, in the Armory window, points the Commander Orders arrow at the nearest).",
             row.name or "that item"))
         return
     end
@@ -1537,6 +1544,26 @@ local setOffset = 0
 -- describe a different set.
 local paneDiff = { changes = {} }
 
+-- Commander Orders' Go button (click Go, Shift-click share, Ctrl-click copy
+-- the /way line, lit "Going" while the arrow goes there). The client reads a
+-- NEW addon file only at start-up, so after an update and a /reload the
+-- button's file may be missing: then a plain button that still asks Orders.
+local function GoButton(parent, opts)
+    local UI = Commander and Commander.UI
+    if UI and type(UI.GoButton) == "function" then return UI.GoButton(parent, opts) end
+    local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    btn:SetSize(opts.width or 96, opts.height or 21)
+    btn:SetText(opts.label or "Go")
+    btn:SetScript("OnClick", function()
+        local orders = CommanderOrders
+        if type(orders) == "table" and type(orders.GoTo) == "function" then
+            orders.GoTo(opts.query, { source = opts.source, key = opts.key, icon = opts.icon })
+        end
+    end)
+    btn.Refresh = function() end
+    return btn
+end
+
 local function PaneButton(parent, label, width)
     local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     btn:SetSize(width or 48, 21)
@@ -1953,6 +1980,16 @@ function EnsurePane()
     end)
     Tip(pane.cancelBtn, "Cancel", "Drop the queued swap. Nothing that has already moved moves back.")
 
+    -- Go to Bank: the idle run bar's slot, shown only while the selected set
+    -- wants something from your bank and you are not at it (RefreshPane)
+    pane.goBank = GoButton(pane, {
+        label = "Go to Bank", width = 104, height = 21, anchor = "ANCHOR_TOP",
+        query = { townsfolk = "Banker" }, title = "Nearest banker", source = "Armory", key = "bank", icon = "BANK",
+        tooltip = "The nearest banker, on the Commander Orders arrow: the set wants something from your bank. Open the bank there and Equip takes it straight out.",
+    })
+    pane.goBank:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", 0, 0)
+    pane.goBank:Hide()
+
     return pane
 end
 
@@ -2307,6 +2344,16 @@ function RefreshPane()
 
     PaintStats(selected, snapshot)
     PaintRun()
+
+    -- Go to Bank (1.1.0): a banked blocker, away from the bank, run bar idle
+    local banked = false
+    for _, reason in ipairs((plan and plan.reasons) or {}) do
+        if reason.code == "IN_BANK" and reason.warning ~= true then banked = true break end
+    end
+    local wantBank = banked and selected ~= nil and not (snapshot and snapshot.atBank)
+        and not pane.cancelBtn:IsShown() and not pane.progressBack:IsShown()
+    pane.goBank:SetShown(wantBank and true or false)
+    if wantBank and pane.goBank.Refresh then pane.goBank:Refresh() end
 
     -- Every disabled button says why. A greyed control with no explanation is
     -- the thing this module exists to stop shipping.

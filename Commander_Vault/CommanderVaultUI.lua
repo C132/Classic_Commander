@@ -11,6 +11,11 @@
 -- one parent holds slots from eight different containers. Owning the button
 -- means owning the click handling too, which is fine — container items are not
 -- protected on this client, so a plain Button can pick up, use and link them.
+--
+-- 1.2.0 (Commander Orders 3.1, DECISIONS D48): while the window shows YOUR
+-- vault remembered away from a banker, the footer line offers "Go to Bank",
+-- Commander Orders' Go button (Commander_Events' Commander.UI.GoButton) to the
+-- nearest banker ({ townsfolk = "Banker" }, source "Vault", key "bank").
 
 CommanderVault = CommanderVault or {}
 local V = CommanderVault
@@ -78,6 +83,26 @@ local pendingItems = {}
 -- Forward-declared: Refresh re-applies the framing on every pass, and it is
 -- defined above the framing block
 local ApplyFraming
+
+-- Commander Orders' Go button (click Go, Shift-click share, Ctrl-click copy
+-- the /way line, lit "Going" while the arrow goes there). The client reads a
+-- NEW addon file only at start-up, so after an update and a /reload the
+-- button's file may be missing: then a plain button that still asks Orders.
+local function GoButton(parent, opts)
+    local UI = Commander and Commander.UI
+    if UI and type(UI.GoButton) == "function" then return UI.GoButton(parent, opts) end
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(opts.width or 96, opts.height or 20)
+    button:SetText(opts.label or "Go")
+    button:SetScript("OnClick", function()
+        local orders = CommanderOrders
+        if type(orders) == "table" and type(orders.GoTo) == "function" then
+            orders.GoTo(opts.query, { source = opts.source, key = opts.key, icon = opts.icon })
+        end
+    end)
+    button.Refresh = function() end
+    return button
+end
 
 local function DB()
     return CommanderVaultDB or {}
@@ -1910,6 +1935,14 @@ function V.Refresh()
     frame.footerFS:SetText(table.concat(parts, "  ·  "))
     frame.footerFS:SetTextColor(unpack(Skin().subtle))
 
+    -- Go to Bank (1.2.0): your own vault, remembered, away from a banker.
+    -- An alt's remembered vault is not a place you can open from here.
+    if frame.goBank then
+        local away = summary.cached and mine ~= false and not V.IsBankOpen()
+        frame.goBank:SetShown(away and true or false)
+        if away and frame.goBank.Refresh then frame.goBank:Refresh() end
+    end
+
     RefreshBagSlots(mine)
 
     frame.tabGrid:SetEnabled(view ~= "GRID")
@@ -2098,6 +2131,11 @@ function ApplyFraming(force)
     end
     frame.footerFS:ClearAllPoints()
     frame.footerFS:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -footInset, bank and 56 or 52)
+    -- Go to Bank: the footer line's left end, above the bag rack
+    if frame.goBank then
+        frame.goBank:ClearAllPoints()
+        frame.goBank:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", footInset, bank and 56 or 52)
+    end
 
     for _, pane in ipairs({ scroll, reportScroll }) do
         pane:ClearAllPoints()
@@ -2412,6 +2450,16 @@ local function EnsureFrame()
     frame.footerFS = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     frame.footerFS:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD - 2, 52)
     frame.footerFS:SetJustifyH("RIGHT")
+
+    -- Go to Bank (Commander Orders 3.1): shown by Refresh only while the
+    -- window shows your own vault remembered away from a banker
+    frame.goBank = GoButton(frame, {
+        label = "Go to Bank", width = 104, height = 20, anchor = "ANCHOR_TOP",
+        query = { townsfolk = "Banker" }, title = "Nearest banker", source = "Vault", key = "bank", icon = "BANK",
+        tooltip = "The nearest banker, on the Commander Orders arrow: this is your vault as it was when you last stood at one.",
+    })
+    frame.goBank:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD + 2, 52)
+    frame.goBank:Hide()
 
     -- The size grip.
     --

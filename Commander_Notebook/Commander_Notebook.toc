@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Notebook
 ## Author: Devin
-## Version: 1.1.0
+## Version: 1.2.0
 ## Notes: Your notes, in the game, in the shape the old Evernote client had them: notebooks and tags down the left, the list of notes in the middle, the note you are writing on the right, and no save button anywhere because notes save themselves. Items and spells shift-clicked into a note stay real links, and a note remembers where you were standing when you wrote it, so with Commander Orders a Go button points the arrow back there.
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 ## SavedVariables: CommanderNotebookDB

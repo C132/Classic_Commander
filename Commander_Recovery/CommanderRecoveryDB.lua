@@ -93,7 +93,7 @@ local function CreateOptionsPanel()
     })
     panel:AddCheckbox({
         label = "Death Report",
-        tooltip = "Print a short casualty report in chat when you die: location and session death count.",
+        tooltip = "Print a short casualty report in chat when you die: location and session death count. With Commander Orders the line ends in a [Go] link to the spot: click it for a waypoint there, Shift-click to share it, Ctrl-click to copy its /way line.",
         get = function() return CommanderRecoveryDB.DeathReport end,
         set = function(value) CommanderRecoveryDB.DeathReport = value end,
         isEnabled = function() return CommanderRecoveryDB.EnableRecovery end,

@@ -1,12 +1,20 @@
 # Commander_Orders — assumptions to verify in game
 
-Orders 3.0 passes six headless harnesses (`Harness/README.md`), which prove
-the logic against Blizzard's own 2.5.6 UI source and this build's DB2 map rows
-and nothing about the live client. Nothing below has been run in game yet.
-Numbered so a test session can report against them. A1–A13 are the in-game
-probes of the 3.0 design review (P1–P14, merged with the client report's
-P1–P8); A14–A38 are the builders' open points; A39–A45 came with the
-review's fixes (each names the decision it tests). **Load bearing** marks the
+Orders passes its headless harnesses (`Harness/README.md`), which prove the
+logic against Blizzard's own 2.5.6 UI source and this build's DB2 map rows
+and nothing about the live client. Orders 3.0 and its wired consumers HAVE
+loaded and run in game: the saved variables carry 3.0's DBVersion and
+per-character stores, and eight client sessions after the 3.0 commit recorded
+no Lua error (the 3.1 critic, 1.1). The behaviours below are still unproven
+one by one. Numbered so a test session can report against them. A1–A13 are
+the in-game probes of the 3.0 design review (P1–P14, merged with the client
+report's P1–P8); A14–A38 are the builders' open points; A39–A45 came with the
+review's fixes (each names the decision it tests); A46–A61 are 3.1's
+(2026-10-05, DECISIONS D31–D41), none of them seen in game; A62–A68 came
+with the 3.1 review's fixes and the lead's three decisions, also unseen.
+
+**First: restart the client, do not /reload (A61).** 3.1 adds files the
+running client has never seen. **Load bearing** marks the
 ones that decide whether a feature works at all; the others degrade to a
 missing line, a hint or a slightly wrong number.
 
@@ -105,6 +113,9 @@ Orders matches an entry to the dungeon by name.
 
 Symptom if wrong: with Questie absent, a dungeon target and a dungeon death
 say "No known way there" instead of naming the entrance.
+
+(3.1: it is now the LAST resort, after the resolvers and the shipped door
+table, DECISIONS D37; it answers only maps the table lacks.)
 
 Test: `/dump C_EncounterJournal.GetDungeonEntrancesForMap(1944)` and `(1415)`
 list entrances with positions; with Questie loaded,
@@ -220,11 +231,13 @@ portal.
 Test: with a target in Outland from the Eastern Kingdoms, Shift-right-click
 the arrow, "Guide me", and follow it to the Dark Portal; repeat for the Undercity
 orb (Horde), the Tirisfal and Durotar zeppelin towers, Menethil, Auberdine,
-Ratchet and Azuremyst.
+Ratchet and Azuremyst. 3.1's new legs are A57.
 
 ## A19 — SendChatMessage SAY needs a hardware event
 
 "As a /way line in /say" is offered only from menu clicks for that reason.
+(3.1: the line is ChatText now, sent through C_ChatInfo.SendChatMessage, and a
+GoButton's Shift-click is one of the clicks: A55.)
 
 Symptom if wrong: nothing (a blocked call would show as an error).
 
@@ -284,7 +297,8 @@ Test: with a route shown, zoom the map in and out.
 Symptom if wrong: two sets of coordinates on the world map, or none.
 
 Test: toggle Questie's map coordinates option; Orders' readout steps aside
-while it is on.
+while it is on. (3.1: only with World Map Coordinates on Automatic, and only
+while the map shows the zone you stand in, outside instances: DECISIONS D39.)
 
 ## A27 — AcquirePin wires OnMouseDown and calls pin:OnMouseUp before OnClick (Blizzard_MapCanvas.lua)
 
@@ -342,8 +356,14 @@ Symptom if wrong: Guide falls back to its own cited door table (it still works);
 a raid death gets no entrance arrow without Questie.
 
 Test: `/dump CommanderOrders.Entrance(350)` names map 1430 (Deadwind Pass).
+(3.1: Guide asks `Entrance({ instance = 532 })`, which QuestLog's resolver
+does not answer, so Orders' door table does; A58.)
 
 ## A35 — A unit follow is a roster token, not a person
+
+*(2026-10-05, 3.1: superseded. Orders now remembers the member's GUID and
+re-points the follow after every roster change, DECISIONS D40; A59 is the
+test.)*
 
 Orders follows `partyN` / `raidN`; it never re-resolves who that is.
 Commander_PartyFrames re-resolves its follow by GUID on every roster change
@@ -360,10 +380,11 @@ ASSUMPTIONS has the detail.
 
 - MINIMAP_PING's x, y are fractions of the minimap's width and height, in
   rotated screen space when the minimap rotates (Commander_Ping). Test: a
-  party member pings a spot you stand on; Ping's [Waypoint] link reads close
-  to 0 yd.
+  party member pings a spot you stand on; Ping's [Go] link (3.1: Orders' own
+  link, DECISIONS D38) reads close to 0 yd in its tooltip.
 - The chat frame's addon-link click reaches EventRegistry's "SetItemRef"
-  callback (Commander_Ping). Test: click a ping callout's [Waypoint].
+  callback (Commander_Ping; 3.1: every Orders link, A47). Test: click a ping
+  callout's [Go].
 - `C_AreaPoiInfo.GetAreaPOIInfo(1461, poi).position` is filled in a live
   Arathi Basin (Commander_Oracle). Test:
   `/dump C_AreaPoiInfo.GetAreaPOIInfo(1461, C_AreaPoiInfo.GetAreaPOIForMap(1461)[1])`.
@@ -498,7 +519,9 @@ map) and off the minimap shows its chevron on the zone name's letters, or
 visibly low on the rim.
 
 Test: on the square map, `/way` a spot 600 yd due north; the chevron sits
-just under "Elwynn Forest" (or any long subzone name), not on it.
+just under "Elwynn Forest" (or any long subzone name), not on it. (3.1: with
+Minimap Coordinates on, a label sits under the name and the chevron rides 38
+units down, under the label: DECISIONS D39.)
 
 ## A44 — Loading through a portal changes C_Map.GetBestMapForUnit before the next 10 Hz pass
 
@@ -529,6 +552,418 @@ Test: Ctrl-click a Questie quest-giver icon on the map (an Orders waypoint
 appears), then `/way` the same coordinates with the NPC's name; Ctrl-click
 the icon again: the waypoint stays (it is yours now, "Set by you" in its
 tooltip).
+
+## A46 — Inside a battleground the map position answers, whatever UnitPosition does (critic 5.1; D34)
+
+**Load bearing for Oracle's Go-tos.** The arrow's battleground hedge derives
+your world position from `C_Map.GetPlayerMapPosition` when `UnitPosition`
+answers nothing in a "pvp" instance. This settles A1 for battlegrounds.
+
+Symptom if wrong: in Arathi Basin an Oracle pip's waypoint says "No position
+here", or the arrow points but the coordinate block reads "--".
+
+Test: inside Arathi Basin, `/dump UnitPosition("player")` and
+`/dump C_Map.GetPlayerMapPosition(C_Map.GetBestMapForUnit("player"),"player")`;
+then click a flag pip on Oracle's board: the arrow points at the flag and
+the yards count down as you run. In Warsong Gulch, `/coracle flag` with an
+enemy carrying your flag points at the carrier and follows them about once a
+second (A60).
+
+## A47 — An Orders chat link clicks and hovers (critic 5.2-5.3; D38)
+
+**Load bearing for chat links.** Read in the 2.5.6 source and modelled in
+the mock: the click reaches EventRegistry "SetItemRef" through SetItemRef
+and LinkUtil's "addon" handler; hover reaches EventRegistry
+"ChatFrame.OnHyperlinkEnter" / "OnHyperlinkLeave".
+
+Symptom if wrong: clicking a [Go] does nothing, or an error names
+LinkUtil; no tooltip on hover; a line shows twice or loses its sender link.
+
+Test: have a party member post `/way Hellfire Peninsula 45 66 test`. The
+line keeps the sender's name link, shows once in each chat window, and has a
+[Go] after it. Hover the [Go]: a tooltip with the title, "Hellfire Peninsula
+45.0, 66.0", the distance or the landmass, and the four hints. Then click it
+plain (a waypoint, the arrow on it, "Waypoint set: test (...)"), with Shift
+and the chat box open (the readable line is typed into the box), with Shift
+and the box closed (the line is posted to the party), with Ctrl (the copy box
+with the /way line) and with the right button (the menu). No Lua error. Ping's
+callout and a refused Go's printed line carry the same link (A36).
+
+## A48 — General is zoneChannelID 1 and LocalDefense 22 (D38)
+
+ASSUMED from the classic ChatChannels data, not read on this build. A bare
+`/way 45 66` there is read on your own map.
+
+Symptom if wrong: a bare `/way 45 66` in General gets no [Go] (the safe
+failure: no link rather than a wrong one).
+
+Test: in General, have someone type `/way 45 66 here`: it gets a [Go] that
+points into your zone. In Trade or LookingForGroup it gets none.
+
+## A49 — Blizzard's formatting after the filters leaves the link's payload whole (D38)
+
+Simulated in the chat harness from the 2.5.6 source: % doubled for format,
+{...} rewritten into icons (C_ChatInfo.ReplaceIconAndGroupExpressions),
+runs of spaces collapsed.
+
+Symptom if wrong: a [Go] that points at the wrong spot, or a click that does
+nothing.
+
+Test: in a party, `/p /way #1944 45 66 {star} 50% off` and click the [Go]:
+the waypoint is at Hellfire Peninsula 45.0, 66.0, titled from the line.
+
+## A50 — Ctrl+Right-click on the minimap makes a waypoint and pings nobody (critic 5.4; D39)
+
+**Load bearing for the minimap gesture.** Commander_Minimap wraps the
+minimap's OnMouseUp with SetScript, keeping the handler it found
+(Minimap_OnClick by name if none). The placement is worked out from
+GetCursorPosition, the minimap's effective scale and centre, as
+Minimap_OnClick does, inverted through Geo.MinimapPlace.
+
+Symptom if wrong: a ping reaches your group (and Commander_Ping makes a
+second waypoint) along with ours; the waypoint lands off the spot you
+clicked; the square map's corners do nothing; any other click stops pinging.
+
+One more risk: SetScript replaces the handler and, if the client drops
+HookScript hooks with it, an addon that hooked the minimap's OnMouseUp
+before Commander_Minimap loaded would stop hearing clicks.
+
+Test: `/dump Minimap:GetScript("OnMouseUp")` names a function. In a group,
+Ctrl+Right-click a spot on the minimap: one waypoint there, the arrow on it,
+and no ping on anyone's minimap. Repeat at zoom 0 and 5, with Rotate Minimap
+on and off, in a square map's corner, and past the edge of the zone (it lands
+in the zone beside it). A plain left click still pings.
+
+## A51 — The copy box takes a 255-letter line (critic 5.5; D40)
+
+2.5.6's pooled dialog edit box keeps the last dialog's letter limit unless a
+dialog names its own; Orders' names 255.
+
+Symptom if wrong: "Copy /way line" after another dialog shows the line cut
+at 24 or 40 letters.
+
+Test: open the Talents "Save build" dialog (or any dialog with a short name
+box), close it, then "Copy /way line" on a waypoint with a long title: the
+whole line is in the box, under "Ctrl+C to copy".
+
+## A52 — UnitPosition keeps answering on taxis, boats and zeppelins (critic 5.6; D39)
+
+The coordinate block reads every 0.2 s whatever you do; a movement event
+would not fire on a taxi.
+
+Symptom if wrong: the block's numbers freeze for a flight, or read "--".
+
+Test: show the coordinate block (`/corder coords on`: off by default since
+the 3.1 review), take a taxi and a boat: the numbers move all the way, and so
+do the minimap's.
+
+## A53 — A zone map is linear in world coordinates, and the zone texts answer (D39)
+
+The block turns UnitPosition into map numbers through each map's world
+rectangle, read once from two GetWorldPosFromMapPos probes. Since the 3.1
+review the runtime leans on the same fact the other way: every place's world
+position on a zone, dungeon, micro or orphan map (mapType 3 and up) is the
+map's two probes plus arithmetic (`WorldOf`), for "nearest" lists, the
+arrow and the pins alike (every UiMapAssignment row of such a map in build
+69795 shares one transform; checked over the whole DB2). GetZoneText /
+GetSubZoneText name the place lines.
+
+Symptom if wrong: the block's numbers drift from the world map's own player
+position toward one edge of a zone; the place lines are empty or wrong inside
+an instance or a city.
+
+Test: stand anywhere and compare the block with the world map's coordinates
+(Orders' readout, World Map Coordinates on Always): the same to the tenth,
+at the middle and near every edge of a zone. Walk into a cave (a micro map):
+the block keeps the zone's numbers. Enter a dungeon: "--", with the dungeon's
+name under it. And: `/way` a spot near a zone's edge, and the arrow's distance
+on arrival is a few yards, not tens.
+
+## A54 — ChatFrameUtil.GetActiveWindow and ChatFrameUtil.InsertLink exist on 2.5.6 (D31, D38, D39)
+
+Blizzard's own Classic code calls both. A Shift-click on the block, the
+minimap label, the TopBar's coordinates or a [Go] types the readable line
+into an open chat box.
+
+Symptom if wrong: with the chat box open, Shift-click posts the line instead
+of typing it.
+
+Test: open the chat box, Shift-click the minimap's coordinates: "Elwynn Forest
+42.0, 65.5 (/way #1429 42.00 65.50)" (or your spot) appears in the box,
+unsent.
+
+## A55 — C_ChatInfo.SendChatMessage to SAY from a click is allowed outdoors (D40, D31)
+
+A GoButton's Shift-click when you are alone, "Post in chat" on a link's
+menu, and the manager's "/say" share all post to SAY from a click (a
+hardware event).
+
+Symptom if wrong: nothing is said, or a blocked-action report names
+SendChatMessage.
+
+Test: alone in the open world, Shift-click any Go button (the Guide's "Go to
+Entrance", the Quest Log's "Go to Turn-in"): the readable line appears in
+/say. In a party it goes to /party.
+
+## A56 — Two shared waypoints show two dialogs (D40)
+
+`multiple = true` on COMMANDER_ORDERS_SHARE; StaticPopup_FindVisible
+would otherwise cancel the first.
+
+Symptom if wrong: the first share's dialog vanishes when the second arrives.
+
+Test: have two party members share a waypoint at the same moment (or one
+share twice quickly): two dialogs, each with its own place, each button
+acting on its own share.
+
+## A57 — 3.1's connection spots are where the boats, zeppelins and fliers leave (D40)
+
+QuestieDB spawn positions: Grom'gol's zeppelin master (npc 3149, Stranglethorn
+31.4, 29.9), the boat to Teldrassil (object 176365, Darkshore 32.7, 41.8),
+Rut'theran's hippogryph master (npc 3838, Teldrassil 58.4, 94.0), and
+Theramore's pier (npc 12716, Dustwallow 71.3, 56.3, INFERRED to be the dock).
+
+Symptom if wrong: "Guide me" pins a spot off the dock or the tower; the
+arrow points across the sea at Teldrassil.
+
+Test: Horde in Stranglethorn with a target in Kalimdor: "Guide me" leads to
+the Grom'gol tower. Alliance in Dustwallow with a target in the Eastern
+Kingdoms: it leads to the Theramore pier where the Menethil boat docks (say
+if the spot is off the dock). Alliance in Darkshore with a target in
+Darnassus: the arrow says "In Teldrassil, via the boat to Teldrassil at
+Auberdine" instead of pointing west across the water; from Darnassus back, it
+names Rut'theran's hippogryph master.
+
+## A58 — The locator in game (D36, D37)
+
+Verified offline against the real Questie 12.0.3 / QuestieDB 1.0.4 booted
+under luajit, never in the client.
+
+Symptom if wrong: a Go button for a "nearest" query says "Questie is still
+loading" for the whole session, picks a far spawn, or the client hitches
+after login.
+
+Tests:
+- Horde in Shattrath, a button or `/run CommanderOrders.GoTo({ townsfolk = "Innkeeper" })`:
+  the arrow points at the nearest innkeeper; no Lua error.
+- After login, when Questie says it is ready, the pre-warm (eight lists, one
+  per 0.1 s) causes no visible hitch.
+- With Commander_QuestLog disabled, `/way #347 50 50` (inside Hellfire
+  Ramparts) from Hellfire Peninsula: the arrow says "via the entrance of
+  Hellfire Ramparts".
+- `/run CommanderOrders.GoTo({ entrance = { instance = 269 } })`: the arrow
+  leads to the Caverns of Time's mouth in Tanaris, not into the rock.
+- `/run local t=debugprofilestop(); NpcDB.BuildNameIndex(); print(debugprofilestop()-t)`
+  (Questie's name index, which a name query builds once): say how long.
+
+## A59 — A followed member stays followed through a roster change (D40, replaces A35)
+
+Orders keeps each follow's GUID and re-points it after GROUP_ROSTER_UPDATE.
+
+Symptom if wrong: after someone leaves or joins, the arrow follows whoever
+inherited the token.
+
+Test: follow a party member (Contacts' "Arrow To Them", PartyFrames' "Arrow
+to My Target" binding or `/cpf arrow`), then have someone ABOVE them in the
+party leave: the arrow keeps pointing at the same person, and it does not
+clear when you reach them.
+
+## A60 — The consumers' field checks (D31, the coverage table)
+
+Each module's own ASSUMPTIONS or Harness README has the detail; listed here
+because the symptom shows on Orders' arrow or in Orders' words.
+
+- Quest Log A61 (objective Go in Questie's order), A62 (QUEST_REMOVED on an
+  abandon, QUEST_TURNED_IN on a turn-in, after a /reload with the quest's Go
+  pinned: the waypoint goes), A63 (Go to Turn-in fits the Log's bar).
+- Guide A12: from south Deadwind, "Go to Entrance" says "Waypoint set" once
+  and points at the nearer Karazhan door; Shift-click shares the readable line.
+- Recovery: die, release, click the [Go] on the death line: a "Where you
+  fell" waypoint.
+- TopBar: click, Shift-click, Ctrl-click and right-click the coordinates; click
+  the durability, bags and ammo readouts (nearest repair, vendor, ammo vendor).
+- Logistics: open a repair vendor with Questie on, then `/dump
+  CommanderLogisticsDB.RepairVendors`: the record has `spawn = true` and the
+  NPC's own coordinates.
+- Adjutant: fill your bags out of combat: the banner names a vendor and a
+  quiet waypoint appears, gone at the first merchant.
+- Quartermaster: Ctrl+Right-click a flask row: the arrow to the nearest
+  auctioneer (from Outland, Kalimdor or the Eastern Kingdoms: no Outland AH).
+- Tradecraft A17 and Formulary A10: their Go buttons behave as D31 says.
+- Oracle: in Warsong Gulch, `/coracle flag` with an enemy carrying your flag;
+  `/dump GetNumBattlefieldFlagPositions(), GetBattlefieldFlagPosition(1)`
+  (the call 2.5.6's own BattlefieldFlagDataProvider makes; the third return
+  is the flag ART, expected as a fileID number that Oracle matches against
+  GetFileIDFromPath of the AllianceFlag / HordeFlag textures; if it matches
+  neither, Oracle lists "Flag 1 / Flag 2" with a [Go] each instead of
+  guessing the carrier). In Alterac Valley and the Eye, `/coracle nodes` lists the
+  map's places, each with a [Go].
+- Key Bindings: "Commander Party Frames > Arrow to My Target" and "Commander
+  Oracle > Go to the Flag" exist (new Bindings.xml files: A61).
+- Contacts A14: hover a [Go] in a logged line: Orders' tooltip.
+- Promotion: level up below 70: the banner names the nearest class trainer, a
+  quiet waypoint appears out of combat, opening a class trainer removes it, a
+  profession trainer does not.
+- Objectives (Turn-in Offer is off by default): switched on, a quest turning
+  complete marks its finisher.
+- Vault: with your own vault shown away from the bank, "Go to Bank" sits on
+  the footer line above the bag rack, clear of it, in both frame styles.
+  Armory: "Go to Bank" in the set pane's bottom right when a set's item is
+  banked.
+
+## A61 — Restart the client, not /reload, after installing 3.1 (critic 5.7, 1.2)
+
+**Load bearing for everything 3.1 adds.** The client only loads files it
+saw at start-up; a TOC naming a file it does not know logs "Error loading
+<file>" (seen in BugGrabber for Pins and UI in session 615). New this round:
+Commander_Orders/CommanderOrdersEntrances.lua, CommanderOrdersLocate.lua,
+CommanderOrdersCoords.lua, CommanderOrdersChat.lua;
+Commander_Events/CommanderGoButton.lua; Commander_Oracle/Bindings.xml;
+Commander_PartyFrames/Bindings.xml.
+
+Symptom if wrong (a /reload instead): "Error loading" warnings; no coordinate
+block, no [Go] links, every "nearest" Go says Commander Orders is still
+loading; the modules' Go buttons fall back to plain buttons (they still call
+GoTo); `/corder coords` says the block is not loaded.
+
+Test: quit the game completely, start it, log in: no "Error loading" line in
+BugSack; the minimap shows your coordinates under its zone name (the
+coordinate block is off by default: `/corder coords on` shows it under the
+arrow's spot); `/dump
+CommanderOrders.Coords ~= nil, CommanderOrders.Linkify ~= nil,
+Commander.UI.GoButton ~= nil` prints true three times.
+
+## A62 — "Open the map here" opens the TBC world map on the link's zone (D38)
+
+2.5.6's `OpenWorldMap(mapID)` calls `WorldMapFrame:HandleUserActionOpenSelf`,
+a method only the Wrath files define (Blizzard_WorldMap_TBC.toc does not load
+QuestLogOwnerMixin), so it raised every time. The menu entry now opens the
+map the player's way, `ToggleWorldMap()` when it is shut (it keeps the
+mini-map setting), then `WorldMapFrame:SetMapID(map)`, as Commander_QuestLog's
+"Show on map" does.
+
+Symptom if wrong: BugSack catches an error from CommanderOrdersChat.lua, or
+the map opens on your own zone, or the windowed map comes up when you use the
+full one.
+
+Test: right-click a [Go] in chat (`/way Hellfire Peninsula 45 66 Test`), pick
+"Open the map here": the map opens on Hellfire Peninsula, no error. With the
+map already open on another zone, do it again: the map moves, and stays open.
+
+## A63 — A greyed Go button shows its reason when you hover it (D31)
+
+2.5.6 gives a disabled Button no OnEnter (and no OnClick) unless
+SetMotionScriptsWhileDisabled(true); every Go button now sets it. An enabled
+query button whose lookup answers nothing (Questie loading or absent, none
+on your landmass) says Orders' reason in the same red line. Greyed by
+Orders' own state (turned off, loading, or absent for a lookup) the button
+leaves out its module's extra line, which says what a press does
+(review-r2: the Quest Log's, Formulary's, Tradecraft's and Guide's promised
+a press a greyed button never gets).
+
+Symptom if wrong: hovering a grey Go shows nothing at all.
+
+Test: `/corder` off (Enable off), hover the Quest Log's "Go to Turn-in": the
+tooltip names the button and says "Commander Orders is turned off (/corder)"
+in red, with no line about what a press does; clicking it does nothing. Inside Karazhan hover the Raid Guide's "Go
+to Entrance": "You are already inside". Within a few seconds of logging in
+(Questie still loading) hover Armory's or Vault's "Go to Bank": "Questie is
+still loading" in red, no "Go to:" line.
+
+## A64 — "Nearest" from inside an instance is measured from its door (D32)
+
+Inside a dungeon or raid UnitPosition answers nil, so a "nearest" list had
+no reference point and was cut to 256 in Questie's order; it named Questie's
+first entry wherever you were. Now the instance's door (the door table)
+stands in for you, the list is sorted from it before the cap, and its
+landmass decides.
+
+Symptom if wrong: inside a raid, Vitals' worn-slot line or the TopBar's
+durability tooltip names Corina Steele (Elwynn Forest) for an Alliance
+player, or Grimnal (Swamp of Sorrows) for a Horde one.
+
+Magisters' Terrace has no uiMap at all on 2.5.6 (build 69795: no UiMap row,
+no UiMapAssignment row for instance 585), so GetBestMapForUnit should answer
+nil in there and the door cannot be found from the map. The instance's own
+id, the 8th value of GetInstanceInfo (as 2.5.6's AdventureGuideUtil.lua and
+Questie read it), finds it instead, for "nearest" and for a death in there
+(review-r2).
+
+Symptom if wrong: inside Magisters' Terrace "Go to Repair" (TopBar
+durability, Bags) sends an Alliance player to the smith in Goldshire ("In the
+Eastern Kingdoms..."), or a ghost who died in there gets no corpse arrow.
+
+Test: Alliance inside Serpentshrine Cavern with worn gear: the durability
+tooltip names Mortog Steamhead (Zangarmarsh 51.5, 35.4); click the TopBar's
+durability, walk out of the portal: the arrow points about 100 yd to him.
+Inside Magisters' Terrace: `/dump C_Map.GetBestMapForUnit("player"),
+select(8, GetInstanceInfo())` answers nil, 585 (if it answers a map, the
+old path already works and this is moot); the durability tooltip names
+Smith Hauthaa (Isle of Quel'Danas 50.6, 40.8); click it, walk out: the arrow
+points about 420 yd to him. Die in there and release: the arrow points at
+the entrance (61.5, 31.1, "Your corpse: Magisters' Terrace entrance"), or
+at the corpse marker the client gives on the Isle's map.
+Then, level 58-69 in Outland, ding: Promotion's banner has no trainer line
+(none on your landmass, "elsewhere"), and Quartermaster's "nearest
+auctioneer" from Shattrath still sets a waypoint whose arrow names the way
+to another continent.
+
+## A65 — The coordinate block, turned on, clears the quest tracker (D39)
+
+The block is off by default (the lead's decision). Turned on it sits under
+the Orders arrow's default box (TOP +240, -504), out of the right column
+from 192 down where 2.5.6 manages the quest tracker (QuestWatchFrame,
+right-aligned, up to about 290 wide).
+
+Symptom if wrong: the block draws over the tracker's lines, or over the
+arrow, or under the action bars at your UI scale.
+
+Test: track a quest; `/corder coords on`; the block and the tracker must not
+overlap; set a waypoint: the block and the arrow must not overlap either.
+Check at your own UI scale, with the right action bars shown and hidden.
+
+## A66 — A "Guide me" hop survives a /reload with its target (D33)
+
+The hop records its target (`guideFor`); the Store keeps that record beside
+the pinned hop, and the runtime restores the link at login.
+
+Symptom if wrong: after a /reload and a crossing made off the hop's spot (a
+hearthstone, a portal, the other boat), the arrow points back across the
+crossing ("In the Eastern Kingdoms via the Dark Portal in Hellfire
+Peninsula").
+
+Test: in the Blasted Lands, point at something in Hellfire Peninsula, use
+"Guide me", `/reload`, then take the portal through Shattrath or hearth to
+the other side: the arrow is back on the target. Once more with the target
+from a module (a Quest Log Go): it is still there after the reload.
+
+## A67 — Follow the Closest in a capital sees the zone around it (D35)
+
+ClosestScope "My zone" folds each capital into its zone (Stormwind City into
+Elwynn, Orgrimmar into Durotar, Shattrath into Terokkar...), only for that
+scope: the coordinate block and the chat links keep the city's own numbers.
+
+Symptom if wrong: in Stormwind, `/cway` says "no waypoint in this zone" for a
+mark just outside the gate.
+
+Test: in Stormwind City, mark a spot in Elwynn just outside the gate
+(`/way Elwynn Forest 32 49 Gate`), clear the arrow, `/cway`: it picks the
+gate mark. In Elwynn, a mark in the Trade District: the same.
+
+## A68 — The nearest bank from Auberdine is Darnassus, one boat away (D40)
+
+Teldrassil is its own landmass (D40's islands), so Darnassus' banks were
+left out of "nearest" lists from Darkshore and the arrow sent you through
+Felwood to Everlook. A place on an island of the same continent frame now
+counts, measured in a straight line; when it wins, the waypoint's choices
+are the island's alone and the arrow names the boat.
+
+Symptom if wrong: from Auberdine "Go to Bank" points at Everlook (Winterspring,
+about 5,200 yd).
+
+Test: Alliance in Auberdine, Armory's or Vault's "Go to Bank": the tooltip
+names a Darnassus banker; the arrow says "In Teldrassil" and "via the boat to
+Teldrassil at Auberdine"; across the water it points at the bank.
 
 ---
 

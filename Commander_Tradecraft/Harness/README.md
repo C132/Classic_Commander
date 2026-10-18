@@ -4,7 +4,7 @@ Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit tradecraft_engine_smoke.lua   # data + engine — 1039 checks
-/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 239 checks
+/opt/homebrew/bin/luajit tradecraft_ui_harness.lua     # UI + host    — 269 checks
 /opt/homebrew/bin/luajit globals_lint.lua              # 4 files, 0 undeclared globals
 ```
 
@@ -78,7 +78,38 @@ Checks worth naming:
   moves it, nothing stacks); the tooltip names the path. Trip routes the Expert bracket's vendors
   as one owned NEAREST route ("trip:ENCHANTING:3") with a Kulwia stop and no Alliance vendor on a
   Horde trip. Without Orders the trip prints its `/way` lines and Go prints the place with its
-  `/way` line, as its tooltip said; Set Waypoints off prints and sends nothing.
+  `/way` line, as its tooltip said; Set Waypoints off prints and sends nothing. Since 1.3.0 (D18)
+  the Go is `Commander.UI.GoButton` (the harness loads `Commander_Events/CommanderGoButton.lua`
+  and its Commander Orders stand-in records 3.1's `GoTo`, `PlaceFor`, `SharePoint`, `CopyText`
+  and the rest), so "and says so" reads Orders' "Waypoint set: Formula: ..." (the one check
+  reworded, SPEC 5's success line). **C3c**: the button is a GoButton filled by the guide;
+  Shift-click shares the place in chat, Ctrl-click copies its `/way` line, neither sends a
+  waypoint (with Set Waypoints off too); it reads "Going" while the arrow is on its place.
+  **C3d** (review round 2, 2026-10-05): the Go's tooltip says what a press does only on a Go that
+  takes the press (2.5.6 delivers no OnClick to a disabled Button, so `GoClicked` never runs on a
+  greyed one). Set Waypoints off with Orders on: live, "Prints ... (Set Waypoints is off)". Orders
+  turned off, with Set Waypoints off or on: greyed, and neither the hover nor the guide's own line
+  (`_tcOpts.tooltip`, read straight, since the GoButton now also hides a module line under an
+  Orders-state reason) says "Prints"; Orders back on: the arrow again.
+- **D4b** — the no-profession banner's Go asks Orders' locator for the nearest Enchanting trainer:
+  nobody known sets nothing and Orders says why; known, one waypoint that takes the arrow; with
+  Set Waypoints off its `/way` line is printed instead.
+  **D4c** (review round 2): without Orders the trainer's Go is greyed "Needs Commander Orders" and
+  promises no print (its own line is nil). 261 -> 269, no check edited; against the old wiring
+  (`o.tooltip = WaypointWords`) the three own-line checks fail.
+- **D3b** — the Master trainers' Go buttons (18 high on a 14 + 2 line) stack without overlapping:
+  `GoRow` keeps the next row clear of the button (review 2026-10-05: 2 px of each Go sat under the
+  next, sending those clicks to the other trainer). The mock records `SetHeight` for it.
+- **I1** — a Simple Wood reagent row (Greater Magic Wand at 103) takes Ctrl+Right-click, says so
+  in its tooltip, ignores a plain right-click, and goes to the nearest vendor of the item.
+- **I2** — the shipped route's own path to a pooled-hover bug: the Minor Agility formula not
+  bought, the step at 110 is its buy step (no hover), so the 110-135 option rows take the first two
+  hover slots, the second being I1's right-click-only reagent row; a LEFT click on the other way
+  must still reach it and choose it, and back. Clicks go through `ClickAs`, which delivers only to
+  a shown, enabled button registered for that button (a Button that never registered takes
+  `LeftButtonUp`), as the client does; the bare `__scripts.OnClick` calls elsewhere cannot see a
+  registration (review 2026-10-05: `NewHover` never reset it, so choosing the other way did nothing
+  until a /reload).
 - **E1/E3** — Route This Trip is absent from the route list, shown in the shopping list exactly
   when the bracket has a formula to buy, and routes that bracket's trip.
 - **E1** — the Route window is rows: five bracket headers each once, the finished two-way segment
@@ -101,4 +132,10 @@ Checks worth naming:
 luajit's bytecode listing names every global a file touches; the check subtracts the ones we mean to
 touch and reports the rest. It caught `InCombat` being defined after its first use on the first run.
 Add a genuinely new WoW API to `ALLOWED` with a comment saying where it is called from; never add a
-name just to make the lint quiet.
+name just to make the lint quiet. The modifier keys (`IsShiftKeyDown`, `IsControlKeyDown`) were
+added in 1.3.0 for the Go buttons and the reagent rows.
+
+Mutation sweep (2026-10-05, 1.3.0, on a scratch copy of the harness pointed at a mutated
+`CommanderTradecraft.lua`): the Set Waypoints wrapper removed, its Shift/Ctrl exception removed, the
+trainer key, the reagent row's Ctrl gate (killed once the plain right-click had an answer to
+find), the waypoint icon: all killed. A redundant spec title was found by the sweep and removed.

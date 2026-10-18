@@ -223,6 +223,43 @@ Commander.ICON_STYLES = {
     { text = "Carved", value = "CARVED" },
 }
 
+-- The PvP trinket's face: the faction's own medallion, never the spell's
+-- icon (42292's art is a white swirl that reads as a dispel at a glance).
+-- `unit` (any token, optional) is asked first; then `race` (UnitRace's file
+-- token); then `enemy` picks the other faction from the player's, the usual
+-- arena bet when nothing better is known. Every board's trinket uses this, so
+-- a medallion looks the same on every Commander surface.
+local TRINKET_ICON = {
+    Alliance = "Interface\\Icons\\INV_Jewelry_TrinketPVP_01",
+    Horde = "Interface\\Icons\\INV_Jewelry_TrinketPVP_02",
+}
+local RACE_FACTION = {
+    Human = "Alliance", Dwarf = "Alliance", NightElf = "Alliance", Gnome = "Alliance", Draenei = "Alliance",
+    Orc = "Horde", Scourge = "Horde", Tauren = "Horde", Troll = "Horde", BloodElf = "Horde",
+}
+Commander.TRINKET_ICON = TRINKET_ICON
+
+function Commander.TrinketFaction(unit, race, enemy)
+    if unit and UnitFactionGroup then
+        local ok, f = pcall(UnitFactionGroup, unit)
+        if ok and TRINKET_ICON[f] then return f end
+    end
+    if unit and not race and UnitRace then
+        local ok, _, token = pcall(UnitRace, unit)
+        if ok then race = token end
+    end
+    local f = race and RACE_FACTION[race]
+    if f then return f end
+    local mine = UnitFactionGroup and UnitFactionGroup("player")
+    if not TRINKET_ICON[mine] then mine = "Alliance" end
+    if enemy then return mine == "Alliance" and "Horde" or "Alliance" end
+    return mine
+end
+
+function Commander.TrinketIcon(unit, race, enemy)
+    return TRINKET_ICON[Commander.TrinketFaction(unit, race, enemy)]
+end
+
 -- On screen only where BOTH are true: a style asked for it, and the icon it
 -- shades is actually showing. The second half is the whole reason the wrapping
 -- below exists.

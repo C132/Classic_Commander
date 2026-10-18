@@ -55,7 +55,7 @@ local function CreateOptionsPanel()
     })
     panel:AddCheckbox({
         label = "Chat Callout",
-        tooltip = "Print who pinged in your chat frame. With Commander Orders loaded the line carries a [Waypoint] link: click it and the arrow points at the pinged spot.",
+        tooltip = "Print who pinged in your chat frame. With Commander Orders loaded the line carries a [Go] link: click it and the arrow points at the pinged spot (Shift-click shares it, Ctrl-click copies a /way line, right-click for more).",
         get = function() return CommanderPingDB.PingCallout end,
         set = function(value) CommanderPingDB.PingCallout = value end,
         isEnabled = function() return CommanderPingDB.EnablePing end,
@@ -71,7 +71,7 @@ local function CreateOptionsPanel()
         label = "Waypoint on Group Pings",
         tooltip = function()
             local text = "Every ping becomes a Commander Orders waypoint at the pinged spot, without clicking the callout's link. It is one waypoint that each new ping moves, it is gone after a reload, and it clears when you get there. It never takes the arrow from a waypoint or route you are following, or after you cleared the arrow: the arrow points at it only when Commander Orders' Follow the Closest has nothing of yours left where you are."
-            if not (CommanderOrders and CommanderOrders.Add) then
+            if not (CommanderOrders and CommanderOrders.GoTo) then
                 text = text .. "\n\nNeeds Commander Orders, which is not loaded."
             end
             return text
@@ -79,7 +79,7 @@ local function CreateOptionsPanel()
         get = function() return CommanderPingDB.PingWaypoint end,
         set = function(value) CommanderPingDB.PingWaypoint = value end,
         isEnabled = function()
-            return CommanderPingDB.EnablePing and CommanderOrders ~= nil and CommanderOrders.Add ~= nil
+            return CommanderPingDB.EnablePing and CommanderOrders ~= nil and CommanderOrders.GoTo ~= nil
         end,
     })
 

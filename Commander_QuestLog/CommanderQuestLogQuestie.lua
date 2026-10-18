@@ -3,8 +3,10 @@
 -- The Zones tab and the world-map drawer show every quest a character can ever
 -- do in a zone, and only Questie knows that list. This file is the ONE place
 -- in the module that names Questie, QuestieLoader, Commander Orders' API
--- (CommanderOrders.Add / AddRoute / RegisterResolver), C_QuestLog.IsOnQuest
--- or C_Map zone resolution.
+-- (CommanderOrders.GoTo / Add / AddRoute / List / RemoveBy / RegisterResolver;
+-- the window's Go buttons hand Orders the specs built here through the
+-- suite's Commander.UI.GoButton, D45), C_QuestLog.IsOnQuest or C_Map zone
+-- resolution.
 -- It reads Questie's data, turns it into the plain `fact` and `char` tables the
 -- pure engine (CommanderQuestLogCompletion.lua) classifies, and caches the
 -- engine's answer per zone. Nothing outside this file ever touches a Questie
@@ -568,10 +570,46 @@ local function HasMembers(areaId)
     return #core > 0
 end
 
+-- The way into one of Questie's instance areas, as the suite's one door
+-- table has it: Commander Orders' locator, { entrance = { area = areaId } }
+-- (the shipped door table first: the approach, the outdoor mouth, where the
+-- table has one, every door of a several-door instance; Orders' DECISIONS
+-- D37). The arrow's dungeon hint, the corpse run and every other Go use that
+-- table, so a Go to a creature inside an instance lands where theirs do and
+-- not on Questie's own spot, up to 100 yd short in Auchindoun's tunnel
+-- (D46). nil when Orders is absent, its locator not loaded yet,
+-- or it knows no door: the caller falls back to Questie's dungeon list.
+-- -> { { map = uiMap, x, y (0..100) }, ... } | nil
+local doorCache, doorGeneration = {}, nil
+
+local function OrdersDoorSpots(areaId)
+    if doorGeneration ~= A.generation then doorCache, doorGeneration = {}, A.generation end
+    local cached = doorCache[areaId]
+    if cached then return cached end
+    local api = CommanderOrders
+    if type(api) ~= "table" or type(api.Locate) ~= "function" then return nil end
+    local ok, places = pcall(api.Locate, { entrance = { area = areaId } })
+    if not ok or type(places) ~= "table" then return nil end
+    local spots = {}
+    for _, place in ipairs(places) do
+        if type(place) == "table" and type(place.map) == "number" and type(place.x) == "number"
+            and type(place.y) == "number" then
+            spots[#spots + 1] = { map = place.map, x = place.x * 100, y = place.y * 100 }
+        end
+    end
+    if #spots == 0 then return nil end
+    doorCache[areaId] = spots
+    return spots
+end
+
 -- One giver's spawns as records { kind, id, name, areaId, x, y, uiMapId, zone }.
 -- areaId is the area whose MAP the coordinates are on; zone is the view key the
 -- spot belongs to (NormalizeArea). A dungeon's {-1, -1} sentinel becomes its
--- entrance(s) outside, the way Questie draws it (AvailableQuests.lua:813-819).
+-- way in outside: Orders' door (OrdersDoorSpots), else Questie's entrance(s),
+-- the way Questie draws it (AvailableQuests.lua:813-819). A door keeps the
+-- zone of Questie's entrance on the same map, so which zone lists the quest
+-- stays Questie's; a door on a map none of Questie's entrances is on (Blackrock
+-- Mountain's second gate) is a spot for the arrow only, zone nil.
 local function GiverRecords(kind, id, name, spawns, prefer, cap)
     local records = {}
     if type(spawns) ~= "table" then
@@ -595,13 +633,48 @@ local function GiverRecords(kind, id, name, spawns, prefer, cap)
             zone = NormalizeArea(areaId),
         }
     end
+    -- A door spot (0..100 on its own uiMap); areaId is the Questie entrance
+    -- area drawn on that map, or nil
+    local function AddDoor(spot, areaId, dungeonAreaId)
+        local key = "door:" .. spot.map .. ":" .. spot.x .. ":" .. spot.y
+        if seen[key] then return end
+        seen[key] = true
+        local mapAreaId, zoneKey
+        if areaId then
+            local _, onMap = UiMapForSpawn(areaId)
+            mapAreaId, zoneKey = onMap, NormalizeArea(areaId)
+        else
+            mapAreaId = (A.ZoneForMap(spot.map))
+        end
+        records[#records + 1] = {
+            kind = kind, id = id, name = name, areaId = mapAreaId, x = spot.x, y = spot.y, uiMapId = spot.map,
+            rawAreaId = (areaId and mapAreaId ~= areaId) and areaId or nil, dungeonAreaId = dungeonAreaId,
+            zone = zoneKey,
+        }
+    end
     for _, zone in ipairs(zones) do
         for _, coords in ipairs(List(spawns[zone])) do
             local x, y = List(coords)[1], List(coords)[2]
             if x == -1 or y == -1 then
-                for _, entrance in ipairs(List(DungeonEntrances(zone))) do
-                    entrance = List(entrance)
-                    Add(entrance[1], entrance[2], entrance[3], zone)
+                local entrances = List(DungeonEntrances(zone))
+                local doors = OrdersDoorSpots(zone)
+                if doors then
+                    for _, spot in ipairs(doors) do
+                        local areaId
+                        for _, entrance in ipairs(entrances) do
+                            local area = List(entrance)[1]
+                            if type(area) == "number" and UiMapForSpawn(area) == spot.map then
+                                areaId = area
+                                break
+                            end
+                        end
+                        AddDoor(spot, areaId, zone)
+                    end
+                else
+                    for _, entrance in ipairs(entrances) do
+                        entrance = List(entrance)
+                        Add(entrance[1], entrance[2], entrance[3], zone)
+                    end
                 end
             else
                 Add(zone, x, y, nil)
@@ -1911,42 +1984,76 @@ local function WayLine(uiMapId, x, y, title)
     return string.format("/way #%d %.2f %.2f %s", uiMapId, x, y, title)
 end
 
+-- Commander Orders 3.1, the "Go to" API: GoTo / IsGoing / Reason (D45)
+local function OrdersGo()
+    local api = Orders()
+    if api and type(api.GoTo) == "function" then return api end
+    return nil
+end
+
 -- target = { title, areaId, x, y } with x, y in 0..100; optional uiMapId,
--- zoneName, questId (the waypoint's key), spawns (A.SpawnsOf's list) and
--- note (Orders shows it in the waypoint's tooltip). A quest's waypoint is
--- noted with what the quest is worth (A.RepLine, "No reputation" included)
--- unless the target brings its own note, note = false, or the
--- ShowRepEverywhere setting is off; that note is kept current while the
--- waypoint lives (the reputation block's RefreshWaypointNotes). Returns
--- "ORDERS" or "PRINT" (nil for no target).
-function A.Waypoint(target)
+-- questId (the waypoint's key "quest:<id>"), key (another key of that quest,
+-- an objective's "quest:<id>:<n>"), spawns (A.SpawnsOf's list) and note
+-- (Orders shows it in the waypoint's tooltip). A quest's waypoint is noted
+-- with what the quest is worth (A.RepLine, "No reputation" included) unless
+-- the target brings its own note, note = false, or the ShowRepEverywhere
+-- setting is off; that note is kept current while the waypoint lives (the
+-- reputation block's RefreshWaypointNotes).
+-- -> spec (0..1, Orders' shape), key, questId, the note to remember | nil
+function A.WaypointSpec(target)
     if type(target) ~= "table" then return nil end
-    local title = target.title or target.name or "Waypoint"
     local x, y = tonumber(target.x), tonumber(target.y)
     local uiMapId = target.uiMapId or (target.areaId and A.UiMapForArea(target.areaId)) or nil
-    if x and y and uiMapId then
-        local api = OrdersReady()
-        if api then
-            local questId = tonumber(target.questId)
-            local note, ours = target.note, false
-            if note == nil and questId and A.RepLine
-                and not (type(CommanderQuestLogDB) == "table" and CommanderQuestLogDB.ShowRepEverywhere == false) then
-                note, ours = A.RepLine(questId), true
-            end
-            -- Orders answers nil and a reason (turned off, no world
-            -- position) rather than raising; the pcall is for a stranger
-            local ok, uid = pcall(api.Add, {
-                map = uiMapId, x = x / 100, y = y / 100, title = title, note = Named(note) and note or nil,
-                source = "QuestLog", key = questId and ("quest:" .. questId) or nil,
-                alternatives = Alternatives(target.spawns), icon = "QUEST", setArrow = true,
-            })
-            if ok and uid then
-                if questId then repCache.waypointNotes[questId] = (ours and Named(note)) and note or nil end
-                return "ORDERS"
-            end
-        end
+    if not (x and y and uiMapId) then return nil end
+    local questId = tonumber(target.questId)
+    local note, ours = target.note, false
+    if note == nil and questId and A.RepLine
+        and not (type(CommanderQuestLogDB) == "table" and CommanderQuestLogDB.ShowRepEverywhere == false) then
+        note, ours = A.RepLine(questId), true
     end
-    local zone = target.zoneName or (target.areaId and A.ZoneName(target.areaId)) or nil
+    local spec = {
+        map = uiMapId, x = x / 100, y = y / 100, title = target.title or target.name or "Waypoint",
+        note = Named(note) and note or nil, alternatives = Alternatives(target.spawns),
+    }
+    local key = target.key or (questId and ("quest:" .. questId)) or nil
+    return spec, key, questId, (ours and Named(note)) and note or nil
+end
+
+-- One Go of an Orders-shaped spec (0..1) under (QuestLog, key): Orders
+-- 3.1's GoTo, which words it either way ("Waypoint set: ..." behind its
+-- Announce setting, or its one refusal line with the place's [Go] link), or
+-- an Orders 3.0's Add. -> "ORDERS" (taken), "PRINT" (Orders 3.1 said why)
+-- or nil (nothing took it and nothing was said: the caller prints)
+function A.GoSpec(spec, key, questId, note)
+    if type(spec) ~= "table" then return nil end
+    local go = OrdersGo()
+    if go then
+        local ok, uid = pcall(go.GoTo, spec, { source = "QuestLog", key = key, icon = "QUEST" })
+        if ok and uid then
+            A.NoteGo(questId, key, note)
+            return "ORDERS"
+        end
+        if ok then return "PRINT" end
+        return nil
+    end
+    local api = OrdersReady()
+    if not api then return nil end
+    -- An Orders 3.0: Add answers nil and a reason (turned off, no world
+    -- position) rather than raising; the pcall is for a stranger
+    local add = {}
+    for k, v in pairs(spec) do add[k] = v end
+    add.source, add.key, add.icon, add.setArrow = "QuestLog", key, "QUEST", true
+    local ok, uid = pcall(api.Add, add)
+    if ok and uid then
+        A.NoteGo(questId, key, note)
+        return "ORDERS"
+    end
+    return nil
+end
+
+-- The line a Go nobody took prints (D27's "never do nothing"): the title,
+-- the zone, the coordinates and the /way line (x, y in 0..100)
+local function PrintPlace(title, zone, x, y, uiMapId)
     local where = zone and (" \226\128\148 " .. zone) or ""
     if x and y and uiMapId then
         print(string.format("Commander Quest Log: |cffffd100%s|r%s %.1f, %.1f   %s", title, where, x, y,
@@ -1957,6 +2064,302 @@ function A.Waypoint(target)
         print(string.format("Commander Quest Log: |cffffd100%s|r%s", title, where))
     end
     return "PRINT"
+end
+
+-- A spec's Go, else its line in chat (the window's buttons without the
+-- suite's GoButton, and a row's right-click)
+function A.GoOrPrint(spec, key, questId, note)
+    if type(spec) ~= "table" then return nil end
+    local done = A.GoSpec(spec, key, questId, note)
+    if done then return done end
+    local info = C_Map and C_Map.GetMapInfo and Try("GetMapInfo", C_Map.GetMapInfo, spec.map)
+    local zone = type(info) == "table" and Named(info.name) and info.name or nil
+    return PrintPlace(spec.title or "Waypoint", zone, spec.x * 100, spec.y * 100, spec.map)
+end
+
+-- Returns "ORDERS" (Orders took it) or "PRINT" (said in chat instead: by
+-- Orders 3.1 itself, one line with the place's [Go] link, or here with the
+-- /way line when Orders is older, absent or turned off); nil for no target.
+function A.Waypoint(target)
+    if type(target) ~= "table" then return nil end
+    local title = target.title or target.name or "Waypoint"
+    local x, y = tonumber(target.x), tonumber(target.y)
+    local uiMapId = target.uiMapId or (target.areaId and A.UiMapForArea(target.areaId)) or nil
+    if x and y and uiMapId then
+        local done = A.GoSpec(A.WaypointSpec(target))
+        if done then return done end
+    end
+    local zone = target.zoneName or (target.areaId and A.ZoneName(target.areaId)) or nil
+    return PrintPlace(title, zone, x, y, uiMapId)
+end
+
+-- ---------------------------------------------------------------------------
+-- "Go to" (Commander Orders 3.1; D45)
+--
+-- One waypoint per quest (D35) now covers four kinds of target: where the
+-- quest starts, where it is handed in, each objective's targets, and a
+-- prerequisite's or follow-up's giver. Start and turn-in keep the key
+-- "quest:<id>"; the quest's n-th objective is "quest:<id>:<n>", so each Go
+-- button lights ("Going") only for its own target; and a Go that lands
+-- drops the quest's other keys, so the quest still owns ONE waypoint.
+-- Turned in or abandoned (QUEST_TURNED_IN, QUEST_REMOVED), every key of the
+-- quest goes: Orders 3.1 keeps the waypoint the arrow is pinned to across a
+-- /reload, and a turn-in waypoint must not outlive its quest.
+--
+-- Objectives (S2): Questie's objective list for the quest, lined up the way
+-- Questie lines it up against the client's own objectives (QuestieDB.lua,
+-- GetQuest: creatures, objects, items, reputation, kill credit, spells, then
+-- the explore trigger, each put first where its *ObjectiveFirst table names
+-- the quest), so the log's objective n is objective n here. A creature or
+-- kill-credit objective goes to the creature's spawns, an object to the
+-- object's, an item to the creatures and objects Questie says drop it (quest
+-- items: the one kind QuestieDB keeps drops for), an explore objective to
+-- its trigger's spot; a spawn inside a dungeon is the dungeon's entrance, as
+-- for givers. Reputation and spell objectives have nowhere to go. The
+-- spawns in the player's zone come first, at most 48 (the arrow takes the
+-- nearest of them).
+-- ---------------------------------------------------------------------------
+
+do
+    local MAX_OBJECTIVE_SPAWNS = 48
+    local MAX_SOURCES = 8              -- droppers (and holders) an item objective reads
+    local objectiveCache = { generation = -1 }
+    local starterCache = { generation = -1 }
+
+    -- Every key of one quest: "quest:<id>" and "quest:<id>:<n>"
+    local function OfQuest(key, questId)
+        if type(key) ~= "string" then return false end
+        local stem = "quest:" .. questId
+        return key == stem or key:sub(1, #stem + 1) == stem .. ":"
+    end
+
+    -- The quest's waypoints, all of them but `keep` (nil: all). -> how many
+    function A.ClearQuestWaypoints(questId, keep)
+        questId = tonumber(questId)
+        local api = Orders()
+        if not (questId and api and type(api.List) == "function" and type(api.RemoveBy) == "function") then return 0 end
+        local ok, list = pcall(api.List, { source = "QuestLog" })
+        if not (ok and type(list) == "table") then return 0 end
+        local keys, n = {}, 0
+        for _, wp in ipairs(list) do
+            local key = type(wp) == "table" and wp.key
+            if key ~= keep and OfQuest(key, questId) then keys[key] = true end
+        end
+        for key in pairs(keys) do
+            local okRemove, removed = pcall(api.RemoveBy, "QuestLog", key)
+            if okRemove and type(removed) == "number" then n = n + removed end
+        end
+        if keep == nil or keep ~= ("quest:" .. questId) then repCache.waypointNotes[questId] = nil end
+        return n
+    end
+
+    -- After a Go landed under (QuestLog, key): remember the reputation note
+    -- the waypoint carries, and drop the quest's other waypoints
+    function A.NoteGo(questId, key, note)
+        questId = tonumber(questId)
+        if not questId then return end
+        A.ClearQuestWaypoints(questId, key)
+        if key == ("quest:" .. questId) then repCache.waypointNotes[questId] = note end
+    end
+
+    -- Giver-style records -> one Orders place: the first placed record, and
+    -- every placed one (2+) as alternatives, 0..1 on their uiMaps
+    local function PlaceOf(records, title)
+        local first, alternatives = nil, {}
+        for _, record in ipairs(List(records)) do
+            if type(record) == "table" and type(record.x) == "number" and type(record.y) == "number" then
+                local uiMapId = record.uiMapId or (UiMapForSpawn(record.areaId))
+                if uiMapId and #alternatives < MAX_OBJECTIVE_SPAWNS then
+                    local place = { map = uiMapId, x = record.x / 100, y = record.y / 100 }
+                    first = first or place
+                    alternatives[#alternatives + 1] = place
+                end
+            end
+        end
+        if not first then return nil end
+        return { map = first.map, x = first.x, y = first.y, title = title,
+                 alternatives = #alternatives > 1 and alternatives or nil }
+    end
+
+    -- Where a quest starts: { name, areaId, zoneName, x, y, uiMapId, spawns },
+    -- a spawn in the player's zone preferred (A.Finisher's twin). Kept per
+    -- generation and zone: a briefing asks on every pass.
+    local function FindStarter(questId, here)
+        local givers = ReadGivers(QueryQuestSingle(questId, "startedBy"), here and { [here] = true } or nil,
+            MAX_FINISHER_SPAWNS)
+        local best
+        for _, giver in ipairs(givers) do
+            if giver.x and here and giver.zone == here then best = giver; break end
+        end
+        if not best then
+            for _, giver in ipairs(givers) do
+                if giver.x then best = giver; break end
+            end
+        end
+        if not (best and best.x) then return nil end
+        return PackGiver(best, givers)
+    end
+
+    function A.Starter(questId)
+        if A.State() ~= "READY" or not Exists(questId) then return nil end
+        local here = A.ZoneForPlayer()
+        if starterCache.generation ~= A.generation or starterCache.here ~= (here or false) then
+            starterCache = { generation = A.generation, here = here or false }
+        end
+        local found = starterCache[questId]
+        if found == nil then
+            found = FindStarter(questId, here) or false
+            starterCache[questId] = found
+        end
+        return found or nil
+    end
+
+    -- The Go for a prerequisite or a follow-up: to where that quest starts
+    -- -> spec, key ("quest:<id>"), questId, note | nil
+    function A.StarterSpec(questId)
+        local giver = A.Starter(questId)
+        if not giver then return nil end
+        return A.WaypointSpec({
+            title = string.format("%s (%s)", QuestName(questId) or ("Quest " .. tostring(questId)),
+                giver.name or "quest giver"),
+            areaId = giver.areaId, uiMapId = giver.uiMapId, x = giver.x, y = giver.y,
+            questId = questId, spawns = giver.spawns,
+        })
+    end
+
+    -- t[1..maxn] in order, holes skipped (Questie walks these with pairs)
+    local function Each(t)
+        local out = {}
+        t = List(t)
+        for i = 1, table.maxn(t) do
+            if t[i] ~= nil then out[#out + 1] = t[i] end
+        end
+        return out
+    end
+
+    local function BuildObjectives(questId)
+        local db = QuestDB()
+        local raw = List(QueryQuestSingle(questId, "objectives"))
+        local trigger = QueryQuestSingle(questId, "triggerEnd")
+        local out = {}
+        local function First(name)
+            local set = db and db[name]
+            return type(set) == "table" and set[questId] and true or false
+        end
+        local function Put(item, first)
+            if first then table.insert(out, 1, item) else out[#out + 1] = item end
+        end
+        for _, o in ipairs(Each(raw[1])) do
+            if type(o) == "table" then Put({ kind = "monster", npcs = { o[1] }, text = o[2] }, false) end
+        end
+        for _, o in ipairs(Each(raw[2])) do
+            if type(o) == "table" then Put({ kind = "object", objects = { o[1] }, text = o[2] }, First("objectObjectiveFirst")) end
+        end
+        for _, o in ipairs(Each(raw[3])) do
+            if type(o) == "table" then Put({ kind = "item", item = o[1], text = o[2] }, First("itemObjectiveFirst")) end
+        end
+        if type(raw[4]) == "table" then Put({ kind = "reputation" }, false) end
+        for _, o in ipairs(Each(raw[5])) do
+            if type(o) == "table" then
+                Put({ kind = "killcredit", npcs = Each(o[1]), root = o[2], text = o[3] }, First("killCreditObjectiveFirst"))
+            end
+        end
+        for _, o in ipairs(Each(raw[6])) do
+            if type(o) == "table" then Put({ kind = "spell", text = o[2] }, First("spellObjectiveFirst")) end
+        end
+        if type(trigger) == "table" then
+            Put({ kind = "event", text = trigger[1], spawns = trigger[2] }, First("eventObjectiveFirst"))
+        end
+        return out
+    end
+
+    local function Objectives(questId)
+        if objectiveCache.generation ~= A.generation then objectiveCache = { generation = A.generation } end
+        local list = objectiveCache[questId]
+        if list == nil then
+            list = (A.State() == "READY" and Exists(questId)) and BuildObjectives(questId) or false
+            objectiveCache[questId] = list
+        end
+        return list or nil
+    end
+
+    local function NameOf(kind, id)
+        local db = QuestDB()
+        if not (db and id) then return nil end
+        local fn = kind == "object" and db.QueryObjectSingle or kind == "item" and db.QueryItemSingle or db.QueryNPCSingle
+        local name = Try("Query" .. kind .. "Name", fn, id, "name")
+        return Named(name) and name or nil
+    end
+
+    local function FirstFew(ids)
+        local out = {}
+        for _, id in ipairs(Each(ids)) do
+            if type(id) == "number" and #out < MAX_SOURCES then out[#out + 1] = id end
+        end
+        return out
+    end
+
+    -- An objective's records, its name and the place: built once per
+    -- generation and zone (the player's zone's spawns come first). The name
+    -- is the creature's, the object's or the item's; a kill credit's own
+    -- text names it better (its credit creature is often an invisible
+    -- marker), and an explore objective has only its text.
+    local function Resolve(o)
+        local here = A.ZoneForPlayer()
+        if o.resolvedFor == (here or false) then return o end
+        o.resolvedFor = here or false
+        local prefer = here and { [here] = true } or nil
+        local db = QuestDB()
+        local records
+        if o.kind == "monster" or o.kind == "killcredit" then
+            records = ReadGivers({ FirstFew(o.npcs) }, prefer, MAX_OBJECTIVE_SPAWNS)
+            if o.kind == "killcredit" then
+                o.name = o.text or NameOf("npc", o.root or o.npcs[1])
+            else
+                o.name = NameOf("npc", o.npcs[1]) or o.text
+            end
+        elseif o.kind == "object" then
+            records = ReadGivers({ nil, FirstFew(o.objects) }, prefer, MAX_OBJECTIVE_SPAWNS)
+            o.name = NameOf("object", o.objects[1]) or o.text
+        elseif o.kind == "item" and db then
+            local npcDrops = Try("QueryItemSingle", db.QueryItemSingle, o.item, "npcDrops")
+            local objectDrops = Try("QueryItemSingle", db.QueryItemSingle, o.item, "objectDrops")
+            records = ReadGivers({ FirstFew(npcDrops), FirstFew(objectDrops) }, prefer, MAX_OBJECTIVE_SPAWNS)
+            o.name = NameOf("item", o.item) or o.text
+        elseif o.kind == "event" and type(o.spawns) == "table" then
+            records = GiverRecords("event", nil, o.text, o.spawns, prefer, MAX_OBJECTIVE_SPAWNS)
+            o.name = o.text
+        end
+        if not Named(o.name) then o.name = nil end
+        o.records = records
+        return o
+    end
+
+    -- What Questie knows of a quest's objectives, in the log's order:
+    -- { { kind, name, places = n }, ... } (n = how many spots a Go has)
+    function A.ObjectiveTargets(questId)
+        local out = {}
+        for index, o in ipairs(Objectives(questId) or EMPTY) do
+            Resolve(o)
+            local place = PlaceOf(o.records)
+            out[index] = { kind = o.kind, name = o.name,
+                           places = place and (place.alternatives and #place.alternatives or 1) or 0 }
+        end
+        return out
+    end
+
+    -- The Go for the quest's index-th objective (the log's numbering)
+    -- -> spec, key ("quest:<id>:<index>"), questId | nil
+    function A.ObjectiveSpec(questId, index)
+        local list = Objectives(questId)
+        local o = list and list[index]
+        if not o then return nil end
+        Resolve(o)
+        local quest = QuestName(questId) or ("Quest " .. tostring(questId))
+        local spec = PlaceOf(o.records, o.name and (quest .. ": " .. o.name) or quest)
+        if not spec then return nil end
+        return spec, "quest:" .. questId .. ":" .. index, questId
+    end
 end
 
 -- "Route open quests here": one stop per quest giver of the zone's OPEN
@@ -4059,6 +4462,9 @@ do
         ZoneForPlayer = false, PlayerPos = false, Waypoint = false, RequestSummaries = false,
         SetLogEntries = false, StatusLines = NoStatus, SpawnsOf = false, RouteStops = EmptyList,
         RouteOpen = false, Entrance = false, RegisterResolvers = false,
+        -- "Go to" (1.7.0)
+        WaypointSpec = false, GoSpec = false, GoOrPrint = false, NoteGo = false, ClearQuestWaypoints = false, Starter = false,
+        StarterSpec = false, ObjectiveTargets = EmptyList, ObjectiveSpec = false,
         -- reputation (1.6.0)
         FactionView = NoView, FactionMenu = EmptyList, FactionSummary = false, FactionStanding = false,
         FactionName = false, FactionIndexState = false, RepEffects = false, RepLine = false,
@@ -4134,11 +4540,14 @@ if CreateFrame then
     if ok and frame then
         pcall(frame.RegisterEvent, frame, "PLAYER_LOGIN")
         for _, event in ipairs(BUMP_EVENTS) do pcall(frame.RegisterEvent, frame, event) end
-        frame:SetScript("OnEvent", function(_, event)
+        frame:SetScript("OnEvent", function(_, event, questId)
             if event == "PLAYER_LOGIN" then
                 A.Init()
                 return
             end
+            -- Turned in or abandoned: every waypoint of the quest goes (D45;
+            -- Orders 3.1 keeps a pinned one across a /reload)
+            if event == "QUEST_TURNED_IN" or event == "QUEST_REMOVED" then A.ClearQuestWaypoints(questId) end
             A.Bump(event)
             -- This bump lands before Questie has refreshed the caches its
             -- verdicts read (a threshold inside a standing tier, a skill-up,

@@ -69,7 +69,7 @@ locations for the TBC raids, unverified on this client: Karazhan's two
 points in Deadwind Pass, the Caverns of Time door in Tanaris for Hyjal,
 the Coilfang Reservoir for Serpentshrine. If wrong: the arrow walks you to
 a spot near, not on, the door, and Orders never says "Arrived" there.
-Tell by: press Waypoint to Entrance, walk the arrow in, and see where it
+Tell by: press Go to Entrance (Waypoint to Entrance before 1.2.0), walk the arrow in, and see where it
 says Arrived against where the portal is.
 
 **A11. `CommanderOrders.Entrance(raidMap)` answers with a zone position.**
@@ -85,3 +85,18 @@ gives Questie's first, 46.7, 70.2), the other doors go along as
 alternatives (D11). Tell by: with QuestLog and Questie loaded, stand by the
 tower's south side (about 46.9, 76) and press Waypoint to Entrance: the
 arrow should point at the 46.9, 74.7 door, not the northern one.
+
+**A12. Orders' door for a raid is where the portal is (1.2.0, D12).** With
+Commander Orders 3.1 the door is Orders' shipped table, not D.ENTRANCES:
+`CommanderOrders.Entrance({ instance = 532 })` answers Karazhan's two
+portals (46.6, 74.1 and the service door), Serpentshrine the Coilfang
+Reservoir's mouth, Hyjal the Caverns of Time's. Read from the client's
+AreaTrigger rows offline, never walked. If wrong: the arrow says Arrived a
+few yards from the portal, or leads to the reservoir's mouth rather than
+the pipe. Tell by: from Deadwind Pass south of the tower press Go to
+Entrance (or `/cguide entrance`): one "Waypoint set: Karazhan entrance"
+line from Commander Orders, the arrow on the nearer door, Arrived at the
+portal. Shift-click the button in a group: the party sees "Karazhan
+entrance - Deadwind Pass ... (/way #1430 ...)". Restart the client after
+updating (no new Guide file, but Orders 3.1 and Commander_Events add
+files).

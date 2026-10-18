@@ -89,7 +89,11 @@ local function Norm(a)
     return a
 end
 
-local SKIP = { CommanderOrdersPins = true, CommanderOrdersUI = true }
+-- The runtime sections test the runtime alone: the pins and the manager have
+-- their own harnesses, and so does the locator (orders_locate_smoke.lua), whose
+-- shipped door table would answer the entrances sections D and Q expect to be
+-- unknown. Section P boots the full TOC.
+local SKIP = { CommanderOrdersPins = true, CommanderOrdersUI = true, CommanderOrdersLocate = true }
 local function Boot(opts)
     opts = opts or {}
     if opts.skipFiles == nil then opts.skipFiles = SKIP end
@@ -202,14 +206,17 @@ Section("A", function()
 
     -- TOC
     local toc = io.open(ADDONS .. "/Commander_Orders/Commander_Orders.toc"):read("*a")
-    HAS(toc, "## Version: 3.0.0", "A: TOC version 3.0.0")
+    HAS(toc, "## Version: 3.1.0", "A: TOC version 3.1.0")
     HAS(toc, "## SavedVariables: CommanderOrdersDB", "A: TOC account SV")
     HAS(toc, "## SavedVariablesPerCharacter: CommanderOrdersChar", "A: TOC per-character SV")
     HAS(toc, "## RequiredDeps: Commander_Events", "A: TOC requires the hub")
     HAS(toc, "## OptionalDeps: TomTom, Commander_Console", "A: TOC optional deps")
     local files = M.TocFiles()
-    EQ(table.concat(files, ","), "CommanderOrdersData,CommanderOrdersGeo,CommanderOrdersStore,CommanderOrdersDB,"
-        .. "CommanderOrders,CommanderOrdersPins,CommanderOrdersUI", "A: TOC load order")
+    -- 3.1 (SPEC 2): the door table, the locator, the coordinates and the
+    -- chat links join, in this order
+    EQ(table.concat(files, ","), "CommanderOrdersData,CommanderOrdersEntrances,CommanderOrdersGeo,"
+        .. "CommanderOrdersStore,CommanderOrdersDB,CommanderOrders,CommanderOrdersLocate,CommanderOrdersPins,"
+        .. "CommanderOrdersCoords,CommanderOrdersChat,CommanderOrdersUI", "A: TOC load order")
     CHECK(not toc:find("Bindings.xml", 1, true), "A: Bindings.xml is not in the TOC")
     -- Bindings
     local xml = io.open(ADDONS .. "/Commander_Orders/Bindings.xml"):read("*a")
@@ -1205,8 +1212,9 @@ Section("J", function()
     M.SetGroup("party", { "Healer" })
     O().Share(uid, "CHAT")
     local chat = M.chat[#M.chat]
-    CHECK(chat and chat.chatType == "PARTY" and chat.text:find("^/way #1429 48.00 42.00"), "J: CHAT posts the /way line",
-        chat and chat.text)
+    -- 3.1 (SPEC 2, critic D11): the readable ChatText, never a line that starts with /way
+    CHECK(chat and chat.chatType == "PARTY" and chat.text:find("Elwynn Forest 48.0, 42.0 (/way #1429 48.00 42.00)", 1, true)
+        and chat.text:sub(1, 1) ~= "/", "J: CHAT posts the readable line with its /way", chat and chat.text)
     -- Receiving: a prompt, never the arrow
     local mine = Store():Pinned()
     M.Receive("CmdrOrders", "1:1429:0.30000:0.40000:Mill%3A Gate", "PARTY", "Healer-Dreamscythe")
@@ -1481,7 +1489,7 @@ Section("N", function()
     local found
     for _, info in ipairs(Commander.GetModules()) do if info.key == "Orders" then found = info end end
     CHECK(found and found.slash == "/corder" and found.title == "Orders", "N: registered as Orders with /corder")
-    EQ(found and found.version, "3.0.0", "N: version from the TOC")
+    EQ(found and found.version, "3.1.0", "N: version from the TOC")
     local titles = {}
     for _, fold in ipairs(panel._folds or {}) do titles[#titles + 1] = fold.title end
     EQ(table.concat(titles, ","), "Arrow,Behaviour,Map & Minimap,Sharing,Compatibility,Places", "N: the sections")
@@ -1495,7 +1503,9 @@ Section("N", function()
             CHECK(f.__ddText ~= nil and f.__ddText ~= "", "N: dropdown " .. i .. " shows its value", f.__ddText)
         end
     end
-    EQ(dd, 6, "N: six dropdowns (units, modifier, frame style, sound channel, map click, shares)")
+    -- 3.1 adds three: Closest Within, World Map Coordinates (was a checkbox)
+    -- and the coordinate block's frame style
+    EQ(dd, 9, "N: nine dropdowns (units, modifier, frame style, closest within, sound channel, map click, map coordinates, the block's frame style, shares)")
     local text = {}
     for _, row in ipairs(panel._rows or {}) do text[#text + 1] = row.row._keywords or "" end
     local all = table.concat(text, " ")
@@ -1699,8 +1709,8 @@ Section("Q", function()
     CHECK(ok == nil and why == "invalid position", "Q: SharePoint: an unknown map refused", why)
     O().SharePoint({ map = 1429, x = 0.5, y = 0.5, title = "Rally" }, "CHAT")
     local chat = M.chat[#M.chat]
-    CHECK(chat and chat.chatType == "PARTY" and chat.text == "/way #1429 50.00 50.00 Rally",
-        "Q: SharePoint: CHAT posts the /way line", chat and chat.text)
+    CHECK(chat and chat.chatType == "PARTY" and chat.text == "Rally - Elwynn Forest 50.0, 50.0 (/way #1429 50.00 50.00)",
+        "Q: SharePoint: CHAT posts the readable line (3.1 ChatText)", chat and chat.text)
     -- Share and SharePoint are one send path: Share still answers the same
     M.W.sendResult = 3
     ok, why = O().Share(uid)
@@ -1940,6 +1950,29 @@ Section("R", function()
     O().Remove(hop)
     Pass(2)
     EQ(Store():Pinned() and Store():Pinned().uid, elsewhere, "R: once you picked something else, the guide lets go")
+    -- review (core): the link survives a /reload. The pinned hop is kept
+    -- (D33) and so is the record it names in guideFor, even a module's
+    -- session-only one, and the crossing still hands the arrow back
+    Boot({ player = { 1419, 0.58, 0.50 } })
+    target = O().Add({ map = 1955, x = 0.5, y = 0.5, title = "Shattrath bank", source = "Armory", key = "bank" })
+    Pass(3)
+    hop = O().Guide()
+    Pass(3)
+    EQ(O().Get(hop) and O().Get(hop).guideFor, target, "R: the hop names its target (guideFor)")
+    Reload()
+    Pass(3)
+    EQ(Store():Pinned() and Store():Pinned().uid, hop, "R: after a reload the hop still holds the arrow")
+    CHECK(O().Get(target) ~= nil, "R: ...and its session-only target was kept beside it (review: core)")
+    M.SetPlayer(1944, 0.8735, 0.5027)
+    M.Fire("PLAYER_ENTERING_WORLD")
+    M.Fire("ZONE_CHANGED_NEW_AREA")
+    M.Advance(1)
+    EQ(O().Get(hop), nil, "R: reloaded, then through the portal off the hop's spot: the hop goes")
+    EQ(Store():Pinned() and Store():Pinned().uid, target, "R: ...the target is pinned again")
+    EQ(A().view.mode, "NAV", "R: ...and the arrow points at it, not back through the portal")
+    Reload()
+    Pass(3)
+    CHECK(O().Get(target) ~= nil, "R: ...still there after the next reload while it holds the arrow")
     NOERR("R guide")
 
     -- review-runtime: following a group member costs no map positions (each
@@ -2016,7 +2049,9 @@ Section("R", function()
     EQ(root:IsShown(), false, "R: ...and stays closed")
     local reset
     for _, w in ipairs(M.W.widgets) do
-        if w.__text == "Reset Position" and w.__scripts and w.__scripts.OnClick then reset = w end
+        -- 3.1: the coordinate block's chrome adds a second Reset Position
+        -- further down the page; the arrow's is the first
+        if not reset and w.__text == "Reset Position" and w.__scripts and w.__scripts.OnClick then reset = w end
     end
     CHECK(reset ~= nil, "R: (the page's Reset Position button)")
     if reset then reset.__scripts.OnClick(reset) end
@@ -2056,6 +2091,505 @@ Section("R", function()
     added, errs = O().Import("/way 45 66 A\r\n\r\nnot a line")
     EQ(errs[1] and errs[1].line, 3, "R: Windows line ends count the same")
     NOERR("R import")
+end)
+
+-- ===========================================================================
+-- S: 3.1, "Go to" everywhere (SPEC 1-2): the new API, the core fixes, the
+-- settings. Booted without the files the other 3.1 agents own (Locate,
+-- Coords, Chat), so these checks answer for the runtime alone.
+-- ===========================================================================
+local SKIP31 = { CommanderOrdersPins = true, CommanderOrdersUI = true, CommanderOrdersLocate = true,
+                 CommanderOrdersCoords = true, CommanderOrdersChat = true }
+
+Section("S", function()
+    -- S1 the API
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31 })
+    for _, name in ipairs({ "FormatCoords", "WayLineFor", "ChatText", "ChatLink", "ParseChatLink", "CopyText", "Reason",
+            "Locate", "GoTo", "IsGoing", "PlaceFor", "ParseCoords", "SaveAsPlace", "MarkPlace", "Entrance" }) do
+        EQ(type(O()[name]), "function", "S: API " .. name)
+    end
+    EQ(type(R().AskCoords), "function", "S: R.AskCoords")
+    local l, lw = O().Locate({ npc = 1 })
+    CHECK(l == nil and lw == "loading", "S: the Locate stand-in answers loading", lw)
+
+    -- S2 the words for a place
+    EQ(O().FormatCoords(0.4523, 0.6687), "45.2, 66.9", "S: FormatCoords at the default precision (1)")
+    DB().CoordDecimals = 2
+    EQ(O().FormatCoords(0.4523, 0.6687), "45.23, 66.87", "S: ...follows CoordDecimals")
+    DB().CoordDecimals = 7
+    EQ(O().FormatCoords(0.4523, 0.6687), "45.23, 66.87", "S: ...clamped to 2")
+    DB().CoordDecimals = 1
+    EQ(O().FormatCoords(0.4523, 0.6687, 0), "45, 67", "S: an explicit precision wins")
+    DB().CoordDecimals = 2
+    local probe = O().Add({ map = 1429, x = 0.4523, y = 0.6687, title = "Precise", setArrow = false })
+    HAS(R().Describe(Store():Get(probe)), "Elwynn Forest 45.23, 66.87", "S: Orders' own readouts follow CoordDecimals")
+    O().Remove(probe)
+    DB().CoordDecimals = 1
+    EQ(O().WayLineFor(1944, 0.452, 0.668, "Nazgrel"), "/way #1944 45.20 66.80 Nazgrel", "S: WayLineFor, always 2 dp")
+    EQ(O().ChatText(1944, 0.452, 0.668, "Nazgrel"), "Nazgrel - Hellfire Peninsula 45.2, 66.8 (/way #1944 45.20 66.80)",
+        "S: ChatText")
+    EQ(O().ChatText(1944, 0.452, 0.668), "Hellfire Peninsula 45.2, 66.8 (/way #1944 45.20 66.80)", "S: ChatText, no title")
+    local slash = O().ChatText(1944, 0.452, 0.668, "/way trick")
+    CHECK(slash and slash:sub(1, 1) ~= "/", "S: ChatText never starts with a slash", slash)
+    local link = O().ChatLink(1944, 0.452, 0.668, "Naz: grel|r")
+    HAS(link, "|Haddon:CommanderOrders:w:1944:0.4520:0.6680:", "S: ChatLink's payload")
+    HAS(link, "|h[Go]|h", "S: ...says [Go]")
+    local m, x, y, t = O().ParseChatLink(link)
+    CHECK(m == 1944 and math.abs(x - 0.452) < 1e-4 and math.abs(y - 0.668) < 1e-4 and t == "Naz: grel",
+        "S: ChatLink round trip", tostring(m) .. " " .. tostring(t))
+    HAS(O().ChatLink(1429, 0.5, 0.5, nil, "Elwynn 50, 50"), "|h[Elwynn 50, 50]|h", "S: ChatLink with its own text")
+
+    -- S3 one refusal vocabulary
+    EQ(O().Reason("disabled"), "Commander Orders is turned off (/corder)", "S: Reason disabled")
+    EQ(O().Reason("loading"), "Commander Orders is still loading", "S: Reason loading")
+    EQ(O().Reason("nowhere"), "No known location", "S: Reason nowhere")
+    EQ(O().Reason("no world position"), "That map has no world coordinates", "S: Reason of a 3.0 word")
+    EQ(O().Reason("something new"), "Something new", "S: an unknown code, capitalised")
+    EQ(O().Reason(nil), "Not available", "S: Reason(nil)")
+
+    -- S4 the copy box (critic D12)
+    M.ClearLog()
+    O().CopyText("/way #1429 45.00 66.00 X")
+    local pop = M.popups[#M.popups]
+    EQ(pop and pop.which, "COMMANDER_ORDERS_COPY", "S: CopyText opens the copy box")
+    EQ(StaticPopupDialogs.COMMANDER_ORDERS_COPY.text, "Ctrl+C to copy", "S: its words")
+    EQ(StaticPopupDialogs.COMMANDER_ORDERS_COPY.maxLetters, 255, "S: 255 letters on the dialog")
+    EQ(pop and pop.dialog.editBox.__maxLetters, 255, "S: ...and on the box")
+    EQ(pop and pop.dialog.editBox.__text, "/way #1429 45.00 66.00 X", "S: with the text")
+
+    -- S5 GoTo a place
+    M.ClearLog()
+    local uid, why = O().GoTo({ map = 1429, x = 0.48, y = 0.42, title = "Northshire" },
+        { source = "QuestLog", key = "quest:1", icon = "QUEST" })
+    CHECK(uid ~= nil, "S: GoTo a place", why)
+    local wp = O().Get(uid)
+    CHECK(wp and wp.source == "QuestLog" and wp.key == "quest:1" and wp.icon == "QUEST" and wp.persistent == false,
+        "S: owned by (source, key), session-only")
+    EQ(O().Active() and O().Active().uid, uid, "S: the arrow follows it")
+    CHECK(M.Has(M.prints, "Waypoint set: Northshire (Elwynn Forest 48.0, 42.0)"), "S: Waypoint set: says so", M.prints[#M.prints])
+    EQ(#M.prints, 1, "S: one line, not the user's announce as well")
+    EQ(O().IsGoing("QuestLog", "quest:1"), true, "S: IsGoing")
+    EQ(O().IsGoing("QuestLog"), true, "S: IsGoing, any key of the source")
+    EQ(O().IsGoing("QuestLog", "quest:2"), false, "S: not another key")
+    EQ(O().IsGoing("Tradecraft"), false, "S: not another source")
+    M.ClearLog()
+    local again = O().GoTo({ map = 1429, x = 0.49, y = 0.43, title = "Northshire" },
+        { source = "QuestLog", key = "quest:1", silent = true })
+    EQ(again, uid, "S: the same (source, key) moves the one waypoint")
+    EQ(#M.prints, 0, "S: silent says nothing")
+    M.ClearLog()
+    local own = O().GoTo({ map = 1429, x = 0.52, y = 0.52, title = "Mine" })
+    EQ(O().Get(own) and O().Get(own).source, "user", "S: a Go with no source is the user's own")
+    EQ(#M.prints, 1, "S: ...said once, not Add's announce as well", M.prints[2])
+    M.ClearLog()
+    DB().Announce = false
+    O().GoTo({ map = 1429, x = 0.5, y = 0.5 }, { source = "QuestLog", key = "quest:3" })
+    EQ(#M.prints, 0, "S: Announce off: no line")
+    DB().Announce = true
+    local follow = O().GoTo({ kind = "unit", unit = "party1", title = "Tank" }, { source = "PartyFrames", key = "follow", silent = true })
+    CHECK(follow and O().Get(follow).kind == "unit" and O().Get(follow).clearOnArrive == false,
+        "S: GoTo a group member: a unit follow that never clears on arrival")
+    O().Remove(follow)
+
+    -- S6 a refusal while off: one line with the place and its link
+    DB().EnableOrders = false
+    Notify()
+    M.ClearLog()
+    local none, w2 = O().GoTo({ map = 1429, x = 0.3, y = 0.3, title = "Farm" })
+    CHECK(none == nil and w2 == "disabled", "S: refused while off", w2)
+    EQ(#M.prints, 1, "S: one line")
+    HAS(M.prints[1], "Commander Orders is turned off (/corder): Farm (Elwynn Forest 30.0, 30.0)", "S: the reason and the place")
+    HAS(M.prints[1], "|Haddon:CommanderOrders:w:1429:0.3000:0.3000:Farm|h[Go]|h", "S: ...and its [Go] link")
+    M.ClearLog()
+    O().GoTo({ map = 1429, x = 0.3, y = 0.3 }, { silent = true })
+    EQ(#M.prints, 0, "S: a silent refusal says nothing")
+    DB().EnableOrders = true
+    Notify()
+
+    -- S7 a query before the locator is in
+    M.ClearLog()
+    local q, qwhy = O().GoTo({ townsfolk = "Repair" }, { source = "Logistics", key = "repair" })
+    CHECK(q == nil and qwhy == "loading", "S: a query with the stand-in Locate: loading", qwhy)
+    HAS(M.prints[1], "Commander Orders is still loading", "S: ...said once")
+    EQ(#M.prints, 1, "S: (one line)")
+
+    -- S8 many places, one waypoint
+    local asked
+    CommanderOrders.Locate = function(query)
+        asked = query
+        return {
+            { map = 1429, x = 0.70, y = 0.70, title = "Far smith" },
+            { map = 1429, x = 0.43, y = 0.66, title = "Near smith" },
+            { map = 1944, x = 0.50, y = 0.50, title = "Outland smith" },
+            { map = 1429, x = 0.45, y = 0.60, title = "Mid smith" },
+            title = "Repair",
+        }
+    end
+    q = O().GoTo({ townsfolk = "Repair" }, { source = "Logistics", key = "repair", silent = true })
+    EQ(asked and asked.townsfolk, "Repair", "S: GoTo asks Locate")
+    local rec = Store():Get(q)
+    CHECK(rec and rec.alternatives and #rec.alternatives == 3, "S: many places, one waypoint: this landmass's three",
+        rec and rec.alternatives and #rec.alternatives)
+    CHECK(rec and math.abs(rec.x - 0.43) < 1e-9, "S: ...nearest first", rec and rec.x)
+    EQ(rec and rec.title, "Repair", "S: ...titled by the list's own words")
+    CommanderOrders.Locate = function()
+        return { { map = 1944, x = 0.5, y = 0.5, title = "A" }, { map = 1944, x = 0.6, y = 0.6, title = "A" } }
+    end
+    q = O().GoTo({ npc = 1 }, { source = "Test", key = "far", silent = true })
+    rec = Store():Get(q)
+    CHECK(rec and rec.map == 1944 and #rec.alternatives == 2 and rec.title == "A", "S: none on this landmass: the list as given")
+    CommanderOrders.Locate = function()
+        local list = {}
+        for i = 1, 300 do list[i] = { map = 1429, x = 0.1 + i * 0.002, y = 0.5, title = "Spot" } end
+        return list
+    end
+    q = O().GoTo({ npc = 2 }, { source = "Test", key = "cap", silent = true })
+    rec = Store():Get(q)
+    EQ(rec and #rec.alternatives, 256, "S: at most 256 alternatives")
+    CommanderOrders.Locate = function() return nil, "otherside" end
+    M.ClearLog()
+    local nf, nwhy = O().GoTo({ npc = 3 })
+    CHECK(nf == nil and nwhy == "otherside", "S: Locate's reason comes back", nwhy)
+    HAS(M.prints[1], "Only the other faction has one", "S: ...in words")
+    CommanderOrders.Locate = function()
+        return { { map = 1429, x = 0.70, y = 0.70, title = "Far" }, { map = 1429, x = 0.43, y = 0.66, title = "Near" } }
+    end
+    local pf = O().PlaceFor({ townsfolk = "Banker" })
+    CHECK(pf and math.abs(pf.x - 0.43) < 1e-9 and pf.title == "Near", "S: PlaceFor: the nearest place", pf and pf.title)
+    pf = O().PlaceFor({ map = 1429, x = 0.7, y = 0.7, title = "Giver",
+        alternatives = { { 1429, 0.7, 0.7 }, { 1429, 0.43, 0.66 } } })
+    CHECK(pf and math.abs(pf.x - 0.43) < 1e-9 and pf.title == "Giver", "S: PlaceFor: the nearest spawn of a spec")
+    local nq, nqwhy = O().GoTo({ title = "Nothing" })
+    CHECK(nq == nil and nqwhy == "noquery", "S: neither a place nor a query", nqwhy)
+
+    -- S9 IsGoing answers for a route's owner
+    local rid = O().AddRoute({ title = "Trip", source = "Tradecraft", key = "trip:1",
+        stops = { { map = 1429, x = 0.45, y = 0.6 }, { map = 1429, x = 0.5, y = 0.6 } } })
+    EQ(O().Active() and O().Active().why, "ROUTE", "S: (a route holds the arrow)")
+    EQ(O().IsGoing("Tradecraft", "trip:1"), true, "S: IsGoing answers for the route's owner")
+    O().RemoveRoute(rid)
+
+    -- S10 Update goes through Add's zone and world checks (critic C11)
+    local u = O().Add({ map = 1429, x = 0.4, y = 0.4, title = "Mover", setArrow = false })
+    local inst, n, w = M.World(1429, 0.5, 0.5)
+    local cx, cy = M.MapPos(1415, inst, n, w)
+    local moved = O().Update(u, { map = 1415, x = cx, y = cy })
+    CHECK(moved and moved.map == 1429 and math.abs(moved.x - 0.5) < 1e-6, "S: Update lands a continent point on its zone",
+        moved and moved.map)
+    local bad, bwhy = O().Update(u, { map = 946, x = 0.5, y = 0.5 })
+    CHECK(bad == nil and bwhy == "no world position", "S: Update refuses a spot with no world position", bwhy)
+    EQ(O().Get(u).map, 1429, "S: ...and leaves it where it was")
+    local idx = O().MarkPlace("Clicked", { map = 1415, x = cx, y = cy })
+    local place = idx and O().Places()[idx]
+    CHECK(place and place.map == 1429 and place.title == "Clicked", "S: MarkPlace at a spot lands on its zone")
+    NOERR("S api")
+
+    -- S11 the pinned consumer Go and the active route survive a reload (D5)
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31 })
+    local kept = O().GoTo({ map = 1429, x = 0.48, y = 0.42, title = "Pinned Go" },
+        { source = "QuestLog", key = "quest:9", silent = true })
+    local other = O().Add({ map = 1429, x = 0.3, y = 0.3, title = "Not pinned", source = "QuestLog", key = "q10", setArrow = false })
+    local temp = O().Add({ map = 1429, x = 0.31, y = 0.3, title = "Ping", source = "Ping", key = "ping", temporary = true,
+        setArrow = false })
+    Reload({ skipFiles = SKIP31 })
+    CHECK(O().Get(kept) ~= nil, "S: the pinned consumer Go survives a reload (D5)")
+    EQ(O().Get(kept) and O().Get(kept).persistent, false, "S: ...still session-only")
+    EQ(O().Get(other), nil, "S: an unpinned consumer waypoint does not")
+    EQ(O().Get(temp), nil, "S: nor a temporary offer")
+    Pass(2)
+    EQ(O().Active() and O().Active().uid, kept, "S: the arrow is back on it")
+    O().ClearArrow()
+    Reload({ skipFiles = SKIP31 })
+    EQ(O().Get(kept), nil, "S: once let go of, it is gone at the next reload")
+    local rid2 = O().AddRoute({ title = "Consumer trip", source = "Tradecraft", key = "trip:2",
+        stops = { { map = 1429, x = 0.45, y = 0.6 }, { map = 1429, x = 0.5, y = 0.6 } } })
+    local idle = O().AddRoute({ title = "Idle trip", source = "Tradecraft", key = "trip:3", start = false,
+        stops = { { map = 1429, x = 0.2, y = 0.6 } } })
+    Reload({ skipFiles = SKIP31 })
+    CHECK(O().GetRoute(rid2) ~= nil and #O().GetRoute(rid2).stops == 2, "S: the active consumer route survives (D5)")
+    EQ(O().GetRoute(rid2) and O().GetRoute(rid2).persistent, false, "S: ...still session-only")
+    EQ(O().GetRoute(idle), nil, "S: an idle consumer route does not")
+    EQ(O().ActiveRoute() and O().ActiveRoute().id, rid2, "S: ...and it is still the one running")
+    NOERR("S reload")
+
+    -- S12 the battleground hedge (D6)
+    Boot({ player = { 1461, 0.40, 0.40 }, skipFiles = SKIP31 })
+    M.SetInstance("pvp")
+    local real = UnitPosition
+    rawset(_G, "UnitPosition", function(unit) if unit == "player" then return nil end return real(unit) end)
+    O().Add({ map = 1461, x = 0.5, y = 0.5, title = "Stables" })
+    Pass(3)
+    EQ(A().view.mode, "NAV", "S: a battleground with no UnitPosition: the map position places you (D6)")
+    CHECK(A().view.distance and A().view.distance > 0, "S: ...with a distance", A().view.distance)
+    local gpmp = C_Map.GetPlayerMapPosition
+    local calls = 0
+    C_Map.GetPlayerMapPosition = function(...) calls = calls + 1 return gpmp(...) end
+    M.Advance(1)
+    C_Map.GetPlayerMapPosition = gpmp
+    CHECK(calls <= 15, "S: ...sampled about ten times a second, not every frame", calls)
+    M.SetInstance(nil)
+    Pass(3)
+    EQ(A().view.mode, "NOPOS", "S: outside a battleground, no hedge")
+    rawset(_G, "UnitPosition", nil)
+    NOERR("S hedge")
+
+    -- S13 Follow the Closest: your zone, your own and shared (S3)
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31 })
+    local west = O().Add({ map = 1436, x = 0.5, y = 0.5, title = "Westfall mark", setArrow = false })
+    Pass(6)
+    EQ(O().Active(), nil, "S: Follow the Closest keeps to your zone (ClosestScope ZONE)")
+    DB().ClosestScope = "LANDMASS"
+    Pass(6)
+    EQ(O().Active() and O().Active().uid, west, "S: LANDMASS: the next zone's mark is followed")
+    DB().ClosestScope = "ZONE"
+    O().Remove(west)
+    -- the lead's decision (D35): a capital is part of the zone around it.
+    -- Stormwind City (1453) and Elwynn Forest (1429) are both Zone maps under
+    -- the continent, so Geo.Zone alone kept a mark outside the gate out of
+    -- scope (review: core)
+    local city = O().Add({ map = 1453, x = 0.5, y = 0.5, title = "Trade District", setArrow = false })
+    Pass(6)
+    EQ(O().Active() and O().Active().uid, city, "S: ZONE from Elwynn: a mark in Stormwind City is in my zone")
+    O().Remove(city)
+    Boot({ player = { 1453, 0.62, 0.70 }, skipFiles = SKIP31 })
+    local gate = O().Add({ map = 1429, x = 0.32, y = 0.49, title = "Outside the gate", setArrow = false })
+    Pass(6)
+    EQ(O().Active() and O().Active().uid, gate, "S: ZONE from Stormwind City: an Elwynn mark is in my zone")
+    O().Remove(gate)
+    local farm = O().Add({ map = 1436, x = 0.5, y = 0.5, title = "Westfall farm", setArrow = false })
+    Pass(6)
+    EQ(O().Active(), nil, "S: ...a Westfall mark is still not")
+    O().Remove(farm)
+    EQ(CommanderOrders.Geo.Zone(R().Env(), 1453), 1453, "S: ...and Geo.Zone still answers the city itself (the block's frame)")
+    TomTom:AddWaypoint(1429, 0.45, 0.62, { title = "Questie's", from = "Questie", crazy = false })
+    Pass(6)
+    EQ(O().Active(), nil, "S: a TomTom-bridge waypoint is not your closest (ClosestMineOnly)")
+    CHECK(TomTom:GetClosestWaypoint() ~= nil, "S: ...though the bridge still finds it for its callers")
+    DB().ClosestMineOnly = false
+    Pass(6)
+    CHECK(O().Active() and O().Active().title == "Questie's", "S: ClosestMineOnly off: it counts again")
+    DB().ClosestMineOnly = true
+    NOERR("S closest")
+
+    -- S14 a unit follow by GUID, and after a roster change (S6)
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31 })
+    M.SetGroup("party", { "Alice", "Bob" })
+    M.SetUnit("party1", 1429, 0.45, 0.60)
+    M.SetUnit("party2", 1429, 0.44, 0.62)
+    local f = O().Add({ kind = "unit", guid = "Player-1-Bob", title = "Bob", source = "PartyFrames", key = "follow" })
+    EQ(O().Get(f) and O().Get(f).unit, "party2", "S: a follow by GUID finds the member's token")
+    EQ(O().Get(f) and O().Get(f).clearOnArrive, false, "S: a follow never clears on arrival")
+    M.SetGroup("party", { "Bob", "Alice" })
+    M.Fire("GROUP_ROSTER_UPDATE")
+    M.Frame()
+    EQ(O().Get(f) and O().Get(f).unit, "party1", "S: after a roster change it follows Bob on his new token")
+    local g = O().Add({ kind = "unit", unit = "party2", title = "Alice", source = "Contacts", key = "follow" })
+    M.SetGroup("party", { "Alice", "Bob" })
+    M.Fire("GROUP_ROSTER_UPDATE")
+    EQ(O().Get(g) and O().Get(g).unit, "party1", "S: a follow made by token learns the GUID too")
+    NOERR("S units")
+
+    -- S15 sharing: dialogs stack, chat goes through C_ChatInfo, no inbox
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31 })
+    EQ(StaticPopupDialogs.COMMANDER_ORDERS_SHARE.multiple, true, "S: shares stack (critic D13)")
+    M.ClearLog()
+    O().SharePoint({ map = 1429, x = 0.5, y = 0.5, title = "Here" }, "CHAT")
+    local said = M.chat[#M.chat]
+    CHECK(said and said.api == "C_ChatInfo" and said.chatType == "SAY",
+        "S: a CHAT share alone goes to /say through C_ChatInfo.SendChatMessage (D11)", said and said.api)
+    M.SetGroup("party", { "Bob" })
+    M.Receive("CmdrOrders", "1:1429:0.30000:0.40000:Mill", "PARTY", "Bob-Dreamscythe")
+    M.Receive("CmdrOrders", "1:1429:0.31000:0.40000:Gate", "PARTY", "Bob-Dreamscythe")
+    local a1, a2 = M.popups[#M.popups - 1], M.popups[#M.popups]
+    CHECK(a1 and a2 and a1.data ~= a2.data and a1.data.title == "Mill" and a2.data.title == "Gate",
+        "S: two shares, two dialogs, each with its own share")
+    rawset(_G, "StaticPopup_Show", false)
+    M.ClearLog()
+    M.Advance(11)
+    M.Receive("CmdrOrders", "1:1429:0.32000:0.40000:Ford", "PARTY", "Bob-Dreamscythe")
+    rawset(_G, "StaticPopup_Show", nil)
+    HAS(M.prints[#M.prints], "Bob shared a waypoint: Ford (Elwynn Forest 32.0, 40.0)", "S: no dialog: said in chat")
+    HAS(M.prints[#M.prints], "|h[Go]|h", "S: ...with its [Go] link")
+    CHECK(not M.Has(M.prints, "manager to add"), "S: ...and no inbox that does not exist")
+    NOERR("S share")
+
+    -- S16 an Orphan-typed instance map gets the entrance hint (critic D4)
+    Boot({ player = { 1446, 0.5, 0.5 }, skipFiles = SKIP31 })
+    O().RegisterResolver("entrance", function(map)
+        if map == 274 then return { map = 1446, x = 0.66, y = 0.49, title = "Caverns of Time" } end
+    end)
+    O().Add({ map = 274, x = 0.5, y = 0.5, title = "Thrall" })
+    Pass(2)
+    EQ(Text("dist"), "In Old Hillsbrad Foothills", "S: an Orphan map is named by itself")
+    EQ(Text("status"), "via the entrance of Old Hillsbrad Foothills", "S: ...and its entrance offered")
+
+    -- S17 the nearest departure among equal ways (deferred H3)
+    Boot({ player = { 1434, 0.30, 0.30 }, skipFiles = SKIP31 })
+    O().Add({ map = 1411, x = 0.5, y = 0.5, title = "Razor Hill" })
+    Pass(2)
+    EQ(Text("status"), "via the zeppelin tower at Grom'gol", "S: of two zeppelins, the nearer departure")
+    Boot({ player = { 1420, 0.60, 0.60 }, skipFiles = SKIP31 })
+    O().Add({ map = 1411, x = 0.5, y = 0.5, title = "Razor Hill" })
+    Pass(2)
+    EQ(Text("status"), "via the zeppelin tower in Tirisfal Glades", "S: ...and from Tirisfal, Tirisfal's")
+
+    -- S18 an island is not on the shore's landmass (deferred H2)
+    Boot({ player = { 1457, 0.5, 0.5 }, faction = "Alliance", skipFiles = SKIP31 })
+    O().Add({ map = 1439, x = 0.4, y = 0.4, title = "Auberdine" })
+    Pass(2)
+    EQ(A().view.mode, "OTHER", "S: Darnassus to Darkshore: no straight arrow over the sea")
+    EQ(Text("dist"), "In Kalimdor", "S: ...named")
+    EQ(Text("status"), "via the hippogryph master at Rut'theran Village", "S: ...by the Rut'theran crossing")
+    Boot({ player = { 1439, 0.4, 0.4 }, faction = "Alliance", skipFiles = SKIP31 })
+    O().Add({ map = 1457, x = 0.5, y = 0.5, title = "Temple" })
+    Pass(2)
+    EQ(Text("dist"), "In Teldrassil", "S: the island named from the shore")
+    EQ(Text("status"), "via the boat to Teldrassil at Auberdine", "S: ...by the Auberdine boat")
+    NOERR("S hints")
+
+    -- S19 the menus (deferred A1)
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31 })
+    local mk = O().Add({ map = 1429, x = 0.48, y = 0.42, title = "Menu" })
+    Pass(2)
+    M.SetModifier("SHIFT", true)
+    M.Click(A().hit, "RightButton")
+    M.SetModifier("SHIFT", false)
+    local texts = table.concat(M.MenuTexts(), "|")
+    HAS(texts, "Point at the closest", "S: the arrow's menu: Point at the closest")
+    HAS(texts, "Save as place", "S: ...Save as place")
+    HAS(texts, "Mark arrived", "S: ...Mark arrived")
+    local wtexts = {}
+    for _, e in ipairs(R().WaypointMenu(mk)) do wtexts[#wtexts + 1] = e.text end
+    wtexts = table.concat(wtexts, "|")
+    HAS(wtexts, "Mark arrived", "S: every pin's menu: Mark arrived")
+    HAS(wtexts, "Save as place", "S: ...Save as place")
+    HAS(wtexts, "Point at the closest", "S: ...Point at the closest")
+    CHECK(M.ClickMenu("Save as place"), "S: (the arrow's Save as place)")
+    local places = O().Places()
+    CHECK(#places == 1 and places[1].title == "Menu" and places[1].map == 1429, "S: Save as place keeps it as a place")
+
+    -- S20 typed coordinates (S8)
+    local spec = O().ParseCoords("Hellfire Peninsula 45.2 66.8 Nazgrel")
+    CHECK(spec and spec.map == 1944 and math.abs(spec.x - 0.452) < 1e-9 and spec.title == "Nazgrel", "S: ParseCoords")
+    spec = O().ParseCoords("45 66")
+    CHECK(spec and spec.map == 1429 and math.abs(spec.y - 0.66) < 1e-9, "S: ParseCoords on your own map")
+    local nope, msg = O().ParseCoords("hello there")
+    CHECK(nope == nil and type(msg) == "string" and msg ~= "", "S: ParseCoords refuses with words", msg)
+    M.ClearLog()
+    CHECK(R().AskCoords(nil), "S: the coordinates box opens")
+    pop = M.popups[#M.popups]
+    EQ(pop and pop.which, "COMMANDER_ORDERS_COORDS", "S: (that box)")
+    EQ(pop and pop.dialog.editBox.__maxLetters, 255, "S: 255 letters")
+    pop.dialog.editBox.__text = "#1944 45.2 66.8 Typed"
+    M.ClickPopup("COMMANDER_ORDERS_COORDS", 1)
+    local typed = Store():Find(1944, 0.452, 0.668, "Typed", 1e-6)
+    CHECK(typed ~= nil, "S: a waypoint at typed coordinates")
+    R().AskCoords(typed and typed.uid)
+    pop = M.popups[#M.popups]
+    EQ(pop and pop.dialog.editBox.__text, "/way #1944 45.20 66.80", "S: a move starts from where it is")
+    pop.dialog.editBox.__text = "Elwynn Forest 40 60"
+    M.ClickPopup("COMMANDER_ORDERS_COORDS", 1)
+    local movedT = typed and O().Get(typed.uid)
+    CHECK(movedT and movedT.map == 1429 and math.abs(movedT.x - 0.4) < 1e-9, "S: moved to the typed coordinates")
+    EQ(movedT and movedT.title, "Typed", "S: ...keeping its title")
+    M.ClearLog()
+    R().AskCoords(nil)
+    M.popups[#M.popups].dialog.editBox.__text = "nowhere at all"
+    M.ClickPopup("COMMANDER_ORDERS_COORDS", 1)
+    CHECK(#M.prints == 1, "S: an unreadable line is said", M.prints[1])
+    NOERR("S typed")
+
+    -- S21 the settings of the round
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31,
+        saved = { CommanderOrdersDB = { DBVersion = 3, EnableOrders = true, MapCoords = false } } })
+    EQ(DB().MapCoords, "OFF", "S: a 3.0 MapCoords false reads as OFF")
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31,
+        saved = { CommanderOrdersDB = { DBVersion = 3, EnableOrders = true, MapCoords = true } } })
+    EQ(DB().MapCoords, "AUTO", "S: ...and true as AUTO")
+    EQ(DB().DBVersion, 3, "S: a value repair, not a schema step")
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31 })
+    for key, want in pairs({ MapCoords = "AUTO", CoordDecimals = 1, CoordsBlock = false, MinimapCoords = true,
+            MinimapClick = true, ChatLinks = true, ClosestScope = "ZONE", ClosestMineOnly = true, CoordsStyle = "SOLID",
+            CoordsLocked = true, CoordsScale = 1, CoordsPos = false }) do
+        EQ(DB()[key], want, "S: default " .. key)
+    end
+    local all = {}
+    for _, row in ipairs(CommanderOrders.DB.Panel._rows or {}) do all[#all + 1] = row.row._keywords or "" end
+    all = table.concat(all, " ")
+    for _, words in ipairs({ "closest within", "only my own and shared", "world map coordinates", "coordinate block",
+            "minimap coordinates", "ctrl+right-click the minimap", "coordinate decimals", "clickable places in chat" }) do
+        HAS(all, words, "S: a settings row: " .. words)
+    end
+
+    -- S22 doors by instance id, after the resolvers
+    R().DoorLookup = function(arg)
+        if type(arg) == "table" and arg.instance == 543 then
+            return { map = 1944, x = 0.47, y = 0.53, title = "Hellfire Ramparts" }
+        end
+        if arg == 347 then return { map = 1944, x = 0.47, y = 0.53, title = "Ramparts door" } end
+    end
+    local e = O().Entrance({ instance = 543 })
+    CHECK(e and e.map == 1944 and e.title == "Hellfire Ramparts", "S: Entrance by instance id (the door table)")
+    EQ(O().Entrance(347) and O().Entrance(347).title, "Ramparts door", "S: ...and by uiMap")
+    -- the lead's decision (D37): the door table outranks a registered
+    -- resolver for every dungeon it knows; a resolver answers the rest
+    O().RegisterResolver("entrance", function(map)
+        if map == 347 or map == 350 then return { map = 1944, x = 0.4, y = 0.5, title = "Resolver door" } end
+    end)
+    EQ(O().Entrance(347) and O().Entrance(347).title, "Ramparts door", "S: the door table outranks a registered resolver")
+    EQ(O().Entrance(350) and O().Entrance(350).title, "Resolver door", "S: ...which still answers a map the table lacks")
+    R().DoorLookup = function() error("broken door table") end
+    EQ(O().Entrance({ instance = 1 }), nil, "S: a raising door table is passed over")
+    EQ(O().Entrance(347) and O().Entrance(347).title, "Resolver door", "S: ...to the resolvers")
+    R().DoorLookup = nil
+    NOERR("S settings")
+
+    -- /corder coords reaches the coordinate file when it is in
+    M.ClearLog()
+    Corder("coords")
+    HAS(M.prints[1], "the coordinate block is not loaded", "S: /corder coords without the file says so")
+    local heard
+    CommanderOrders.Coords = { Command = function(rest) heard = rest end }
+    Corder("coords Lock Now")
+    EQ(heard, "Lock Now", "S: /corder coords <words> reaches O.Coords.Command, case kept")
+    Corder("coords")
+    EQ(heard, "", "S: ...and the bare word too")
+    CommanderOrders.Coords = nil
+
+    -- S23 the mock's 3.1 surface, which the consumers' harnesses build on
+    EQ(table.concat(M.AddonTocFiles("Commander_TopBar"), ","), "CommanderTopBarDB.lua,CommanderTopBar.lua",
+        "S: M.AddonTocFiles reads a consumer's TOC")
+    local loadedSeen = {}
+    Boot({ player = GOLDSHIRE, skipFiles = SKIP31, addons = { { name = "Commander_Fake", files = {} } },
+        before = function()
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("ADDON_LOADED")
+            f:SetScript("OnEvent", function(_, _, name) loadedSeen[#loadedSeen + 1] = name end)
+        end })
+    EQ(table.concat(loadedSeen, ","), "Commander_Events,Commander_Orders,Commander_Fake",
+        "S: opts.addons: ADDON_LOADED for each consumer, after Orders'")
+    EQ(C_AddOns.IsAddOnLoaded("Commander_Fake"), true, "S: ...and it counts as loaded")
+    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_SAY", function(_, _, msg, ...) return false, msg .. "!", ... end)
+    local res = { M.RunChatFilters("CHAT_MSG_SAY", "hi", "Bob", "", "", "", "", 0, 0, "", 0, 7, "GUID-1", 0, false) }
+    CHECK(res[1] == false and res[2] == "hi!" and res[3] == "Bob" and res[12] == 7 and res[13] == "GUID-1",
+        "S: the mock runs chat filters the client's way, all fourteen args")
+    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_SAY", function(_, _, msg) return false, msg .. "?" end)
+    res = { M.RunChatFilters("CHAT_MSG_SAY", "hi", "Bob", "", "", "", "", 0, 0, "", 0, 7, "GUID-1", 0, false) }
+    CHECK(res[2] == "hi!?" and res[3] == nil and res[13] == nil, "S: ...and a filter returning two values wipes the rest")
+    local clicked
+    EventRegistry:RegisterCallback("SetItemRef", function(owner, link, text, button)
+        clicked = { owner = owner, link = link, button = button }
+    end, loadedSeen)
+    CHECK(M.ClickLink(O().ChatLink(1429, 0.5, 0.5, "X"), "RightButton"), "S: M.ClickLink clicks a printed link")
+    CHECK(clicked and clicked.owner == loadedSeen and clicked.link == "addon:CommanderOrders:w:1429:0.5000:0.5000:X"
+        and clicked.button == "RightButton", "S: ...an addon: link reaches EventRegistry SetItemRef as fn(owner, ...)")
+    EQ(UnitGUID("party1"), nil, "S: UnitGUID of an empty slot is nil")
+
+    -- S24 the full TOC boots with every 3.1 file that exists
+    Boot({ player = GOLDSHIRE, skipFiles = {} })
+    EQ(#M.loadErrors, 0, "S: every TOC file that exists loads", M.loadErrors[1])
+    EQ(type(Commander.UI.GoButton), "function", "S: Commander.UI.GoButton (Commander_Events) is there")
+    EQ(Commander.UI.GoRowHint, "Ctrl+Right-click: Go", "S: ...and the row hint")
 end)
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))

@@ -1381,6 +1381,96 @@ local fmts = PlainAscii(G.FormatDistance(12952, "YARDS")) and PlainAscii(G.Forma
     and PlainAscii(G.FormatEta(4320)) and PlainAscii(G.FormatCoords(0.5, 0.5))
 CHECK(fmts, "N: formatted text is plain ASCII")
 
+-- ===========================================================================
+-- O: 3.1 (SPEC 1-2): islands, zones, chat text and links
+-- ===========================================================================
+do
+    local function HAS(str, needle, label)
+        CHECK(type(str) == "string" and str:find(needle, 1, true) ~= nil, label, "got " .. tostring(str))
+    end
+    EQ(type(G.Zone), "function", "O: G.Zone")
+    for _, name in ipairs({ "PlainText", "ChatText", "ChatLink", "ParseChatLink", "LinkEscape", "LinkUnescape" }) do
+        EQ(type(G[name]), "function", "O: G." .. name)
+    end
+    EQ(G.LINK_PREFIX, "addon:CommanderOrders:", "O: the link prefix")
+
+    -- islands: off without env.islands, on with them
+    local plainEnv = NewEnv()
+    EQ(G.Landmass(plainEnv, 1457), G.Landmass(plainEnv, 1439), "O: without islands Darnassus shares Kalimdor's key (3.0)")
+    local islandEnv = NewEnv()
+    islandEnv.islands = { [1438] = "teldrassil", [1457] = "teldrassil" }
+    EQ(G.Landmass(islandEnv, 1457), "1414:1:teldrassil", "O: Darnassus is on the island")
+    EQ(G.Landmass(islandEnv, 1438), "1414:1:teldrassil", "O: ...and so is Teldrassil")
+    EQ(G.Landmass(islandEnv, 1439), "1414:1", "O: Darkshore is not")
+    EQ(G.Landmass(islandEnv, 1457, 1), "1414:1:teldrassil", "O: an instance given keeps the island")
+    EQ(G.SameLandmass(islandEnv, 1457, 1439), false, "O: no straight line across the sea")
+    EQ(G.SameLandmass(islandEnv, 1457, 1438), true, "O: Darnassus to Teldrassil is one island")
+    EQ(G.SameLandmass(islandEnv, 1429, 1436), true, "O: the mainland is untouched")
+    local calls = islandEnv.calls.mapInfo
+    G.Landmass(islandEnv, 1457)
+    G.Landmass(islandEnv, 1457)
+    EQ(islandEnv.calls.mapInfo, calls, "O: the island is cached")
+
+    -- zones
+    local zEnv = NewEnv()
+    EQ(G.Zone(zEnv, 1429), 1429, "O: a zone is its own zone")
+    EQ(G.Zone(zEnv, 350), 1430, "O: Karazhan's zone is Deadwind Pass")
+    EQ(G.Zone(zEnv, 274), 1446, "O: an orphan map's zone (Old Hillsbrad: Tanaris)")
+    EQ(G.Zone(zEnv, 1415), nil, "O: a continent has none")
+    EQ(G.Zone(zEnv, 946), nil, "O: nor Cosmic")
+    EQ(G.Zone(zEnv, 999999), nil, "O: nor an unknown map")
+    EQ(G.Zone(zEnv, nil), nil, "O: nil-safe")
+
+    -- plain text
+    EQ(G.PlainText("|cffff0000Red|r and |Hitem:1|h[Sword]|h"), "Red and [Sword]", "O: PlainText keeps words, drops escapes")
+    EQ(G.PlainText("a|Tpath:12|tb"), "ab", "O: ...textures go whole")
+    EQ(G.PlainText("x|y\nz"), "x y z", "O: ...a stray bar and control characters become spaces")
+    EQ(G.PlainText(nil), "", "O: ...nil is empty")
+
+    -- ChatText
+    EQ(G.ChatText(1944, 0.452, 0.668, "Nazgrel", "Hellfire Peninsula", 1),
+        "Nazgrel - Hellfire Peninsula 45.2, 66.8 (/way #1944 45.20 66.80)", "O: ChatText")
+    EQ(G.ChatText(1944, 0.452, 0.668, nil, "Hellfire Peninsula", 1),
+        "Hellfire Peninsula 45.2, 66.8 (/way #1944 45.20 66.80)", "O: ...without a title")
+    EQ(G.ChatText(1944, 0.452, 0.668, "T", nil, 0), "T - 45, 67 (/way #1944 45.20 66.80)", "O: ...without a zone, 0 dp")
+    EQ(G.ChatText(1944, 0.452, 0.668, "/way #1 2 3", "Z", 1):sub(1, 1) ~= "/", true, "O: ...never starts with /")
+    EQ(G.ChatText(1944, 0.452, 0.668, "|cffff0000Red|r", "Z", 1), "Red - Z 45.2, 66.8 (/way #1944 45.20 66.80)",
+        "O: ...no escape reaches chat")
+    local long = G.ChatText(1944, 0.452, 0.668, string.rep("x", 400), "Hellfire Peninsula", 1)
+    CHECK(long and #long <= 255 and long:find("(/way #1944 45.20 66.80)", 1, true), "O: ...at most 255 bytes, the /way kept",
+        long and #long)
+    EQ(G.ChatText(1944, 1.5, 0.5, "x", "Z", 1), nil, "O: ...nil for an impossible spot")
+    EQ(G.ChatText(nil, 0.5, 0.5, "x", "Z", 1), nil, "O: ...and for no map")
+
+    -- links
+    EQ(G.LinkEscape("a:b|c%d[e]"), "a%3Ab%7Cc%25d%5Be%5D", "O: LinkEscape")
+    EQ(G.LinkUnescape(G.LinkEscape("a:b|c%d[e]\1")), "a:b|c%d[e]\1", "O: ...and back")
+    local link = G.ChatLink(1944, 0.452, 0.668, "Mill: Gate [north]")
+    EQ(link, "|cff71d5ff|Haddon:CommanderOrders:w:1944:0.4520:0.6680:Mill%3A Gate %5Bnorth%5D|h[Go]|h|r", "O: ChatLink")
+    local m, x, y, t = G.ParseChatLink(link)
+    CHECK(m == 1944 and math.abs(x - 0.452) < 1e-9 and math.abs(y - 0.668) < 1e-9 and t == "Mill: Gate [north]",
+        "O: ParseChatLink reads the whole link back", t)
+    m, x, y, t = G.ParseChatLink("addon:CommanderOrders:w:1429:0.5:0.25:")
+    CHECK(m == 1429 and x == 0.5 and y == 0.25 and t == nil, "O: ...or the payload SetItemRef hands over, no title")
+    EQ(G.ParseChatLink("addon:CommanderPing:3"), nil, "O: another addon's link is not ours")
+    EQ(G.ParseChatLink("addon:CommanderOrders:w:1429:1.5:0.5:x"), nil, "O: an impossible spot is refused")
+    EQ(G.ParseChatLink(nil), nil, "O: nil-safe")
+    HAS(G.ChatLink(1429, 0.5, 0.5, nil, "Elwynn 50, 50"), "|h[Elwynn 50, 50]|h", "O: a link with its own words")
+    HAS(G.ChatLink(1429, 0.5, 0.5, nil, "[bracketed]"), "|h[bracketed]|h", "O: ...never doubled brackets")
+    EQ(G.ChatLink(1429, 2, 0.5), nil, "O: no link for an impossible spot")
+    local roundOK = true
+    for i = 1, 200 do
+        local mx, my = (i * 37 % 1000) / 1000, (i * 53 % 1000) / 1000
+        local title = "T" .. i .. (i % 3 == 0 and ":|%[]" or "")
+        local pm, px, py, pt = G.ParseChatLink(G.ChatLink(1429, mx, my, title))
+        if not (pm == 1429 and math.abs(px - mx) <= 5e-5 and math.abs(py - my) <= 5e-5 and pt == G.PlainText(title)) then
+            roundOK = false
+        end
+    end
+    CHECK(roundOK, "O: 200 links round-trip map, x, y and title")
+    CHECK(PlainAscii(G.ChatText(1944, 0.452, 0.668, "Nazgrel", "Hellfire Peninsula", 1)), "O: ChatText is plain ASCII")
+end
+
 -- Nothing in all of the above reached for a global
 EQ(#reads, 0, "N: no unknown global was read during the run")
 EQ(#writes, 0, "N: no global was written during the run")

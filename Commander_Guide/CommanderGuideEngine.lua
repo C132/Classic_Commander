@@ -378,8 +378,9 @@ end
 -- the way to the door (DECISIONS D11)
 -- ---------------------------------------------------------------------------
 -- Getting to the raid is the one part of a raid night the guide could not
--- help with. These two build what the runtime hands Commander Orders (or, with
--- Orders absent or switched off, prints): no client call here either.
+-- help with. These two build what the runtime hands an Orders without the 3.1
+-- GoTo, what it falls back on when Orders cannot look the door up, and what
+-- it prints without Orders (DECISIONS D12): no client call here either.
 
 -- A uiMap position the client could ever answer for: a map id and 0..1 x, y
 -- (NaN fails every comparison, so it fails here too)

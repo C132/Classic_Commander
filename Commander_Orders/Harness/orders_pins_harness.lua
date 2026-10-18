@@ -415,11 +415,23 @@ Section("C", function()
     pt = LastPoint(pDiag)
     NEAR(pt and pt.x, 63, 0.06, "C: square: the corner, 63 px right")
     -- the top rim of a square map rides under Commander_Minimap's zone
-    -- name (GameFontNormal at TOP -2: 70 - 22 = 48; review: render)
-    NEAR(pt and pt.y, 48, 0.06, "C: square: under the zone-name strip at the top (48 px up)")
+    -- name (GameFontNormal at TOP -2: 70 - 22 = 48; review: render), and
+    -- since 3.1 under your coordinates beneath it too (MinimapCoords, on by
+    -- default: 70 - 38 = 32)
+    NEAR(pt and pt.y, 32, 0.06, "C: square: under the zone name and the coordinates (32 px up)")
     NEAR(pDiag.edge.__rotation, -math.pi / 4, 1e-6, "C: square: the chevron keeps its angle")
     pt = LastPoint(pFar)
-    NEAR(pt and pt.y, 48, 0.06, "C: square: due north 48 px, clear of the zone name")
+    NEAR(pt and pt.y, 32, 0.06, "C: square: due north 32 px, clear of the zone name and the coordinates")
+    DB().MinimapCoords = false
+    Notify()
+    M.Fire("MINIMAP_UPDATE_ZOOM")
+    pt = LastPoint(pFar)
+    NEAR(pt and pt.y, 48, 0.06, "C: square, Minimap Coordinates off: the zone-name strip alone (48 px up)")
+    DB().MinimapCoords = true
+    Notify()
+    M.Fire("MINIMAP_UPDATE_ZOOM")
+    pt = LastPoint(pFar)
+    NEAR(pt and pt.y, 32, 0.06, "C: square, on again: 32 px up")
     local south = AddOffset(-400, 0, "Far south")
     M.Advance(1.1)
     pt = LastPoint(MiniPinFor(south))
@@ -759,6 +771,57 @@ Section("E", function()
     HAS(table.concat(M.tooltip, "\n"), "The nearest of 3 places", "E: alternatives: the tooltip says so")
     HAS(table.concat(M.tooltip, "\n"), "From Quest Log", "E: tooltip: the source, in the words the manager uses")
     CHECK(not sp[1].data.draggable, "E: alternatives cannot be dragged")
+    -- 3.1 (M7): every pin's card names the spawn IT shows, not the first one
+    local named, others = {}, 0
+    for _, pin in ipairs(sp) do
+        M.Hover(pin)
+        local want = R().Where(pin.data.pos)
+        EQ(M.tooltip[2], want, "E: M7: the card names this pin's spawn")
+        named[M.tooltip[2] or "?"] = true
+        local tip = table.concat(M.tooltip, "\n")
+        if pin.data.alt then
+            others = others + 1
+            HAS(tip, "This is another of them; the arrow takes the nearest", "E: M7: a spawn the arrow is not on says so")
+            CHECK(not tip:find("The arrow points here", 1, true), "E: M7: ...and never claims the arrow")
+        else
+            CHECK(not tip:find("This is another", 1, true), "E: M7: the followed spawn says nothing of the kind")
+        end
+    end
+    local n = 0
+    for _ in pairs(named) do n = n + 1 end
+    EQ(n, 3, "E: M7: three spawns, three places named")
+    EQ(others, 2, "E: M7: (two of them others)")
+    local dists = {}
+    for _, pin in ipairs(sp) do
+        M.Hover(pin)
+        local line = M.tooltip[3] or ""
+        CHECK(line:find(" yd", 1, true) ~= nil, "E: M7: each spawn's card has a distance", line)
+        dists[line] = true
+    end
+    n = 0
+    for _ in pairs(dists) do n = n + 1 end
+    EQ(n, 3, "E: M7: each its own distance, not the followed spawn's")
+    -- the arrow on it: only the followed spawn says so
+    O().SetArrow(spawns)
+    Settle()
+    sp = PinsFor(spawns)
+    for _, pin in ipairs(sp) do
+        M.Hover(pin)
+        local tip = table.concat(M.tooltip, "\n")
+        if pin.data.alt then
+            CHECK(not tip:find("The arrow points here", 1, true), "E: M7: the arrow's target: its other spawns do not claim it")
+        else
+            HAS(tip, "The arrow points here", "E: M7: the followed spawn does")
+        end
+    end
+    M.Advance(1.1)
+    local mp7 = MiniPinFor(spawns)
+    CHECK(mp7 ~= nil, "E: M7: the minimap pin of the nearest-of-3")
+    if mp7 then
+        M.Hover(mp7)
+        EQ(M.tooltip[2], R().Where(Store():Get(spawns).alternatives[Store():ChosenAlternative(spawns)]),
+            "E: M7: the minimap card names the spawn the arrow follows")
+    end
 
     -- a corpse, a reached mark, a followed unit
     local corpse = Store():Add({ kind = "corpse", source = "corpse", map = 1429, x = 0.45, y = 0.6,
@@ -1300,6 +1363,52 @@ Section("I", function()
     Notify()
     M.Advance(0.12)
     CHECK(M.Visible(f), "I: MapCoords on: shown")
+
+    -- 3.1: MapCoords is "AUTO" | "ON" | "OFF" (SPEC 2, coords C4). AUTO steps
+    -- aside only where Questie's numbers are right: on the map you stand on
+    rawset(_G, "Questie", { db = { profile = { mapCoordinatesEnabled = true } } })
+    DB().MapCoords = "AUTO"
+    Notify()
+    M.SetMapID(1429)
+    M.Advance(0.12)
+    CHECK(M.Visible(f) and not Shown(f.text), "I: AUTO, Questie's on, your own map: ours step aside")
+    M.SetMapID(1415)
+    M.Advance(0.12)
+    CHECK(Shown(f.text) and Shown(f.bg), "I: AUTO, Questie's on, another map (where its Player is wrong): ours show")
+    HAS(f.text.__text, string.format("Player  %.1f, %.1f", px * 100, py * 100), "I: ...with the viewed map's numbers")
+    M.SetMapID(1429)
+    M.SetInstance("party")
+    M.Advance(0.12)
+    CHECK(Shown(f.text), "I: AUTO in a dungeon (Questie writes nothing there): ours show")
+    M.SetInstance(nil)
+    M.Advance(0.12)
+    CHECK(not Shown(f.text), "I: (out again: aside)")
+    DB().MapCoords = "ON"
+    Notify()
+    M.Advance(0.12)
+    CHECK(M.Visible(f) and Shown(f.text) and Shown(f.bg), "I: ON: shown beside Questie's, on your own map too")
+    HAS(f.text.__text, "Player  42.0, 65.5", "I: ON: the player's numbers")
+    DB().CoordDecimals = 2
+    Notify()
+    M.Advance(0.12)
+    HAS(f.text.__text, "Player  42.00, 65.50", "I: Coordinate Decimals 2")
+    DB().CoordDecimals = 0
+    Notify()
+    M.Advance(0.12)
+    HAS(f.text.__text, "Player  42, ", "I: Coordinate Decimals 0")
+    CHECK(not f.text.__text:find("42.0", 1, true), "I: ...no decimal point", f.text.__text)
+    DB().CoordDecimals = 1
+    DB().MapCoords = "OFF"
+    Notify()
+    CHECK(not M.Visible(f), "I: OFF: hidden, Questie's or not")
+    rawset(_G, "Questie", nil)
+    Notify()
+    CHECK(not M.Visible(f), "I: OFF: hidden without Questie too")
+    DB().MapCoords = "AUTO"
+    Notify()
+    M.Advance(0.12)
+    CHECK(M.Visible(f) and Shown(f.text), "I: AUTO without Questie: shown")
+    EQ(Questie, nil, "I: (nothing of Questie's written)")
     M.HideMap()
     CHECK(not M.Visible(f), "I: hidden with the map")
     EQ(#W.map.writes, 0, "I: nothing assigned to WorldMapFrame")
@@ -1376,7 +1485,7 @@ Section("K", function()
     M.Advance(0.6)
     local pt = LastPoint(MiniPinFor(diag))
     NEAR(pt and pt.x, 63, 0.06, "K: Orders' pins clamp to the square corner")
-    NEAR(pt and pt.y, 48, 0.06, "K: and under its zone name at the top (70 - 22)")
+    NEAR(pt and pt.y, 32, 0.06, "K: and under its zone name and your coordinates at the top (70 - 38)")
     EQ(TestAddonMinimapButton.__alpha, 0, "K: the tidy ran (an addon button is faded)")
     for i = 1, MiniCount() do
         local pin = I().Mini.pins[i]

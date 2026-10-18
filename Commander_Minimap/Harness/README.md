@@ -34,7 +34,8 @@ already drawn, both release paths, the live toggle, and the guard that skips a
 tiled overlay when the layer's tile size disagrees with the table.
 
 Its last six checks are not about the fog: they load `CommanderMinimap.lua` in
-a sealed sandbox (neither harness here loads that file otherwise) and prove the
+a sealed sandbox (the coordinates harness below loads it too, for its
+label and its click wrapper) and prove the
 global `GetMinimapShape()` it defines for the square mask (2.4.0, for Commander
 Orders' minimap pins and every HereBeDragons/LibDBIcon user): nothing defined
 while the file merely loads or on another addon's ADDON_LOADED, the square mask
@@ -44,6 +45,38 @@ from another addon is never overwritten. Commander Orders'
 checks that its pins clamp to the square and survive the button tidy.
 
 Must exit 0 before any defog change ships.
+
+## Your coordinates and Ctrl+Right-click (Commander Orders 3.1)
+
+    /opt/homebrew/bin/luajit minimap_coords_harness.lua   # 51 checks
+
+`CommanderMinimap.lua` hosts two things Commander Orders owns the settings
+and the behaviour of (its Map & Minimap section: Minimap Coordinates,
+Ctrl+Right-Click the Minimap): a coordinate label under the zone name, and a
+wrapper round the Minimap's `OnMouseUp`. Blizzard's `Minimap_OnClick` pings
+for ANY button (Classic `Minimap.lua` 130-141), so a hook could not take
+Ctrl+Right-click without also pinging the group; the wrapper hands
+Ctrl+Right-click (Ctrl alone) to Orders and skips the ping, and runs the
+handler that was there for every other click. Orders loads after this addon
+(alphabetical, no dependency), so `CommanderOrders.Coords` is looked up when
+used, never at load.
+
+This harness loads the real file into a sandbox with a stand-in for that
+Orders surface and checks Commander_Minimap's half alone: the label sits
+under the zone name, hidden until Orders answers, asked five times a second
+(not every frame, not while the minimap is hidden), written only when the
+text changes, hidden again when Orders says nil or errs; its click surface
+covers the text only, is unnamed (the tidy collects by name) and hands both
+clicks and the hover to Orders without a ping; Ctrl+Right-click reaches
+Orders with the Minimap and never pings, while plain, Left, Ctrl+Left,
+Ctrl+Shift and Ctrl+Alt clicks, Orders absent, Orders not wanting the click
+and Orders erring on the question all ping exactly as before; loading the
+file writes no global. Orders' half (the numbers, the placement round trip
+against `Geo.MinimapPlace`, the menu, the square corners, the zone beside
+the edge) is checked against this same file in
+`Commander_Orders/Harness/orders_coords_harness.lua` sections G and H.
+
+Must exit 0 before any change to the label or the click wrapper ships.
 
 ## The XP tracker (information button)
 

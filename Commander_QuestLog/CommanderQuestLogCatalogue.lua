@@ -772,10 +772,11 @@ function C.New(spec)
         card = nil, menu = nil, actions = nil, actionList = {},
         rows = {}, emptyFS = nil,
         blocks = {}, quads = {}, bands = {},
+        goLines = {},           -- the briefing's row Go buttons (D45)
     }
 
     -- The briefing's cursor for one layout pass
-    local P = { y = 0, block = 1, quad = 1, band = 1, width = 0 }
+    local P = { y = 0, block = 1, quad = 1, band = 1, width = 0, go = 1 }
 
     -- Every hook's first argument (see the file header)
     local cat = setmetatable({ spec = spec, instance = Z, S = S, W = W, P = P, keys = KEYS },
@@ -851,28 +852,36 @@ function C.New(spec)
         return nil
     end
 
-    local function SendWaypoint(entry)
+    -- The adapter's waypoint target for a quest: its giver or its turn-in
+    -- (WaypointTarget's choice), with every spawn of that giver riding along
+    -- so the arrow takes the nearest: BestStarter packs them, a raw finisher
+    -- record has them in its list
+    local function GoTarget(entry)
         local adapter = Adapter()
         local target, role = WaypointTarget(entry)
-        if not (target and adapter and adapter.Waypoint) then
-            print("Commander Quest Log: Questie does not know where |cffffd100" ..
-                tostring(entry and entry.title or "that quest") .. "|r starts.")
-            return nil
-        end
-        -- Every spawn of that giver rides along, so the arrow takes the
-        -- nearest: BestStarter packs them, a raw finisher record has them in
-        -- its list
+        if not (target and adapter) then return nil end
         local spawns = target.spawns
         if not spawns and role == "finisher" and adapter.SpawnsOf then
             spawns = adapter.SpawnsOf(entry.finishers, target)
         end
-        return adapter.Waypoint({
+        return {
             title = string.format("%s (%s)", entry.title or "Quest",
                 target.name or (role == "finisher" and "turn in" or "quest giver")),
             areaId = target.areaId, uiMapId = target.uiMapId,
             zoneName = target.zoneName or ZoneNameOf(target),
             x = target.x, y = target.y, questId = entry.id, spawns = spawns,
-        })
+        }
+    end
+
+    local function SendWaypoint(entry)
+        local adapter = Adapter()
+        local target = GoTarget(entry)
+        if not (target and adapter and adapter.Waypoint) then
+            print("Commander Quest Log: Questie does not know where |cffffd100" ..
+                tostring(entry and entry.title or "that quest") .. "|r starts.")
+            return nil
+        end
+        return adapter.Waypoint(target)
     end
 
     -- -----------------------------------------------------------------------
@@ -1163,11 +1172,17 @@ function C.New(spec)
     -- tab's; a spec gives its own with { stock = ..., tooltip = ... }.
     local STOCK = {
         WAYPOINT = {
-            field = "waypointBtn", label = "Waypoint", width = 80,
+            field = "waypointBtn", label = "Go", width = 80, go = true,
             tooltip = function()
-                local where = Kit().WaypointWhere and Kit().WaypointWhere() or "the chat frame"
-                return "Set a waypoint to where this quest starts or, once it is in your log and ready, to where it is handed in. Right-clicking a row does the same. Goes to "
-                    .. where .. "."
+                local kit = Kit()
+                local text = "Go to where this quest starts or, once it is in your log and ready, to where it is handed in. "
+                -- Orders turned off greys the Go: no press to promise, only
+                -- the row's right-click (the Kit's GoGreyedOff)
+                if kit.GoGreyedOff and kit.GREYED_OFF and kit.GoGreyedOff() then
+                    return text .. kit.GREYED_OFF:format("right-clicking a row")
+                end
+                local where = kit.WaypointWhere and kit.WaypointWhere() or "the chat frame"
+                return text .. "Right-clicking a row does the same. Goes to " .. where .. "."
             end,
             onClick = function()
                 if S.selectedEntry then SendWaypoint(S.selectedEntry) end
@@ -1232,6 +1247,32 @@ function C.New(spec)
             return button
         end
 
+        -- The stock Go (D45): the suite's Go button over the selected quest,
+        -- keyed by it as its spec is read; a plain button on SendWaypoint
+        -- without it (the kit decides)
+        local function GoAction(label, width, tooltip)
+            local opts = { label = label, width = width, height = 22, source = "QuestLog", anchor = "ANCHOR_TOP",
+                           tooltip = tooltip }
+            opts.spec = function()
+                local adapter = Adapter()
+                local target = S.selectedEntry and GoTarget(S.selectedEntry)
+                local spec, key, questId, note
+                if target and adapter and adapter.WaypointSpec then
+                    spec, key, questId, note = adapter.WaypointSpec(target)
+                end
+                opts.key, opts.questId, opts.note = key, questId, note
+                return spec
+            end
+            opts.onGo = function(uid)
+                local adapter = Adapter()
+                if uid and adapter and adapter.NoteGo then adapter.NoteGo(opts.questId, opts.key, opts.note) end
+            end
+            opts.fallback = function()
+                if S.selectedEntry then SendWaypoint(S.selectedEntry) end
+            end
+            return Kit().GoButton(actions, opts)
+        end
+
         local left, right
         for _, item in ipairs(spec.actions or DEFAULT_ACTIONS) do
             local action = ResolveAction(item)
@@ -1242,9 +1283,14 @@ function C.New(spec)
                     tooltip = function() return ask(cat) end
                 end
                 local onClick = action.onClick
-                local button = Button(action.label or action.field, action.width or 80, tooltip, function()
-                    if onClick then onClick(cat) end
-                end)
+                local button
+                if action.go and Kit().GoButton then
+                    button = GoAction(action.label or "Go", action.width or 80, tooltip)
+                else
+                    button = Button(action.label or action.field, action.width or 80, tooltip, function()
+                        if onClick then onClick(cat) end
+                    end)
+                end
                 if action.right then
                     if right then
                         button:SetPoint("RIGHT", right, "LEFT", -4, 0)
@@ -1593,14 +1639,14 @@ function C.New(spec)
 
     -- One line of text at the cursor; colour is an {r, g, b} table and goes
     -- through Paper() here, so no caller can forget it. Returns block, height.
-    local function Line(text, template, colour, indent)
+    local function Line(text, template, colour, indent, right)
         local kit = Kit()
         indent = indent or 0
         local block = AcquireBlock(P.block, template or "GameFontHighlightSmall")
         P.block = P.block + 1
         block:ClearAllPoints()
         block:SetPoint("TOPLEFT", kit.DetailChild(), "TOPLEFT", kit.PAD + indent, -P.y)
-        block:SetWidth(P.width - indent)
+        block:SetWidth(P.width - indent - (right or 0))
         block:SetText(text or "")
         local c = colour or InkT("secondary")
         block:SetTextColor(kit.Paper(c[1], c[2], c[3]))
@@ -1781,6 +1827,35 @@ function C.New(spec)
         end
     end
 
+    -- A line with a row Go at its right (D45) when target() has somewhere
+    -- to go; a plain line otherwise
+    local function GoLine(text, colour, indent, target, tip)
+        local kit = Kit()
+        local spec = target and kit.LineGo and target()
+        if not spec then return Line(text, "GameFontHighlightSmall", colour, indent) end
+        local top = P.y
+        local block, height = Line(text, "GameFontHighlightSmall", colour, indent, kit.LINE_GO_W + 6)
+        kit.LineGo(W.goLines, P.go, top, target, tip)
+        P.go = P.go + 1
+        P.y = math.max(P.y, top + kit.LINE_GO_H)
+        return block, height
+    end
+
+    -- A prerequisite's or a follow-up's Go: to where that quest starts
+    -- (one still to do; a done one has nowhere left to send you)
+    local function StarterTarget(ref)
+        if ref.done or type(ref.id) ~= "number" then return nil end
+        return function()
+            local adapter = Adapter()
+            if not (adapter and adapter.StarterSpec) then return nil end
+            return adapter.StarterSpec(ref.id)
+        end
+    end
+
+    local function StarterTip()
+        return "Go to where this quest starts."
+    end
+
     local function LayoutLinks(entry, detail)
         if not detail then return end
         local external = {}
@@ -1793,14 +1868,14 @@ function C.New(spec)
                     Heading("REQUIRES")
                     shown = true
                 end
-                Line(RefLine(ref), "GameFontHighlightSmall", InkT("primary"), 4)
+                GoLine(RefLine(ref), InkT("primary"), 4, StarterTarget(ref), StarterTip)
             end
         end
         if #(detail.followups or {}) > 0 then
             Rule()
             Heading("LEADS TO")
             for _, ref in ipairs(detail.followups) do
-                Line(RefLine(ref), "GameFontHighlightSmall", InkT("primary"), 4)
+                GoLine(RefLine(ref), InkT("primary"), 4, StarterTarget(ref), StarterTip)
             end
         end
     end
@@ -1816,9 +1891,14 @@ function C.New(spec)
             if logDetail and logDetail.objectivesText and logDetail.objectivesText ~= "" then
                 Line(logDetail.objectivesText, "GameFontHighlightSmall", InkT("primary"), 4)
             end
-            for _, objective in ipairs(logEntry.objectives or {}) do
-                Line("\194\183 " .. (objective.text or ""), "GameFontHighlightSmall",
-                    objective.finished and OBJECTIVE_DONE or OBJECTIVE_OPEN, 6)
+            local kit = Kit()
+            for index, objective in ipairs(logEntry.objectives or {}) do
+                local target, tip
+                if not objective.finished and kit.ObjectiveHasPlace and kit.ObjectiveHasPlace(entry.id, index) then
+                    target, tip = kit.ObjectiveTarget(entry.id, index), kit.ObjectiveTip(entry.id, index)
+                end
+                GoLine("\194\183 " .. (objective.text or ""), objective.finished and OBJECTIVE_DONE or OBJECTIVE_OPEN,
+                    6, target, tip)
             end
             if logEntry.isComplete then
                 Line("Ready to turn in.", "GameFontNormalSmall", ToneT("good"), 4)
@@ -1878,7 +1958,7 @@ function C.New(spec)
 
     local function LayoutBriefing()
         local kit = Kit()
-        P.y, P.block, P.quad, P.band = 6, 1, 1, 1
+        P.y, P.block, P.quad, P.band, P.go = 6, 1, 1, 1, 1
         P.width = kit.DetailWidth() - kit.PAD
         if not S.view then
             LayoutMessage()
@@ -1890,6 +1970,7 @@ function C.New(spec)
         for position = P.block, #W.blocks do W.blocks[position]:Hide() end
         for position = P.quad, #W.quads do W.quads[position]:Hide() end
         for position = P.band, #W.bands do W.bands[position]:Hide() end
+        if kit.HideLineGo then kit.HideLineGo(W.goLines, P.go) end
         kit.DetailChild():SetHeight(math.max(P.y + 10, 1))
     end
 
@@ -1963,7 +2044,11 @@ function C.New(spec)
         for _, action in ipairs(W.actionList) do
             local button, stock = action.button, action.stock
             if stock == "WAYPOINT" then
-                button:SetEnabled(entry ~= nil and WaypointTarget(entry) ~= nil)
+                if Kit().RefreshGo then
+                    Kit().RefreshGo(button, entry ~= nil and WaypointTarget(entry) ~= nil)
+                else
+                    button:SetEnabled(entry ~= nil and WaypointTarget(entry) ~= nil)
+                end
             elseif stock == "MAP" then
                 button:SetEnabled(S.view ~= nil and MapFor(entry) ~= nil)
             elseif stock == "LOG" then
@@ -2144,6 +2229,7 @@ function C.New(spec)
         for _, block in ipairs(W.blocks) do block:Hide() end
         for _, quad in ipairs(W.quads) do quad:Hide() end
         for _, band in ipairs(W.bands) do band:Hide() end
+        for _, button in ipairs(W.goLines) do button:Hide() end
     end
 
     -- -----------------------------------------------------------------------

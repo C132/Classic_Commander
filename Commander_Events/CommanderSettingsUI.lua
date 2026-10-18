@@ -1114,6 +1114,17 @@ function UI.HudChromeDefaults(prefix, styleDefault)
     }
 end
 
+-- Which DB key holds the frame's scale. Normally <prefix>Scale; a module
+-- whose right size depends on context (Party Frames: one scale per group
+-- size bracket) passes opts.scaleKey, a key or a function returning one,
+-- and every reader and writer here (slider, grips, Apply) follows it.
+local function HudScaleKey(prefix, opts)
+    local key = opts and opts.scaleKey
+    if type(key) == "function" then key = key() end
+    return key or (prefix .. "Scale")
+end
+UI.HudScaleKey = HudScaleKey
+
 -- Session-scoped "closed" flags for window-style HUD frames (weak-keyed on
 -- the module DB, so nothing persists or leaks)
 local hudClosed = setmetatable({}, { __mode = "k" })
@@ -1426,14 +1437,15 @@ local function EnsureWindowChrome(frame, db, prefix)
     grip:SetScript("OnMouseDown", function()
         frame._hudDragging = true    -- freezes re-anchoring while sizing
         local startX, startY = GetCursorPosition()
-        local startScale = db[prefix .. "Scale"] or 1
+        local scaleKey = HudScaleKey(prefix, frame._hudOpts)
+        local startScale = db[scaleKey] or 1
         local uiScale = (UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
         grip:SetScript("OnUpdate", function()
             local x, y = GetCursorPosition()
             local delta = ((x - startX) - (y - startY)) / 2 / uiScale
             local newScale = math.max(0.6, math.min(1.6, startScale + delta / 160))
             newScale = math.floor(newScale * 100 + 0.5) / 100
-            db[prefix .. "Scale"] = newScale
+            db[scaleKey] = newScale
             frame:SetScale(newScale)
         end)
     end)
@@ -1444,7 +1456,7 @@ local function EnsureWindowChrome(frame, db, prefix)
         -- window stays where it visually ended up
         local point, _, _, x, y = frame:GetPoint(1)
         if point then
-            local scale = db[prefix .. "Scale"] or 1
+            local scale = frame:GetScale() or 1
             db[prefix .. "Pos"] = { point = point, x = x * scale, y = y * scale }
         end
         if frame._hudOpts then
@@ -1556,8 +1568,8 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
         end)
     end
 
-    local scale = db[prefix .. "Scale"] or 1
-    frame:SetScale(scale)
+    local scale = db[HudScaleKey(prefix, opts)] or 1
+    if (frame:GetScale() or 1) ~= scale then frame:SetScale(scale) end
 
     -- Never re-anchor mid-drag: throttled setting notifies would snap the
     -- frame out of the user's hand
@@ -1618,7 +1630,7 @@ function UI.ApplyHudChrome(frame, db, prefix, opts)
         local grip = frame._hudScaleGrip
         if not grip then
             grip = UI.AttachScaleGrip(frame, {
-                set = function(value) db[prefix .. "Scale"] = value end,
+                set = function(value) db[HudScaleKey(prefix, frame._hudOpts)] = value end,
                 -- freezes re-anchoring while sizing, as a drag does
                 onStart = function() frame._hudDragging = true end,
                 onStop = function(point, x, y)
@@ -1687,16 +1699,31 @@ function UI.AddHudChromeOptions(panel, db, prefix, opts)
         set = function(value) db[prefix .. "Style"] = value end,
         isEnabled = enabled,
     }, 0, 120)
-    BuildSlider(panel, chromeRow, {
-        label = "Frame Scale",
-        tooltip = "Overall size of the frame."
-            .. (opts.scaleGrip and " Dragging the grip in the frame's bottom-right corner sets the same number." or ""),
-        min = 0.6, max = 1.6, step = 0.05,
-        format = UI.FormatPercent,
-        get = function() return db[prefix .. "Scale"] or 1 end,
-        set = function(value) db[prefix .. "Scale"] = value end,
-        isEnabled = enabled,
-    }, 270, 170)
+    -- opts.scaleSliders = { { key, label, tooltip }, ... } replaces the one
+    -- Frame Scale slider with several (a scale per context, chosen at Apply
+    -- by opts.scaleKey): the first takes the usual seat beside the style
+    -- dropdown, the rest follow two to a row.
+    local sliders = opts.scaleSliders or {
+        { key = prefix .. "Scale", label = "Frame Scale", tooltip = "Overall size of the frame." },
+    }
+    local gripNote = opts.scaleGrip and " Dragging the grip in the frame's bottom-right corner sets the same number." or ""
+    local function ScaleSlider(row, spec, x)
+        BuildSlider(panel, row, {
+            label = spec.label,
+            tooltip = spec.tooltip .. gripNote,
+            min = 0.6, max = 1.6, step = 0.05,
+            format = UI.FormatPercent,
+            get = function() return db[spec.key] or 1 end,
+            set = function(value) db[spec.key] = value end,
+            isEnabled = enabled,
+        }, x, 170)
+    end
+    ScaleSlider(chromeRow, sliders[1], 270)
+    for i = 2, #sliders, 2 do
+        local row = panel:AddRow(52, 8)
+        ScaleSlider(row, sliders[i], 0)
+        if sliders[i + 1] then ScaleSlider(row, sliders[i + 1], 270) end
+    end
     -- Compact final row: unlock checkbox left, reset button right, sharing
     -- one 26px row to respect the panels' no-scroll height budget
     local row = panel:AddRow(26, 2)

@@ -8,6 +8,17 @@
 -- watchlist is a per-character restock TARGET ("keep 20 of this on me"), and
 -- the star is an account-wide FAVORITE ("this is one of mine"). A row can
 -- wear both.
+--
+-- 2.4.0 (Commander Orders 3.1): a row also GOES to where the thing comes
+-- from. Ctrl+Right-click (Orders' gesture for a list row with no room for a
+-- button; plain right-click stays the restock target) asks Orders' locator
+-- at runtime, so the 900 KB data is not regenerated: a consumable sold at
+-- the auction house goes to the nearest auctioneer, one sold by vendors to
+-- the nearest vendor of it, anything else to its nearest known source; an
+-- enhancement to its best source's NPCs (the vendors of the item, its
+-- trainers or its droppers; a dropper inside an instance is its door), a
+-- quest's giver or a container. The waypoint is (source "Quartermaster",
+-- key "src:<id>"), and Orders words it ("Waypoint set: ...").
 
 local Data = CommanderQuartermasterData
 local Events = COMMANDER_QUARTERMASTER_EVENTS
@@ -827,6 +838,65 @@ end
 local function ItemIcon(id)
     local ok, icon = pcall(C_Item.GetItemIconByID, id)
     return (ok and icon) or "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
+-- Where a browser row's thing comes from, as Commander Orders' locator
+-- query: target, title (the waypoint's), key, words (for the hint), a second
+-- target to try when the first finds nothing, and the pin's icon. nil when
+-- no source has a place (a crafted-only or reputation-only enhancement).
+local GO_NPC_KINDS = { VENDOR = "vendor", TRAINER = "trainer", DROP = "drop" }
+local GO_ICONS = { VENDOR = "VENDOR", TRAINER = "TRAINER", QUEST = "QUEST" }
+local function GoTarget(item)
+    if type(item) ~= "table" or type(item.entry) ~= "table" then return nil end
+    local entry = item.entry
+    if item.kind == "item" then
+        local id, name = item.id, entry.name or ("item " .. tostring(item.id))
+        local key = "src:" .. tostring(id)
+        if entry.src == "AH" then return { townsfolk = "Auctioneer" }, "Nearest auctioneer", key, "the nearest auctioneer" end
+        if entry.src == "VENDOR" then return { itemVendor = id }, name .. " vendor", key, "the nearest vendor of it" end
+        return { itemSource = id }, name .. " source", key, "its nearest source"
+    end
+    if item.kind ~= "enh" then return nil end
+    local name = entry.name or "?"
+    local key = "src:" .. tostring(entry.item or entry.spell or entry.ench or name)
+    for _, src in ipairs(type(entry.src) == "table" and entry.src or {}) do
+        local words = GO_NPC_KINDS[src.k]
+        if words and src.npc then
+            local ids = {}
+            for _, other in ipairs(entry.src) do
+                if other.k == src.k and other.npc then ids[#ids + 1] = other.npc end
+            end
+            local npcs = { npc = #ids == 1 and ids[1] or ids }
+            local title = #ids == 1 and src.name or (name .. " " .. words)
+            local hint = #ids == 1 and src.name or ("the nearest " .. words)
+            -- An item's vendors through Questie's item data are filtered to
+            -- your faction; the NPCs the generator named are the fallback
+            if src.k == "VENDOR" and entry.item then return { itemVendor = entry.item }, title, key, hint, npcs, "VENDOR" end
+            return npcs, title, key, hint, nil, GO_ICONS[src.k]
+        end
+        if src.k == "QUEST" and src.giver then
+            return { npc = src.giver }, ("%s (%s)"):format(src.giver, tostring(src.name)), key, src.giver, nil, "QUEST"
+        end
+        if src.k == "OBJECT" and src.go then return { object = src.go }, src.name or name, key, src.name or "the container" end
+    end
+    if entry.item then return { itemSource = entry.item }, name .. " source", key, "its nearest source" end
+    return nil
+end
+
+-- Ctrl+Right-click on a row: Orders' GoTo, which says what it did or why not
+local function GoToSource(item)
+    local api = CommanderOrders
+    if type(api) ~= "table" or type(api.GoTo) ~= "function" then
+        print("Commander Quartermaster: going to a source needs Commander Orders")
+        return
+    end
+    local target, title, key, _, fallback, icon = GoTarget(item)
+    if not target then
+        print("Commander Quartermaster: no place on record to go to for that (crafted or a reputation reward)")
+        return
+    end
+    if fallback and type(api.PlaceFor) == "function" and not api.PlaceFor(target) then target = fallback end
+    api.GoTo(target, { source = "Quartermaster", key = key, title = title, icon = icon })
 end
 
 -- Item level from the client cache, memoized once known. Uncached items
@@ -2294,6 +2364,16 @@ local function CreateRow(parent, index)
         end
     end
 
+    -- With Commander Orders loaded, where Ctrl+Right-click goes
+    local function GoHint(item)
+        local api = CommanderOrders
+        if type(api) ~= "table" or type(api.GoTo) ~= "function" then return end
+        local target, _, _, words = GoTarget(item)
+        if not target then return end
+        local hint = (Commander.UI and Commander.UI.GoRowHint) or "Ctrl+Right-click: Go"
+        GameTooltip:AddLine(hint .. " to " .. tostring(words), 0.6, 0.8, 1, true)
+    end
+
     local function ShowRowTooltip(self)
         local item = self.item
         if not item then return end
@@ -2348,6 +2428,7 @@ local function CreateRow(parent, index)
                 end
             end
             GameTooltip:AddLine(FavHint(self), 0.5, 0.5, 0.5)
+            GoHint(item)
             GameTooltip:Show()
             return
         end
@@ -2358,6 +2439,7 @@ local function CreateRow(parent, index)
             GameTooltip:SetText(item.entry.name or "?")
         end
         GameTooltip:AddLine(FavHint(self), 0.5, 0.5, 0.5)
+        GoHint(item)
         GameTooltip:Show()
     end
 
@@ -2412,6 +2494,13 @@ local function CreateRow(parent, index)
         -- sets a restock target. A gear row links the EQUIPPED item, enchant
         -- and gems and all, because that link is already in hand and is what
         -- someone linking their gear means to show.
+        -- Ctrl+Right-click goes to where it comes from (Orders' list-row
+        -- gesture); a plain right-click stays the restock target
+        if button == "RightButton" and (item.kind == "item" or item.kind == "enh")
+            and IsControlKeyDown and IsControlKeyDown() then
+            GoToSource(item)
+            return
+        end
         if item.kind ~= "item" then
             local clickID, clickLink
             if item.kind == "gearslot" then

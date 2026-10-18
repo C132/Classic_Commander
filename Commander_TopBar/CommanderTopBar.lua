@@ -5,18 +5,29 @@
 -- the console's own color setting, so the two always match).
 --
 -- ---------------------------------------------------------------------------
--- Coordinates you can click, and where the arrow is going
+-- Coordinates you can click, where the arrow is going, and supplies to go to
 -- ---------------------------------------------------------------------------
--- The coordinates readout was TomTom's coordinate block without TomTom's one
--- useful habit: clicking it. It now takes the mouse through an invisible
--- button laid over the text, and over the text only. The bar itself stays
--- mouse-free on purpose: it spans the whole top edge, and a mouse-enabled
--- strip there would swallow every camera drag that starts near the top of
--- the screen. Click marks a Commander Orders waypoint where you stand (the
--- same as /wayb), Shift-click shares where you stand with your group WITHOUT
--- adding a waypoint of your own (CommanderOrders.SharePoint), right-click
--- opens the waypoint manager. With Commander Orders missing, a click prints
--- the spot as a /way line, so the button never silently does nothing.
+-- The coordinates readout takes the mouse through an invisible button laid
+-- over the text, and over the text only. The bar itself stays mouse-free on
+-- purpose: it spans the whole top edge, and a mouse-enabled strip there would
+-- swallow every camera drag that starts near the top of the screen.
+--
+-- 2.3.0 (Commander Orders 3.1): the coordinates ARE Orders' coordinate
+-- surface. The numbers are CommanderOrders.Coords.Text() (zone numbers, the
+-- Coordinate Decimals setting, no Vector2D a read), and a click is Orders'
+-- one rule for every coordinate surface (Orders DECISIONS, the 3.1 words and
+-- gestures entry; CommanderOrders.Coords.Gesture): click a waypoint where you
+-- stand, Shift-click share it in chat (your group's, else /say), Ctrl-click
+-- copy its /way line, right-click a menu (waypoint, share, copy, precision,
+-- the manager). With Commander Orders missing, a click prints the spot as a
+-- /way line, so the button never silently does nothing.
+--
+-- The supply readouts (2.3.0) go places too, with Commander Orders loaded and
+-- Go from the Readouts on: durability to the nearest repair, bag slots to the
+-- nearest vendor, ammo to the nearest ammo vendor (Orders' locator: Questie's
+-- lists merged with the repair vendors Commander Logistics remembers). The
+-- gestures are a Go button's: click Go (CommanderOrders.GoTo, worded by
+-- Orders), Shift-click share, Ctrl-click copy the /way line.
 --
 -- The optional Nav segment is the arrow's own words in the bar: the title,
 -- distance and arrival time of whatever Commander Orders is pointing at, read
@@ -251,7 +262,7 @@ local function UpdateXP()
 end
 
 -- ---------------------------------------------------------------------------
--- Commander Orders: the clickable coordinates and the Nav segment
+-- Commander Orders: the clickable coordinates, the supplies and the Nav segment
 -- ---------------------------------------------------------------------------
 local NAV_ICON = "Interface\\Icons\\INV_Misc_Map_01"
 local NAV_TITLE_MAX = 22             -- bytes of waypoint title in the bar
@@ -262,6 +273,14 @@ local here = { map = nil, x = nil, y = nil }   -- the spot the coordinates show
 local hits = {}                                -- the click surfaces, by segment key
 local UpdateAll                                -- assigned below
 
+-- Where each supply readout goes: Orders' locator query, the waypoint's key
+-- (source "TopBar"), and the words
+local SUPPLY = {
+    durability = { query = { townsfolk = "Repair" }, key = "repair", label = "Durability", what = "the nearest repair" },
+    bags = { query = { townsfolk = "Vendor" }, key = "vendor", label = "Supply", what = "the nearest vendor" },
+    ammo = { query = { townsfolk = "Ammo" }, key = "ammo", label = "Ammo", what = "the nearest ammo vendor" },
+}
+
 -- The Orders API, or nil when Commander Orders is not loaded
 local function Orders()
     local api = CommanderOrders
@@ -269,11 +288,36 @@ local function Orders()
     return nil
 end
 
+-- Orders' coordinate surface (CommanderOrdersCoords.lua, 3.1), or nil
+local function Coords()
+    local api = Orders()
+    local c = api and api.Coords
+    if type(c) == "table" and type(c.Gesture) == "function" and type(c.Read) == "function" then return c end
+    return nil
+end
+
+-- Orders' Go-to (3.1), or nil
+local function GoApi()
+    local api = Orders()
+    if api and type(api.GoTo) == "function" and type(api.PlaceFor) == "function" then return api end
+    return nil
+end
+
 local function Say(message)
     print("Commander Top Bar: " .. message)
 end
 
--- Where you stand: map, x, y (0..1), or nil where the map has no position
+local function Words(why)
+    local api = Orders()
+    if api and type(api.Reason) == "function" then
+        local ok, text = pcall(api.Reason, why)
+        if ok and type(text) == "string" then return text end
+    end
+    return tostring(why or "unknown reason")
+end
+
+-- Where you stand without Orders: map, x, y (0..1), or nil where the map has
+-- no position
 local function PlayerPosition()
     if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition) then return nil end
     local ok, mapID = pcall(C_Map.GetBestMapForUnit, "player")
@@ -292,7 +336,8 @@ local function MapName(mapID)
     return ok and type(info) == "table" and info.name or nil
 end
 
-local function WayLine(mapID, x, y)
+-- The /way line Orders would write, for a client without Orders
+local function OwnWayLine(mapID, x, y)
     return string.format("/way #%d %.2f %.2f", mapID, x * 100, y * 100)
 end
 
@@ -313,40 +358,21 @@ local function Plain(text)
     return (tostring(text or ""):gsub("|", "||"))
 end
 
-local REASONS = {
-    disabled = "Commander Orders is turned off (/corder to turn it on)",
-    loading = "Commander Orders is still loading",
-    ["no position"] = "there is no map position here",
-    ["not in a group"] = "you are not in a group, so there is nobody to share with",
-}
-
-local function Reason(why)
-    return REASONS[why] or tostring(why or "unknown reason")
-end
-
-local function MarkHere()
-    local api = Orders()
-    if not api then
-        local mapID, x, y = PlayerPosition()
-        if not mapID then Say(REASONS["no position"]) return end
-        Say("Commander Orders is not loaded; this spot is " .. WayLine(mapID, x, y))
+-- A click on the coordinates: Orders' coordinate gesture, or the /way line
+local function CoordsClick(button)
+    local c = Coords()
+    if c then
+        local ok, err = pcall(c.Gesture, button, { surface = "topbar", anchor = "cursor" })
+        if not ok and geterrorhandler then geterrorhandler()(err) end
         return
     end
-    -- Orders reads your position itself, fresher than the 1 s readout
-    local uid, why = api.Here()
-    if not uid then Say("no waypoint set: " .. Reason(why)) end
-end
-
-local function ShareHere()
+    if button == "RightButton" then
+        Say("Commander Orders is not loaded: no waypoint menu")
+        return
+    end
     local mapID, x, y = PlayerPosition()
-    if not mapID then Say(REASONS["no position"]) return end
-    local api = Orders()
-    if not (api and api.SharePoint) then
-        Say("Commander Orders is not loaded; this spot is " .. WayLine(mapID, x, y))
-        return
-    end
-    local ok, why = api.SharePoint({ map = mapID, x = x, y = y })
-    if not ok then Say("your position was not shared: " .. Reason(why)) end
+    if not mapID then Say("there is no map position here") return end
+    Say("Commander Orders is not loaded; this spot is " .. OwnWayLine(mapID, x, y))
 end
 
 local function OpenManager(uid)
@@ -394,7 +420,9 @@ end
 local function AddStatusLines(st)
     GameTooltip:AddLine("Arrow: " .. (st.title or "Waypoint"), 1, 1, 1)
     if st.zone and st.x and st.y then
-        GameTooltip:AddLine(string.format("%s %.1f, %.1f", st.zone, st.x * 100, st.y * 100), 0.8, 0.8, 0.8)
+        local api = Orders()
+        local coords = api and api.FormatCoords and api.FormatCoords(st.x, st.y)
+        GameTooltip:AddLine(st.zone .. " " .. (coords or string.format("%.1f, %.1f", st.x * 100, st.y * 100)), 0.8, 0.8, 0.8)
     end
     local words = StatusWords(st)
     if words ~= "" then GameTooltip:AddLine(words, 1, 0.82, 0.3) end
@@ -404,6 +432,22 @@ local function AddStatusLines(st)
 end
 
 local function CoordsTooltip(owner)
+    local c = Coords()
+    if c then
+        -- Orders' coordinate card (the place, the numbers, the gestures),
+        -- then what the arrow is following
+        local ok, err = pcall(c.Tooltip, owner, { anchor = "ANCHOR_BOTTOM" })
+        if not ok then
+            if geterrorhandler then geterrorhandler()(err) end
+            return
+        end
+        local st = Status()
+        if st then
+            AddStatusLines(st)
+            GameTooltip:Show()
+        end
+        return
+    end
     GameTooltip:SetOwner(owner, "ANCHOR_BOTTOM")
     if here.map then
         GameTooltip:SetText(string.format("%s %.1f, %.1f", MapName(here.map) or ("Map " .. here.map),
@@ -411,16 +455,8 @@ local function CoordsTooltip(owner)
     else
         GameTooltip:SetText("Coordinates", 1, 1, 1)
     end
-    if Orders() then
-        local st = Status()
-        if st then AddStatusLines(st) end
-        GameTooltip:AddLine("Click: waypoint where you stand", HINT_R, HINT_G, HINT_B)
-        GameTooltip:AddLine("Shift-click: share where you stand with your group", HINT_R, HINT_G, HINT_B)
-        GameTooltip:AddLine("Right-click: waypoint manager", HINT_R, HINT_G, HINT_B)
-    else
-        GameTooltip:AddLine("Click: print this spot as a /way line", HINT_R, HINT_G, HINT_B)
-        GameTooltip:AddLine("Waypoints need Commander Orders", 0.6, 0.6, 0.6)
-    end
+    GameTooltip:AddLine("Click: print this spot as a /way line", HINT_R, HINT_G, HINT_B)
+    GameTooltip:AddLine("Waypoints need Commander Orders", 0.6, 0.6, 0.6)
     GameTooltip:Show()
 end
 
@@ -433,54 +469,130 @@ local function NavTooltip(owner)
     GameTooltip:Show()
 end
 
--- An invisible button over one segment's text; hidden with the segment
-local function NewHit(key, onClick, onEnter)
+-- A supply readout clicked: a Go button's gestures over Orders' locator
+local function SupplyClick(key)
+    local line = SUPPLY[key]
+    local api = GoApi()
+    if not api then
+        Say("Go to " .. line.what .. " needs Commander Orders")
+        return
+    end
+    local shift = IsShiftKeyDown and IsShiftKeyDown()
+    local ctrl = IsControlKeyDown and IsControlKeyDown()
+    if shift or ctrl then
+        local p, why = api.PlaceFor(line.query)
+        if type(p) ~= "table" then
+            Say(Words(why or "nowhere"))
+            return
+        end
+        if shift then
+            local ok, err = api.SharePoint({ map = p.map, x = p.x, y = p.y, title = p.title }, "CHAT")
+            if not ok then Say("could not share: " .. Words(err)) end
+        else
+            api.CopyText(api.WayLineFor(p.map, p.x, p.y, p.title))
+        end
+        return
+    end
+    -- Orders says "Waypoint set: ..." (its Announce setting) or why not
+    api.GoTo(line.query, { source = "TopBar", key = line.key, icon = "VENDOR" })
+end
+
+local function SupplyTooltip(owner, key)
+    local line = SUPPLY[key]
+    GameTooltip:SetOwner(owner, "ANCHOR_BOTTOM")
+    GameTooltip:SetText(line.label, 1, 1, 1)
+    local api = GoApi()
+    if not api then
+        GameTooltip:AddLine("Go to " .. line.what .. " needs Commander Orders", 0.6, 0.6, 0.6, true)
+        GameTooltip:Show()
+        return
+    end
+    local p, why = api.PlaceFor(line.query)
+    if type(p) == "table" then
+        local where = (MapName(p.map) or ("map #" .. tostring(p.map))) .. " " .. (api.FormatCoords(p.x, p.y) or "")
+        GameTooltip:AddLine("Go to: " .. (p.title and (p.title .. " - ") or "") .. where, 0.9, 0.9, 0.9, true)
+        if api.IsGoing and api.IsGoing("TopBar", line.key) then
+            GameTooltip:AddLine("The arrow points here now.", 0.3, 1, 0.36)
+        end
+        GameTooltip:AddLine("Click: Go to " .. line.what, HINT_R, HINT_G, HINT_B)
+        GameTooltip:AddLine("Shift-click: share in chat. Ctrl-click: copy a /way line.", HINT_R, HINT_G, HINT_B, true)
+    else
+        GameTooltip:AddLine(Words(why or "nowhere"), 1, 0.3, 0.25, true)
+    end
+    GameTooltip:Show()
+end
+
+-- An invisible button over one segment's text; hidden with the segment.
+-- refresh: a tooltip open over it follows the bar's 1 s tick (the supply
+-- tooltips do not: each asks Orders' locator once, on the hover)
+local function NewHit(key, onClick, onEnter, refresh, buttons)
     local segment = segments[key]
     local hit = CreateFrame("Button", nil, bar)
     hit:SetPoint("TOPLEFT", segment, "TOPLEFT", -4, 4)
     hit:SetPoint("BOTTOMRIGHT", segment, "BOTTOMRIGHT", 4, -4)
     hit:EnableMouse(true)
-    hit:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    if buttons == "left" then
+        hit:RegisterForClicks("LeftButtonUp")
+    else
+        hit:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    end
     hit:SetScript("OnClick", onClick)
     hit:SetScript("OnEnter", onEnter)
     hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    hit.refresh = onEnter
+    hit.refresh = refresh and onEnter or nil
     hit:Hide()
     hits[key] = hit
     return hit
 end
 
-NewHit("coords", function(_, button)
-    if button == "RightButton" then
-        OpenManager()
-    elseif IsShiftKeyDown and IsShiftKeyDown() then
-        ShareHere()
-    else
-        MarkHere()
-    end
-end, CoordsTooltip)
+NewHit("coords", function(_, button) CoordsClick(button) end, CoordsTooltip, true)
 
 NewHit("nav", function()
     local st = Status()
     OpenManager(st and st.uid)
-end, NavTooltip)
+end, NavTooltip, true)
+
+for key in pairs(SUPPLY) do
+    NewHit(key, function() SupplyClick(key) end, function(self) SupplyTooltip(self, key) end, false, "left")
+end
 
 -- A tooltip that is open over a segment follows the segment's own refresh
 local function RefreshTooltips()
     if not (GameTooltip and GameTooltip.GetOwner) then return end
     local owner = GameTooltip:GetOwner()
     for _, hit in pairs(hits) do
-        if owner == hit and hit:IsShown() then hit.refresh(hit) end
+        if owner == hit and hit.refresh and hit:IsShown() then hit.refresh(hit) end
+    end
+end
+
+-- The supply readouts take the mouse only with Orders' Go-to and the option on
+local function UpdateSupplyHits()
+    local on = CommanderTopBarDB.SupplyClicks ~= false and GoApi() ~= nil
+    for key in pairs(SUPPLY) do
+        hits[key]:SetShown(on and segments[key]:IsShown())
     end
 end
 
 local function UpdateCoords()
     local segment = segments.coords
-    local mapID, x, y
-    if CommanderTopBarDB.ShowCoords then mapID, x, y = PlayerPosition() end
+    local mapID, x, y, text
+    if CommanderTopBarDB.ShowCoords then
+        local c = Coords()
+        if c then
+            -- Orders' reading: zone numbers at the Coordinate Decimals setting
+            local ok, m, cx, cy = pcall(c.Read)
+            if ok and type(m) == "number" then
+                mapID, x, y = m, cx, cy
+                local okText, t = pcall(c.Text)
+                if okText and type(t) == "string" then text = t end
+            end
+        else
+            mapID, x, y = PlayerPosition()
+        end
+    end
     here.map, here.x, here.y = mapID, x, y
     if mapID then
-        segment:SetFormattedText("|cffc7c7cf%.0f, %.0f|r", x * 100, y * 100)
+        segment:SetText("|cffc7c7cf" .. (text or string.format("%.0f, %.0f", x * 100, y * 100)) .. "|r")
     end
     segment:SetShown(mapID ~= nil)
     hits.coords:SetShown(mapID ~= nil)
@@ -533,6 +645,7 @@ function UpdateAll()
     UpdateNav()
     UpdateClock()
     UpdatePerformance()
+    UpdateSupplyHits()
     LayoutSegments()
     RefreshTooltips()
 end

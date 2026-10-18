@@ -4,7 +4,7 @@ Three luajit checks plus the data generator. Run **all three** before any change
 
 ```bash
 /opt/homebrew/bin/luajit formulary_model_smoke.lua   # data + model — 2766 checks
-/opt/homebrew/bin/luajit formulary_ui_harness.lua    # UI + host    — 150 checks
+/opt/homebrew/bin/luajit formulary_ui_harness.lua    # UI + host    — 180 checks
 /opt/homebrew/bin/luajit globals_lint.lua            # 5 files, 0 undeclared globals
 ```
 
@@ -32,6 +32,15 @@ trainer-taught crafts keyed by spell, plus two mis-mappings), ours carries four 
 Lesser Spirit, Chest - Major Resilience, Void Shatter, Ring - Stats), and the ten source
 differences were presentation caps (twelve droppers per formula, bosses first), not data holes.
 RM was then uninstalled; the check silently skips when it is absent.
+
+Since 1.2.0 (DECISIONS D15) a creature inside an instance is written `instance = <id>`, its
+Map.db2 ID (the client's instanceMapID, what Commander Orders' door table is keyed by), where it was
+`instance = true`; a boss with no spawn row keeps `true`. Regenerated 2026-10-05 offline from the
+Quartermaster cache (`Commander_Quartermaster/Harness/.cache`: the DB2 CSVs this script reads, plus
+`tbcdb.sql.gz` read once through `cmangos.read` into `tbcdb.pkl`; `FactionTemplate.csv` is not in
+that cache and came from an earlier wago.tools download; the byte-for-byte run below shows it is
+the one the data was built with). Before the change that input reproduced
+both data files byte for byte; after it, only the 116 instance lines moved.
 
 ## `formulary_model_smoke.lua` — the data and the model
 
@@ -65,6 +74,29 @@ Orders both print `/way` lines and send nothing. **G** is First Aid: `/cfm first
 the Read Recipes button re-aimed, a bandage's bare `/cast`, the trade skill window taking the
 profession on screen and being put away, Cooking left alone, and a manual's tooltip verdict judged
 against First Aid's skill while Enchanting is on screen.
+
+**3.1 Go-to (D15)**: the harness loads `Commander_Events/CommanderGoButton.lua`, and its Commander
+Orders stand-in records 3.1's `GoTo`, `PlaceFor`, `SharePoint`, `CopyText` and the rest (a locator
+query is answered from `locatorAnswers`). **B3b** the vendor's Go is a `Commander.UI.GoButton`:
+Shift-click shares the place in chat, Ctrl-click copies its `/way` line, neither sends a waypoint;
+its tooltip names where, what a press does and the gestures. **B4b** Moroes carries Karazhan's id
+(532) and his Go is the door (`{ entrance = { instance = 532 } }`, key "door:532"). **B4c** "any
+trainer will teach it now" goes to the nearest Enchanting trainer. **G3b** with First Aid on screen
+the rank readout's tooltip offers the next rank's Go; plain right-click does nothing, Ctrl+Right-
+click points at the Horde Triage giver. Mutation sweep (2026-10-05, on a scratch copy pointed at a
+mutated UI file): the door branch, the door key, the trainer Go, the readout's Ctrl gate, the quest
+icon, the one-stop route, the Go tooltip: all killed. **B7** (review 2026-10-05) the stacked Go
+buttons of "How to learn it" never overlap: Minor Mana's column of vendors and droppers, Minor
+Agility's, and Major Armor's Outland trainers. A row Go is 18 high anchored 1 above a line that may
+be only 12 + 3 high, so `GoRow` keeps the next row 18 below the row's top; the mock records the last
+`SetPoint` for it. Without that line the check finds 22, 6 and 5 overlapping pairs, 3 px each.
+**B3c / B4d** (review round 2, 2026-10-05; 175 -> 180, no check edited) a greyed Go promises no
+press: 2.5.6 delivers no OnClick to a disabled Button. With Orders turned off Kulwia's Go is greyed
+and neither its hover nor its own tooltip line (`_fmOpts.tooltip`, read straight, since the GoButton
+now also hides a module line under an Orders-state reason) says "Prints ..."; without Orders the
+placed Go stays live and its line says it prints the `/way` line; without Orders Moroes' door Go is
+greyed "Needs Commander Orders" and its line is nil. Against the old wiring (`o.tooltip =
+WaypointWords`) the two own-line checks fail.
 
 ## `globals_lint.lua` — scoping
 

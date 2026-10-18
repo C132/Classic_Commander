@@ -2,7 +2,7 @@
 ## Category: Commander
 ## Title: Commander Comms
 ## Author: Devin
-## Version: 2.10.0
+## Version: 2.11.0
 ## Notes: A radial quick-message wheel: one keypress, ten battle calls, routed to raid, party, or say automatically. Rally on Me in the middle of the wheel says where you are, and with Commander Orders sends your spot to the group as a waypoint to follow.
 ## IconTexture: Interface\Icons\INV_Misc_Horn_01
 ## SavedVariables: CommanderCommsDB

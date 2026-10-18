@@ -141,6 +141,29 @@
 --   G.ZoneIndex(env, aliases), G.MatchZone(index, text), G.MakeResolver(index),
 --        G.WayUsage(topic): the /way resolver and its usage lines.
 --   G.Normalize(a), G.IsFinite(v), G.MAP_TYPE, G.COSMIC_MAP, G.ClearCache(env).
+--
+-- Added in 3.1 (SPEC 1-2):
+--   env.islands = { [uiMap] = "name" } (optional): a map at or under one of
+--        these is an island of its continent's frame, and G.Landmass appends
+--        ":name" to its key ("1414:1:teldrassil"), so no straight line is
+--        drawn across the sea to it (deferred H2). The runtime passes
+--        Data.ISLANDS; without the field every key is as before.
+--   G.Zone(env, map) -> the Zone-type map at or above map (a dungeon, micro
+--        or orphan map climbs to its zone; World and Continent maps have
+--        none): Follow the Closest's "my zone" scope compares these.
+--   G.PlainText(s): a string with every UI escape gone (colours, links keep
+--        their text, textures, atlases) and no | or control character left.
+--   G.ChatText(map, x01, y01, title, zoneName, decimals): the readable line
+--        a player without addons can use, "Title - Hellfire Peninsula 45.2,
+--        66.8 (/way #1944 45.20 66.80)", never starting with "/" (a pasted
+--        line starting with /way runs locally instead of being sent) and at
+--        most 255 bytes (the chat limit; the title is cut first).
+--   G.ChatLink(map, x01, y01, title, text) -> the local chat link
+--        "|cff71d5ff|Haddon:CommanderOrders:w:<map>:<x %.4f>:<y %.4f>:<title
+--        %XX-escaped>|h[<text or Go>]|h|r"; G.ParseChatLink(link) reads the
+--        whole link or just its "addon:..." payload back into map, x, y,
+--        title. G.LinkEscape / G.LinkUnescape are the %XX escaping (%, :, |,
+--        [, ] and control characters). G.LINK_PREFIX = "addon:CommanderOrders:".
 
 CommanderOrders = CommanderOrders or {}
 local O = CommanderOrders
@@ -245,7 +268,7 @@ local CACHES = setmetatable({}, { __mode = "k" })
 local function Cache(env)
     local c = CACHES[env]
     if not c then
-        c = { continent = {}, root = {}, instance = {} }
+        c = { continent = {}, root = {}, instance = {}, zone = {}, island = {} }
         CACHES[env] = c
     end
     return c
@@ -400,17 +423,65 @@ end
 -- at all, the continent alone decides (so a pure Store harness can group by
 -- landmass); with worldPos present but no answer, the map has no world data
 -- and there is no landmass.
+-- The island a map lies on (env.islands, 3.1), self first, up to its
+-- continent: a name, or nil. Cached per env like the other tree answers.
+local function IslandOf(env, map)
+    local islands = env.islands
+    if type(islands) ~= "table" then return nil end
+    local c = Cache(env)
+    local known = c.island[map]
+    if known == nil then
+        known = false
+        local id, depth = map, 0
+        while type(id) == "number" and id > 0 and depth < MAX_DEPTH do
+            local name = islands[id]
+            if type(name) == "string" and name ~= "" then known = name break end
+            local info = MapInfo(env, id)
+            if not info or info.mapType <= MAP_CONTINENT then break end
+            id = info.parentMapID
+            depth = depth + 1
+        end
+        c.island[map] = known
+    end
+    return known or nil
+end
+
 function G.Landmass(env, map, instance)
     if type(env) ~= "table" or type(map) ~= "number" then return nil end
     local continent, root = Roots(env, map)
     local base = continent or root
     if not base then return nil end
+    local island = IslandOf(env, map)
+    local tail = island and (":" .. island) or ""
     if instance == nil then
-        if type(env.worldPos) ~= "function" then return tostring(base) .. ":?" end
+        if type(env.worldPos) ~= "function" then return tostring(base) .. ":?" .. tail end
         instance = G.Instance(env, map)
         if instance == nil then return nil end
     end
-    return tostring(base) .. ":" .. tostring(instance)
+    return tostring(base) .. ":" .. tostring(instance) .. tail
+end
+
+-- The zone a map belongs to (3.1): itself when it is a Zone map, else the
+-- first Zone-type ancestor of a dungeon, micro or orphan map; nil for the
+-- World, Continent and Cosmic maps and for anything unknown.
+function G.Zone(env, map)
+    if type(env) ~= "table" or type(map) ~= "number" then return nil end
+    local c = Cache(env)
+    local known = c.zone[map]
+    if known == nil then
+        known = false
+        local id, depth = map, 0
+        while type(id) == "number" and id > 0 and depth < MAX_DEPTH do
+            local info = MapInfo(env, id)
+            if not info then break end
+            if info.mapType == MAP_ZONE then known = id break end
+            if info.mapType <= MAP_CONTINENT then break end
+            id = info.parentMapID
+            depth = depth + 1
+        end
+        c.zone[map] = known
+    end
+    return known or nil
 end
 
 function G.SameLandmass(env, mapA, mapB, instA, instB)
@@ -769,6 +840,104 @@ function G.WayLine(map, x01, y01, title)
     title = CleanTitle(title)
     if title then line = line .. " " .. title end
     return line
+end
+
+-- ---------------------------------------------------------------------------
+-- Words for chat (3.1): the readable line, the local link
+-- ---------------------------------------------------------------------------
+G.LINK_PREFIX = "addon:CommanderOrders:"
+local LINK_COLOUR = "ff71d5ff"          -- Commander_Ping's link colour
+local CHAT_MAX = 255                    -- bytes a chat message may carry
+local LINK_TITLE_MAX = 120              -- bytes of title in a link (the share wire's cap)
+
+-- Cut to n bytes on a UTF-8 boundary (no "..." here: a title in a line or a
+-- payload is cut, not elided)
+local function CutBytes(s, n)
+    if #s <= n then return s end
+    local cut = n
+    while cut > 0 do
+        local b = s:byte(cut + 1)
+        if not b or b < 0x80 or b >= 0xC0 then break end
+        cut = cut - 1
+    end
+    return s:sub(1, cut)
+end
+
+-- Every UI escape out of a string: a colour goes, a link keeps its text, a
+-- texture, atlas or kstring goes whole, |n is a space, and any | or control
+-- character left over is dropped (a | in a chat message is refused by the
+-- server; one on screen starts an escape)
+function G.PlainText(s)
+    if type(s) == "number" then s = tostring(s) end
+    if type(s) ~= "string" then return "" end
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    s = s:gsub("|H.-|h(.-)|h", "%1")
+    s = s:gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("|K.-|k", "")
+    s = s:gsub("|n", " ")
+    s = s:gsub("[|%c]", " ")
+    return Trim((s:gsub("%s%s+", " ")))
+end
+
+function G.LinkEscape(s)
+    if type(s) ~= "string" then return "" end
+    return (s:gsub("[%%:|%[%]%c]", function(ch) return format("%%%02X", ch:byte()) end))
+end
+
+function G.LinkUnescape(s)
+    if type(s) ~= "string" then return "" end
+    return (s:gsub("%%(%x%x)", function(hex) return string.char(tonumber(hex, 16)) end))
+end
+
+local function ValidPlace(map, x01, y01)
+    return IsFinite(map) and map > 0 and map == floor(map)
+        and IsFinite(x01) and x01 >= 0 and x01 <= 1 and IsFinite(y01) and y01 >= 0 and y01 <= 1
+end
+
+-- "Title - Hellfire Peninsula 45.2, 66.8 (/way #1944 45.20 66.80)". zoneName
+-- may be nil (then just the numbers), title may be nil (then the zone
+-- leads). decimals is the readable pair's precision (the /way part is
+-- always 2 dp). Never starts with "/", never longer than 255 bytes.
+function G.ChatText(map, x01, y01, title, zoneName, decimals)
+    if not ValidPlace(map, x01, y01) then return nil end
+    local coords = G.FormatCoords(x01, y01, decimals or 1)
+    local way = format("(/way #%d %.2f %.2f)", map, x01 * 100, y01 * 100)
+    local zone = G.PlainText(zoneName)
+    local place = (zone ~= "" and (zone .. " ") or "") .. coords
+    local t = G.PlainText(title):gsub("^[/%s]+", "")
+    local tail = place .. " " .. way
+    if t == "" then return CutBytes(tail, CHAT_MAX) end
+    local room = CHAT_MAX - #tail - 3
+    if room < 1 then return CutBytes(tail, CHAT_MAX) end
+    t = Trim(CutBytes(t, room))
+    if t == "" then return tail end
+    return t .. " - " .. tail
+end
+
+-- The local link. Links never leave this client (Blizzard's addon link
+-- handler: "local links only"); what is sent is ChatText.
+function G.ChatLink(map, x01, y01, title, text)
+    if not ValidPlace(map, x01, y01) then return nil end
+    local t = CutBytes(G.PlainText(title), LINK_TITLE_MAX)
+    local shown = G.PlainText(text):gsub("[%[%]]", "")
+    if shown == "" then shown = "Go" end
+    return format("|c%s|H%sw:%d:%.4f:%.4f:%s|h[%s]|h|r", LINK_COLOUR, G.LINK_PREFIX, map, x01, y01,
+        G.LinkEscape(t), shown)
+end
+
+-- map, x01, y01, title (nil when it had none) from a ChatLink or from the
+-- "addon:CommanderOrders:w:..." payload SetItemRef hands over; nil for
+-- anything else
+function G.ParseChatLink(link)
+    if type(link) ~= "string" then return nil end
+    local payload = link
+    if strfind(link, "|H", 1, true) then payload = link:match("|H(.-)|h") end
+    if type(payload) ~= "string" then return nil end
+    local m, xs, ys, rest = payload:match("^addon:CommanderOrders:w:(%d+):([%d%.]+):([%d%.]+):?(.*)$")
+    local map, x, y = tonumber(m), tonumber(xs), tonumber(ys)
+    if not (map and ValidPlace(map, x, y)) then return nil end
+    local title = G.LinkUnescape(rest or "")
+    if title == "" then title = nil end
+    return map, x, y, title
 end
 
 -- ---------------------------------------------------------------------------

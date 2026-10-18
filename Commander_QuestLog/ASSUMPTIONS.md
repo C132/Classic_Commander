@@ -1026,3 +1026,88 @@ the XML parentKeys of the maximized map (the drawer anchors to
 `ScrollContainer` only), and the payload of `FACTION_STANDING_CHANGED`
 (critic §5.6: calibration reads the bars and the chat line, never that
 event).
+
+## A61 — The log's objectives come in Questie's objective order
+
+Load bearing for the objective Go buttons (D45). Objective n of
+`GetQuestLogLeaderBoard` is matched to entry n of Questie's objective list as
+the adapter builds it (creatures, objects, items, reputation, kill credit,
+spells, then the explore trigger, with Questie's `*ObjectiveFirst` tables
+moving one kind first). Questie matches them the same way
+(`QuestieQuest.lua` reads `quest.ObjectiveData[objective.Index]`), so a quest
+where the order is wrong is wrong in Questie's own tracker too, and Questie
+carries the corrections. Checked offline against the real thing
+(2026-10-05): with the installed Questie and QuestieDB booted under luajit
+(the session's real-data boot, a level-64 Horde paladin), the adapter's
+order matched Questie's own `QuestieDB.GetQuest(id).ObjectiveData` kind for
+kind on all 6657 quests (4137 with objectives, 3 with a `*First` flag), and
+5172 of the 6484 objectives had a place (every explore trigger and kill
+credit, 1597 of 1627 creatures, 191 of 207 objects, 3113 of 4203 items --
+an item no creature or object drops, such as Purified Helboar Meat, has
+none). The log's own order against Questie's is not seen in game.
+
+Symptom if wrong: an objective's Go leads to another objective's creature
+(the "Patrol Sentry slain" Go walking to the poster).
+
+Test: take a quest with a kill and a loot objective (Hellfire's "Know Your
+Enemy" style), hover each objective's Go: the tooltip names the creature or
+the item on its own line ("Where Questie places Patrol Sentry (8 spots ...)").
+
+## A62 — QUEST_REMOVED fires for an abandon and QUEST_TURNED_IN for a turn-in, with the quest id
+
+Load bearing for the turn-in cleanup (D45). Both carry the quest id first
+(`QuestLogDocumentation.lua` in the 2.5.6 source); the adapter removes every
+`quest:<id>` waypoint of that quest on either. Read from the documentation;
+the firing on an abandon is assumed.
+
+Symptom if wrong: a quest's waypoint stays in Commander Orders after the
+quest is gone (the arrow keeps pointing at a turn-in you made).
+
+Test: Go to Turn-in on a quest, hand it in: the waypoint is gone from the
+manager (`/corder`). Go to an objective of another quest, abandon it: gone
+too. `/reload` with a quest's Go pinned and hand it in after: gone.
+
+## A63 — The Go buttons fit their bars
+
+Not load bearing. "Go to Turn-in" sits in a 120 px button on the Log's
+action bar (lit: "Going to Turn-in"), between Announce and Abandon with
+about 20 px to spare; the Zones tab's "Go" keeps the 80 px the Waypoint
+button had; an objective's row Go is 48 px, enough for "Going". Widths from
+the mock's string metrics, not seen in game.
+
+Test: open the Log on a quest Questie knows, press Go to Turn-in: the lit
+label is whole and clear of Abandon.
+
+## A64 — A Go to a creature inside an instance lands on Orders' door (D46)
+
+Load bearing for every Go of a giver, finisher or objective whose creature
+stands inside an instance. The adapter asks `CommanderOrders.Locate({
+entrance = { area = <Questie's instance area> } })` and takes every spot it
+answers; Questie's own dungeon spot only when Orders answers nothing. Proved
+over the fake Questie with the real Orders (contract L) and over the real
+Questie and QuestieDB in a scratch boot (Murmur and Exarch Maladaar 0 yd from
+Orders' door, 100 and 103 yd before; the zone lists of 17 zones unchanged),
+never in the client.
+
+Symptom if wrong: the arrow for "Into the Heart of the Labyrinth" stops in
+the Auchindoun tunnel short of the portal, or a dungeon quest moves to a
+different zone's list on the Zones tab.
+
+Test: track "Into the Heart of the Labyrinth" (10095), press Go on its
+Murmur objective: the arrow points at the Shadow Labyrinth portal in
+Auchindoun (Terokkar 39.6, 73.8), the same spot the arrow's dungeon hint
+gives inside the instance. The Zones tab's Terokkar Forest count is what it
+was before the update.
+
+## A65 — A greyed Go's tooltip says what still answers (D46)
+
+Not load bearing. With Commander Orders turned off (`/corder off`), the Go
+to Turn-in and the Zones tab's Go are greyed and their tooltips no longer
+promise a press; they say the row's gesture still answers in chat. Relies on
+the GoButton showing a greyed button's tooltip (Orders' D31,
+`SetMotionScriptsWhileDisabled`), not seen in game.
+
+Test: `/corder off`, hover Go to Turn-in on a quest Questie knows: no "a
+press says so" line, the red "Commander Orders is turned off (/corder)"
+under it; Ctrl+Right-click the quest's row: one chat line with the place
+and its [Go] link. `/corder on` after.

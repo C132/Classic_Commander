@@ -516,6 +516,33 @@ function Fake.DefaultWorld()
     return DeepCopy(DEFAULT_WORLD)
 end
 
+-- The default world plus quest objectives, for the 1.7.0 "Go to" work
+-- (DECISIONS D45). Quest 9005, "Know Your Enemy", lists every kind Questie
+-- writes, in Questie's own shape ({ creatures, objects, items, reputation,
+-- kill credit, spells } plus triggerEnd): a creature (the eight-spawn Patrol
+-- Sentry), an object (the Wanted Poster), an item (the Legion Missive,
+-- dropped by Quartermaster Urgronn and the Patrol Sentry), a reputation goal,
+-- a kill credit (Caza'rez, whose only spawn is the Blood Furnace's {-1, -1}:
+-- its entrance) and an explore trigger. Its object objective is put first,
+-- as QuestieDB.objectObjectiveFirst can ask, so the log's order is: 1 the
+-- Wanted Poster, 2 the Patrol Sentry, 3 the Legion Missive, 4 the
+-- reputation, 5 Caza'rez, 6 the trigger. world.objectiveFirst sets those
+-- five tables (QuestieDB.killCreditObjectiveFirst, objectObjectiveFirst,
+-- itemObjectiveFirst, eventObjectiveFirst, spellObjectiveFirst); Install
+-- gives every world all five, empty unless said.
+function Fake.GoWorld()
+    local W = DeepCopy(DEFAULT_WORLD)
+    W.items[30002] = { name = "Legion Missive", npcDrops = { 20008, 20016 } }
+    local q = W.quests[9005]
+    q.objectives = {
+        { { 20016 } }, { { 50001 } }, { { 30002 } }, { 946, 3000 },
+        { { { 20011 }, 20011, "Caza'rez slain" } },
+    }
+    q.triggerEnd = { "Scout the Legion front", { [3483] = { { 70.0, 40.0 } } } }
+    W.objectiveFirst = { objectObjectiveFirst = { [9005] = true } }
+    return W
+end
+
 -- ---------------------------------------------------------------------------
 -- The reputation world: a level-70 human paladin who pledged to the Aldor,
 -- across Shattrath, Terokkar, Hellfire, Nagrand, Zangarmarsh, Shadowmoon,
@@ -913,6 +940,11 @@ function Fake.Install(world, opts)
     for id in pairs(W.npcs) do DB.NPCPointers[id] = true end
     for id in pairs(W.objects) do DB.ObjectPointers[id] = true end
     for id in pairs(W.items) do DB.ItemPointers[id] = true end
+    -- Questie's objective-order tables (QuestieDB.lua 456-460), all five
+    for _, name in ipairs({ "killCreditObjectiveFirst", "objectObjectiveFirst", "itemObjectiveFirst",
+            "eventObjectiveFirst", "spellObjectiveFirst" }) do
+        DB[name] = DeepCopy((W.objectiveFirst or {})[name] or {})
+    end
     DB.questsOnlyAvailableUntilReputationValue = {}
     for id, q in pairs(W.quests) do
         if q.oneWayRep then DB.questsOnlyAvailableUntilReputationValue[id] = true end

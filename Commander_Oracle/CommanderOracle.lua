@@ -810,22 +810,39 @@ end, "ANCHOR_LEFT")
 -- board, so the HUD chrome's right-click handling still works over them.
 -- Nothing here changes a frame's shape or visibility, so a click works the
 -- same in combat as out of it.
+--
+-- 1.9.0 (Commander Orders 3.1, its SPEC 5 and S4). Every Go goes through
+-- Orders' one way in, CommanderOrders.GoTo, so the confirmation ("Waypoint
+-- set: ...", behind Orders' Announce In Chat) and every refusal are Orders'
+-- own words, once (Orders' DECISIONS, the 3.1 "Go to" words and gestures);
+-- without Orders a click prints the place's /way line. Beyond Arathi:
+--   * Go to the Flag (Warsong Gulch, Eye of the Storm): the key binding and
+--     /coracle flag point the arrow at the flag the client places on the
+--     battleground map (GetBattlefieldFlagPosition): your own side's flag
+--     first (an enemy is carrying it, or it lies dropped), else the other
+--     side's (your carrier), else the Eye's one flag. The flag moves with
+--     its carrier, so the waypoint (source "Oracle", key "flag") follows it
+--     about once a second, and goes when the flag stops being on the map
+--     (captured or returned) or the match ends.
+--   * /coracle nodes lists every place the battleground map names (its area
+--     POIs: Arathi's flags, the Eye's towers, Alterac's towers, bunkers and
+--     graveyards) and the flags, each with Orders' [Go] link; clicking one
+--     points the arrow there as the Oracle's one "node" waypoint.
+-- Inside a battleground UnitPosition may answer nothing; the arrow then
+-- measures from the map position (Orders' D6), which is what makes these
+-- waypoints walkable.
 -- ---------------------------------------------------------------------------
 local nodeArrow = {
     displaced = nil,   -- the pin of yours a flag click took over
     uid = nil,         -- the flag waypoint's uid, to tell "reached" from "you moved the arrow"
 }
 
+-- Orders 3.1's API (GoTo is the one way in), or nil
 local function Orders()
     local api = CommanderOrders
-    if type(api) == "table" and type(api.Add) == "function" then return api end
+    if type(api) == "table" and type(api.GoTo) == "function" then return api end
     return nil
 end
-
-local ORDERS_REASONS = {
-    disabled = "Commander Orders is turned off (/corder to turn it on)",
-    loading = "Commander Orders is still loading",
-}
 
 -- Where a flag stands on the battle map: x, y (0..1), or nil
 local function NodePosition(index)
@@ -840,6 +857,37 @@ local function NodePosition(index)
     return x, y
 end
 
+-- The battleground Go-tos (one table: this chunk sits near Lua's 200 locals)
+local BG = { FLAG_KEY = "flag", NODE_KEY = "node", followAt = 0, flag = nil }
+
+-- One Oracle waypoint under key, pinned outright (a click asked for the
+-- arrow); remembers the pin of yours it took. Returns uid or nil.
+function BG.Go(map, x, y, title, key)
+    local api = Orders()
+    if not api then
+        print(string.format("Commander Oracle: %s: /way #%d %.2f %.2f %s (Commander Orders is not loaded)",
+            title, map, x * 100, y * 100, title))
+        return nil
+    end
+    -- A pinned waypoint of yours gets the arrow back when the match is over:
+    -- the LAST one a click took over, so a waypoint you pinned mid-match wins
+    -- over the one you came in with
+    if api.Active then
+        local active = api.Active()
+        if active and active.why == "PINNED" and active.source ~= "Oracle" then
+            nodeArrow.displaced = active.uid
+        end
+    end
+    -- Not silent: Orders says "Waypoint set" or its one refusal line
+    local uid = api.GoTo({ map = map, x = x, y = y, title = title }, {
+        source = "Oracle", key = key, icon = "PVP", temporary = true, persistent = false, setArrow = false,
+    })
+    if not uid then return nil end
+    if key == BG.NODE_KEY then nodeArrow.uid = uid end
+    if api.SetArrow then api.SetArrow(uid) end
+    return uid
+end
+
 local function NodeWaypoint(index)
     local canon = AB.nodes[index]
     if not canon then return end
@@ -852,31 +900,202 @@ local function NodeWaypoint(index)
         print("Commander Oracle: the map has not placed the " .. canon.name .. " yet")
         return
     end
-    local api = Orders()
-    if not api then
-        print(string.format("Commander Oracle: the %s is /way #%d %.2f %.2f", canon.name, AB.uiMapID, x * 100, y * 100))
-        return
+    BG.Go(AB.uiMapID, x, y, canon.name, BG.NODE_KEY)
+end
+
+-- The battleground map you stand on, or nil outside one
+function BG.Map()
+    if not (GetInstanceInfo and C_Map and C_Map.GetBestMapForUnit) then return nil end
+    local _, instanceType = GetInstanceInfo()
+    if instanceType ~= "pvp" then return nil end
+    local ok, map = pcall(C_Map.GetBestMapForUnit, "player")
+    if ok and type(map) == "number" then return map end
+    return nil
+end
+
+-- Whose flag a flag's art names: "alliance", "horde" or nil. 2.5.6's own
+-- map provider (BattlefieldFlagDataProvider) hands the third answer of
+-- GetBattlefieldFlagPosition straight to SetTexture, so it is a path or a
+-- FileDataID: a number is matched against the two flag textures' file ids,
+-- read from the client once; a path is read off "Alliance" / "Horde" in it
+-- (Assumption: the art is the faction's flag texture; Harness README).
+BG.FLAG_ART = {
+    alliance = "Interface\\WorldStateFrame\\AllianceFlag",
+    horde = "Interface\\WorldStateFrame\\HordeFlag",
+}
+function BG.FlagSide(art)
+    if type(art) == "string" and tonumber(art) then art = tonumber(art) end
+    if type(art) == "number" then
+        if not BG.artIDs then
+            local ids = {}
+            if type(GetFileIDFromPath) == "function" then
+                for whose, path in pairs(BG.FLAG_ART) do
+                    local ok, id = pcall(GetFileIDFromPath, path)
+                    if ok and type(id) == "number" and id > 0 then ids[id] = whose end
+                end
+            end
+            BG.artIDs = ids
+        end
+        return BG.artIDs[art]
     end
-    -- A pinned waypoint of yours gets the arrow back when the match is over:
-    -- the LAST one a flag click took over, so a waypoint you pinned mid-match
-    -- wins over the one you came in with
-    if api.Active then
-        local active = api.Active()
-        if active and active.why == "PINNED" and active.source ~= "Oracle" then
-            nodeArrow.displaced = active.uid
+    local name = type(art) == "string" and art:lower() or ""
+    return (name:find("alliance", 1, true) and "alliance") or (name:find("horde", 1, true) and "horde") or nil
+end
+
+-- The flags the client places on the battleground map: { { index, x, y,
+-- side = "OURS" | "THEIRS" | nil, title } }, ours first. A flag whose side
+-- the art does not tell is "The flag" when it is the only one, "Flag 1" /
+-- "Flag 2" (the map's own order) when there are more, so no two read alike.
+function BG.Flags()
+    local out = {}
+    if not (GetNumBattlefieldFlagPositions and GetBattlefieldFlagPosition) then return out end
+    local ok, n = pcall(GetNumBattlefieldFlagPositions)
+    if not ok or type(n) ~= "number" then return out end
+    local mine = myFaction and myFaction:lower()
+    local unknown = 0
+    for i = 1, math.min(n, 4) do
+        local okF, x, y, art = pcall(GetBattlefieldFlagPosition, i)
+        if okF and type(x) == "number" and type(y) == "number" and x > 0 and x <= 1 and y > 0 and y <= 1 then
+            local whose = BG.FlagSide(art)
+            local side = whose and (whose == mine and "OURS" or "THEIRS") or nil
+            local title = (side == "OURS" and "Our flag") or (side == "THEIRS" and "Their flag") or "The flag"
+            if not side then unknown = unknown + 1 end
+            out[#out + 1] = { index = i, x = x, y = y, side = side, title = title }
         end
     end
-    local uid, why = api.Add({
-        map = AB.uiMapID, x = x, y = y, title = canon.name,
-        source = "Oracle", key = "node", temporary = true, persistent = false, setArrow = false,
-    })
-    if not uid then
-        print("Commander Oracle: no waypoint: " .. (ORDERS_REASONS[why] or tostring(why)))
+    if unknown > 1 then
+        for _, flag in ipairs(out) do
+            if not flag.side then flag.title = "Flag " .. flag.index end
+        end
+    end
+    table.sort(out, function(a, b)
+        local ra = a.side == "OURS" and 1 or (a.side == "THEIRS" and 2 or 3)
+        local rb = b.side == "OURS" and 1 or (b.side == "THEIRS" and 2 or 3)
+        if ra ~= rb then return ra < rb end
+        return a.index < b.index
+    end)
+    return out
+end
+
+-- One flag waypoint (Oracle, flag) that follows its carrier
+function BG.GoFlag(map, flag)
+    local uid = BG.Go(map, flag.x, flag.y, flag.title, BG.FLAG_KEY)
+    BG.flag = uid and { uid = uid, index = flag.index, map = map, x = flag.x, y = flag.y } or nil
+    return uid
+end
+
+-- A place as a chat line with Orders' [Go] link, its click claimed for go
+-- (the Oracle's one waypoint, never one of yours); the /way line when Orders
+-- has no chat file (a /reload before the restart a new file needs)
+function BG.PrintPlace(map, place, go)
+    local api = CommanderOrders
+    local link = type(api) == "table" and type(api.ChatLink) == "function"
+        and type(api.ClaimChatLink) == "function" and api.ChatLink(map, place.x, place.y, place.title)
+    if link then
+        api.ClaimChatLink(link, go)
+        print("  " .. place.title .. " " .. link)
         return
     end
-    nodeArrow.uid = uid
-    if api.SetArrow then api.SetArrow(uid) end
+    local way = type(api) == "table" and type(api.WayLineFor) == "function"
+        and api.WayLineFor(map, place.x, place.y, place.title)
+        or string.format("/way #%d %.2f %.2f %s", map, place.x * 100, place.y * 100, place.title)
+    print("  " .. place.title .. " " .. way)
 end
+
+-- Go to the Flag: the binding and /coracle flag. Two flags out and the art
+-- naming neither side: never a guess at index 1 (one faction would chase its
+-- own carrier); both are listed, each with a [Go] that follows that flag.
+function BG.GoToFlag()
+    local map = BG.Map()
+    if not map then
+        print("Commander Oracle: Go to the Flag works inside a battleground with flags (Warsong Gulch, Eye of the Storm)")
+        return nil
+    end
+    local flags = BG.Flags()
+    local flag = flags[1]
+    if not flag then
+        print("Commander Oracle: no flag is on the map right now (at its base, the map does not show it)")
+        return nil
+    end
+    if #flags > 1 and not flag.side then
+        print("Commander Oracle: the map does not say whose flag is whose; click the [Go] of the one to chase:")
+        for _, f in ipairs(flags) do
+            local index = f.index
+            BG.PrintPlace(map, f, function()
+                local here = BG.Map()
+                for _, now in ipairs(here and BG.Flags() or {}) do
+                    if now.index == index then return BG.GoFlag(here, now) end
+                end
+                print("Commander Oracle: that flag is no longer on the map")
+            end)
+        end
+        return nil
+    end
+    return BG.GoFlag(map, flag)
+end
+
+-- About once a second while a flag waypoint stands: follow the carrier, and
+-- take the waypoint away once the flag is off the map (captured, returned)
+function BG.FollowFlag(now)
+    local f = BG.flag
+    if not f or (now - BG.followAt) < 1 then return end
+    BG.followAt = now
+    local api = Orders()
+    if not (api and api.Get and api.Get(f.uid)) then BG.flag = nil return end
+    local x, y
+    if GetBattlefieldFlagPosition then
+        local ok, fx, fy = pcall(GetBattlefieldFlagPosition, f.index)
+        if ok and type(fx) == "number" and type(fy) == "number" and fx > 0 and fy > 0 then x, y = fx, fy end
+    end
+    if not x or BG.Map() ~= f.map then
+        api.RemoveBy("Oracle", BG.FLAG_KEY)
+        BG.flag = nil
+        return
+    end
+    if math.abs(x - f.x) + math.abs(y - f.y) > 0.002 and api.Update then
+        if api.Update(f.uid, { map = f.map, x = x, y = y }) then f.x, f.y = x, y end
+    end
+end
+
+-- /coracle nodes: every place the battleground map names, and the flags,
+-- each with Orders' [Go] link (its click claimed: the Oracle's one waypoint)
+function BG.ListNodes()
+    local map = BG.Map()
+    if not map then
+        print("Commander Oracle: /coracle nodes lists a battleground's places from inside one")
+        return 0
+    end
+    local api = CommanderOrders
+    local places = {}
+    if C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIForMap and C_AreaPoiInfo.GetAreaPOIInfo then
+        local okList, ids = pcall(C_AreaPoiInfo.GetAreaPOIForMap, map)
+        for _, poi in ipairs(okList and type(ids) == "table" and ids or {}) do
+            local ok, info = pcall(C_AreaPoiInfo.GetAreaPOIInfo, map, poi)
+            local pos = ok and type(info) == "table" and info.position
+            local x, y = pos and pos.x, pos and pos.y
+            if pos and (x == nil or y == nil) and pos.GetXY then x, y = pos:GetXY() end
+            if type(x) == "number" and type(y) == "number" and type(info.name) == "string" and info.name ~= "" then
+                places[#places + 1] = { x = x, y = y, title = info.name }
+            end
+        end
+    end
+    for _, flag in ipairs(BG.Flags()) do places[#places + 1] = { x = flag.x, y = flag.y, title = flag.title } end
+    if #places == 0 then
+        print("Commander Oracle: the map names no places here")
+        return 0
+    end
+    table.sort(places, function(a, b) return a.title < b.title end)
+    print("Commander Oracle: this battleground's places (click [Go] to point the arrow there):")
+    for _, place in ipairs(places) do
+        BG.PrintPlace(map, place, function() BG.Go(map, place.x, place.y, place.title, BG.NODE_KEY) end)
+    end
+    return #places
+end
+
+CommanderOracle_GoToFlag = BG.GoToFlag
+CommanderOracle_Nodes = BG.ListNodes
+BINDING_HEADER_COMMANDERORACLE = "Commander Oracle"
+BINDING_NAME_COMMANDERORACLE_FLAG = "Go to the Flag"
 
 -- The match is over: the flag waypoint goes, and the arrow goes back to a
 -- waypoint of yours if a flag click took it, unless you have moved it since.
@@ -885,6 +1104,7 @@ end
 local function ClearNodeWaypoint()
     local displaced, flag = nodeArrow.displaced, nodeArrow.uid
     nodeArrow.displaced, nodeArrow.uid = nil, nil
+    BG.flag = nil
     local api = Orders()
     if not (api and api.RemoveBy) then return end
     local active = api.Active and api.Active()
@@ -916,7 +1136,7 @@ local function NodeTooltip(pip)
         GameTooltip:AddLine("Uncontrolled", 0.8, 0.8, 0.8)
     end
     if Orders() then
-        GameTooltip:AddLine("Click: point the arrow at the " .. canon.name .. " (Commander Orders)", 0.6, 0.8, 1, true)
+        GameTooltip:AddLine("Click: Go to the " .. canon.name .. " (the Commander Orders arrow)", 0.6, 0.8, 1, true)
     else
         GameTooltip:AddLine("Click: print where it is as a /way line", 0.6, 0.8, 1, true)
     end
@@ -2693,6 +2913,9 @@ local function RefreshZone()
     if inBattleground and not battleground and (now - battlegroundSeenAt) >= EXIT_GRACE then
         inBattleground = false
         ResetRoster()
+        -- a flag or node waypoint from another battleground goes with it
+        -- (Arathi's own went with the basin, above)
+        if BG.flag or nodeArrow.uid then ClearNodeWaypoint() end
     end
 end
 
@@ -2707,6 +2930,9 @@ Tick = function()
         zoneCheckedAt = GetTime()
         RefreshZone()
     end
+    -- A flag waypoint follows its carrier (about once a second; a no-op
+    -- without one)
+    BG.FollowFlag(GetTime())
 
     local demo = demoUntil > GetTime()
     local unlocked = Commander.UI.HudUnlocked(db, "Board")

@@ -4,6 +4,18 @@
 -- message containing an n/m counter is treated as objective progress, shown
 -- as a toast, and promoted to OBJECTIVE SECURED when the counter fills.
 -- QUEST_TURNED_IN adds the MISSION ACCOMPLISHED banner.
+--
+-- 2.2.0 (Commander Orders 3.1, its SPEC 5 and S9): the Turn-in Offer. When
+-- a quest in your log turns complete, its turn-in can be marked: a quiet
+-- Commander Orders waypoint at the quest's finisher (source "Objectives",
+-- key "turnin:<questID>"), temporary, never asking for the arrow and saying
+-- nothing, the way Commander Adjutant offers a repairer; never placed in
+-- combat (parked until PLAYER_REGEN_ENABLED); taken down when the quest is
+-- turned in, abandoned or no longer complete. Off by default: quests finish
+-- often, and an arrow that appears because a counter filled is a change the
+-- player asks for, not one the module makes. The finisher comes from Commander
+-- Quest Log's Questie adapter (CommanderQuestLog.Questie.Finisher), the one
+-- place the suite reads quest data; without it there is no offer.
 
 local COLOR_PROGRESS = { 0.9, 0.9, 0.9 }
 local COLOR_SECURED = { 0.3, 1, 0.4 }
@@ -32,6 +44,14 @@ local generation = 0
 local priorityUntil = -math.huge
 
 local function ShowBanner(title, detail, color, withSound, isPriority)
+    -- Commander Tracer draws centre-screen text in its own lanes when it
+    -- runs. Its ledger holds every row, so nothing needs the priority hold.
+    if CommanderTracer_Notice and CommanderTracer_Notice({ text = title, sub = detail, r = color[1], g = color[2], b = color[3] }) then
+        if withSound and CommanderObjectivesDB.ObjectiveSound then
+            PlaySound(SOUNDKIT.IG_QUEST_LIST_COMPLETE, "Master")
+        end
+        return
+    end
     local hold = CommanderObjectivesDB.HoldTime or 2.5
     if not isPriority and GetTime() < priorityUntil then
         return
@@ -396,9 +416,107 @@ local RARE_LOOT_COLORS = {
     ["ffa335ee"] = true, ["ffff8000"] = true,
 }
 
+-- ---------------------------------------------------------------------------
+-- The Turn-in Offer (see the header). One table: what was complete at the
+-- last scan, what is parked for after combat.
+-- ---------------------------------------------------------------------------
+local TurnIn = { complete = {}, primed = false, pending = {}, scheduled = false }
+
+-- The finisher as one Commander Orders place (every placed spawn as its
+-- choices, so the arrow takes the nearest), and the finisher's name; nil when
+-- Commander Quest Log or Questie cannot place it
+function TurnIn.Finisher(questID)
+    local Q = CommanderQuestLog
+    local A = type(Q) == "table" and Q.Questie or nil
+    if not (type(A) == "table" and type(A.Finisher) == "function") then return nil end
+    local ok, f = pcall(A.Finisher, questID)
+    if not ok or type(f) ~= "table" then return nil end
+    local x, y = tonumber(f.x), tonumber(f.y)
+    if not (type(f.uiMapId) == "number" and x and y) then return nil end
+    local spec = { map = f.uiMapId, x = x / 100, y = y / 100 }
+    if type(f.spawns) == "table" and #f.spawns > 1 then
+        local alts = {}
+        for _, spawn in ipairs(f.spawns) do
+            local sx, sy = tonumber(spawn.x), tonumber(spawn.y)
+            if type(spawn.uiMapId) == "number" and sx and sy then
+                alts[#alts + 1] = { map = spawn.uiMapId, x = sx / 100, y = sy / 100 }
+            end
+        end
+        if #alts > 1 then spec.alternatives = alts end
+    end
+    return spec, f.name
+end
+
+function TurnIn.Offer(questID, title)
+    TurnIn.pending[questID] = nil
+    if not (IsOn() and CommanderObjectivesDB.TurnInOffer) then return nil end
+    if InCombatLockdown and InCombatLockdown() then
+        TurnIn.pending[questID] = title
+        return nil
+    end
+    local O = CommanderOrders
+    if not (type(O) == "table" and type(O.GoTo) == "function") then return nil end
+    local spec, who = TurnIn.Finisher(questID)
+    if not spec then return nil end
+    spec.title = "Turn in: " .. tostring(title) .. (who and (" (" .. tostring(who) .. ")") or "")
+    return O.GoTo(spec, {
+        source = "Objectives", key = "turnin:" .. questID, icon = "QUEST",
+        temporary = true, persistent = false, setArrow = false, silent = true,
+    })
+end
+
+function TurnIn.Withdraw(questID)
+    TurnIn.pending[questID] = nil
+    TurnIn.complete[questID] = nil
+    local O = CommanderOrders
+    if type(O) == "table" and type(O.RemoveBy) == "function" then
+        pcall(O.RemoveBy, "Objectives", "turnin:" .. tostring(questID))
+    end
+end
+
+-- Which quests in the log are complete now. Headers are never expanded (that
+-- moves the selection the stock log and other addons read), so a quest under
+-- a collapsed header is simply not seen: its state is left as it was, and
+-- only turn-in, abandon (their events) or being seen incomplete withdraw it.
+function TurnIn.Scan()
+    TurnIn.scheduled = false
+    if not (GetNumQuestLogEntries and GetQuestLogTitle) then return end
+    local seen, now = {}, {}
+    for i = 1, (GetNumQuestLogEntries()) or 0 do
+        local title, _, _, isHeader, _, isComplete, _, questID = GetQuestLogTitle(i)
+        if not title then break end
+        if not isHeader and type(questID) == "number" and questID > 0 then
+            seen[questID] = true
+            -- 1 is complete, -1 failed (the era's overload)
+            if isComplete == 1 or isComplete == true then now[questID] = title end
+        end
+    end
+    for questID, title in pairs(now) do
+        if TurnIn.primed and not TurnIn.complete[questID] then TurnIn.Offer(questID, title) end
+        TurnIn.complete[questID] = true
+    end
+    for questID in pairs(TurnIn.complete) do
+        if seen[questID] and not now[questID] then TurnIn.Withdraw(questID) end
+    end
+    TurnIn.primed = true
+end
+
+-- QUEST_LOG_UPDATE comes in bursts: one scan a moment later
+function TurnIn.Schedule()
+    if TurnIn.scheduled then return end
+    TurnIn.scheduled = true
+    C_Timer.After(0.3, TurnIn.Scan)
+end
+
+function TurnIn.AfterCombat()
+    for questID, title in pairs(TurnIn.pending) do TurnIn.Offer(questID, title) end
+end
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("UI_INFO_MESSAGE")
+events:RegisterEvent("QUEST_LOG_UPDATE")
+events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 events:RegisterEvent("PLAYER_XP_UPDATE")
@@ -414,6 +532,9 @@ if not C_EventUtils or C_EventUtils.IsEventValid("QUEST_TURNED_IN") then
 end
 if not C_EventUtils or C_EventUtils.IsEventValid("ENCOUNTER_END") then
     pcall(events.RegisterEvent, events, "ENCOUNTER_END")
+end
+if not C_EventUtils or C_EventUtils.IsEventValid("QUEST_REMOVED") then
+    pcall(events.RegisterEvent, events, "QUEST_REMOVED")
 end
 events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5)
     if event == "PLAYER_LOGIN" then
@@ -456,6 +577,14 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4, arg5)
     elseif event == "QUEST_TURNED_IN" then
         OnQuestTurnedIn()
         Bump("quests")
+        -- (questID, xpReward, moneyReward): its turn-in offer has done its job
+        if type(arg1) == "number" then TurnIn.Withdraw(arg1) end
+    elseif event == "QUEST_REMOVED" then
+        if type(arg1) == "number" then TurnIn.Withdraw(arg1) end
+    elseif event == "QUEST_LOG_UPDATE" then
+        TurnIn.Schedule()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        TurnIn.AfterCombat()
     elseif event == "PLAYER_ENTERING_WORLD" then
         CheckMissionState()
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then

@@ -159,7 +159,7 @@ local MSG_NO_ZONES = "No quest zones on this map."
 local MSG_UNAVAILABLE = "Zone unreadable: /cql status"
 local MSG_ONLY_UNCOUNTED = "Only quests outside your 100% are filed here."
 
-local ROW_HINT = "Click: show its giver on the map. Right-click: waypoint. Ctrl-click: open it in the quest log."
+local ROW_HINT = "Click: show its giver on the map. Right-click: Go. Ctrl-click: open it in the quest log."
 local ZONE_HINT = "Click to open this zone's map."
 local ROUTE_TIP = " Right-click for a Commander Orders route through every giver with an open quest here, nearest first."
 local HEADER_TIP = "Every quest this character has done or can still do here counts toward 100%. Missed quests "

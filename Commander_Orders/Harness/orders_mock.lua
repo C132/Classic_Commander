@@ -34,6 +34,13 @@
 --       files = { "Data", ... }   Orders files to load (default: the TOC's, the
 --                                 ones that exist; Pins and UI included when present)
 --       skipFiles = { CommanderOrdersPins = true }   leave some out
+--       addons = { "Commander_TopBar", { name = "Commander_X", files = { "A.lua" } } }
+--                                 (3.1) consumer addons loaded AFTER Orders'
+--                                 files: each one's TOC .lua files that exist
+--                                 (or the files named, relative to its folder),
+--                                 then ADDON_LOADED fired for each after
+--                                 Orders' own (the hook-frame workaround the
+--                                 contract harnesses used is no longer needed)
 --     Environment overrides for mutation runs: ORDERS_RUNTIME, ORDERS_DB,
 --     ORDERS_DATA, ORDERS_STORE, ORDERS_GEO, ORDERS_PINS, ORDERS_UI = path of
 --     a copy to load instead (the pins and manager harnesses load their own
@@ -53,6 +60,25 @@
 --   M.Advance(seconds, step)   frames of `step` (default 1/30 s)
 --   M.Fire(event, ...)    dispatch to every frame that registered it
 --
+-- 3.1 additions (additive: nothing above changed meaning)
+--   Commander_Events/CommanderGoButton.lua is loaded between the settings
+--   framework and CommanderEvents.lua, as its TOC orders it (when present;
+--   ORDERS_GOBUTTON=<path> loads that copy instead).
+--   C_ChatInfo.SendChatMessage records into M.chat like SendChatMessage.
+--   StaticPopup_Show applies a dialog's maxLetters to its edit box (2.5.6
+--   GameDialog.lua 210-213), so box.__maxLetters can be checked.
+--   UnitGUID answers for group members ("Player-1-<name>").
+--   EventRegistry: RegisterCallback(event, fn, owner) / UnregisterCallback /
+--   TriggerEvent, calling fn(owner, ...) as CallbackRegistryMixin does
+--   (errors caught into M.errors). SetItemRef(link, text, button, frame): an
+--   "addon:" link fires EventRegistry "SetItemRef" (LinkUtil's AddOn
+--   handler); others are recorded in M.itemRefs. M.ClickLink(text, button)
+--   finds the first |H...|h link in a string and clicks it.
+--   ChatFrameUtil.AddMessageEventFilter / RemoveMessageEventFilter (and the
+--   ChatFrame_* names): M.RunChatFilters(event, arg1..arg14) runs them the
+--   way ChatFrameFilters.lua ProcessFilters does and returns discard and the
+--   14 args; M.filterCalls counts calls.
+
 -- What came out
 --   M.prints, M.errors (geterrorhandler and caught script errors), M.sounds
 --   ({ id, channel }), M.sent (addon messages { prefix, text, channel, target }),
@@ -71,7 +97,11 @@
 --   M.SetIndoors(bool), M.SetNoPosition(bool) (UnitPosition and the map
 --   position answer nil, as inside instances)
 --   M.SetLife("ALIVE" | "DEAD" | "GHOST" | "FEIGN")
---   M.SetInstance(kind | nil)       "party" | "raid" | "pvp" | "arena"
+--   M.SetInstance(kind | nil, id)   "party" | "raid" | "pvp" | "arena"; id is
+--                                   GetInstanceInfo's 8th value (the instance
+--                                   map id, 585 Magisters' Terrace) while inside
+--   M.SetNoMap(bool)                GetBestMapForUnit("player") answers nil
+--                                   (a dungeon with no uiMap: Magisters' Terrace)
 --   M.SetCombat(bool)               fires PLAYER_REGEN_DISABLED / _ENABLED
 --   M.SetModifier("SHIFT" | "CTRL" | "ALT", down)   fires MODIFIER_STATE_CHANGED
 --   M.SetGroup(kind, members)       kind nil | "party" | "raid" | "instance";
@@ -116,9 +146,10 @@
 --   __textColor, __mouse, __level, __strata, __scripts, __children
 --   M.Visible(frame)      shown and every parent shown
 --   M.Click(frame, button)    delivers OnClick only when the frame is
---                         visible and mouse-enabled, like the client; returns
---                         whether it was delivered
---   M.Hover(frame)        OnEnter
+--                         visible and mouse-enabled and (a Button) enabled,
+--                         like the client; returns whether it was delivered
+--   M.Hover(frame)        OnEnter; a disabled Button only with
+--                         SetMotionScriptsWhileDisabled(true), as the client
 --   M.ClickMenu(text)     runs the func of the M.menu entry with that text
 --   M.ClickPopup(which, index)   the dialog's button handler (1, 2, 3)
 --   StaticPopup_Show parents the dialog to UIParent at DIALOG strata before
@@ -388,9 +419,10 @@ end
 M.prints, M.errors, M.sounds, M.sent, M.chat, M.popups, M.tooltip = {}, {}, {}, {}, {}, {}, {}
 M.blocked, M.writes, M.loadErrors, M.settingsOpened = {}, {}, {}, {}
 M.menu = {}
+M.itemRefs, M.filterCalls = {}, 0
 
 function M.ClearLog()
-    for _, list in ipairs({ M.prints, M.errors, M.sounds, M.sent, M.chat, M.popups, M.blocked }) do
+    for _, list in ipairs({ M.prints, M.errors, M.sounds, M.sent, M.chat, M.popups, M.blocked, M.itemRefs }) do
         for i = #list, 1, -1 do list[i] = nil end
     end
 end
@@ -519,6 +551,8 @@ function METHODS.SetEnabled(s, v) s.__enabled = v and true or false end
 function METHODS.Enable(s) s.__enabled = true end
 function METHODS.Disable(s) s.__enabled = false end
 function METHODS.IsEnabled(s) return s.__enabled ~= false end
+function METHODS.SetMotionScriptsWhileDisabled(s, v) s.__motionWhileDisabled = v and true or false end
+function METHODS.GetMotionScriptsWhileDisabled(s) return s.__motionWhileDisabled and true or false end
 function METHODS.SetValue(s, v) s.__value = v; FireScript(s, "OnValueChanged", v) end
 function METHODS.GetValue(s) return s.__value end
 function METHODS.SetMinMaxValues(s, a, b) s.__min, s.__max = a, b end
@@ -949,7 +983,10 @@ local function UnitWorldOf(unit)
 end
 
 local function UnitMapOf(unit)
-    if unit == "player" then return W.player.map end
+    if unit == "player" then
+        if W.noMap then return nil end
+        return W.player.map
+    end
     local u = W.units[unit]
     return u and u.map or nil
 end
@@ -1115,6 +1152,7 @@ local function InstallClient()
         assert(not (info.OnCancel and info.OnButton2), "dialog has both OnCancel and OnButton2")
         local box = NewWidget("EditBox", nil, nil)
         box.__text = ""
+        if info.maxLetters then box.__maxLetters = info.maxLetters end
         local dialog = NewWidget("Frame", nil, nil)
         dialog.which, dialog.data, dialog.editBox = which, data, box
         box.__parent = dialog
@@ -1310,6 +1348,15 @@ local function InstallClient()
         if W.instanceKind then return true, W.instanceKind end
         return false, "none"
     end)
+    -- name, instanceType, difficultyID, difficultyName, maxPlayers,
+    -- dynamicDifficulty, isDynamic, instanceID (2.5.6's order); outside an
+    -- instance the client names the continent and its frame's id
+    Install("GetInstanceInfo", function()
+        if W.instanceKind then
+            return "Instance", W.instanceKind, 1, "Normal", W.instanceKind == "raid" and 25 or 5, 0, false, W.instanceID
+        end
+        return "World", "none", 0, "", 0, 0, false, W.player.inst or 0
+    end)
     Install("UnitIsDead", function(unit) return unit == "player" and W.life == "DEAD" end)
     Install("UnitIsGhost", function(unit) return unit == "player" and W.life == "GHOST" end)
     Install("UnitIsDeadOrGhost", function(unit)
@@ -1320,7 +1367,13 @@ local function InstallClient()
     Install("UnitClass", function() return "Paladin", "PALADIN", 2 end)
     Install("UnitRace", function() return "Blood Elf", "BloodElf", 10 end)
     Install("UnitLevel", function() return 70 end)
-    Install("UnitGUID", function(unit) if unit == "player" then return "Player-1-00000001" end end)
+    Install("UnitGUID", function(unit)
+        if unit == "player" then return "Player-1-00000001" end
+        local i = type(unit) == "string" and tonumber(unit:match("^party(%d)$") or unit:match("^raid(%d+)$"))
+        local name = i and W.group.members[i]
+        if name then return "Player-1-" .. name end
+        return nil
+    end)
     Install("UnitExists", function(unit) return unit == "player" or W.units[unit] ~= nil end)
     Install("UnitName", function(unit)
         if unit == "player" then return W.name end
@@ -1367,6 +1420,9 @@ local function InstallClient()
         M.chat[#M.chat + 1] = { text = text, chatType = chatType, target = target }
     end)
     Install("C_ChatInfo", {
+        SendChatMessage = function(text, chatType, lang, target)
+            M.chat[#M.chat + 1] = { text = text, chatType = chatType, target = target, api = "C_ChatInfo" }
+        end,
         RegisterAddonMessagePrefix = function(prefix)
             W.prefixes[prefix] = true
             return 0
@@ -1380,6 +1436,93 @@ local function InstallClient()
     })
 
     if W.minimapShape then Install("GetMinimapShape", function() return W.minimapShape end) end
+
+    -- EventRegistry (CallbackRegistryMixin, undefined events allowed): a
+    -- function callback is called as fn(owner, ...); one per owner per event
+    local callbacks = {}
+    W.eventCallbacks = callbacks
+    local ownerSeq = 0
+    Install("EventRegistry", {
+        RegisterCallback = function(_, event, fn, owner)
+            assert(type(event) == "string" and type(fn) == "function", "EventRegistry:RegisterCallback(event, func, owner)")
+            if owner == nil then ownerSeq = ownerSeq + 1; owner = ownerSeq end
+            callbacks[event] = callbacks[event] or {}
+            callbacks[event][owner] = fn
+            return owner
+        end,
+        UnregisterCallback = function(_, event, owner)
+            if callbacks[event] then callbacks[event][owner] = nil end
+        end,
+        TriggerEvent = function(_, event, ...)
+            local list = {}
+            for owner, fn in pairs(callbacks[event] or {}) do list[#list + 1] = { owner, fn } end
+            for _, pair in ipairs(list) do
+                local ok, err = pcall(pair[2], pair[1], ...)
+                if not ok then M.errors[#M.errors + 1] = "EventRegistry " .. event .. ": " .. tostring(err) end
+            end
+        end,
+    })
+    -- SetItemRef: LinkUtil.ProcessLink's AddOn handler hands an addon: link
+    -- to EventRegistry "SetItemRef"; the rest are recorded
+    Install("SetItemRef", function(link, text, button, frame)
+        if type(link) == "string" and link:sub(1, 6) == "addon:" then
+            _G.EventRegistry:TriggerEvent("SetItemRef", link, text, button, frame)
+            return
+        end
+        M.itemRefs[#M.itemRefs + 1] = { link = link, text = text, button = button }
+    end)
+    -- Chat message filters (ChatFrameFilters.lua)
+    local filters = {}
+    W.chatFilters = filters
+    local function AddFilter(event, fn)
+        filters[event] = filters[event] or {}
+        for _, f in ipairs(filters[event]) do if f == fn then return end end
+        table.insert(filters[event], fn)
+    end
+    local function RemoveFilter(event, fn)
+        local list = filters[event]
+        if not list then return end
+        for i = #list, 1, -1 do if list[i] == fn then table.remove(list, i) end end
+    end
+    Install("ChatFrameUtil", {
+        AddMessageEventFilter = AddFilter,
+        RemoveMessageEventFilter = RemoveFilter,
+        GetMessageEventFilters = function(event) return filters[event] end,
+    })
+    Install("ChatFrame_AddMessageEventFilter", AddFilter)
+    Install("ChatFrame_RemoveMessageEventFilter", RemoveFilter)
+end
+
+-- ProcessFilters as 2.5.6 runs it: each filter is called as fn(chatFrame,
+-- event, arg1..arg14); a truthy first return discards the line and stops;
+-- a non-nil second return replaces all fourteen args (so a filter that
+-- returns only false, msg wipes the sender, lineID and GUID, as the client
+-- does); an error counts as nil (securecallfunction) and is recorded.
+function M.RunChatFilters(event, ...)
+    local args = { ... }
+    local frame = M.chatFrame or NewWidget("ScrollingMessageFrame", "ChatFrame1")
+    M.chatFrame = frame
+    for _, fn in ipairs((W.chatFilters or {})[event] or {}) do
+        M.filterCalls = M.filterCalls + 1
+        local results = { pcall(fn, frame, event, unpack(args, 1, 14)) }
+        if not results[1] then
+            M.errors[#M.errors + 1] = "chat filter " .. event .. ": " .. tostring(results[2])
+        elseif results[2] then
+            return true, unpack(args, 1, 14)
+        elseif results[3] ~= nil then
+            args = {}
+            for i = 1, 14 do args[i] = results[i + 2] end
+        end
+    end
+    return false, unpack(args, 1, 14)
+end
+
+-- Click the first |H...|h link in a printed line (SetItemRef's path)
+function M.ClickLink(text, button, frame)
+    local link, shown = tostring(text or ""):match("|H(.-)|h(.-)|h")
+    if not link then return false end
+    _G.SetItemRef(link, shown, button or "LeftButton", frame)
+    return true
 end
 
 -- _G: Lua's own globals stay raw; the client's are served through __index,
@@ -1473,7 +1616,11 @@ function M.SetTaxi(b) W.taxi = b and true or false end
 function M.SetIndoors(b) W.indoors = b and true or false end
 function M.SetNoPosition(b) W.noPosition = b and true or false end
 function M.SetLife(state) W.life = state end
-function M.SetInstance(kind) W.instanceKind = kind end
+function M.SetInstance(kind, id)
+    W.instanceKind = kind
+    W.instanceID = kind and id or nil
+end
+function M.SetNoMap(b) W.noMap = b and true or nil end
 function M.SetZoom(z) W.zoom = z end
 
 function M.SetCombat(b)
@@ -1548,16 +1695,32 @@ end
 function M.SetMapID(mapID) W.map.frame:SetMapID(mapID) end
 function M.SetMapCursor(nx, ny) W.map.cursor[1], W.map.cursor[2] = nx, ny end
 
+-- A disabled Button: the client delivers no OnClick, and no OnEnter or
+-- OnLeave unless SetMotionScriptsWhileDisabled(true) (2.5.6: Blizzard sets
+-- it wherever a greyed button explains itself, GuildRegistrarFrame.xml:130,
+-- UIButtonMixin:SetDisabledTooltip). The mock used to deliver both, which
+-- hid a GoButton whose red reason no player could ever see (review:
+-- consistency).
+local function Disabled(frame)
+    local kind = frame.__kind
+    return (kind == "Button" or kind == "CheckButton") and frame.__enabled == false
+end
+
 function M.Click(frame, button)
     if not (frame and M.Visible(frame) and frame.__mouse) then return false end
+    if Disabled(frame) then return false end
     local handler = frame.__scripts.OnClick
     if handler then handler(frame, button or "LeftButton", false) end
     return true
 end
 
+-- OnEnter; false when the client would not run it (a disabled Button
+-- without motion scripts)
 function M.Hover(frame)
+    if frame and Disabled(frame) and not frame.__motionWhileDisabled then return false end
     local handler = frame and frame.__scripts.OnEnter
     if handler then handler(frame) end
+    return true
 end
 
 function M.ClickMenu(text)
@@ -1648,6 +1811,19 @@ local function TocFiles()
 end
 M.TocFiles = TocFiles
 
+-- Another addon's TOC .lua files, in order (3.1, opts.addons)
+function M.AddonTocFiles(name)
+    local out = {}
+    local f = io.open(M.ADDONS .. "/" .. tostring(name) .. "/" .. tostring(name) .. ".toc", "r")
+    if not f then return out end
+    for line in f:lines() do
+        line = line:gsub("\r$", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if line:match("%.lua$") and not line:match("^#") then out[#out + 1] = (line:gsub("\\", "/")) end
+    end
+    f:close()
+    return out
+end
+
 local function Exists(path)
     local f = io.open(path, "r")
     if f then f:close() return true end
@@ -1680,6 +1856,12 @@ function M.Boot(opts)
 
     W.phase = "events"
     LoadFile(M.ADDONS .. "/Commander_Events/CommanderSettingsUI.lua", "CommanderSettingsUI.lua")
+    -- 3.1: Commander.UI.GoButton, in its TOC slot (ORDERS_GOBUTTON=<copy>
+    -- loads a mutated copy instead, for a mutation sweep)
+    local goButton = os.getenv("ORDERS_GOBUTTON") or (M.ADDONS .. "/Commander_Events/CommanderGoButton.lua")
+    if Exists(goButton) then
+        LoadFile(goButton, "CommanderGoButton.lua")
+    end
     LoadFile(M.ADDONS .. "/Commander_Events/CommanderEvents.lua", "CommanderEvents.lua")
     W.phase = "orders"
     local files = opts.files or TocFiles()
@@ -1689,6 +1871,20 @@ function M.Boot(opts)
         local path = override or (M.ORDERS .. "/" .. name .. ".lua")
         if not skip[name] and Exists(path) then LoadFile(path, name .. ".lua") end
     end
+    -- 3.1: consumer addons on top (opts.addons), in the order given
+    local consumers = {}
+    for _, a in ipairs(opts.addons or {}) do
+        local name = type(a) == "table" and a.name or a
+        local list = type(a) == "table" and a.files or M.AddonTocFiles(name)
+        W.phase = "addon:" .. tostring(name)
+        for _, file in ipairs(list or {}) do
+            local path = M.ADDONS .. "/" .. name .. "/" .. file
+            if Exists(path) then LoadFile(path, name .. "/" .. file) end
+        end
+        consumers[#consumers + 1] = name
+        W.loaded[name] = true
+    end
+    W.phase = "orders"
     if opts.afterFiles then opts.afterFiles(M, W) end
     -- The client assigns the saved variables after the files ran, before
     -- ADDON_LOADED
@@ -1697,6 +1893,7 @@ function M.Boot(opts)
     W.phase = "runtime"
     M.Fire("ADDON_LOADED", "Commander_Events")
     M.Fire("ADDON_LOADED", "Commander_Orders")
+    for _, name in ipairs(consumers) do M.Fire("ADDON_LOADED", name) end
     if opts.combat then W.combat = true end
     M.Fire("PLAYER_LOGIN")
     M.Fire("PLAYER_ENTERING_WORLD", true, false)
@@ -1731,7 +1928,7 @@ function M.Reload(opts)
     -- The world outside the addon carries over a reload: life, corpse,
     -- group, facing, instance, taxi
     local carry = {}
-    for _, key in ipairs({ "life", "corpse", "facing", "instanceKind", "noPosition", "taxi", "speed",
+    for _, key in ipairs({ "life", "corpse", "facing", "instanceKind", "instanceID", "noMap", "noPosition", "taxi", "speed",
             "indoors", "loaded", "entrances", "minimapShape", "region" }) do
         carry[key] = W and W[key]
     end

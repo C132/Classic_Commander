@@ -70,6 +70,55 @@ local function ResetBagPositions()
     Commander.Notify(COMMANDER_BAGS_EVENTS.UPDATE)
 end
 
+-- ---------------------------------------------------------------------------
+-- Go to Vendor / Go to Repair (2.3.0, Commander Orders 3.1)
+--
+-- A full bag of junk wants a merchant, broken gear a repairer: two Commander
+-- Orders Go buttons on the settings page and the slash words /cb vendor and
+-- /cb repair, each asking Orders' locator for the nearest one ({ townsfolk =
+-- "Vendor" | "Repair" }: your faction, your landmass, the arrow taking the
+-- nearest), one waypoint each (source "Bags", key "vendor" | "repair"). The
+-- words and gestures are Orders' (its DECISIONS, the 3.1 "Go to" entry):
+-- click Go, Shift-click share, Ctrl-click copy the /way line. Orders speaks
+-- for the press ("Waypoint set" or its one refusal line). Nothing here is a
+-- preference, and no Blizzard bag button is touched.
+-- ---------------------------------------------------------------------------
+local GO_TO = {
+    vendor = { label = "Go to Vendor", query = { townsfolk = "Vendor" }, key = "vendor", title = "Nearest vendor",
+        tooltip = "The nearest merchant, on the Commander Orders arrow: any vendor buys your junk (also: /cb vendor)." },
+    repair = { label = "Go to Repair", query = { townsfolk = "Repair" }, key = "repair", title = "Nearest repair",
+        tooltip = "The nearest vendor who repairs, on the Commander Orders arrow (also: /cb repair)." },
+}
+
+-- /cb vendor, /cb repair
+local function GoTo(which)
+    local go = GO_TO[which]
+    local orders = CommanderOrders
+    if not (type(orders) == "table" and type(orders.GoTo) == "function") then
+        print("Commander Bags: " .. go.label .. " needs Commander Orders")
+        return nil
+    end
+    return orders.GoTo(go.query, { source = "Bags", key = go.key, title = go.title, icon = "VENDOR" })
+end
+
+-- Commander Orders' Go button (Commander_Events). The client reads a NEW
+-- addon file only at start-up, so after an update and a /reload the
+-- button's file may be missing: then a plain button that does the same.
+local function GoButton(parent, which)
+    local go = GO_TO[which]
+    local UI = Commander and Commander.UI
+    if UI and type(UI.GoButton) == "function" then
+        return UI.GoButton(parent, { label = go.label, width = 120, query = go.query, title = go.title,
+            source = "Bags", key = go.key, icon = "VENDOR", tooltip = go.tooltip })
+    end
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(120, 22)
+    button:SetText(go.label)
+    button:SetScript("OnClick", function() GoTo(which) end)
+    button.Refresh = function() end
+    return button
+end
+
 local function Reset()
     Commander.UI.ResetToDefaults(CommanderBagsDB, DefaultSettings)
     ResetBagPositions()
@@ -96,6 +145,8 @@ local function CreateOptionsPanel()
                     CommanderBags_PrintDiagnostics()
                 end
             end,
+            vendor = function() GoTo("vendor") end,
+            repair = function() GoTo("repair") end,
         },
     })
 
@@ -186,6 +237,18 @@ local function CreateOptionsPanel()
             end,
         },
     })
+
+    panel:AddSection("Vendor and Repair", "A full bag wants a merchant and broken gear a repairer: Commander Orders' arrow to the nearest one (click to go, Shift-click to share the place, Ctrl-click to copy the /way line).")
+    local goRow = panel:AddRow(26, 10)
+    local goVendor = GoButton(goRow, "vendor")
+    goVendor:SetPoint("LEFT", goRow, "LEFT", 0, 0)
+    local goRepair = GoButton(goRow, "repair")
+    goRepair:SetPoint("LEFT", goVendor, "RIGHT", 8, 0)
+    panel:TagRow(goRow, GO_TO.vendor.label, GO_TO.vendor.tooltip, GO_TO.repair.label, GO_TO.repair.tooltip)
+    panel:AddRefresher(function()
+        if goVendor.Refresh then goVendor:Refresh() end
+        if goRepair.Refresh then goRepair:Refresh() end
+    end)
 
     panel:Finalize({ onDefaults = Reset })
 end

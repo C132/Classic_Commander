@@ -12,6 +12,7 @@ local DefaultSettings = {
     AlertRepair = true,
     RepairWaypoint = true,      -- the repair alert marks the nearest known vendor (Logistics + Orders)
     AlertBagsFull = true,
+    VendorWaypoint = true,      -- the full-bags alert marks the nearest vendor (Logistics + Orders)
     AlertLevelUp = true,
     AlertReinforcements = true,
     AlertQueuePop = true,
@@ -98,6 +99,13 @@ local function CreateOptionsPanel()
         get = function() return CommanderAdjutantDB.RepairWaypoint end,
         set = function(value) CommanderAdjutantDB.RepairWaypoint = value end,
         isEnabled = function() return CommanderAdjutantDB.EnableAdjutant and CommanderAdjutantDB.AlertRepair end,
+    })
+    panel:AddCheckbox({
+        label = "Mark the Nearest Vendor",
+        tooltip = "When your bags fill up, the alert names the nearest vendor on your continent (the repair vendors Commander Logistics remembers, and with Questie every vendor it knows) and marks it with a Commander Orders waypoint, the same quiet offer as the repair mark: it never takes the arrow from what you are following, waits for combat to end, and is taken down by the first merchant you open or the first free bag slot.",
+        get = function() return CommanderAdjutantDB.VendorWaypoint end,
+        set = function(value) CommanderAdjutantDB.VendorWaypoint = value end,
+        isEnabled = function() return CommanderAdjutantDB.EnableAdjutant and CommanderAdjutantDB.AlertBagsFull end,
     })
 
     panel:AddSection("Deployment Countdown",

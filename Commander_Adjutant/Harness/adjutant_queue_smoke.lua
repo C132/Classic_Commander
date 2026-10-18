@@ -693,12 +693,12 @@ do
         return nil
     end
     local function Wear(ratio) dura = ratio; Fire("UPDATE_INVENTORY_DURABILITY") end
-    local offers, clears = {}, 0
+    local offers, clears, lastClearOpts = {}, 0, nil
     local vendor = { name = "Smith Argus", map = 1429, x = 0.416, y = 0.655, yards = 340 }
     local function StubLogistics()
         CommanderLogistics_NearestRepair = function() return vendor end
         CommanderLogistics_RepairWaypoint = function(opts) offers[#offers + 1] = opts; return true, "w4", vendor end
-        CommanderLogistics_ClearRepairWaypoint = function() clears = clears + 1; return 1 end
+        CommanderLogistics_ClearRepairWaypoint = function(opts) clears = clears + 1; lastClearOpts = opts; return 1 end
         CommanderLogistics_FormatYards = function(y) return string.format("%d yd", y) end
     end
     local errs0 = #harnessFailedErrors
@@ -721,6 +721,8 @@ do
     -- Mended: the offer is withdrawn, once
     Wear(1)
     CHECK(clears == 1, "O: mended gear takes the mark down", clears)
+    CHECK(type(lastClearOpts) == "table" and lastClearOpts.offerOnly == true,
+        "O: ...the offer only: a repair waypoint you asked for on the same line is yours (review 2026-10-05)")
     Wear(1)
     CHECK(clears == 1, "O: ...once", clears)
 
@@ -775,6 +777,99 @@ do
     CHECK(#harnessFailedErrors == errs0, "O: nothing escaped", harnessFailedErrors[#harnessFailedErrors])
     CommanderLogistics_NearestRepair, CommanderLogistics_RepairWaypoint = nil, nil
     CommanderLogistics_ClearRepairWaypoint, CommanderLogistics_FormatYards = nil, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- P: full bags name and mark the nearest vendor (2.4.0, Commander Orders
+-- 3.1). Logistics is a stub again; its "Vendor" supply line through the REAL
+-- Orders and its locator is logistics_orders_smoke.lua section I.
+-- ---------------------------------------------------------------------------
+do
+    db.EnableAdjutant, db.AlertBagsFull = true, true
+    CHECK(db.VendorWaypoint == true, "P: Mark the Nearest Vendor defaults on")
+    local free = 4
+    C_Container = {
+        GetContainerNumSlots = function() return 16 end,
+        GetContainerNumFreeSlots = function(bag) return bag == 0 and free or 0 end,
+    }
+    local function Fill(n) free = n; Fire("BAG_UPDATE_DELAYED") end
+    local offers, clears, clearOpts = {}, {}, {}
+    local vendor = { name = "Innkeeper Grosk", map = 1411, x = 0.5, y = 0.5, yards = 120 }
+    local function StubLogistics()
+        CommanderLogistics_Nearest = function(kind) if kind == "Vendor" then return vendor end end
+        CommanderLogistics_SupplyWaypoint = function(kind, opts)
+            offers[#offers + 1] = { kind = kind, opts = opts }
+            return true, "w9", vendor
+        end
+        CommanderLogistics_ClearSupplyWaypoint = function(kind, opts) clears[#clears + 1] = kind; clearOpts[#clearOpts + 1] = opts; return 1 end
+        CommanderLogistics_FormatYards = function(y) return string.format("%d yd", y) end
+    end
+    local errs0 = #harnessFailedErrors
+
+    Fill(4)
+    Fill(0)
+    CHECK(BannerText() == "Storage at full capacity", "P: no Logistics, the plain alert", BannerText())
+    Fill(4)
+
+    StubLogistics()
+    Fill(0)
+    CHECK(BannerText() == "Storage at full capacity: Innkeeper Grosk, 120 yd", "P: the banner names the nearest vendor", BannerText())
+    CHECK(#offers == 1 and offers[1].kind == "Vendor", "P: ...and marks it once, on the vendor line", #offers)
+    CHECK(offers[1] and offers[1].opts.temporary == true and offers[1].opts.quiet == true,
+        "P: ...as a temporary, quiet offer")
+    Fill(0)
+    CHECK(#offers == 1, "P: still full: no second offer", #offers)
+    Fill(1)
+    CHECK(#clears == 1 and clears[1] == "Vendor", "P: a free slot takes the mark down", #clears)
+    CHECK(type(clearOpts[1]) == "table" and clearOpts[1].offerOnly == true,
+        "P: ...the offer only: a vendor waypoint you asked for on the same line is yours (review 2026-10-05)")
+    Fill(2)
+    CHECK(#clears == 1, "P: ...once", #clears)
+
+    inCombatNow = true
+    Fill(0)
+    CHECK(#offers == 1, "P: nothing is marked mid-fight", #offers)
+    inCombatNow = false
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(#offers == 2, "P: the mark lands when combat ends", #offers)
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(#offers == 2, "P: ...once", #offers)
+    Fill(3)
+    inCombatNow = true
+    Fill(0)
+    Fill(3)
+    inCombatNow = false
+    Fire("PLAYER_REGEN_ENABLED")
+    CHECK(#offers == 2, "P: bags emptied mid-fight are not marked afterwards", #offers)
+
+    db.VendorWaypoint = false
+    Fill(0)
+    CHECK(BannerText() == "Storage at full capacity: Innkeeper Grosk, 120 yd" and #offers == 2,
+        "P: Mark the Nearest Vendor off: named, not marked", #offers)
+    Fill(3)
+    db.VendorWaypoint = true
+    db.AlertBagsFull = false
+    Fill(0)
+    CHECK(#offers == 2, "P: the full-bags alert off: no mark either", #offers)
+    Fill(3)
+    db.AlertBagsFull = true
+
+    CommanderLogistics_Nearest = function() return nil, "none" end
+    Fill(0)
+    CHECK(BannerText() == "Storage at full capacity" and #offers == 2, "P: no vendor known: plain alert, no mark", BannerText())
+    Fill(3)
+    CommanderLogistics_Nearest = function() error("logistics blew up") end
+    Fill(0)
+    CHECK(BannerText() == "Storage at full capacity", "P: a throwing Logistics still gets the plain alert", BannerText())
+    Fill(3)
+    StubLogistics()
+    CommanderLogistics_SupplyWaypoint = function() error("waypoint blew up") end
+    Fill(0)
+    CHECK(BannerText() == "Storage at full capacity: Innkeeper Grosk, 120 yd", "P: a throwing mark still names the vendor")
+    Fill(3)
+    CHECK(#harnessFailedErrors == errs0, "P: nothing escaped", harnessFailedErrors[#harnessFailedErrors])
+    CommanderLogistics_Nearest, CommanderLogistics_SupplyWaypoint = nil, nil
+    CommanderLogistics_ClearSupplyWaypoint, CommanderLogistics_FormatYards = nil, nil
 end
 
 CHECK(#harnessFailedErrors == 0, "no errors across the run", harnessFailedErrors[1])

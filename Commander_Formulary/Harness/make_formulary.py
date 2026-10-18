@@ -439,7 +439,11 @@ def generate(P):
                                    "faction": faction_of(npc), "kinds": set()}
         if place:
             zone, mapId, x, y, mp = place
-            info.update({"zone": zone, "map": mapId, "x": x, "y": y, "instance": x is None})
+            # Inside an instance: the instance's map id (Map.db2 ID, the
+            # client's instanceMapID), so the window can send the player to
+            # its door (Commander Orders' Entrance({ instance = id })). A
+            # boss with no spawn row ("(summoned)") has none: True.
+            info.update({"zone": zone, "map": mapId, "x": x, "y": y, "instance": (mp or True) if x is None else None})
         info["kinds"].add(kind)
         npcs[entry] = info
         return place is not None
@@ -823,8 +827,10 @@ def generate(P):
             fields.append("zone = %s" % lstr(n["zone"]))
             if n.get("x") is not None:
                 fields += ["map = %d" % n["map"], "x = %s" % n["x"], "y = %s" % n["y"]]
-            else:
+            elif n.get("instance") is True:
                 fields.append("instance = true")
+            else:
+                fields.append("instance = %d" % n["instance"])
         if "drop" in n["kinds"]:
             fields.append("level = { %d, %d }" % n["level"])
         if n["faction"] and "vendor" in n["kinds"]:

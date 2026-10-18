@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Promotion
 ## Author: Devin
-## Version: 2.1.0
-## Notes: A level-up ceremony worthy of the grind: full-screen gold burst, PROMOTION banner, and your stat gains on parade.
+## Version: 2.2.0
+## Notes: A level-up ceremony worthy of the grind: full-screen gold burst, PROMOTION banner, and your stat gains on parade. With Commander Orders, the banner names the nearest class trainer and a quiet waypoint marks it; /cpromo trainer points the arrow there.
 ## IconTexture: Interface\Icons\INV_Scroll_11
 ## SavedVariables: CommanderPromotionDB
 ## RequiredDeps: Commander_Events

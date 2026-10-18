@@ -71,6 +71,10 @@ local function CreateOptionsPanel()
             defend = function() if CommanderOracle_Defend then CommanderOracle_Defend() end end,
             take = function() if CommanderOracle_Take then CommanderOracle_Take() end end,
             probe = function() if CommanderOracle_Probe then CommanderOracle_Probe() end end,
+            -- Commander Orders 3.1: Go to the Flag (also a key binding) and
+            -- every place the battleground map names, each with a [Go] link
+            flag = function() if CommanderOracle_GoToFlag then CommanderOracle_GoToFlag() end end,
+            nodes = function() if CommanderOracle_Nodes then CommanderOracle_Nodes() end end,
         },
     })
 

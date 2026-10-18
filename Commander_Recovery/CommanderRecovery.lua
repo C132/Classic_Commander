@@ -31,6 +31,15 @@
 -- In a battleground the whole corpse-run apparatus is beside the point, so
 -- Recovery also presses release for you there -- see the auto-release block
 -- below.
+--
+-- 2.4.0 (Commander Orders 3.1, "Go to" everywhere): the death line's
+-- coordinates are Orders' own (CommanderOrders.FormatCoords, at the player's
+-- Coordinate Decimals) and end in Orders' [Go] chat link to the spot, titled
+-- "Where you fell": a click puts a waypoint there (Shift shares it, Ctrl
+-- copies its /way line, Right opens Orders' menu -- the one gesture rule
+-- every Commander module follows), which is what a player wants after a
+-- /reload or once the corpse arrow is gone. Without Orders 3.1 the numbers
+-- are printed alone at one decimal, as Orders' default reads them.
 
 local sessionDeaths = 0
 local lastDeath = nil        -- { mapID, x, y, zone, when }
@@ -45,6 +54,32 @@ local function Orders()
     local api = CommanderOrders
     if type(api) == "table" and type(api.CorpseArrow) == "function" then return api end
     return nil
+end
+
+-- Orders 3.1's "Go to" surface (FormatCoords, ChatLink), when loaded
+local function OrdersGo()
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.FormatCoords) == "function" and type(api.ChatLink) == "function" then
+        return api
+    end
+    return nil
+end
+
+-- "(45.2, 66.8) [Go]": the spot in the player's chosen precision and Orders'
+-- link to it; "(45.2, 66.8)" alone without Orders 3.1
+local function Where(spot)
+    local api = OrdersGo()
+    local coords, link
+    if api then
+        local ok, text = pcall(api.FormatCoords, spot.x, spot.y)
+        if ok and type(text) == "string" and text ~= "" then coords = text end
+        if spot.mapID then
+            local okLink, made = pcall(api.ChatLink, spot.mapID, spot.x, spot.y, "Where you fell")
+            if okLink and type(made) == "string" and made ~= "" then link = made end
+        end
+    end
+    coords = coords or string.format("%.1f, %.1f", spot.x * 100, spot.y * 100)
+    return "(" .. coords .. ")" .. (link and (" " .. link) or "")
 end
 
 -- Whether a release will get the Orders corpse arrow, and if not, why:
@@ -180,9 +215,9 @@ function CommanderRecovery_Report()
     end
     if lastDeath and lastDeath.x then
         print(string.format(
-            "Commander Recovery: %d casualt%s this session — last unit lost in %s (%.0f, %.0f)",
+            "Commander Recovery: %d casualt%s this session — last unit lost in %s %s",
             sessionDeaths, sessionDeaths == 1 and "y" or "ies",
-            lastDeath.zone, lastDeath.x * 100, lastDeath.y * 100))
+            lastDeath.zone, Where(lastDeath)))
     else
         print(string.format(
             "Commander Recovery: %d casualt%s this session — last unit lost in %s",
@@ -211,8 +246,8 @@ function CommanderRecovery_Test()
     end
     if here.x then
         print(string.format(
-            "Commander Recovery: TEST — unit lost in %s (%.0f, %.0f)%s",
-            here.zone, here.x * 100, here.y * 100, corpse and ("; " .. corpse) or ""))
+            "Commander Recovery: TEST — unit lost in %s %s%s",
+            here.zone, Where(here), corpse and ("; " .. corpse) or ""))
     else
         print(string.format("Commander Recovery: TEST — unit lost in %s%s", here.zone,
             corpse and ("; " .. corpse) or ""))

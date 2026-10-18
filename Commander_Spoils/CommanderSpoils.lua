@@ -2239,42 +2239,31 @@ function CommanderSpoils_ToggleFarm()
     end
 end
 
--- "Back to the farm" (DECISIONS D23): a Commander Orders waypoint at the spot
--- the running farm started. Orders is optional and looked up here, at the
--- press: absent, the /way line is printed instead, so the press is never a
--- dead end. One record under (Spoils, farm): a second press moves it, never
--- stacks a twin. Returns true, uid when Orders took it; false, reason else.
-local ORDERS_REFUSED = {
-    disabled = "Commander Orders is switched off",
-    loading = "Commander Orders is still loading",
-}
+-- "Go to Farm" (DECISIONS D23, D24): a Commander Orders waypoint at the spot
+-- the running farm started, through Orders 3.1's one way in,
+-- CommanderOrders.GoTo. Orders says "Waypoint set: ..." or its one refusal
+-- line itself, in its own words (D24), so this file has no refusal table.
+-- Orders is optional and looked up here, at the press: absent, the /way line
+-- is printed instead, so the press is never a dead end. One record under
+-- (Spoils, farm): a second press moves it, never stacks a twin. Returns true,
+-- uid when Orders took it; false, reason else.
 function CommanderSpoils_BackToFarm()
-    local home, why = E.FarmHome()
-    if not home then
+    local spot, why = E.FarmSpot()
+    if not spot then
         print("|cff66ccffCommander Spoils|r: " .. (why == "nofarm"
-            and "no farm is running — /cspoils farm starts one where you stand"
+            and "no farm is running: /cspoils farm starts one where you stand"
             or "this farm started somewhere with no map position, so there is no way back to mark"))
         return false, why
     end
-    local title = "Farm: " .. home.label
-    local line = format("/way #%d %.2f %.2f %s", home.map, home.x * 100, home.y * 100, title)
     local O = CommanderOrders
-    if type(O) ~= "table" or type(O.Add) ~= "function" then
-        print("|cff66ccffCommander Spoils|r: back to the farm — " .. line)
+    if type(O) ~= "table" or type(O.GoTo) ~= "function" then
+        print(format("|cff66ccffCommander Spoils|r: the farm is at /way #%d %.2f %.2f %s (Commander Orders is not loaded)",
+            spot.map, spot.x * 100, spot.y * 100, spot.title))
         return false, "absent"
     end
-    local ok, uid, refused = pcall(O.Add, {
-        map = home.map, x = home.x, y = home.y, title = title,
-        source = "Spoils", key = "farm", setArrow = true,
-    })
-    if ok and uid then
-        print("|cff66ccffCommander Spoils|r: the arrow points back to the farm")
-        return true, uid
-    end
-    refused = ok and refused or "error"
-    print("|cff66ccffCommander Spoils|r: " .. (ORDERS_REFUSED[refused]
-        or ("Commander Orders refused it (" .. tostring(refused) .. ")")) .. " — " .. line)
-    return false, refused
+    local ok, uid, refused = pcall(O.GoTo, spot, { source = "Spoils", key = "farm", icon = "FARM", setArrow = true })
+    if ok and uid then return true, uid end
+    return false, ok and refused or "error"
 end
 
 function CommanderSpoils_Report()
@@ -2672,7 +2661,7 @@ login:SetScript("OnEvent", function()
     Commander.UI.AttachTooltip(header.glyphs.filter, "What gets announced",
         "Which item classes raise a pickup notice. Right-click any row to pin or mute a single item.")
     Commander.UI.AttachTooltip(header.glyphs.farm, "Farm",
-        "Start or stop a named farm segment. It survives a client restart, unlike the session.|n|nRight-click: a waypoint back to where the farm started (Commander Orders; without it, the /way line).")
+        "Start or stop a named farm segment. It survives a client restart, unlike the session.|n|nRight-click: Go to Farm, the Commander Orders arrow back to where the farm started (without Commander Orders, the /way line).")
     Commander.UI.AttachTooltip(header.glyphs.wipe, "Wipe history",
         "Clears the whole ledger. Settings are untouched. There is no undo.")
     Commander.UI.AttachTooltip(header.value, "Value acquired", function()

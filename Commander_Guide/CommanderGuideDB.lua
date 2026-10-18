@@ -153,9 +153,9 @@ local function CreatePanel()
         { label = "Test Voice", tooltip = "Say one line with the voice, rate and volume below.", onClick = function() Call("CommanderGuide_Test") end, isEnabled = VoiceOn },
     })
 
-    panel:AddSection("Getting there", "The raid's door as a Commander Orders waypoint: the arrow walks you to it and the waypoint clears itself when you arrive. Without Commander Orders the button prints the /way line instead. Also /cguide entrance, a key binding, and the button under the boss list in the guide window.")
+    panel:AddSection("Getting there", "The raid's door as a Commander Orders waypoint: the arrow walks you to it and the waypoint clears itself when you arrive. Without Commander Orders the button prints the /way line instead. Also /cguide entrance, a key binding, and Go to Entrance under the boss list in the guide window.")
     panel:AddButtonRow({
-        { label = "Waypoint to Entrance", width = 170, tooltip = "Waypoint to the entrance of the raid the guide is showing (Karazhan's door in Deadwind Pass for now). Greyed out in the window while you are inside that raid.", onClick = function() Call("CommanderGuide_Entrance") end, isEnabled = Enabled },
+        { label = "Go to Entrance", width = 170, tooltip = "Point the Commander Orders arrow at the entrance of the raid the guide is showing (Karazhan's doors in Deadwind Pass for now; the arrow takes the nearer one). The window's button is greyed out while you are inside that raid, and its Shift-click shares the door in chat.", onClick = function() Call("CommanderGuide_Entrance") end, isEnabled = Enabled },
     })
 
     panel:AddSection("The voice", "Callouts are spoken through the client's own text-to-speech, the same engine that reads chat.")

@@ -1,8 +1,11 @@
 # Commander_Orders — decisions
 
-Numbered so later work can argue with them by name. These are 3.0's decisions
-(2026-10-04), the release that rebuilt Orders into the suite's own navigation
-and retired TomTom. The 2.x module's defects are cited as "2.x defect Dn": the
+Numbered so later work can argue with them by name. D1-D30 are 3.0's
+decisions (2026-10-04), the release that rebuilt Orders into the suite's own
+navigation and retired TomTom; D31-D41 are 3.1's (2026-10-05), "Go to"
+everywhere: one API, one button, one set of words and gestures, the locator,
+the coordinates and the chat links. Where 3.1 changed an older entry, that
+entry says so in a "(3.1: ...)" note and names the new one. The 2.x module's defects are cited as "2.x defect Dn": the
 numbering of the old review, kept in the header of `CommanderOrders.lua`
 where each one is fixed. In-game unknowns are in `ASSUMPTIONS.md`; the
 harnesses and their counts in `Harness/README.md`.
@@ -36,7 +39,12 @@ also the public API. Geo and Store make no client call at all: the runtime
 hands Geo an `env` of client functions (built once per session, its caches are
 keyed by it) and the Store a `ctx` of answers (position, distance, landmass,
 ghost, taxi, clock). That is what lets their harnesses load each file ALONE in
-a sealed environment where touching any other global raises.
+a sealed environment where touching any other global raises. (3.1: eleven
+files, in this TOC order: Data, Entrances (generated door data, D37), Geo,
+Store, DB, CommanderOrders, Locate (D36), Pins, Coords (D39), Chat (D38), UI;
+`O.Entrances`, `O.Coords` and `O.Chat` join the sub-tables. The three new
+code files build on the public API and `O.R` only, as Pins and UI do. A new
+file is a full client restart, never a /reload.)
 
 **D3 — The axis convention is named, not remembered.** A waypoint is
 `{ map = uiMapID, x = 0..1, y = 0..1 }` (TomTom's convention; a consumer
@@ -188,7 +196,9 @@ citable spot (the Thalassian Pass, Booty Bay to Ratchet) is named but offers
 no Guide me. A dungeon TARGET points at its entrance when a resolver knows it
 (QuestLog's, from Questie), else at the client's
 C_EncounterJournal.GetDungeonEntrancesForMap list, else says "No known way
-there". Combat layout never changes by default: HideInCombat, HideInInstances
+there". (3.1: resolvers, then the shipped door table, then the client's list,
+D37; Orphan-typed instance maps count as dungeons, D37; new legs, the nearest
+departure among equal ways and the Teldrassil island, D40.) Combat layout never changes by default: HideInCombat, HideInInstances
 and HideWithMap are all off; only HideNoTarget is on.
 
 **D13 — Continent points are stored on their zone.** A continent map holds
@@ -268,7 +278,10 @@ places a waypoint there (accepted). A refused map click or drop is said
 over the map for three seconds as well as in chat, which the maximized
 map's blackout hides. On the minimap a two-digit route number gets an 18-unit badge, and
 on a SQUARE map an edge chevron at the top rides 22 units under the edge,
-clear of Commander_Minimap's zone name.
+clear of Commander_Minimap's zone name. (3.1: 38 while Minimap Coordinates
+puts a label under that name; the world-map readout is AUTO / ON / OFF
+instead of stepping aside whenever Questie's is on; a nearest-of-N
+waypoint's every pin names its own spawn: D39.)
 
 **D16 — Commander_Minimap answers GetMinimapShape.** Its square mask has been
 on since ADDON_LOADED with nothing saying so, so every pin library
@@ -356,6 +369,8 @@ left over goes, on both wires. TomTom
 users' `TOMTOM4` messages are read only behind ListenTomTom (off). "Copy /way
 line" is offered everywhere, and the CHAT / SAY forms post a /way line for
 players without addons, from menu clicks only (SAY needs a hardware event).
+(3.1: they post the readable ChatText line through C_ChatInfo.SendChatMessage,
+a GoButton's Shift-click among the clicks; dialogs stack; D40.)
 `Share` and `SharePoint` (a spot that is not one of your waypoints: Rally on
 me, the TopBar's Shift-click) go through one send path.
 
@@ -387,7 +402,8 @@ event. The legacy globals keep working as documented wrappers:
 `CommanderOrders_IssueOrder` is ONE record under (legacy, order) that every new
 order moves (the old single-slot feel, not a pile), ClearOrder removes it or
 else dismisses the pinned target, and `RallySet / RallyGo / RallyList` are
-Places titled "Rally N".
+Places titled "Rally N". (3.1: the list grows by D32; the pinned record and the
+active route survive a reload whoever made them, D33.)
 
 **D22 — One table says who set a waypoint.** `Data.SOURCE_ICONS` (the tint a
 source wears when it names no icon) and `Data.SOURCE_WORDS` ("Quest Log",
@@ -403,7 +419,10 @@ so the alert's offer and the manual request are one record); Recovery adds
 nothing (D24). The TopBar's click is the user's own mark (source "user").
 All of them are session-only by D21's default. Quartermaster is not wired in:
 its generated data carries zone names only (its Harness/README has the
-follow-up).
+follow-up). (3.1: every consumer has a row in both tables, Quartermaster
+included (it asks the locator at runtime, D36), and the new tints PVP, NOTE,
+FARM, UNIT and BANK; the pinned record outlives a reload, D33; the 60-module
+coverage table is in Harness/README, D41.)
 
 **D23 — Persistence.** `CommanderOrdersDB` is ACCOUNT-wide: settings, Places
 (named spots tagged with the faction that marked them), PastePages, the
@@ -474,7 +493,10 @@ clickable. Units AUTO means yards in the US region and metres elsewhere
 (GetCurrentRegion; Geo itself cannot see the region). Sounds are two kits
 Blizzard's TBC UI plays, never the same one (2.x defect D15): MAP_PING 3175 on
 set and receive, IG_QUEST_LIST_COMPLETE 878 on arrival. Announce lines are
-for the user's own actions only; consumers print their own.
+for the user's own actions only; consumers print their own. (3.1: a Go a
+module asks for on the user's behalf is the user's own action, so Orders says
+"Waypoint set: ..." for it under Announce and the modules print nothing, D31;
+the round's settings, D40.)
 
 **D28 — Numbers corrected from the community tables.** The minimap's
 outdoor zoom 3 diameter is 266.67 yd (800/3), not HereBeDragons' 266.33: the
@@ -502,3 +524,486 @@ for whoever uses the frame after. Before, "Copy /way line" from a map pin
 opened an unseen box that held the keyboard. The pins' refusals go on the
 map for the same reason (D15). The mock models both (the dialog at DIALOG
 before its OnShow, the maximized map at FULLSCREEN).
+
+---
+
+# 3.1 (2026-10-05): "Go to" everywhere
+
+The user's brief: "focus on the waypoints and coords, finish the upgrade and
+complete integration of 'go to' buttons across ALL of the Commander apps".
+The contract was the session's SPEC with the completeness critic's
+corrections adopted (critic D1-D13). Nothing below has been seen in game;
+ASSUMPTIONS A46-A61 are the checks, with Test: lines.
+
+**D31 — "Go to": one set of words, one set of gestures.** Before 3.1, 14
+modules had a Go-to and each carried its own Orders lookup, its own /way
+formatter (ten of them, disagreeing on titles and precision), its own
+refusal words and tooltip. Now there is one of each, and every consumer
+cites this entry.
+
+- *Words.* "Go" on a row button; "Go to <Thing>" on a standalone one ("Go to
+  Entrance", "Go to Bank", "Go to Farm", "Go to Turn-in", "Go to the Flag");
+  "[Go]" for a chat link; "Waypoint" is only the noun for the record. A lit
+  button reads "Going" / "Going to <Thing>". A unit follow is an arrow, not a
+  place: "Arrow To Them" (Contacts' Title Case menus), "Arrow to My Target"
+  (PartyFrames' binding). Menus keep their module's case ("Go To This Note").
+- *A button* is `Commander.UI.GoButton(parent, opts)` (Commander_Events
+  CommanderGoButton.lua; every module requires Events, only some list Orders).
+  Click = `CommanderOrders.GoTo(spec or query, opts)` under (source, key);
+  Shift-click = `SharePoint(place, "CHAT")`, the readable ChatText line in the
+  group's chat, else /say; Ctrl-click = `CopyText(WayLineFor(...))`. The
+  tooltip says "Go to: <title> - <zone> <x, y>", the clicks ("Shift-click:
+  share in chat. Ctrl-click: copy a /way line.") and, in red, why it cannot go.
+  It greys out while Orders is turned off or loading, without Orders for a
+  query, and when the spec or query answers nothing; a spec or query function
+  may answer `nil, reason` (an Orders reason code or a sentence of the
+  module's own: Guide's "You are already inside"). Greyed for Orders' own
+  state (off, loading, absent for a query) its tooltip leaves out the
+  module's extra line, which says what a press does (review-r2); a reason
+  of the spec's or query's own keeps it. A greyed button still
+  explains itself: it runs its motion scripts while disabled
+  (`SetMotionScriptsWhileDisabled(true)`; 2.5.6 gives a disabled Button no
+  OnEnter otherwise, so before the 3.1 review no player ever saw the red
+  line) and, as the client rules, takes no click. An enabled query whose
+  lookup answers nothing now (Questie loading or absent, none on your
+  landmass) shows Orders' reason in the same red line instead of "Go to:"
+  and clicks that would only print it. It is lit while
+  `IsGoing(source, key)`, refreshed on CHANGED and UPDATE and in its OnShow
+  (a button made before Orders loaded starts listening on its first refresh
+  that finds Orders' events). `opts.key` is read after the spec runs, so a
+  spec function may re-point a pooled button (QuestLog, Guide). Without
+  Orders a spec still prints its /way line (formatted locally) and a query
+  says "Needs Commander Orders". A plain Button, never secure; the SPEC's em
+  dash and middle dot became " - " and a full stop (suite D11).
+- *A coordinate surface* (the coordinate block, the TopBar's coordinates,
+  Commander_Minimap's label, an Orders chat link): Left = Go (a waypoint
+  there, or where you stand, with the arrow on it), Shift = share (typed into
+  an open chat box as ChatText, else posted like a GoButton), Ctrl = copy the
+  /way line, Right = a menu, the manager one of its entries. The block, the
+  TopBar and the label all call `CommanderOrders.Coords.Gesture`; the links
+  are CommanderOrdersChat.lua's (D38).
+- *A list row with no room for a button*: Ctrl+Right-click = Go (the map's
+  MapClickModifier CTRL, the user's saved value), with
+  `Commander.UI.GoRowHint` ("Ctrl+Right-click: Go") in the row's tooltip:
+  QuestLog's Log rows, Quartermaster's rows, Tradecraft's reagent rows,
+  Formulary's rank readout. Rows whose plain right-click already set a
+  waypoint (QuestLog's Zones, Reputations and drawer rows) keep it.
+- *Feedback.* A Go the user asked for is `GoTo` not silent: Orders says
+  "Waypoint set: <title> (<Zone x, y>)" under Announce (on by default), or ONE
+  refusal line, `Reason(why)` plus ": <title> (<Zone x, y>)" and the place's
+  [Go] link when the coordinates are known. The modules' own confirmation and
+  refusal tables are gone. An automatic offer is `silent`, `temporary` and
+  `setArrow = false` (Adjutant's, Promotion's, Objectives', Ping's automatic
+  waypoint, Oracle's flag re-point, PartyFrames' roster re-point).
+
+Cited by QuestLog D45, Guide D12, Tradecraft D18, Formulary D15, Spoils D24,
+Notebook D11, Contacts D12, Armory D18 and Vault D48, and by the Harness
+READMEs of Bags, Logistics, Ping, TopBar, Comms and PartyFrames.
+
+**D32 — The 3.1 API (D21's list grows).** Every function is pcall'd at the
+boundary as before; `Locate`, `Linkify` and `ClaimChatLink` guard
+themselves, and the `Coords` functions are called guarded by their hosts
+(Commander_Minimap and the TopBar pcall them).
+
+- `GoTo(target, opts) -> uid | nil, reason`. `target`: a place `{ map, x, y
+  [, title] [, alternatives] }` (0..1; a continent point lands on its zone as
+  Add's does), a unit follow `{ kind = "unit", unit = token | guid = GUID }`,
+  or a query for `Locate` (`npc`, `object`, `townsfolk`, `entrance`,
+  `itemVendor`, `itemSource`; D36). Many places become ONE waypoint,
+  measured from you or, inside a dungeon or raid (no UnitPosition), from the
+  instance's door, which stands in for you (the door table; 3.1 review),
+  found from your dungeon uiMap, else from the instance id (GetInstanceInfo's
+  8th) for Magisters' Terrace, which has no uiMap on 2.5.6 (review-r2). The
+  candidates are the places on that landmass and on an island of the same
+  continent frame (D40); the nearest wins (whole centimetres, a tie keeps the
+  list's order) and the places on ITS landmass, nearest first, at most 256
+  (the Store's cap), are the `alternatives` the arrow follows by D6's
+  hysteresis. With no candidate, the list landmass by landmass, those one
+  cited leg away first, each in the order given; with nothing to measure
+  from, the places on your continent first. Never cut at 256 in the given
+  order before that (Mortog Steamhead was the 260th repairer of 268, and the
+  nearest from Serpentshrine's door). World positions come from each map's
+  two probes and arithmetic (A53), never a Vector2D pair a place. The title
+  is the caller's, else the list's own
+  ("Nearest innkeeper"), else the places' shared one. `opts`: source, key,
+  title, icon, note, setArrow (default true), persistent, temporary,
+  clearOnArrive, arrive, colour, silent (D31's feedback).
+- `IsGoing(source[, key])`: the arrow's target is (source, key)'s; a route
+  stop answers for its route's owner; a nil key matches any key of the source.
+- `PlaceFor(target) -> { map, x, y, title, alternatives[, elsewhere] } | nil,
+  reason`: the spot GoTo would point at first, for a Shift- or Ctrl-click and
+  the tooltips. A query is measured once (in Resolve), not again. "The
+  nearest <townsfolk>" with no candidate on your landmass (or the island
+  beside it) is `nil, "elsewhere"`, never a starting-zone trainer from
+  Outland (Promotion's and Vitals' lines stay quiet, as their comments
+  promise); with nothing to measure from, `nil, "instance"` or `nil, "no
+  position"`. Any other target answers its first place, `elsewhere = true`
+  when it is not on your landmass. GoTo still goes in every case: the arrow
+  shows the crossing.
+- `Reason(why) -> sentence`: the one refusal vocabulary, `Data.REASONS`:
+  disabled "Commander Orders is turned off (/corder)", loading "Commander
+  Orders is still loading", nowhere "No known location", nomap "No map for
+  that place", nocoords "No coordinates for that place", instance "No position
+  inside instances", otherside "Only the other faction has one", elsewhere
+  "None on your landmass" (3.1 review), noquestie
+  "Needs Questie to look that up", notready "Questie is still loading",
+  needsorders "Needs Commander Orders", noquery "Nothing to look up", unknown
+  "Commander Orders cannot look that up", error "Something went wrong (see your
+  error log)", and the 3.0 answers kept as codes so no consumer's comparison
+  breaks ("no world position", "no position", "invalid unit", "invalid
+  position", "unknown waypoint", "not in a group", "no chat", "chat is locked
+  down", "no guide", "unknown place", "no stops", "no fields", ...). An
+  unknown code (or a module's own sentence) comes back capitalised.
+- Words for a place: `FormatCoords(x01, y01[, decimals])` ("45.2, 66.8", at
+  CoordDecimals by default), `WayLineFor(map, x01, y01, title)` (always 2 dp),
+  `ChatText(map, x01, y01, title)` ("Title - Hellfire Peninsula 45.2, 66.8
+  (/way #1944 45.20 66.80)", never starting with "/", at most 255 bytes),
+  `ChatLink(map, x01, y01, title[, text])` and `ParseChatLink(link)` (D38),
+  `CopyText(text)` (the copy box, D40), `ParseCoords(text)` (what /way would
+  make of a typed line).
+- Places: `SaveAsPlace(uid[, title])` (at the spot the arrow follows) and
+  `MarkPlace(title[, at])` (`at = { map, x, y }` instead of where you stand).
+- `Entrance(uiMap | { instance = id })`: the door table, then the
+  registered resolvers for a uiMap it does not know, then the client (D37,
+  the lead's decision); a door's alternatives are copied out too.
+- `Locate(query) -> places | nil, reason` (D36; a stand-in answering
+  "loading" until CommanderOrdersLocate.lua replaces it);
+  `RegisterResolver` widened with "townsfolk" and "npc" (D36).
+- `Linkify(text, ctx)` and `ClaimChatLink(link, fn)` (D38); `Coords` (D39:
+  Read, Text, Here, Gesture, Tooltip, Waypoint, Share, Copy, Menu,
+  MinimapText, WantsMinimapClick, MinimapPoint, MinimapClick, Command).
+- For the other Orders files (`O.R`): Decimals, AskCoords, TypedCoords,
+  UnitForGuid, RemapUnits, DoorLookup (the locator's to set), LocateState;
+  `Store:Retarget(uid, unit)`, `Store:Closest(ctx, anyOwner)`; Geo: Zone,
+  PlainText, ChatText, ChatLink, ParseChatLink, LinkEscape / LinkUnescape,
+  LINK_PREFIX, `env.islands`; Data: REASONS, ISLANDS, CLOSEST_SCOPES,
+  MAP_COORDS, the new ICON_COLOURS keys. One new dialog,
+  `COMMANDER_ORDERS_COORDS`; no new global.
+- In Commander_Events: `Commander.UI.GoButton`, `Commander.UI.GoRowHint`,
+  `Commander.UI.RefreshGoButtons`.
+
+**D33 — Persistence, amended: the pinned target and the active route survive
+a reload (critic D5).** 3.0 kept consumer records session-only (D21, D22),
+so a Go pressed before a /reload pointed at nothing after it. Now the Store's
+Serialize keeps the record the arrow is PINNED to and the ACTIVE route even
+when they are session-only, and (3.1 review) the record a pinned "Guide me"
+hop leads to: the hop names it in `guideFor` (a persisted field), the Store
+keeps it beside the hop under the same two exclusions, and LoadStore
+restores the runtime's guide link, so a crossing made off the hop's spot
+after a /reload still hands the arrow back instead of pointing across it. They load still session-only, so the next save
+keeps them only while they hold the arrow: everything else a consumer made
+stays session-only, and nothing piles up. Two exclusions: a unit follow (a
+token is another member after a relog) and a temporary offer (a group ping,
+a battleground node, a repair offer: the moment is gone; Commander_Ping's
+"gone after a reload" check holds it to that). Routes save their persistent
+flag; a 3.0 save's routes load as persistent. A persisted record needs its
+owner to clear it: QuestLog removes every key of a quest on QUEST_TURNED_IN
+and QUEST_REMOVED (QuestLog D45), Logistics' vendor waypoint goes at any
+merchant, Oracle's go when the battleground ends.
+
+**D34 — The battleground hedge (critic D6).** UnitPosition may answer
+nothing inside a battleground (A1 is unproven either way) while the map
+position does. When `UnitPosition("player")` answers nothing and
+`IsInInstance()` says "pvp", the player's world position is the map position
+through `Geo.ToWorld`, sampled at most ten times a second (a Vector2D a
+call). Group members are not hedged. Oracle's Arathi pips and its WSG/EotS
+"Go to the Flag" work through it if only the map position answers, and so
+does the coordinate block's reading. A46 settles it.
+
+**D35 — Follow the Closest keeps to your zone, and to your own (S3).**
+`ClosestScope` "ZONE" (the default, TomTom's rule) or "LANDMASS" (3.0's): in
+the zone scope a candidate's spot (a nearest-of-N waypoint's chosen spawn)
+must share the player's zone (`Geo.Zone` of both maps). `ClosestMineOnly`
+(on): records whose source is "TomTom:*" (Questie's and WhatsTraining's asks
+through the bridge) are left out; every Commander module's records count as
+the user's own. `/cway` and "Point at the closest" follow both; the bridge's
+own GetClosestWaypoint / SetClosestWaypoint pass `anyOwner` and see
+everything, because TomTom's callers expect their own waypoints there.
+`/cway` with nothing in scope names the setting. A capital is part of the
+zone around it (the lead's decision, 3.1 review): every capital is a Zone map
+whose parent is the continent (UiMap.csv: Stormwind City 1453 and Elwynn
+Forest 1429 both hang off 1415), so `Data.CITY_ZONES` folds each into its
+zone (Stormwind into Elwynn, Orgrimmar into Durotar, Ironforge into Dun
+Morogh, Thunder Bluff into Mulgore, Darnassus into Teldrassil, Undercity
+into Tirisfal, the Exodar into Azuremyst, Silvermoon into Eversong,
+Shattrath into Terokkar) in this scope ONLY: Geo.Zone stays the city, the
+coordinate frame the block and the chat links read. "My landmass" restores
+3.0.
+
+**D36 — The locator: CommanderOrdersLocate.lua is the one Orders file that
+names Questie (SPEC 3).** It mirrors QuestLog's rule for its adapter, so
+when Questie changes shape the damage is one file wide and a Go button says
+"Needs Questie to look that up", never a Lua error. Every read is
+feature-detected and pcall'd, and nothing is decided at load (Orders loads
+before Questie and QuestieDB). What answers, in order:
+
+1. Registered resolvers. "townsfolk" ones are MERGED with Questie's lists (a
+   learned place stands for Questie's spawn of the same NPC on that map, or
+   any Questie place within 0.002 of it); "npc" ones answer FIRST.
+   `RegisterResolver("townsfolk", fn(kind, query))`,
+   `RegisterResolver("npc", fn(idOrName, query))`, each answering nil, a list
+   of `{ map, x, y, title?, npc? }` or one such table. Logistics registers its
+   learned book for BOTH "Repair" and "Vendor" (a repair vendor is a vendor).
+2. QuestieDB's public contract (`LibQuestieDB.RequireContract(2)`): NPC,
+   object and item reads.
+3. Questie's Townsfolk module (`QuestieLoader._modules.Townsfolk`, internal:
+   a REQUIRED-list probe, pcall, never ImportModule) and
+   `Questie.db.char.vendorList`, for the "nearest X" kinds.
+4. The shipped door table (D37).
+
+Kinds: `npc` (id, exact name or a list of ids; an NPC found only inside an
+instance answers its door: QuestieDB's {-1, -1} spawn), `object`,
+`townsfolk` (Repair, Vendor, Innkeeper, Banker, Auctioneer, Flight Master,
+Battlemaster, Weapon Master, Stable Master, Spirit Healer, Mailbox, Meeting
+Stone, Class Trainer [class], Portal Trainer, Profession Trainer [profession]
+or "<Profession> Trainer", and the vendor lists Reagents, Poisons, Trade
+Goods, Bags, Potions, Food, Drink, Ammo; aliases folded: "inn", "fp", "ah",
+"bank", "water", ...), `itemVendor`, `itemSource` (vendors, then droppers,
+then containers; an instance source answers its door) and `entrance` (a
+uiMap, `{ instance = id }` or `{ area = questieAreaId }`). Faction-filtered as
+Questie's own map is (friendlyToFaction, its NPC blacklist). List titles are
+"Nearest <words>". The reasons it answers are D32's codes (noquery,
+unknown, noquestie, notready, nowhere, otherside, instance, error). Hover is
+cheap: every list is built once per Questie source table and every id, name
+and item answer memoized; all of it is dropped when Questie says it is ready,
+and then the eight common lists are built one per 0.1 s, never in combat. A
+NAME query builds QuestieDB's name index once (55 ms under luajit): modules
+pass ids. Without Questie only resolvers answer. A shipped townsfolk table
+for players without Questie is a follow-up (D41).
+
+**D37 — The door table (SPEC 3, critic D4).** `Harness/make_entrances.py`
+writes `CommanderOrdersEntrances.lua` from the client's AreaTrigger DB2 (build
+2.5.6.69795) joined to the CMaNGOS `areatrigger_teleport` table: 51
+instances, 65 doors, 113 dungeon uiMaps and 113 Questie areaIds, `--check`
+byte for byte (it needs the DB2 CSVs: `--fetch --db2 DIR`). A door's zone is
+its dungeon map's parent when the trigger lies inside that zone, else
+Formulary's boundary rule (the rule alone put Wailing Caverns in Mulgore). 23
+instances whose portal is in a cave, a mountain or under a lake ship their
+outdoor mouth (an "approach", each row citing its source) when any door is
+more than 100 yd from it; several doors become alternatives and the arrow
+takes the nearest. The research's "matches Questie within 0.3 map-%" held for
+10 of 51; every instance's verdict is in the file's header, and a new
+disagreement is flagged UNREVIEWED. `Entrance()` asks the registered
+resolvers, then this table (`R.DoorLookup`), then
+C_EncounterJournal; it takes `{ instance = id }` too (Guide and Formulary key
+by instance id), and Orphan-typed instance maps (mapType 6: the Black Morass
+273, Old Hillsbrad 274, Hyjal 329, Zul'Aman 333) count as dungeons in the
+hint, the landmass name and the client lookup. Guide adopted the table
+(Guide D12) without registering its own as a resolver. DECIDED (the lead,
+3.1 review; was OPEN): the table comes FIRST for every dungeon it knows, and
+the registered resolvers answer only what it lacks (QuestLog's, from
+Questie's dungeon list, keeps working for those). So the corpse run, the
+arrow's dungeon hint and a uiMap-keyed `{ entrance = map }` get the reviewed
+door with every door or approach as alternatives (the corpse record carries
+them now, so the nearest door wins). QuestLog's own givers and objectives
+inside a dungeon (the {-1, -1} spawn) now ask `CommanderOrders.Locate({
+entrance = area })` for the door too, falling back to Questie's spot only when
+Orders has none (QuestLog, 3.1 review round 2), so every Go into a dungeon
+points at the same door.
+
+**D38 — Places in chat you can click (SPEC 4, CHAT).**
+CommanderOrdersChat.lua adds a [Go] link after a place someone types:
+tier A, a `/way`, `/tway` or `/tomtomway` line (any case); tier B, "Zone x,
+y" when up to four words before the pair fold to exactly one zone name or an
+alias of four letters or more. There is no bare "x, y" tier (critic D7: "2,
+5" in Trade is not a place). A bare `/way 45 66` takes the sender's map: your
+own line, a group member's (their map), or SAY, YELL, EMOTE and the zone's
+General and LocalDefense channels (zoneChannelID 1 and 22, assumed: A48);
+anything else gets no link. The map is raised to its zone and written into
+the link, so a later click never guesses. Orders' own shared line ("Title -
+Zone x, y (/way ...)") gets ONE link, its title read back. The filter
+(critic D10) goes through `ChatFrameUtil.AddMessageEventFilter` (the
+deprecated global only as a fallback) on 17 events (not SYSTEM, MONSTER or
+LOOT), hands back all fourteen arguments or a bare false, keeps the last 64
+lines by lineID, reads plain text only (links, colours, textures, kstrings
+and {...} skipped whole), rejects a line with no digit in one find, adds at
+most four links, and contains its errors (five reports a session).
+
+The link is LOCAL: `|cff71d5ff|Haddon:CommanderOrders:w:<map>:<x %.4f>:<y
+%.4f>:<title>|h[Go]|h|r`, the title plain words, at most 120 bytes (60 from
+a typed /way), braces dropped, and `%`, `:`, `|`, `[`, `]` and control
+characters %XX-escaped, so Blizzard's formatting after the filters (% doubled,
+{...} icons, runs of spaces) leaves it whole; it round-trips map, x, y within
+5e-5 and the title exactly. What is SENT is ChatText. The click travels
+OnHyperlinkClick, SetItemRef, LinkUtil's "addon" handler, EventRegistry
+"SetItemRef"; hover is EventRegistry "ChatFrame.OnHyperlinkEnter" /
+"OnHyperlinkLeave" (read in the 2.5.6 source): one owner table, nothing
+hooked or replaced. Gestures are D31's; the menu: Go, Add without the arrow,
+Open the map here, Share with group, Post in chat, Copy /way line, Save as
+place. `Linkify(text, ctx)` serves text that never passed the filters
+(Contacts' logged lines); `ClaimChatLink(link, fn)` lets a module keep a
+printed link's plain click for the session (Ping's callout moves its one
+"Ping" waypoint; Oracle's `/coracle nodes`), the last 64 kept, a lost claim
+falling back to the plain Go. Ping's `[Waypoint]` link, an index into a
+20-ping list that died on a reload, folded into this one (map:x:y survives).
+One setting, ChatLinks, covers both tiers. Known false positive: a level
+range written with a space ("Hellfire Peninsula 58 60").
+
+**D39 — Your coordinates, visible by default (SPEC 4, COORDS; the block
+opt-in since the 3.1 review).** On this
+install the player saw no Commander coordinates anywhere (critic 2: the
+TopBar segment off, Questie's minimap numbers in a zone text Commander_Minimap
+hides, Orders' map readout stepping aside for Questie's). Now:
+
+- *The coordinate block* (CommanderOrdersCoords.lua): OFF by default (the
+  lead's decision, 3.1 review: `CoordsBlock` false; a saved value is kept as
+  it is, no migration), so Commander_Minimap's label is the default surface;
+  the label's right-click menu, and every surface but the block, offers
+  "Show the coordinate block". The shared HUD chrome (prefix "Coords", style
+  SOLID, TOP +240, -504, under the Orders arrow's default box, 150 wide, LOW
+  strata). Not under the minimap any more: 3.1's TOPRIGHT -21, -208 sat in
+  the right column where 2.5.6 manages the quest tracker (QuestWatchFrame,
+  right-aligned from 192 down, up to about 290 wide) and its lines 2 to 5
+  drew over the block (review: render; A65). It shows "42.0, 65.5" over the
+  subzone (gold) and the zone (grey), "--" with no position. An unconditional 0.2 s throttle, written
+  only on change (critic 1.6: taxis, boats, knockbacks move you without a
+  movement event). It reads UnitPosition through each map's world rectangle
+  (two GetWorldPosFromMapPos probes per map, kept), never a Vector2D five
+  times a second, and speaks in ZONE numbers (Geo.Zone), so a cave or a city
+  sub-map reads like the world map. First chromed out of combat (D10), its
+  click surface a child Button under the drag overlay; unnamed, no global,
+  no secure child; no scale grip on a small plate. `/corder coords` [on | off
+  | lock | unlock | reset | 0 | 1 | 2 | where].
+- *MapCoords* AUTO | ON | OFF (the world-map readout, Pins): AUTO shows ours
+  when Questie's are off, OR the viewed map is not the player's (where
+  Questie's "Player" is wrong), OR inside a dungeon or raid (Questie writes
+  nothing there). A 3.0 boolean is repaired to AUTO / OFF in DB.Init;
+  DBVersion stays 3.
+- *CoordDecimals* (0..2, default 1) everywhere Orders writes readable
+  coordinates; /way lines always carry 2.
+- *Commander_Minimap* 2.5.0: a label under its zone name (MinimapCoords) and
+  Ctrl+Right-click = a waypoint there (MinimapClick). Blizzard's
+  Minimap_OnClick pings for ANY button, so the minimap's OnMouseUp is wrapped
+  with SetScript, keeping whatever handler was there: Ctrl alone with the
+  right button goes to Orders and never pings (no ping reaches the group, and
+  Commander_Ping echoes no second waypoint); every other click runs the old
+  handler. The placement is the exact inverse of Geo.MinimapPlace (square
+  bounds when GetMinimapShape() says SQUARE, the facing turned back under
+  rotateMinimap); past the zone's edge the smallest sibling zone takes it;
+  outside the map's face nothing happens. Without Orders there is no label
+  and every click pings as before.
+- *Pins*: on a SQUARE minimap with the label on, the top edge chevron rides
+  38 under the edge (D15's 22 otherwise); every world pin of a nearest-of-N
+  waypoint names its own spawn and distance, and one the arrow is not on says
+  so (M7).
+- The label is on by default and the block off (the lead's decision), so
+  the numbers show once; each has its switch.
+
+**D40 — The smaller 3.1 fixes (SPEC 2).**
+- `Update` goes through Add's zone and world checks (critic C11): a
+  continent point lands on its zone, a spot with no world position is
+  refused.
+- Shares: the share dialog stacks (`multiple = true`, each with its own share
+  as data; a second share no longer cancelled the first, critic D13); with no
+  dialog the line carries the place's [Go] link (there is no inbox to point
+  at); CHAT and SAY post ChatText through `C_ChatInfo.SendChatMessage` (the
+  bare global is the deprecation shim, kept as the fallback; critic D11).
+- The copy box: `maxLetters = 255` (2.5.6's pooled edit box keeps the last
+  dialog's 24 or 40 otherwise) and "Ctrl+C to copy" (a pasted /way runs, it is
+  not sent; critic D12).
+- Connections (S7), every spot cited from QuestieDB: Grom'gol's zeppelin
+  (npc 3149, Horde), Theramore's boat to Menethil (npc 12716 on the pier,
+  INFERRED to be the dock: A57), Auberdine to Teldrassil (object 176365) and
+  back (npc 3838, Rut'theran's hippogryph master). Shattrath's portals are
+  named with no place (no citable spot); Exodar to Darnassus is not listed;
+  Booty Bay to Ratchet stays text only. Among the first hops of every
+  SHORTEST way the nearest departure wins (H3), a text-only hop only when
+  nothing placed ties. `Data.ISLANDS`: Teldrassil and Darnassus are
+  "1414:1:teldrassil", so the arrow names the crossing instead of pointing
+  across the sea; the Isle of Quel'Danas stays on Quel'Thalas (its crossings
+  are a portal and a taxi). An island must not hide the nearest place, though
+  (3.1 review: from Auberdine the nearest bank was Everlook, 5,211 yd through
+  Felwood, with Darnassus one boat away): "nearest" lists count the places on
+  an island of the same continent frame, measured in a straight line (the
+  same world frame), and when one wins the waypoint's choices are that
+  island's alone, so the arrow shows the boat until you cross. A landmass a
+  cited leg away in another frame (Outland, the Eastern Kingdoms from
+  Kalimdor) is not counted: its arrival spot is not citable for every leg
+  (the Menethil dock serves two boats, Ratchet's lands at an unplaced Booty
+  Bay), so it only orders the "elsewhere" fallback (D32).
+- Unit follows (S6): `{ kind = "unit", guid = ... }` finds the token; every
+  follow remembers the member's GUID and is re-pointed after
+  GROUP_ROSTER_UPDATE (`Store:Retarget`); a follow defaults to
+  `clearOnArrive = false`. A35's "a token, not a person" no longer holds.
+- The manager (S8): "Add at..." and "Move..." take typed coordinates through
+  the `COMMANDER_ORDERS_COORDS` box (Geo.ParseWay, then Add or Update); "Save
+  as place" keeps a waypoint as a named place. The arrow and pin menus gain
+  Mark arrived, Save as place and Point at the closest. A place from a map
+  click is a pin's Save as place (no new gesture).
+- Settings (Orders owns every key of the round; the other files read them
+  with these defaults): CoordDecimals 1, CoordsBlock off (it was on until the
+  3.1 review; D39) and the Coords chrome keys (style SOLID), MapCoords AUTO, MinimapCoords on, MinimapClick on,
+  ChatLinks on, ClosestScope ZONE, ClosestMineOnly on. The rows went into the
+  existing sections (Behaviour: Closest Within, Only My Own and Shared; Map &
+  Minimap: World Map Coordinates, Coordinate Block, Minimap Coordinates,
+  Ctrl+Right-Click the Minimap, Coordinate Decimals and the block's chrome
+  rows; Sharing: Clickable Places in Chat).
+- TOC 3.1.0; the four new files (Entrances, Locate, Coords, Chat) and
+  Commander_Events' CommanderGoButton.lua need a full client restart.
+  Bindings.xml is unchanged.
+
+**D41 — "Everywhere" is a table, and what is left.** Of the 60 Commander
+modules (`ls -d Commander_*/`), 24 have Go surfaces, 2 are the
+infrastructure (Orders, Events) and 34 hold no place a player walks to;
+`Harness/README.md` has the row for every one, each N/A with its reason, so
+"all" can be checked. One owner per offer (critic S9): Logistics owns the
+repair and vendor supply lines (Adjutant's repair and full-bags offers ask
+it), Promotion owns the level-up class-trainer offer (Adjutant adds none),
+Objectives owns the turn-in offer (off by default). The consumers' new
+globals are documented entry points, listed under the table. Left to Devin:
+PartyFrames' click-cast
+rows fire every binding on both the down and the up phase (it is ours;
+menus act on the up phase only, so spells, macros and targets double; the
+fix needs 2.5.6's "downbutton" remap per phase and an in-game test, and was
+not built); Tradecraft keeps its Set Waypoints switch and Formulary has none
+(critic D7's "pick one" left as it was). Follow-ups, not built (critic's
+COULD list and the builders' asks): a shipped townsfolk / stations table for
+players without Questie; flight, hearth, graveyard, station and town kinds;
+per-kind pin icons; arrow alpha and strata; RXP coexistence; more bindings
+(nearest repair or bank, follow my target from Orders); route reorder, loop
+and share; TOMTOM4 send; an inbox; guild share in the menus; LDB feeds
+(replaced by TopBar segments); `/corder status` printing `R.LocateState()`;
+`Commander.UI.WayLine` for the consumers' last no-Orders formatter;
+`CommanderOrders.Nearest(query)` / `DistanceTo(place)` (a nearest place with
+its own title and yards, which Logistics, Vitals and Promotion work out
+themselves). (Commander_Chat's mirror window now fires the same
+EventRegistry hover events as Blizzard's chat frame, so the [Go] hover card
+shows there too: Commander_Chat 2.1.1.)
+
+**D42 — The 3.1 review's fixes, and the lead's three decisions (2026-10-05).**
+Six review lenses (client fidelity, the locator on real Questie, the core,
+consistency, pictures, cost) made twelve findings (one of them found twice);
+every one is fixed here
+except where a consumer must follow, and each fix has a harness check that
+fails on the code before it (README: 22 mutants, all killed). The lead
+decided: (1) the door table outranks a registered entrance resolver for
+every dungeon it knows (D37); (2) the coordinate block is off by default and
+the minimap label on, the label offering D31's gestures (it calls
+`Coords.Gesture` and `Coords.Tooltip`) and the block (D39); (3) Follow the
+Closest's zone scope counts a capital as part of its zone (D35). The fixes:
+"Open the map here" through ToggleWorldMap and SetMapID, because 2.5.6's
+OpenWorldMap raises (D38, A62); a greyed Go button runs its motion scripts
+while disabled, and an enabled query's lookup reason shows (D31, A63);
+"nearest" from inside an instance measured from its door and sorted before
+the 256 cap (D32, A64); PlaceFor's "elsewhere" (D32); the island beside your
+landmass counted (D40, A68); a "Guide me" hop's target and link survive a
+/reload (D33, A66); the block's default spot moved off the quest tracker
+(D39, A65); world positions by each map's two probes and arithmetic, and a
+query measured once (D32, A53; a nearest-of-600 hover made 1,200 Vector2Ds);
+the corpse run with every door. The harness mock was blind to two of them:
+`M.Click` now delivers nothing to a disabled Button and `M.Hover` runs its
+OnEnter only with motion scripts on, and the chat harness's world map is
+2.5.6's (OpenWorldMap raises). Left to the consumers' owners (their files):
+Formulary, Tradecraft and the Quest Log say in their own tooltip lines that
+a press of a greyed Go prints in chat, which the client never delivers
+(their GoButton's red line already says why); QuestLog's sentinel branch
+(D37); `questlog_orders_contract.lua` B expects its resolver's door for the
+Ramparts, where the table's now answers (the lead's decision 1).
+The second review (review-r2) added three: Magisters' Terrace has no uiMap
+on 2.5.6, so "nearest" from inside it and a death in it now find its door
+by the instance id (GetInstanceInfo's 8th; D32, A64; the corpse record keeps
+`instanceID`); a greyed Go leaves out its module's line while Orders is off,
+loading or absent, since those lines describe a press (D31, A63; the
+consumers' own wording is their owners' to fix as well); and the harness
+README's counts, Chat's hover row and Logistics' GoButtons and global were
+brought up to date.

@@ -4,7 +4,7 @@ Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
 /opt/homebrew/bin/luajit armory_harness.lua      # engine fixture — 459 checks
-/opt/homebrew/bin/luajit armory_ui_harness.lua   # UI + host      — 362 checks
+/opt/homebrew/bin/luajit armory_ui_harness.lua   # UI + host      - 373 checks
 /opt/homebrew/bin/luajit globals_lint.lua        # 5 files, 0 undeclared globals
 ```
 
@@ -176,3 +176,17 @@ the host's `CommanderArmory_WipeSets`, which is the path that actually runs,
 cleared only `store.sets`. A wiped character kept a bank cache describing gear
 for sets that no longer existed. The checks read the store directly rather than
 the confirmation message.
+
+## Go to Bank (1.1.0, Commander Orders 3.1, DECISIONS D18)
+
+`armory_ui_harness.lua` loads `Commander_Events/CommanderGoButton.lua` in its TOC slot, and
+section **M** checks the pane's **Go to Bank**: shown while the selected set's plan carries an
+IN_BANK blocker, in the suite's words, as Commander Orders' Go button asking the locator for
+`{ townsfolk = "Banker" }` under (Armory, bank) in the BANK tint, a click handing Orders exactly
+that; hidden at the bank and back once you walk away; hidden for a set whose piece is missing
+rather than banked; and (N) never on top of a queued swap's Cancel. `ARMORY_UI=/path` loads a copy
+of `CommanderArmoryUI.lua` (added for this round). Mutants: treating MISSING as banked is killed;
+dropping the at-the-bank test or the run-bar test is equivalent here (a plan made at the bank has
+no IN_BANK blocker, and a set with one can never queue). The flyout's "open a banker" line now
+names Go to Bank (check F still reads "open a banker"). The globals lint allows `CommanderOrders`.
+

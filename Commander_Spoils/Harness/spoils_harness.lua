@@ -568,6 +568,8 @@ local function Load(path)
 end
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
+-- Commander_Events' TOC loads its Go button between the two (Orders 3.1)
+Load(ADDONS .. "/Commander_Events/CommanderGoButton.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 Load(SPOILS .. "/CommanderSpoilsDB.lua")
 Load(SPOILS .. "/CommanderSpoilsEngine.lua")
@@ -1841,8 +1843,24 @@ do
     end
     local adds = {}
     local addAnswer = { "w3" }
+    -- Orders 3.1's one way in: GoTo(target, opts), recorded as the spec the
+    -- real GoTo hands its Add (target and opts merged, opts winning), with
+    -- what the Go button reads beside it
+    local going = false
     local function StubOrders()
-        CommanderOrders = { Add = function(spec) adds[#adds + 1] = spec; return unpack(addAnswer) end }
+        CommanderOrders = {
+            GoTo = function(target, opts)
+                local spec = {}
+                for k, v in pairs(target or {}) do spec[k] = v end
+                for k, v in pairs(opts or {}) do spec[k] = v end
+                adds[#adds + 1] = spec
+                return unpack(addAnswer)
+            end,
+            IsAvailable = function() return true end,
+            IsGoing = function(source, key) return going and source == "Spoils" and key == "farm" end,
+            Reason = function(why) return "reason:" .. tostring(why) end,
+            FormatCoords = function(x, y) return format("%.1f, %.1f", x * 100, y * 100) end,
+        }
     end
     local function LastPrint() return printLog[#printLog] or "" end
     local errs0 = #errors
@@ -1885,6 +1903,7 @@ do
 
     -- Orders present: one keyed waypoint that takes the arrow
     StubOrders()
+    local printed = #printLog
     ok, why = CommanderSpoils_BackToFarm()
     eq(ok, true, "farm-back: Orders took it")
     eq(why, "w3", "farm-back: ...and the uid comes back")
@@ -1894,7 +1913,11 @@ do
     eq(s and s.key, "farm", "farm-back: one key, so a second press moves it")
     eq(s and s.setArrow, true, "farm-back: a press takes the arrow")
     eq(s and s.title, "Farm: " .. home.label, "farm-back: titled after the farm")
-    CHECK(LastPrint():find("points back to the farm", 1, true), "farm-back: one line of confirmation", LastPrint())
+    -- Orders 3.1 (SPEC 5): the one confirmation is Orders' own "Waypoint set"
+    -- (GoTo not silent); Spoils no longer says one of its own
+    CHECK(s and not s.silent and #printLog == printed,
+        "farm-back: one line of confirmation, Orders' own (GoTo, not silent)", LastPrint())
+    eq(s and s.icon, "FARM", "farm-back: the farm icon (Orders' FARM tint)")
 
     -- The header glyph: left toggles, right is the way back
     local farmGlyph
@@ -1921,15 +1944,55 @@ do
 
     -- Refusals in words, and an Add that throws is caught
     addAnswer = { nil, "disabled" }
+    local before = #printLog
     ok, why = CommanderSpoils_BackToFarm()
     eq(why, "disabled", "farm-back: Orders switched off is a refusal")
-    CHECK(LastPrint():find("Commander Orders is switched off", 1, true) and LastPrint():find("/way #1951", 1, true),
-        "farm-back: ...said in words, with the line", LastPrint())
-    CommanderOrders.Add = function() error("orders blew up") end
+    -- Orders 3.1 (SPEC 5): the refusal is Orders' one line in Orders' words
+    -- (GoTo prints it with the place and its [Go] link); Spoils adds none
+    CHECK(#printLog == before and not adds[#adds].silent,
+        "farm-back: ...said in words, with the line (Orders' own refusal line)", LastPrint())
+    CommanderOrders.GoTo = function() error("orders blew up") end
     ok, why = CommanderSpoils_BackToFarm()
     eq(why, "error", "farm-back: a throwing Add is caught")
     eq(#errors, errs0, "farm-back: ...with no error escaping", errors[#errors])
     addAnswer = { "w3" }
+
+    -- Go to Farm on the settings page: Commander Orders' Go button (D24)
+    StubOrders()
+    local goFarm
+    for _, f in ipairs(allWidgets) do
+        if rawget(f, "__text") == "Go to Farm" or rawget(f, "_goLabel") == "Go to Farm" then goFarm = f end
+    end
+    CHECK(goFarm ~= nil, "go-farm: the settings page has Go to Farm (the words: Go to <Thing>)")
+    CHECK(goFarm and rawget(goFarm, "_goOpts") ~= nil, "go-farm: ...as Commander Orders' Go button (Commander.UI.GoButton)")
+    if goFarm and rawget(goFarm, "_goOpts") then
+        local o = goFarm._goOpts
+        eq(o.source, "Spoils", "go-farm: source Spoils")
+        eq(o.key, "farm", "go-farm: key farm, the same record /cspoils back moves")
+        eq(o.icon, "FARM", "go-farm: the farm icon")
+        goFarm.__shown = true
+        goFarm:Refresh()
+        eq(goFarm._goReason, nil, "go-farm: enabled while a farm with a place runs")
+        local n = #adds
+        goFarm.__scripts.OnClick(goFarm, "LeftButton")
+        eq(#adds, n + 1, "go-farm: a click asks Orders to go")
+        local spec = adds[#adds]
+        local start = E.FarmHome()     -- (the glyph checks above restarted the farm out at 0.9, 0.9)
+        CHECK(spec and start and spec.map == start.map and spec.x == start.x and spec.y == start.y
+            and spec.title == "Farm: " .. start.label,
+            "go-farm: ...to the farm's start, titled after the farm",
+            spec and (tostring(spec.map) .. " " .. tostring(spec.x) .. " " .. tostring(spec.title)))
+        going = true
+        goFarm:Refresh()
+        eq(goFarm.__text, "Going to Farm", "go-farm: lit while the arrow goes there")
+        going = false
+        goFarm:Refresh()
+        eq(goFarm.__text, "Go to Farm", "go-farm: ...and back to its words after")
+        E.StopFarm()
+        goFarm:Refresh()
+        eq(goFarm._goReason, "nowhere", "go-farm: greyed with no farm running")
+        CommanderSpoils_ToggleFarm()
+    end
 
     -- A restart: the saved block brings the way back with it
     local saved = DB.Farm

@@ -81,6 +81,13 @@ GameFontNormal GameFontNormalSmall GameFontNormalLarge
 GameFontHighlight GameFontHighlightSmall GameFontDisable GameFontDisableSmall
 ]]
 
+-- Commander Orders 3.1: a browser row's Ctrl+Right-click goes to the thing's
+-- source (CommanderQuartermaster.lua GoTarget / GoToSource); Orders is
+-- optional and looked up at the click
+allow[[
+CommanderOrders IsControlKeyDown
+]]
+
 local problems, scanned = 0, 0
 for _, file in ipairs(FILES) do
     local pipe = assert(io.popen(string.format('%q -bl %q 2>/dev/null',

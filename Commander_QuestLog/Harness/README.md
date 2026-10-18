@@ -1,6 +1,6 @@
 # Commander_QuestLog harnesses
 
-Ten luajit checks and one generator check, run from the AddOns root. Each
+Eleven luajit checks and one generator check, run from the AddOns root. Each
 resolves the AddOns root from its own file location, so it works in a git
 worktree as well as in the live AddOns directory (and from any working
 directory), and exits non-zero if any check fails. Run them all before
@@ -9,21 +9,45 @@ touching anything in the module. The first five are the 1.5.0 set: the window
 window and the drawer both stand on, the drawer, and the adapter against the
 real Commander Orders. The next five came with the Reputations tab (1.6.0):
 the generated reputation data, the reputation rules engine, the Reputations
-tab, reputation on every other surface, and the NPC's quest dialog.
+tab, reputation on every other surface, and the NPC's quest dialog. The
+eleventh came with "Go to" (1.7.0, DECISIONS D45, Commander Orders 3.1): the
+window's Go buttons over the suite's own `Commander.UI.GoButton`.
 
 ```bash
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_harness.lua         # 525 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/completion_engine_smoke.lua  # 756 checks
-/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questie_adapter_smoke.lua    # 666 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questie_adapter_smoke.lua    # 676 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_map_harness.lua     # 337 checks
-/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_orders_contract.lua # 25 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_orders_contract.lua # 65 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/reputation_data_smoke.lua    # 432 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/standing_smoke.lua           # 609 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_reps_harness.lua    # 192 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_rep_everywhere_harness.lua  # 203 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questframe_harness.lua       # 72 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_goto_harness.lua    # 72 checks
 python3 Commander_QuestLog/Harness/make_reputations.py --check                   # exit 0: the data file is current
 ```
+
+**1.7.0 ("Go to", D45).** The contract harness 25 -> 60 (sections F-K) and
+the new `questlog_goto_harness.lua` (67); every other count is unchanged.
+Two existing checks moved with the SPEC's words, nothing else: the contract
+harness's E (Orders turned off) now expects Orders 3.1's one refusal line --
+"Commander Orders is turned off (/corder): Know Your Enemy (Hellfire
+Peninsula 61.8, 60.6)" with the place's [Go] link -- where it expected the
+adapter's own /way line, because a press with Orders 3.1 is Orders' `GoTo`,
+which words its refusal itself; and the drawer harness's D row hint reads
+"Right-click: Go" where it read "Right-click: waypoint" ("Waypoint" is the
+noun only). The window, adapter and drawer harnesses load no GoButton and
+stub an Orders 3.0 (Add, no GoTo), so they keep proving the plain-button
+path and D35's Add spec unchanged. Mutation runs: 23 hand-made mutants of the
+adapter, the window and the catalogue (no GoTo, no turn-in or abandon
+cleanup, no one-waypoint-per-quest, Questie's objective order ignored, an
+item's droppers dropped, the objective key shared, a sloppy key prefix, no
+starter, the trigger ignored, one spot only, no Ctrl+Right-click, a Go on a
+finished objective, no room left on the line, the turn-in key never set, no
+row hint, plain buttons, the pools never put away, no LEADS TO Go, the
+catalogue's Go a plain button, no objective Go on the Zones tab, the key not
+following the selection): each fails at least one check.
 
 The 1.6.0 counts against 1.5.0's: the window 447 -> 525 (section Q3, the tab
 register), the engine 747 -> 756 (section O, `StandingWord` with no value),
@@ -51,6 +75,16 @@ the badge's 12-character fit and Shattrath's "+3850 Scry"; D: a faction at
 the ceiling, at Exalted 500, and quests and repeatables held to 0; F: the
 drawer's fit; H: several factions seen in game) and the quest dialog
 71 -> 72 (H: "(seen in game)" on the heading).
+The Go-to review's round 2 (2026-10-05, D46) added the adapter 666 -> 676
+(Q2: a {-1, -1} spawn is Orders' door, Questie's zone kept), the contract
+harness 60 -> 65 (L: Murmur's Go on Orders' Shadow Labyrinth door, within 5
+yd, where Questie's spot is 100 yd short) and the Go harness 67 -> 72 (F: a
+greyed Go promises no press). One check moved with the fix: the contract
+harness's G expected Questie's Blood Furnace spot (46.0, 51.8) and now
+expects Orders' own door there (`Entrance({ instance = 542 })`, 45.87,
+51.93). Run against the old sentinel branch (`CQL_ADAPTER`), Q2 fails 5, G
+and L fail 1 each; against the old tooltips (`CQL_UI`, `CQL_CATALOGUE`), F's
+own-line checks fail.
 
 Mutation hooks, for proving a check bites against a broken copy of a file
 (the copy lives anywhere; the live file is never touched):
@@ -84,10 +118,11 @@ The suite's own settings smoke (`Commander_Events/Harness/settings_ui_smoke.lua`
 the framework this module's page is built on, including the fold-and-search
 layout a page with more than three sections gets (1.6.0 made it six, with
 Reputation between Zones & Completion and World Map). Commander Orders' own
-five harnesses
-(`Commander_Orders/Harness/*.lua`: 679, 569, 779, 523 and 490 checks) boot the
-pins and the store the contract harness hands waypoints to; a change to the
-adapter's `A.Waypoint` is worth a run of them too.
+harnesses (`Commander_Orders/Harness/*.lua`, their counts in that folder's
+README) boot the pins and the store the contract harness hands waypoints to;
+a change to the adapter's `A.Waypoint` / `A.GoSpec` is worth a run of them
+too, and so is `Commander_Events/Harness/gobutton_smoke.lua` (the Go button
+this module's buttons are, D45).
 
 ---
 
@@ -387,7 +422,7 @@ The 2026-10-04 checks (H1, H2, Q) were each run against the engine as it was
 before the review and fail there; the round-2 checks fail 25 times against
 the engine before round 2.
 
-# questie_adapter_smoke.lua — the Questie adapter (666 checks)
+# questie_adapter_smoke.lua — the Questie adapter (676 checks)
 
 Drives `CommanderQuestLogQuestie.lua` over `fake_questie.lua` under a WoW mock
 just big enough for it: a `C_Timer` on a manual clock that runs one frame at a
@@ -443,8 +478,14 @@ pcall would otherwise swallow it) and must stay empty.
   a Riding quest is locked; *round 2:* a second reputation change inside the
   late look's window gets a look of its own a bucket after it, and then no
   more; ready under a heading collapsed in the stock log (through
-  `IsQuestComplete`), beating a stale scan, and only on a true answer; **P** nothing forbidden, nothing leaked into
-  globals, no glyphs.
+  `IsQuestComplete`), beating a stale scan, and only on a true answer; **Q2**
+  (D46) a {-1, -1} spawn asks Orders' locator first: the Blood Furnace's
+  sentinel is the stub's door, Hellfire still lists the quest (Questie's
+  entrance zone kept), the Underbog's door on Zangarmarsh keeps Zangarmarsh,
+  a second door on Hellfire is a spot for the arrow only (zone nil, so
+  Hellfire does not start listing it), the turn-in follows; a locator that
+  raises or answers "loading" leaves Questie's spot; **P** nothing forbidden,
+  nothing leaked into globals, no glyphs.
 - **R — reputation (1.6.0)**, 238 checks over `Fake.RepWorld()` (real quest
   ids with Questie's real rows) with the REAL rules engine and the generated
   data, both loaded for this section only and taken away after it, a fresh
@@ -609,7 +650,7 @@ counts are other harnesses' assertions.
 
 ---
 
-# questlog_orders_contract.lua — the adapter against the real Commander Orders (25 checks)
+# questlog_orders_contract.lua — the adapter against the real Commander Orders (65 checks)
 
 The other harnesses prove what the Quest Log asks Commander Orders for, through
 a recording stand-in; this one proves Orders takes it (D35). It boots
@@ -637,6 +678,33 @@ the adapter after Orders' `ADDON_LOADED`, the client's order for an addon with
 `CQL_ADAPTER` loads a mutated adapter here too; the alternatives, the key, the
 route mode, the registration at Init and the entrance's 0..1 scaling each fail
 a check when broken.
+
+Since 1.7.0 (D45) it boots `Fake.GoWorld()` (the default world plus quest
+9005's objectives, below), and E expects Orders 3.1's one refusal line with
+the place's [Go] link. The new sections run the "Go to" work on the real
+Orders 3.1:
+
+- **F** a press is Orders' `GoTo`: Orders' own "Waypoint set" line and none
+  of the Quest Log's; owned (QuestLog, `quest:9005`) with the quest's icon.
+- **G** quest 9005's objectives in Questie's order (the object first, as
+  `objectObjectiveFirst` asks), each named, each one's spots (the poster, the
+  eight sentries, the missive's nine droppers' spawns, none for the
+  reputation goal, Orders' own Blood Furnace door for Caza'rez (D46), the
+  explore trigger's spot); the sentry Go taken by Orders with all eight spawns and
+  the arrow on the one the player stands by.
+- **H** one waypoint per quest across its keys: objective, turn-in, objective
+  again; another quest's left alone.
+- **I** `QUEST_TURNED_IN` and `QUEST_REMOVED` remove every key of the quest
+  and nobody else's (quest 900's turn-in leaves 9005's).
+- **J** the pinned quest Go survives `M.Reload` (Orders 3.1 keeps it) and the
+  turn-in after the reload still clears it.
+- **K** a follow-up's Go: The Legion Reborn starts with Danath; an
+  item-started quest has nowhere to go.
+- **L** (D46) the Shadow Labyrinth as Questie has it (area 3789, Terokkar
+  39.6, 71.0), Murmur inside it and quest 10095 to kill him, added to the
+  world in `BootOpts`: Murmur's objective Go lands within 5 yd of Orders'
+  `Entrance({ instance = 555 })` (Questie's own spot is 100 yd short), one
+  place, and the real Orders takes it.
 
 
 ---
@@ -895,6 +963,55 @@ Drives `CommanderQuestLogQuestFrame.lua` over `questframe_mock.lua` (the
   at PLAYER_LOGIN.
 
 `CQL_QUESTFRAME` loads a mutated copy.
+
+# questlog_goto_harness.lua — "Go to" in the window (72 checks)
+
+D45 (1.7.0). The window harness drives the window WITHOUT
+`Commander_Events/CommanderGoButton.lua`, so its checks keep proving the
+plain-button path; this one loads it, on the same client (`questlog_mock.lua`,
+its silent `Enable` / `Disable` given state here), over the fake Questie's
+`GoWorld` (quest 9005 in the log with an objective of every kind) and a
+recording Commander Orders 3.1 (`GoTo` merging its options into the place as
+the real one does, `IsGoing` by the arrow's owner, `PlaceFor`, `Reason`,
+`SharePoint`, `CopyText`, `List`, `RemoveBy`; its `Add` raises, since no Go
+may take the 3.0 path while GoTo is there).
+
+- **A** the Log's "Go to Turn-in" (120 px) and the Zones tab's "Go" are the
+  suite's GoButton.
+- **B** the Log's briefing: a row Go on the poster, the sentries, Caza'rez
+  and the trigger, none on the finished missive or the reputation goal; at
+  the briefing's right edge, the line keeping room for it; its tooltip; a
+  click is GoTo under `quest:9005:2` with all eight spawns, lit "Going" for
+  that objective alone; Shift-click shares through `SharePoint(..., "CHAT")`,
+  Ctrl-click copies the /way line; Caza'rez goes to the Blood Furnace's
+  entrance and the quest keeps one waypoint.
+- **C** Go to Turn-in: `quest:9005`, the finisher's title, the objective's
+  waypoint dropped, lit "Going to Turn-in", its tooltip and gestures.
+- **D** a log row's Ctrl+Right-click goes to its turn-in, a plain
+  right-click still tracks, the tooltip names the gesture, and a quest with
+  nothing to place puts the objective Go buttons away.
+- **E** the Zones tab: Go on the selected quest (its own key, every spawn,
+  lit, greyed with nothing selected); LEADS TO's Go to that quest's giver;
+  an in-log quest's objectives carry the Log's Go; a quest with nothing to
+  place has none.
+- **F** Orders turned off: every Go greyed, Orders' reason in the tooltip;
+  a greyed Go promises no press (D46: 2.5.6 delivers no OnClick to a
+  disabled Button): neither the hover nor the module's own line (read
+  straight from `_goOpts.tooltip`) says "a press says so" or "Goes to", and
+  the own line names the row's gesture instead; on again, "Goes to the
+  Commander Orders arrow".
+- **G** no error, plain ASCII words, no global written.
+
+`CQL_UI`, `CQL_CATALOGUE` and `CQL_ADAPTER` load a mutated copy.
+
+`fake_questie.lua` gained `Fake.GoWorld()` for this (and the contract
+harness): the default world plus quest 9005's `objectives` (a creature, an
+object, an item with `npcDrops`, a reputation goal, a kill credit whose
+creature stands only inside the Blood Furnace) and `triggerEnd`, with
+`objectObjectiveFirst` naming 9005. `Install` now gives every world
+Questie's five `*ObjectiveFirst` tables (empty unless `world.objectiveFirst`
+says). The default world itself is untouched: its counts are other
+harnesses' assertions.
 
 # questlog_mock.lua and questframe_mock.lua — not harnesses
 

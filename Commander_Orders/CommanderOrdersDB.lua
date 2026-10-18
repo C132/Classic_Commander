@@ -25,6 +25,17 @@
 --          Sounds, and keeps the user's EnableOrders exactly as it was.
 -- Places and PastePages stay out of the defaults too, so a reset keeps them.
 --
+-- 3.1 adds every setting of the "Go to" round here, read by whichever file
+-- draws it (each reads with these defaults): CoordDecimals, the coordinate
+-- block (CoordsBlock and its HUD chrome keys, prefix "Coords"; drawn by
+-- CommanderOrdersCoords.lua), MapCoords (now "AUTO" | "ON" | "OFF"; Pins),
+-- MinimapCoords and MinimapClick (Commander_Minimap and the coordinate
+-- file), ChatLinks (CommanderOrdersChat.lua), ClosestScope and
+-- ClosestMineOnly (the Store, through the runtime's ctx). MapCoords was a
+-- boolean in 3.0: Init turns a saved true into "AUTO" and false into "OFF"
+-- (a value repair, not a schema step: DBVersion stays 3).
+-- A new file in the TOC needs a full client restart, not a /reload.
+--
 -- /corder is the framework's slash (exact-match handlers, lowercased). The
 -- forms that carry free text -- "/corder way 45 66 Nazgrel", "/corder go
 -- Farm", "/corder mark Farm", "/corder here Camp" -- cannot go through it:
@@ -85,11 +96,27 @@ local DefaultSettings = {
     WorldPins = true,
     RouteLines = true,
     MapClickModifier = "CTRL",
-    MapCoords = true,
+    -- 3.1: AUTO shows ours when the map you look at is not the one you stand
+    -- on (where Questie's "Player" is wrong) or when Questie's are off
+    MapCoords = "AUTO",
+
+    -- coordinates (3.1)
+    CoordDecimals = 1,          -- 0..2; /way lines always carry 2
+    -- the coordinate block on the HUD chrome: opt-in (the lead's decision,
+    -- D39). Commander_Minimap's label (MinimapCoords) is the default surface
+    -- and offers the same gestures; a saved true or false is kept as it is
+    CoordsBlock = false,
+    MinimapCoords = true,       -- coordinates under Commander_Minimap's zone name
+    MinimapClick = true,        -- Ctrl+Right-click on the minimap = a waypoint there
+
+    -- Follow the Closest (3.1)
+    ClosestScope = "ZONE",      -- "ZONE" (TomTom's) | "LANDMASS"
+    ClosestMineOnly = true,     -- leave out what other addons set through the TomTom bridge
 
     -- sharing
     ShareAccept = "ASK",
     ListenTomTom = false,
+    ChatLinks = true,           -- 3.1: a [Go] link after /way lines and "Zone x, y" in chat
 
     -- compatibility
     TomTomShim = true,
@@ -97,6 +124,9 @@ local DefaultSettings = {
 }
 if UI and UI.HudChromeDefaults then
     for k, v in pairs(UI.HudChromeDefaults("Arrow", "NONE")) do DefaultSettings[k] = v end
+    -- the coordinate block: a solid plate, so the numbers read the same over
+    -- any ground (CoordsStyle, CoordsScale, CoordsLocked, CoordsPos)
+    for k, v in pairs(UI.HudChromeDefaults("Coords", "SOLID")) do DefaultSettings[k] = v end
 end
 O.Defaults = DefaultSettings
 
@@ -161,6 +191,8 @@ function DBM.Init()
     local db = CommanderOrdersDB
     if DBM._initFor == db then return db end
     DBM.Migrate(db)
+    -- 3.0 saved MapCoords as a boolean
+    if db.MapCoords == true then db.MapCoords = "AUTO" elseif db.MapCoords == false then db.MapCoords = "OFF" end
     if UI and UI.ApplyDefaults then UI.ApplyDefaults(db, DefaultSettings) end
     if type(db.Places) ~= "table" then db.Places = {} end
     if type(db.PastePages) ~= "table" then db.PastePages = {} end
@@ -241,6 +273,7 @@ local SLASH_HANDLERS = {
     way = function() Command("way", "") end,
     mark = function() Command("mark", "") end,
     go = function() Command("go", "") end,
+    coords = function() Command("coords", "") end,      -- 3.1: the coordinate block (CommanderOrdersCoords.lua)
 }
 -- The old rally slots, kept so muscle memory still works
 for slot = 1, 4 do
@@ -250,7 +283,7 @@ end
 
 -- First words that carry free text; the framework's exact match cannot
 -- hand them their argument, let alone its case
-local FREE_WORDS = { way = true, mark = true, go = true, here = true, share = true }
+local FREE_WORDS = { way = true, mark = true, go = true, here = true, share = true, coords = true }
 
 local function WrapSlash()
     local key = "COMMANDERUI_ORDERS"
@@ -333,11 +366,17 @@ local function CreatePanel()
         isEnabled = Enabled,
     })
     CheckPair(panel,
-        { "Follow the Closest", "AutoClosest", "When you have not picked a waypoint (or it was reached), point at the nearest one on the landmass you stand on." },
+        { "Follow the Closest", "AutoClosest", "When you have not picked a waypoint (or it was reached), point at the nearest one: in your zone, or anywhere on the landmass you stand on (Closest Within, below)." },
         { "Keep My Own Marks", "KeepMyMarks", "Waypoints you set yourself stay on the map after you reach them, ticked off, instead of clearing." })
+    -- both also steer Point at the Closest (/cway), so they stay on with
+    -- Follow the Closest off
+    panel:AddDropdown(Drop("ClosestScope", "Closest Within", D.CLOSEST_SCOPES or {},
+        "Where Follow the Closest and Point at the Closest (/cway) look: your zone only (TomTom's way: after you arrive, the arrow never swings to a waypoint a continent away), or the whole landmass you stand on."))
+    Check(panel, "Only My Own and Shared", "ClosestMineOnly",
+        "Follow the Closest and /cway leave out the waypoints other addons set through the TomTom bridge (Questie's, WhatsTraining's). Your own, the ones a Go button anywhere in Commander set, and shared ones still count. Those addons still find their own.")
     CheckPair(panel,
         { "Corpse Arrow", "CorpseArrow", "After you release, point at your corpse (or the entrance of the instance it lies in), ahead of everything else, until you are alive again. Not in battlegrounds and arenas." },
-        { "Announce In Chat", "Announce", "A short chat line when you set, mark or share a waypoint yourself. Waypoints other addons set are never announced." })
+        { "Announce In Chat", "Announce", "A short chat line when you set, mark or share a waypoint yourself, with a Go button anywhere in Commander too (\"Waypoint set: ...\"). Waypoints other addons set on their own are never announced." })
     panel:AddCheckbox({
         label = "Sounds",
         tooltip = "A ping when a waypoint is set or shared with you, and a chime when you arrive.",
@@ -350,7 +389,7 @@ local function CreatePanel()
         function() return Enabled() and DB().Sounds end))
 
     -- Map and minimap -------------------------------------------------------
-    panel:AddSection("Map & Minimap", "Pins for your waypoints on the minimap and the world map, and adding a waypoint with a click on the map.")
+    panel:AddSection("Map & Minimap", "Pins for your waypoints on the minimap and the world map, adding a waypoint with a click on the map, and your coordinates: on the world map, under the minimap's zone name and in a block of their own.")
     CheckPair(panel,
         { "Minimap Pins", "MinimapPins", "A pin on the minimap for every waypoint on your landmass, not just in your zone." },
         { "Pins Ride the Edge", "MinimapEdge", "A waypoint off the edge of the minimap shows as a small arrow on its rim, pointing the way." })
@@ -359,8 +398,28 @@ local function CreatePanel()
         { "Route Lines", "RouteLines", "Lines between the stops of the route you are on." })
     panel:AddDropdown(Drop("MapClickModifier", "Add With Right-Click Plus", D.MAP_MODIFIERS or {},
         "Hold this key and right-click the world map to drop a waypoint there. A click on a continent lands in the zone under the cursor. Off turns map clicks off."))
-    Check(panel, "Map Coordinates", "MapCoords",
-        "Your coordinates and the cursor's along the bottom of the world map, for the map you are looking at. Skipped when Questie already shows its own.")
+    panel:AddDropdown(Drop("MapCoords", "World Map Coordinates", D.MAP_COORDS or {},
+        "Your coordinates and the cursor's along the bottom of the world map, for the map you are looking at. Automatic: shown when Questie's own are off, and whenever the map on screen is not the one you stand on (Questie's \"Player\" then reads your own zone's numbers). Always: shown beside Questie's. Off: never."))
+    CheckPair(panel,
+        { "Coordinate Block", "CoordsBlock", "Your zone, subzone and coordinates in a small block of their own, under the arrow until you move it (\"--\" inside instances). Off by default: the minimap's coordinates show the same and take the same clicks. Click: a waypoint where you stand. Shift-click: share it. Ctrl-click: copy a /way line. Right-click: its menu. Also /corder coords." },
+        { "Minimap Coordinates", "MinimapCoords", "Your coordinates under the zone name on Commander's minimap." })
+    CheckPair(panel,
+        { "Ctrl+Right-Click the Minimap", "MinimapClick", "Hold Ctrl and right-click a spot on the minimap to put a waypoint there. It never pings your group." },
+        nil)
+    panel:AddSlider({
+        label = "Coordinate Decimals",
+        tooltip = "How many decimals coordinates show with: the block, the minimap, the world map, tooltips and chat lines. /way lines always carry two.",
+        min = 0, max = 2, step = 1, format = "%d",
+        get = function() return DB().CoordDecimals end,
+        set = function(value) DB().CoordDecimals = value end,
+        isEnabled = Enabled,
+    })
+    if UI.AddHudChromeOptions then
+        UI.AddHudChromeOptions(panel, DB(), "Coords", {
+            isEnabled = function() return Enabled() and DB().CoordsBlock == true end,
+            onChanged = Notify,
+        })
+    end
 
     -- Sharing ---------------------------------------------------------------
     panel:AddSection("Sharing", "Waypoints your group sends you never take your arrow from a waypoint of your own: you choose.")
@@ -368,6 +427,8 @@ local function CreatePanel()
         "Ask me: a small window offers Add, Add and go, or Ignore. Add from my group: waypoints from people in your group are added quietly; anyone else is asked. Off: shared waypoints are ignored. A share added without \"go\" is never pinned and waits behind your own waypoints; Follow the Closest points at it only when you have nothing else."))
     Check(panel, "Listen to TomTom Users", "ListenTomTom",
         "Also accept waypoints group members send from TomTom. They are handled the same way as above.")
+    Check(panel, "Clickable Places in Chat", "ChatLinks",
+        "A [Go] link after /way lines and after \"Zone 45, 66\" in chat. Click: a waypoint there. Shift-click: share it. Ctrl-click: copy a /way line. Right-click: a menu. Lines you post yourself with Share read as \"Title - Zone 45.2, 66.8 (/way ...)\", so players without addons can use them too.")
 
     -- Compatibility ---------------------------------------------------------
     panel:AddSection("Compatibility", "Other addons that were written for TomTom.")

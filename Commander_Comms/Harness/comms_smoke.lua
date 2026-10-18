@@ -1736,5 +1736,63 @@ local rallyPoint = rawget(rally, "__point")
 CHECK(rallyPoint and rallyPoint[4] == 0 and rallyPoint[5] < -24,
     "rally: centred, below the preview line", rallyPoint and rallyPoint[5])
 
+-- ===========================================================================
+-- 2.11.0 Rally on Me in Commander Orders 3.1's words
+-- ===========================================================================
+-- The coordinates are Orders' (FormatCoords, at the player's Coordinate
+-- Decimals), and a share Orders refuses is said in Orders' words (Reason),
+-- except "not in a group", which is the solo case
+local printedLines = {}
+print = function(...)
+    local parts = {}
+    for i = 1, select("#", ...) do parts[#parts + 1] = tostring(select(i, ...)) end
+    printedLines[#printedLines + 1] = table.concat(parts, " ")
+end
+local decimals = 0
+local shareAnswer = { true }
+local function Orders31()
+    local o = OrdersStub()
+    o.FormatCoords = function(x, y)
+        local f = "%." .. decimals .. "f, %." .. decimals .. "f"
+        return string.format(f, x * 100, y * 100)
+    end
+    o.SharePoint = function(spec, channel)
+        shares[#shares + 1] = { spec = spec, channel = channel }
+        return unpack(shareAnswer)
+    end
+    o.Reason = function(why) return "Orders says: " .. tostring(why) end
+    return o
+end
+CommanderOrders = Orders31()
+inGroup = true
+ClickRally()
+CHECK(sent[1] and sent[1].msg == "Rally on me! Goldshire, Elwynn Forest 42, 66",
+    "rally 3.1: the coordinates are Orders' (FormatCoords, Coordinate Decimals 0)", sent[1] and sent[1].msg)
+decimals = 2
+ClickRally()
+CHECK(sent[1] and sent[1].msg == "Rally on me! Goldshire, Elwynn Forest 42.14, 65.50",
+    "rally 3.1: ...and follow the setting (2)", sent[1] and sent[1].msg)
+decimals = 1
+ClickRally()
+CHECK(sent[1] and sent[1].msg == "Rally on me! Goldshire, Elwynn Forest 42.1, 65.5",
+    "rally 3.1: at the default (1) the line is the 2.10 one", sent[1] and sent[1].msg)
+CHECK(#printedLines == 0, "rally 3.1: a share that went says nothing more", printedLines[1])
+shareAnswer = { nil, "chat is locked down" }
+ClickRally()
+CHECK(#sent == 1, "rally 3.1: a refused share: the chat line still went", #sent)
+CHECK(printedLines[#printedLines] == "Commander Comms: the rally waypoint did not go out: Orders says: chat is locked down",
+    "rally 3.1: ...and the refusal is said in Orders' words", printedLines[#printedLines])
+printedLines = {}
+shareAnswer = { nil, "not in a group" }
+ClickRally()
+CHECK(#printedLines == 0, "rally 3.1: \"not in a group\" (solo) is not a complaint", printedLines[1])
+shareAnswer = { true }
+CommanderOrders = OrdersStub()        -- an Orders without FormatCoords: the line as before
+decimals = 0
+ClickRally()
+CHECK(sent[1] and sent[1].msg == "Rally on me! Goldshire, Elwynn Forest 42.1, 65.5",
+    "rally 3.1: without FormatCoords the line is the 2.10 one", sent[1] and sent[1].msg)
+print = function() end
+
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

@@ -114,9 +114,21 @@
 --   bottom-left of the ScrollContainer (clear of QuestLog's drawer on the
 --   right), not to BorderFrame (TBC hides BorderFrame
 --   in the windowed map: TomTom B2), so it shows in both map modes, for the
---   MAP ON SCREEN (TomTom showed the player's zone whatever was viewed). It
---   steps aside when Questie writes its own (Questie.db.profile.
---   mapCoordinatesEnabled, Questie's default; read only, never written).
+--   MAP ON SCREEN (TomTom showed the player's zone whatever was viewed), at
+--   the CoordDecimals setting. MapCoords (3.1) says when: "ON" always,
+--   "OFF" never, "AUTO" (the default) everywhere except where Questie's own
+--   are right. Questie writes its numbers into the map title when its option
+--   is on (Questie.db.profile.mapCoordinatesEnabled, its default; read only,
+--   never written), outside dungeons and raids, and its "Player" is ALWAYS
+--   the player's own map (QuestieCoordinates.lua:54; TomTom's B3): on any
+--   other map it is wrong. So under AUTO ours step aside only while
+--   Questie's show AND the map on screen is the one you stand on. 3.0 saved
+--   MapCoords as a boolean; true still reads AUTO and false OFF here (the
+--   DB's Init repairs the saved value too).
+-- * THE NAMED SPOT. A nearest-of-N waypoint draws a pin per spawn. Every
+--   pin's hover card names the place IT shows (the minimap's: the spawn the
+--   arrow follows), never the record's first spawn (3.1, M7); a spawn that
+--   is not the nearest says so, with its own distance.
 -- * THE MAXIMIZED MAP covers UIParent with an opaque BlackoutFrame at
 --   FULLSCREEN strata, the chat frame included, so a refused click or drop
 --   is said over the map too (Notice), not only in chat.
@@ -128,7 +140,10 @@
 -- named frame. The runtime calls O.Pins.Refresh() after every change and
 -- every settings update, and O.Pins.OnTarget(uid) when the arrow changes
 -- hands. Settings read: EnableOrders, MinimapPins, MinimapEdge, WorldPins,
--- RouteLines, MapClickModifier, MapCoords.
+-- RouteLines, MapClickModifier, MapCoords ("AUTO" | "ON" | "OFF"),
+-- CoordDecimals (through the runtime's R.Decimals) and MinimapCoords (the
+-- top rim the edge chevrons keep clear of on a square map). The coordinate
+-- block and the minimap label are CommanderOrdersCoords.lua's.
 -- ---------------------------------------------------------------------------
 
 CommanderOrders = CommanderOrders or {}
@@ -160,8 +175,13 @@ local MINI_EDGE = 12
 -- Commander_Minimap writes the zone name across the top of its square map
 -- (GameFontNormal at TOP -2: about 2..15 units down). On a square map an
 -- edge chevron at the top rim (0.9 of the half height, 57..69 for a 12-unit
--- chevron) sat on its letters; it rides this far under the top edge instead
+-- chevron) sat on its letters; it rides this far under the top edge instead.
+-- 3.1: with your coordinates under the zone name (MinimapCoords, a 10 px
+-- line about 17..29 down, its click surface to 31) the strip is deeper, so
+-- a chevron's top edge (6 units over its centre) clears the numbers and
+-- their click surface too (render: at 36 it touched them).
 local MINI_TOP_STRIP = 22
+local MINI_TOP_STRIP_COORDS = 38
 local WORLD_SIZE = { DOT = 18, BADGE = 22, CORPSE = 22 }  -- canvas units at pin scale 1
 local WORLD_ALT = 10                  -- the other spawns of a nearest-of-N waypoint
 local RING_SCALE = 1.7                -- the focus ring's quad against its pin (Ring.png radius 0.39)
@@ -388,17 +408,32 @@ local function Menu(uid)
     if type(entries) == "table" and #entries > 0 then r.ShowMenu(entries, "cursor") end
 end
 
--- The hover card the minimap and the map share
-local function Tooltip(owner, uid, hints)
+-- Yards from the player to one spot (a spawn the arrow is not on), or nil
+-- when no straight line exists
+local function SpotDistance(r, pos)
+    local inst, n, w = r.PosWorld(pos)
+    local pn, pw, pinst = r.PlayerWorld()
+    if not (inst and pn) or inst ~= pinst then return nil end
+    local pmap = r.PlayerMap()
+    if not pmap or r.Landmass(pos.map, inst) ~= r.Landmass(pmap, pinst) then return nil end
+    return G.Distance(pn, pw, n, w)
+end
+
+-- The hover card the minimap and the map share. pos: the spot this pin
+-- shows (a spawn of a nearest-of-N waypoint; M7), other: it is not the one
+-- the arrow follows
+local function Tooltip(owner, uid, hints, pos, other)
     if not (GameTooltip and owner) then return end
     local store, r = Store(), Rt()
     local wp = store and store:Get(uid)
     if not (wp and r) then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText(r.Title(wp), 1, 1, 1)
-    if wp.map then GameTooltip:AddLine(r.Where(wp), 0.8, 0.8, 0.8) end
-    local active = uid == ActiveUid()
-    local d = store:Distance(wp, r.Ctx())
+    local shown = (type(pos) == "table" and type(pos.map) == "number") and pos or wp
+    if shown.map then GameTooltip:AddLine(r.Where(shown), 0.8, 0.8, 0.8) end
+    local active = uid == ActiveUid() and not other
+    local d
+    if other and shown ~= wp then d = SpotDistance(r, shown) else d = store:Distance(wp, r.Ctx()) end
     if d then
         local text = r.Distance(d) or ""
         local eta = active and r.Eta and r.Eta()
@@ -414,6 +449,7 @@ local function Tooltip(owner, uid, hints)
     end
     if type(wp.alternatives) == "table" and #wp.alternatives > 1 then
         GameTooltip:AddLine(format("The nearest of %d places", #wp.alternatives), 0.8, 0.8, 0.8)
+        if other then GameTooltip:AddLine("This is another of them; the arrow takes the nearest", 0.6, 0.6, 0.6) end
     end
     local words = SourceWords(wp)
     if words then GameTooltip:AddLine(words, 0.6, 0.6, 0.6) end
@@ -455,6 +491,10 @@ function Mini.ReadView()
         if ok and type(s) == "string" then shape = s end
     end
     Mini.shape = shape
+    -- the top strip on a square map: under the zone name, and under your
+    -- coordinates when Commander_Minimap shows them there
+    Mini.topStrip = (shape == "SQUARE" and Setting("MinimapCoords") ~= false) and MINI_TOP_STRIP_COORDS
+        or MINI_TOP_STRIP
     local w = Minimap and Minimap.GetWidth and Minimap:GetWidth()
     local h = Minimap and Minimap.GetHeight and Minimap:GetHeight()
     Mini.halfW = (IsNum(w) and w > 0) and w / 2 or 70
@@ -520,7 +560,7 @@ function Mini.Pin(i)
     pin.ring, pin.icon, pin.edge, pin.number = ring, icon, edge, number
     pin:SetScript("OnClick", Guarded(MiniClick))
     pin:SetScript("OnEnter", Guarded(function(self)
-        if self.entry then Tooltip(self, self.entry.uid, MINI_HINTS) end
+        if self.entry then Tooltip(self, self.entry.uid, MINI_HINTS, self.entry.pos) end
     end))
     pin:SetScript("OnLeave", function(self) HideTooltip(self) end)
     pin:Hide()
@@ -583,7 +623,7 @@ function Mini.Rebuild()
                             e = {}
                             entries[n] = e
                         end
-                        e.uid, e.wp, e.n, e.w = wp.uid, wp, north, west
+                        e.uid, e.wp, e.n, e.w, e.pos = wp.uid, wp, north, west, pos
                     end
                 end
             end
@@ -640,7 +680,8 @@ function Mini.Place()
             px, py, onEdge, angle = G.MinimapPlace(e.n - pn, e.w - pw, radius, facing, rotate, shape, halfW, halfH)
             -- under Commander_Minimap's zone name on its square map (the
             -- chevron keeps its angle; only its spot on the rim moves down)
-            if onEdge and shape == "SQUARE" and py > halfH - MINI_TOP_STRIP then py = halfH - MINI_TOP_STRIP end
+            local strip = Mini.topStrip or MINI_TOP_STRIP
+            if onEdge and shape == "SQUARE" and py > halfH - strip then py = halfH - strip end
         end
         if not px or (onEdge and not edgeOn) then
             if pin:IsShown() then pin:Hide() end
@@ -807,7 +848,7 @@ local function NewPinMixin()
 
     function mixin:OnMouseEnter()
         local d = self.data
-        if d then Tooltip(self, d.uid, d.draggable and WORLD_DRAG_HINTS or WORLD_HINTS) end
+        if d then Tooltip(self, d.uid, d.draggable and WORLD_DRAG_HINTS or WORLD_HINTS, d.pos, d.alt) end
     end
 
     function mixin:OnMouseLeave()
@@ -1056,6 +1097,7 @@ function World.Collect(viewed)
                             uid = wp.uid, x = x, y = y, look = look, r = r, g = g, b = b,
                             number = number, active = wp.uid == active, alt = alts ~= nil and i ~= chosen,
                             reached = wp.reached ~= nil, draggable = draggable, lift = lift,
+                            pos = p,       -- the spot this pin shows (its tooltip names it)
                         }
                     end
                 end
@@ -1257,13 +1299,45 @@ end
 -- ---------------------------------------------------------------------------
 -- World-map coordinates
 -- ---------------------------------------------------------------------------
--- Questie writes its own into the map title, on by default; then ours step
--- aside (read only)
+-- MapCoords: "AUTO" | "ON" | "OFF" (a 3.0 boolean reads as AUTO / OFF)
+function Coords.Mode()
+    local m = Setting("MapCoords")
+    if m == false or m == "OFF" then return "OFF" end
+    if m == "ON" then return "ON" end
+    return "AUTO"
+end
+
+-- Questie writes its own into the map title while its option is on (its
+-- default), except inside a dungeon or raid (QuestieCoordinates.lua:43-52);
+-- read only, never written
 function Coords.QuestieShows()
     local q = Questie
     local db = type(q) == "table" and q.db
     local profile = type(db) == "table" and db.profile
-    return type(profile) == "table" and profile.mapCoordinatesEnabled and true or false
+    if not (type(profile) == "table" and profile.mapCoordinatesEnabled) then return false end
+    if IsInInstance then
+        local inside, kind = IsInInstance()
+        if inside and kind ~= "pvp" then return false end
+    end
+    return true
+end
+
+-- AUTO steps aside only where Questie's numbers are right: they show, and
+-- the map on screen is the one you stand on (Questie's "Player" is always
+-- your own map's; on any other it is wrong)
+function Coords.Suppressed(viewed)
+    if Coords.Mode() ~= "AUTO" or not Coords.QuestieShows() then return false end
+    local r = Rt()
+    local mine = r and r.PlayerMap and r.PlayerMap()
+    return mine ~= nil and viewed == mine
+end
+
+-- CoordDecimals (0..2), through the runtime
+function Coords.Decimals()
+    local r = Rt()
+    local d = r and r.Decimals and r.Decimals()
+    if type(d) == "number" then return d end
+    return 1
 end
 
 function Coords.Build()
@@ -1301,7 +1375,7 @@ end
 function Coords.Update()
     local f = Coords.frame
     if not f then return end
-    local want = Ready() and Setting("MapCoords") ~= false and MapShown()
+    local want = Ready() and Coords.Mode() ~= "OFF" and MapShown()
     if want then
         Coords.Level()
         Coords.acc = COORDS_INTERVAL      -- write on the next frame
@@ -1322,16 +1396,16 @@ function Coords.Player(map)
     return x, y
 end
 
-function Coords.Text()
-    local map = WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
+function Coords.Text(map)
     if type(map) ~= "number" then return nil end
+    local d = Coords.Decimals()
     local px, py = Coords.Player(map)
-    local player = px and G.FormatCoords(px, py, 1) or "--"
+    local player = px and G.FormatCoords(px, py, d) or "--"
     local cursor = "--"
     local container = WorldMapFrame.ScrollContainer
     if container and container.IsMouseOver and container:IsMouseOver() and WorldMapFrame.GetNormalizedCursorPosition then
         local cx, cy = WorldMapFrame:GetNormalizedCursorPosition()
-        if IsNum(cx) and IsNum(cy) then cursor = G.FormatCoords(cx, cy, 1) or "--" end
+        if IsNum(cx) and IsNum(cy) then cursor = G.FormatCoords(cx, cy, d) or "--" end
     end
     return "Player  " .. player .. "      Cursor  " .. cursor
 end
@@ -1341,14 +1415,15 @@ function Coords.Tick(elapsed)
     if Coords.acc < COORDS_INTERVAL then return end
     Coords.acc = 0
     local f = Coords.frame
-    local hide = Coords.QuestieShows()
+    local map = WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
+    local hide = Coords.Suppressed(map)
     if hide ~= Coords.suppressed then
         Coords.suppressed = hide
         f.bg:SetShown(not hide)
         f.text:SetShown(not hide)
     end
     if hide then return end
-    local text = Coords.Text()
+    local text = Coords.Text(map)
     if text and text ~= Coords.last then
         Coords.last = text
         Coords.writes = Coords.writes + 1

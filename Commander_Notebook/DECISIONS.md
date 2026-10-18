@@ -148,3 +148,28 @@ ambiguous name is listed with its `/way #id` forms instead of guessed. Without C
 spot is printed as a `/way` line, so the button never does nothing. Rejected: a zone-name table in
 this module (a second copy of data Orders already has, and it would drift).
 
+## D11 - Go is Commander Orders' Go, in Orders' words
+
+1.2.0, 2026-10-05 (Commander Orders 3.1, its SPEC 5). A map-stamped note's **Go** is now Commander
+Orders' own Go button (`Commander.UI.GoButton`, in Commander_Events): click goes, Shift-click
+shares the readable line in chat, Ctrl-click copies the `/way` line, it is greyed with Orders'
+reason while Orders is off, and it reads "Going" while the arrow points at that note. The press
+goes through `CommanderOrders.GoTo` under the same owner as before, (Notebook, `note:<id>`), with
+Orders' NOTE tint. Orders now speaks for itself: "Waypoint set: <title> (Zone x, y)" (behind its
+Announce In Chat setting) and its ONE refusal line in its own words, with the place and a [Go]
+link, so the Notebook's own confirmation and refusal table are gone. One button serves the page:
+the action row is rebuilt per note and the button is re-pointed (its key and place) at whichever
+note is open.
+
+The menu entry is **Go To This Note** (it was "Waypoint To This Note"): the suite's words are
+Orders' (its DECISIONS D31, the 3.1 "Go to" entry), "Go" for the act and "Waypoint" only the noun, in
+the Notebook's own Title Case for menus.
+
+An old, name-only stamp (D10) keeps the plain **Go**, which asks Orders' `/way` resolver by name
+(`CommanderOrders.Import`) and lists an ambiguous name's candidates; it says "Waypoint set" in the
+same words, and only while Orders' Announce In Chat is on (an Import under the Notebook's source is
+not one Orders announces itself, so the Notebook says the line, under Orders' switch, the way GoTo
+says it for a map-stamped note; with Orders keeping no settings table it is said, as Orders'
+defaults would). Its waypoint still has no per-note key (Import takes none). Without Commander Orders
+both print the `/way` line, as before.
+

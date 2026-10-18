@@ -26,6 +26,12 @@
 --   E  a battleground death: Orders draws no corpse arrow, so Recovery says
 --      nothing about one
 --   F  Recovery's settings checkbox reads and writes Orders' setting
+--
+-- And (2.4.0, Commander Orders 3.1):
+--   G  the death line's coordinates are Orders' FormatCoords at the
+--      player's Coordinate Decimals and end in Orders' [Go] link to the
+--      spot ("Where you fell"), which a click turns into a waypoint; without
+--      Orders, the numbers alone
 
 local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]+$")) or "."
 if HERE:sub(1, 1) ~= "/" then HERE = (os.getenv("PWD") or ".") .. "/" .. HERE end
@@ -277,6 +283,71 @@ do
     CHECK(mine.CommanderRecoveryDB and mine.COMMANDER_RECOVERY_EVENTS and mine.CommanderRecovery_Report
         and mine.CommanderRecovery_Test, "F: Recovery's globals are its own")
     NoErrors("F")
+end
+
+-- ===========================================================================
+-- G. The death line's [Go] (2.4.0, Commander Orders 3.1): Orders' own
+--    coordinates at the player's precision, and a link that goes there
+-- ===========================================================================
+do
+    local function LastLost()
+        for i = #M.prints, 1, -1 do
+            local line = tostring(M.prints[i])
+            if line:find("last unit lost in", 1, true) then return line end
+        end
+        return nil
+    end
+    Boot({ player = GOLDSHIRE })
+    M.ClearLog()
+    M.SetLife("DEAD")
+    M.Fire("PLAYER_DEAD")
+    local line = LastLost() or ""
+    local coords = O().FormatCoords(GOLDSHIRE[2], GOLDSHIRE[3])
+    CHECK(line:find("last unit lost in Elwynn Forest (" .. coords .. ")", 1, true) ~= nil,
+        "G: the death line's numbers are Orders' FormatCoords (Coordinate Decimals 1)", line)
+    local payload = line:match("|H(addon:CommanderOrders:[^|]+)|h")
+    local m, x, y, title = O().ParseChatLink(payload or "")
+    CHECK(m == 1429 and x and math.abs(x - GOLDSHIRE[2]) < 1e-4 and y and math.abs(y - GOLDSHIRE[3]) < 1e-4,
+        "G: ...and it ends in Orders' link to the death spot", payload)
+    CHECK(title == "Where you fell", "G: ...titled for what it is", title)
+    CHECK(line:find("|h[Go]|h", 1, true) ~= nil, "G: ...worded [Go] (Orders' words)", line)
+    -- The link is live: a click is Orders' Go (the chat file's handler)
+    local before = #O().List({ source = "user" })
+    CHECK(M.ClickLink(line), "G: (the line carries a clickable link)")
+    local made = O().List({ source = "user" })
+    local spot = made[#made]
+    CHECK(#made == before + 1 and spot and spot.map == 1429 and math.abs(spot.x - GOLDSHIRE[2]) < 1e-4
+        and spot.title == "Where you fell", "G: clicking [Go] puts a waypoint on the spot where you fell",
+        spot and (tostring(spot.map) .. " " .. tostring(spot.title)))
+    -- Precision follows the player's Coordinate Decimals, read when the line is said
+    CommanderOrdersDB.CoordDecimals = 2
+    CommanderRecovery_Report()
+    CHECK((LastLost() or ""):find("(" .. O().FormatCoords(GOLDSHIRE[2], GOLDSHIRE[3], 2) .. ")", 1, true) ~= nil,
+        "G: two decimals once the player asks for two", LastLost())
+    CommanderOrdersDB.CoordDecimals = 0
+    CommanderRecovery_Test()
+    local test = ""
+    for i = #M.prints, 1, -1 do
+        if tostring(M.prints[i]):find("TEST", 1, true) and tostring(M.prints[i]):find("unit lost", 1, true) then
+            test = tostring(M.prints[i]); break
+        end
+    end
+    CHECK(test:find("(" .. O().FormatCoords(0.42, 0.655, 0) .. ")", 1, true) ~= nil
+        and test:find("addon:CommanderOrders:", 1, true) ~= nil,
+        "G: the tester's preview line has the same numbers and link", test)
+    CommanderOrdersDB.CoordDecimals = 1
+    NoErrors("G")
+
+    -- Without Orders: the numbers alone, at one decimal, and no link
+    Boot({ player = GOLDSHIRE, files = {} })
+    CHECK(O() == nil, "G: (Orders not loaded)")
+    M.ClearLog()
+    M.SetLife("DEAD")
+    M.Fire("PLAYER_DEAD")
+    line = LastLost() or ""
+    CHECK(line:find("last unit lost in Elwynn Forest (42.0, 65.5)", 1, true) ~= nil and not line:find("|H", 1, true),
+        "G: without Orders the death line says where at one decimal, with no link", line)
+    NoErrors("G2")
 end
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))

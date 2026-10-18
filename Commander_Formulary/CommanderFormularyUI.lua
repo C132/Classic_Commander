@@ -517,16 +517,23 @@ end
 -- ---------------------------------------------------------------------------
 -- Waypoints: the Commander Orders arrow, else the place and its /way line
 --
--- Commander Orders 3.0 is the suite's navigation; TomTom is gone (and this
--- window never tried Orders before, so the Go buttons would have dropped to
--- printing the day it went). A Go press is the player asking for the arrow,
--- so the waypoint takes it; each place owns ONE waypoint (source
--- "Formulary", key "place:<name>@<map>"), so a second press moves nothing and
--- stacks nothing; it is session only, Orders' default for a consumer. With
--- Orders absent, turned off or refusing, the place is printed with its /way
--- line, and every Go tooltip says which it will be. The Trips view routes:
--- a right-click on a zone walks its vendors, Route All Trips walks every
--- zone (DECISIONS D16).
+-- Commander Orders is the suite's navigation, and since its 3.1 "Go to" is
+-- one widget and one API for every Commander module (Orders' DECISIONS, the
+-- 3.1 words and gestures entry). Every Go in the briefing is a
+-- Commander.UI.GoButton: click goes (CommanderOrders.GoTo; the waypoint takes
+-- the arrow and Orders says "Waypoint set: ..."), Shift-click shares the
+-- place in chat, Ctrl-click copies its /way line; it greys out with Orders'
+-- reason and reads "Going" while the arrow is on its place. Each place owns
+-- ONE waypoint (source "Formulary", key "place:<name>@<map>"), so a second
+-- press moves nothing and stacks nothing; it is session only, Orders'
+-- default for a consumer. A creature inside an instance (the data carries
+-- its instance map id since 3.1, D18) goes to the instance's door (Orders'
+-- locator, { entrance = { instance = id } }, key "door:<id>"), and "any
+-- trainer will teach it now" to the nearest trainer of the profession. The
+-- rank readout takes Ctrl+Right-click: a Go to wherever the next rank comes
+-- from. Without Orders a place's Go prints its /way line. The Trips view
+-- routes: a right-click on a zone walks its vendors, Route All Trips walks
+-- every zone (DECISIONS D16).
 -- ---------------------------------------------------------------------------
 
 local function OrdersApi()
@@ -556,12 +563,34 @@ local function WaypointWords()
     return WAYPOINT_WORDS[WaypointPath()]
 end
 
+-- A briefing Go's line on what a press does (its GoButton's extra tooltip
+-- line). A greyed Go gets no click at all (2.5.6 delivers no OnClick to a
+-- disabled Button) and the GoButton's own red line says why, so it promises
+-- nothing: Orders turned off greys every Go, Orders absent greys a locator
+-- Go (a trainer, a door). Only a Go that will take the press is worded: the
+-- arrow, or, without Orders, a placed Go's /way line (D15).
+local function GoWords(b)
+    local path = WaypointPath()
+    if path == "OFF" then return nil end
+    if path == "ABSENT" then
+        local o = type(b) == "table" and b._fmOpts or nil
+        if not (type(o) == "table" and type(o.spec) == "table") then return nil end
+    end
+    return WAYPOINT_WORDS[path]
+end
+
 local function PlaceKey(place)
     return "place:" .. tostring(place.name) .. "@" .. tostring(place.map or place.zone)
 end
 
--- The command that puts a place on anybody's arrow, x and y in 0..100
+-- The command that puts a place on anybody's arrow (Orders' own when it is
+-- loaded), x and y in 0..100
 local function WayLine(place, title)
+    local api = CommanderOrders
+    if type(api) == "table" and type(api.WayLineFor) == "function" then
+        local ok, line = pcall(api.WayLineFor, place.map, place.x / 100, place.y / 100, title or place.name)
+        if ok and type(line) == "string" then return line end
+    end
     return ("/way #%d %.2f %.2f %s"):format(place.map, place.x, place.y, title or place.name)
 end
 
@@ -570,27 +599,102 @@ local function Placed(place)
         and type(place.y) == "number"
 end
 
-local function SetWaypoint(place, title, icon)
+-- Orders' position for a placed place: uiMap and 0..1
+local function PlacePosition(place)
+    if not Placed(place) then return nil end
+    return { map = place.map, x = place.x / 100, y = place.y / 100 }
+end
+
+-- A waypoint at a place for a route of one stop (the Trips view): Orders'
+-- GoTo, which words it; without Orders, or with Orders turned off, the place
+-- and its /way line
+local function GoPlace(place, title, icon)
     title = title or place.name
-    if Placed(place) and WaypointPath() == "ORDERS" then
-        -- Orders answers nil and a reason rather than raising
-        local ok, uid = pcall(OrdersApi().Add, {
-            map = place.map, x = place.x / 100, y = place.y / 100, title = title, icon = icon,
-            source = "Formulary", key = PlaceKey(place), setArrow = true,
-        })
-        if ok and uid then
-            Announce(("Waypoint set: %s — %s (%.1f, %.1f)"):format(place.name, place.zone, place.x, place.y))
-            return true
-        end
+    local api = OrdersApi()
+    if Placed(place) and WaypointPath() == "ORDERS" and type(api.GoTo) == "function" then
+        local uid = api.GoTo(PlacePosition(place), { source = "Formulary", key = PlaceKey(place), title = title, icon = icon })
+        return uid ~= nil
     end
     if Placed(place) then
-        Announce(("%s — %s (%.1f, %.1f)   %s"):format(place.name, place.zone, place.x, place.y, WayLine(place, title)))
+        Announce(("%s - %s (%.1f, %.1f)   %s"):format(place.name, place.zone, place.x, place.y, WayLine(place, title)))
     elseif place.x then
-        Announce(("%s — %s (%.1f, %.1f)"):format(place.name, place.zone, place.x, place.y))
+        Announce(("%s - %s (%.1f, %.1f)"):format(place.name, place.zone, place.x, place.y))
     else
-        Announce(("%s — %s"):format(place.name, place.zone or "?"))
+        Announce(("%s - %s"):format(place.name, place.zone or "?"))
     end
     return false
+end
+
+-- What a Go from the rank readout or a recipe's source heads for: a placed
+-- place (spec), a creature inside an instance (its door), or the nearest
+-- trainer of the profession. Returns target, title, key, icon, or nil.
+local function TrainerTarget(data)
+    return { townsfolk = data.name .. " Trainer" }, "Nearest " .. data.name .. " trainer", "trainer:" .. tostring(data.key), "TRAINER"
+end
+
+local function PlaceTarget(place, title, icon)
+    if Placed(place) then return PlacePosition(place), title or place.name, PlaceKey(place), icon end
+    if type(place) == "table" and type(place.instance) == "number" then
+        return { entrance = { instance = place.instance } },
+            ("%s (%s entrance)"):format(tostring(title or place.name), tostring(place.zone or "the dungeon")),
+            "door:" .. place.instance, icon
+    end
+    return nil
+end
+
+-- Where the profession on screen gets its next rank: the first place of its
+-- rank route (a book's vendor, a quest's giver), else its trainers (Outland's
+-- for a rank only they teach, else the nearest of any). Returns target,
+-- title, key, icon, or nil and words for why not.
+local function NextRankTarget()
+    local data = Data()
+    local rank, maxRank = ReadSkill(data)
+    if maxRank == 0 then return TrainerTarget(data) end
+    local nextRank = M.NextRank(data, { rank = rank, maxRank = maxRank })
+    if not nextRank then return nil, "no rank left to learn" end
+    for _, l in ipairs(M.RankRoute(data, nextRank, world or BuildWorld())) do
+        if l.place and (Placed(l.place) or type(l.place.instance) == "number") then
+            local target, title, _, icon = PlaceTarget(l.place, l.place.name, l.kind == "quest" and "QUEST" or "VENDOR")
+            return target, title, "rank:" .. tostring(data.key), icon
+        end
+        if l.kind == "trainer" and l.outland then
+            local alts = {}
+            for _, t in ipairs(data.trainers or {}) do
+                if t.outland and Placed(t) and (not t.faction or not world or not world.faction or t.faction == world.faction) then
+                    alts[#alts + 1] = PlacePosition(t)
+                end
+            end
+            if #alts > 0 then
+                local first = alts[1]
+                return { map = first.map, x = first.x, y = first.y, alternatives = alts },
+                    "Nearest Outland " .. data.name .. " trainer", "rank:" .. tostring(data.key), "TRAINER"
+            end
+        end
+        if l.kind == "trainer" then
+            local target, title, _, icon = TrainerTarget(data)
+            return target, title, "rank:" .. tostring(data.key), icon
+        end
+    end
+    return nil, "nowhere to learn it on record"
+end
+
+-- Ctrl+Right-click on the rank readout: Go there (Orders' list-row gesture)
+local function GoNextRank()
+    local target, title, key, icon = NextRankTarget()
+    if not target then
+        Announce(("next rank: %s"):format(title or "nothing to go to"))
+        return
+    end
+    local api = OrdersApi()
+    if not (api and type(api.GoTo) == "function") then
+        if target.map then
+            Announce(("%s   %s"):format(title, ("/way #%d %.2f %.2f %s"):format(target.map, target.x * 100, target.y * 100, title)))
+        else
+            Announce(title .. ": needs Commander Orders to find one")
+        end
+        return
+    end
+    api.GoTo(target, { source = "Formulary", key = key, title = title, icon = icon })
 end
 
 -- A Trips stop's title: the vendor and what to buy there
@@ -633,7 +737,7 @@ local function RouteSpecs(specs, title, key)
         Announce("nothing to route: no vendor stop there")
         return false
     end
-    if #specs == 1 then return SetWaypoint(specs[1].place, specs[1].title, "VENDOR") end
+    if #specs == 1 then return GoPlace(specs[1].place, specs[1].title, "VENDOR") end
     local api = OrdersApi()
     if WaypointPath() == "ORDERS" and type(api.AddRoute) == "function" then
         local stops = {}
@@ -1167,8 +1271,8 @@ end
 -- The briefing
 -- ---------------------------------------------------------------------------
 
-local blocks = { text = {}, icon = {}, button = {}, hover = {} }
-local used = { text = 0, icon = 0, button = 0, hover = 0 }
+local blocks = { text = {}, icon = {}, button = {}, hover = {}, go = {} }
+local used = { text = 0, icon = 0, button = 0, hover = 0, go = 0 }
 local dy
 
 local function ReleaseBlocks()
@@ -1344,10 +1448,50 @@ local function PaintReagents(entry)
         or (Hex(fr, fg, fb) .. "You are short of a reagent.|r"), { indent = 2, gap = 2 })
 end
 
-local function GoButton(place, title, rowY, icon)
-    if not place.x then return end
-    local b = DButton("Go", 40, function() SetWaypoint(place, title, icon) end, "Waypoint", WaypointWords)
+-- A pooled Commander.UI.GoButton on the briefing; its options table is its
+-- own and is filled afresh at every paint. Without the widget (an older
+-- Commander_Events) a plain button prints the place.
+local function DGo()
+    used.go = used.go + 1
+    local b = blocks.go[used.go]
+    if not b then
+        local o = { label = "Go", width = 40, height = 18, source = "Formulary", setArrow = true }
+        if Commander.UI and Commander.UI.GoButton then
+            b = Commander.UI.GoButton(detailChild, o)
+        else
+            b = CreateFrame("Button", nil, detailChild, "UIPanelButtonTemplate")
+            b:SetSize(40, 18)
+            b:SetText("Go")
+            b:SetScript("OnClick", function(self) if self._fmPlace then GoPlace(self._fmPlace, self._fmTitle) end end)
+        end
+        b._fmOpts = o
+        blocks.go[used.go] = b
+    end
+    return b
+end
+
+-- A Go at the right of the row at rowY: a place (its own spot, or its door
+-- when it stands inside an instance), or a locator target
+local function GoRow(rowY, target, title, key, icon, place)
+    if not target then return end
+    local b = DGo()
+    local o = b._fmOpts
+    if target.map then o.spec, o.query = target, nil else o.spec, o.query = nil, target end
+    o.title, o.key, o.icon = title, key, icon
+    o.tooltip = GoWords
+    b._fmPlace, b._fmTitle = place, title
+    b:ClearAllPoints()
     b:SetPoint("TOPRIGHT", detailChild, "TOPRIGHT", -2, rowY + 1)
+    -- The button reaches 17 below the row's top, a single line only 12 + 3:
+    -- keep the next row clear of it, so stacked Gos never overlap
+    if dy > rowY - 18 then dy = rowY - 18 end
+    b:Show()
+    if b.Refresh then b:Refresh() end
+end
+
+local function GoButton(place, title, rowY, icon)
+    local target, words, key, ico = PlaceTarget(place, title, icon)
+    GoRow(rowY, target, words, key, ico, place)
 end
 
 -- Gold: what a cast costs, what it makes, what learning would cost
@@ -1411,7 +1555,9 @@ local function PaintHowToLearn(entry)
         if l.kind == "trainer" then
             Line(l.text, { indent = 2 })
             if not entry.known and entry.learnable == "trainer" then
-                Line(Hex(GOOD[1], GOOD[2], GOOD[3]) .. "You have the skill — any trainer will teach it now." .. "|r", { indent = 12 })
+                local ty = dy
+                Line(Hex(GOOD[1], GOOD[2], GOOD[3]) .. "You have the skill — any trainer will teach it now." .. "|r", { indent = 12, rightPad = 46 })
+                if not l.outland then GoRow(ty, TrainerTarget(Data())) end
             end
             if l.outland then
                 for _, t in ipairs(Data().trainers) do
@@ -1491,7 +1637,7 @@ local function PaintDetail()
                 Gap(6)
                 local rowY = dy
                 Line(("%s (%.1f, %.1f)"):format(t.zone, t.x, t.y), { indent = 2, rightPad = 46 })
-                GoButton(t, t.name, rowY)
+                GoButton(t, t.name, rowY, "TRAINER")
                 -- What this trainer would teach you right now
                 local teachable = {}
                 for _, e in pairs(view.entries) do
@@ -1909,7 +2055,14 @@ local function EnsureFrame()
     frame.rankButton = CreateFrame("Button", nil, toolbar)
     frame.rankButton:SetPoint("TOPLEFT", frame.rankFS, "TOPLEFT", -4, 2)
     frame.rankButton:SetPoint("BOTTOMRIGHT", frame.rankFS, "BOTTOMRIGHT", 4, -2)
-    frame.rankButton:SetScript("OnClick", function() CommanderFormulary_Profession() end)
+    frame.rankButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    frame.rankButton:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then
+            if IsControlKeyDown and IsControlKeyDown() then GoNextRank() end
+            return
+        end
+        CommanderFormulary_Profession()
+    end)
     frame.rankButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
         GameTooltip:AddLine("Professions")
@@ -1932,6 +2085,10 @@ local function EnsureFrame()
         end
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Click to switch. A profession also comes on screen whenever its own window opens.", 0.6, 0.6, 0.6, true)
+        local target, title = NextRankTarget()
+        if target then
+            GameTooltip:AddLine(((Commander.UI and Commander.UI.GoRowHint) or "Ctrl+Right-click: Go") .. " to " .. title, 0.6, 0.8, 1, true)
+        end
         GameTooltip:Show()
     end)
     frame.rankButton:SetScript("OnLeave", function() GameTooltip:Hide() end)

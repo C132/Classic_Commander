@@ -41,6 +41,8 @@ CommanderOracle_FACTION_COLORS CommanderOracle_Opposite CommanderOracle_Roster
 CommanderOracle_Test CommanderOracle_Call CommanderOracle_Probe
 CommanderOracle_Defend CommanderOracle_Take
 CommanderOracle_Sections
+CommanderOracle_GoToFlag CommanderOracle_Nodes
+BINDING_HEADER_COMMANDERORACLE BINDING_NAME_COMMANDERORACLE_FLAG
 ]]
 
 -- WoW client API this module deliberately touches. Every one of these was
@@ -55,6 +57,7 @@ GetBattlefieldInstanceRunTime InCombatLockdown
 UnitName UnitExists UnitIsUnit UnitClass UnitPosition CheckInteractDistance
 SetRaidTarget GetRaidTargetIndex CanBeRaidTarget
 UnitIsGroupLeader UnitIsGroupAssistant GameTooltip
+GetNumBattlefieldFlagPositions GetBattlefieldFlagPosition GetFileIDFromPath
 ]]
 
 -- Commander Orders, for the flag waypoints (optional: every use is guarded)

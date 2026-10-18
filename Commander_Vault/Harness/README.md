@@ -4,7 +4,7 @@ One luajit check. Run it before any change to the model, the search language,
 the advisor, the sort, or the window.
 
 ```bash
-/opt/homebrew/bin/luajit vault_harness.lua   # 339 checks
+/opt/homebrew/bin/luajit vault_harness.lua   # 365 checks
 ```
 
 It resolves the AddOns root from its own file location, so it works in a git
@@ -170,3 +170,15 @@ Lessons already paid for, so the next run does not re-learn them:
   `bankSlotsFull`) so the full and not-full paths are both reachable.
   `popupsShown` records what was raised, because "did the purchase dialog
   open" is the question the rack's whole point rests on.
+
+## Go to Bank (1.2.0, Commander Orders 3.1, DECISIONS D48)
+
+The harness loads `Commander_Events/CommanderGoButton.lua` in its TOC slot and, in the window
+section, checks the footer's **Go to Bank**: hidden at the bank, shown on your own vault reopened
+away from it, in the suite's words, as Commander Orders' Go button asking the locator for the
+nearest banker under (Vault, bank) in the BANK tint, a click handing Orders exactly that, and
+hidden on an alt's vault (not yours to open). `VAULT_UI=/path` loads a copy of
+`CommanderVaultUI.lua` (added for this round). Mutants: showing it on an alt's vault and the wrong
+source are killed; dropping the "remembered" test is equivalent (your own vault is remembered
+exactly when the bank is shut).
+

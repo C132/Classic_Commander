@@ -441,3 +441,20 @@ A naked set contributes nothing to the positive line, which is correct: it names
 no items, and a set that specifies bare slots does not "use" anything. The scan
 keys off `state == "ITEM"` with a key, so `EMPTY` and `IGNORED` entries can never
 make an item look claimed.
+
+## D18 - Go to Bank, when the set wants the bank
+
+1.1.0, 2026-10-05 (Commander Orders 3.1, its SPEC 5). IN_BANK was the one refusal this module could
+explain but not help with: "X is in your bank" is true, and the player still has to find a banker.
+Now, while the selected set's plan carries an IN_BANK blocker and you are not at a bank, the pane's
+run bar (idle at that moment: no swap running, nothing queued) holds **Go to Bank**, Commander
+Orders' own Go button (`Commander.UI.GoButton`, from Commander_Events): it asks Orders' locator for
+the nearest banker (`{ townsfolk = "Banker" }`, the player's faction, on the player's landmass, the
+arrow taking the nearest of them), owned as (source `Armory`, key `bank`) in the BANK tint. Click
+goes, Shift-click shares the place in chat, Ctrl-click copies the `/way` line, it greys with
+Orders' reason while Orders is off or still loading, and reads "Going to Bank" while the arrow
+goes there. The words and gestures are Orders' (its DECISIONS D31, the 3.1 "Go to" entry). The button
+is a plain Button, never secure, so the UI file's rule that nothing it draws is secure stands, and it
+appears only where the run bar is idle. The flyout's banked-row message names it. Without Questie (Orders' locator
+reads Questie's townsfolk lists) the button greys with "Needs Questie to look that up".
+

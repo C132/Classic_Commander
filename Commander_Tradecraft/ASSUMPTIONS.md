@@ -166,3 +166,22 @@ The guide and the route window keep Dark Panel's rounded tooltip edge, now over 
 of a 60% tint. *Test:* look at the corners: the edge art has transparent notches outside its curve,
 and a solid fill that reaches under them shows as four dark squares. The fill is inset three pixels
 for exactly this, as it always was; if squares show, Solid Dark's hairline edge is the fix.
+
+## A17 — The Go buttons behave as Commander Orders' one Go button (1.3.0, D18)
+
+Every Go on the guide is `Commander.UI.GoButton` from Commander_Events, and the trainer and reagent
+Gos are answered by Commander Orders' locator from Questie's lists at runtime. None of it has run in
+the client. *Test:* restart the client (not /reload: Commander_Events and Commander_Orders gained
+files), open the guide on a formula step and press Go: the arrow points at the vendor and Orders
+says "Waypoint set: Formula: ..." once; Shift-click it with your group: the readable line lands in
+party chat; Ctrl-click: the copy box holds the `/way` line. With Questie loaded, on a character
+without the profession, the banner's Go points at the nearest trainer of it; Ctrl+Right-click a
+Simple Wood or Copper Rod row: the arrow points at a trade-supply vendor. No Lua error in BugSack.
+Then the pooled-hover rule (D18, 2026-10-05): with the Simple Wood row painted at 101-110, reach 110
+without the Minor Agility formula and LEFT-click the "Enchant Shield - Minor Stamina" way under TWO
+WAYS THROUGH 110 - 135: it must become the chosen way at once, no /reload. And two Master trainers
+listed at 275+ show their Go buttons one under the other, edge to edge, never overlapping.
+With Commander Orders turned off (`/corder off`), hover a formula step's Go, with Set Waypoints on
+and then off: it is greyed both times, the red "Commander Orders is turned off (/corder)" is the
+only word on what a press does (no "Prints the coordinates" line), and clicking it prints nothing;
+`/corder on` after (D18, review round 2).

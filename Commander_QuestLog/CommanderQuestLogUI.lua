@@ -49,6 +49,8 @@ local FRAME_W, FRAME_H = 792, 528
 
 local frame, navScroll, navChild, detailScroll, detailChild
 local navRows, rewardButtons, detailBlocks = {}, {}, {}
+-- The briefing's row Go buttons (one per objective with somewhere to go)
+local objectiveGo = {}
 local entries, rows, numQuests = {}, {}, 0
 local selectedKey, selectedEntry, selectedDetail
 -- A quest asked for from outside (Open in Log, a quest link): its row is
@@ -521,29 +523,171 @@ local function FinisherLine(finisher)
     return text
 end
 
--- Which way a Waypoint press will go, for the tooltips: they say so rather
--- than leaving the player to find out by pressing it
+-- Which way a Go press will go, for the tooltips: they say so rather than
+-- leaving the player to find out by pressing it
 local WAYPOINT_WORDS = {
     ORDERS = "the Commander Orders arrow, which picks the nearest spawn when there are several",
-    ORDERS_OFF = "the chat frame, as coordinates and a /way line (Commander Orders is turned off)",
+    ORDERS_OFF = "Commander Orders, which is turned off (/corder): a press says so in chat, with the place and its [Go] link",
     PRINT = "the chat frame, as coordinates and a /way line (Commander Orders is not loaded)",
 }
 
-local function WaypointWhere()
+local function WaypointPathNow()
     local adapter = Q.Questie
-    local path = adapter and adapter.WaypointPath and adapter.WaypointPath() or "PRINT"
-    return WAYPOINT_WORDS[path] or WAYPOINT_WORDS.PRINT
+    return adapter and adapter.WaypointPath and adapter.WaypointPath() or "PRINT"
+end
+
+local function WaypointWhere()
+    return WAYPOINT_WORDS[WaypointPathNow()] or WAYPOINT_WORDS.PRINT
+end
+
+-- Orders turned off greys the suite's Go button (Commander.UI.GoButton): a
+-- disabled Button gets no click on 2.5.6, and the button's red line says
+-- why. So a Go's tooltip then names no destination for a press; it says the
+-- list row's gesture still answers, in chat (A.Waypoint: Orders' refusal
+-- line with the place's [Go] link). The plain button that stands in without
+-- the GoButton is never greyed by Orders' state: its press is ORDERS_OFF's
+-- (D46).
+local function GoGreyedOff()
+    local ui = Commander and Commander.UI
+    return type(ui) == "table" and type(ui.GoButton) == "function" and WaypointPathNow() == "ORDERS_OFF"
+end
+local GREYED_OFF = "Greyed out while Commander Orders is turned off (/corder); %s then says so in chat, with the place and its [Go] link."
+
+-- The adapter's waypoint target for a log quest's turn-in (nil when Questie
+-- does not know where it is handed in)
+local function TurnInTarget(entry, finisher)
+    if not (entry and finisher and finisher.x) then return nil end
+    return {
+        title = string.format("%s (%s)", entry.title or "Quest", finisher.name or "turn in"),
+        areaId = finisher.areaId, uiMapId = finisher.uiMapId, zoneName = finisher.zoneName,
+        x = finisher.x, y = finisher.y, questId = entry.questID, spawns = finisher.spawns,
+    }
 end
 
 function Q.LogWaypoint()
-    local finisher = selectedFinisher
     local adapter = Q.Questie
-    if not (selectedEntry and finisher and finisher.x and adapter and adapter.Waypoint) then return end
-    adapter.Waypoint({
-        title = string.format("%s (%s)", selectedEntry.title or "Quest", finisher.name or "turn in"),
-        areaId = finisher.areaId, uiMapId = finisher.uiMapId, zoneName = finisher.zoneName,
-        x = finisher.x, y = finisher.y, questId = selectedEntry.questID, spawns = finisher.spawns,
-    })
+    local target = TurnInTarget(selectedEntry, selectedFinisher)
+    if not (target and adapter and adapter.Waypoint) then return end
+    adapter.Waypoint(target)
+end
+
+-- A log row's Ctrl+Right-click (the suite's row gesture, D45): Go to its
+-- turn-in, the same as the action bar's Go to Turn-in for that quest
+function Q.LogGo(entry)
+    local adapter = Q.Questie
+    if not (entry and adapter and adapter.Waypoint) then return nil end
+    local target = TurnInTarget(entry, LogFinisher(entry))
+    if not target then
+        print("Commander Quest Log: Questie does not know where |cffffd100" .. tostring(entry.title or "that quest")
+            .. "|r is handed in.")
+        return nil
+    end
+    return adapter.Waypoint(target)
+end
+
+-- ---------------------------------------------------------------------------
+-- Go buttons (Commander Orders 3.1, D45)
+--
+-- The suite's Commander.UI.GoButton wherever it is loaded (it is part of
+-- Commander_Events): click Go, Shift-click share the place in chat, Ctrl-
+-- click copy its /way line, lit "Going" while the arrow is on its target,
+-- greyed with Orders' reason when it cannot go. Without it, a plain button
+-- whose click runs opts.fallback. The spec functions name the quest's key as
+-- they are read (opts.key), so one button can follow the selection.
+-- ---------------------------------------------------------------------------
+
+local function GoButton(parent, opts)
+    local ui = Commander and Commander.UI
+    if ui and type(ui.GoButton) == "function" then
+        local button = ui.GoButton(parent, opts)
+        button._cqlGo = true
+        return button, true
+    end
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(opts.width or 40, opts.height or 22)
+    button:SetText(opts.label or "Go")
+    button:SetScript("OnClick", function(self) if opts.fallback then opts.fallback(self) end end)
+    if ui and ui.AttachTooltip then ui.AttachTooltip(button, opts.label or "Go", opts.tooltip, opts.anchor) end
+    return button, false
+end
+
+-- Enabled as the GoButton decides (it knows Orders' state), or as `live`
+-- says for a plain button
+local function RefreshGo(button, live)
+    if not button then return end
+    if button._cqlGo then button:Refresh() else button:SetEnabled(live and true or false) end
+end
+
+-- A row "Go" at the right of a briefing line, pooled per owner (the Log's
+-- objectives here, a catalogue's own pools there). target() -> spec, key,
+-- questId, note (the adapter's); tip() -> an extra tooltip line or nil.
+local LINE_GO_W, LINE_GO_H = 48, 18
+
+local function LineGo(pool, position, top, target, tip)
+    local button = pool[position]
+    if not button then
+        local opts = { label = "Go", width = LINE_GO_W, height = LINE_GO_H, source = "QuestLog" }
+        opts.spec = function()
+            local spec, key, questId, note
+            if opts.target then spec, key, questId, note = opts.target() end
+            opts.key, opts.questId, opts.note = key, questId, note
+            return spec
+        end
+        opts.onGo = function(uid)
+            local adapter = Q.Questie
+            if uid and adapter and adapter.NoteGo then adapter.NoteGo(opts.questId, opts.key, opts.note) end
+        end
+        opts.fallback = function()
+            local adapter = Q.Questie
+            if opts.target and adapter and adapter.GoOrPrint then adapter.GoOrPrint(opts.target()) end
+        end
+        opts.tooltip = function() return opts.tip and opts.tip() or nil end
+        button = GoButton(detailChild, opts)
+        button._lineOpts = opts
+        pool[position] = button
+    end
+    local opts = button._lineOpts
+    opts.target, opts.tip = target, tip
+    button:ClearAllPoints()
+    button:SetPoint("TOPRIGHT", detailChild, "TOPRIGHT", -PAD, -(top - 3))
+    button:Show()
+    RefreshGo(button, true)
+    return button
+end
+
+local function HideLineGo(pool, from)
+    for position = from or 1, #pool do pool[position]:Hide() end
+end
+
+-- An objective's Go, for the Log's briefing and a catalogue's: the
+-- adapter's place for the quest's index-th objective
+local function ObjectiveTarget(questId, index)
+    return function()
+        local adapter = Q.Questie
+        if not (adapter and adapter.ObjectiveSpec) then return nil end
+        return adapter.ObjectiveSpec(questId, index)
+    end
+end
+
+local function ObjectiveTip(questId, index)
+    return function()
+        local adapter = Q.Questie
+        local list = adapter and adapter.ObjectiveTargets and adapter.ObjectiveTargets(questId)
+        local target = list and list[index]
+        if not (target and target.places and target.places > 0) then return nil end
+        local what = target.name and ("Where Questie places " .. target.name) or "Where Questie places this objective"
+        if target.places > 1 then
+            return what .. string.format(" (%d spots; the arrow takes the nearest).", target.places)
+        end
+        return what .. "."
+    end
+end
+
+-- Questie has somewhere to send this objective
+local function ObjectiveHasPlace(questId, index)
+    local adapter = Q.Questie
+    if not (adapter and adapter.ObjectiveSpec and QuestieReady()) then return false end
+    return adapter.ObjectiveSpec(questId, index) ~= nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -613,6 +757,12 @@ local function AcquireNavRow(position)
             return
         end
         if not self.entry then return end
+        -- Ctrl+Right-click is the suite's row Go (D45); a plain right-click
+        -- still tracks, as it always has on the Log
+        if button == "RightButton" and IsControlKeyDown and IsControlKeyDown() then
+            Q.LogGo(self.entry)
+            return
+        end
         if button == "RightButton" then
             selectedKey = self.entry.key
             selectedEntry = self.entry
@@ -644,6 +794,11 @@ local function AcquireNavRow(position)
         end
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Right-click to track. Shift-click to announce.", 0.55, 0.55, 0.6)
+        local finisher = LogFinisher(self.entry)
+        if finisher and finisher.x then
+            local hint = (Commander and Commander.UI and Commander.UI.GoRowHint) or "Ctrl+Right-click: Go"
+            GameTooltip:AddLine(hint .. " (to where it is handed in).", 0.55, 0.55, 0.6)
+        end
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -931,7 +1086,10 @@ Q._kit = {
     InkSet = InkSet, OnPaper = OnPaper, Quad = Quad, EnsureChevron = EnsureChevron,
     PointChevron = PointChevron, QualityColor = QualityColor, DB = DB,
     AcquireRewardButton = AcquireRewardButton, DetailWidth = DetailWidth,
-    WaypointWhere = WaypointWhere, InkOnHover = InkOnHover,
+    WaypointWhere = WaypointWhere, GoGreyedOff = GoGreyedOff, GREYED_OFF = GREYED_OFF, InkOnHover = InkOnHover,
+    GoButton = GoButton, RefreshGo = RefreshGo, LineGo = LineGo, HideLineGo = HideLineGo,
+    LINE_GO_W = LINE_GO_W, LINE_GO_H = LINE_GO_H, ObjectiveTarget = ObjectiveTarget,
+    ObjectiveTip = ObjectiveTip, ObjectiveHasPlace = ObjectiveHasPlace,
     ScrollIntoView = ScrollIntoView, CancelReveal = CancelReveal,
     Frame = function() return frame end,
     NavChild = function() return navChild end,
@@ -1114,12 +1272,12 @@ local function LayoutDetail()
     local blocks, rules, rewards = 1, 1, 1
 
     local DEFAULT_TEXT = { Ink("secondary") }
-    local function Body(text, template, color, indent)
+    local function Body(text, template, color, indent, right)
         local block = AcquireBlock("body", blocks, template or "GameFontHighlightSmall")
         blocks = blocks + 1
         block:ClearAllPoints()
         block:SetPoint("TOPLEFT", detailChild, "TOPLEFT", PAD + (indent or 0), -y)
-        block:SetWidth(width - (indent or 0))
+        block:SetWidth(width - (indent or 0) - (right or 0))
         block:SetText(text or "")
         color = color or DEFAULT_TEXT
         block:SetTextColor(Paper(color[1], color[2], color[3]))
@@ -1145,6 +1303,7 @@ local function LayoutDetail()
             and "Nothing to brief. The log is empty."
             or "Pick a quest on the left and its briefing appears here.",
             "GameFontDisableSmall")
+        HideLineGo(objectiveGo, 1)
         HideFrom("body", blocks)
         HideFrom("rules", rules)
         for position = rewards, #rewardButtons do rewardButtons[position]:Hide() end
@@ -1200,11 +1359,24 @@ local function LayoutDetail()
         Body(entry.isComplete and "Return to the quest giver." or "No countable objectives.",
             "GameFontHighlightSmall", { 0.7, 0.7, 0.75 }, 4)
     end
-    for _, objective in ipairs(entry.objectives) do
+    -- An objective Questie can place gets a row Go at the line's right
+    -- (D45): to the creature, the object, the item's droppers or the spot
+    local goCount = 0
+    for index, objective in ipairs(entry.objectives) do
         local color = objective.finished and { 0.35, 0.8, 0.35 } or { 0.92, 0.86, 0.6 }
         local mark = objective.finished and "\194\183 " or "\194\183 "
-        Body(mark .. (objective.text or ""), "GameFontHighlightSmall", color, 6)
+        local questID = entry.questID
+        if not objective.finished and type(questID) == "number" and ObjectiveHasPlace(questID, index) then
+            local top = y
+            Body(mark .. (objective.text or ""), "GameFontHighlightSmall", color, 6, LINE_GO_W + 6)
+            goCount = goCount + 1
+            LineGo(objectiveGo, goCount, top, ObjectiveTarget(questID, index), ObjectiveTip(questID, index))
+            y = math.max(y, top + LINE_GO_H)
+        else
+            Body(mark .. (objective.text or ""), "GameFontHighlightSmall", color, 6)
+        end
     end
+    HideLineGo(objectiveGo, goCount + 1)
     if entry.isComplete then
         Body("Ready to turn in.", "GameFontNormalSmall", { 0.35, 0.85, 0.35 }, 4)
     end
@@ -1349,7 +1521,7 @@ local function UpdateToolbar(shown)
     frame.shareBtn:SetEnabled(hasSelection and (selectedDetail == nil or selectedDetail.pushable))
     frame.announceBtn:SetEnabled(hasSelection)
     frame.abandonBtn:SetEnabled(hasSelection)
-    frame.waypointBtn:SetEnabled(hasSelection and selectedFinisher ~= nil and selectedFinisher.x ~= nil)
+    RefreshGo(frame.waypointBtn, hasSelection and selectedFinisher ~= nil and selectedFinisher.x ~= nil)
     frame.trackBtn:SetText(hasSelection and selectedEntry.watched and "Untrack" or "Track")
 
     if frame.titleAccent then
@@ -1503,6 +1675,7 @@ local function SetLogWidgetsShown(shown)
         for _, block in ipairs(pool) do block:Hide() end
     end
     for _, button in ipairs(rewardButtons) do button:Hide() end
+    HideLineGo(objectiveGo, 1)
     if navChild and navChild.emptyFS then navChild.emptyFS:Hide() end
 end
 
@@ -2049,12 +2222,32 @@ local function EnsureFrame()
         function() Q.Announce() end)
     frame.announceBtn:SetPoint("LEFT", frame.shareBtn, "RIGHT", 4, 0)
 
-    ActionButton("waypointBtn", "Waypoint", 80,
-        function()
-            return "Set a waypoint to where this quest is handed in. Needs Questie, which knows where the quest giver stands; greyed out without it. Goes to "
-                .. WaypointWhere() .. "."
+    -- Go to Turn-in (D45): the suite's Go button over the briefed quest's
+    -- turn-in, owned (QuestLog, "quest:<id>") like every Go of the quest
+    local turnIn = {
+        label = "Go to Turn-in", width = 120, height = 22, source = "QuestLog", anchor = "ANCHOR_TOP",
+        tooltip = function()
+            local text = "Go to where this quest is handed in. Needs Questie, which knows where the quest giver stands; greyed out without it. "
+            if GoGreyedOff() then
+                return text .. GREYED_OFF:format("Ctrl+Right-clicking a row in the list")
+            end
+            return text .. "Goes to " .. WaypointWhere() .. ". Ctrl+Right-clicking a row in the list does the same for that quest."
         end,
-        function() Q.LogWaypoint() end)
+        fallback = function() Q.LogWaypoint() end,
+    }
+    turnIn.spec = function()
+        local adapter = Q.Questie
+        local target = TurnInTarget(selectedEntry, selectedFinisher)
+        local spec, key, questId, note
+        if target and adapter and adapter.WaypointSpec then spec, key, questId, note = adapter.WaypointSpec(target) end
+        turnIn.key, turnIn.questId, turnIn.note = key, questId, note
+        return spec
+    end
+    turnIn.onGo = function(uid)
+        local adapter = Q.Questie
+        if uid and adapter and adapter.NoteGo then adapter.NoteGo(turnIn.questId, turnIn.key, turnIn.note) end
+    end
+    frame.waypointBtn = GoButton(actions, turnIn)
     frame.waypointBtn:SetPoint("LEFT", frame.announceBtn, "RIGHT", 4, 0)
 
     ActionButton("abandonBtn", "Abandon", 82,

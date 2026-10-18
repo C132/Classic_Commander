@@ -674,8 +674,8 @@ Section("E", function()
     CHECK(MenuEntry("As a /way line in group chat") == nil, "E: no group chat without a group")
     CHECK(M.ClickMenu("As a /way line in /say"), "E: Share: say it")
     local said = M.chat[#M.chat]
-    CHECK(said and said.chatType == "SAY" and said.text == "/way #1429 43.00 66.00 Inn", "E: /say carries the /way line",
-        said and said.text)
+    CHECK(said and said.chatType == "SAY" and said.text == "Inn - Elwynn Forest 43.0, 66.0 (/way #1429 43.00 66.00)",
+        "E: /say carries the readable line with its /way (3.1 ChatText)", said and said.text)
     EQ(W.status.__text, "Posted in chat as a /way line.", "E: and says so")
     M.SetGroup("party", { "Bob" })
     Press(Action("share"))
@@ -1380,6 +1380,72 @@ Section("L", function()
     end
     EQ(#M.blocked, 0, "L: no protected call")
     NOERR("L")
+end)
+
+-- ===========================================================================
+-- M: 3.1 (SPEC 2, S8): typed coordinates, Save as place, the row menu
+-- ===========================================================================
+Section("M", function()
+    Boot({ player = GOLDSHIRE })
+    local u = Populate()
+    O().OpenManager()
+    Tick()
+    local W = UIW()
+    CHECK(W.addAt and M.Visible(W.addAt), "M: Add at... on the Waypoints tab")
+    EQ(W.addAt and W.addAt.__text, "Add at...", "M: its label")
+    M.ClearLog()
+    CHECK(Press(W.addAt), "M: Add at... takes a click")
+    local pop = LastPopup("COMMANDER_ORDERS_COORDS")
+    CHECK(pop ~= nil, "M: it opens the coordinates box")
+    CHECK(pop and Focused() == pop.dialog.editBox, "M: the box takes the keyboard (a click asked for it), the manager's do not")
+    if pop then
+        pop.dialog.editBox.__text = "Westfall 56 47 Typed hill"
+        M.ClickPopup("COMMANDER_ORDERS_COORDS", 1)
+    end
+    Tick()
+    local typed = Store():Find(1436, 0.56, 0.47, "Typed hill", 1e-6)
+    CHECK(typed ~= nil, "M: a waypoint at the typed coordinates")
+    CHECK(RowBy("Typed hill") ~= nil, "M: ...listed")
+
+    CHECK(Press(RowBy("Lion's Pride Inn")), "M: (the inn selected)")
+    local move = Action("move")
+    CHECK(move and M.Visible(move) and move:IsEnabled(), "M: a waypoint offers Move...")
+    Press(move)
+    pop = LastPopup("COMMANDER_ORDERS_COORDS")
+    EQ(pop and pop.dialog.editBox.__text, "/way #1429 43.00 66.00", "M: Move... starts from where it is")
+    if pop then
+        pop.dialog.editBox.__text = "Elwynn Forest 44 65"
+        M.ClickPopup("COMMANDER_ORDERS_COORDS", 1)
+    end
+    Tick()
+    local inn = O().Get(u.lion)
+    CHECK(inn and math.abs(inn.x - 0.44) < 1e-9 and math.abs(inn.y - 0.65) < 1e-9, "M: moved to the typed coordinates")
+    EQ(inn and inn.title, "Lion's Pride Inn", "M: ...keeping its title")
+    EQ(Info("Where"), "Elwynn Forest 44.0, 65.0", "M: ...and the detail says so")
+
+    local place = Action("place")
+    CHECK(place and M.Visible(place) and place:IsEnabled(), "M: Save as place")
+    Press(place)
+    local places = O().Places()
+    CHECK(#places == 1 and places[1].title == "Lion's Pride Inn" and math.abs(places[1].x - 0.44) < 1e-9,
+        "M: a place kept from the waypoint")
+    EQ(W.status.__text, "Kept as a place (see the Places tab).", "M: ...and says so")
+
+    M.SetGroup("party", { "Bob" })
+    O().Add({ kind = "unit", unit = "party1", title = "Bob", setArrow = false })
+    Tick()
+    CHECK(Press(RowBy("Bob")), "M: (a group member selected)")
+    CHECK(Action("move") and not Action("move"):IsEnabled(), "M: no Move... for a group member")
+    CHECK(Action("place") and not Action("place"):IsEnabled(), "M: no Save as place either")
+
+    M.Click(RowBy("Typed hill"), "RightButton")
+    CHECK(MenuEntry("Save as place") and MenuEntry("Mark arrived") and MenuEntry("Point at the closest"),
+        "M: a row's menu has the arrow menu's entries", table.concat(M.MenuTexts(), "|"))
+
+    CommanderOrders.UI.OpenPlaces()
+    Tick()
+    CHECK(not M.Visible(W.addAt), "M: Add at... on the Waypoints tab only")
+    NOERR("M")
 end)
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))

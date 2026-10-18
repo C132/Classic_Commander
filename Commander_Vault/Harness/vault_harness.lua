@@ -798,6 +798,8 @@ local function Load(path)
 end
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
+-- Commander_Events' TOC loads its Go button between the two (Orders 3.1)
+Load(ADDONS .. "/Commander_Events/CommanderGoButton.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 -- Everything the module is allowed to publish. A global that is not on this
 -- list is either a leak or a new entry point somebody forgot to write down.
@@ -811,7 +813,8 @@ Load(ADDONS .. "/Commander_Vault/CommanderVaultGuild.lua")
 Load(ADDONS .. "/Commander_Vault/CommanderVaultAdvisor.lua")
 Load(ADDONS .. "/Commander_Vault/CommanderVaultSort.lua")
 Load(ADDONS .. "/Commander_Vault/CommanderVaultTooltip.lua")
-Load(ADDONS .. "/Commander_Vault/CommanderVaultUI.lua")
+-- Mutation hook (Orders 3.1 work): VAULT_UI=/path of a copy to load instead
+Load(os.getenv("VAULT_UI") or (ADDONS .. "/Commander_Vault/CommanderVaultUI.lua"))
 
 local V = CommanderVault
 preloadTickers = #tickers
@@ -1428,6 +1431,7 @@ V.Refresh()
 
 CHECK(win.footerFS:GetText():find("items") ~= nil, "the footer reports what is in there",
     win.footerFS:GetText())
+CHECK(win.goBank ~= nil and not win.goBank:IsShown(), "at the bank there is no Go to Bank (1.2.0)")
 
 -- Closing the bank must take the last snapshot BEFORE the flag flips, or the
 -- cache is overwritten with the empty reads that follow
@@ -1442,6 +1446,23 @@ CHECK(not win:IsShown(), "and the vault window closes with it")
 CommanderVault_Toggle(true)
 CHECK(win:IsShown(), "the vault reopens on demand away from the bank")
 CHECK(V.CurrentBank().cached == true, "showing the remembered snapshot")
+-- Go to Bank (1.2.0, Commander Orders 3.1): your own remembered vault offers
+-- Orders' Go button to the nearest banker
+CHECK(win.goBank:IsShown(), "a remembered vault offers Go to Bank")
+CHECK(win.goBank.__text == "Go to Bank", "in the suite's words (Go to <Thing>)", win.goBank.__text)
+local goOpts = rawget(win.goBank, "_goOpts")
+CHECK(goOpts ~= nil, "as Commander Orders' Go button")
+CHECK(goOpts and goOpts.query and goOpts.query.townsfolk == "Banker" and goOpts.source == "Vault"
+    and goOpts.key == "bank" and goOpts.icon == "BANK", "the nearest banker, as (Vault, bank) in the bank tint")
+local askedOrders
+CommanderOrders = {
+    GoTo = function(target, opts) askedOrders = { target = target, opts = opts } return "w1" end,
+    IsAvailable = function() return true end,
+}
+win.goBank.__scripts.OnClick(win.goBank, "LeftButton")
+CHECK(askedOrders and askedOrders.target.townsfolk == "Banker" and askedOrders.opts.key == "bank",
+    "a click asks Orders to go there")
+CommanderOrders = nil
 CommanderVault_Toggle()
 CHECK(not win:IsShown(), "and toggles shut again")
 
@@ -1513,6 +1534,7 @@ CHECK(ShownButtons() == 2, "selecting an alt draws that character's vault", Show
 CHECK(win.TitleText:GetText() == "Vault — Baldwin", "and says whose it is", win.TitleText:GetText())
 CHECK(not win.sortBtn:IsShown(), "an alt's vault cannot be sorted — the button is gone, not merely inert")
 CHECK(not win.depositBtn:IsShown(), "nor deposited into")
+CHECK(not win.goBank:IsShown(), "and an alt's vault offers no Go to Bank (it is not yours to open)")
 CommanderVaultDB.RosterChar = nil
 V.Refresh()
 CHECK(win.TitleText:GetText() == "Vault", "clearing the selection comes back to your own")

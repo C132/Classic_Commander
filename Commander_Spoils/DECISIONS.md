@@ -585,3 +585,29 @@ natural next step and consumers.md proposes it, but it would be a twenty-sixth
 preference (it cannot be on by default: an arrow appearing because a vendor
 window closed is exactly the kind of uninvited layout change the suite
 avoids), and D20 says that is a decision to make on purpose, not in passing.
+
+## D24 - Go to Farm is Commander Orders' "Go to", in Orders' words
+
+3.2.0, 2026-10-05 (Commander Orders 3.1, its SPEC 5). The way back to the farm
+(D23) now goes through Orders' one way in, `CommanderOrders.GoTo`, under the
+same owner (source `Spoils`, key `farm`) with Orders' FARM tint. What changed
+is who speaks: Orders prints "Waypoint set: Farm: <label> (Zone x, y)" (behind
+its Announce In Chat setting) and, when it refuses, its ONE line in its own
+words (`CommanderOrders.Reason`: "Commander Orders is turned off (/corder)")
+with the farm's place and a [Go] link, so Spoils' own confirmation and its
+refusal table are gone. Spoils still says what only it knows: no farm is
+running, or the farm started where the map has no position. Without Orders the
+press prints the farm's `/way` line, as before.
+
+The words and gestures are Orders' (its DECISIONS D31, the 3.1 "Go to" entry):
+"Go to <Thing>" on a standalone button, so the settings page's "Back to the
+Farm" is now **Go to Farm**, and it is Commander Orders' Go button
+(`Commander.UI.GoButton`): click goes, Shift-click shares the readable line in
+chat, Ctrl-click copies the `/way` line, it is greyed with the reason while no
+farm with a place runs, and it reads "Going to Farm" while the arrow goes
+there. The header glyph keeps right-click = go back (left still starts and
+stops the farm), and `/cspoils back` is unchanged. Still no preference added
+(D20). The engine hands the farm's spot out as one shape, `E.FarmSpot()`.
+Harness: spoils_harness.lua section 15, and spoils_orders_smoke.lua against
+the real Orders.
+

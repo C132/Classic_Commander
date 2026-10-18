@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Adjutant
 ## Author: Devin
-## Version: 2.3.0
-## Notes: RTS-style announcer: on-screen banners and alert sounds for attacks, critical health, repairs (naming and marking the nearest repair vendor Commander Logistics has met), full bags, level-ups, and reinforcements — plus a draining countdown on the battleground invite that survives the Hide button and can be clicked to enter.
+## Version: 2.4.0
+## Notes: RTS-style announcer: on-screen banners and alert sounds for attacks, critical health, repairs and full bags (naming and marking the nearest repair vendor or vendor through Commander Logistics and Commander Orders), level-ups, and reinforcements — plus a draining countdown on the battleground invite that survives the Hide button and can be clicked to enter.
 ## IconTexture: Interface\Icons\Ability_Warrior_RallyingCry
 ## SavedVariables: CommanderAdjutantDB
 ## RequiredDeps: Commander_Events

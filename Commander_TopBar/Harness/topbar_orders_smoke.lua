@@ -14,11 +14,14 @@
 -- orders_mock.lua, with the REAL Commander_Events framework, and loads the
 -- Top Bar on top the way the client would (OptionalDeps: Orders first).
 --
---   A  it loads clean beside Orders; the coordinates show and take the mouse
+--   A  it loads clean beside Orders; the coordinates show (Orders' reading,
+--      at Coordinate Decimals) and take the mouse
 --   B  click = a waypoint where you stand (source user, pinned, announced)
---   C  Shift-click = your position shared with the group and NO waypoint of
---      your own; solo it says why; the wire decodes to where you stand
---   D  right-click = the waypoint manager, at no waypoint
+--   C  Shift-click = the spot shared in chat as Orders' readable line (your
+--      group's chat, else /say) and NO waypoint of your own; Ctrl-click = its
+--      /way line in Orders' copy box (2.3.0: Orders' coordinate gestures)
+--   D  right-click = Orders' coordinate menu; its last entry opens the
+--      manager, at no waypoint
 --   E  the Nav segment: the arrow's own distance (582 yd, the D1 walk), an
 --      arrival time while walking, the other-landmass words, hidden with no
 --      target, refreshed by Orders' CHANGED inside a second
@@ -29,6 +32,10 @@
 --   J  the settings page: Waypoint checkbox present, disabled without Orders
 --   K  globals: the Top Bar writes only its own two globals and reads only
 --      what it means to (a local declared after its use shows up here)
+--   L  the supply readouts (2.3.0): durability, bags and ammo go to the
+--      nearest repair, vendor and ammo vendor through Orders' locator (a
+--      harness resolver stands in for Questie); Go, Shift share, Ctrl copy,
+--      the hover card, refusals, the option, Orders off and absent, combat
 
 local HERE = (debug.getinfo(1, "S").source:match("^@(.*)/[^/]+$")) or "."
 if HERE:sub(1, 1) ~= "/" then
@@ -148,7 +155,7 @@ end
 -- The coordinates segment is the one with the grey "nn, nn"; the Nav one
 -- carries the map icon
 local NAV_ICON = "INV_Misc_Map_01"
-local function CoordsSegment() return SegmentWith("|cffc7c7cf42, 66|r") or SegmentWith(", ") end
+local function CoordsSegment() return SegmentWith("|cffc7c7cf42.0, 65.5|r") or SegmentWith(", ") end
 local function NavSegment()
     for _, fs in ipairs(Kids("FontString")) do
         if type(fs.__text) == "string" and fs.__text:find(NAV_ICON, 1, true) then return fs end
@@ -201,7 +208,7 @@ Section("A", function()
     CHECK(Bar() and M.Visible(Bar()), "A: the bar is up")
     coords = CoordsSegment()
     CHECK(coords ~= nil, "A: the coordinates are drawn")
-    HAS(coords and coords.__text, "42, 66", "A: at the player's spot (Goldshire)")
+    HAS(coords and coords.__text, "42.0, 65.5", "A: at the player's spot (Goldshire)")
     hit = coords and HitFor(coords)
     CHECK(hit ~= nil, "A: a click surface sits on the coordinates")
     CHECK(hit and M.Visible(hit) and hit.__mouse, "A: shown and taking the mouse")
@@ -234,32 +241,35 @@ Section("B", function()
 end)
 
 -- ---------------------------------------------------------------------------
--- C  Shift-click = your position, shared, with no waypoint of your own
+-- C  Shift-click = the spot shared in chat, with no waypoint of your own;
+--    Ctrl-click = its /way line in the copy box (Orders' coordinate gestures)
 -- ---------------------------------------------------------------------------
+local function CtrlClick(h)
+    M.W.mods.CTRL = true
+    local delivered = M.Click(h, "LeftButton")
+    M.W.mods.CTRL = false
+    return delivered
+end
 Section("C", function()
     O().Clear()
     M.Advance(0.1)
     M.ClearLog()
     ShiftClick(hit)
     EQ(#M.sent, 0, "C: solo, nothing is sent")
-    CHECK(M.Has(M.prints, "not in a group"), "C: and it says why", M.prints[1])
+    local said = M.chat[#M.chat] or {}
+    EQ(said.chatType, "SAY", "C: solo, the spot goes to /say (Orders' share in chat)")
+    HAS(said.text, "Elwynn Forest 42.0, 65.5 (/way #1429 42.00 65.50)", "C: as Orders' readable line")
+    CHECK(type(said.text) == "string" and said.text:sub(1, 1) ~= "/", "C: never a line that starts with a slash", said.text)
     EQ(#O().List(), 0, "C: and no waypoint appeared")
 
     M.SetGroup("party", { "Zuljin" })
     M.ClearLog()
     ShiftClick(hit)
-    EQ(#M.sent, 1, "C: in a party, one addon message")
-    local msg = M.sent[1] or {}
-    EQ(msg.prefix, "CmdrOrders", "C: on Orders' own prefix")
-    EQ(msg.channel, "PARTY", "C: to the party")
-    local v, map, x, y = Decode(msg.text)
-    EQ(v, 1, "C: wire version 1")
-    EQ(map, 1429, "C: the map you stand on")
-    NEAR(x, 0.42, 1e-4, "C: x where you stand")
-    NEAR(y, 0.655, 1e-4, "C: y where you stand")
-    EQ(#O().List(), 0, "C: still no waypoint of your own (the point of SharePoint)")
+    said = M.chat[#M.chat] or {}
+    EQ(said.chatType, "PARTY", "C: in a party, to the party's chat")
+    HAS(said.text, "/way #1429 42.00 65.50", "C: the /way part where you stand")
+    EQ(#O().List(), 0, "C: still no waypoint of your own (the point of sharing)")
     EQ(O().Active(), nil, "C: and the arrow was not pinned at your feet")
-    CHECK(M.Has(M.prints, "shared"), "C: a short confirmation", M.prints[1])
 
     -- A mark of yours at the very same spot is left alone
     O().Here()
@@ -270,22 +280,36 @@ Section("C", function()
     M.SetGroup("raid", { "Zuljin", "Rokhan" })
     M.ClearLog()
     ShiftClick(hit)
-    EQ(M.sent[1] and M.sent[1].channel, "RAID", "C: in a raid, to the raid")
+    EQ(M.chat[#M.chat] and M.chat[#M.chat].chatType, "RAID", "C: in a raid, to the raid")
     M.SetGroup(nil)
+
+    -- Ctrl-click: the /way line, in Orders' copy box
+    M.ClearLog()
+    CtrlClick(hit)
+    local pop = M.popups[#M.popups]
+    EQ(pop and pop.which, "COMMANDER_ORDERS_COPY", "C: Ctrl-click opens Orders' copy box")
+    HAS(pop and pop.dialog.editBox.__text, "/way #1429 42.00 65.50", "C: ...holding the /way line")
+    EQ(#M.chat, 0, "C: ...and posts nothing")
     NOERR("C")
 end)
 
 -- ---------------------------------------------------------------------------
--- D  right-click = the waypoint manager
+-- D  right-click = the coordinate menu, with the waypoint manager in it
 -- ---------------------------------------------------------------------------
 Section("D", function()
     local opened = "never"
     O().UI = { Open = function(uid) opened = uid end }
+    M.menu = {}
     Click(hit, "RightButton")
+    local texts = table.concat(M.MenuTexts(), " | ")
+    HAS(texts, "Waypoint here", "D: right-click opens Orders' coordinate menu")
+    HAS(texts, "Copy /way line", "D: ...with the copy entry")
+    CHECK(M.ClickMenu("Open the manager"), "D: ...and the manager entry")
     EQ(opened, nil, "D: right-click opens the manager, at no particular waypoint")
     O().UI = nil
     M.ClearLog()
     Click(hit, "RightButton")
+    M.ClickMenu("Open the manager")
     CHECK(M.Has(M.prints, "waypoints"), "D: without the manager file, Orders' chat list stands in", M.prints[1])
     NOERR("D")
 end)
@@ -366,9 +390,9 @@ Section("F", function()
     HAS(lines, "Elwynn Forest 42.0, 65.5", "F: the spot, named and to a tenth")
     HAS(lines, "Arrow: Northshire", "F: what the arrow is following")
     HAS(lines, "582 yd", "F: and how far")
-    HAS(lines, "Click: waypoint where you stand", "F: hint: click")
-    HAS(lines, "Shift-click: share where you stand", "F: hint: Shift-click")
-    HAS(lines, "Right-click: waypoint manager", "F: hint: right-click")
+    HAS(lines, "Click: a waypoint where you stand", "F: hint: click")
+    HAS(lines, "Shift-click: share in chat", "F: hint: Shift-click")
+    HAS(lines, "Right-click: menu", "F: hint: right-click")
 
     local navHit = HitFor(NavSegment())
     M.Hover(navHit)
@@ -482,7 +506,7 @@ end)
 local ALLOWED_READ = {}
 for name in ([[
 type tonumber tostring ipairs pairs select pcall print string math table date time
-CreateFrame UIParent C_Timer C_Map C_Container C_AddOns GameTooltip IsShiftKeyDown
+CreateFrame UIParent C_Timer C_Map C_Container C_AddOns GameTooltip IsShiftKeyDown IsControlKeyDown geterrorhandler
 GetMoney GetTime UnitXP UnitXPMax UnitLevel GetInventoryItemCount GetInventoryItemTexture
 GetInventoryItemDurability GetNetStats GetFramerate
 Commander CommanderTopBarDB COMMANDER_TOPBAR_EVENTS COMMANDER_CONSOLE_EVENTS
@@ -515,6 +539,142 @@ Section("K", function()
             CHECK(ALLOWED_WRITE[w.name] or w.name == "CommanderTopBar", "K: load-time global write", w.name)
         end
     end
+end)
+
+-- ---------------------------------------------------------------------------
+-- L  the supply readouts go places (2.3.0)
+-- ---------------------------------------------------------------------------
+local function SegmentWithIcon(needle)
+    for _, fs in ipairs(Kids("FontString")) do
+        if M.Visible(fs) and type(fs.__text) == "string" and fs.__text:find(needle, 1, true) then return fs end
+    end
+    return nil
+end
+local DURABILITY_ICON, BAGS_ICON, AMMO_ICON = "Trade_BlackSmithing", "Button-Backpack-Up", "INV_Ammo_Arrow_02"
+local function Supplier(kind)
+    -- What Questie's lists would hand Orders' locator, as a registered resolver
+    local places = {
+        Repair = { { map = 1429, x = 0.43, y = 0.65, title = "Smith Argus", npc = 90001 },
+                   { map = 1944, x = 0.56, y = 0.37, title = "Thrallmar Smith", npc = 90003 } },
+        Vendor = { { map = 1429, x = 0.425, y = 0.66, title = "Grocer Jan", npc = 90005 } },
+    }
+    return places[kind]
+end
+Section("L", function()
+    Boot()
+    rawset(_G, "GetInventoryItemCount", function(_, slot) if slot == 0 then return 150 end return 0 end)
+    rawset(_G, "GetInventoryItemTexture", function(_, slot) if slot == 0 then return "Interface\\Icons\\" .. AMMO_ICON end end)
+    O().RegisterResolver("townsfolk", Supplier)
+    M.Advance(1.05)
+    NOERR("L: boot")
+    EQ(CommanderTopBarDB.SupplyClicks, true, "L: Go from the Readouts defaults on")
+    local dura = SegmentWithIcon(DURABILITY_ICON)
+    local bags = SegmentWithIcon(BAGS_ICON)
+    local ammo = SegmentWithIcon(AMMO_ICON)
+    CHECK(dura and bags and ammo, "L: (durability, bags and ammo are drawn)")
+    local hd, hb, ha = dura and HitFor(dura), bags and HitFor(bags), ammo and HitFor(ammo)
+    CHECK(hd and M.Visible(hd) and hd.__mouse, "L: durability takes the mouse, over its text")
+    CHECK(hb and M.Visible(hb) and hb.__mouse, "L: so do the bag slots")
+    CHECK(ha and M.Visible(ha) and ha.__mouse, "L: and the ammo")
+
+    -- Durability: the nearest repair, through GoTo, worded by Orders; it
+    -- takes the arrow from a mark of yours (a Go button asks for it)
+    local mine = O().Add({ map = 1429, x = 0.30, y = 0.30, title = "Mine", source = "user" })
+    EQ(O().Active() and O().Active().uid, mine, "L: (the arrow is on a mark of yours)")
+    M.ClearLog()
+    Click(hd)
+    local list = O().List({ source = "TopBar" })
+    EQ(#list, 1, "L: a click is one waypoint")
+    local wp = list[1] or {}
+    EQ(wp.key, "repair", "L: ...owned by the Top Bar's repair key")
+    EQ(wp.map, 1429, "L: ...at the nearest repair on your landmass")
+    NEAR(wp.x, 0.43, 1e-9, "L: ...where it stands")
+    EQ(wp.title, "Nearest repair", "L: ...titled by the locator")
+    EQ(wp.icon, "VENDOR", "L: ...wearing the vendor pin")
+    EQ(O().Active() and O().Active().uid, wp.uid, "L: ...and the arrow is on it")
+    CHECK(M.Has(M.prints, "Waypoint set: Nearest repair"), "L: Orders says so once", M.prints[1])
+    Click(hd)
+    EQ(#O().List({ source = "TopBar" }), 1, "L: clicking again moves the same waypoint")
+    O().Remove(mine)
+
+    -- The hover card: where a click goes and the gestures
+    M.Hover(hd)
+    local lines = table.concat(M.tooltip, "\n")
+    HAS(lines, "Durability", "L: the hover card names the readout")
+    HAS(lines, "Go to: Nearest repair - Elwynn Forest 43.0, 65.0", "L: ...where a click goes")
+    HAS(lines, "The arrow points here now.", "L: ...that the arrow is on it")
+    HAS(lines, "Click: Go to the nearest repair", "L: ...the click")
+    HAS(lines, "Shift-click: share in chat. Ctrl-click: copy a /way line.", "L: ...and the other gestures")
+    -- The card asks the locator once, on the hover, never on the bar's tick
+    local asked, baseLocate = 0, O().Locate
+    O().Locate = function(...) asked = asked + 1 return baseLocate(...) end
+    M.Hover(hd)
+    local afterHover = asked
+    CHECK(afterHover > 0, "L: (the hover asked the locator)")
+    M.Advance(2.1)
+    EQ(asked, afterHover, "L: an open supply card is not re-asked every second")
+    O().Locate = baseLocate
+
+    -- Shift-click shares the nearest repair in chat, Ctrl-click copies it
+    M.ClearLog()
+    ShiftClick(hd)
+    local said = M.chat[#M.chat] or {}
+    EQ(said.chatType, "SAY", "L: Shift-click solo: /say")
+    HAS(said.text, "Nearest repair - Elwynn Forest 43.0, 65.0 (/way #1429 43.00 65.00", "L: ...Orders' readable line")
+    M.ClearLog()
+    M.W.mods.CTRL = true
+    M.Click(hd, "LeftButton")
+    M.W.mods.CTRL = false
+    local pop = M.popups[#M.popups]
+    HAS(pop and pop.dialog.editBox.__text, "/way #1429 43.00 65.00 Nearest repair", "L: Ctrl-click: the /way line in the copy box")
+
+    -- Bags: the nearest vendor (the repair vendors count as vendors too)
+    Click(hb)
+    local v
+    for _, w in ipairs(O().List({ source = "TopBar" })) do if w.key == "vendor" then v = w end end
+    EQ(v and v.title, "Nearest vendor", "L: the bag slots go to the nearest vendor")
+    NEAR(v and v.x, 0.425, 1e-9, "L: ...the grocer, nearer than the smith")
+
+    -- Ammo: nobody known here says why, and the click changes nothing
+    M.Hover(ha)
+    HAS(table.concat(M.tooltip, "\n"), "Needs Questie to look that up", "L: no ammo vendor known: the card says why")
+    local before = #O().List({ source = "TopBar" })
+    M.ClearLog()
+    Click(ha)
+    EQ(#O().List({ source = "TopBar" }), before, "L: ...and a click adds nothing")
+    CHECK(M.Has(M.prints, "Needs Questie"), "L: ...but says why, once", M.prints[1])
+
+    -- Orders turned off: a click is refused in Orders' words
+    CommanderOrdersDB.EnableOrders = false
+    M.ClearLog()
+    Click(hd)
+    CHECK(M.Has(M.prints, "turned off"), "L: Orders off: the click says so", M.prints[1])
+    CommanderOrdersDB.EnableOrders = true
+
+    -- The option off: the readouts never take the mouse
+    CommanderTopBarDB.SupplyClicks = false
+    M.Advance(1.05)
+    CHECK(not M.Visible(hd) and not M.Visible(hb) and not M.Visible(ha), "L: Go from the Readouts off: no click surfaces")
+    CommanderTopBarDB.SupplyClicks = true
+    M.Advance(1.05)
+    CHECK(M.Visible(hd), "L: ...and back on")
+
+    -- Combat: a plain button, nothing protected
+    M.SetCombat(true)
+    O().Clear()
+    Click(hd)
+    EQ(#O().List({ source = "TopBar" }), 1, "L: in combat a click still goes")
+    EQ(#M.blocked, 0, "L: ...and nothing protected was attempted", M.blocked[1])
+    M.SetCombat(false)
+    NOERR("L")
+
+    -- Without Orders the readouts are plain text again
+    Boot({ noOrders = true })
+    M.Advance(1.05)
+    local d2 = SegmentWithIcon(DURABILITY_ICON)
+    local h2 = d2 and HitFor(d2)
+    CHECK(d2 ~= nil and not (h2 and M.Visible(h2)), "L: no Orders: durability takes no mouse")
+    NOERR("L: no Orders")
 end)
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))

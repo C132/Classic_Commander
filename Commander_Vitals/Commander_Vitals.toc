@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Vitals
 ## Author: Devin
-## Version: 2.1.0
-## Notes: RTS unit wireframe for your gear: per-slot condition bars that appear when equipment durability runs low.
+## Version: 2.2.0
+## Notes: RTS unit wireframe for your gear: per-slot condition bars that appear when equipment durability runs low. With Commander Orders, a worn slot's tooltip names the nearest repairer and /cvitals repair points the arrow there.
 ## IconTexture: Interface\Icons\INV_Hammer_20
 ## SavedVariables: CommanderVitalsDB
 ## RequiredDeps: Commander_Events

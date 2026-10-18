@@ -647,6 +647,8 @@ CommanderNotebookDB = {
 }
 
 Load(ADDONS .. "/Commander_Events/CommanderSettingsUI.lua")
+-- Commander_Events' TOC loads its Go button between the two (Orders 3.1)
+Load(ADDONS .. "/Commander_Events/CommanderGoButton.lua")
 Load(ADDONS .. "/Commander_Events/CommanderEvents.lua")
 -- Mutation hooks: NOTEBOOK_STORE / NOTEBOOK_UI = /path of a copy to load instead
 Load(os.getenv("NOTEBOOK_STORE") or (ADDONS .. "/Commander_Notebook/CommanderNotebookStore.lua"))
@@ -1075,15 +1077,27 @@ do
     EQ(context and context.x, 0.435, "L1 and the exact x, not the rounded one in the text")
     EQ(context and context.zone, "Nagrand Arena", "L1 and the zone name")
 
-    -- Commander Orders, as far as Notebook reaches into it
+    -- Commander Orders, as far as Notebook reaches into it. Since Orders 3.1
+    -- a map-stamped Go is GoTo(target, opts), recorded as the spec the real
+    -- GoTo hands its Add (target and opts merged), plus what the Go button
+    -- reads; an old stamp still goes through Import by name.
     local adds, imports = {}, {}
     local orders
+    local REASONS = { disabled = "Commander Orders is turned off (/corder)" }
     orders = {
-        Add = function(spec)
+        GoTo = function(target, opts)
+            local spec = {}
+            for k, v in pairs(target or {}) do spec[k] = v end
+            for k, v in pairs(opts or {}) do spec[k] = v end
             adds[#adds + 1] = spec
             if orders.refuse then return nil, orders.refuse end
             return "w1"
         end,
+        IsAvailable = function()
+            if orders.refuse then return false, orders.refuse end
+            return true
+        end,
+        Reason = function(why) return REASONS[why] or tostring(why) end,
         Import = function(text, opts)
             imports[#imports + 1] = { text = text, opts = opts }
             if orders.ambiguous then
@@ -1120,8 +1134,11 @@ do
     EQ(spec.source, "Notebook", "L2 source Notebook")
     EQ(spec.key, "note:" .. made.id, "L2 keyed by the note, so Go twice is one waypoint")
     EQ(spec.setArrow, true, "L2 and the arrow goes there")
-    CHECK(PrintedMatching("waypoint to Arena comp %(Halaa, Nagrand Arena 43%.5, 61%.2%)"),
-        "L2 a one-line confirmation", printLog[#printLog])
+    -- Orders 3.1 (SPEC 5): the one confirmation is Orders' own "Waypoint
+    -- set" (GoTo, not silent); the Notebook no longer prints one of its own
+    CHECK(not spec.silent and #printLog == 0, "L2 a one-line confirmation (Orders' own)", printLog[#printLog])
+    EQ(spec.icon, "NOTE", "L2 in the Notebook's tint (Orders' NOTE icon)")
+    CHECK(go and rawget(go, "_goOpts") ~= nil, "L2 the Go is Commander Orders' Go button")
 
     -- Go sits right after Stamp, and the row still fits the page
     local widths, used, shown = {}, 0, 0
@@ -1142,9 +1159,9 @@ do
     Click(ActionButton("Move To..."))
     local entry
     for _, info in ipairs(menuCaptured) do
-        if info.text == "Waypoint To This Note" then entry = info end
+        if info.text == "Go To This Note" then entry = info end
     end
-    CHECK(entry ~= nil, "L4 the note menu offers Waypoint To This Note")
+    CHECK(entry ~= nil, "L4 the note menu offers Go To This Note")
     if entry then entry.func() end
     EQ(#adds, 2, "L4 and it asks for the same waypoint")
 
@@ -1160,6 +1177,21 @@ do
     EQ(#imports, 1, "L5 the line goes through Orders' /way resolver")
     EQ(imports[1] and imports[1].text, "/way Nagrand 42.5 61.2 Rare spawn", "L5 as a /way line by zone name")
     EQ(imports[1] and imports[1].opts and imports[1].opts.source, "Notebook", "L5 under source Notebook")
+    -- The Notebook's own "Waypoint set" for it follows Orders' Announce In
+    -- Chat: said while it is on (or Orders keeps no settings), never off
+    printLog = {}
+    Click(go)
+    CHECK(PrintedMatching("Waypoint set: Rare spawn"), "L5 found: \"Waypoint set\"", printLog[1])
+    CommanderOrdersDB = { Announce = false }
+    printLog = {}
+    Click(go)
+    EQ(#imports, 3, "L5 Announce In Chat off: the waypoint all the same")
+    EQ(#printLog, 0, "L5 ...and no line of the Notebook's", printLog[1])
+    CommanderOrdersDB = { Announce = true }
+    printLog = {}
+    Click(go)
+    CHECK(PrintedMatching("Waypoint set: Rare spawn"), "L5 back on: said again", printLog[1])
+    CommanderOrdersDB = nil
     orders.ambiguous = true
     printLog = {}
     Click(go)
@@ -1175,7 +1207,7 @@ do
     Click(ActionButton("Move To..."))
     local offered = false
     for _, info in ipairs(menuCaptured) do
-        if info.text == "Waypoint To This Note" then offered = true end
+        if info.text == "Go To This Note" then offered = true end
     end
     CHECK(not offered, "L6 and no menu entry")
 
@@ -1197,6 +1229,36 @@ do
     Click(ActionButton("Go"))
     CHECK(PrintedMatching("/way Nagrand 42%.5 61%.2 Rare spawn"), "L8 for an old stamp too, by name", printLog[1])
     NoErrors("L8 no Orders raised nothing")
+
+    -- L10 (1.2.0, Orders 3.1): one Go button follows the open note, and an
+    -- old name-only stamp keeps the plain Go that asks Orders by name
+    CommanderOrders = orders
+    adds = {}
+    local second = S.CreateNote({ title = "Second spot", body = "x" })
+    S.SetContext(second.id, { map = 1, x = 0.25, y = 0.75, zone = "Nagrand Arena" })
+    N.OpenToNote(made.id)
+    local goA = ActionButton("Go")
+    N.OpenToNote(second.id)
+    local goB = ActionButton("Go")
+    CHECK(goA ~= nil and goA == goB, "L10 one Go button, re-pointed at whichever note is open")
+    Click(goB)
+    EQ(adds[1] and adds[1].key, "note:" .. second.id, "L10 its key follows the open note")
+    EQ(adds[1] and adds[1].x, 0.25, "L10 ...and so does its place")
+    N.OpenToNote(oldNote and oldNote.id or made.id)
+    local plainGo = ActionButton("Go")
+    CHECK(plainGo ~= nil and rawget(plainGo, "_goOpts") == nil and plainGo ~= goA,
+        "L10 an old stamp's Go is the plain button (Orders' /way by name)")
+    N.OpenToNote(plain.id)
+    CHECK(ActionButton("Go") == nil and not goA.__shown, "L10 a note with no place hides the Go button")
+    orders.refuse = "disabled"
+    N.OpenToNote(made.id)
+    local reasonGo = ActionButton("Go")
+    if reasonGo and reasonGo.Refresh then reasonGo:Refresh() end
+    EQ(reasonGo and reasonGo._goReason, "disabled", "L10 greyed while Orders is off, the reason kept for its tooltip")
+    orders.refuse = nil
+    S.Trash(second.id)
+    CommanderOrders = nil
+    NoErrors("L10 raised nothing")
 
     -- A note stamped as it is made keeps its place as well
     CommanderNotebookDB.StampNewNotes = true

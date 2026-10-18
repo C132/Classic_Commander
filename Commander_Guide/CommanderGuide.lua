@@ -5,14 +5,26 @@
 -- combat-log rows into the engine's plain events, the engine's lines into
 -- C_VoiceChat.SpeakText and a banner, and a boss page into fontstrings.
 --
--- Since 1.1.0 it also gets you to the raid (DECISIONS D11): "Waypoint to
+-- Since 1.1.0 it also gets you to the raid (DECISIONS D11): "Go to
 -- Entrance" hands Commander Orders the raid's door. Orders is optional and is
 -- looked up when the button is pressed, never captured at load, so the guide
 -- works the same with Orders absent (it prints the /way line instead) or
--- switched off (it says so and prints the line). Nothing here holds a
--- waypoint of its own: Orders owns the record under (source "Guide",
--- key "entrance:<raid>"), so pressing it twice moves one waypoint, never
--- stacks two.
+-- turned off (it says so). Nothing here holds a waypoint of its own: Orders
+-- owns the record under (source "Guide", key "entrance:<raid>"), so pressing
+-- it twice moves one waypoint, never stacks two.
+--
+-- 1.2.0 (Commander Orders 3.1, DECISIONS D12): with Orders 3.1 the door is
+-- Orders' own -- CommanderOrders.GoTo({ entrance = { instance = id } }),
+-- answered from the door table Orders ships for every dungeon and raid,
+-- with both of Karazhan's doors and the Coilfang Reservoir's mouth rather
+-- than a portal under the lake -- and Orders words the outcome ("Waypoint
+-- set: ..." or its one refusal line). The cited table in the data file is
+-- what the button falls back on when Orders cannot look the door up, and
+-- what it prints without Orders. The window's button is the suite's
+-- Commander.UI.GoButton: click Go, Shift-click share the door in chat,
+-- Ctrl-click copy its /way line, lit "Going to Entrance" while the arrow is
+-- on it (Orders' one words-and-gestures rule). An Orders 3.0 without GoTo
+-- still gets the 1.1.0 spec through Add.
 
 local D = CommanderGuide_Data
 local E = CommanderGuide_Engine
@@ -22,7 +34,7 @@ BINDING_HEADER_COMMANDERGUIDE = "Commander Guide"
 BINDING_NAME_COMMANDERGUIDE_TOGGLE = "Open the Guide"
 BINDING_NAME_COMMANDERGUIDE_BRIEF = "Read the brief for the boss in front of you"
 BINDING_NAME_COMMANDERGUIDE_STOP = "Stop the voice"
-BINDING_NAME_COMMANDERGUIDE_ENTRANCE = "Waypoint to the raid's entrance"
+BINDING_NAME_COMMANDERGUIDE_ENTRANCE = "Go to the raid's entrance"
 
 local db
 local ctx
@@ -176,6 +188,8 @@ end
 
 local function ShowBanner(text)
     if not (Enabled() and DB().Banner ~= false) then return end
+    -- Commander Tracer draws centre-screen text in its own lanes when it runs
+    if CommanderTracer_Notice and CommanderTracer_Notice({ text = text }) then return end
     local b = EnsureBanner()
     b.text:SetText(text or "")
     b.text:SetAlpha(1)
@@ -425,8 +439,16 @@ local function Orders()
     return nil
 end
 
--- The door as an Add spec: Orders' own entrance resolvers first (asked for
--- the raid's uiMap), then the table in the data file
+-- Orders 3.1, the "Go to" API (GoTo, PlaceFor, Reason)
+local function OrdersGo()
+    local O = Orders()
+    if O and type(O.GoTo) == "function" then return O end
+    return nil
+end
+
+-- The door as an Add spec, for an Orders without GoTo: Orders' own entrance
+-- resolvers first (asked for the raid's uiMap), then the table in the data
+-- file
 local function EntranceFor(raid)
     if not raid then return nil end
     local row = D.ENTRANCES and D.ENTRANCES[raid.instanceMapID]
@@ -439,11 +461,41 @@ local function EntranceFor(raid)
     return E.EntranceSpec(D, raid, resolved)
 end
 
--- Orders' refusal reasons, in words
+-- Orders 3.1: what a Go hands GoTo. The door query when Orders can look it
+-- up (its shipped door table, every door as an alternative), else the cited
+-- table's spec (both of Karazhan's doors), else nil
+local function EntranceTarget(raid)
+    if not raid then return nil end
+    local O = OrdersGo()
+    if O and type(O.PlaceFor) == "function" and raid.instanceMapID then
+        local query = { entrance = { instance = raid.instanceMapID } }
+        local ok, place = pcall(O.PlaceFor, query)
+        if ok and type(place) == "table" then return query, "orders" end
+    end
+    local spec = E.EntranceSpec(D, raid, nil)
+    if spec then return spec, "table" end
+    return nil
+end
+
+-- Who owns the waypoint and what it is called
+local function EntranceOpts(raid)
+    return { source = "Guide", key = "entrance:" .. tostring(raid.key), title = (raid.title or "Raid") .. " entrance" }
+end
+
+-- Orders' refusal reasons, in words: Orders' own (CommanderOrders.Reason,
+-- the suite's one vocabulary) when it has them, these otherwise
 local REFUSED = {
-    disabled = "Commander Orders is switched off",
+    disabled = "Commander Orders is turned off (/corder)",
     loading = "Commander Orders is still loading",
 }
+
+local function RefusedWords(O, why)
+    if O and type(O.Reason) == "function" then
+        local ok, words = pcall(O.Reason, why)
+        if ok and type(words) == "string" and words ~= "" then return words end
+    end
+    return REFUSED[why] or ("Commander Orders refused it (" .. tostring(why) .. ")")
+end
 
 local function EntranceTooltip()
     local raid = PageRaid()
@@ -462,6 +514,36 @@ local function EntranceTooltip()
         .. ". Pressing it again moves the same waypoint; it clears itself when you arrive."
 end
 
+-- The window's button with Commander.UI.GoButton: its spec and its query
+-- are read on every refresh, so both follow the page's raid; the spec says
+-- which raid owns the waypoint (the key) as it is read. Inside the raid
+-- neither answers and the button greys out, its red line saying why (a
+-- GoButton spec or query may answer nil, reason).
+local INSIDE = "You are already inside"
+local entranceGo = { label = "Go to Entrance", source = "Guide" }
+entranceGo.spec = function()
+    local raid = PageRaid()
+    if not raid then return nil end
+    if InsideRaid(raid) then return nil, INSIDE end
+    entranceGo.key = "entrance:" .. tostring(raid.key)
+    local target, via = EntranceTarget(raid)
+    if via == "orders" then return nil end
+    return target
+end
+entranceGo.query = function()
+    local raid = PageRaid()
+    if not raid then return nil end
+    if InsideRaid(raid) then return nil, INSIDE end
+    local target, via = EntranceTarget(raid)
+    if via == "orders" then return target end
+    return nil
+end
+entranceGo.title = function()
+    local raid = PageRaid()
+    return raid and ((raid.title or "Raid") .. " entrance") or nil
+end
+entranceGo.tooltip = function() return EntranceTooltip() end
+
 local function RenderList()
     if not frame then return end
     local raid = (selectedBoss and selectedBoss.raid) or currentRaid or D.RAIDS[1]
@@ -478,7 +560,13 @@ local function RenderList()
             btn:Hide()
         end
     end
-    if frame.entrance then frame.entrance:SetEnabled(raid ~= nil and not InsideRaid(raid)) end
+    if frame.entrance then
+        if frame.entranceIsGo then
+            frame.entrance:Refresh()
+        else
+            frame.entrance:SetEnabled(raid ~= nil and not InsideRaid(raid))
+        end
+    end
 end
 
 function ShowBoss(boss)
@@ -540,14 +628,23 @@ local function EnsureFrame()
     frame.raidTitle:SetPoint("TOPLEFT", list, "TOPLEFT", 8, -4)
     frame.bossButtons = {}
     for i = 1, 16 do frame.bossButtons[i] = MakeBossButton(list, i) end
-    -- The way in sits under the boss list: it is the raid's, not a boss's
-    local entrance = CreateFrame("Button", nil, list, "UIPanelButtonTemplate")
+    -- The way in sits under the boss list: it is the raid's, not a boss's.
+    -- The suite's Go button when Commander_Events has it (click Go, Shift
+    -- share, Ctrl copy, lit while the arrow is on the door); a plain button
+    -- calling CommanderGuide_Entrance otherwise
+    local entrance
+    if UI and type(UI.GoButton) == "function" then
+        entrance = UI.GoButton(list, entranceGo)
+        frame.entranceIsGo = true
+    else
+        entrance = CreateFrame("Button", nil, list, "UIPanelButtonTemplate")
+        entrance:SetText("Go to Entrance")
+        entrance:SetScript("OnClick", function() CommanderGuide_Entrance() end)
+        if UI and UI.AttachTooltip then UI.AttachTooltip(entrance, "Go to Entrance", EntranceTooltip) end
+    end
     entrance:SetHeight(22)
     entrance:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 4, 4)
     entrance:SetPoint("BOTTOMRIGHT", list, "BOTTOMRIGHT", -4, 4)
-    entrance:SetText("Waypoint to Entrance")
-    entrance:SetScript("OnClick", function() CommanderGuide_Entrance() end)
-    if UI and UI.AttachTooltip then UI.AttachTooltip(entrance, "Waypoint to Entrance", EntranceTooltip) end
     frame.entrance = entrance
 
     -- right: toolbar + page
@@ -669,7 +766,8 @@ end
 
 -- A Commander Orders waypoint at the raid's door: raidKey's raid, else the
 -- page's. Returns true, uid when Orders took it; false, reason otherwise
--- (the /way line has been printed then, so the press never does nothing).
+-- (a line has been said then -- Orders' own refusal with its [Go] link, or
+-- the /way line -- so the press never does nothing).
 function CommanderGuide_Entrance(raidKey)
     if not Enabled() then print("Commander Guide is disabled in its settings") return false, "disabled" end
     local raid = raidKey and RaidByKey(raidKey) or PageRaid()
@@ -677,6 +775,24 @@ function CommanderGuide_Entrance(raidKey)
     if InsideRaid(raid) then
         print("Commander Guide: you are already inside " .. raid.title)
         return false, "inside"
+    end
+    local G = OrdersGo()
+    if G then
+        -- Orders 3.1 says what happened itself: "Waypoint set: ..." or its
+        -- one refusal line (with the door's [Go] when it knows the spot)
+        local target = EntranceTarget(raid)
+        if not target then
+            print("Commander Guide: no entrance is known for " .. raid.title)
+            return false, "unknown"
+        end
+        local ok, uid, why = pcall(G.GoTo, target, EntranceOpts(raid))
+        if ok and uid then return true, uid end
+        why = ok and why or "error"
+        if not ok then
+            local line = E.WayLine(E.EntranceSpec(D, raid, nil))
+            print("Commander Guide: " .. RefusedWords(G, why) .. (line and (" -- " .. line) or ""))
+        end
+        return false, why
     end
     local spec = EntranceFor(raid)
     if not spec then
@@ -689,6 +805,10 @@ function CommanderGuide_Entrance(raidKey)
         print("Commander Guide: " .. spec.title .. " -- " .. line)
         return false, "absent"
     end
+    if type(O.WayLineFor) == "function" then
+        local okLine, made = pcall(O.WayLineFor, spec.map, spec.x, spec.y, spec.title)
+        if okLine and type(made) == "string" and made ~= "" then line = made end
+    end
     local ok, uid, why = pcall(O.Add, spec)
     if ok and uid then
         local row = D.ENTRANCES and D.ENTRANCES[raid.instanceMapID]
@@ -697,8 +817,7 @@ function CommanderGuide_Entrance(raidKey)
         return true, uid
     end
     why = ok and why or "error"
-    print("Commander Guide: " .. (REFUSED[why] or ("Commander Orders refused it (" .. tostring(why) .. ")"))
-        .. " -- " .. line)
+    print("Commander Guide: " .. RefusedWords(O, why) .. " -- " .. line)
     return false, why
 end
 
