@@ -187,3 +187,15 @@ A friend, guild member or listing nobody knows gets nothing added (D8). Every
 name is still handed to the feed through RatingsFor. Setting: Friends,
 Guild And Group Finder, on by default.
 
+
+## D14 — A name with no realm is not a name on our realm (1.2.1, 2026-10-17)
+
+Devin, in the group finder: "only about half people or less with rating on their
+tooltips", though their listings named their ratings. Of 117 names Muster had handed to
+the feed, 37 had come back empty, and 28 of those were Nightslayer players asked for on
+Dreamscythe: the group finder (and friends lists) give a bare name, and `Resolve` filled
+in our realm as though it knew. It now returns a fourth value, `bare`, and `FeedFor`
+passes it to Ladder (its L8): Lookup tries our realm, then the one other realm that has
+the name; Want files it as realm-unknown so the feed tries every realm, ours first. A unit
+token, a GUID, a "Name-Realm", or a bare name we have already seen under a GUID is not a
+guess and is never second-guessed.

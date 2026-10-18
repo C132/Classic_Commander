@@ -346,9 +346,13 @@ CommanderMuster.RecordFor = RecordFor
 -- Ratings for anyone (D11): what we saw, merged with the web feed
 -- ---------------------------------------------------------------------------
 
--- guid, name, realm for a unit token, a GUID, or a "Name" / "Name-Realm".
--- Any of the three may be nil: a GUID the client never cached has no name,
--- and a name nobody has been inspected under has no GUID.
+-- guid, name, realm, bare for a unit token, a GUID, or a "Name" / "Name-Realm".
+-- Any of the first three may be nil: a GUID the client never cached has no
+-- name, and a name nobody has been inspected under has no GUID. `bare` is
+-- true when we were handed a name with no realm, so the realm returned is
+-- only our guess: the group finder lists Nightslayer players that way, and
+-- 28 of 37 names the feed could not find on 2026-10-17 were exactly those,
+-- asked for on Dreamscythe (D14).
 local function Resolve(who)
     if type(who) ~= "string" or who == "" then return nil end
     if UnitExists(who) then
@@ -372,17 +376,19 @@ local function Resolve(who)
     end
     local key = E.NameKey(who, nil, HomeRealm())
     local name, realm = E.SplitKey(key)
-    return byName[key], name, realm
+    return byName[key], name, realm, not who:find("-", 1, true)
 end
 
 -- Commander_Ladder's entry for a player, as a source. A player the feed does
 -- not have is handed to Want, so the next feed run looks them up by name.
-local function FeedFor(name, realm, guid)
+-- `bare`: the realm is our guess, so Ladder may answer from another realm
+-- and the feed tries them all (Ladder L8).
+local function FeedFor(name, realm, guid, bare)
     if not name or type(CommanderLadder) ~= "table" or type(CommanderLadder.Lookup) ~= "function" then
         return nil
     end
     if realm == "" then realm = nil end
-    local ok, entry = pcall(CommanderLadder.Lookup, name, realm)
+    local ok, entry = pcall(CommanderLadder.Lookup, name, realm, bare)
     if ok and type(entry) == "table" then
         local generated
         if type(CommanderLadder.Generated) == "function" then
@@ -392,7 +398,7 @@ local function FeedFor(name, realm, guid)
         return E.FeedSource(entry, generated)
     end
     if guid ~= playerGUID and type(CommanderLadder.Want) == "function" then
-        pcall(CommanderLadder.Want, name, realm)
+        pcall(CommanderLadder.Want, name, realm, bare)
     end
     return nil
 end
@@ -402,11 +408,12 @@ end
 local function RatingsFor(who)
     -- The master switch reaches every surface that asks, not only Muster's own
     if not IsOn() then return nil end
-    local guid, name, realm = Resolve(who)
+    local guid, name, realm, bare = Resolve(who)
     local sources = {}
     local seen = guid and bests and E.SeenSource(bests[guid], time(), LIVE_WINDOW)
     if seen then sources[#sources + 1] = seen end
-    local feed = FeedFor(name, realm, guid)
+    -- A bare name that resolved to a GUID we have seen is not a guess
+    local feed = FeedFor(name, realm, guid, bare and not guid)
     if feed then sources[#sources + 1] = feed end
     return E.MergeRatings(sources)
 end

@@ -456,9 +456,10 @@ end
 
 -- Commander_Ladder, the web feed (D11): a data table the harness fills, and
 -- the names Muster hands back for the next feed run
-local ladderData, ladderWants = {}, {}
+local ladderData, ladderWants, ladderBare = {}, {}, {}
 CommanderLadder = {
-    Lookup = function(name, realm)
+    Lookup = function(name, realm, anyRealm)
+        ladderBare[name] = anyRealm and true or false
         return ladderData[name .. "-" .. (realm or "Dreamscythe")]
     end,
     Want = function(name, realm)
@@ -1063,6 +1064,11 @@ do
     FriendsFrame_UpdateFriendButton(nemo)
     CHECK(nemo.info:GetText() == "Ironforge", "a friend nobody knows keeps the plain line", nemo.info:GetText())
     CHECK(ladderWants["Nemo-Dreamscythe"] ~= nil, "and is handed to the feed")
+    -- Ladder L8: a name with no realm says so, so Ladder may answer from the
+    -- other realm and the feed tries them all; a written realm never does
+    CHECK(ladderBare["Nemo"] == true, "a bare name is passed on as realm-unknown")
+    CommanderMuster.RatingsFor("Nemo-Nightslayer")
+    CHECK(ladderBare["Nemo"] == false, "...and a Name-Realm is not")
     CommanderMusterDB.RatingsOnLists = false
     FriendsFrame_UpdateFriendButton(kay)
     CHECK(kay.info:GetText() == "Shattrath City", "the setting turns them off", kay.info:GetText())
