@@ -43,7 +43,7 @@ DATA.LANES = {
       point = { point = "LEFT", x = 30, y = 140 },
       motion = "STACK", direction = "DOWN", fontSize = 13, color = "KIND", format = "FULL", icon = "LEFT" },
     { key = "Call",   title = "Callouts",         short = "Callouts",
-      note = "The moments: a killing blow, an interrupt you landed, a proc ready, a dispel. Big text at the top of the screen that punches in and fades. Off for the ordinary numbers, on for the things you would say out loud.",
+      note = "Big text at the top of the screen that punches in and fades. Nothing is routed here by default -- the moments and the centre-screen text go to the ledger, out of the middle of the view -- but any kind can be sent here from the routing sections.",
       point = { point = "TOP", x = 0, y = -180 },
       motion = "POP", direction = "DOWN", fontSize = 26, color = "KIND", format = "FULL", icon = "LEFT" },
 }
@@ -146,16 +146,16 @@ DATA.KINDS = {
       tip = "A harmful aura landing on you: the sheep, the fear, the dot.",
       color = { 1, 0.45, 0.25 } },
     -- moments
-    { key = "KillingBlow",  label = "Killing Blows",     group = "MOMENTS", lane = "Call", ledger = true,
-      tip = "You landed the blow that killed something. Commander Impact draws its own TARGET ELIMINATED for the same moment; keep one of the two.",
+    { key = "KillingBlow",  label = "Killing Blows",     group = "MOMENTS", lane = "Log", ledger = true,
+      tip = "You landed the blow that killed something. While this is routed, Commander Impact leaves its TARGET ELIMINATED text to this (its edge pulse and sound stay).",
       color = { 1, 0.82, 0.3 }, sound = "SoundKill" },
-    { key = "Interrupt",    label = "Your Interrupts",   group = "MOMENTS", lane = "Call", ledger = true,
+    { key = "Interrupt",    label = "Your Interrupts",   group = "MOMENTS", lane = "Log", ledger = true,
       tip = "A cast you stopped, named.",
       color = { 1, 0.6, 0.2 }, sound = "SoundInterrupt" },
-    { key = "Dispel",       label = "Your Dispels",      group = "MOMENTS", lane = "Call", ledger = true,
+    { key = "Dispel",       label = "Your Dispels",      group = "MOMENTS", lane = "Log", ledger = true,
       tip = "An aura you removed or stole, named.",
       color = { 0.55, 0.85, 1 } },
-    { key = "ProcReady",    label = "Procs Ready",       group = "MOMENTS", lane = "Call", ledger = true,
+    { key = "ProcReady",    label = "Procs Ready",       group = "MOMENTS", lane = "Log", ledger = true,
       tip = "The client's own reactive-ability call: Overpower, Revenge, Mongoose Bite and friends lighting up.",
       color = { 1, 0.95, 0.5 }, sound = "SoundProc" },
     { key = "HonorGained",  label = "Honor Gained",      group = "MOMENTS", lane = "OFF",  ledger = true,
@@ -164,6 +164,27 @@ DATA.KINDS = {
     { key = "CombatState",  label = "Entering / Leaving Combat", group = "MOMENTS", lane = "OFF", ledger = false,
       tip = "A ledger row when combat starts and when it ends.",
       color = { 0.8, 0.8, 0.8 } },
+    -- the centre of the screen: text other frames used to draw over the
+    -- middle of the view, taken off them and drawn here instead. Off hands
+    -- a kind back to whoever drew it before.
+    { key = "ZoneText",     label = "Zone Changes",      group = "SCREEN", lane = "Log", ledger = false, notice = true,
+      tip = "The big zone and subzone names (and the Sanctuary / Contested line under them) the client fades in over the middle of the screen when you cross a border.",
+      color = { 1, 0.93, 0.76 }, icon = "Interface\\Icons\\INV_Misc_Map_01" },
+    { key = "ErrorText",    label = "Red Errors",        group = "SCREEN", lane = "Log", ledger = false, notice = true,
+      tip = "The red line at the top of the screen: Not enough rage, Out of range, Ability is not ready yet. Repeats merge into one row with a count.",
+      color = { 1, 0.25, 0.25 } },
+    { key = "InfoText",     label = "Yellow Notices",    group = "SCREEN", lane = "Log", ledger = false, notice = true,
+      tip = "The yellow line at the top of the screen: quest progress (Boar Ribs 3/6), discoveries, system notices, and anything another addon writes there.",
+      color = { 1, 0.9, 0.3 } },
+    { key = "RaidWarning",  label = "Raid Warnings",     group = "SCREEN", lane = "Log", ledger = false, notice = true,
+      tip = "Raid warnings, and the warnings boss mods push through the same frame. The warning sound still plays.",
+      color = { 1, 0.45, 0.2 }, icon = "Interface\\Icons\\Ability_Warrior_BattleShout" },
+    { key = "BossEmote",    label = "Boss Emotes",       group = "SCREEN", lane = "Log", ledger = false, notice = true,
+      tip = "A boss's emotes and whispers (Gruul grows in size!), and arena and battleground start announcements that use the same frame.",
+      color = { 1, 0.6, 0.2 }, icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01" },
+    { key = "CommanderAlert", label = "Commander Banners", group = "SCREEN", lane = "Log", ledger = false, notice = true,
+      tip = "The suite's own banners: Adjutant's alerts, Objectives' OBJECTIVE SECURED, Production's X ready, Impact's HONORABLE KILL, Promotion's level ceremony, Guide's boss lines. Each module keeps its sound; only the text moves.",
+      color = { 0.55, 0.75, 1 } },
 }
 DATA.KIND_BY_KEY = {}
 for _, kind in ipairs(DATA.KINDS) do DATA.KIND_BY_KEY[kind.key] = kind end
@@ -173,7 +194,9 @@ DATA.KIND_GROUPS = {
     { key = "ONYOU",   title = "Routing: On You",
       note = "Where each thing that happens to you is drawn." },
     { key = "MOMENTS", title = "Routing: The Moments",
-      note = "The events worth a callout: kills, interrupts, dispels, procs, honor." },
+      note = "The events worth a callout: kills, interrupts, dispels, procs, honor. In the ledger by default, so nothing pops up over the middle of the view; the Callouts lane is there for anyone who wants them big." },
+    { key = "SCREEN",  title = "Routing: Centre-Screen Text",
+      note = "Everything that used to pop up over the middle of the view -- the zone name, the red and yellow lines at the top, raid warnings, boss emotes, and the suite's own banners -- funnelled into a lane instead (the ledger by default). Set a kind to Off, ledger row No, and it is handed back to the frame that drew it before." },
 }
 
 -- ---------------------------------------------------------------------------

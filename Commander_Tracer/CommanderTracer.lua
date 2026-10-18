@@ -146,6 +146,7 @@ local function ApplyFace(fs, cfg, sizeScale)
 end
 
 local function IconFor(rec)
+    if rec.icon then return rec.icon end
     if rec.spellId and GetSpellTexture then
         local ok, tex = pcall(GetSpellTexture, rec.spellId)
         if ok and tex then return tex end
@@ -390,6 +391,121 @@ function CommanderTracer_Post(rec)
     return true
 end
 
+-- Whether a kind is drawn anywhere while the module runs. Other modules ask
+-- before drawing their own banner; Off hands the kind back to them.
+local function Routed(kindKey)
+    if not Enabled() then return false end
+    return E.Routed(CommanderTracerDB, kindKey)
+end
+
+function CommanderTracer_Routes(kindKey)
+    return Routed(kindKey)
+end
+
+-- For other Commander modules: a banner's text, drawn here instead of over
+-- the middle of the screen. Returns true when it was taken, and the caller
+-- then skips its own banner (keeping its sound); false means draw your own.
+-- spec = { text = "...", sub = "...", r = , g = , b = , icon = "..." }
+function CommanderTracer_Notice(spec)
+    if type(spec) ~= "table" or not Routed("CommanderAlert") then return false end
+    local rec = E.NoticeRecord("CommanderAlert", spec.text, spec.sub, spec.r, spec.g, spec.b, spec.icon)
+    if not rec then return false end
+    Dispatch(rec)
+    return true
+end
+
+-- ---------------------------------------------------------------------------
+-- Blizzard's centre-screen text. Not CVars this time: frames. Each one is
+-- hooked (hooksecurefunc, so nothing of Blizzard's is replaced or tainted),
+-- the text it was about to fade in over the view is read off it and
+-- dispatched as a record, and the frame is put away. Every hook asks the
+-- settings on every call, so unticking the box or routing a kind Off hands
+-- the frame straight back with nothing to restore.
+--
+--   ZoneTextFrame / SubZoneTextFrame  FadingFrame_Show; read on the next
+--       tick so the zone, subzone and PvP line arrive as ONE record (and so
+--       ZoneText_OnEvent still sees its own frame shown, or it re-shows the
+--       zone name as a subzone)
+--   RaidWarningFrame / RaidBossEmoteFrame  RaidNotice_AddMessage, which boss
+--       mods call too; RaidNotice_Clear puts it away (the sound still plays)
+--   UIErrorsFrame  its AddMessage; Clear() before it is ever drawn (the
+--       error voice still plays)
+-- ---------------------------------------------------------------------------
+local function TakingCenter(kindKey)
+    return G("HideBlizzardCenterText", true) and Routed(kindKey)
+end
+
+local zonePending = false
+local hooked = {}
+
+local function TextOf(fs)
+    if not (fs and fs.GetText) then return nil end
+    local text = fs:GetText()
+    if type(text) ~= "string" or text == "" then return nil end
+    return text
+end
+
+local function FlushZone()
+    zonePending = false
+    local zoneShown = ZoneTextFrame and ZoneTextFrame:IsShown()
+    local subShown = SubZoneTextFrame and SubZoneTextFrame:IsShown()
+    if not (zoneShown or subShown) then return end
+    local zone = zoneShown and TextOf(ZoneTextString) or nil
+    local subzone = subShown and TextOf(SubZoneTextString) or nil
+    local pvp = TextOf(PVPInfoTextString) or TextOf(PVPArenaTextString)
+    local r, g, b
+    local colorFrom = zone and ZoneTextString or SubZoneTextString
+    if colorFrom and colorFrom.GetTextColor then r, g, b = colorFrom:GetTextColor() end
+    if zoneShown then ZoneTextFrame:Hide() end
+    if subShown then SubZoneTextFrame:Hide() end
+    local rec = E.ZoneRecord(zone, subzone, pvp, r, g, b)
+    if rec then Dispatch(rec) end
+end
+
+local function OnFadingShow(frame)
+    if frame ~= ZoneTextFrame and frame ~= SubZoneTextFrame then return end
+    if TakingCenter("ZoneText") then zonePending = true end
+end
+
+local function OnRaidNotice(frame, text, color)
+    local kind
+    if frame == RaidWarningFrame then kind = "RaidWarning"
+    elseif frame == RaidBossEmoteFrame then kind = "BossEmote"
+    else return end
+    if not TakingCenter(kind) then return end
+    local rec = E.NoticeRecord(kind, text, nil, color and color.r, color and color.g, color and color.b)
+    if RaidNotice_Clear then pcall(RaidNotice_Clear, frame) end
+    frame:Hide()
+    if rec then Dispatch(rec) end
+end
+
+local function OnErrorMessage(frame, text, r, g, b)
+    local kind = E.IsErrorColor(r, g, b) and "ErrorText" or "InfoText"
+    if not TakingCenter(kind) then return end
+    -- Clear, not remove-this-one: the frame is a C-side MessageFrame with no
+    -- way to drop a single line. A line of the OTHER colour still on screen
+    -- goes with it; the next one of its kind draws as normal.
+    frame:Clear()
+    local rec = E.NoticeRecord(kind, text, nil, r, g, b)
+    if rec then Dispatch(rec) end
+end
+
+local function HookCenterText()
+    if not hooksecurefunc then return end
+    if not hooked.fading and FadingFrame_Show then
+        hooked.fading = true
+        hooksecurefunc("FadingFrame_Show", OnFadingShow)
+    end
+    if not hooked.raid and RaidNotice_AddMessage then
+        hooked.raid = true
+        hooksecurefunc("RaidNotice_AddMessage", OnRaidNotice)
+    end
+    if not hooked.errors and UIErrorsFrame and UIErrorsFrame.AddMessage then
+        hooked.errors = true
+        hooksecurefunc(UIErrorsFrame, "AddMessage", OnErrorMessage)
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- The clock
 -- ---------------------------------------------------------------------------
@@ -422,6 +538,7 @@ end
 
 local function OnUpdate()
     local now = GetTime()
+    if zonePending then FlushZone() end
     if volley then
         local shots = volley.shots
         while volley.next <= #shots and now - volley.start >= shots[volley.next].at do
@@ -532,6 +649,7 @@ end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("UNIT_PET")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -545,11 +663,16 @@ events:SetScript("OnEvent", function(_, event, arg1, ...)
         OnCombatText(arg1, ...)
     elseif event == "PLAYER_LOGIN" then
         BuildLanes()
+        HookCenterText()
         RefreshIdentity()
         driver = driver or CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)
         ApplyAll()
         ApplyCVars()
+    elseif event == "ADDON_LOADED" then
+        -- Blizzard_UIErrorsFrame is its own addon; should it load after this
+        -- one, the error hook goes on when it does
+        HookCenterText()
     elseif event == "PLAYER_ENTERING_WORLD" then
         RefreshIdentity()
         ApplyCVars()
@@ -584,6 +707,13 @@ function CommanderTracer_Report()
         G("HideBlizzardWorldText", true) and "hidden" or "shown",
         G("HideBlizzardPlayerText", true) and "hidden" or "shown",
         held, held == 1 and "" or "s", cvarsPending and ", apply pending combat" or ""))
+    local taken = {}
+    for _, kind in ipairs(DATA.KINDS) do
+        if kind.group == "SCREEN" and Routed(kind.key) then taken[#taken + 1] = kind.label end
+    end
+    print(string.format("  Centre-screen text: %s (%s)",
+        G("HideBlizzardCenterText", true) and "taken over" or "left to Blizzard",
+        #taken > 0 and table.concat(taken, ", ") or "nothing routed"))
 end
 
 -- Read-only, for the harness and for other modules

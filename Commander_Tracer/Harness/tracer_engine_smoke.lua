@@ -555,8 +555,22 @@ for _, shot in ipairs(volley) do
     ok, err = pcall(E.Color, { ColorMode = "SCHOOL" }, shot.rec)
     CHECK(ok, "H: every shot has a colour", err)
 end
+-- Every lane some kind is routed to by default; the Callouts lane has none
+-- (nothing pops up over the middle of the view unless asked)
+local routedLane = {}
+for _, kind in ipairs(DATA.KINDS) do
+    if kind.lane ~= "OFF" then routedLane[kind.lane] = true end
+    if kind.ledger then routedLane.Log = true end
+end
+CHECK(not routedLane.Call, "H: nothing is routed to the Callouts lane by default")
 for _, lane in ipairs(DATA.LANES) do
-    CHECK(seenLane[lane.key], "H: the volley reaches the " .. lane.title .. " lane under the default routing")
+    if routedLane[lane.key] then
+        CHECK(seenLane[lane.key], "H: the volley reaches the " .. lane.title .. " lane under the default routing")
+    end
+end
+for _, key in ipairs({ "KillingBlow", "Interrupt", "Dispel", "ProcReady", "ZoneText", "ErrorText", "InfoText",
+        "RaidWarning", "BossEmote", "CommanderAlert" }) do
+    EQ(DATA.KIND_BY_KEY[key].lane, "Log", "H: " .. key .. " goes to the ledger by default, out of the middle of the view")
 end
 for _, kind in ipairs(DATA.KINDS) do
     if kind.key ~= "BuffFaded" and kind.key ~= "CombatState" then
@@ -581,6 +595,47 @@ for _, lane in ipairs(DATA.LANES) do
     CHECK(okMotion, "H: lane " .. lane.key .. " defaults to a real motion")
     CHECK(DATA.FONTS[DATA.LANE_DEFAULTS.Font] ~= nil, "H: the default face exists")
 end
+
+-- ===========================================================================
+-- I: centre-screen text
+-- ===========================================================================
+local n = E.NoticeRecord("ErrorText", "  Not enough rage ", nil, 1, 0.1, 0.1)
+EQ(n.text, "Not enough rage", "I: a notice is trimmed")
+EQ(n.mergeKey, "ErrorText|Not enough rage", "I: ...and merges on its text")
+EQ(n.notice, true, "I: ...and is marked a notice")
+CHECK(E.NoticeRecord("ErrorText", "   ") == nil, "I: a blank line is nothing")
+CHECK(E.NoticeRecord("ErrorText", nil) == nil, "I: ...and so is no line")
+local hc = E.NoticeRecord("RaidWarning", "Dead", nil, 255, 50, 50)
+CHECK(math.abs(hc.color[1] - 1) < 1e-6 and math.abs(hc.color[2] - 50 / 255) < 1e-6, "I: a 0..255 colour is scaled down")
+EQ(E.NoticeRecord("ZoneText", "Shattrath City").icon, DATA.KIND_BY_KEY.ZoneText.icon, "I: the kind's icon by default")
+EQ(E.NoticeRecord("CommanderAlert", "X", nil, nil, nil, nil, "Interface\\Icons\\Foo").icon, "Interface\\Icons\\Foo", "I: ...or the caller's")
+local cfgLog = { Format = "FULL", ColorMode = "KIND" }
+local m, sub = E.Text(cfgLog, E.NoticeRecord("CommanderAlert", "OBJECTIVE SECURED", "Boar Ribs: 6/6"), "SEPARATED")
+EQ(m, "OBJECTIVE SECURED", "I: a notice's text is its line")
+EQ(sub, "Boar Ribs: 6/6", "I: ...with its sub line")
+local merged = E.NoticeRecord("ErrorText", "Not enough rage")
+merged.count = 3
+EQ((E.Text(cfgLog, merged, "SEPARATED")), "Not enough rage x3", "I: repeats carry a count")
+local r, g, b = E.Color(cfgLog, E.NoticeRecord("ZoneText", "Shattrath City", nil, 0.41, 0.8, 0.94))
+CHECK(math.abs(r - 0.41) < 1e-6 and math.abs(b - 0.94) < 1e-6, "I: a notice keeps its old frame's colour")
+r, g, b = E.Color({ ColorMode = "FLAT", FlatColor = "GOLD" }, E.NoticeRecord("ZoneText", "Shattrath City", nil, 0.41, 0.8, 0.94))
+EQ(g, 0.85, "I: ...unless the lane is one colour")
+local z = E.ZoneRecord("Terokkar Forest", "Shattrath City", "Sanctuary", 0.41, 0.8, 0.94)
+EQ(z.text, "Terokkar Forest", "I: zone on top")
+EQ(z.sub, "Shattrath City - Sanctuary", "I: ...subzone and the PvP line under it")
+z = E.ZoneRecord(nil, "Lower City", "")
+EQ(z.text, "Lower City", "I: a subzone alone is the line")
+EQ(z.sub, nil, "I: ...with nothing under it")
+z = E.ZoneRecord("Nagrand", "Nagrand", nil)
+EQ(z.sub, nil, "I: a subzone that is the zone is not said twice")
+CHECK(E.ZoneRecord(nil, nil, "Contested") == nil, "I: no name, no record")
+CHECK(E.IsErrorColor(1, 0.1, 0.1), "I: RED_FONT_COLOR is an error")
+CHECK(not E.IsErrorColor(1, 1, 0), "I: YELLOW_FONT_COLOR is not")
+CHECK(not E.IsErrorColor(1, 0.82, 0), "I: ...nor a system gold")
+local dbr = { ZoneTextLane = "OFF", ZoneTextLedger = false, ErrorTextLane = "OFF", ErrorTextLedger = true, InfoTextLane = "Log" }
+CHECK(not E.Routed(dbr, "ZoneText"), "I: Off with no ledger row is not routed (handed back)")
+CHECK(E.Routed(dbr, "ErrorText"), "I: a ledger row alone is routed")
+CHECK(E.Routed(dbr, "InfoText"), "I: ...and so is a lane")
 
 io.write(string.format("%d checks, %d failures\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

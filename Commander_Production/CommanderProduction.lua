@@ -315,6 +315,11 @@ local function StopBannerFade()
 end
 
 local function ShowReadyBanner(text)
+    -- Commander Tracer draws centre-screen text in its own lanes when it
+    -- runs; the ready sound is ReadyAlert's and still plays
+    if CommanderTracer_Notice and CommanderTracer_Notice({ text = text, r = 0.3, g = 1, b = 0.4 }) then
+        return
+    end
     StopBannerFade()
     bannerGeneration = bannerGeneration + 1
     local generation = bannerGeneration

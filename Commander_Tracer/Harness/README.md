@@ -39,6 +39,12 @@ Decisions a player would make by hand, as claims that survive an edit:
   one slot along (lerped, not teleported, and clamped through a hitch),
   grows in either direction, and expires; fade in, fade out, a crit's punch
   and settle, the merge punch.
+* **centre-screen text** is trimmed, merges on its text, keeps the colour
+  its old frame had (a 0..255 colour scaled down) unless the lane is one
+  colour, takes its kind's icon or the caller's; the zone record folds
+  zone, subzone and PvP line and never says a name twice; the red line is
+  told from the yellow by colour; a kind Off with no ledger row is not
+  routed (handed back), and nothing defaults to the Callouts lane.
 * **the test volley** is in time order, every shot is a known kind with
   text and a colour, and under the default routing it reaches every lane
   and shows every kind it claims to.
@@ -53,7 +59,7 @@ and no `SetFont` yet is an error ("Font not set"), so writing text before
 setting the face fails here rather than 79 times on the settings page plus the real `CommanderSettingsUI.lua` and
 `CommanderEvents.lua`, so the page is built the way the client builds it.
 
-* login applies 255 defaults, builds six named roots on the strata set,
+* login applies 269 defaults, builds six named roots on the strata set,
   and takes Blizzard's seven CVars while remembering each one's old value
   (including one that was already off, so restore is exact);
 * a Fireball in the log becomes a number in Outgoing dressed with its icon,
@@ -90,10 +96,22 @@ setting the face fails here rather than 79 times on the settings page plus the r
   previews take the lane's face and follow a change, `/ctracer unlock |
   lock | report | reset` work, and reset keeps the CVar backup.
 
+* centre-screen text: a border crossing (zone frame, then subzone frame,
+  in one event) is ONE ledger row with the PvP line beneath, in the colour
+  the zone text had, and both frames are put away on the next tick, not
+  inside Blizzard's own call; a subzone alone is a row; red and yellow lines
+  are rows, the error frame is cleared before it draws, repeats merge with a
+  count, and an error routed Off goes back to Blizzard's frame; raid
+  warnings and boss emotes are rows and their frames cleared, a third frame
+  through the same function left alone; the Take Over box unticked hands
+  every frame back; a module's banner is taken with its detail line, refused
+  when empty, routed Off or with the module off; the report says what is
+  taken.
+
 ## The settings-reach check
 
 This module stores most of its settings by PATTERN — `<lane><Key>` for the
-six lanes, `<kind>Lane` / `<kind>Ledger` for the twenty-two kinds, one key
+six lanes, `<kind>Lane` / `<kind>Ledger` for the twenty-eight kinds, one key
 per sound slot — so `settings_reach.py` expands the patterns (from
 `DATA.LANES`, `DATA.LANE_DEFAULTS`, `DATA.KINDS`, `DATA.SOUND_SLOTS`) rather
 than reading only literal keys, on all three sides: declared, obeyed (the
@@ -101,4 +119,4 @@ runtime's `G("Key")` / `L(P, "Key")` / `cfg.Key`, the engine's
 `db[rec.kind .. "Lane"]`), and reachable (the page's
 `CommanderTracerDB[P .. "Key"]` / `[kind.key .. "Lane"]` / `[slot.key]`, and
 the chrome keys `AddHudChromeOptions` gives every lane). It reports
-UNREACHABLE, DEAD and UNREAD. 255 settings, all three ways.
+UNREACHABLE, DEAD and UNREAD. 269 settings, all three ways.

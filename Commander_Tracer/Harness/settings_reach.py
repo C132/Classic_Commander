@@ -48,7 +48,7 @@ RUNTIME_FILE = os.path.join(ROOT, "CommanderTracer.lua")
 CHROME_KEYS = ("Style", "Scale", "Locked", "Pos")
 
 # Deliberately off the page
-INTERNAL = {"CVarBackup"}
+INTERNAL = {"CVarBackup", "Migrated"}
 
 
 def read(path):
@@ -128,7 +128,7 @@ def main():
         for lane in lanes:
             for key in CHROME_KEYS:
                 obeyed.add(lane + key)
-    obeyed |= INTERNAL & set(re.findall(r"db\.(\w+)", runtime))
+    obeyed |= INTERNAL & set(re.findall(r"db\.(\w+)", runtime + db))
 
     # reachable
     reachable = set(re.findall(r"CommanderTracerDB\.(\w+)", db))

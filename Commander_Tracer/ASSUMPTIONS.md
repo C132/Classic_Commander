@@ -61,3 +61,20 @@ gates the event by the CVar, procs and honor stop drawing while Hide
 Blizzard's Player Text is ticked. Tell by: an Overpower proc with that box
 on and the Callouts lane on. If it is gated, the fix is to leave that CVar
 on and hide `CombatText` (the addon's frame) instead.
+
+**A10. The centre-screen hooks (1.1.0, from Blizzard's classic_anniversary
+source, not field-verified as of 2026-10-05).** `ZoneTextFrame` /
+`SubZoneTextFrame` are shown through the global `FadingFrame_Show`, with
+their lines on `ZoneTextString`, `SubZoneTextString`, `PVPInfoTextString`
+and `PVPArenaTextString`; `RaidWarningFrame` and `RaidBossEmoteFrame` are
+filled through the global `RaidNotice_AddMessage(frame, text, colorInfo)`
+and emptied by `RaidNotice_Clear`; `UIErrorsFrame` (a MessageFrame in the
+Blizzard_UIErrorsFrame addon) receives every red and yellow line through
+its `AddMessage(text, r, g, b, ...)` and has `Clear()`. If any is wrong:
+that kind of text still draws in the middle as before, nothing else is
+affected. Tell by: crossing a zone border, pressing an ability out of range,
+and `/rw test` in a group, each with the ledger on.
+
+**A11. `UIErrorsFrame:Clear()` from inside the AddMessage hook removes the
+line before it is ever drawn.** The hook runs in the same frame as the add;
+nothing renders between. If wrong: a red line flickers for one frame.

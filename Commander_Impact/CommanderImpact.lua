@@ -77,6 +77,10 @@ killText:Hide()
 local textGeneration = 0
 
 local function ShowKillText(text, r, g, b)
+    -- Commander Tracer draws centre-screen text in its own lanes when it runs
+    if CommanderTracer_Notice and CommanderTracer_Notice({ text = text, r = r or 1, g = g or 0.82, b = b or 0.15 }) then
+        return
+    end
     textGeneration = textGeneration + 1
     local myGeneration = textGeneration
     killText:SetText(text)
@@ -97,7 +101,8 @@ local function OnKill(destName)
     if CommanderImpactDB.KillFlash then
         Pulse(killLayer, 1, 0.82, 0.15, CommanderImpactDB.FlashIntensity or 0.4)
     end
-    if CommanderImpactDB.KillText then
+    -- Commander Tracer, when it is drawing killing blows, already says this
+    if CommanderImpactDB.KillText and not (CommanderTracer_Routes and CommanderTracer_Routes("KillingBlow")) then
         ShowKillText(destName and string.format("TARGET ELIMINATED: %s", destName) or "TARGET ELIMINATED")
     end
     if CommanderImpactDB.KillSound then

@@ -30,6 +30,7 @@ local DefaultSettings = {
     -- when it stops). Both on: this module IS the combat text.
     HideBlizzardWorldText = true,    -- the engine's numbers over units in the world
     HideBlizzardPlayerText = true,   -- Blizzard_CombatText scrolling round your character
+    HideBlizzardCenterText = true,   -- the zone name, the red/yellow lines, raid warnings and boss emotes over the middle of the view
 
     NumberStyle = "SEPARATED",       -- PLAIN | SEPARATED | SHORT
     Strata = "LOW",                  -- where the lanes draw: BACKGROUND | LOW | MEDIUM | HIGH
@@ -40,6 +41,8 @@ local DefaultSettings = {
     -- Bookkeeping, not on the page: the CVar values this module replaced,
     -- so they can be given back exactly.
     CVarBackup = {},
+    -- Which one-time moves of an existing install's settings have run
+    Migrated = {},
 }
 
 -- The lanes: the shared list, with the lane's own overrides
@@ -95,12 +98,38 @@ local frame = CreateFrame("FRAME")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 
+-- One-time moves of an install's saved settings, each run once and noted.
+-- CENTER_TEXT (1.1.0): the moments used to pop up in the Callouts lane over
+-- the middle of the view; a kind still on the old default goes to the
+-- ledger with the rest of the centre-screen text. A kind the player had
+-- routed anywhere else is left where they put it.
+local MIGRATIONS = {
+    { key = "CENTER_TEXT", run = function(db)
+        for _, kindKey in ipairs({ "KillingBlow", "Interrupt", "Dispel", "ProcReady" }) do
+            if db[kindKey .. "Lane"] == "Call" then db[kindKey .. "Lane"] = "Log" end
+        end
+    end },
+}
+
+local function Migrate(db, fresh)
+    if type(db.Migrated) ~= "table" then db.Migrated = {} end
+    for _, m in ipairs(MIGRATIONS) do
+        if not db.Migrated[m.key] then
+            -- A fresh install already has the new defaults
+            if not fresh then m.run(db) end
+            db.Migrated[m.key] = true
+        end
+    end
+end
+
 local function Reset()
     -- The CVar backup is not a setting: resetting the page must not forget
     -- what Blizzard's values were
     local backup = CommanderTracerDB.CVarBackup
+    local migrated = CommanderTracerDB.Migrated
     Commander.UI.ResetToDefaults(CommanderTracerDB, DefaultSettings)
     CommanderTracerDB.CVarBackup = backup or {}
+    CommanderTracerDB.Migrated = migrated or {}
     Commander.Notify(COMMANDER_TRACER_EVENTS.UPDATE)
     print("Commander Tracer: settings restored to defaults")
 end
@@ -357,7 +386,7 @@ end
 
 local function AddTakeoverSection(panel)
     panel:AddSection("Taking Over From Blizzard",
-        "This client draws combat text twice: the engine's numbers over units out in the world, and the Blizzard_CombatText addon scrolling round your character. Both are switched off here while this module runs, and the values they had are written back the moment either box is unticked or the module is disabled, so nothing is lost by trying it.")
+        "This client draws combat text twice: the engine's numbers over units out in the world, and the Blizzard_CombatText addon scrolling round your character. Both are switched off here while this module runs, and the values they had are written back the moment either box is unticked or the module is disabled, so nothing is lost by trying it. The third box takes the rest of the text that pops up over the middle of the view.")
     panel:AddCheckboxPair({
         label = "Hide Blizzard's World Numbers",
         tooltip = "Switch off the engine's own damage and healing numbers over units in the world (the floatingCombatTextCombat* CVars: damage, healing, periodic, pet melee, pet spells). Their previous values are remembered and restored when this is unticked.",
@@ -369,6 +398,13 @@ local function AddTakeoverSection(panel)
         tooltip = "Switch off the scrolling combat text round your character (the enableFloatingCombatText CVar, which loads Blizzard_CombatText). Restored when unticked.",
         get = function() return CommanderTracerDB.HideBlizzardPlayerText end,
         set = function(value) CommanderTracerDB.HideBlizzardPlayerText = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddCheckbox({
+        label = "Take Over Centre-Screen Text",
+        tooltip = "Pull the text Blizzard fades in over the middle of the view -- the zone name when you cross a border, the red error and yellow notice lines at the top, raid warnings, boss emotes -- off its frames and draw it in this module's lanes instead (the ledger by default; see Routing: Centre-Screen Text). Sounds still play. Unticked, or with a kind routed Off, Blizzard draws it as before. The suite's own banners are routed separately, under Commander Banners.",
+        get = function() return CommanderTracerDB.HideBlizzardCenterText end,
+        set = function(value) CommanderTracerDB.HideBlizzardCenterText = value end,
         isEnabled = Enabled,
     })
 end
@@ -734,7 +770,7 @@ local function CreatePanel()
         key = "Tracer",
         title = "Tracer",
         addonName = "Commander_Tracer",
-        description = "Floating combat text, rebuilt: six lanes -- your damage, your healing, what lands on you, what heals you, a lingering ledger column that holds each event long enough to be read after the fact, and big callouts for the moments -- each with its own anchor, motion, face, colour rule and merge window, fed by the combat log so every number carries its spell, its icon and its target. Blizzard's own text is switched off while this runs and handed back when it stops.",
+        description = "Floating combat text, rebuilt: six lanes -- your damage, your healing, what lands on you, what heals you, a lingering ledger column that holds each event long enough to be read after the fact, and a callouts lane for anything you want big -- each with its own anchor, motion, face, colour rule and merge window, fed by the combat log so every number carries its spell, its icon and its target. Blizzard's own text is switched off while this runs and handed back when it stops, and nothing pops up over the middle of the view: kills, procs, the zone name, error lines, raid warnings and the suite's banners all land in the ledger.",
         event = COMMANDER_TRACER_EVENTS.UPDATE,
         slash = { "/ctracer", "/ctr" },
         slashHandlers = {
@@ -793,8 +829,10 @@ end
 
 local function OnEvent(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "Commander_Tracer" then
+        local fresh = (next(CommanderTracerDB) == nil)
         Commander.UI.ApplyDefaults(CommanderTracerDB, DefaultSettings)
         if type(CommanderTracerDB.CVarBackup) ~= "table" then CommanderTracerDB.CVarBackup = {} end
+        Migrate(CommanderTracerDB, fresh)
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         CreatePanel()

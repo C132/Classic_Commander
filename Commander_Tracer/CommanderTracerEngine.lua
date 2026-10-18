@@ -125,6 +125,9 @@ function E.Color(cfg, rec, classColor, extraPalette)
     if mode == "FLAT" then
         return E.FlatColor(cfg.FlatColor or "STEEL", extraPalette)
     end
+    -- Centre-screen text keeps the colour its old frame would have drawn
+    -- it in (a red error, a raid warning's orange, a sanctuary's blue)
+    if rec.color then return rec.color[1] or 1, rec.color[2] or 1, rec.color[3] or 1 end
     if rec.missType then return GREY[1], GREY[2], GREY[3] end
     if rec.kind == "Energize" then return E.PowerColor(rec.powerType) end
     if mode == "SCHOOL" and rec.damage then
@@ -350,6 +353,56 @@ function E.CombatRecord(entering)
     return { kind = "CombatState", entering = entering and true or false }
 end
 
+-- Centre-screen text taken off another frame: the zone name, the red and
+-- yellow lines, a raid warning, a boss emote, a Commander banner. `text` is
+-- the line as the old frame would have written it, `sub` an optional second
+-- line, the colour the old frame's (0..1, or 0..255 as the hardcore death
+-- notice passes it), `icon` a texture path. Nil when there is nothing to say.
+local function Unit(v)
+    v = tonumber(v)
+    if not v then return nil end
+    if v > 1 then v = v / 255 end
+    if v < 0 then v = 0 elseif v > 1 then v = 1 end
+    return v
+end
+
+function E.NoticeRecord(kindKey, text, sub, r, g, b, icon)
+    if type(text) ~= "string" then return nil end
+    text = text:gsub("^%s+", ""):gsub("%s+$", "")
+    if text == "" then return nil end
+    if type(sub) ~= "string" or sub:gsub("%s", "") == "" then sub = nil end
+    local color
+    r, g, b = Unit(r), Unit(g), Unit(b)
+    if r and g and b then color = { r, g, b } end
+    local kind = DATA.KIND_BY_KEY[kindKey]
+    return {
+        kind = kindKey, notice = true, text = text, sub = sub, color = color,
+        icon = icon or (kind and kind.icon) or nil,
+        mergeKey = kindKey .. "|" .. text,
+    }
+end
+
+-- The zone frames' three lines folded into one record: the zone (or the
+-- subzone alone when only it changed) on top, the rest underneath
+function E.ZoneRecord(zone, subzone, pvp, r, g, b)
+    if zone == "" then zone = nil end
+    if subzone == "" or subzone == zone then subzone = nil end
+    if pvp == "" then pvp = nil end
+    local main, rest = zone, subzone
+    if not main then main, rest = subzone, nil end
+    if not main then return nil end
+    local sub = rest
+    if pvp then sub = sub and (sub .. " - " .. pvp) or pvp end
+    return E.NoticeRecord("ZoneText", main, sub, r, g, b)
+end
+
+-- The red line from the yellow one, by the colour the client gave it
+-- (RED_FONT_COLOR is 1, 0.1, 0.1; YELLOW_FONT_COLOR 1, 1, 0)
+function E.IsErrorColor(r, g, b)
+    r, g, b = tonumber(r) or 1, tonumber(g) or 1, tonumber(b) or 1
+    return r > 0.8 and g < 0.4 and b < 0.4
+end
+
 -- ---------------------------------------------------------------------------
 -- Routing: which lane, and whether the ledger gets a row too
 -- ---------------------------------------------------------------------------
@@ -361,6 +414,13 @@ function E.Route(db, rec)
     -- A kind routed to the ledger lane itself does not need the flag twice
     if lane == "Log" then ledger = false end
     return lane, ledger
+end
+
+-- Whether a kind is drawn anywhere at all. A kind that is not is handed back
+-- to the frame that drew it before (Blizzard's zone text, a module's banner).
+function E.Routed(db, kindKey)
+    local lane, ledger = E.Route(db, { kind = kindKey })
+    return (lane ~= nil) or ledger
 end
 
 -- ---------------------------------------------------------------------------
@@ -402,6 +462,10 @@ function E.Text(cfg, rec, numberStyle, petTag)
     local wantTarget = (fmt == "AMOUNT_TARGET" or fmt == "FULL")
     local pet = (rec.pet and petTag ~= false) and "Pet: " or ""
 
+    -- Centre-screen text is already a sentence
+    if rec.notice then
+        return (rec.text or "") .. Count(rec), rec.sub
+    end
     -- The moments have their own grammar
     if kind == "KillingBlow" then
         local main = "Killing Blow"
@@ -649,5 +713,11 @@ function E.TestVolley()
     at(4.0, { kind = "HonorGained", amount = 15, mergeKey = "HonorGained" })
     at(4.3, { kind = "DamageDone", damage = true, amount = 1180, spellName = "Fireball", spellId = 27070, school = 4, target = "Gankmage", mergeKey = "DamageDone|Fireball" })
     at(4.5, { kind = "KillingBlow", target = "Gankmage" })
+    at(4.8, E.NoticeRecord("ZoneText", "Shattrath City", "Sanctuary", 0.41, 0.8, 0.94))
+    at(5.0, E.NoticeRecord("ErrorText", "Not enough mana", nil, 1, 0.1, 0.1))
+    at(5.2, E.NoticeRecord("InfoText", "Boar Ribs: 3/6", nil, 1, 1, 0))
+    at(5.4, E.NoticeRecord("RaidWarning", "Interrupt the Priest", nil, 1, 0.28, 0))
+    at(5.6, E.NoticeRecord("BossEmote", "Gruul grows in size!", nil, 1, 0.5, 0))
+    at(5.8, E.NoticeRecord("CommanderAlert", "Production ready", "Production", 0.3, 1, 0.4))
     return v
 end

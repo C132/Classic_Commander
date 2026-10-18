@@ -294,6 +294,49 @@ C_CombatText = { GetCurrentEventInfo = function() return unpack(combatTextData, 
 local cleuArgs
 function CombatLogGetCurrentEventInfo() return unpack(cleuArgs, 1, cleuArgs.n) end
 
+-- hooksecurefunc as the client has it: the original runs, then the hook,
+-- with the same arguments
+function hooksecurefunc(a, b, c)
+    if type(a) == "string" then
+        local orig = _G[a]
+        _G[a] = function(...) local r = { orig(...) }; b(...); return unpack(r) end
+    else
+        local orig = a[b]
+        a[b] = function(...) local r = { orig(...) }; c(...); return unpack(r) end
+    end
+end
+
+-- Blizzard's centre-screen frames, as much of them as the hooks touch
+local function BlizzFrame(name)
+    local f = CreateFrame("Frame", name, UIParent)
+    f:Hide()
+    return f
+end
+BlizzFrame("ZoneTextFrame")
+BlizzFrame("SubZoneTextFrame")
+ZoneTextString = ZoneTextFrame:CreateFontString(nil, "OVERLAY", "ZoneTextFont")
+SubZoneTextString = SubZoneTextFrame:CreateFontString(nil, "OVERLAY", "SubZoneTextFont")
+PVPInfoTextString = ZoneTextFrame:CreateFontString(nil, "OVERLAY", "PVPInfoTextFont")
+PVPArenaTextString = SubZoneTextFrame:CreateFontString(nil, "OVERLAY", "PVPInfoTextFont")
+for _, fs in ipairs({ ZoneTextString, SubZoneTextString }) do
+    fs.GetTextColor = function(self) local c = self.__color or { 1, 1, 1 }; return c[1], c[2], c[3] end
+end
+function FadingFrame_Show(frame) frame:Show() end
+BlizzFrame("RaidWarningFrame")
+BlizzFrame("RaidBossEmoteFrame")
+BlizzFrame("SomeBossModFrame")
+local raidShown = {}
+function RaidNotice_AddMessage(frame, text, color)
+    frame:Show()
+    raidShown[frame] = text
+end
+function RaidNotice_Clear(frame) raidShown[frame] = nil end
+BlizzFrame("UIErrorsFrame")
+UIErrorsFrame:Show()
+UIErrorsFrame.lines = {}
+UIErrorsFrame.AddMessage = function(self, text, r, g, b) self.lines[#self.lines + 1] = text end
+UIErrorsFrame.Clear = function(self) self.lines = {} end
+
 local function Fire(event, ...)
     -- A copy: a handler that unregisters itself mid-dispatch must not make
     -- the next frame's handler vanish, which the client never lets happen
@@ -546,7 +589,16 @@ sounds = {}
 CLEU("PARTY_KILL", ME, "Me", MINE, "Player-7", "Gankmage", HOSTILE)
 Advance(0.05)
 EQ(#sounds, 0, "G: the kill bell is silent by default")
-EQ(Texts("Call"), "Killing Blow: Gankmage", "G: ...but the callout lands")
+EQ(#Entries("Call"), 0, "G: nothing pops up in the Callouts lane by default")
+EQ(Texts("Log"), "Killing Blow: Gankmage", "G: ...the kill is a ledger row, out of the middle of the view")
+EQ(#Entries("Log"), 1, "G: ...one, the ledger flag not doubling it")
+-- The Callouts lane, for anyone who asks for it
+db.KillingBlowLane = "Call"; db.ProcReadyLane = "Call"; db.InterruptLane = "Call"
+Notify()
+CommanderTracer_Clear()
+CLEU("PARTY_KILL", ME, "Me", MINE, "Player-7", "Gankmage", HOSTILE)
+Advance(0.05)
+EQ(Texts("Call"), "Killing Blow: Gankmage", "G: routed to Callouts, the callout lands")
 CHECK(Frames("Call")[1].text.__font[2] == 26 and Frames("Call")[1].text.__font[3] == "THICKOUTLINE", "G: ...big and thick")
 EQ(#Entries("Log"), 1, "G: ...and a ledger row")
 db.SoundKill = "TOLL_HI"
@@ -725,13 +777,17 @@ EQ(rows[1].text.__text, "Leaving combat", "K: ...newest first")
 db.CombatStateLedger = false
 CommanderTracer_Clear()
 CommanderTracer_Report()
-CHECK(printLog[#printLog]:find("Blizzard text: world hidden, player hidden", 1, true), "K: the report reads the takeover", printLog[#printLog])
+CHECK(printLog[#printLog - 1]:find("Blizzard text: world hidden, player hidden", 1, true), "K: the report reads the takeover", printLog[#printLog - 1])
 EQ(#caughtErrors, 0, "K: no errors", caughtErrors[1])
 
 -- ===========================================================================
 -- L: the volley, Clear, unlock
 -- ===========================================================================
 local seen = {}
+-- Nothing is routed to Callouts by default; send the kill there so the
+-- volley has every lane to reach
+db.KillingBlowLane = "Call"
+Notify()
 CommanderTracer_Test()
 for _ = 1, 100 do
     Advance(0.05)
@@ -771,6 +827,110 @@ db.OutMotion = "SCROLL"; db.OutSide = "ALTERNATE"
 CommanderTracer_Clear()
 Notify()
 EQ(#caughtErrors, 0, "L: no errors", caughtErrors[1])
+
+-- ===========================================================================
+-- N: centre-screen text
+-- ===========================================================================
+-- Back to the shipped routing for the moments
+db.KillingBlowLane = "Log"; db.ProcReadyLane = "Log"; db.InterruptLane = "Log"
+Notify()
+CommanderTracer_Clear()
+EQ(db.HideBlizzardCenterText, true, "N: centre-screen text is taken over by default")
+
+-- A border crossing: the zone frame, then the subzone frame, in one event
+ZoneTextString:SetText("Terokkar Forest")
+ZoneTextString:SetTextColor(0.41, 0.8, 0.94)
+PVPInfoTextString:SetText("Sanctuary")
+FadingFrame_Show(ZoneTextFrame)
+SubZoneTextString:SetText("Shattrath City")
+FadingFrame_Show(SubZoneTextFrame)
+CHECK(ZoneTextFrame:IsShown(), "N: the zone frame is left shown for the rest of Blizzard's own event")
+Advance(0.05)
+CHECK(not ZoneTextFrame:IsShown() and not SubZoneTextFrame:IsShown(), "N: ...then both are put away on the next tick")
+rows = Frames("Log")
+EQ(#rows, 1, "N: zone, subzone and the PvP line are ONE ledger row")
+EQ(rows[1].text.__text, "Terokkar Forest", "N: ...the zone on top")
+EQ(rows[1].sub.__text, "Shattrath City - Sanctuary", "N: ...the rest beneath")
+CHECK(math.abs(rows[1].text.__color[1] - 0.41) < 1e-6, "N: ...in the sanctuary blue the zone text had", rows[1].text.__color[1])
+EQ(rows[1].icon.__texture, DATA.KIND_BY_KEY.ZoneText.icon, "N: ...with the map icon")
+PVPInfoTextString:SetText("")
+ZoneTextString:SetText("")
+SubZoneTextString:SetText("Lower City")
+FadingFrame_Show(SubZoneTextFrame)
+Advance(0.05)
+EQ(Frames("Log")[1].text.__text, "Lower City", "N: a subzone alone is a row of its own")
+CHECK(not SubZoneTextFrame:IsShown(), "N: ...and its frame is put away")
+
+-- The red and yellow lines
+CommanderTracer_Clear()
+UIErrorsFrame:AddMessage("Not enough mana", 1, 0.1, 0.1, 1)
+UIErrorsFrame:AddMessage("Not enough mana", 1, 0.1, 0.1, 1)
+UIErrorsFrame:AddMessage("Boar Ribs: 3/6", 1, 1, 0, 1)
+Advance(0.05)
+EQ(#UIErrorsFrame.lines, 0, "N: the error frame is cleared before it draws")
+EQ(Texts("Log"), "Boar Ribs: 3/6 | Not enough mana x2", "N: errors and notices are rows, a repeat merged with a count")
+db.ErrorTextLane = "OFF"
+Notify()
+UIErrorsFrame:AddMessage("Out of range.", 1, 0.1, 0.1, 1)
+Advance(0.05)
+EQ(UIErrorsFrame.lines[1], "Out of range.", "N: an error routed Off is handed back to Blizzard's frame")
+CHECK(not Texts("Log"):find("Out of range", 1, true), "N: ...and not drawn here")
+db.ErrorTextLane = "Log"
+Notify()
+
+-- Raid warnings and boss emotes, from Blizzard or a boss mod
+CommanderTracer_Clear()
+RaidNotice_AddMessage(RaidWarningFrame, "Interrupt the Priest", { r = 1, g = 0.28, b = 0 })
+RaidNotice_AddMessage(RaidBossEmoteFrame, "Gruul grows in size!", { r = 1, g = 0.5, b = 0 })
+RaidNotice_AddMessage(SomeBossModFrame, "a frame of its own", { r = 1, g = 1, b = 1 })
+Advance(0.05)
+CHECK(not RaidWarningFrame:IsShown() and raidShown[RaidWarningFrame] == nil, "N: the raid warning frame is cleared and hidden")
+CHECK(not RaidBossEmoteFrame:IsShown(), "N: ...the boss emote frame too")
+CHECK(SomeBossModFrame:IsShown(), "N: ...a frame that is neither is left alone")
+EQ(Texts("Log"), "Gruul grows in size! | Interrupt the Priest", "N: both are rows")
+
+-- The box off: everything goes back to Blizzard
+CommanderTracer_Clear()
+db.HideBlizzardCenterText = false
+Notify()
+RaidNotice_AddMessage(RaidWarningFrame, "Back to Blizzard", { r = 1, g = 0.28, b = 0 })
+UIErrorsFrame:AddMessage("Spell is not ready yet.", 1, 0.1, 0.1, 1)
+ZoneTextString:SetText("Nagrand")
+FadingFrame_Show(ZoneTextFrame)
+Advance(0.05)
+CHECK(RaidWarningFrame:IsShown(), "N: unticked, the raid warning draws as before")
+EQ(UIErrorsFrame.lines[#UIErrorsFrame.lines], "Spell is not ready yet.", "N: ...the error too")
+CHECK(ZoneTextFrame:IsShown(), "N: ...and the zone name")
+EQ(#Entries("Log"), 0, "N: ...and nothing is drawn here")
+db.HideBlizzardCenterText = true
+ZoneTextFrame:Hide(); RaidWarningFrame:Hide()
+Notify()
+
+-- The suite's own banners
+CommanderTracer_Clear()
+CHECK(CommanderTracer_Routes("KillingBlow"), "N: another module can ask whether a kind is drawn here")
+CHECK(CommanderTracer_Notice({ text = "OBJECTIVE SECURED", sub = "Boar Ribs: 6/6", r = 0.3, g = 1, b = 0.4 }), "N: a module's banner is taken")
+Advance(0.05)
+rows = Frames("Log")
+EQ(rows[1].text.__text, "OBJECTIVE SECURED", "N: ...drawn as a row")
+EQ(rows[1].sub.__text, "Boar Ribs: 6/6", "N: ...with its detail beneath")
+CHECK(not CommanderTracer_Notice({ text = "" }), "N: an empty banner is refused, so the module draws nothing either")
+db.CommanderAlertLane = "OFF"
+Notify()
+CHECK(not CommanderTracer_Notice({ text = "Production ready" }), "N: routed Off, the module keeps its own banner")
+db.CommanderAlertLane = "Log"
+db.Enable = false
+Notify()
+CHECK(not CommanderTracer_Notice({ text = "Production ready" }), "N: ...and so it does with the module off")
+CHECK(not CommanderTracer_Routes("KillingBlow"), "N: ...where nothing is routed at all")
+UIErrorsFrame:AddMessage("Not enough rage", 1, 0.1, 0.1, 1)
+EQ(UIErrorsFrame.lines[#UIErrorsFrame.lines], "Not enough rage", "N: ...and Blizzard's frames draw as before")
+db.Enable = true
+Notify()
+CommanderTracer_Report()
+CHECK(printLog[#printLog]:find("Centre-screen text: taken over", 1, true), "N: the report reads the centre-screen takeover", printLog[#printLog])
+CommanderTracer_Clear()
+EQ(#caughtErrors, 0, "N: no errors", caughtErrors[1])
 
 -- ===========================================================================
 -- M: the settings page on the real framework
@@ -829,7 +989,7 @@ CHECK(db.OutLocked == false and db.LogLocked == false, "M: /ctracer unlock unloc
 SlashCmdList.COMMANDERUI_TRACER("lock")
 CHECK(db.OutLocked == true and db.LogLocked == true, "M: /ctracer lock locks them")
 SlashCmdList.COMMANDERUI_TRACER("report")
-CHECK(printLog[#printLog]:find("Blizzard text", 1, true), "M: /ctracer report prints")
+CHECK(printLog[#printLog - 1]:find("Blizzard text", 1, true) and printLog[#printLog]:find("Centre-screen text", 1, true), "M: /ctracer report prints")
 -- Restore Defaults keeps the CVar backup
 db.OutFontSize = 40
 SlashCmdList.COMMANDERUI_TRACER("reset")

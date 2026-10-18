@@ -18,7 +18,7 @@ alternative -- bespoke pages per lane -- is how lanes drift apart in what
 they can do. The ledger and the callouts differ from the number lanes only
 by their DEFAULTS (stack / pop, longer duration, merge on, bigger face).
 
-**D3. Kinds route to a lane AND optionally to the ledger.** Twenty-two
+**D3. Kinds route to a lane AND optionally to the ledger.** Twenty-eight
 kinds, each with a lane dropdown (any lane or Off) and a ledger flag. The
 flag exists because the ledger is a second VIEW of the same event -- a
 number scrolls past in the moment, the row lingers for the read-back --
@@ -57,10 +57,12 @@ offered because it is the face the old damage numbers used.
 rings on every crit is a combat text people switch off. The proc chime is
 the one sound whose whole value is that you were not looking.
 
-**D11. Commander Impact is left alone.** It draws TARGET ELIMINATED and edge
-pulses for the same kill; this module's Killing Blow callout says in its
-tooltip to keep one of the two. Merging the two modules was considered and
-rejected: Impact is a screen-edge language, this is a text language.
+**D11. Commander Impact keeps its edges; its words come here.** Impact is a
+screen-edge language, this is a text language, so the modules stay apart.
+But while Killing Blows are routed here, Impact skips its TARGET ELIMINATED
+text (asking `CommanderTracer_Routes("KillingBlow")`), and its other words
+(HONORABLE KILL) arrive as a Commander Banner. Superseded 2026-10-05 by D14;
+before that the tooltip said to keep one of the two.
 
 **D12. A locked lane never takes the mouse.** The shared HUD chrome keeps a
 locked frame mouse-enabled (left-clicks passed through) for its triple
@@ -74,3 +76,33 @@ root right after the chrome runs; unlocking is the page's button or
 edges of the row with wrapping off, so a long sentence is cut at the
 backdrop rather than running out past it. Row Width is the control.
 
+**D14. Nothing pops up over the middle of the view (1.1.0, 2026-10-05).**
+Devin's ask: the text that fades in over the centre -- Killing Blow, X
+ready, the zone name, the suite's banners -- made the view hard to read,
+and should all go through this module; the scrolling numbers stay as they
+are. So: the four moments default to the ledger (the Callouts lane stays,
+routed to nothing, one dropdown away), and six CENTRE-SCREEN kinds were
+added -- Zone Changes, Red Errors, Yellow Notices, Raid Warnings, Boss
+Emotes, Commander Banners -- all defaulting to the ledger. A one-time
+migration (`Migrated.CENTER_TEXT`) moves an existing install's moments off
+"Call" only where they were still on that default.
+
+**D15. Blizzard's centre text is taken by hook, read off the frame, and
+handed back by routing Off.** `hooksecurefunc` on `FadingFrame_Show` (zone
+frames), `RaidNotice_AddMessage` (raid warning, boss emote, and every boss
+mod that writes there) and `UIErrorsFrame:AddMessage`, so nothing of
+Blizzard's is replaced and no protected path is touched. The text is read
+from what the frame was about to draw, not re-derived from events, so the
+client's own rules (when a subzone counts, the sanctuary line, the error
+throttle) stay the client's. Every hook re-reads the settings, so a kind set
+Off (and no ledger row), the Take Over box unticked, or the module disabled
+hands the frame straight back with nothing to restore. Sounds stay where
+they were. The zone frames are put away on the NEXT tick: ZoneText_OnEvent
+asks whether its own frame is shown, and hiding it inside the call makes
+the client re-show the zone name as a subzone.
+
+**D16. Commander banners ask, then step aside.** A module calls
+`CommanderTracer_Notice{ text, sub, r, g, b, icon }`; true means taken and
+the module skips its own banner but keeps its sound, false means draw your
+own (Tracer absent, off, or Commander Banners routed Off). No dependency is
+declared either way: the call is made at runtime, long after login.
