@@ -580,5 +580,122 @@ do
     EQ(#out, 0, "G stunned with no trinket: nothing")
 end
 
+-- === H: rules about a teammate, and Mending's reach =======================
+do
+    local pws, pom = Rule("PRIEST_PWS_ALLY"), Rule("PRIEST_POM")
+    EQ(pws.scope, "ally", "H the ally shield is scoped to teammates")
+    EQ(pom.scope, "group", "H Mending is scoped to the whole group")
+    local function Ally(over)
+        local a = { unit = "party1", guid = "g1", name = "Rogue", hp = 1, inRange = true,
+            auras = {}, debuffs = {}, taking = false, melee = 0 }
+        for k, v in pairs(over or {}) do a[k] = v end
+        return a
+    end
+    local function S2(allies)
+        local S = Known(Snap({ inCombat = true, inGroup = true }), "Power Word: Shield", "Prayer of Mending")
+        S.allies = allies
+        return S
+    end
+
+    -- The teammate being hit, not the full one
+    local S = S2({ Ally({ name = "Rogue", hp = 0.35, taking = true }), Ally({ unit = "party2", name = "Mage", hp = 1 }) })
+    local tier, reason, spell, who = E.Assess(pws, S, Cfg(), E.NewState())
+    EQ(tier, 3, "H a teammate at 35% taking hits is a high shield")
+    EQ(who and who.name, "Rogue", "H ...on the teammate it is about")
+    EQ(spell, "Power Word: Shield", "H ...with the shield")
+    CHECK(reason and reason:find("^Rogue: health 35%%"), "H ...and the reason names them first", reason)
+
+    -- Weakened Soul on THEM blocks it; on you it does not
+    S = S2({ Ally({ hp = 0.35, taking = true, debuffs = { ["Weakened Soul"] = { expire = 108 } } }) })
+    tier = E.Assess(pws, S, Cfg(), E.NewState())
+    EQ(tier, nil, "H their Weakened Soul blocks a shield on them")
+    S = S2({ Ally({ hp = 0.35, taking = true }) })
+    S.debuffs["Weakened Soul"] = { expire = 108 }
+    tier = E.Assess(pws, S, Cfg(), E.NewState())
+    EQ(tier, 3, "H yours does not")
+    -- A shield already on them, any caster's
+    S = S2({ Ally({ hp = 0.35, taking = true, auras = { ["Power Word: Shield"] = { expire = 120 } } }) })
+    EQ(E.Assess(pws, S, Cfg(), E.NewState()), nil, "H a teammate already shielded is not offered")
+    -- Out of reach, dead, or you
+    S = S2({ Ally({ hp = 0.35, taking = true, inRange = false }) })
+    EQ(E.Assess(pws, S, Cfg(), E.NewState()), nil, "H out of range is not offered")
+    S = S2({ Ally({ hp = 0, taking = true, dead = true }) })
+    EQ(E.Assess(pws, S, Cfg(), E.NewState()), nil, "H the dead are not offered")
+    S = S2({ Ally({ isPlayer = true, name = "Me", hp = 0.3, taking = true }) })
+    EQ(E.Assess(pws, S, Cfg(), E.NewState()), nil, "H the ally shield leaves you to the self rule")
+
+    -- The worse of two at the same tier
+    S = S2({ Ally({ name = "Rogue", hp = 0.65, taking = true }), Ally({ unit = "party2", name = "Mage", hp = 0.55, taking = true }) })
+    local _, _, _, w2 = E.Assess(pws, S, Cfg(), E.NewState())
+    EQ(w2 and w2.name, "Mage", "H between two mediums, the lower health")
+    -- Two melee on a full-health teammate is already a medium
+    S = S2({ Ally({ hp = 1, melee = 2 }) })
+    EQ(E.Assess(pws, S, Cfg(), E.NewState()), 2, "H two melee on a teammate is a medium shield")
+    -- Just cast: quiet for the grace, whoever it went on
+    S = S2({ Ally({ hp = 0.35, taking = true }) })
+    S.recentCasts["Power Word: Shield"] = 99.5
+    local t3, r3 = E.Assess(pws, S, Cfg(), E.NewState())
+    CHECK(t3 == nil and r3 == "just cast", "H a shield just cast quiets the ally rule", r3)
+    -- Silenced: nothing but items, ally rules included
+    S = S2({ Ally({ hp = 0.35, taking = true }) })
+    S.control = { silenced = true }
+    EQ(E.Assess(pws, S, Cfg(), E.NewState()), nil, "H silenced quiets the ally rule too")
+    -- A pin replaces its tier
+    S = S2({ Ally({ hp = 0.9, taking = true }) })
+    EQ(E.Assess(pws, S, Cfg({ modes = { PRIEST_PWS_ALLY = "HIGH" } }), E.NewState()), 3,
+        "H Always high pins an ally rule too")
+
+    -- Evaluate carries who through the hysteresis
+    S = S2({ Ally({ name = "Rogue", hp = 0.35, taking = true }) })
+    local out = E.Evaluate(S, { pws }, Cfg(), E.NewState())
+    EQ(out[1] and out[1].who and out[1].who.name, "Rogue", "H the signal carries who")
+
+    -- Mending: you count, and one already out quiets it
+    S = S2({ Ally({ isPlayer = true, name = "Me", hp = 0.6, taking = true }), Ally({ hp = 1 }) })
+    local tp, _, _, wp = E.Assess(pom, S, Cfg(), E.NewState())
+    EQ(tp, 2, "H Mending on yourself when you are the one being hit")
+    CHECK(wp and wp.isPlayer, "H ...aimed at you")
+    S.mineOut = { ["Prayer of Mending"] = true }
+    local tq, rq = E.Assess(pom, S, Cfg(), E.NewState())
+    CHECK(tq == nil and rq == "already out", "H yours already out on anyone quiets it", rq)
+    -- Between two equal, the one it can bounce on from
+    S = S2({ Ally({ name = "Lonely", hp = 0.6, taking = true, reach = "NO" }),
+             Ally({ unit = "party2", name = "Huddled", hp = 0.6, taking = true, reach = "YES" }) })
+    local _, rr, _, wr = E.Assess(pom, S, Cfg(), E.NewState())
+    EQ(wr and wr.name, "Huddled", "H between equals, the one with somebody to bounce to")
+    CHECK(rr and rr:find("someone within 20 yd"), "H ...and the reason says so", rr)
+    S = S2({ Ally({ name = "Lonely", hp = 0.6, taking = true, reach = "NO" }) })
+    local _, rn = E.Assess(pom, S, Cfg(), E.NewState())
+    CHECK(rn and rn:find("it will not bounce"), "H a lone holder is warned about", rn)
+
+    -- Reach, from real positions
+    local function P(x, y, inst) return { pos = { x = x, y = y, inst = inst or 1 } } end
+    local holder = P(0, 0)
+    local st, n = E.BounceReach(holder, { holder, P(10, 0), P(100, 0) })
+    CHECK(st == "YES" and n == 1, "H one teammate within twenty yards is a bounce", tostring(st) .. n)
+    st = E.BounceReach(holder, { holder, P(21, 0), P(100, 0) })
+    EQ(st, "NO", "H everyone further than twenty is no bounce")
+    st = E.BounceReach(holder, { holder, P(5, 0, 2) })
+    EQ(st, nil, "H another instance is not a distance")
+    st = E.BounceReach(holder, { holder })
+    EQ(st, nil, "H alone, there is nothing to say")
+    st = E.BounceReach(holder, { holder, P(30, 0), { dead = true, pos = { x = 1, y = 0, inst = 1 } } })
+    EQ(st, "NO", "H the dead do not take a bounce")
+
+    -- Reach, from range bounds only (no positions: an arena)
+    local me = { lo = 0, hi = 0 }
+    st = E.BounceReach(me, { me, { lo = 30 }, { lo = 40 } })
+    EQ(st, "NO", "H on you, and everyone outside thirty yards: no bounce, provably")
+    st = E.BounceReach(me, { me, { lo = 0, hi = 30 } })
+    EQ(st, nil, "H inside thirty is not inside twenty: unknown, never claimed")
+    st = E.BounceReach({ lo = 0, hi = 30 }, { me, { lo = 0, hi = 30 } })
+    EQ(st, nil, "H two people each within thirty of you: unknown")
+    st = E.BounceReach({ lo = 0, hi = 8 }, { me, { lo = 0, hi = 30 } })
+    EQ(st, "YES", "H a holder within eight of you can bounce to you")
+    local least, most = E.Between({ lo = 40 }, { lo = 0, hi = 10 })
+    CHECK(least == 30 and most == math.huge, "H the triangle: forty out and ten in are thirty apart at least",
+        tostring(least) .. " " .. tostring(most))
+end
+
 io.write(string.format("%d checks, %d failed\n", checks, fails))
 os.exit(fails == 0 and 0 or 1)

@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit advisor_engine_smoke.lua   # engine, no mock — 1180 checks
-/opt/homebrew/bin/luajit advisor_ui_harness.lua     # wiring under a WoW mock — 56 checks
+/opt/homebrew/bin/luajit advisor_engine_smoke.lua   # engine, no mock — 1241 checks
+/opt/homebrew/bin/luajit advisor_ui_harness.lua     # wiring under a WoW mock — 90 checks
 /opt/homebrew/bin/luajit globals_lint.lua           # 4 files, 0 undeclared globals
 ```
 
@@ -28,7 +28,16 @@ stance and shield, resistance totems by school, Fade PvE-only, Grounding's
 two tiers, Mana Shield's mana floor); hysteresis (rise per tier, hold on
 the way down, instant rise, instant drop on cast); modes, caution, ranking
 and the cap; and control — nothing but the trinket while stunned, only
-items while silenced, everything while merely rooted.
+items while silenced, everything while merely rooted. Section H (1.3.0) is
+the rules about a teammate: the ally shield picks the teammate being hit and
+names them, THEIR Weakened Soul blocks it and yours does not, a shield
+already on them / out of range / dead / you are skipped, the lower health
+wins a tie, just-cast and silenced quiet it, a pin replaces its tier, the
+signal carries who through the hysteresis; Mending counts you, is quiet
+while yours is out anywhere, prefers the teammate with somebody to bounce
+to and warns about a lone holder; and E.BounceReach from real positions
+(within twenty, beyond, another instance, alone, the dead) and from range
+bounds only (provable no, never-claimed unknown, the triangle).
 
 ## `advisor_ui_harness.lua` — the wiring
 
@@ -45,7 +54,17 @@ reason, Weakened Soul clearing the shield the same tick, the report, the
 trinket alone while stunned, everything lapsing once nothing has hit you,
 Fear Ward high while a nameplate casts Fear at you, the settings page with
 one mode dropdown per priest rule, a colour and style change repainting a
-lit button, the master switch clearing, and the test lighting three.
+lit button, the master switch clearing, and the test lighting three. The
+teammate scenario (1.3.0) grows the mock a party member with per-unit auras,
+positions and a @mouseover macro, then checks the Shield overlay (Weakened
+Soul clock, red seconds and rim when bare, the name, one pip per seat,
+the hover in words), that auras are re-read on UNIT_AURA rather than every
+tick, that the macro answers for its mouseover and falls through to the
+target, the pale seconds under a holding shield, the ally shield lighting
+high for a teammate at 30% with their pip standing taller and the hover
+naming them (and dropping when their Weakened Soul lands), the Mending
+overlay (holder, charges, green rim inside twenty yards, red at thirty, no
+rim without a position), `/cadv range`, and both switches clearing.
 
 ## `globals_lint.lua`
 

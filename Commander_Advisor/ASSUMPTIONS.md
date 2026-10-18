@@ -39,3 +39,30 @@ through as they are confirmed.
   `ENVIRONMENTAL_DAMAGE` the amount at arg13.**
 - **Hanging an insecure child frame on a Blizzard action button and drawing on
   it does not taint the button** — the same pattern Commander_Forecast ships.
+
+## 1.3.0 (2026-10-16) — teammates, overlays, bounce range. Unverified in game.
+
+- **`SecureCmdOptionParse(options)` is callable from addon code and returns
+  `action, target`** for a macro line's conditional text, as on retail. If it
+  is missing or errors (pcall'd), a macro button answers for your friendly
+  target or you, like a plain button.
+- **`GetMacroBody(id)` returns the macro text** so the overlay can find the
+  line that casts the spell. Absent: the same fallback.
+- **`IsSpellInRange(name, unit)` answers 1/0/nil for party members in combat.**
+  Used for "can my shield reach them" (40 yd) and the reach bounds (30/40 yd).
+  `CheckInteractDistance` is protected on this client and `IsItemInRange` is
+  refused on friendlies in combat (TBC API notes), so these are the only
+  bounds there are.
+- **`UnitPosition(partyN)` in an arena is UNTESTED.** It answers in the open
+  world and in battlegrounds for group members; arenas have no UiMap and may
+  blank it. If it is blank there, the Mending rim in arena is red only when
+  Mending is on you and everyone is beyond thirty yards, and otherwise shows
+  nothing. `/cadv range` in a skirmish answers this.
+- **Mending can jump to any group member, not only your subgroup**, in a raid
+  (battleground). The reach estimate counts the whole raid; the Shield pips
+  and the ally rule use your subgroup (at most five seats).
+- **Party members' `UnitHealth` is the real value**, so a teammate's
+  time-to-die is in seconds like yours.
+- **`UNIT_AURA` fires for a party member's token (and for `target` when it is
+  them) when their auras change.** The overlays cache aura reads per GUID and
+  re-read on that event, or after a second at most.

@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Advisor
 ## Author: Devin
-## Version: 1.2.0
-## Notes: Glows the button you should be pressing. A conservative rules engine — not a language model — that watches your health, what is hitting you and how fast, who is on you, what is being cast at you, what is on you and what is not, and your cooldowns, and lights the action button for the defensive answer at one of three tiers: a low note, a medium prompt, a high alarm. Missing self-buffs (Inner Fire, Touch of Weakness, an armour, a shield, a blessing, an aspect) ride the same ladder. Every rule has its own switch and tier pin; hover a glowing button for the reason.
+## Version: 1.3.0
+## Notes: Glows the button you should be pressing. A conservative rules engine — not a language model — that watches your health, what is hitting you and how fast, who is on you, what is being cast at you, what is on you and what is not, and your cooldowns, and lights the action button for the defensive answer at one of three tiers: a low note, a medium prompt, a high alarm. Missing self-buffs (Inner Fire, Touch of Weakness, an armour, a shield, a blessing, an aspect) ride the same ladder. A healer's button can be about a teammate: Power Word: Shield lights for a bare, unlocked teammate being hit and names who, and Prayer of Mending lights while yours is not out on anyone. For a disc priest the Shield button also carries Weakened Soul on whoever it would land on — your @mouseover, your friendly target, or you — as a clock with its seconds, a red rim when they are bare and locked, and a pip per teammate along its edge; the Mending button names who holds yours, shows its charges, and rims green or red for whether anyone is within twenty yards for it to bounce to. Every rule has its own switch and tier pin; hover a glowing button for the reason.
 ## IconTexture: Interface\Icons\Spell_Holy_PowerWordShield
 ## SavedVariables: CommanderAdvisorDB
 ## RequiredDeps: Commander_Events

@@ -454,7 +454,7 @@ local BOOK = {
     { "Inner Fire", 10952 }, { "Power Word: Fortitude", 25389 }, { "Power Word: Shield", 25218 },
     { "Renew", 25222 }, { "Flash Heal", 25235 }, { "Desperate Prayer", 25437 }, { "Psychic Scream", 10890 },
     { "Fade", 25429 }, { "Dispel Magic", 988 }, { "Shadow Protection", 25433 }, { "Fear Ward", 6346 },
-    { "Smite", 25364 }, { "Mind Blast", 25375 },
+    { "Smite", 25364 }, { "Mind Blast", 25375 }, { "Prayer of Mending", 33076 },
 }
 function GetNumSpellTabs() return 1 end
 function GetSpellTabInfo() return "General", "", 0, #BOOK end
@@ -544,6 +544,12 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    -- Recorded: a red countdown and a pale one are different instructions
+    if key == "SetTextColor" then
+        local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
+        rawset(self, key, fn)
+        return fn
+    end
     return baseIndex(self, key)
 end
 
@@ -614,7 +620,10 @@ end
 local holdersByButton = {}
 CreateFrame = function(frameType, name, parent, template)
     local f = BaseCreateFrame(frameType, name, parent, template)
-    if parent and type(parent) == "table" and parent.__name and parent.__name:find("Button%d+$") then
+    -- The FIRST frame a button gets is its glow holder (built at login); a
+    -- Shield or Mending overlay arrives later and must not take its place
+    if parent and type(parent) == "table" and parent.__name and parent.__name:find("Button%d+$")
+        and not holdersByButton[parent.__name] then
         holdersByButton[parent.__name] = f
     end
     return f
@@ -813,6 +822,216 @@ Tick(2)
 CHECK(not Holder(2).tier, "... and it stays clear")
 CommanderAdvisorDB.EnableAdvisor = true
 Commander.Notify(COMMANDER_ADVISOR_EVENTS.UPDATE)
+
+-- ===========================================================================
+-- A teammate (1.3.0): the Shield and Mending overlays, and the ally shield
+-- ===========================================================================
+do
+    -- The mock grows a party member, per-unit auras, positions and macros
+    local team = { party1 = true }
+    local unitBuffs, unitDebuffs = {}, {}
+    local pos = { player = { 0, 0 }, party1 = { 10, 0 } }
+    local partyHp = 1000
+    local friendlyTarget, mouseover = nil, nil
+    local baseE, baseG, baseN, baseC, baseU, baseH, baseA =
+        UnitExists, UnitGUID, UnitName, UnitClass, UnitIsUnit, UnitHealth, UnitCanAttack
+    UnitExists = function(u)
+        if team[u] then return true end
+        if u == "target" and friendlyTarget then return true end
+        if u == "mouseover" then return mouseover ~= nil end
+        return baseE(u)
+    end
+    local function Resolve(u)
+        if u == "target" and friendlyTarget then return friendlyTarget end
+        if u == "mouseover" and mouseover then return mouseover end
+        return u
+    end
+    UnitGUID = function(u) u = Resolve(u); if u == "party1" then return "Player-0-ROGUE" end return baseG(u) end
+    UnitName = function(u) u = Resolve(u); if u == "party1" then return "Stabby" end return baseN(u) end
+    UnitClass = function(u) u = Resolve(u); if u == "party1" then return "Rogue", "ROGUE" end return baseC(u) end
+    UnitIsUnit = function(a, b) return baseU(Resolve(a), Resolve(b)) end
+    UnitHealth = function(u) u = Resolve(u); if u == "party1" then return partyHp end return baseH(u) end
+    UnitCanAttack = function(a, b)
+        if b == "target" and friendlyTarget then return false end
+        return baseA(a, b)
+    end
+    UnitCanAssist = function(a, b) return b == "target" and friendlyTarget ~= nil end
+    UnitPosition = function(u)
+        local p = pos[Resolve(u)]
+        if p then return p[2], p[1], 0, 530 end
+        return nil
+    end
+    IsInGroup = function() return true end
+    RAID_CLASS_COLORS.ROGUE = { r = 1, g = 0.96, b = 0.41 }
+    local baseBuff, baseDebuff = C_UnitAuras.GetBuffDataByIndex, C_UnitAuras.GetDebuffDataByIndex
+    C_UnitAuras.GetBuffDataByIndex = function(u, i)
+        u = Resolve(u)
+        if u == "player" then return baseBuff(u, i) end
+        local b = (unitBuffs[u] or {})[i]
+        if not b then return nil end
+        return { name = b.name, expirationTime = b.expire or 0, duration = b.duration,
+            sourceUnit = b.mine and "player" or "party2", spellId = b.id or 1, applications = b.stacks }
+    end
+    C_UnitAuras.GetDebuffDataByIndex = function(u, i)
+        u = Resolve(u)
+        if u == "player" then return baseDebuff(u, i) end
+        local d = (unitDebuffs[u] or {})[i]
+        if not d then return nil end
+        return { name = d.name, expirationTime = d.expire or 0, duration = d.duration, spellId = d.id or 2 }
+    end
+    local macroBody = "#showtooltip\n/cast [@mouseover,help,nodead][] Power Word: Shield"
+    GetMacroBody = function(id) return id == 1 and macroBody or nil end
+    local baseMacroSpell = GetMacroSpell
+    GetMacroSpell = function(id) if id == 1 then return 25218 end return baseMacroSpell(id) end
+    SecureCmdOptionParse = function(opts)
+        if opts:find("@mouseover", 1, true) and mouseover then return "Power Word: Shield", "mouseover" end
+        return "Power Word: Shield", nil
+    end
+
+    me.combat, me.hp, me.buffs, me.debuffs = false, me.hpMax, { { name = "Inner Fire", mine = true, expire = 0 } }, {}
+    slots[9] = { "spell", 33076 }
+    slots[10] = { "macro", 1 }
+    Fire("ACTIONBAR_SLOT_CHANGED", 9)
+    Fire("GROUP_ROSTER_UPDATE")
+    friendlyTarget = "party1"
+    unitDebuffs.party1 = { { name = "Weakened Soul", expire = GetTime() + 9, duration = 15, id = 6788 } }
+    Fire("UNIT_AURA", "party1")
+    Tick(1)
+
+    local W = CommanderAdvisor.WatchFor
+    local shield = W(_G.ActionButton2)
+    CHECK(shield ~= nil and shield.__shown, "team: the Shield button wears an overlay")
+    CHECK(shield and shield.cd.__shown, "team: Weakened Soul on your friendly target is a clock across it")
+    CHECK(shield and shield.text.__text == "9", "team: ...with its seconds written on it", shield and shield.text.__text)
+    CHECK(shield and shield.text.__color and shield.text.__color[1] == 1 and shield.text.__color[2] < 0.5,
+        "team: ...in red: they have no shield to show for it")
+    CHECK(shield and shield.rim[1].__shown and shield.rim[1].__color[1] > 0.9, "team: ...and the red rim")
+    CHECK(shield and shield.name.__text and shield.name.__text:find("Stabby"), "team: ...naming who",
+        shield and shield.name.__text)
+    CHECK(shield and shield.pips[1].__shown and shield.pips[2].__shown and not shield.pips[3].__shown,
+        "team: one pip per seat")
+    CHECK(shield and shield.pips[1].state == "READY" and shield.pips[2].state == "EXPOSED",
+        "team: you can take a shield, the rogue cannot", shield and (tostring(shield.pips[1].state) .. "/" .. tostring(shield.pips[2].state)))
+    GameTooltip.__lines = {}
+    GameTooltip.SetAction(GameTooltip, 2)
+    local said = table.concat(GameTooltip.__lines, " | ")
+    CHECK(said:find("Stabby: Weakened Soul 9s, no shield", 1, true), "team: the hover says it in words", said)
+
+    -- The cache: an aura change with no UNIT_AURA is not seen inside the
+    -- second, and is the moment the event arrives
+    unitDebuffs.party1 = {}
+    Tick(1)
+    CHECK(shield.cd.__shown, "team: auras are re-read on UNIT_AURA, not every tick")
+    Fire("UNIT_AURA", "party1")
+    Tick(1)
+    CHECK(not shield.cd.__shown, "team: ...and the event brings the change at once")
+    unitDebuffs.party1 = { { name = "Weakened Soul", expire = GetTime() + 9, duration = 15, id = 6788 } }
+    Fire("UNIT_AURA", "party1")
+    Tick(1)
+
+    -- The macro's own @mouseover wins over the target: over yourself, no lockout
+    mouseover = "player"
+    Tick(1)
+    local macro = W(_G.ActionButton10)
+    CHECK(macro and macro.__shown and not macro.cd.__shown,
+        "team: a @mouseover macro answers for the mouseover, not the target")
+    CHECK(shield.cd.__shown, "team: ...while the plain button still answers for the target")
+    mouseover = nil
+    Tick(1)
+    CHECK(W(_G.ActionButton10).cd.__shown, "team: no mouseover: the macro falls through to the target")
+
+    -- A shield still on them: pale seconds, no rim, a blue pip
+    unitBuffs.party1 = { { name = "Power Word: Shield", expire = GetTime() + 20, duration = 30, id = 25218 } }
+    Fire("UNIT_AURA", "party1")
+    Tick(1)
+    CHECK(shield.text.__color[1] < 0.9 and shield.text.__color[2] > 0.8, "team: a holding shield makes the seconds pale")
+    CHECK(not shield.rim[1].__shown, "team: ...and takes the red rim off")
+    CHECK(shield.pips[2].state == "SHIELDED", "team: ...and the pip goes blue")
+
+    -- The ally shield: the rogue bare and hit hard
+    unitBuffs.party1, unitDebuffs.party1 = {}, {}
+    Fire("UNIT_AURA", "party1")
+    partyHp = 300
+    me.combat = true
+    for _ = 1, 3 do
+        FireCleu(now, "SWING_DAMAGE", false, "Player-0-ENEMY", "Enemy", 0, 0, "Player-0-ROGUE", "Stabby", 0, 0, 200, 0, 1, 0)
+        Advance(0.3)
+    end
+    Tick(1)
+    CHECK(Holder(2).tier == 3, "team: a rogue at 30% under fire lights the shield high", Holder(2).tier)
+    CHECK(Holder(2).signal and Holder(2).signal.who and Holder(2).signal.who.name == "Stabby",
+        "team: ...and the signal knows who")
+    CHECK(shield.pips[2].tall == true and shield.pips[1].tall == false, "team: ...their pip stands taller")
+    GameTooltip.__lines = {}
+    GameTooltip.SetAction(GameTooltip, 2)
+    said = table.concat(GameTooltip.__lines, " | ")
+    CHECK(said:find("Stabby: health 30%", 1, true), "team: ...and the hover names them", said)
+    -- Weakened Soul lands on them: the ally rule drops at once
+    unitDebuffs.party1 = { { name = "Weakened Soul", expire = GetTime() + 15, duration = 15, id = 6788 } }
+    Fire("UNIT_AURA", "party1")
+    Tick(1)
+    CHECK(not Holder(2).tier or not (Holder(2).signal and Holder(2).signal.who),
+        "team: their Weakened Soul takes the ally shield down")
+    unitDebuffs.party1 = {}
+    Fire("UNIT_AURA", "party1")
+    partyHp = 1000
+    me.combat = false
+
+    -- Mending on the rogue, four charges, you ten yards away
+    unitBuffs.party1 = { { name = "Prayer of Mending", mine = true, stacks = 4, expire = GetTime() + 25, duration = 30, id = 41635 } }
+    Fire("UNIT_AURA", "party1")
+    Tick(3)
+    local pom = W(_G.ActionButton9)
+    CHECK(pom and pom.__shown, "team: the Mending button wears an overlay")
+    CHECK(pom and pom.count.__text == "4", "team: ...with its charges", pom and pom.count.__text)
+    CHECK(pom and pom.name.__text and pom.name.__text:find("Stabby"), "team: ...naming who holds it")
+    CHECK(pom and pom.reach == "YES" and pom.rim[1].__shown and pom.rim[1].__color[2] > 0.9,
+        "team: ...and a green rim: you are within twenty yards to bounce to", pom and tostring(pom.reach))
+    pos.party1 = { 30, 0 }
+    Tick(3)
+    CHECK(pom.reach == "NO" and pom.rim[1].__color[1] > 0.9 and pom.rim[1].__color[2] < 0.4,
+        "team: thirty yards apart: a red rim", tostring(pom.reach))
+    GameTooltip.__lines = {}
+    GameTooltip.SetAction(GameTooltip, 9)
+    said = table.concat(GameTooltip.__lines, " | ")
+    CHECK(said:find("Nobody is within 20 yd of Stabby", 1, true), "team: ...and the hover says why", said)
+    pos.party1 = nil
+    Tick(3)
+    CHECK(pom.reach == nil and not pom.rim[1].__shown, "team: no position for them: no rim, never a guess",
+        tostring(pom.reach))
+    printLog = {}
+    CommanderAdvisor_RangeReport()
+    CHECK(#printLog >= 3 and printLog[3]:find("Stabby", 1, true), "team: /cadv range lists every seat",
+        printLog[3])
+
+    -- The master switch takes the overlays with the glows
+    CommanderAdvisorDB.EnableAdvisor = false
+    Tick(1)
+    CHECK(not shield.__shown and not pom.__shown, "team: Enable Advisor off clears the overlays too")
+    CommanderAdvisorDB.EnableAdvisor = true
+    Tick(1)
+    CHECK(shield.__shown, "team: ...and they come back with it")
+
+    -- Switched off, the overlays go
+    CommanderAdvisorDB.ShieldWatch, CommanderAdvisorDB.MendingWatch = false, false
+    Tick(1)
+    CHECK(not shield.__shown and not pom.__shown, "team: both switches off clear both overlays")
+    CommanderAdvisorDB.ShieldWatch, CommanderAdvisorDB.MendingWatch = true, true
+
+    -- Back to the solo mock for what follows
+    team.party1 = nil
+    friendlyTarget = nil
+    unitBuffs.party1 = nil
+    IsInGroup = function() return false end
+    UnitExists, UnitGUID, UnitName, UnitClass, UnitIsUnit, UnitHealth, UnitCanAttack =
+        baseE, baseG, baseN, baseC, baseU, baseH, baseA
+    UnitPosition = nil
+    slots[9], slots[10] = nil, nil
+    Fire("ACTIONBAR_SLOT_CHANGED", 9)
+    Fire("GROUP_ROSTER_UPDATE")
+    Tick(1)
+    CHECK(not shield.cd.__shown, "team: solo again, nothing left over")
+end
 
 -- Test lights three buttons
 printLog = {}

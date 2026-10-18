@@ -51,6 +51,11 @@
 --   blockedBy  debuff names on you that make the spell pointless right now
 --   notWhile   buff names on you that mean it is already handled
 --   requiresReady  spells that must be off cooldown for this to make sense
+--   scope      "ally" -- the ladder is walked against each TEAMMATE instead
+--              of you, and the signal names who; "group" -- teammates and
+--              you. blockedBy / notWhile then read that ally's auras. (See
+--              E.AssessAllies.)
+--   notOutMine a spell of yours that must not be out on anyone (Mending)
 --   default    "AUTO" | "OFF" | "LOW" | "MEDIUM" | "HIGH" — the shipped mode
 --   weight     tiebreak inside a tier: higher is listed (and glowed) first
 --   tiers      the ladder, highest tier first
@@ -245,6 +250,33 @@ D.RULES = {
         { tier = 2, enemyBurst = "any", combat = true },
         { tier = 2, hp = 0.75, taking = true },
         { tier = 1, combat = true, taking = true },
+      } },
+    -- The same shield, pressed on a teammate. Weakened Soul is read off THEM:
+    -- the button lights only for an ally your shield can actually land on,
+    -- and the hover names who. Its own key, so a priest who only wants the
+    -- self rule can switch this one off.
+    { key = "PRIEST_PWS_ALLY", class = "PRIEST", role = "react", scope = "ally", weight = 88,
+      spell = "Power Word: Shield", default = "AUTO",
+      blockedBy = { "Weakened Soul" }, notWhile = { "Power Word: Shield" },
+      desc = "Power Word: Shield on a teammate who is being hit and has neither a shield nor Weakened Soul on them — the button glows, their pip on it pulses, and the hover names who.",
+      tiers = {
+        { tier = 3, hp = 0.40, taking = true },
+        { tier = 3, ttl = 6, hpBelowCeiling = true },
+        { tier = 2, enemyBurst = "any", combat = true },
+        { tier = 2, hp = 0.70, taking = true },
+        { tier = 2, melee = 2 },
+        { tier = 1, combat = true, taking = true },
+      } },
+    -- Mending kept rolling: you own one, and one sitting in your spellbook
+    -- off cooldown while the team takes hits is healing thrown away. The
+    -- target is whoever is being hit -- and between two equal, the one with
+    -- somebody near enough to bounce to.
+    { key = "PRIEST_POM", class = "PRIEST", role = "react", scope = "group", weight = 55,
+      spell = "Prayer of Mending", default = "AUTO", notOutMine = "Prayer of Mending",
+      desc = "Prayer of Mending, kept rolling: lit when yours is not out on anyone and you or a teammate is taking hits, aimed at whoever is — the hover says whether anyone is within twenty yards of them for it to bounce to.",
+      tiers = {
+        { tier = 2, hp = 0.70, taking = true, group = true },
+        { tier = 1, combat = true, taking = true, group = true },
       } },
     { key = "PRIEST_RENEW", class = "PRIEST", role = "react", weight = 50,
       spell = "Renew", default = "AUTO", notWhileMine = { "Renew" },

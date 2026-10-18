@@ -77,6 +77,15 @@ allow [[
 C_CombatLog CombatLogGetCurrentEventInfo
 ]]
 
+-- The group (CommanderAdvisor.lua: the seats, teammates' auras and range,
+-- the Mending reach estimate, and a macro's own @unit for the overlays)
+allow [[
+UnitName UnitCanAssist UnitInRange UnitIsConnected UnitPosition IsSpellInRange
+IsInRaid GetNumGroupMembers GetRaidRosterInfo GetMacroBody SecureCmdOptionParse
+RAID_CLASS_COLORS STANDARD_TEXT_FONT wipe
+CommanderAdvisor_RangeReport
+]]
+
 local problems, scanned = 0, 0
 
 for _, file in ipairs(FILES) do

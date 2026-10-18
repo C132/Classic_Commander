@@ -347,8 +347,176 @@ local function FamilyAura(rule, S)
 end
 E.FamilyAura = FamilyAura
 
+-- ---------------------------------------------------------------------------
+-- Rules about a TEAMMATE (scope "ally" / "group")
+--
+-- Every other rule asks about you. A healer's most important button is
+-- usually pressed on somebody else, so a rule can instead be scoped to the
+-- group: the client hands the snapshot a list of allies (S.allies), each a
+-- small snapshot of its own -- health, its own intake book's answers, its
+-- own buffs and debuffs, whether your spell reaches it -- and the rule's
+-- ladder is walked against each of them in turn. The highest tier wins;
+-- between two allies at the same tier the one lower on health does. The
+-- signal carries WHO, and the reason names them.
+--
+--   scope "ally"    teammates only (you have a self rule for the same spell)
+--   scope "group"   teammates and you (one spell, whoever needs it most)
+--
+-- blockedBy / notWhile are read off the ALLY's auras: Weakened Soul on them
+-- blocks your shield on them, not on you. notOutMine names a spell of yours
+-- that must not be out on anyone at all (Prayer of Mending: you own one).
+-- An ally your spell cannot reach, or who is dead, is never offered.
+-- ---------------------------------------------------------------------------
+
+-- Fields of the player's snapshot every ally view carries unchanged: the
+-- book, the clock, and what you are doing right now
+local SHARED = { "now", "spells", "petSpells", "items", "recentCasts", "casting", "castingName", "zone", "inGroup" }
+
+function E.AllyView(S, ally)
+    local A = {}
+    for k, v in pairs(ally) do A[k] = v end
+    for _, k in ipairs(SHARED) do A[k] = S[k] end
+    A.auras = A.auras or {}
+    A.debuffs = A.debuffs or {}
+    A.debuffTypes = A.debuffTypes or {}
+    A.control = A.control or {}
+    A.incomingCasts = A.incomingCasts or {}
+    A.hp = A.hp or 1
+    A.melee, A.casters, A.attackers, A.enemyPlayers =
+        A.melee or 0, A.casters or 0, A.attackers or 0, A.enemyPlayers or 0
+    -- In combat if either of you is: a teammate being hit pulls you in a
+    -- beat later than it pulls them
+    A.inCombat = (A.inCombat or S.inCombat) and true or false
+    return A
+end
+
+-- One sentence about a teammate: who, and what earned it
+function E.ExplainAlly(rule, rung, A)
+    local parts = { A.isPlayer and "you" or (A.name or "a teammate") }
+    if rung then
+        if rung.hp then parts[#parts + 1] = string.format("health %d%%", math.floor((A.hp or 0) * 100 + 0.5)) end
+        if rung.ttl and A.ttl then parts[#parts + 1] = string.format("~%.0fs to live at this rate", A.ttl) end
+        if rung.melee then parts[#parts + 1] = string.format("%d melee on %s", A.melee or 0, A.isPlayer and "you" or "them") end
+        if rung.taking and not rung.hp and not rung.ttl then parts[#parts + 1] = "taking damage" end
+        if rung.enemyBurst then
+            local burst = A.enemyBurst or {}
+            parts[#parts + 1] = (burst.name or "a burst") .. " on the enemy"
+        end
+    end
+    if rule.blockedBy and rule.blockedBy[1] then
+        parts[#parts + 1] = "no " .. rule.blockedBy[1]
+    end
+    if A.reach == "YES" then
+        parts[#parts + 1] = "someone within 20 yd to bounce to"
+    elseif A.reach == "NO" then
+        parts[#parts + 1] = "nobody within 20 yd: it will not bounce"
+    end
+    return parts[1] .. ": " .. table.concat(parts, ", ", 2)
+end
+
+-- Walk the rule's ladder against every ally. Returns tier, reason, spell,
+-- who (the ally entry), or nil and why nothing qualified.
+function E.AssessAllies(rule, S, cfg)
+    if rule.notOutMine and S.mineOut and S.mineOut[rule.notOutMine] then
+        return nil, "already out"
+    end
+    local entry, spellName = PickSpell(rule, S)
+    if not entry then return nil, spellName end
+    local allies = S.allies or {}
+    if #allies == 0 then return nil, "nobody to cast on" end
+    local best, bestTier, bestRung, bestView
+    local why = "conditions not met"
+    for _, ally in ipairs(allies) do
+        local skip
+        if ally.isPlayer and rule.scope ~= "group" then skip = "you"
+        elseif ally.dead then skip = "dead"
+        elseif ally.inRange == false then skip = "out of range"
+        elseif rule.blockedBy and HasAny(ally.debuffs, rule.blockedBy) then skip = "blocked"
+        elseif rule.notWhile and HasAny(ally.auras, rule.notWhile) then skip = "already up"
+        end
+        if not skip then
+            local A = E.AllyView(S, ally)
+            for _, rung in ipairs(rule.tiers) do
+                if E.RungHolds(rung, A, cfg) then
+                    local better = not bestTier or rung.tier > bestTier
+                        or (rung.tier == bestTier and (A.hp or 1) < (bestView.hp or 1))
+                        -- ...and between two equally urgent, the one it can
+                        -- bounce on from (Mending's reach)
+                        or (rung.tier == bestTier and (A.hp or 1) == (bestView.hp or 1)
+                            and A.reach == "YES" and bestView.reach ~= "YES")
+                    if better then
+                        best, bestTier, bestRung, bestView = ally, rung.tier, rung, A
+                    end
+                    break
+                end
+            end
+        elseif why == "conditions not met" and skip ~= "you" then
+            why = skip
+        end
+    end
+    if not best then return nil, why end
+    return bestTier, E.ExplainAlly(rule, bestRung, bestView), spellName, best
+end
+
+-- ---------------------------------------------------------------------------
+-- Prayer of Mending's reach: can it bounce on from whoever holds it?
+--
+-- It jumps to a group member within twenty yards of the holder when the
+-- holder is next hit. Two kinds of evidence, used for exactly what each can
+-- prove:
+--
+--   pos       { x, y, inst } -- a real position. Two of them in the same
+--             instance give a real distance.
+--   lo, hi    yards from YOU, as bounds: "at least" and "at most". A spell
+--             range check gives one or the other (in range of a 30-yard
+--             spell: hi = 30; out of it: lo = 30); you yourself are 0, 0.
+--
+-- With bounds only, the triangle inequality is all there is: two people are
+-- certainly within reach if their distances from you add up to no more
+-- than the jump, and certainly out of it if one is further from you than
+-- the other plus the jump. Anything between is not known, and is never
+-- reported as either. Returns "YES" with how many, "NO", or nil.
+-- ---------------------------------------------------------------------------
+E.POM_JUMP = 20
+
+function E.Between(a, b)
+    if a.pos and b.pos and a.pos.inst == b.pos.inst then
+        local dx, dy = a.pos.x - b.pos.x, a.pos.y - b.pos.y
+        local d = math.sqrt(dx * dx + dy * dy)
+        return d, d
+    end
+    local aLo, aHi = a.lo or 0, a.hi or math.huge
+    local bLo, bHi = b.lo or 0, b.hi or math.huge
+    local most = aHi + bHi
+    local least = math.max(bLo - aHi, aLo - bHi, 0)
+    return least, most
+end
+
+function E.BounceReach(holder, others, jump)
+    jump = jump or E.POM_JUMP
+    if not holder then return nil, 0 end
+    local n, blind, asked = 0, false, 0
+    for _, o in ipairs(others or {}) do
+        if o ~= holder and not o.dead then
+            asked = asked + 1
+            local least, most = E.Between(holder, o)
+            if most <= jump then
+                n = n + 1
+            elseif least <= jump then
+                blind = true
+            end
+        end
+    end
+    if n > 0 then return "YES", n end
+    -- Nobody to ask about is not "nobody in range": alone, there is no
+    -- bounce to talk about
+    if blind or asked == 0 then return nil, 0 end
+    return "NO", 0
+end
+
 -- The tier a rule earns right now, before hysteresis, and why. Returns
--- tier (or nil), reason, spellName.
+-- tier (or nil), reason, spellName, and for a group rule the ally entry
+-- it is about.
 function E.Assess(rule, S, cfg, state)
     local mode = cfg.modes and cfg.modes[rule.key] or rule.default or "AUTO"
     if mode == "OFF" then return nil, "off" end
@@ -363,6 +531,22 @@ function E.Assess(rule, S, cfg, state)
     if S.control and S.control.silenced and not rule.item then return nil, "silenced" end
     if S.stealthed and cfg.quietInStealth and rule.role == "maintain" then return nil, "stealthed" end
     if S.resting and cfg.quietWhileResting and not S.inCombat then return nil, "resting" end
+
+    -- A rule about a teammate: your own buffs and debuffs say nothing about
+    -- whether THEY can take it, so it skips straight to its allies
+    if rule.scope == "ally" or rule.scope == "group" then
+        for _, name in ipairs(SpellList(rule)) do
+            local castAt = S.recentCasts and S.recentCasts[name]
+            if castAt and (S.now - castAt) < (cfg.castGrace or 2.0) then return nil, "just cast" end
+            if S.castingName == name then return nil, "casting it" end
+        end
+        local tier, reason, spellName, who = E.AssessAllies(rule, S, cfg)
+        if not tier then return nil, reason end
+        if mode == "LOW" then tier = E.TIER_LOW
+        elseif mode == "MEDIUM" then tier = E.TIER_MEDIUM
+        elseif mode == "HIGH" then tier = E.TIER_HIGH end
+        return tier, reason, spellName, who
+    end
 
     -- Pointless right now
     if rule.blockedBy and HasAny(S.debuffs, rule.blockedBy) then return nil, "blocked" end
@@ -515,7 +699,8 @@ end
 --   remindInCombat / remindOutOfCombat / quietWhileResting / quietInStealth / remindWhileMounted
 --   maxSignals       how many to return (0 = all)
 --
--- Returns the ranked list of { rule, tier, reason, spell, since, rising }
+-- Returns the ranked list of { rule, tier, reason, spell, since, who }
+-- (who: the ally entry a group rule is about, else nil)
 -- and mutates state.
 function E.Evaluate(S, rules, cfg, state)
     local now = S.now
@@ -524,7 +709,7 @@ function E.Evaluate(S, rules, cfg, state)
     local out = {}
 
     for _, rule in ipairs(rules) do
-        local tier, reason, spellName = E.Assess(rule, S, cfg, state)
+        local tier, reason, spellName, who = E.Assess(rule, S, cfg, state)
         local key = rule.key
         local active = state.active[key]
         local pending = state.pending[key]
@@ -533,11 +718,11 @@ function E.Evaluate(S, rules, cfg, state)
             if active then
                 -- Rising is immediate, falling waits for the hold
                 if tier >= active.tier then
-                    active.tier, active.reason, active.spell = tier, reason, spellName
+                    active.tier, active.reason, active.spell, active.who = tier, reason, spellName, who
                     active.lastTrue = now
                 else
                     if now - active.lastTrue >= hold then
-                        active.tier, active.reason, active.spell = tier, reason, spellName
+                        active.tier, active.reason, active.spell, active.who = tier, reason, spellName, who
                         active.lastTrue = now
                     end
                 end
@@ -548,7 +733,7 @@ function E.Evaluate(S, rules, cfg, state)
                 end
                 local need = rise[tier] or 0
                 if now - pending.since >= need then
-                    active = { tier = tier, reason = reason, spell = spellName, since = now, lastTrue = now }
+                    active = { tier = tier, reason = reason, spell = spellName, who = who, since = now, lastTrue = now }
                     state.active[key] = active
                     state.pending[key] = nil
                 end
@@ -557,7 +742,8 @@ function E.Evaluate(S, rules, cfg, state)
             state.pending[key] = nil
             if active then
                 if reason == "just cast" or reason == "casting it" or reason == "already up"
-                    or reason == "up" or reason == "blocked" or reason == "dead" or reason == "held" then
+                    or reason == "up" or reason == "blocked" or reason == "dead" or reason == "held"
+                    or reason == "already out" then
                     -- The advice was taken (or became impossible): drop at once
                     state.active[key] = nil
                     active = nil
@@ -571,7 +757,7 @@ function E.Evaluate(S, rules, cfg, state)
         if active then
             out[#out + 1] = {
                 rule = rule, tier = active.tier, reason = active.reason,
-                spell = active.spell, since = active.since,
+                spell = active.spell, since = active.since, who = active.who,
                 isNew = active.since == now,
             }
         end

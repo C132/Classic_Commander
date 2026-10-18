@@ -90,6 +90,13 @@ local DefaultSettings = {
     PipSize = 5,
     ShowTooltip = true,
 
+    -- Disc priest: what the Shield and Mending buttons say about the unit
+    -- they would land on (see the overlay block in CommanderAdvisor.lua)
+    ShieldWatch = true,           -- Weakened Soul as a clock across the Shield button
+    TeamPips = true,              -- one pip per teammate along its bottom edge
+    MendingWatch = true,          -- where your Mending is, its charges, its bounce range
+    WatchNames = true,            -- the name of who the button is about, across its top
+
     -- Per-rule modes, keyed by rule key. Missing = the rule's shipped default.
     RuleModes = {},
 }
@@ -271,6 +278,7 @@ local function CreateOptionsPanel()
             report = function() if CommanderAdvisor_Report then CommanderAdvisor_Report() end end,
             why = function() if CommanderAdvisor_Report then CommanderAdvisor_Report() end end,
             test = function() if CommanderAdvisor_Test then CommanderAdvisor_Test() end end,
+            range = function() if CommanderAdvisor_RangeReport then CommanderAdvisor_RangeReport() end end,
         },
     })
 
@@ -488,6 +496,40 @@ local function CreateOptionsPanel()
         set = function(value) CommanderAdvisorDB.StartBurst = value end,
         isEnabled = IsOn,
     })
+
+    -- The priest's two buttons that are always about somebody else
+    local _, classToken = UnitClass("player")
+    if classToken == "PRIEST" then
+        panel:AddSection("Shield & Mending",
+            "What your Power Word: Shield and Prayer of Mending buttons say about whoever they would land on right now — a macro's @mouseover or @focus when it picks one, else your friendly target, else you. The Shield button carries Weakened Soul as a dark red clock across its face with the seconds written on it (red when they have no shield, pale while one still holds) and a red rim when they are bare and locked; a pip per teammate along its bottom edge says who can take a shield (yellow), who has one (blue) and who cannot (red), and the one the Advisor wants shielded stands taller. The Mending button names who is holding yours, shows its charges, and wears a rim for whether it can bounce on from them: green, somebody is within twenty yards; red, nobody is, so their next hit spends the heal and wastes the rest; no rim where the client gives no positions (/cadv range shows what it can see). Hover either button for the same in words.")
+        local function WatchOn() return IsOn() end
+        panel:AddCheckboxPair({
+            label = "Weakened Soul On Shield",
+            tooltip = "Draw the target's Weakened Soul across your Power Word: Shield buttons as a clock with its seconds, and a red rim while they have no shield to show for it.",
+            get = function() return CommanderAdvisorDB.ShieldWatch end,
+            set = function(value) CommanderAdvisorDB.ShieldWatch = value end,
+            isEnabled = WatchOn,
+        }, {
+            label = "Team Pips",
+            tooltip = "One pip per teammate along the Shield button's bottom edge: yellow can take a shield, blue has one, red is bare and locked by Weakened Soul, grey is dead. Faded when your shield cannot reach them.",
+            get = function() return CommanderAdvisorDB.TeamPips end,
+            set = function(value) CommanderAdvisorDB.TeamPips = value end,
+            isEnabled = function() return IsOn() and CommanderAdvisorDB.ShieldWatch end,
+        })
+        panel:AddCheckboxPair({
+            label = "Mending Bounce Range",
+            tooltip = "Name who is holding your Prayer of Mending on its button, show its charges, and rim it green while somebody is within twenty yards of them to bounce to — red when nobody is.",
+            get = function() return CommanderAdvisorDB.MendingWatch end,
+            set = function(value) CommanderAdvisorDB.MendingWatch = value end,
+            isEnabled = WatchOn,
+        }, {
+            label = "Names On Buttons",
+            tooltip = "Write who the button is about across its top, in their class colour, whenever it is not you.",
+            get = function() return CommanderAdvisorDB.WatchNames end,
+            set = function(value) CommanderAdvisorDB.WatchNames = value end,
+            isEnabled = function() return IsOn() and (CommanderAdvisorDB.ShieldWatch or CommanderAdvisorDB.MendingWatch) end,
+        })
+    end
 
     AddRuleSections(panel)
 

@@ -70,3 +70,52 @@ once, at any health. That is the one place the advisor speaks BEFORE the
 damage: the burst is a fact the moment the aura lands, not an estimate. A
 burst on a stranger is ignored; melee and spell bursts are told apart so
 Evasion does not answer Arcane Power.
+
+**D12 — A healer's button is pressed on somebody else (1.3.0, 2026-10-16).**
+Every rule used to be about you. A rule can now be scoped to the group
+(`scope = "ally"` teammates only, `"group"` teammates and you): the client
+builds a small snapshot per seat — health, that teammate's own intake book
+from the combat log, their buffs and debuffs, whether your spell reaches
+them — and `E.AssessAllies` walks the rule's ladder against each one. The
+highest tier wins, the lower health breaks a tie, and the signal carries
+WHO, so the hover names them. `blockedBy`/`notWhile` read the teammate's
+auras: their Weakened Soul blocks your shield on them, yours does not.
+Shipped for the disc priest only: `PRIEST_PWS_ALLY` (the shield on a bare,
+unlocked teammate being hit; the self rule `PRIEST_PWS` is untouched) and
+`PRIEST_POM` (Mending kept rolling while yours is not out on anyone,
+grouped only, aimed at whoever is being hit — and between two equally
+urgent, the one with somebody within twenty yards to bounce to).
+
+**D13 — The Shield and Mending buttons say who they are about.** An action
+button shows a spell's cooldown and nothing about the target, and the one
+fact that decides a Power Word: Shield press — Weakened Soul on whoever it
+would land on — is not on it. Both buttons now wear an insecure overlay for
+the unit the button would land on RIGHT NOW: a macro's own `@unit` when the
+client's parser (`SecureCmdOptionParse`) says its conditions pick one, else
+a friendly target, else you. Shield: Weakened Soul as a dark red clock with
+its seconds (red when they are bare, pale while a shield still holds), a red
+rim for bare-and-locked, their name across the top, and one pip per seat
+along the bottom (yellow shieldable, blue shielded, red locked and bare, grey
+dead; the teammate the ally rule wants stands taller). Mending: the holder's
+name, its charges, and a rim for whether it can bounce on (D14). The hover
+says all of it in words. Off with `ShieldWatch` / `MendingWatch`.
+
+**D14 — Bounce range is proven or not claimed.** Mending jumps to a group
+member within twenty yards of the holder. `E.BounceReach` takes two kinds of
+evidence and uses each only for what it proves: a real position pair
+(`UnitPosition`, same instance) is a distance; a friendly spell range check
+from you is a BOUND (inside a 30-yard spell: at most 30; outside it: at least
+30), and bounds only ever prove something through the triangle inequality.
+Green = somebody provably within twenty; red = everyone provably beyond it;
+no rim otherwise — never a guess. In practice that means: wherever the
+client gives group positions the rim is exact; where it does not (see
+ASSUMPTIONS on arenas) the only provable case is "Mending on you, everyone
+else beyond thirty yards", which is red. `/cadv range` prints what each
+seat's evidence is, so one arena skirmish settles which world you are in.
+
+**D15 — The Mending end sound stays in Commander Party Frames.** That board
+already follows Mending as the travelling object it is (a grace window that
+tells a bounce from an end), and two addons tracking the same object would
+mean two sounds for one end. The "wasted" ending — expired, purged, or a
+heal with nobody in range to jump to — got its own line and sound there
+(Party Frames 5.44.0, the holy fizzle).
