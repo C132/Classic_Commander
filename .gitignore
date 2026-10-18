@@ -118,3 +118,11 @@ __pycache__/
 /ArenaArmory
 # Commander_Ladder: written by Tools/ladder_feed.py from the web API, never committed
 /Commander_Ladder/CommanderLadderData.lua
+# Third-party addons the addon manager installed (2026-10-18)
+/ArenaReplay
+/QuestieDB
+/TomTom
+/TurnIn
+# Render-harness output written to the AddOns root by mistake (2026-10-05)
+/arenaframes_render.json
+/meters_arena_render.json
