@@ -1,0 +1,18 @@
+<Bindings>
+    <!-- Auto-loaded from the addon folder, never listed in the TOC (listing it
+         loads it twice). A changed file: the client reads it only at start-up,
+         so restart the client, not /reload. No double hyphen inside an XML
+         comment: the parser rejects the whole file on one.
+
+         The sweep sends the next /who of its plan. The game lets an addon
+         send /who only from a click or a key press, so a key is the
+         comfortable way to walk a sweep: tap it every five seconds. Its name
+         is still COMMANDERRECRUIT_NEXT from when it also ran the ladder probe
+         (removed in 1.8.0), so a key already bound to it keeps working. -->
+    <Binding name="COMMANDERRECRUIT_NEXT" header="COMMANDERRECRUIT" category="ADDONS" runOnUp="false">
+        if CommanderRecruit_NextStep then CommanderRecruit_NextStep() end
+    </Binding>
+    <Binding name="COMMANDERRECRUIT_TOGGLE" category="ADDONS" runOnUp="false">
+        if CommanderRecruit_Toggle then CommanderRecruit_Toggle() end
+    </Binding>
+</Bindings>
