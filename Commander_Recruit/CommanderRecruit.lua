@@ -38,7 +38,7 @@ local WHO_GAP = 5           -- seconds between two /who queries
 local WHO_TIMEOUT = 8       -- an answer this late is given up on
 local KEEP = 3 * 3600       -- a sighting is forgotten after this
 local ROW_H = 16
-local COLUMN_W = 250
+local COLUMN_W = 280        -- 250 until the race and tree icons took 30 of the name's room (R22)
 
 local function IsOn() return db and db.EnableRecruit end
 local function Say(text) print("|cff66ccffCommander Recruit|r: " .. text) end
@@ -76,11 +76,28 @@ local function Note(s, source)
     if E.Note(book, s, time(), source, homeRealm) then MarkDirty() end
 end
 
+-- Class, race and sex ("M"/"F") from a GUID, as far as the client knows it
 local function ClassOfGUID(guid)
     if not (guid and GetPlayerInfoByGUID) then return nil end
-    local ok, _, class, _, race = pcall(GetPlayerInfoByGUID, guid)
-    if ok then return class, race end
+    local ok, _, class, _, race, sex = pcall(GetPlayerInfoByGUID, guid)
+    if ok then return class, race, E.Sex(sex) end
     return nil
+end
+
+-- A localized race name (/who's raceStr) to its token, through the same
+-- names WhoNames gives /who
+local raceByName
+local function RaceToken(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    if not raceByName then
+        raceByName = {}
+        local names = WhoNames()
+        for token in pairs(RACE_IDS) do
+            raceByName[names[token]] = token
+            raceByName[RACE_FALLBACK[token]] = token
+        end
+    end
+    return raceByName[name]
 end
 
 -- ---------------------------------------------------------------------------
@@ -131,7 +148,8 @@ local function ReadWho()
             if db.UseWho then
                 Note({ fullName = fullName, level = info.level,
                     class = info.filename or info.classFileName, zone = info.area,
-                    guild = info.fullGuildName or "" }, "who")
+                    guild = info.fullGuildName or "", race = RaceToken(info.raceStr),
+                    sex = E.Sex(info.gender) }, "who")
             end
         end
     end
@@ -162,10 +180,10 @@ local CHAT_EVENTS = {
 
 local function OnChat(event, sender, guid)
     if not db.UseChat or type(sender) ~= "string" or sender == "" then return end
-    local class, race = ClassOfGUID(guid)
+    local class, race, sex = ClassOfGUID(guid)
     if CHAT_EVENTS[event] == "race" and not (race and RACE_FACTION[race] == faction) then return end
     if guid and guid == UnitGUID("player") then return end
-    Note({ fullName = sender, class = class, guid = guid }, "chat")
+    Note({ fullName = sender, class = class, guid = guid, race = race, sex = sex }, "chat")
 end
 
 local function ReadGuild()
@@ -272,7 +290,8 @@ local function ReadFriends()
             end
             if db.UseFriends or w then
                 if info.connected then
-                    Note({ fullName = info.name, level = info.level, class = ClassOfGUID(info.guid),
+                    local class, race, sex = ClassOfGUID(info.guid)
+                    Note({ fullName = info.name, level = info.level, class = class, race = race, sex = sex,
                         zone = info.area, guid = info.guid }, "friend")
                 else
                     E.Gone(book, info.name, homeRealm)
@@ -382,7 +401,9 @@ local function ReadUnit(unit)
     if UnitIsUnit(unit, "player") or UnitFactionGroup(unit) ~= faction then return end
     local name = GetUnitName and GetUnitName(unit, true) or UnitName(unit)
     local _, class = UnitClass(unit)
-    Note({ fullName = name, class = class, level = UnitLevel(unit), guid = UnitGUID(unit) }, "seen")
+    local race = UnitRace and select(2, UnitRace(unit))
+    Note({ fullName = name, class = class, level = UnitLevel(unit), guid = UnitGUID(unit), race = race,
+        sex = UnitSex and E.Sex(UnitSex(unit)) }, "seen")
 end
 
 -- ---------------------------------------------------------------------------
@@ -633,6 +654,61 @@ local function Invite(p)
     end
 end
 
+-- ---------------------------------------------------------------------------
+-- Race and talent-tree icons (R22)
+-- ---------------------------------------------------------------------------
+
+-- The ladder roster by key, indexed again whenever the roster is a new table
+-- (a new data file, or Ladder switched off)
+local rosterIndex, rosterIndexed = {}, nil
+local function LadderFacts(p)
+    local roster = LadderRoster()
+    if roster ~= rosterIndexed then
+        rosterIndex = {}
+        for _, r in ipairs(roster or {}) do rosterIndex[r.key] = r end
+        rosterIndexed = roster
+    end
+    return rosterIndex[p.key]
+end
+
+-- A row's race, sex, talent tree and class: the ladder's (a week old at most,
+-- and the only place a tree comes from), else what the game showed of them
+local function Looks(p)
+    local r = LadderFacts(p)
+    return (r and r.race) or p.race, (r and r.sex) or p.sex, r and r.spec, (r and r.class) or p.class
+end
+
+-- Whether the client has an atlas (asked once per name)
+local atlasKnown = {}
+local function HasAtlas(name)
+    if atlasKnown[name] == nil then
+        local ok, info = false, nil
+        if C_Texture and C_Texture.GetAtlasInfo then ok, info = pcall(C_Texture.GetAtlasInfo, name) end
+        atlasKnown[name] = ok and info ~= nil or false
+    end
+    return atlasKnown[name]
+end
+
+-- The two icons before a name. An unknown one is left empty, never closed
+-- up, so the names stay in one column
+local function PaintLooks(row, p)
+    local race, sex, spec, class = Looks(p)
+    local atlas = E.RaceAtlas(race, sex)
+    if atlas and HasAtlas(atlas) then
+        row.race:SetAtlas(atlas)
+        row.race:Show()
+    else
+        row.race:Hide()
+    end
+    local _, icon = E.Spec(class, spec)
+    if icon then
+        row.spec:SetTexture(icon)
+        row.spec:Show()
+    else
+        row.spec:Hide()
+    end
+end
+
 local function RowTooltip(row)
     local entry = row.entry
     if not entry then return end
@@ -643,6 +719,12 @@ local function RowTooltip(row)
     if p.level then facts[#facts + 1] = "Level " .. p.level end
     if p.class and LOCALIZED_CLASS_NAMES_MALE then facts[#facts + 1] = LOCALIZED_CLASS_NAMES_MALE[p.class] end
     if #facts > 0 then GameTooltip:AddLine(table.concat(facts, " "), 1, 1, 1) end
+    local race, _, spec, class = Looks(p)
+    local looks = {}
+    if race then looks[#looks + 1] = WhoNames()[race] end
+    local specName = E.Spec(class, spec)
+    if specName then looks[#looks + 1] = specName .. " (talents, from the ladder feed)" end
+    if #looks > 0 then GameTooltip:AddLine(table.concat(looks, " · "), 0.9, 0.9, 0.9) end
     if p.guild then GameTooltip:AddLine("<" .. p.guild .. ">", 0.25, 1, 0.25) end
     if p.zone then GameTooltip:AddLine(p.zone, 0.8, 0.8, 0.8) end
     if CommanderRecruit.IsWatched(p) then GameTooltip:AddLine("Watching (on your friends list)", 0.4, 0.8, 1) end
@@ -698,7 +780,7 @@ end
 -- (cut short with an ellipsis rather than pushed into the numbers). Nothing
 -- depends on a guessed font width, so a larger UI scale cannot make two
 -- cells overlap.
-local AGE_W, RECORD_W, RATING_W, RANK_W = 30, 56, 38, 20
+local AGE_W, RECORD_W, RATING_W, RANK_W, ICON_W = 30, 56, 38, 20, 14
 
 local function NewRow(parent)
     local row = CreateFrame("Button", nil, parent)
@@ -744,8 +826,16 @@ local function NewRow(parent)
     row.record:SetPoint("RIGHT", row.age, "LEFT", -4, 0)
     row.rating = Cell(row, "GameFontHighlightSmall", "RIGHT", RATING_W)
     row.rating:SetPoint("RIGHT", row.record, "LEFT", -6, 0)
+    -- Race, then talent tree, between the rank and the name (R22)
+    row.race = row:CreateTexture(nil, "ARTWORK")
+    row.race:SetSize(ICON_W, ICON_W)
+    row.race:SetPoint("LEFT", row.rank, "RIGHT", 3, 0)
+    row.spec = row:CreateTexture(nil, "ARTWORK")
+    row.spec:SetSize(ICON_W, ICON_W)
+    row.spec:SetPoint("LEFT", row.race, "RIGHT", 2, 0)
+    row.spec:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.name = Cell(row, "GameFontHighlightSmall", "LEFT")
-    row.name:SetPoint("LEFT", row.rank, "RIGHT", 6, 0)
+    row.name:SetPoint("LEFT", row.spec, "RIGHT", 4, 0)
     row.name:SetPoint("RIGHT", row.rating, "LEFT", -6, 0)
     row:SetScript("OnEnter", RowTooltip)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -776,6 +866,7 @@ local function PaintColumn(col, list)
             row.rating:SetTextColor(RatingColor(entry.rating))
             row.record:SetText(entry.wins .. "-" .. entry.lost)
             row.age:SetText(AgeText(now - (p.at or 0)))
+            PaintLooks(row, p)
             PaintEye(row.eye, CommanderRecruit.IsWatched(p))
             -- Watching is friending, and another realm cannot be friended
             row.eye:SetShown(CommanderRecruit.CanFriend(p) or CommanderRecruit.IsWatched(p))

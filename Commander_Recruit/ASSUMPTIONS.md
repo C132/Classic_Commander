@@ -91,3 +91,11 @@ board filled (307 seen, 25 rated across the three brackets), and the sweep butto
   on the rows, the drop gap from `GetCursorPosition()` divided by the list's effective scale
   against its top. Written from the API, checked only under the mock; if a drop lands one row off
   at Devin's UI scale, that division is the place to look.
+- **A32 — CONFIRMED from the client's tables, not yet seen in game: the race atlases exist.**
+  `raceicon-<race>-<male|female>` for all ten TBC races is in UiTextureAtlasMember for build
+  2.5.6.70006 (wago.tools), and Blizzard's own SharedXML on this branch builds the same names
+  (`GetRaceAtlas`). If a row's race icon is blank for a player whose race is known, the atlas
+  lookup (`C_Texture.GetAtlasInfo`) said no (R22).
+- **A33 — Unknown: the scale of /who's `gender` number.** Recruit reads 2 as male and 3 as female,
+  as `UnitSex` does. If /who uses 0/1 instead, players known only from /who get the male race icon;
+  ladder, GUID and unit sightings are unaffected.

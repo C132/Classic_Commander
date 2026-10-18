@@ -412,6 +412,10 @@ do
             local fn = function(w, v) w.__enabled = v and true or false end
             rawset(self, key, fn); return fn
         end
+        if key == "SetAtlas" then
+            local fn = function(w, v) w.__atlas = v end
+            rawset(self, key, fn); return fn
+        end
         return base(self, key)
     end
 end
@@ -482,7 +486,16 @@ local guids = {
     ["Player-ORC"] = { "Warrior", "WARRIOR", "Orc", "Orc" },
     ["Player-GNOME"] = { "Mage", "MAGE", "Gnome", "Gnome" },
 }
-function GetPlayerInfoByGUID(g) local x = guids[g]; if x then return x[1], x[2], x[3], x[4] end end
+guids["Player-TINKER"] = { "Mage", "MAGE", "Gnome", "Gnome", 3 }
+function GetPlayerInfoByGUID(g) local x = guids[g]; if x then return x[1], x[2], x[3], x[4], x[5] end end
+function UnitRace(u) local x = units[u]; if x and x.race then return x.race, x.race end end
+function UnitSex(u) local x = units[u]; return x and x.sex or 1 end
+-- The client's race atlases (R22); the test can take one away
+local missingAtlas = {}
+C_Texture = { GetAtlasInfo = function(name)
+    if name:match("^raceicon%-") and not missingAtlas[name] then return { width = 64, height = 64 } end
+    return nil
+end }
 
 -- Whispers and invites
 local told, invited = {}, {}
@@ -619,7 +632,7 @@ do
     CHECK((row.record.__w or 0) >= 56, "layout: the win-loss has room for 456-505", row.record.__w)
     CHECK(row.eye.dot and row.eye.dot.__texture == "Interface\\Buttons\\WHITE8X8",
         "layout: the watch mark is a small dot, not an icon", row.eye.dot and row.eye.dot.__texture)
-    CHECK(Col(2).__w == 250 and win.__w == 974, "layout: three 250-wide columns beside the 176-wide search order",
+    CHECK(Col(2).__w == 280 and win.__w == 1064, "layout: three 280-wide columns beside the 176-wide search order",
         tostring(Col(2).__w) .. "/" .. tostring(win.__w))
 end
 
@@ -1278,6 +1291,80 @@ do
     CommanderRecruit.Clear()
     who.results, who.total = {}, 0
     ratings["Pri1-Dreamscythe"], ratings["Pal1-Dreamscythe"] = nil, nil
+end
+
+-- ===========================================================================
+-- I. Race and talent-tree icons before the name (R22)
+-- ===========================================================================
+do
+    CommanderRecruit.Clear()
+    CommanderLadder = { Roster = function()
+        return {
+            { key = "Stabby-Dreamscythe", name = "Stabby", faction = "A", class = "ROGUE", race = "NightElf",
+                sex = "F", spec = "SUBTLETY", best = 2300, last = now },
+            { key = "Healz-Dreamscythe", name = "Healz", faction = "A", class = "PRIEST", race = "Dwarf",
+                sex = "M", spec = "DISCIPLINE", best = 2250, last = now },
+        }
+    end }
+    missingAtlas["raceicon-draenei-female"] = true
+    who.results = {
+        -- the ladder says female; /who's gender is not trusted over it
+        { fullName = "Stabby", level = 70, filename = "ROGUE", raceStr = "Night Elf", gender = 2, area = "Shattrath City", fullGuildName = "" },
+        { fullName = "Walker", level = 70, filename = "WARRIOR", raceStr = "Dwarf", gender = 2, area = "Ironforge", fullGuildName = "" },
+        { fullName = "Mystery", level = 70, filename = "MAGE", raceStr = "", gender = 0, area = "Ironforge", fullGuildName = "" },
+        { fullName = "Shiny", level = 70, filename = "PALADIN", raceStr = "Draenei", gender = 3, area = "Exodar", fullGuildName = "" },
+        { fullName = "Healz", level = 70, filename = "PRIEST", raceStr = "Dwarf", gender = 2, area = "Ironforge", fullGuildName = "" },
+    }
+    who.total = #who.results
+    for i, name in ipairs({ "Stabby", "Walker", "Mystery", "Shiny", "Healz", "Tinker" }) do
+        ratings[name .. "-Dreamscythe"] = R(2400 - i * 10)
+    end
+    Fire("WHO_LIST_UPDATE")
+    -- Tinker only spoke in chat: race and sex come from the GUID
+    Fire("CHAT_MSG_CHANNEL", "lf 2s", "Tinker", "", "2. Trade", "", "", 0, 2, "Trade", 0, 9, "Player-TINKER")
+    win:Show()
+    Commander.Notify(COMMANDER_RECRUIT_EVENTS.UPDATE)
+    Repaint()
+    local byName = {}
+    for _, row in ipairs(Shown(Col(2))) do byName[row.name.__text] = row end
+    local stab, walk, myst, shiny, healz, tink = byName.Stabby, byName.Walker, byName.Mystery, byName.Shiny,
+        byName.Healz, byName.Tinker
+    CHECK(stab and walk and myst and shiny and healz and tink, "icons: all six rated players are on the board")
+    if stab and walk and myst and shiny and healz and tink then
+        CHECK(stab.race.__shown and stab.race.__atlas == "raceicon-nightelf-female",
+            "icons: the ladder's race and sex draw the race icon", stab.race.__atlas)
+        CHECK(stab.spec.__shown and stab.spec.__texture == "Interface\\Icons\\Ability_Stealth",
+            "icons: the ladder's talent tree draws the tree icon", stab.spec.__texture)
+        CHECK(healz.spec.__texture == "Interface\\Icons\\Spell_Holy_WordFortitude", "icons: a discipline priest's tree")
+        CHECK(walk.race.__shown and walk.race.__atlas == "raceicon-dwarf-male" and not walk.spec.__shown,
+            "icons: off the roster, /who's race and gender draw the race; no tree is known", walk.race.__atlas)
+        CHECK(tink.race.__shown and tink.race.__atlas == "raceicon-gnome-female",
+            "icons: a chat line's GUID gives race and sex", tink.race.__atlas)
+        CHECK(not myst.race.__shown and not myst.spec.__shown, "icons: nothing known, both left empty")
+        CHECK(not shiny.race.__shown, "icons: an atlas the client lacks is not drawn")
+        local np = myst.name.__points or {}
+        CHECK(np[1] and np[1].rel == myst.spec and myst.spec.__points[1].rel == myst.race
+            and myst.race.__points[1].rel == myst.rank,
+            "icons: rank, race, tree, name, so the names stay in one column with or without icons")
+        GameTooltip.__lines = {}
+        stab.__scripts.OnEnter(stab)
+        local tipText = table.concat(GameTooltip.__lines, " | ")
+        CHECK(tipText:find("Night Elf · Subtlety %(talents, from the ladder feed%)"),
+            "icons: the tooltip names the race and the tree", tipText)
+    end
+    -- Without the ladder the race still comes from the game, the tree does not
+    CommanderLadder = nil
+    Commander.Notify(COMMANDER_RECRUIT_EVENTS.UPDATE)
+    Repaint()
+    byName = {}
+    for _, row in ipairs(Shown(Col(2))) do byName[row.name.__text] = row end
+    CHECK(byName.Stabby and byName.Stabby.race.__atlas == "raceicon-nightelf-male" and not byName.Stabby.spec.__shown,
+        "icons: no ladder: /who's race and gender, no tree", byName.Stabby and byName.Stabby.race.__atlas)
+    for _, name in ipairs({ "Stabby", "Walker", "Mystery", "Shiny", "Healz", "Tinker" }) do
+        ratings[name .. "-Dreamscythe"] = nil
+    end
+    who.results, who.total = {}, 0
+    CommanderRecruit.Clear()
 end
 
 CHECK(#harnessFailedErrors == 0, "no errors were swallowed anywhere", harnessFailedErrors[1])

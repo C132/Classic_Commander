@@ -9,6 +9,7 @@
 --   E  the steered sweep (R20): the roster in, queries by expected finds,
 --      answers counted, offline proved, arena zones on a timer, the fallback
 --   F  a simulated peak hour: steered against the fixed plan
+--   G  race and talent-tree icons (R22): atlases, sex, trees, the book keeps them
 
 local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
@@ -364,6 +365,32 @@ do
     EQ(fixed.queue[1].label, "Warrior", "E the fixed plan's query has a label")
     E.SweepResult(fixed, 50, 90)
     EQ(E.SweepNext(fixed).label, "Orc Warrior", "E ...and a race split says the race")
+end
+
+-- === G: race and talent-tree icons (R22) ===================================
+do
+    EQ(E.RaceAtlas("Scourge", "F"), "raceicon-undead-female", "G Scourge is the undead atlas")
+    EQ(E.RaceAtlas("NightElf", "M"), "raceicon-nightelf-male", "G a two-word race, run together")
+    EQ(E.RaceAtlas("BloodElf"), "raceicon-bloodelf-male", "G sex unknown: the male icon")
+    EQ(E.RaceAtlas("Worgen", "M"), nil, "G not a TBC race: nothing")
+    EQ(E.RaceAtlas(nil, "F"), nil, "G no race: nothing")
+    EQ(E.Sex(2), "M", "G UnitSex 2 is male")
+    EQ(E.Sex(3), "F", "G 3 female")
+    EQ(E.Sex(1), nil, "G 1 unknown")
+    local name, icon = E.Spec("DRUID", "FERALCOMBAT")
+    CHECK(name == "Feral Combat" and icon == "Interface\\Icons\\Ability_Racial_BearForm", "G the feed's tree token names a tree and its icon", icon)
+    EQ(E.Spec("ROGUE", "FERALCOMBAT"), nil, "G a tree of another class is nothing")
+    EQ(E.Spec(nil, "ARMS"), nil, "G no class: nothing")
+    local trees = 0
+    for _, classTrees in pairs(E.SPECS) do for _ in pairs(classTrees) do trees = trees + 1 end end
+    EQ(trees, 27, "G nine classes, three trees each")
+    local book = E.NewBook()
+    E.Note(book, { fullName = "Sly", race = "Gnome", sex = "F" }, 100, "chat", "Dreamscythe")
+    E.Note(book, { fullName = "Sly", race = "", sex = nil }, 200, "who", "Dreamscythe")
+    local p = book.players["Sly-Dreamscythe"]
+    CHECK(p.race == "Gnome" and p.sex == "F", "G a sighting keeps race and sex; a later one without them forgets neither")
+    E.Note(book, { fullName = "Sly", sex = "X" }, 300, "who", "Dreamscythe")
+    EQ(p.sex, "F", "G only M or F is a sex")
 end
 
 -- === F: a simulated peak hour ==============================================

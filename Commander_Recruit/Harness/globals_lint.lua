@@ -48,12 +48,14 @@ CommanderMuster CommanderLadder
 allow [[
 CreateFrame UIParent GameTooltip UISpecialFrames tinsert wipe C_Timer GetTime
 RAID_CLASS_COLORS LOCALIZED_CLASS_NAMES_MALE CLASS_ICON_TCOORDS GetCursorPosition Enum
+C_Texture
 ]]
 
 -- Names, units and realms
 allow [[
 GetNormalizedRealmName GetRealmName GetPlayerInfoByGUID C_CreatureInfo
 UnitExists UnitIsPlayer UnitIsUnit UnitGUID UnitName GetUnitName UnitClass UnitLevel UnitFactionGroup
+UnitRace UnitSex
 ]]
 
 -- Where "online" comes from: /who, the group finder, the guild, friends

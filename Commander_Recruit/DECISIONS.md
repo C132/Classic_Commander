@@ -375,3 +375,25 @@ classes** and **Reset**. Saved account-wide: SweepOrder, SweepOff, SweepInOrder,
   the fixed plan starts again in the new order. The window repaints at once.
 - **Layout.** The list is 176 wide on the left of the three columns (the window 974 wide); rows
   anchored from both ends, no wrap; the grip drawn from quads.
+
+## R22 — Race and talent-tree icons before the name (1.11.0, 2026-10-18)
+
+Devin: "include race and specialization icons before the player's name in the recruit window for
+the entries - might need to update the client to have that info." Each row is now dot, rank,
+**race icon, talent-tree icon**, name.
+
+- **Race** is drawn from the client's own atlases, `raceicon-<race>-<male|female>` (read from the
+  2.5.6.70006 build's UiTextureAtlasMember table; Blizzard's `GetRaceAtlas` spells Scourge
+  "undead"). An atlas the client lacks is not drawn (`C_Texture.GetAtlasInfo`, asked once a name).
+  Race and sex come from the ladder roster first (the feed now writes sex, Ladder L10), else from
+  what the game showed: /who's `raceStr` and `gender`, a GUID's race and sex (chat, friends), a
+  unit's `UnitRace`/`UnitSex`. Unknown sex draws the male icon.
+- **Talent tree** only exists in the ladder data: the feed reads each described player's talents
+  (`/specializations`, the active group of a dual spec, the tree with the most points; Ladder L10).
+  The icons are the talent-tab icons Commander PartyFrames already uses for its spec display.
+  Other-realm and unrated players have no tree; a player's tree is up to a week old.
+- **Alignment.** An unknown icon is left empty, never closed up, so the names stay in one column.
+- **Room.** Two 14px icons took 30px from the name, so the columns grew from 250 to 280 and the
+  window from 974 to 1064 wide; the name keeps the width it had. If 1064 is too wide at Devin's UI
+  scale, the age column (30) is the next thing to give.
+- The tooltip adds "Night Elf · Subtlety (talents, from the ladder feed)".

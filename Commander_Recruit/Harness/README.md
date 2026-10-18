@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run all three before any change.
 
 ```bash
-/opt/homebrew/bin/luajit recruit_engine_smoke.lua   # the engine, no mock — 132 checks
-/opt/homebrew/bin/luajit recruit_ui_harness.lua     # wiring under a WoW mock — 172 checks
+/opt/homebrew/bin/luajit recruit_engine_smoke.lua   # the engine, no mock — 146 checks
+/opt/homebrew/bin/luajit recruit_ui_harness.lua     # wiring under a WoW mock — 183 checks
 /opt/homebrew/bin/luajit globals_lint.lua           # 3 files, 0 undeclared globals
 ```
 
@@ -147,3 +147,13 @@ on, and a drop in place moves nothing; the sweep asks in the new order, takes a 
 off mid-sweep at once, and the counts follow the board; Hide unchecked classes hides them and the
 header says so; Reset; and the fixed plan without a roster in the order and without classes off.
 The layout check now expects the 974-wide window.
+
+1.11.0 (R22). The engine smoke's section G: race atlases (Scourge is undead, a two-word race run
+together, unknown sex male, a non-TBC race nothing), UnitSex numbers, the feed's tree tokens to a
+name and icon (27 trees, none across classes), and the book keeping race and sex. The UI harness's
+section I, with a Commander Ladder roster mock: the ladder's race, sex and tree draw the icons over
+/who's gender; off the roster /who's race draws the race and no tree; a chat GUID gives race and
+sex; nothing known leaves both empty; an atlas the client lacks is not drawn; rank, race, tree and
+name are chained so names stay in one column; the tooltip names race and tree; without the ladder
+the race comes from the game alone. The mock now records SetAtlas, and has C_Texture, UnitRace and
+UnitSex. The layout check expects 280-wide columns and the 1064-wide window.

@@ -70,8 +70,9 @@ function E.NewBook()
 end
 
 -- A sighting. `s` carries any of: fullName (required), class (token), level,
--- guild, zone. Later sightings refresh the time and fill what earlier ones
--- left blank; a fact never goes from known to unknown.
+-- guild, zone, race (token), sex ("M"/"F"). Later sightings refresh the time
+-- and fill what earlier ones left blank; a fact never goes from known to
+-- unknown.
 function E.Note(book, s, now, source, homeRealm)
     if type(s) ~= "table" then return nil end
     local key, name, realm, bare = E.Key(s.fullName, homeRealm)
@@ -87,6 +88,8 @@ function E.Note(book, s, now, source, homeRealm)
     p.at = now
     p.source = source or p.source
     if s.class and s.class ~= "" then p.class = s.class end
+    if s.race and s.race ~= "" then p.race = s.race end
+    if s.sex == "M" or s.sex == "F" then p.sex = s.sex end
     local level = tonumber(s.level)
     if level and level > 0 then p.level = level end
     if s.guild ~= nil then p.guild = s.guild ~= "" and s.guild or nil end
@@ -167,6 +170,62 @@ function E.Board(players, ratingsFor, opts)
         end)
     end
     return board
+end
+
+-- ---------------------------------------------------------------------------
+-- Race and talent-tree icons (R21)
+-- ---------------------------------------------------------------------------
+
+-- The client's race atlases (UiTextureAtlasMember, build 2.5.6.70006):
+-- "raceicon-<race>-<male|female>"; Blizzard's GetRaceAtlas spells Scourge "undead"
+local RACE_ATLAS = { Human = "human", Orc = "orc", Dwarf = "dwarf", NightElf = "nightelf", Scourge = "undead",
+    Tauren = "tauren", Gnome = "gnome", Troll = "troll", BloodElf = "bloodelf", Draenei = "draenei" }
+
+-- The atlas for a race token and sex ("M"/"F"; unknown draws the male one), or nil
+function E.RaceAtlas(race, sex)
+    local name = race and RACE_ATLAS[race]
+    if not name then return nil end
+    return string.format("raceicon-%s-%s", name, sex == "F" and "female" or "male")
+end
+
+-- "Unit sex" numbers (UnitSex, GetPlayerInfoByGUID): 2 male, 3 female
+function E.Sex(n)
+    n = tonumber(n)
+    if n == 2 then return "M" elseif n == 3 then return "F" end
+    return nil
+end
+
+-- The talent trees, keyed by class and by the feed's tree token (the en_US
+-- name's letters in capitals, Ladder L10): the name to show and the
+-- talent-tab icon -- the same icons as Commander PartyFrames' spec display
+E.SPECS = {
+    WARRIOR = { ARMS = { "Arms", "Ability_Warrior_SavageBlow" }, FURY = { "Fury", "Ability_Warrior_InnerRage" },
+        PROTECTION = { "Protection", "Ability_Warrior_DefensiveStance" } },
+    PALADIN = { HOLY = { "Holy", "Spell_Holy_HolyBolt" }, PROTECTION = { "Protection", "Spell_Holy_DevotionAura" },
+        RETRIBUTION = { "Retribution", "Spell_Holy_AuraOfLight" } },
+    HUNTER = { BEASTMASTERY = { "Beast Mastery", "Ability_Hunter_BeastTaming" },
+        MARKSMANSHIP = { "Marksmanship", "Ability_Marksmanship" }, SURVIVAL = { "Survival", "Ability_Hunter_SwiftStrike" } },
+    ROGUE = { ASSASSINATION = { "Assassination", "Ability_Rogue_Eviscerate" }, COMBAT = { "Combat", "Ability_BackStab" },
+        SUBTLETY = { "Subtlety", "Ability_Stealth" } },
+    PRIEST = { DISCIPLINE = { "Discipline", "Spell_Holy_WordFortitude" }, HOLY = { "Holy", "Spell_Holy_HolyBolt" },
+        SHADOW = { "Shadow", "Spell_Shadow_ShadowWordPain" } },
+    SHAMAN = { ELEMENTAL = { "Elemental", "Spell_Nature_Lightning" },
+        ENHANCEMENT = { "Enhancement", "Spell_Nature_LightningShield" },
+        RESTORATION = { "Restoration", "Spell_Nature_MagicImmunity" } },
+    MAGE = { ARCANE = { "Arcane", "Spell_Holy_MagicalSentry" }, FIRE = { "Fire", "Spell_Fire_FireBolt02" },
+        FROST = { "Frost", "Spell_Frost_FrostBolt02" } },
+    WARLOCK = { AFFLICTION = { "Affliction", "Spell_Shadow_DeathCoil" },
+        DEMONOLOGY = { "Demonology", "Spell_Shadow_Metamorphosis" },
+        DESTRUCTION = { "Destruction", "Spell_Shadow_RainOfFire" } },
+    DRUID = { BALANCE = { "Balance", "Spell_Nature_StarFall" }, FERALCOMBAT = { "Feral Combat", "Ability_Racial_BearForm" },
+        RESTORATION = { "Restoration", "Spell_Nature_HealingTouch" } },
+}
+
+-- A tree's name and icon path for a class, or nil
+function E.Spec(class, spec)
+    local t = class and spec and E.SPECS[class] and E.SPECS[class][spec]
+    if not t then return nil end
+    return t[1], "Interface\\Icons\\" .. t[2]
 end
 
 -- ---------------------------------------------------------------------------
