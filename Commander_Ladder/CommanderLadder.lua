@@ -7,10 +7,24 @@
 --
 -- Three calls, and Commander_Muster is the one caller (its D11). Everything
 -- else in the suite asks Muster, which merges this with what it has seen:
---   CommanderLadder.Lookup(name, realm) -> { [2] = { rating, won, lost }, ..., t = epoch } or nil
---   CommanderLadder.Want(name, realm)   -- a name the feed lacks, for its next run
+--   CommanderLadder.Lookup(name, realm, anyRealm) -> { [2] = { rating, won, lost }, ..., t = epoch } or nil
+--   CommanderLadder.Want(name, realm, anyRealm)   -- a name the feed lacks, for its next run
 --   CommanderLadder.Generated()         -- epoch the data file was written, or nil
 -- realm defaults to ours, and "Name-Realm" is accepted as the name.
+--
+-- A fourth call is for Commander_Recruit, which aims its /who sweep with it
+-- (L9): who the home realm's rated players are.
+--   CommanderLadder.Roster(realm) -> { { key, name, faction = "A"|"H", class, race,
+--                                        last = epoch|nil, guild = name|nil, best = rating }, ... }
+-- Only players the feed described (a `w` on their line) are listed; a file
+-- written before L9 gives an empty list.
+--
+-- anyRealm (L8): the caller had a bare name and does not know the realm --
+-- the group finder hands over Nightslayer players without one, so "ours"
+-- was a guess and a wrong one. Lookup then tries our realm first and, on a
+-- miss, the one other realm in the data that has that name (two realms with
+-- it is a coin toss, and is left unanswered). Want files the name under
+-- "Name-*OurRealm", which the feed tries on our realm first, then the rest.
 
 CommanderLadder = _G.CommanderLadder or {}
 local L = CommanderLadder
@@ -53,17 +67,77 @@ end
 
 L.Key = Key
 
-function L.Lookup(name, realm)
+-- Lower-case bare name -> its key, or false when two realms share it.
+-- Built once per data file, the first time a realm-less name misses.
+local function ByBareName(data)
+    if data.byBare then return data.byBare end
+    local index = {}
+    for key in pairs(data.players) do
+        local bare = key:match("^([^%-]+)%-")
+        if bare then
+            bare = bare:lower()
+            if index[bare] == nil then
+                index[bare] = key
+            elseif index[bare] ~= key then
+                index[bare] = false
+            end
+        end
+    end
+    data.byBare = index
+    return index
+end
+
+function L.Lookup(name, realm, anyRealm)
     if not IsOn() then return nil end
     local data = Data()
     if not data then return nil end
     local key = Key(name, realm)
-    return key and data.players[key] or nil
+    local entry = key and data.players[key] or nil
+    if entry or not anyRealm or type(name) ~= "string" or name:find("-", 1, true) then
+        return entry
+    end
+    local other = ByBareName(data)[name:lower()]
+    return other and data.players[other] or nil
 end
 
 function L.Generated()
     local data = Data()
     return data and tonumber(data.generated) or nil
+end
+
+-- The rated players of `realm` (ours by default) the feed described: each
+-- line's w = { faction, class, race, last login, guild }. Built once per data
+-- file and realm; callers must not change the tables.
+function L.Roster(realm)
+    if not IsOn() then return {} end
+    local data = Data()
+    if not data then return {} end
+    realm = type(realm) == "string" and realm ~= "" and realm:gsub("%s", "") or HomeRealm()
+    if not realm then return {} end
+    data.rosters = data.rosters or {}
+    if data.rosters[realm] then return data.rosters[realm] end
+    local list, suffix = {}, "-" .. realm
+    for key, entry in pairs(data.players) do
+        local w = type(entry) == "table" and entry.w
+        if type(w) == "table" and key:sub(-#suffix) == suffix and w[2] and w[3] then
+            local best = 0
+            for _, size in ipairs({ 2, 3, 5 }) do
+                local b = entry[size]
+                local rating = type(b) == "table" and tonumber(b[1]) or 0
+                if rating > best then best = rating end
+            end
+            local last = tonumber(w[4])
+            list[#list + 1] = {
+                key = key, name = key:sub(1, -#suffix - 1), faction = w[1], class = w[2], race = w[3],
+                last = last and last > 0 and last or nil,
+                guild = type(w[5]) == "string" and w[5] ~= "" and w[5] or nil,
+                best = best,
+            }
+        end
+    end
+    table.sort(list, function(a, b) return a.key < b.key end)
+    data.rosters[realm] = list
+    return list
 end
 
 -- Players in the data file, for the settings page
@@ -105,9 +179,16 @@ local function PruneWanted(now)
     wantedCount = n
 end
 
-function L.Want(name, realm)
+function L.Want(name, realm, anyRealm)
     if not IsOn() then return end
-    local key = Key(name, realm)
+    local key
+    if anyRealm and type(name) == "string" and name ~= "" and not name:find("-", 1, true) then
+        -- The realm is not known: the feed tries the name on every realm,
+        -- ours first (a friend's bare name is usually from here)
+        key = name .. "-*" .. (HomeRealm() or "")
+    else
+        key = Key(name, realm)
+    end
     if not key then return end
     local wanted = Wanted()
     local now = time()

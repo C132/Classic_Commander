@@ -3,6 +3,7 @@
 -- Loads the REAL shared framework (CommanderSettingsUI.lua, CommanderEvents.lua)
 -- plus Commander_Ladder's files under a permissive WoW mock, and checks the
 -- three calls Commander_Muster relies on (Lookup, Want, Generated), the
+-- roster Commander_Recruit aims its sweep with (Roster, L9), the
 -- missing-data-file case, the wanted list's caps, and the settings page.
 --
 -- Mock copied from Commander_Muster/Harness/muster_ui_harness.lua (its generic
@@ -403,6 +404,27 @@ CHECK(CommanderLadder.Status():find("No feed yet"), "the status says how to get 
 -- B. A data file, as ladder_feed.py writes it
 -- ===========================================================================
 
+-- Two realms with the same name is a coin toss: left unanswered (checked
+-- first, on a file of its own, so the index is built from it)
+CommanderLadderData = {
+    generated = now, players = {
+        ["Twin-Dreamscythe"] = { [2] = { 1500, 1, 1 }, t = now },
+        ["Twin-Nightslayer"] = { [2] = { 1900, 1, 1 }, t = now },
+        ["Solo-Nightslayer"] = { [3] = { 1700, 1, 1 }, t = now },
+    },
+}
+CHECK(CommanderLadder.Lookup("Twin", nil, true) and CommanderLadder.Lookup("Twin", nil, true)[2][1] == 1500,
+    "realm unknown, the name on ours and another: ours")
+CHECK(CommanderLadder.Lookup("Solo", nil, true) and CommanderLadder.Lookup("Solo", nil, true)[3][1] == 1700,
+    "realm unknown, the name on one other realm only: that one")
+CommanderLadderData.players["Twin-Dreamscythe"] = nil
+CommanderLadderData.players["Twin-LivingFlame"] = { [2] = { 1700, 1, 1 }, t = now }
+CommanderLadderData.byBare = nil
+CHECK(CommanderLadder.Lookup("Twin", nil, true) == nil
+    and CommanderLadder.Lookup("Twin-Nightslayer") ~= nil,
+    "...but two OTHER realms with it is not guessed")
+CommanderLadderData.players["Twin-Dreamscythe"] = { [2] = { 1500, 1, 1 }, t = now }
+
 CommanderLadderData = {
     generated = now - 3 * 3600, region = "us", namespace = "dynamic-classicann-us", season = 3,
     players = {
@@ -421,10 +443,55 @@ do
     CHECK(CommanderLadder.Lookup("Zed") == nil, "the same name on our realm is someone else")
     CHECK(CommanderLadder.Lookup("") == nil and CommanderLadder.Lookup(nil) == nil, "no name, no entry")
     CHECK(CommanderLadder.Generated() == now - 3 * 3600, "Generated is the file's time")
+    -- A name with no realm at all (L8): the group finder lists Nightslayer
+    -- players that way, and "ours" was a wrong guess for every one of them
+    CHECK(CommanderLadder.Lookup("Zed", nil, true) and CommanderLadder.Lookup("Zed", nil, true)[5][1] == 1888,
+        "realm unknown: the one other realm with that name answers")
+    CHECK(CommanderLadder.Lookup("zed", nil, true) ~= nil, "...whatever its case")
+    CHECK(CommanderLadder.Lookup("Polypopin", nil, true) == e, "realm unknown: ours is still tried first")
+    CHECK(CommanderLadder.Lookup("Zed-Dreamscythe", nil, true) == nil,
+        "a written realm is never second-guessed")
+    CHECK(CommanderLadder.Lookup("Nobody", nil, true) == nil, "a name nowhere in the file is nil")
     CHECK(CommanderLadder.Count() == 2, "two players counted")
     CHECK(CommanderLadder.Status():find("2 players") and CommanderLadder.Status():find("3h old")
         and CommanderLadder.Status():find("season 3"), "status line", CommanderLadder.Status())
 end
+
+-- ===========================================================================
+-- B2. The roster (L9): who the home realm's rated players are, for Recruit
+-- ===========================================================================
+
+CHECK(#CommanderLadder.Roster() == 0, "a file written before L9 lists nobody")
+local sectionBData = CommanderLadderData
+CommanderLadderData = {
+    generated = now - 3600, region = "us", namespace = "dynamic-classicann-us", season = 3,
+    players = {
+        ["Bootii-Dreamscythe"] = { [2] = { 1512, 11, 10 }, [5] = { 1840, 30, 20 },
+            w = { "H", "ROGUE", "BloodElf", now - 86400, "Gank Squad" }, t = now },
+        ["Loner-Dreamscythe"] = { [3] = { 1700, 4, 4 }, w = { "A", "PRIEST", "NightElf", 0 }, t = now },
+        ["Bare-Dreamscythe"] = { [2] = { 1600, 1, 1 }, t = now },
+        ["Zed-LivingFlame"] = { [5] = { 1888, 10, 2 }, w = { "H", "MAGE", "Troll", now, "Elsewhere" }, t = now },
+    },
+}
+do
+    local roster = CommanderLadder.Roster()
+    CHECK(#roster == 2, "our realm's described players only", #roster)
+    local boot, loner = roster[1], roster[2]
+    CHECK(boot and boot.key == "Bootii-Dreamscythe" and boot.name == "Bootii" and boot.faction == "H"
+        and boot.class == "ROGUE" and boot.race == "BloodElf" and boot.guild == "Gank Squad"
+        and boot.last == now - 86400, "every field of w, by name")
+    CHECK(boot and boot.best == 1840, "best is the highest bracket", boot and boot.best)
+    CHECK(loner and loner.guild == nil and loner.last == nil, "no guild and no login are nil")
+    CHECK(CommanderLadder.Roster() == roster, "built once per data file")
+    local other = CommanderLadder.Roster("Living Flame")
+    CHECK(#other == 1 and other[1].name == "Zed", "another realm by name, spaces dropped")
+    CommanderLadderDB.EnableLadder = false
+    CHECK(#CommanderLadder.Roster() == 0, "off: nobody")
+    CommanderLadderDB.EnableLadder = true
+    CHECK(CommanderLadder.Lookup("Bootii")[5][1] == 1840 and CommanderLadder.Count() == 4,
+        "a line with w still reads as ratings")
+end
+CommanderLadderData = sectionBData
 
 -- ===========================================================================
 -- C. Wanted names for the next feed run
@@ -439,6 +506,17 @@ do
     CHECK(CommanderLadderWanted["Ivy-Nightslayer"] ~= nil, "name and realm")
     CHECK(CommanderLadderWanted["Kel-LivingFlame"] ~= nil, "a written realm loses its space")
     CHECK(CommanderLadder.WantedCount() == 3, "three waiting", CommanderLadder.WantedCount())
+    CommanderLadder.Want("Lfg", nil, true)
+    CommanderLadder.Want("Kel-Living Flame", nil, true)
+    CHECK(CommanderLadderWanted["Lfg-*Dreamscythe"] ~= nil and CommanderLadderWanted["Lfg-Dreamscythe"] == nil,
+        "realm unknown: filed as Name-*OurRealm, for the feed to try every realm, ours first")
+    CHECK(CommanderLadder.WantedCount() == 4, "...and a written realm is still filed under it",
+        CommanderLadder.WantedCount())
+    CommanderLadderWanted["Lfg-*Dreamscythe"] = nil
+    CommanderLadder.ClearWanted()
+    CommanderLadder.Want("Bob")
+    CommanderLadder.Want("Ivy", "Nightslayer")
+    CommanderLadder.Want("Kel-Living Flame")
     Advance(60)
     CommanderLadder.Want("Bob")
     CHECK(CommanderLadderWanted["Bob-Dreamscythe"] == now and CommanderLadder.WantedCount() == 3,

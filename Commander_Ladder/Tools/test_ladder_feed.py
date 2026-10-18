@@ -5,7 +5,8 @@
 
 Covers the payload parsers, realm names, the Lua writer (loaded back through luajit),
 the sandboxed SavedVariables shim, carry-over between runs, the HTTP retry rules,
-and that credentials never reach any output.
+the home realm's profile summaries (parsed, cached a week, written as `w`), and that
+credentials never reach any output.
 """
 
 import importlib.util
@@ -24,6 +25,10 @@ spec.loader.exec_module(feed)
 
 LUAJIT = feed.LUAJIT
 HAVE_LUAJIT = Path(LUAJIT).exists()
+
+# Nothing here may touch the real profile cache in ~/Library/Caches
+CACHE_DIR = tempfile.TemporaryDirectory()
+feed.PROFILE_CACHE = Path(CACHE_DIR.name) / "profiles.json"
 
 REALM_INDEX = {"realms": [
     {"id": 6101, "name": "Dreamscythe", "slug": "dreamscythe"},
@@ -278,6 +283,302 @@ class Probe(unittest.TestCase):
         self.assertIn("profiles work too (profile-classicann-us)", text)
         self.assertNotIn(SECRET_KEY, text)
         self.assertNotIn("tok-XYZ-123456", text, "the token is never printed")
+
+    def test_anniversary_season_layout(self):
+        """TBC Anniversary has no pvp-region level: the season index answers directly."""
+        api, fetch, _ = make_api({
+            "/data/wow/realm/index": [(200, {}, REALM_INDEX)],
+            "/data/wow/pvp-season/index": [(200, {}, {"current_season": {"id": 3}})],
+            "/data/wow/pvp-season/3/pvp-leaderboard/": [(200, {}, LEADERBOARD)],
+            "/pvp-bracket/": [(200, {}, {"rating": 1534, "season_match_statistics": {"won": 21, "lost": 18}})],
+        })
+        found = feed.discover(api, lambda *_: None)
+        self.assertEqual(found["boards"], [("/data/wow/pvp-season/3", 3)])
+        lines = []
+        real = feed.connect
+        feed.connect = lambda: api
+        try:
+            self.assertEqual(feed.probe(lines.append), 0)
+        finally:
+            feed.connect = real
+        self.assertIn("VERDICT: the ladder works", "\n".join(lines))
+        self.assertFalse(any("/pvp-region/" in call[0] for call in fetch.calls),
+                         "a season index that answers is not followed by a region lookup")
+
+    def test_run_finds_realmless_names(self):
+        """A "Name-*" wish (the game had no realm) is found on whichever realm it lives on."""
+        rated = {"rating": 1450, "season_match_statistics": {"won": 5, "lost": 4}}
+        api, fetch, _ = make_api({
+            "/data/wow/realm/index": [(200, {}, REALM_INDEX)],
+            "/data/wow/pvp-season/index": [(200, {}, {"current_season": {"id": 3}})],
+            "/pvp-leaderboard/": [(200, {}, LEADERBOARD)],
+            "/character/dreamscythe/polypopin/pvp-bracket/": [(200, {}, rated)],
+            "/character/nightslayer/lowguy/pvp-bracket/": [(200, {}, rated)],
+            # the summary: Lowguy lives on Nightslayer only, Nobody nowhere
+            "/character/nightslayer/lowguy?": [(200, {}, {"level": 70})],
+        })
+        written = {}
+        saved = (feed.connect, feed.read_wanted, feed.read_previous, feed.write_atomically)
+        feed.connect = lambda: api
+        feed.read_wanted = lambda: {"Lowguy-*Dreamscythe": 300, "Zed-*Dreamscythe": 200,
+                                    "Nobody-*": 150, "Polypopin-Dreamscythe": 100}
+        feed.read_previous = lambda: None
+        # .lua is the data file; the profile cache (.json) goes to the test's temp path
+        real_write = feed.write_atomically
+        feed.write_atomically = lambda path, text, suffix=".lua": (
+            written.__setitem__("text", text) if suffix == ".lua" else real_write(path, text, suffix=suffix))
+        try:
+            self.assertEqual(feed.run(lambda *_: None), 0)
+        finally:
+            feed.connect, feed.read_wanted, feed.read_previous, feed.write_atomically = saved
+        text = written["text"]
+        self.assertIn('["Lowguy-Nightslayer"]', text, "found on the realm it lives on")
+        self.assertNotIn("Lowguy-Dreamscythe", text, "not filed under our realm by guess")
+        self.assertNotIn("-*", text, "a wish's marker never reaches the data file")
+        self.assertNotIn("Nobody", text, "a name that lives nowhere writes nothing")
+        urls = [call[0] for call in fetch.calls]
+        self.assertFalse(any("/character/" in u and "/zed" in u for u in urls),
+                         "a name on one realm's ladder needs no lookup: the game matches it by name")
+        self.assertFalse(any("/character/dreamscythe/lowguy/pvp-bracket" in u for u in urls),
+                         "brackets are only fetched on the realm the summary found")
+        summaries = [u for u in urls if "/character/" in u and "/lowguy?" in u]
+        self.assertIn("/character/dreamscythe/lowguy?", summaries[0], "the game's own realm is asked first")
+
+
+SUMMARY = {
+    "name": "Bootii", "level": 70, "last_login_timestamp": 1792250000123,
+    "faction": {"type": "HORDE", "name": "Horde"},
+    "character_class": {"id": 4, "name": "Rogue"},
+    "race": {"id": 10, "name": "Blood Elf"},
+    "guild": {"name": "Gank Squad", "id": 9, "faction": {"type": "HORDE"}},
+}
+
+
+class Profiles(unittest.TestCase):
+    """L9: who the home realm's rated players are, for Recruit's sweep."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cache_path = Path(self.tmp.name) / "c" / "profiles.json"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_parse_summary(self):
+        self.assertEqual(feed.parse_summary(SUMMARY),
+                         {"f": "H", "c": "ROGUE", "r": "BloodElf", "g": "Gank Squad", "l": 1792250000},
+                         "game tokens, and milliseconds become seconds")
+        loner = {"character_class": {"id": 5}, "race": {"id": 4}, "last_login_timestamp": 1792250000}
+        self.assertEqual(feed.parse_summary(loner),
+                         {"f": "A", "c": "PRIEST", "r": "NightElf", "g": "", "l": 1792250000},
+                         "no guild is an empty name; no faction is read from the race")
+        self.assertEqual(feed.parse_summary({"character_class": {"id": 5}, "race": {"id": 5}})["r"],
+                         "Scourge", "the undead are Scourge, as UnitRace spells it")
+        self.assertIsNone(feed.parse_summary({"character_class": {"id": 6}, "race": {"id": 1}}),
+                          "a death knight is no TBC class")
+        self.assertIsNone(feed.parse_summary({"race": {"id": 1}}))
+        self.assertIsNone(feed.parse_summary(None))
+
+    def test_cache_round_trip(self):
+        self.assertEqual(feed.load_cache(self.cache_path), {}, "no file is an empty cache")
+        feed.save_cache({"Abbé-Dreamscythe": {"c": "MAGE", "at": 5}}, self.cache_path)
+        self.assertEqual(feed.load_cache(self.cache_path), {"Abbé-Dreamscythe": {"c": "MAGE", "at": 5}})
+        self.assertEqual([p.name for p in self.cache_path.parent.iterdir()], ["profiles.json"],
+                         "the folder is made and no temp file is left")
+        self.cache_path.write_text("not json")
+        self.assertEqual(feed.load_cache(self.cache_path), {}, "a damaged cache starts over")
+
+    def test_refresh_fetches_only_what_is_due(self):
+        now = 1792300000
+        api, fetch, _ = make_api({
+            "/character/dreamscythe/bootii?": [(200, {}, SUMMARY)],
+            "/character/dreamscythe/old?": [(200, {}, SUMMARY)],
+            "/character/dreamscythe/abb%C3%A9?": [(200, {}, SUMMARY)],
+        })
+        cache = {
+            "Fresh-Dreamscythe": {"c": "MAGE", "r": "Human", "f": "A", "at": now - 86400},
+            "Old-Dreamscythe": {"c": "MAGE", "r": "Human", "f": "A", "at": now - 8 * 86400},
+        }
+        keys = ["Bootii-Dreamscythe", "Fresh-Dreamscythe", "Old-Dreamscythe", "Gone-Dreamscythe",
+                "Abbé-Dreamscythe"]
+        by_name = {"Dreamscythe": "dreamscythe"}
+        self.assertEqual(feed.refresh_profiles(api, "profile-classicann-us", keys, by_name, cache, now), 4)
+        urls = [c[0] for c in fetch.calls if "/character/" in c[0]]
+        self.assertFalse(any("/fresh?" in u for u in urls), "a summary under a week old is not asked again")
+        self.assertIn("/old?", urls[-1], "never-fetched names first, the oldest after them")
+        self.assertTrue(all("namespace=profile-classicann-us" in u for u in urls))
+        self.assertEqual(cache["Bootii-Dreamscythe"]["c"], "ROGUE")
+        self.assertEqual(cache["Bootii-Dreamscythe"]["at"], now)
+        self.assertEqual(cache["Gone-Dreamscythe"], {"gone": 1, "at": now}, "a 404 is cached as gone")
+        self.assertEqual(cache["Abbé-Dreamscythe"]["r"], "BloodElf", "an accented name is asked lower-cased, encoded")
+        # A week later only the ones fetched then are due again; the limit holds
+        fetch.calls.clear()
+        self.assertEqual(feed.refresh_profiles(api, "ns", keys, by_name, cache, now + 3600, limit=10), 0)
+        self.assertEqual(feed.refresh_profiles(api, "ns", keys, by_name, cache, now + 8 * 86400, limit=2), 2)
+
+    def test_refresh_is_spread_over_days(self):
+        ages = [feed.profile_max_age(f"P{i}-Dreamscythe") for i in range(400)]
+        self.assertTrue(all(5 * 86400 < a <= 7 * 86400 for a in ages), "five to seven days")
+        self.assertGreater(max(ages) - min(ages), 86400, "spread, not one morning")
+        self.assertEqual(feed.profile_max_age("Abbé-Dreamscythe"), feed.profile_max_age("Abbé-Dreamscythe"),
+                         "the same for a name every run")
+
+    def test_refresh_keeps_what_came_when_the_budget_runs_out(self):
+        api, fetch, _ = make_api({"/character/": [(200, {}, SUMMARY)]})
+        calls = [0]
+        real_get = api.get
+
+        def get(path, ns, **kw):
+            calls[0] += 1
+            if calls[0] > 2:
+                raise feed.FeedError("hourly request budget spent; stopping this run")
+            return real_get(path, ns, **kw)
+        api.get = get
+        cache, lines = {}, []
+        n = feed.refresh_profiles(api, "ns", ["A-Dreamscythe", "B-Dreamscythe", "C-Dreamscythe"],
+                                  {}, cache, 1792300000, say=lines.append)
+        self.assertEqual(n, 2)
+        self.assertEqual(sorted(cache), ["A-Dreamscythe", "B-Dreamscythe"])
+        self.assertIn("profiles stopped after 2", lines[0])
+
+    def test_prune(self):
+        now = 1792300000
+        cache = {"Kept-Dreamscythe": {"at": 0}, "Recent-Dreamscythe": {"at": now - 86400},
+                 "Old-Dreamscythe": {"at": now - 31 * 86400}}
+        feed.prune_cache(cache, ["Kept-Dreamscythe"], now)
+        self.assertEqual(sorted(cache), ["Kept-Dreamscythe", "Recent-Dreamscythe"],
+                         "only a summary for someone off the data a month goes")
+
+    def test_attach(self):
+        prev_time = 1792200000
+        cache = {
+            "Bootii-Dreamscythe": {"f": "H", "c": "ROGUE", "r": "BloodElf", "g": "Gank Squad", "l": prev_time - 5 * 86400},
+            "Idle-Dreamscythe": {"f": "A", "c": "MAGE", "r": "Gnome", "g": "", "l": prev_time - 9 * 86400},
+            "Gone-Dreamscythe": {"gone": 1},
+            "Zed-Nightslayer": {"f": "H", "c": "MAGE", "r": "Troll", "g": "", "l": 1},
+        }
+        previous = {"generated": prev_time, "players": {
+            "Bootii-Dreamscythe": {"2": {"1": 1500, "2": 10, "3": 10}, "t": prev_time},
+            "Idle-Dreamscythe": {"3": {"1": 1700, "2": 4, "3": 4}, "t": prev_time,
+                                 "w": {"1": "A", "2": "MAGE", "3": "Gnome", "4": prev_time - 2 * 86400}},
+        }}
+        players = {
+            "Bootii-Dreamscythe": {2: (1512, 11, 10), "t": prev_time + 86400},
+            "Idle-Dreamscythe": {3: (1700, 4, 4), "t": prev_time + 86400},
+            "Gone-Dreamscythe": {2: (1600, 1, 1), "t": 1},
+            "New-Dreamscythe": {2: (1600, 1, 1), "t": 1},
+            "Zed-Nightslayer": {2: (1600, 1, 1), "t": 1},
+        }
+        self.assertEqual(feed.attach_profiles(players, cache, previous), 2)
+        self.assertEqual(players["Bootii-Dreamscythe"]["w"], ("H", "ROGUE", "BloodElf", prev_time, "Gank Squad"),
+                         "a record that moved since the last run means they logged in after it")
+        self.assertEqual(players["Idle-Dreamscythe"]["w"][3], prev_time - 2 * 86400,
+                         "an unchanged record keeps the newest login known, the last file's included")
+        self.assertNotIn("w", players["Gone-Dreamscythe"], "a 404 describes nobody")
+        self.assertNotIn("w", players["New-Dreamscythe"], "nothing cached, nothing written")
+        self.assertNotIn("w", players["Zed-Nightslayer"], "only the home realm is described")
+
+    @unittest.skipUnless(HAVE_LUAJIT, "luajit not installed")
+    def test_render_w_loads_back(self):
+        data = {"generated": 1792200000, "region": "us", "namespace": "dynamic-classicann-us", "season": 3,
+                "players": {
+                    "Bootii-Dreamscythe": {2: (1512, 11, 10), "w": ("H", "ROGUE", "BloodElf", 1792200000, 'Gank "Squad"'),
+                                           "t": 1792200000},
+                    "Loner-Dreamscythe": {3: (1700, 4, 4), "w": ("A", "PRIEST", "NightElf", 0, ""), "t": 1792200000},
+                }}
+        text = feed.render_lua(data)
+        self.assertIn('["Bootii-Dreamscythe"] = { [2] = { 1512, 11, 10 }, w = { "H", "ROGUE", "BloodElf", '
+                      '1792200000, "Gank \\"Squad\\"" }, t = 1792200000 },', text)
+        self.assertIn('w = { "A", "PRIEST", "NightElf", 0 }, t = 1792200000', text, "no guild, no fifth field")
+        path = Path(self.tmp.name) / "CommanderLadderData.lua"
+        feed.write_atomically(path, text)
+        back = feed.read_previous(path)
+        self.assertEqual(back["players"]["Bootii-Dreamscythe"]["w"],
+                         {"1": "H", "2": "ROGUE", "3": "BloodElf", "4": 1792200000, "5": 'Gank "Squad"'})
+        self.assertEqual(feed.entry_from_json(back["players"]["Bootii-Dreamscythe"]),
+                         {2: (1512, 11, 10), "t": 1792200000}, "the ratings read back as before")
+
+    def run_feed(self, api, previous=None):
+        written = {}
+        saved = (feed.connect, feed.read_wanted, feed.read_previous, feed.write_atomically, feed.PROFILE_CACHE)
+        real_write = feed.write_atomically
+        feed.connect = lambda: api
+        feed.read_wanted = lambda: {}
+        feed.read_previous = lambda: previous
+        feed.PROFILE_CACHE = self.cache_path
+
+        def write(path, text, suffix=".lua"):
+            if suffix == ".lua":
+                written["text"] = text
+            else:
+                real_write(path, text, suffix=suffix)
+        feed.write_atomically = write
+        try:
+            self.assertEqual(feed.run(lambda *_: None), 0)
+        finally:
+            (feed.connect, feed.read_wanted, feed.read_previous, feed.write_atomically,
+             feed.PROFILE_CACHE) = saved
+        return written["text"]
+
+    def test_run_describes_the_home_realm_once_a_week(self):
+        board = {"entries": [
+            {"character": {"name": "Bootii", "realm": {"slug": "dreamscythe"}}, "faction": {"type": "HORDE"},
+             "rating": 1512, "season_match_statistics": {"won": 11, "lost": 10}},
+            {"character": {"name": "Zed", "realm": {"slug": "nightslayer"}}, "faction": {"type": "HORDE"},
+             "rating": 1888, "season_match_statistics": {"won": 10, "lost": 2}},
+        ]}
+        routes = {
+            "/data/wow/realm/index": [(200, {}, REALM_INDEX)],
+            "/data/wow/pvp-season/index": [(200, {}, {"current_season": {"id": 3}})],
+            "/pvp-leaderboard/": [(200, {}, board)],
+            "/character/dreamscythe/polypopin/pvp-bracket/": [(200, {}, {"rating": 1534})],
+            "/character/dreamscythe/bootii?": [(200, {}, SUMMARY)],
+        }
+        api, fetch, _ = make_api(routes)
+        text = self.run_feed(api)
+        self.assertIn('[5] = { 1512, 11, 10 }, w = { "H", "ROGUE", "BloodElf", 1792250000, "Gank Squad" }, t = ',
+                      text)
+        self.assertIn('["Zed-Nightslayer"] = { [2] = { 1888, 10, 2 }, [3] = { 1888, 10, 2 }, [5] = { 1888, 10, 2 }, t = ',
+                      text, "another realm: ratings only")
+        self.assertFalse(any("/character/nightslayer/zed?" in c[0] for c in fetch.calls),
+                         "no summary is fetched for another realm")
+        self.assertIn("Bootii-Dreamscythe", feed.load_cache(self.cache_path), "the summary is cached")
+        # The next day: the cache answers, no summary is fetched again, the line is the same
+        api2, fetch2, _ = make_api(routes)
+        text2 = self.run_feed(api2)
+        self.assertFalse(any("/character/dreamscythe/bootii?" in c[0] for c in fetch2.calls),
+                         "a summary under a week old comes from the cache")
+        self.assertIn('w = { "H", "ROGUE", "BloodElf", 1792250000, "Gank Squad" }', text2)
+
+    def test_fields_prints_names_not_values(self):
+        board = {"entries": [
+            {"character": {"name": "Zed", "realm": {"slug": "nightslayer"}}, "rating": 1888},
+            {"character": {"name": "Bootii", "id": 7, "realm": {"slug": "dreamscythe"}},
+             "faction": {"type": "HORDE"}, "rating": 1512, "season_match_statistics": {"won": 11, "lost": 10}},
+        ]}
+        api, fetch, _ = make_api({
+            "/data/wow/realm/index": [(200, {}, REALM_INDEX)],
+            "/data/wow/pvp-season/index": [(200, {}, {"current_season": {"id": 3}})],
+            "/pvp-leaderboard/2v2": [(200, {}, board)],
+            "/character/dreamscythe/bootii?": [(200, {}, SUMMARY)],
+        })
+        lines = []
+        real = feed.connect
+        feed.connect = lambda: api
+        try:
+            self.assertEqual(feed.fields(lines.append), 0)
+        finally:
+            feed.connect = real
+        text = "\n".join(lines)
+        self.assertIn("leaderboard entry for Bootii-dreamscythe", text, "the one value: a home-realm sample's name")
+        self.assertIn("faction.type (str)", text)
+        self.assertIn("guild.name (str)", text)
+        self.assertIn("last_login_timestamp (int)", text)
+        self.assertIn("faction: present (also on the leaderboard entry)", text)
+        for value in ("Gank Squad", "HORDE", "1792250000", "1512", "Blood Elf"):
+            self.assertNotIn(value, text, "field values are never printed")
+        self.assertNotIn("tok-XYZ-123456", text)
+
 
 
 if __name__ == "__main__":

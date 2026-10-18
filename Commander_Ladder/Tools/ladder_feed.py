@@ -2,11 +2,17 @@
 """Commander Ladder feed: arena ratings from Blizzard's web API, as a Lua file the game loads.
 
     python3 -I ladder_feed.py probe   # check credentials, namespaces and endpoints; changes nothing
+    python3 -I ladder_feed.py fields  # the field names of one ladder entry and one profile summary
     python3 -I ladder_feed.py run     # pull the ladders + wanted profiles, write CommanderLadderData.lua
 
 The game only tells an addon another player's rating through an inspect (own faction, ~28 yards).
 Everyone else comes from here: the same web API ironforge.pro reads. Commander_Muster merges it
 with what it has seen in game (its D11); the newest reading wins per bracket.
+
+For the home realm's ladder players a run also writes who they are -- faction, class, race, last
+login and guild, from each one's character profile summary (L9) -- which Commander_Recruit uses
+to aim its /who sweep. Those summaries are cached in ~/Library/Caches/CommanderLadder/ (outside
+the repo; COMMANDER_LADDER_CACHE overrides) and fetched again once a week.
 
 Credentials live in the macOS login Keychain, stored by Devin with:
     security add-generic-password -a "$USER" -s commander-battlenet-client-id -w
@@ -27,6 +33,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -56,6 +63,28 @@ CARRY_SECONDS = 7 * 86400    # how long an entry not refreshed this run is kept
 
 PROBE_CHARACTER = ("dreamscythe", "polypopin")
 PROBE_EXPECTED = {2: 1534, 3: 1531, 5: 1605}   # ironforge.pro, 2026-10-16
+
+# Who the rated players are (L9): the character profile summary of every ladder player on these
+# realms (normalized names), cached outside the repo and refreshed weekly. Commander_Recruit steers
+# its /who sweep with it. Nightslayer would add ~7,900 requests a week; Devin plays Dreamscythe.
+HOME_REALMS = ("Dreamscythe",)
+PROFILE_CACHE = Path(os.environ.get("COMMANDER_LADDER_CACHE")
+                     or Path.home() / "Library" / "Caches" / "CommanderLadder" / "profiles.json")
+PROFILE_MAX_AGE = 7 * 86400      # a summary older than this is fetched again...
+PROFILE_SPREAD = 2 * 86400       # ...or up to this much sooner, fixed per name, so the first fill's
+                                 # ~1,600 do not all come due on the same morning
+PROFILE_FORGET = 30 * 86400      # a cached summary for someone off the data this long is dropped
+MAX_PROFILES_PER_RUN = 2500      # one request each; the first run fetches ~1,600
+
+# The game's own tokens (UnitClass / UnitRace file names), by the API's ids. 6 (death knight) and
+# the later races are not TBC: a summary naming one describes nobody Recruit can /who.
+CLASS_TOKENS = {1: "WARRIOR", 2: "PALADIN", 3: "HUNTER", 4: "ROGUE", 5: "PRIEST", 7: "SHAMAN",
+                8: "MAGE", 9: "WARLOCK", 11: "DRUID"}
+RACE_TOKENS = {1: "Human", 2: "Orc", 3: "Dwarf", 4: "NightElf", 5: "Scourge", 6: "Tauren",
+               7: "Gnome", 8: "Troll", 10: "BloodElf", 11: "Draenei"}
+RACE_FACTION = {"Human": "A", "Dwarf": "A", "NightElf": "A", "Gnome": "A", "Draenei": "A",
+                "Orc": "H", "Scourge": "H", "Tauren": "H", "Troll": "H", "BloodElf": "H"}
+FACTION_LETTER = {"ALLIANCE": "A", "HORDE": "H"}
 
 
 class FeedError(Exception):
@@ -355,6 +384,13 @@ def render_lua(data):
                 parts.append(f"[{size}] = {{ {int(b[0])}, {int(b[1])}, {int(b[2])} }}")
         if not parts:
             continue
+        who = entry.get("w")
+        if who:
+            # faction, class, race, last login, guild (L9); the guild is left off when there is none
+            fields = [lua_string(who[0]), lua_string(who[1]), lua_string(who[2]), str(int(who[3]))]
+            if len(who) > 4 and who[4]:
+                fields.append(lua_string(who[4]))
+            parts.append(f"w = {{ {', '.join(fields)} }}")
         parts.append(f"t = {int(entry['t'])}")
         lines.append(f"        [{lua_string(key)}] = {{ {', '.join(parts)} }},")
     lines.append("    },")
@@ -362,10 +398,10 @@ def render_lua(data):
     return "\n".join(lines) + "\n"
 
 
-def write_atomically(path, text):
+def write_atomically(path, text, suffix=".lua"):
     """Write via a temp file in the same folder and rename, so the game never loads half a file."""
     path = Path(path)
-    fd, tmp = tempfile.mkstemp(prefix=".ladder-", suffix=".lua", dir=str(path.parent))
+    fd, tmp = tempfile.mkstemp(prefix=".ladder-", suffix=suffix, dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
@@ -407,6 +443,121 @@ def carry_over(previous, players, now, season):
 
 
 # ---------------------------------------------------------------------------
+# Who the rated players are (L9)
+# ---------------------------------------------------------------------------
+
+def parse_summary(summary):
+    """{f, c, r, g, l} from a character profile summary: faction letter, class and race tokens as
+    the game spells them, guild name ("" for none) and last login in epoch seconds (0 unknown).
+    None when the class or race is missing or not a TBC one."""
+    if not isinstance(summary, dict):
+        return None
+    cls = CLASS_TOKENS.get((summary.get("character_class") or {}).get("id"))
+    race = RACE_TOKENS.get((summary.get("race") or {}).get("id"))
+    if not (cls and race):
+        return None
+    faction = FACTION_LETTER.get(str((summary.get("faction") or {}).get("type") or "").upper())
+    guild = (summary.get("guild") or {}).get("name") or ""
+    try:
+        login = int(summary.get("last_login_timestamp") or 0)
+    except (TypeError, ValueError):
+        login = 0
+    if login > 10 ** 11:
+        login //= 1000   # the retail layout sends milliseconds
+    return {"f": faction or RACE_FACTION[race], "c": cls, "r": race, "g": str(guild), "l": login}
+
+
+def load_cache(path=None):
+    """The profile cache, { "Name-Realm": {f, c, r, g, l, at} or {gone, at} }, or {}."""
+    path = Path(path or PROFILE_CACHE)
+    try:
+        cache = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return cache if isinstance(cache, dict) else {}
+
+
+def save_cache(cache, path=None):
+    path = Path(path or PROFILE_CACHE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_atomically(path, json.dumps(cache, ensure_ascii=False, sort_keys=True), suffix=".json")
+
+
+def profile_max_age(key):
+    """How old `key`'s summary may get: five to seven days, the same for a name every run."""
+    return PROFILE_MAX_AGE - zlib.crc32(key.encode("utf-8")) % PROFILE_SPREAD
+
+
+def refresh_profiles(api, namespace, keys, by_name, cache, now, limit=None, say=print):
+    """Fetch the summary of every key in `keys` whose cached one is missing or about a week old
+    (profile_max_age), the never-fetched first, then the oldest; at most `limit`. A 404 (renamed,
+    moved, deleted) is cached as gone and asked again in a week. A spent request budget stops the
+    fetching but keeps what came. Returns how many were fetched."""
+    limit = MAX_PROFILES_PER_RUN if limit is None else limit
+    due = [k for k in keys if now - int((cache.get(k) or {}).get("at") or 0) >= profile_max_age(k)]
+    due.sort(key=lambda k: (int((cache.get(k) or {}).get("at") or 0), k))
+    fetched = 0
+    for key in due[:limit]:
+        name, _, realm = key.partition("-")
+        slug = by_name.get(realm) or realm.lower()
+        try:
+            summary = api.get(f"/profile/wow/character/{urllib.parse.quote(slug)}/"
+                              f"{urllib.parse.quote(name.lower())}", namespace)
+        except FeedError as err:
+            say(f"Commander Ladder: profiles stopped after {fetched}: {err}")
+            break
+        record = parse_summary(summary) if summary else None
+        cache[key] = dict(record or {"gone": 1}, at=now)
+        fetched += 1
+    return fetched
+
+
+def prune_cache(cache, keep, now):
+    """Drop cached summaries for players not in `keep` and not fetched for PROFILE_FORGET."""
+    keep = set(keep)
+    for key in [k for k, rec in cache.items()
+                if k not in keep and now - int((rec or {}).get("at") or 0) >= PROFILE_FORGET]:
+        del cache[key]
+
+
+def played_count(entry, size):
+    b = entry.get(size) if isinstance(entry, dict) else None
+    return int(b[1]) + int(b[2]) if b else None
+
+
+def attach_profiles(players, cache, previous):
+    """Give each home-realm player the cache knows a `w` = (faction, class, race, last login,
+    guild). The last login is raised to the previous run's time when the ladder record moved
+    since then: they played a match after it, so they logged in after it. The profile is a week
+    old at worst; the ladder is a day old. Returns how many were described."""
+    prev_players = (previous or {}).get("players") or {}
+    prev_time = int((previous or {}).get("generated") or 0)
+    described = 0
+    for key, entry in players.items():
+        if key.partition("-")[2] not in HOME_REALMS:
+            continue
+        rec = cache.get(key) or {}
+        if rec.get("gone") or not rec.get("c"):
+            continue
+        last = int(rec.get("l") or 0)
+        raw = prev_players.get(key)
+        before = entry_from_json(raw) if isinstance(raw, dict) else None
+        if isinstance(raw, dict) and isinstance(raw.get("w"), dict):
+            try:
+                last = max(last, int(raw["w"].get("4") or 0))
+            except (TypeError, ValueError):
+                pass
+        if before and prev_time and any(played_count(entry, s) is not None
+                                        and played_count(entry, s) != played_count(before, s)
+                                        for s in (2, 3, 5)):
+            last = max(last, prev_time)
+        entry["w"] = (rec.get("f") or RACE_FACTION.get(rec.get("r"), ""), rec["c"], rec["r"], last,
+                      rec.get("g") or "")
+        described += 1
+    return described
+
+
+# ---------------------------------------------------------------------------
 # The two commands
 # ---------------------------------------------------------------------------
 
@@ -417,8 +568,18 @@ def connect():
 
 
 def discover(api, say=print):
-    """Which namespaces answer, which pvp regions and seasons exist. Returns a dict."""
-    found = {"dynamic": None, "profile": None, "regions": [], "realms": ({}, {})}
+    """Which namespaces answer, and where the current season's leaderboards live.
+
+    Two layouts exist. TBC Anniversary uses the retail one, seasons with no region level:
+    /data/wow/pvp-season/{season}/pvp-leaderboard/{bracket}, about 5,000 players a bracket
+    (probed 2026-10-16: season 3, 2v2/3v3/5v5 all answered). Older Classic flavours put a
+    region in front: /data/wow/pvp-region/{region}/pvp-season/{season}/... The season layout
+    is asked first; the region layout only when it gives nothing.
+
+    found["boards"] is a list of (path prefix, season): a leaderboard is
+    f"{prefix}/pvp-leaderboard/{bracket}".
+    """
+    found = {"dynamic": None, "profile": None, "boards": [], "realms": ({}, {})}
     for ns in DYNAMIC_NAMESPACES:
         index = api.get("/data/wow/realm/index", ns)
         if index and index.get("realms"):
@@ -430,13 +591,19 @@ def discover(api, say=print):
     if not found["dynamic"]:
         return found
     ns = found["dynamic"]
+    season = current_season(api.get("/data/wow/pvp-season/index", ns))
+    if season is not None:
+        say(f"  pvp seasons: current season {season}")
+        found["boards"].append((f"/data/wow/pvp-season/{season}", season))
+        return found
+    say("  pvp seasons: none; trying pvp regions")
     regions = ids_from(api.get("/data/wow/pvp-region/index", ns), "pvp_regions", "regions")
     say(f"  pvp regions: {regions or 'none'}")
     for region in regions:
         season = current_season(api.get(f"/data/wow/pvp-region/{region}/pvp-season/index", ns))
         say(f"    region {region}: current season {season}")
         if season is not None:
-            found["regions"].append((region, season))
+            found["boards"].append((f"/data/wow/pvp-region/{region}/pvp-season/{season}", season))
     return found
 
 
@@ -453,13 +620,12 @@ def probe(say=print):
     found = discover(api, say)
 
     ladder_ok = False
-    for region, season in found["regions"]:
+    for prefix, season in found["boards"]:
         for label, size in BRACKETS.items():
-            board = api.get(f"/data/wow/pvp-region/{region}/pvp-season/{season}/pvp-leaderboard/{label}",
-                            found["dynamic"])
+            board = api.get(f"{prefix}/pvp-leaderboard/{label}", found["dynamic"])
             players = parse_leaderboard(board, found["realms"][0])
             sample = next(iter(players.items()), None)
-            say(f"    region {region} season {season} {label}: {len(players)} entries"
+            say(f"    season {season} {label}: {len(players)} entries"
                 + (f", e.g. {sample[0]} {sample[1][0]}" if sample else ""))
             ladder_ok = ladder_ok or bool(players)
 
@@ -493,6 +659,71 @@ def probe(say=print):
     return 1
 
 
+def field_paths(obj, prefix=""):
+    """Every key path in a JSON value with its type, never its value: ["rating (int)", ...].
+    A list shows its first item's paths under "[]"."""
+    out = []
+    if isinstance(obj, dict):
+        for key in sorted(obj):
+            out += field_paths(obj[key], f"{prefix}.{key}" if prefix else str(key))
+    elif isinstance(obj, list):
+        out.append(f"{prefix} (list of {len(obj)})")
+        if obj:
+            out += field_paths(obj[0], f"{prefix}[]")
+    else:
+        out.append(f"{prefix} ({type(obj).__name__})")
+    return out
+
+
+def fields(say=print):
+    """The field names of one leaderboard entry and one character profile summary for a
+    PROBE_CHARACTER-realm ladder player: what the feed can learn about who is rated. Names and
+    types only; the one value printed is the sample character's name."""
+    say("Commander Ladder fields (reads only; writes nothing)")
+    try:
+        api = connect()
+        api.token()
+    except FeedError as err:
+        say(f"  {err}")
+        return 2
+    found = discover(api, lambda *_: None)
+    home = PROBE_CHARACTER[0]
+    entry = None
+    for prefix, _ in found["boards"]:
+        board = api.get(f"{prefix}/pvp-leaderboard/2v2", found["dynamic"])
+        for candidate in (board or {}).get("entries", []):
+            if ((candidate.get("character") or {}).get("realm") or {}).get("slug") == home:
+                entry = candidate
+                break
+        if entry:
+            break
+    if not entry:
+        say(f"  no 2v2 leaderboard entry on {home}")
+        return 1
+    name = entry["character"].get("name", "")
+    say(f"  leaderboard entry for {name}-{home}:")
+    for line in field_paths(entry):
+        say(f"    {line}")
+    summary, ns_used = None, None
+    for ns in PROFILE_NAMESPACES:
+        summary = api.get(f"/profile/wow/character/{home}/{urllib.parse.quote(name.lower())}", ns)
+        if summary:
+            ns_used = ns
+            break
+    if not summary:
+        say("  no character profile summary in either profile namespace")
+        return 1
+    say(f"  profile summary ({ns_used}):")
+    for line in field_paths(summary):
+        say(f"    {line}")
+    tops = set(summary)
+    for want in ("faction", "character_class", "race", "guild", "last_login_timestamp"):
+        say(f"  {want}: {'present' if want in tops else 'MISSING'}"
+            + (" (also on the leaderboard entry)" if want in entry else ""))
+    say(f"  requests made: {api.requests}")
+    return 0
+
+
 def run(say=print):
     try:
         api = connect()
@@ -507,11 +738,10 @@ def run(say=print):
     season = None
     namespace = found["dynamic"] or ""
 
-    for region, region_season in found["regions"]:
-        season = max(season or 0, region_season)
+    for prefix, board_season in found["boards"]:
+        season = max(season or 0, board_season)
         for label, size in BRACKETS.items():
-            board = api.get(f"/data/wow/pvp-region/{region}/pvp-season/{region_season}/pvp-leaderboard/{label}",
-                            found["dynamic"])
+            board = api.get(f"{prefix}/pvp-leaderboard/{label}", found["dynamic"])
             for key, value in parse_leaderboard(board, by_slug).items():
                 players.setdefault(key, {"t": now})[size] = value
     from_ladder = len(players)
@@ -526,13 +756,21 @@ def run(say=print):
     wanted = read_wanted()
     looked_up = 0
     if profile_ns:
-        # Newest wishes first; names already on the ladder need no profile call
-        for key, _ in sorted(wanted.items(), key=lambda kv: -kv[1]):
-            if looked_up >= MAX_WANTED_PER_RUN:
-                break
-            if key in players:
-                continue
-            name, _, realm = key.partition("-")
+        # A "Name-*" wish has no realm (the game had a bare name, L8). The realms with
+        # players on this season's ladder are tried busiest first, then every other realm the
+        # index lists; the character summary says which one the name lives on (one request a
+        # realm), and only that realm's brackets are fetched
+        realm_counts = {}
+        for key in players:
+            realm_counts[key.partition("-")[2]] = realm_counts.get(key.partition("-")[2], 0) + 1
+        any_realms = sorted(realm_counts, key=lambda r: -realm_counts[r])
+        any_realms += [r for r in sorted(by_name) if r not in realm_counts]
+        on_ladder = {}
+        for key in players:
+            bare = key.partition("-")[0].lower()
+            on_ladder[bare] = on_ladder.get(bare, 0) + 1
+
+        def look(name, realm):
             slug = by_name.get(realm) or realm.lower()
             entry = {"t": now}
             for label, size in BRACKETS.items():
@@ -540,16 +778,58 @@ def run(say=print):
                 parsed = parse_bracket(api.get(path, profile_ns))
                 if parsed:
                     entry[size] = parsed
+            return entry if len(entry) > 1 else None
+
+        # Newest wishes first; names already on the ladder need no profile call
+        for key, _ in sorted(wanted.items(), key=lambda kv: -kv[1]):
+            if looked_up >= MAX_WANTED_PER_RUN:
+                break
+            if key in players:
+                continue
+            name, _, realm = key.partition("-")
+            if realm.startswith("*"):
+                # One realm's ladder already has the name: the game matches it by name
+                if on_ladder.get(name.lower()) == 1:
+                    continue
+                looked_up += 1
+                # "*Dreamscythe": the game's own realm is asked first, as the game asks it first
+                home = realm[1:]
+                order = ([home] if home else []) + [r for r in any_realms if r != home]
+                for candidate in order:
+                    slug = by_name.get(candidate) or candidate.lower()
+                    if api.get(f"/profile/wow/character/{urllib.parse.quote(slug)}/"
+                               f"{urllib.parse.quote(name.lower())}", profile_ns) is None:
+                        continue
+                    entry = look(name, candidate)
+                    if entry:
+                        players[f"{name}-{candidate}"] = entry
+                        break
+                    # Lives here but unrated: someone of that name elsewhere may be the
+                    # one the game saw (a bare name could be either)
+                continue
+            entry = look(name, realm)
             looked_up += 1
-            if len(entry) > 1:
+            if entry:
                 players[key] = entry
 
-    carried = carry_over(read_previous(), players, now, season)
+    previous = read_previous()
+    carried = carry_over(previous, players, now, season)
+
+    # Who the home realm's rated players are, for Recruit's sweep (L9)
+    profiled = described = 0
+    home_keys = sorted(k for k in players if k.partition("-")[2] in HOME_REALMS)
+    if profile_ns and home_keys:
+        cache = load_cache()
+        profiled = refresh_profiles(api, profile_ns, home_keys, by_name, cache, now, say=say)
+        prune_cache(cache, home_keys, now)
+        save_cache(cache)
+        described = attach_profiles(players, cache, previous)
+
     data = {"generated": now, "region": REGION, "namespace": namespace, "season": season, "players": players}
     write_atomically(DATA_FILE, render_lua(data))
     say(f"Commander Ladder: {len(players)} players written ({from_ladder} from the ladder, "
-        f"{looked_up} wanted names looked up, {carried} carried over), {api.requests} requests. "
-        f"/reload in game to load them.")
+        f"{looked_up} wanted names looked up, {carried} carried over, {described} described, "
+        f"{profiled} profiles fetched), {api.requests} requests. /reload in game to load them.")
     return 0
 
 
@@ -560,11 +840,13 @@ def main(argv):
             return probe()
         if command == "run":
             return run()
+        if command == "fields":
+            return fields()
     except FeedError as err:
         print(f"Commander Ladder: {err}", file=sys.stderr)
         return 1
     print(__doc__.strip().splitlines()[0])
-    print("usage: python3 -I ladder_feed.py probe|run")
+    print("usage: python3 -I ladder_feed.py probe|fields|run")
     return 2
 
 
