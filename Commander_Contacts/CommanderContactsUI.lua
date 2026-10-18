@@ -2134,6 +2134,22 @@ function H.OpenConversation(key)
     return true
 end
 
+-- Another module's way in (Commander Recruit's left-click on a name): the
+-- conversation with one player, made if there is none yet, open on the
+-- Activity tab with the history above and the compose box ready. False when
+-- Contacts is off or not attached, so the caller can fall back to a plain
+-- whisper.
+function H.OpenWhisper(fullName, fields)
+    if not (Enabled() and Ready()) or type(fullName) ~= "string" or fullName == "" then return false end
+    local short = H.Shorten(fullName)
+    if short == "" or H.IsSelf(fullName) then return false end
+    fields = type(fields) == "table" and fields or {}
+    local conv = S.EnsureDM(short, { target = fullName, class = fields.class, guid = fields.guid })
+    if not (conv and H.OpenConversation(conv.key)) then return false end
+    if composeBox then composeBox:SetFocus() end
+    return true
+end
+
 function H.PrintStats()
     if not Ready() then return end
     local stats = S.Stats()
@@ -2155,6 +2171,7 @@ CommanderContacts_Show = H.Show
 CommanderContacts_Hide = H.Hide
 CommanderContacts_ShowTab = H.ShowTab
 CommanderContacts_OpenConversation = H.OpenConversation
+CommanderContacts_OpenWhisper = H.OpenWhisper
 CommanderContacts_PrintStats = H.PrintStats
 CommanderContacts_ForgetSuggestions = function()
     H.ForgetSuggestions()

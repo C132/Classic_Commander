@@ -1602,6 +1602,23 @@ do
     NoErrors("G7 no errors through the Orders additions")
 end
 
+-- ===========================================================================
+-- R. Another module opens a whisper (Commander Recruit's left-click)
+-- ===========================================================================
+do
+    CHECK(type(CommanderContacts_OpenWhisper) == "function", "R1 OpenWhisper is exported")
+    CommanderContacts_Hide()
+    local ok = CommanderContacts_OpenWhisper("Freshface-Blackrock", { class = "ROGUE" })
+    CHECK(ok == true, "R2 a player with no history yet: a thread is made and opened")
+    CHECK(frame:IsShown() and state.tab == "activity" and state.selected.activity == "dm:Freshface-Blackrock",
+        "R3 ...on the Activity tab, that conversation selected", tostring(state.selected.activity))
+    CHECK(CommanderContactsStore.Conversation("dm:Freshface-Blackrock") ~= nil, "R4 ...and kept like any other thread")
+    CHECK(CommanderContacts_OpenWhisper("Vexa-Blackrock") == true and state.selected.activity == "dm:Vexa-Blackrock",
+        "R5 a player you have talked to opens on the history you already have")
+    CHECK(CommanderContacts_OpenWhisper("") == false, "R6 no name, nothing opened")
+    NoErrors("R7 no errors opening whispers from outside")
+end
+
 if fails > 0 then
     io.write(string.format("contacts ui harness: %d/%d checks FAILED\n", fails, checks))
     os.exit(1)

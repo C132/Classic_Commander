@@ -166,3 +166,13 @@ message previews are left alone. The Scout's own `Performers[...].ratings`
 stay as they are: they rank strangers for suggestions by the highest rating
 seen, which is a different question from what someone is rated now.
 
+
+## D14 - Another module opens a whisper here (1.2.1)
+
+Devin, 2026-10-17, of Commander Recruit's online ladder: "instead of left click whisper I want it
+to bring up left click contacts whisper window for that person, that way I know the history of
+chat I've had with them". `CommanderContacts_OpenWhisper(fullName, fields)` is the public way in:
+the player's DM thread (made with `S.EnsureDM` when there is none, `target` the full name to
+whisper back), opened on the Activity tab with the compose box focused. It answers false when
+Contacts is off or not attached, so a caller can fall back to a plain whisper; Recruit does.
+Harness section R.

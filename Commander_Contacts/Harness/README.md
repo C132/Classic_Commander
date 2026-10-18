@@ -5,7 +5,7 @@ Five luajit checks, all in-addon. Run **all five** before any change.
 ```bash
 /opt/homebrew/bin/luajit contacts_store_smoke.lua   # store fixture - 131 checks
 /opt/homebrew/bin/luajit contacts_scout_smoke.lua   # scout fixture - 70 checks
-/opt/homebrew/bin/luajit contacts_ui_harness.lua    # UI + host     - 309 checks
+/opt/homebrew/bin/luajit contacts_ui_harness.lua    # UI + host     - 316 checks
 /opt/homebrew/bin/luajit contacts_orders_smoke.lua  # the REAL Commander Orders - 34 checks
 /opt/homebrew/bin/luajit globals_lint.lua           # 5 files, 0 undeclared globals
 ```
@@ -125,3 +125,6 @@ Orders' Chat Links off the line is drawn plain; E hovering the link shows Orders
 the GUID is equivalent against the real Orders (Orders records the token's GUID itself when a
 follow names none); the UI harness's G1 holds Contacts to passing it.
 
+Section **R** (1.2.1): `CommanderContacts_OpenWhisper` makes and opens a thread for a player with no
+history (Activity tab, that conversation selected, kept like any other), opens an existing one on
+its history, refuses an empty name, and raises no errors.
