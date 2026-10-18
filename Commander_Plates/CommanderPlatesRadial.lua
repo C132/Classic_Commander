@@ -385,6 +385,9 @@ function R.New(parent)
     -- its cooldown sweeping when not (built once New's other parts exist)
     w.centerText = NewText(over, 11)
     w.centerText:SetPoint("CENTER", w, "CENTER", 0, 0)
+    -- The clock under the number: a control's or a cast's seconds, on a line
+    -- of its own so the number above never yields to it or moves for it
+    w.subText = NewText(over, 8)
     w.drBadge = NewText(over, 9)
     w.levelText = NewText(over, 9)
     w.nameText = NewText(over, 10)
@@ -496,7 +499,9 @@ function R.Layout(w, cfg)
     local centerSize = math.max(8, math.floor(r.core * 0.85))
     if (cfg.coreTextSize or 0) > 0 then centerSize = cfg.coreTextSize end
     w.centerText:SetFont(FONT, centerSize, "OUTLINE")
-    w.drBadge:SetFont(FONT, math.max(8, math.floor(centerSize * 0.65)), "OUTLINE")
+    local smallSize = math.max(8, math.floor(centerSize * 0.65))
+    w.drBadge:SetFont(FONT, smallSize, "OUTLINE")
+    w.subText:SetFont(FONT, smallSize, "OUTLINE")
     w.levelText:SetFont(FONT, math.max(8, math.floor(cfg.size * 0.2)), "OUTLINE")
     w.nameText:SetFont(FONT, cfg.nameSize, "OUTLINE")
     w.nameText:SetWidth(cfg.nameWidth)
@@ -520,8 +525,14 @@ function R.Layout(w, cfg)
     w.trinket:SetSize(badge, badge)
     local youOuter = r.outer + 3
     w.youRing:SetSize(youOuter / R.RING_OUTER, youOuter / R.RING_OUTER)
+    -- The number keeps the middle; the clock hangs under where it sits and
+    -- the DR bracket over it, both off the number's size rather than its
+    -- text, so neither moves when the number is blank
+    local half = math.ceil(centerSize / 2)
+    w.subText:ClearAllPoints()
+    w.subText:SetPoint("TOP", w, "CENTER", 0, -half)
     w.drBadge:ClearAllPoints()
-    w.drBadge:SetPoint("TOP", w, "CENTER", 0, -r.core * 0.25)
+    w.drBadge:SetPoint("BOTTOM", w, "CENTER", 0, half)
 end
 
 -- The disc sits on the plate's own anchor (the health bar Blizzard would
@@ -877,17 +888,31 @@ function R.SetMarker(w, key, fraction, r, g, b)
     t:Show()
 end
 
-function R.SetCenterText(w, text, r, g, b)
+-- The face goes dark under the text for exactly as long as there is some
+local function Shade(w)
+    local any = w.centerText:IsShown() or w.subText:IsShown()
+    w.shade:SetShown(any and (w.laid.textShade or 0) > 0)
+end
+
+local function SetLine(w, fs, text, r, g, b)
     if not text or text == "" then
-        w.centerText:Hide()
-        w.shade:Hide()
-        return
+        fs:Hide()
+    else
+        fs:SetText(text)
+        fs:SetTextColor(r or 1, g or 1, b or 1)
+        fs:Show()
     end
-    w.centerText:SetText(text)
-    w.centerText:SetTextColor(r or 1, g or 1, b or 1)
-    w.centerText:Show()
-    -- The face goes dark under the number for exactly as long as there is one
-    w.shade:SetShown((w.laid.textShade or 0) > 0)
+    Shade(w)
+end
+
+-- The number in the middle: health, the arena seat, or "Dead"
+function R.SetCenterText(w, text, r, g, b)
+    SetLine(w, w.centerText, text, r, g, b)
+end
+
+-- The small line under it: the seconds left on a control or a cast
+function R.SetSubText(w, text, r, g, b)
+    SetLine(w, w.subText, text, r, g, b)
 end
 
 function R.SetDrBadge(w, text, r, g, b)
@@ -1154,7 +1179,7 @@ function R.Clear(w)
     R.SetDead(w, false)
     w.arrowL:Hide(); w.arrowR:Hide()
     for _, f in ipairs(w.drIcons or {}) do f:Hide() end
-    w.centerText:Hide(); w.drBadge:Hide(); w.levelText:Hide()
+    w.centerText:Hide(); w.subText:Hide(); w.drBadge:Hide(); w.levelText:Hide()
     w.shade:Hide()
     w.nameText:Hide(); w.castText:Hide()
     w:SetScript("OnUpdate", nil)

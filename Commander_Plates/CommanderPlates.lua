@@ -651,6 +651,7 @@ local function ReleaseRadial(rec)
     if rec.ov.radial then Radial.Clear(rec.ov.radial) end
     HideOrbit(rec.ov)
     rec.coreCC, rec.castCore, rec.casting, rec.loudCast = nil, nil, nil, nil
+    rec.castEnd, rec.castRGB = nil, nil
 end
 
 -- What the name label says: the same rules the bar mode applies to
@@ -732,33 +733,48 @@ local function RadialRim(rec)
     Radial.SetRim(w, r, g, b, 1)
 end
 
--- The middle of the disc: a control's seconds, a cast's seconds, or what
--- the Core Text setting asks for
+-- The middle of the disc, two lines. The number is what the Core Text
+-- setting asks for and NOTHING takes its place: a control or a cast writes
+-- its seconds on the small line under it, so the number never blinks out or
+-- shifts the moment one starts. A clock under a blank reads as the number
+-- having gone, so while there is one SMART's "nothing at full health" gives
+-- way to the percent.
 local function RadialCenterText(rec, now)
     local w, cfg = rec.ov.radial, radialCfg
     if not w then return end
-    local text, r, g, b = "", 1, 1, 1
-    local cc, cast = rec.coreCC, rec.castCore
+    local sub, sr, sg, sb = "", 1, 1, 1
+    local cc = rec.coreCC
     if cc then
         if DB("CcTimer", true) and cc.expiration and cc.expiration > 0 then
             local left = cc.expiration - now
-            text = E.FormatTime(left)
-            if DB("AuraTimerUrgent", true) and left > 0 and left < 3 then r, g, b = 1, 0.3, 0.3 end
+            sub = left > 0 and E.FormatTime(left) or ""
+            if cc.tint then sr, sg, sb = unpack(cc.tint) end
+            if DB("AuraTimerUrgent", true) and left > 0 and left < 3 then sr, sg, sb = 1, 0.3, 0.3 end
         end
-    elseif cast then
-        if DB("CastTimer", true) and rec.castEnd then
-            local left = rec.castEnd - now
-            text = left > 0 and string.format("%.1f", left) or ""
-        end
-    elseif rec.dead then
-        text, r, g, b = "Dead", 0.7, 0.7, 0.7
+    elseif rec.castEnd and DB("CastTimer", true) then
+        local left = rec.castEnd - now
+        sub = left > 0 and string.format("%.1f", left) or ""
+        if rec.castRGB then sr, sg, sb = unpack(rec.castRGB) end
+    end
+
+    local text, r, g, b = "", 1, 1, 1
+    if rec.dead then
+        text, r, g, b, sub = "Dead", 0.7, 0.7, 0.7, ""
     else
         local arena = (rec.arena and DB("ArenaNumbers", "REPLACE") ~= "OFF") and rec.arena or nil
         text = E.CoreText(cfg.coreText, rec.hpFrac or 1, rec.hpValue, arena)
+        if text == "" and sub ~= "" and cfg.coreText == "SMART" then
+            text = string.format("%d", math.floor((rec.hpFrac or 1) * 100 + 0.5))
+        end
     end
-    if w.lastCenter == text and w.lastCenterR == r then return end
-    w.lastCenter, w.lastCenterR = text, r
-    Radial.SetCenterText(w, text, r, g, b)
+    if w.lastCenter ~= text or w.lastCenterR ~= r then
+        w.lastCenter, w.lastCenterR = text, r
+        Radial.SetCenterText(w, text, r, g, b)
+    end
+    if w.lastSub ~= sub or w.lastSubR ~= sr then
+        w.lastSub, w.lastSubR = sub, sr
+        Radial.SetSubText(w, sub, sr, sg, sb)
+    end
 end
 
 -- The face itself: control beats cast beats identity. `force` redraws a
@@ -796,7 +812,7 @@ local function PaintRadialCore(rec, force)
         and ((rec.isFriend and DB("ClassIconFriendly", false)) or (not rec.isFriend and DB("ClassIconEnemy", true)))
     Radial.SetClassBadge(w, wantBadge and rec.class or nil)
     RadialRim(rec)
-    w.lastCenter = nil
+    w.lastCenter, w.lastSub = nil, nil
     RadialCenterText(rec, GetTime())
 end
 
@@ -838,7 +854,7 @@ local function RadialHealth(rec, now)
         end
         Radial.SetMarker(w, "value", maxHealth > 0 and mark / maxHealth or nil, 1, 0.82, 0.2)
     end
-    if not (rec.coreCC or rec.castCore) then RadialCenterText(rec, now) end
+    RadialCenterText(rec, now)
 end
 
 local function WantPower(rec)
@@ -1104,7 +1120,9 @@ local function RadialTrinket(rec)
     if startMS and durationMS and startMS > 0 and durationMS > 0 then
         start, duration = startMS / 1000, durationMS / 1000
     end
-    Radial.SetTrinket(w, DrIcon(spellId), start, duration)
+    -- The enemy's faction medallion: the spell's own icon reads as a dispel
+    local icon = Commander.TrinketIcon and Commander.TrinketIcon("arena" .. rec.arena, nil, true) or DrIcon(spellId)
+    Radial.SetTrinket(w, icon, start, duration)
 end
 
 local function RequestTrinkets()
@@ -1166,7 +1184,7 @@ local function TickRadialCast(rec, now)
     end
     if not name or not startMS or not endMS then
         if rec.casting then
-            rec.casting, rec.castCore, rec.castEnd, rec.loudCast, rec.castLine = nil, nil, nil, nil, nil
+            rec.casting, rec.castCore, rec.castEnd, rec.castRGB, rec.loudCast, rec.castLine = nil, nil, nil, nil, nil, nil
             Radial.ClearCast(w)
             Radial.SetCastName(w, nil)
             PaintRadialCore(rec)
@@ -1189,6 +1207,7 @@ local function TickRadialCast(rec, now)
         end
         rec.loudCast = loud and { r, g, b } or nil
         rec.castEnd = endMS / 1000
+        rec.castRGB = { r, g, b }
         Radial.SetCast(w, cfg, startMS / 1000, (endMS - startMS) / 1000, channel, r, g, b)
         if cfg.castName then
             rec.castLine = { name = name, r = r, g = g, b = b, target = CastTargetText(rec) }
@@ -1851,7 +1870,7 @@ local function OnPlateRemoved(unit)
     HideAll(rec.ov)
     RestoreBlizzard(rec)
     rec.casting, rec.castCore, rec.coreCC, rec.loudCast, rec.combo, rec.mouseover = nil, nil, nil, nil, nil, nil
-    rec.targetsYou, rec.dead = nil, nil
+    rec.targetsYou, rec.dead, rec.castEnd, rec.castRGB, rec.castLine = nil, nil, nil, nil, nil
     byUF[rec.uf] = nil
     plates[unit] = nil
 end
@@ -2251,7 +2270,7 @@ ticker:SetScript("OnUpdate", function(self, elapsed)
             for _, f in ipairs(ov.orbitSquare) do
                 if f:IsShown() then TickIcon(f, now) end
             end
-            if rec.coreCC or rec.castCore then RadialCenterText(rec, now) end
+            if rec.coreCC or rec.castEnd then RadialCenterText(rec, now) end
             if radialCfg.mouseover then
                 local over = UnitIsUnit(rec.unit, "mouseover") and true or false
                 if over ~= (rec.mouseover or false) then

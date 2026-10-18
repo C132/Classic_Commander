@@ -5,7 +5,7 @@ runs without it, which is the point.
 
 ```
 luajit  Harness/plates_engine_smoke.lua       the rules (1312 checks)
-luajit  Harness/plates_board_smoke.lua        the runtime over a widget mock (378 checks)
+luajit  Harness/plates_board_smoke.lua        the runtime over a widget mock (397 checks)
 python3 Harness/order_lint.py                 use-before-declaration
 python3 Harness/settings_reach.py             every setting has a control
 python3 Harness/make_cc_table.py              regenerate the CC block (after a patch)

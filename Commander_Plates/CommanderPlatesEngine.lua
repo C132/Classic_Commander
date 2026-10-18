@@ -468,7 +468,9 @@ end
 -- The radii, from the middle out. cfg: size (diameter to the health ring's
 -- outer edge), healthThick, power (bool), powerThick, cast (bool), castThick,
 -- auraSize, auraGap. Every band keeps a pixel of air either side so two
--- colours never bleed into one.
+-- colours never bleed into one; the cast ring gets two, and floats.
+E.RADIAL_CAST_GAP = 2
+
 function E.RadialRadii(cfg)
     local r = {}
     r.health = cfg.size / 2
@@ -482,7 +484,9 @@ function E.RadialRadii(cfg)
     r.core = math.max(4, inner)
     local outer = r.health
     if cfg.cast then
-        r.castInner = outer + 1
+        -- The cast floats: RADIAL_CAST_GAP px of air between it and the
+        -- plate, so it reads as a ring round the unit rather than a band of it
+        r.castInner = outer + E.RADIAL_CAST_GAP
         r.cast = r.castInner + cfg.castThick
         outer = r.cast
     end

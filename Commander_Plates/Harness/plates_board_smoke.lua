@@ -1479,11 +1479,17 @@ CHECK(w.core.__texture == "Interface\\Icons\\Poly", "the face becomes the spell"
 CHECK(w.castText.__text == "Polymorph" and w.castText.__shown, "the spell's name under the unit's")
 CHECK(w.alert.__shown == true, "an emphasised cast lights the warning halo")
 CHECK(w.spark.__shown == true and w:GetScript("OnUpdate") ~= nil, "the spark rides the sweep")
-CHECK(w.centerText.__text ~= "" and tonumber(w.centerText.__text) ~= nil, "the middle counts the cast down", w.centerText.__text)
+CHECK(w.centerText.__text == "30", "a cast never takes the health number's place", w.centerText.__text)
+CHECK(w.subText.__shown and tonumber(w.subText.__text) ~= nil, "...its seconds count down on the small line under it", w.subText.__text)
+local subPoint = w.subText.__points and w.subText.__points[1]
+CHECK(subPoint and subPoint.y < 0 and w.centerText.__points[1].y == 0, "...below the middle, the number still on it")
+local castR = w.castArc.track.__w and (w.castArc.track.__w * CommanderPlates_Radial.RING_OUTER)
+CHECK(castR and castR - 3 - cfgB.radii.health >= 2, "the cast ring floats 2px off the plate", castR)
 units.nameplate4.cast = nil
 Tick(0.1)
 CHECK(w.castArc.cd.__shown == false and w.core.__texture == CommanderPlates_Data.CLASS_ICON, "cast over: ring clear, face back to the class")
 CHECK(w.alert.__shown == false and w.castText.__shown == false, "...halo and spell name gone")
+CHECK(w.subText.__shown == false and w.centerText.__text == "30", "...the clock line goes, the number stays put")
 
 -- A kick
 Fire("UNIT_SPELLCAST_INTERRUPTED", "nameplate4")
@@ -1495,6 +1501,8 @@ CHECK(w.flash.__shown == false and w.castText.__shown == false, "...and fades")
 units.nameplate4.debuffs = { Aura("Corruption", 172, 12, 18, true), Aura("Cheap Shot", 1833, 3, 4, false) }
 Fire("UNIT_AURA", "nameplate4")
 CHECK(w.core.__texture == "Interface\\Icons\\Cheap Shot", "a stun takes the face", w.core.__texture)
+CHECK(w.centerText.__text == "30", "...but never the health number", w.centerText.__text)
+CHECK(w.subText.__shown and w.subText.__text ~= "", "...its seconds go on the line under it", w.subText.__text)
 CHECK(w.wipe[1].__shown == true and w.wipe[2].__shown == true and w.coreCd.__shown == false, "...its countdown a clock wipe over it, not a Cooldown")
 CHECK(w.wipe[1].__layer == "BACKGROUND" and w.coreCd:GetFrameLevel() < w.healthArc.cd:GetFrameLevel(), "...drawn beneath every ring")
 CHECK(Near(w.wipe[1].__w, (half2core or w.core.__w) / 2 / 0.46, 0.01), "...the wipe's disc exactly the face's size", w.wipe[1].__w)

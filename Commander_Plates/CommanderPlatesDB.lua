@@ -699,22 +699,32 @@ local function PaintRadialMock(m, now)
     local sheeped = isFriend and cfg.coreCC and db.CcEnable and db.CcOnFriends and db.CcIncaps
     local casting = (not isFriend) and cfg.coreCast
     Radial.SetDrBadge(w, nil)
+    -- The number stays the health whatever the face is doing; a control's or
+    -- a cast's seconds go on the small line under it, as on the plate
+    local sub, sr, sg, sb = "", 1, 1, 1
     if sheeped then
         Radial.SetCore(w, "ICON", PREVIEW_CC)
         Radial.SetCoreSwipe(w, now - 2, 8)
-        Radial.SetCenterText(w, db.CcTimer and "6" or "")
+        if db.CcTimer then sub, sr, sg, sb = "6", ccTint[1], ccTint[2], ccTint[3] end
         if db.CcDrBadge then Radial.SetDrBadge(w, DATA.BRACKET_LABEL[2], unpack(DATA.BRACKET_TINT[2])) end
     elseif casting then
         Radial.SetCore(w, "ICON", PREVIEW_CAST)
         Radial.SetCoreSwipe(w, nil)
-        Radial.SetCenterText(w, db.CastTimer and "1.4" or "")
     else
         Radial.SetCoreSwipe(w, nil)
         if cfg.coreArt == "NONE" then Radial.SetCore(w, "NONE") else Radial.SetCore(w, "CLASS", spec.class) end
-        local mid = CommanderPlates_Engine.CoreText(cfg.coreText, spec.health, spec.health * PREVIEW_MAXHP,
-            (not isFriend and db.ArenaNumbers ~= "OFF") and 2 or nil)
-        Radial.SetCenterText(w, mid)
     end
+    if (not isFriend) and db.CastTimer and (cfg.cast or cfg.coreCast) and not sheeped then
+        sub = "1.4"
+        sr, sg, sb = Draw.ResolveColor(cfg.castColor, ctx)
+    end
+    local arena = (not isFriend and db.ArenaNumbers ~= "OFF") and 2 or nil
+    local mid = CommanderPlates_Engine.CoreText(cfg.coreText, spec.health, spec.health * PREVIEW_MAXHP, arena)
+    if mid == "" and sub ~= "" and cfg.coreText == "SMART" then
+        mid = string.format("%d", math.floor(spec.health * 100 + 0.5))
+    end
+    Radial.SetCenterText(w, mid)
+    Radial.SetSubText(w, sub, sr, sg, sb)
     Radial.SetClassBadge(w, (sheeped or casting) and ((isFriend and db.ClassIconFriendly) or (not isFriend and db.ClassIconEnemy)) and spec.class or nil)
     Radial.SetBacking(w, 0, 0, 0, 0.85)
     local br, bg, bb = 0.02, 0.02, 0.03
@@ -760,7 +770,8 @@ local function PaintRadialMock(m, now)
     else
         Radial.SetTargetsYou(w, false)
     end
-    Radial.SetTrinket(w, (not isFriend and cfg.trinket) and "Interface\\Icons\\INV_Jewelry_TrinketPVP_01" or nil)
+    Radial.SetTrinket(w, (not isFriend and cfg.trinket)
+        and (Commander.TrinketIcon and Commander.TrinketIcon(nil, nil, true) or "Interface\\Icons\\INV_Jewelry_TrinketPVP_01") or nil)
     Radial.SetLevel(w, nil)
 
     -- The orbit: three dots on the mage, a Rejuvenation on the druid
