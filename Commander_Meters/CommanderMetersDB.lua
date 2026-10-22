@@ -85,6 +85,14 @@ local DefaultSettings = {
     ArenaRecord = true,      -- record arena matches (both teams, replayable)
     ArenaKeepMatches = 6,    -- past matches saved across logout (0 = session only)
     ArenaDispelLog = true,   -- the replay's DISPEL LOG drawer is open (its header button toggles it)
+    ArenaScoreboard = true,  -- feature flag (D31): the replay's SCOREBOARD band, every player's final
+                             -- numbers, MMR and rating change, MMR change from their next game
+    ArenaUptime = true,      -- feature flag (D32): the replay's UPTIME drawer, every debuff one side
+                             -- kept on one player, its share of their time alive and its drops
+    ArenaUptimeOpen = false, -- the UPTIME drawer is open (its header button toggles it)
+    ArenaBreakdown = true,   -- feature flag (D33): the replay's BREAKDOWN drawer, one player's damage and
+                             -- healing by ability and by target, as of the cursor
+    ArenaBreakdownOpen = false, -- the BREAKDOWN drawer is open (its header button toggles it)
 }
 for key, value in pairs(Commander.UI.HudChromeDefaults("Hud", "DARK")) do
     DefaultSettings[key] = value
@@ -289,12 +297,34 @@ local function CreateCorePanel()
     panel:AddSection("Arena",
         "Arena matches are recorded as a whole: both teams, every seat, from the gates to the result — damage, healing, control with DR brackets, kicks, dispels, kills, mana, cooldowns — with a replayable timeline. The crossed-swords button in the meter window (or /cm arena) opens the report; ARENA modes in the meter window show both teams live.")
 
-    panel:AddCheckbox({
+    panel:AddCheckboxPair({
         label = "Record Arena Matches",
         tooltip = "Record every arena match you play into the Arena Report. Off leaves the meter window's ordinary modes untouched and records nothing arena-specific. The report never opens on its own — the crossed-swords button in the meter window, /cm arena, or an ARENA row opens it.",
         get = function() return CommanderMetersDB.ArenaRecord end,
         set = function(value) CommanderMetersDB.ArenaRecord = value end,
         isEnabled = Enabled,
+    }, {
+        label = "Scoreboard in the Replay",
+        tooltip = "A SCOREBOARD band under the replay's meters, split by team: every player's damage, healing, killing blows and deaths for the whole match, their MMR going in, their rating change, and how their MMR moved. The game never reports an MMR change, so it is read from that player's MMR in your next game of the same bracket — yours always, a teammate's when they queued with you again. The server's board is re-read until you leave the arena, because the ratings can arrive a moment after the result. Off puts the replay and the seat tooltips back exactly as they were.",
+        get = function() return CommanderMetersDB.ArenaScoreboard end,
+        set = function(value) CommanderMetersDB.ArenaScoreboard = value end,
+        isEnabled = function() return Enabled() and CommanderMetersDB.ArenaRecord end,
+    })
+
+    panel:AddCheckbox({
+        label = "Debuff Uptime in the Replay",
+        tooltip = "An UPTIME button in the replay's header opens a drawer listing every debuff one side kept on one player — Mortal Strike, Judgement of Justice, the poisons, the dots — with how long each was up, its share of the time that player was alive, its longest drop, and a strip of the whole match showing where it fell off. A HEALING REDUCED row joins Mortal Strike, Aimed Shot and Wound Poison into one answer. It opens on the enemy who took the most damage; click any card's portrait to read someone else. Off puts the replay back exactly as it was.",
+        get = function() return CommanderMetersDB.ArenaUptime end,
+        set = function(value) CommanderMetersDB.ArenaUptime = value end,
+        isEnabled = function() return Enabled() and CommanderMetersDB.ArenaRecord end,
+    })
+
+    panel:AddCheckbox({
+        label = "Damage & Healing Breakdown in the Replay",
+        tooltip = "A BREAKDOWN button in the replay's header opens a drawer with one player's damage, ability by ability and whom it hit, and their healing, spell by spell and whom it landed on, each with its share and a bar, read as of the cursor. Hover a line for hits, crits, the biggest hit, misses and overheal. It opens on you; click a player's row in the meters, or their portrait while the drawer is open, to read anyone else. Matches saved before this option existed show their whole-match numbers at any cursor. Off puts the replay back exactly as it was.",
+        get = function() return CommanderMetersDB.ArenaBreakdown end,
+        set = function(value) CommanderMetersDB.ArenaBreakdown = value end,
+        isEnabled = function() return Enabled() and CommanderMetersDB.ArenaRecord end,
     })
 
     panel:AddSlider({

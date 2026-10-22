@@ -935,6 +935,51 @@ local function RepaintArenaPane(pane, mode, want)
     end
 end
 
+-- How long between two games, in a tooltip's words
+local function GapText(s)
+    if s < 3600 then return format("%d min", math.max(1, math.floor(s / 60 + 0.5))) end
+    if s < 86400 then return format("%.0f h", s / 3600) end
+    return format("%d days", math.floor(s / 86400 + 0.5))
+end
+
+-- The Scoreboard option's half of the seat tooltip (D31): the server's
+-- killing blows beside the log's deaths (the arena board answers 0 deaths
+-- for everyone), the rating change — yours with before and after — and the
+-- MMR with how it moved, read from that player's next game
+local function ArenaScoreTipLines(m, seat, line)
+    local hint = THEME.tipDim
+    local _, _, kb, deaths, mmr, change = A.ScoreLine(m, seat)
+    line("KILLING BLOWS / DEATHS", kb .. " / " .. deaths)
+    if change then
+        local text = format("%+d", change)
+        if seat.token == "player" then
+            local before, after = A.OurRating(m)
+            if before then text = format("%d → %d  (%+d)", before, after, change) end
+        end
+        line("RATING CHANGE", text, change >= 0 and THEME.healTx or THEME.danger)
+    end
+    if not mmr then
+        if m.rated == false then line("MMR", "none (skirmish)") end
+        return
+    end
+    local after, nextOrWhy, gap, sure = A.NextMmr(m, seat)
+    if after then
+        line("MMR", format("%d → %d  (%+d)", mmr, after, after - mmr), after >= mmr and THEME.healTx or THEME.danger)
+        GameTooltip:AddLine(format("The new MMR is %s pre-match MMR in your next game (%s later).",
+            seat.token == "player" and "your" or "their", GapText(gap)), hint[1], hint[2], hint[3], true)
+        if not sure then
+            GameTooltip:AddLine("They were not on your team: a game of their own in between would be in this number.",
+                hint[1], hint[2], hint[3], true)
+        end
+    else
+        line("MMR", tostring(mmr))
+        GameTooltip:AddLine(nextOrWhy == "PENDING"
+            and "The game never reports an MMR change. It shows here after your next game in this bracket."
+            or "The game never reports an MMR change, and your next game cannot tell it.",
+            hint[1], hint[2], hint[3], true)
+    end
+end
+
 -- Hover on an arena row: the seat's whole card — every stat the match
 -- engine keeps for it, plus the server's scoreboard numbers when merged
 ArenaSeatTooltip = function(row, matchOverride)
@@ -982,12 +1027,16 @@ ArenaSeatTooltip = function(row, matchOverride)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("SCOREBOARD (SERVER)", THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3])
         line("DAMAGE / HEALING", FmtNum(seat.sb.dmg) .. " / " .. FmtNum(seat.sb.heal))
-        line("KILLING BLOWS / DEATHS", seat.sb.kb .. " / " .. seat.sb.deaths)
-        if seat.sb.ratingChange then
-            line("RATING CHANGE", format("%+d", seat.sb.ratingChange),
-                seat.sb.ratingChange >= 0 and THEME.healTx or THEME.danger)
+        if db.ArenaScoreboard then
+            ArenaScoreTipLines(m, seat, line)
+        else
+            line("KILLING BLOWS / DEATHS", seat.sb.kb .. " / " .. seat.sb.deaths)
+            if seat.sb.ratingChange then
+                line("RATING CHANGE", format("%+d", seat.sb.ratingChange),
+                    seat.sb.ratingChange >= 0 and THEME.healTx or THEME.danger)
+            end
+            if seat.sb.mmr then line("MMR", tostring(seat.sb.mmr)) end
         end
-        if seat.sb.mmr then line("MMR", tostring(seat.sb.mmr)) end
     end
     GameTooltip:AddLine("Click for the Arena Report", THEME.tipHint[1], THEME.tipHint[2], THEME.tipHint[3])
     GameTooltip:Show()
@@ -3353,6 +3402,9 @@ local function ArenaReadRanked(m)
     if ok and isArena then m.rated = isRanked and true or false end
 end
 
+local SCORE_REFRESH_S = 120
+local scoreRefresh = { m = nil, faction = nil, untilTs = 0 } -- the closed match whose board is still up
+
 local function ArenaFinishIfDecided()
     local m = A.Live()
     if not m then return end
@@ -3386,7 +3438,32 @@ local function ArenaFinishIfDecided()
         pcall(arenaEvents.UnregisterEvent, arenaEvents, "UNIT_SPELLCAST_SUCCEEDED")
     end
     E.SetMatch(false, MatchLabel(m), result, time())
-    A.Finish(time(), result, runTime)
+    local done = A.Finish(time(), result, runTime)
+    if done and db.ArenaScoreboard then
+        scoreRefresh.m, scoreRefresh.faction, scoreRefresh.untilTs = done, ourFaction, time() + SCORE_REFRESH_S
+    end
+end
+
+-- The Scoreboard option keeps reading the board after the result, while
+-- it is up: the ratings can land a beat after the winner (ArenaArmory
+-- retries for twenty seconds for exactly this), and Blizzard's own board
+-- asks the server every frame while shown, so UPDATE_BATTLEFIELD_SCORE
+-- keeps coming until we leave. Each read merges onto the CLOSED match;
+-- only a changed number repaints. Leaving the arena, a new match, or two
+-- minutes end it.
+local function ArenaRefreshScore()
+    local m = scoreRefresh.m
+    if not m then return end
+    if A.Live() or time() > scoreRefresh.untilTs or not db.ArenaScoreboard or not InArenaNow() then
+        scoreRefresh.m = nil
+        return
+    end
+    local rows = ArenaReadScoreboard()
+    if not rows then return end
+    local rev = m.sbRev
+    A.MergeScoreboard(m, rows, scoreRefresh.faction)
+    ArenaReadTeamInfo(m, scoreRefresh.faction)
+    if m.sbRev ~= rev then repaintNow() end
 end
 
 -- Battlegrounds get the same one-fight-per-match reading (no replay —
@@ -3438,6 +3515,7 @@ local function ArenaZoneCheck()
     if not db then return end
     BattlegroundZoneCheck()
     local inArena = InArenaNow()
+    if not inArena then scoreRefresh.m = nil end
     if inArena then
         ArenaBegin()
     elseif A.Live() then
@@ -3741,6 +3819,59 @@ function CommanderMeters_ArenaTest()
     hp[D2] = 0
     snap(D2, 139.5)
     ev(140, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, D2, "Leafshade", FENEMY, 0)
+    -- The debuffs the uptime drawer reads: poisons and the Frostbolt chill
+    -- kept on the warlock and the druid (dropped while the druid was
+    -- sheeped), the warrior's Mortal Strike kept on the mage
+    aura(68, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 27189, "Wound Poison V")
+    for i = 1, 3 do aura(68 + i, "SPELL_AURA_APPLIED_DOSE", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 27189, "Wound Poison V") end
+    aura(68.5, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 11201, "Crippling Poison")
+    aura(80.5, "SPELL_AURA_REMOVED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 11201, "Crippling Poison")
+    aura(105, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, L3, "Nethra", FENEMY, 11201, "Crippling Poison")
+    aura(75, "SPELL_AURA_APPLIED", ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 27072, "Frostbolt")
+    for i = 1, 7 do aura(75 + i * 2.5, "SPELL_AURA_REFRESH", ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 27072, "Frostbolt") end
+    aura(101.5, "SPELL_AURA_REMOVED", ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 27072, "Frostbolt")
+    aura(105, "SPELL_AURA_APPLIED", ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 27072, "Frostbolt")
+    aura(111.5, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 27189, "Wound Poison V")
+    for i = 1, 4 do aura(111.5 + i * 2, "SPELL_AURA_APPLIED_DOSE", R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 27189, "Wound Poison V") end
+    aura(132, "SPELL_AURA_REFRESH", R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 27189, "Wound Poison V")
+    aura(112, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 11201, "Crippling Poison")
+    aura(124, "SPELL_AURA_REMOVED", R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 11201, "Crippling Poison")
+    aura(133, "SPELL_AURA_APPLIED", R2, "Shiv", FPARTY, D2, "Leafshade", FENEMY, 11201, "Crippling Poison")
+    aura(131, "SPELL_AURA_APPLIED", ME, "Frostweaver", FME, D2, "Leafshade", FENEMY, 27072, "Frostbolt")
+    aura(75, "SPELL_AURA_APPLIED", W1, "Gorehowl", FENEMY, ME, "Frostweaver", FME, 30330, "Mortal Strike")
+    for i = 1, 7 do aura(75 + i * 2.5, "SPELL_AURA_REFRESH", W1, "Gorehowl", FENEMY, ME, "Frostweaver", FME, 30330, "Mortal Strike") end
+    aura(102.5, "SPELL_AURA_REMOVED", W1, "Gorehowl", FENEMY, ME, "Frostweaver", FME, 30330, "Mortal Strike")
+    -- The rest of each breakdown (D33), past the one spell each player
+    -- leans on: the mage's Water Elemental, Ice Lance and Fire Blast, the
+    -- priest's shield absorbs, Renew, Prayer of Mending and Shadow Word:
+    -- Pain, the druid's Rejuvenation and Regrowth. Queued straight, with no
+    -- casts and no HP moves: the scripted health, cast bars and deaths stay
+    -- exactly as they were
+    local WE, FWE = "Creature-0-CMARENA-WE", 0x2111
+    A.SetOwner(WE, ME, "Water Elemental")
+    local function hit(t, sg, sn, sf, dg, dn, df, id, name, amount, crit, periodic)
+        ev(t, periodic and "SPELL_PERIODIC_DAMAGE" or "SPELL_DAMAGE", nil, sg, sn, sf, 0, dg, dn, df, 0,
+            id, name, 16, amount, 0, 16, 0, 0, 0, crit or false, false, false, false)
+    end
+    local function mend(t, sg, sn, sf, dg, dn, df, id, name, amount, over, periodic)
+        ev(t, periodic and "SPELL_PERIODIC_HEAL" or "SPELL_HEAL", nil, sg, sn, sf, 0, dg, dn, df, 0,
+            id, name, 2, amount, over or 0, 0, false)
+    end
+    for i = 0, 3 do hit(76 + i * 6, WE, "Water Elemental", FWE, L3, "Nethra", FENEMY, 31707, "Waterbolt", 520 + i * 20, i == 2) end
+    hit(102.5, ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 30455, "Ice Lance", 640)
+    hit(103.5, ME, "Frostweaver", FME, L3, "Nethra", FENEMY, 30455, "Ice Lance", 1310, true)
+    hit(128, ME, "Frostweaver", FME, W1, "Gorehowl", FENEMY, 27079, "Fire Blast", 980)
+    hit(136.5, ME, "Frostweaver", FME, D2, "Leafshade", FENEMY, 30455, "Ice Lance", 660)
+    for i, amount in ipairs({ 480, 610, 390 }) do
+        ev(84 + i * 3, "SPELL_ABSORBED", nil, W1, "Gorehowl", FENEMY, 0, ME, "Frostweaver", FME, 0,
+            30330, "Mortal Strike", 1, P3, "Vespers", FPARTY, 0, 25218, "Power Word: Shield", 2, amount, false)
+    end
+    for i = 0, 4 do mend(96 + i * 3, P3, "Vespers", FPARTY, ME, "Frostweaver", FME, 25222, "Renew", 222, i == 4 and 222 or 0, true) end
+    mend(122, P3, "Vespers", FPARTY, R2, "Shiv", FPARTY, 33110, "Prayer of Mending", 800)
+    for i = 0, 5 do hit(113 + i * 3, P3, "Vespers", FPARTY, W1, "Gorehowl", FENEMY, 25368, "Shadow Word: Pain", 186, false, true) end
+    for i = 0, 5 do mend(77 + i * 3, D2, "Leafshade", FENEMY, L3, "Nethra", FENEMY, 26982, "Rejuvenation", 265, 0, true) end
+    for i = 0, 3 do mend(112 + i * 3, D2, "Leafshade", FENEMY, W1, "Gorehowl", FENEMY, 26982, "Rejuvenation", 265, i == 3 and 80 or 0, true) end
+    mend(121, D2, "Leafshade", FENEMY, W1, "Gorehowl", FENEMY, 26980, "Regrowth", 1650)
     table.sort(queue, function(a, b)
         if a.t ~= b.t then return a.t < b.t end
         return a.n < b.n
@@ -3963,6 +4094,9 @@ local function OnEvent(_, event, arg1, arg2, arg3, arg4, arg5)
         return
     end
     if event == "UPDATE_BATTLEFIELD_SCORE" then
+        -- The refresh first: on the event that ends a match it has no
+        -- target yet, so the board is read once there, not twice
+        ArenaRefreshScore()
         ArenaFinishIfDecided()
         BattlegroundFinishIfDecided()
         return

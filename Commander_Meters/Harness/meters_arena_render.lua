@@ -1,6 +1,6 @@
 -- Commander Meters ARENA REPORT renderer (luajit)
 --
---     luajit Commander_Meters/Harness/meters_arena_render.lua report.json [cursorT]
+--     luajit Commander_Meters/Harness/meters_arena_render.lua report.json [cursorT] [5v5] [uptime[=guid] | breakdown[=guid]]
 --     python3 Commander_ArenaFrames/Harness/render_svg.py report.json report.svg 2
 --     qlmanage -t -s 1800 -o . report.svg
 --
@@ -23,6 +23,17 @@ local cursorT = arg and arg[2] and tonumber(arg[2]) or nil
 -- A third argument of "5v5" synthesizes a five-a-side match through the
 -- engine and opens the replay on it: the tallest layout the window takes
 local fiveVfive = arg and arg[3] == "5v5"
+-- "uptime" (third or fourth) opens the UPTIME drawer instead of the
+-- dispel log, on the seat the drawer picks (or a guid after "=")
+local uptimeArg
+-- "breakdown" (third or fourth) opens the BREAKDOWN drawer the same way,
+-- on you (or a guid after "=")
+local breakdownArg
+for i = 3, 4 do
+    local a = arg and arg[i]
+    if a and a:find("^uptime") then uptimeArg = a end
+    if a and a:find("^breakdown") then breakdownArg = a end
+end
 
 _G.__widgets = {}
 
@@ -170,6 +181,27 @@ _G.__afterArenaReport = function(report)
         A.Finish(T0 + 100, "WIN", 40)
         CommanderMetersArena_Open(nil, m5.id)
         CommanderMetersArena_View().t = 81
+        report.__scripts.OnUpdate(report, 0.6)
+    end
+    if uptimeArg then
+        for _, w in ipairs(_G.__widgets) do
+            if w.headerRole == "arenaUptime" then w.__scripts.OnClick(w) end
+        end
+        local guid = uptimeArg:match("^uptime=(.+)$")
+        if guid then
+            local v = CommanderMetersArena_View()
+            v.uptGuid = guid
+        end
+        report.__scripts.OnUpdate(report, 0.6)
+    end
+    if breakdownArg then
+        local v = CommanderMetersArena_View()
+        if not v.bd then
+            for _, w in ipairs(_G.__widgets) do
+                if w.headerRole == "arenaBreakdown" then w.__scripts.OnClick(w) end
+            end
+        end
+        v.bdGuid = breakdownArg:match("^breakdown=(.+)$")
         report.__scripts.OnUpdate(report, 0.6)
     end
     if cursorT then

@@ -261,3 +261,65 @@ visible wrong label, or missing feature) rather than silently mis-attributing.
     *Test*: Dispel Magic / Mass Dispel a rogue under Cloak — the log shows
     the attempt as IMMUNE under its cast, MISS +1 in the tally.
 
+
+43. **The scoreboard's 14th value (`preMatchMMR`) is the player's own MMR
+    for the bracket, and the 15th does not exist** — there is no
+    `mmrChange` on this client. Supported by Devin's saved rated games
+    (ArenaArmory's store, 2026-10-20): every player carries a distinct
+    pre-match MMR, no row carries a post-match one, and his own pre-match
+    MMR moves every game in the direction of his rating change (usually
+    about twice its size). D31's MMR± column rests on it: the change is
+    read from the player's pre-match MMR in your next game.
+    *Test*: play two rated games in a row in one bracket — the first
+    game's SCOREBOARD shows your MMR± (and your partner's) the moment the
+    second one ends, equal to the second game's MMR minus the first's.
+
+44. **Ratings can reach the scoreboard after the winner is declared**, and
+    `UPDATE_BATTLEFIELD_SCORE` keeps firing while Blizzard's end-of-match
+    board is up (its OnUpdate calls `RequestBattlefieldScoreData` every
+    frame). D31 re-reads the board onto the closed match until you leave,
+    for at most two minutes; if the ratings were already there at the
+    winner, the re-read changes nothing.
+    *Test*: finish a rated game, open the replay before leaving — MMR and
+    RTG± are filled for every player, not dashes; leave and reopen — the
+    numbers are kept.
+
+45. **An aura fade the combat log never delivered is not seen.** The
+    interval runs from the APPLIED to the REMOVED (or the break, the
+    death, the end). A player out of combat-log range when a debuff fell
+    off leaves it counted until the next sign: a new application, their
+    death, or the match's end. The cards' icon rows have always read the
+    same intervals; D32's uptime inherits them.
+    *Test*: in a game where a druid kited into travel form across the map,
+    compare the drawer's Judgement of Justice stretches with when it was
+    really judged — a stretch far longer than 20 s without refreshes
+    means a missed fade.
+
+46. **Intervals are kept per debuff NAME on a seat**, so two casters' copies
+    of one debuff (two warlocks' Corruption) are one interval: the first
+    REMOVED ends it while the second copy is still up, and uptime reads
+    low. Mortal Strike and the other healing cuts do not stack across
+    casters, so D32's main answers are untouched; a double-same-class
+    comp's dots are the case to doubt.
+    *Test*: a game against (or with) two of one class — compare a shared
+    dot's uptime with each caster's casts.
+
+47. **`SPELL_ABSORBED` names the shielded player as its destination** — the
+    one whose damage the shield took — and the shield's caster in the
+    trailing caster fields. The engine already credited the absorb to the
+    caster's healing on that reading; D33's HEALED list also credits it
+    to the destination. Supported by the client's own combat-log layout
+    (the absorb rides the attack's source and destination).
+    *Test*: shield a teammate who then takes a hit — the BREAKDOWN on you
+    lists Power Word: Shield under SPELLS and that teammate under HEALED,
+    with the same amount.
+
+48. **A target name matches its seat by the name before the realm** when the
+    log and the roster disagree on the realm: the exact name first, else
+    the one seat whose realm-less name is the same. A cross-realm player
+    the log names "Name-Realm" still wears their class in TARGETS and
+    HEALED; two seats sharing a name on different realms match neither
+    and show uncoloured (the numbers are right either way: the list is
+    keyed by the log's name).
+    *Test*: a game against players from another realm — every enemy in
+    the mage's TARGETS carries a class icon and colour.

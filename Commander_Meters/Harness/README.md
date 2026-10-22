@@ -7,11 +7,11 @@ Run with the compile-gate luajit:
                                                      # throughput measurement, match mode, dispels (910 checks)
     /opt/homebrew/bin/luajit meters_arena_harness.lua # arena match engine: both teams,
                                                      # the DR ladder, replay state,
-                                                     # persistence round trip, insights, history, replay records, the three-source trinket, Feign Death, your personal rating in a teamless season, dispels + Mass Dispel + the dispel log (519 checks)
+                                                     # persistence round trip, insights, history, replay records, the three-source trinket, Feign Death, your personal rating in a teamless season, dispels + Mass Dispel + the dispel log, the scoreboard and the MMR change read from the next game, debuff uptime, the damage and healing breakdown (629 checks)
     /opt/homebrew/bin/luajit meters_ui_harness.lua   # UI smoke under a WoW mock, loading
                                                      # the REAL Commander_Events framework,
                                                      # incl. the Arena Report and a live
-                                                     # match through the event path, the spectator replay, the sidebar, match mode, the trinket badge and its client source, a live feign, the dispel log drawer and the DISPELS split, arena ratings on bar and seat tooltips, a scoreboard row with no name (405 checks)
+                                                     # match through the event path, the spectator replay, the sidebar, match mode, the trinket badge and its client source, a live feign, the dispel log drawer and the DISPELS split, arena ratings on bar and seat tooltips, a scoreboard row with no name, the SCOREBOARD band and its flag, the UPTIME drawer and its flag, the BREAKDOWN drawer and its flag (540 checks)
     /opt/homebrew/bin/luajit meters_ui_harness.lua arena-login
                                                      # login or /reload INSIDE an arena on an arena
                                                      # mode: the match starts at login and its repaint
@@ -29,7 +29,7 @@ possibly mid-match. Must print "No use-before-declaration".
 ## The Arena Report renderer
 
 ```
-luajit Commander_Meters/Harness/meters_arena_render.lua report.json [cursorSeconds]
+luajit Commander_Meters/Harness/meters_arena_render.lua report.json [cursorSeconds] [5v5] [uptime[=guid] | breakdown[=guid]]
 python3 Commander_ArenaFrames/Harness/render_svg.py report.json report.svg 2
 qlmanage -t -s 1900 -o . report.svg        # report.svg.png, on a Mac
 ```
@@ -40,6 +40,13 @@ Report is up on the canned 3v3, resolves every anchor to a rectangle and
 writes the lot for Arena Frames' SVG script. Text widths are estimated
 (no font metrics; icon escapes show as their raw text); positions, sizes
 and colours are exact. Pass a cursor time (e.g. `128`) to see the board
-scrubbed mid-match — HP strips, control tags, cooldown tags. Devin's
+scrubbed mid-match — HP strips, control tags, cooldown tags. `uptime`
+opens the UPTIME drawer instead of the dispel log (`uptime=<guid>` on that
+seat, e.g. `uptime=Player-1-CMARENA12` for the canned druid);
+`breakdown` opens the BREAKDOWN drawer the same way (on you, or
+`breakdown=Player-0-CMARENA03` for the canned priest). The renderer opens
+its drawer before the rest of the smoke runs, so the smoke's own
+"closed by default" checks fail under `uptime` or `breakdown` — the
+picture is the output there, not the check count. Devin's
 first-look layout pass (D27 pass 8) was made against these pictures;
 render before shipping any change to the report.

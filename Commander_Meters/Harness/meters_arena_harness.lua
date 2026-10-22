@@ -1453,6 +1453,427 @@ do
     eq(K.GetMatch("last").dlog[1].hits[1].name, "Blessing of Might", "J: the log survives the store")
 end
 
+-- ===========================================================================
+-- Stage K: the scoreboard (D31) — one seat's whole-match line, the board
+-- merged again onto a CLOSED match, and an MMR change read from the
+-- player's next game (the client never reports one)
+-- ===========================================================================
+
+do
+    local K = LoadArena()
+    local SH, GH, LS, NE = "Player-0-SHIV", "Player-1-GORE", "Player-1-LEAF", "Player-1-NETH"
+    -- One game: our character + Shiv against two, a blow so it is played,
+    -- the board merged, closed. `me` renames our character (an alt).
+    local function Game(ts, opts)
+        local m = K.Begin(ts, opts.map or "Nagrand Arena")
+        local meName = opts.me or "Devinp"
+        K.SetSeat("us", ME, meName, "MAGE", "Human", "player")
+        K.SetSeat("us", SH, opts.shivName or "Shiv", opts.shivClass or "ROGUE", "NightElf", "party1")
+        for _, e in ipairs(opts.them or { { GH, "Gorehowl", "WARRIOR" }, { LS, "Leafshade", "DRUID" } }) do
+            K.SetSeat("them", e[1], e[2], e[3])
+        end
+        if opts.bracket == 3 then K.SetSeat("them", "Player-1-X3", "Third", "PALADIN") end
+        K.OnCleu(ts + 5, "SWING_DAMAGE", nil, ME, meName, F_ME, 0, GH, "Gorehowl", F_ENEMY, 0,
+            100, 0, 1, 0, 0, 0, false, false, false, false)
+        m.rated = opts.rated
+        if opts.rows then K.MergeScoreboard(m, opts.rows, 1) end
+        K.Finish(ts + (opts.dur or 120), opts.result or "WIN")
+        return m
+    end
+    local function Row(name, mmr, rc, extra)
+        local r = { name = name, kb = 1, hk = 0, deaths = 0, dmg = 10000, heal = 2000, ratingChange = rc, mmr = mmr, faction = 1 }
+        for k, v in pairs(extra or {}) do r[k] = v end
+        return r
+    end
+    local MIN = 60
+
+    -- 1. ScoreLine: server numbers, the log's deaths, ratings only when rated
+    local g1 = Game(T0, { rated = true, rows = {
+        Row("Devinp", 1800, 12, { kb = 2, dmg = 31200, heal = 150, deaths = 0 }),
+        Row("Shiv", 1750, 10), Row("Gorehowl", 1820, -11), Row("Leafshade", 1790, -9) } })
+    g1.seats[GH].deaths = 1  -- the log saw him die; the board says 0 for everyone
+    local dmg, heal, kb, deaths, mmr, rc, server = K.ScoreLine(g1, g1.seats[ME])
+    CHECK(dmg == 31200 and heal == 150 and kb == 2 and server == true, "K: a scored seat reads the server's damage, healing and killing blows")
+    CHECK(mmr == 1800 and rc == 12, "K: ...and its MMR and rating change")
+    local _, _, _, gd = K.ScoreLine(g1, g1.seats[GH])
+    eq(gd, 1, "K: deaths come from the log — the arena board answers 0 for everyone")
+    local unscored = g1.seats[ME].sb
+    g1.seats[ME].sb = nil
+    local ld, lh, lk, _, lm, lr, ls = K.ScoreLine(g1, g1.seats[ME])
+    CHECK(ld == g1.seats[ME].dmg and lh == g1.seats[ME].heal + g1.seats[ME].absorb and lk == g1.seats[ME].kills,
+        "K: no board row: the log's damage, healing and kills stand in")
+    CHECK(lm == nil and lr == nil and ls == false, "K: ...with no ratings, marked not the server's")
+    g1.seats[ME].sb = unscored
+    -- A rated game can move someone by exactly 0
+    g1.seats[SH].sb.ratingChange = 0
+    local _, _, _, _, zm, zr = K.ScoreLine(g1, g1.seats[SH])
+    CHECK(zm == 1750 and zr == 0, "K: a rated +0 is a change of zero, not no change")
+    g1.seats[SH].sb.ratingChange = 10
+
+    -- 2. The next game teaches the change: you, a teammate, an opponent met again
+    local g2 = Game(T0 + 120 + 5 * MIN, { rated = true, rows = {
+        Row("Devinp", 1824, 9), Row("Shiv", 1771, 8), Row("Gorehowl", 1801, -10) },
+        them = { { GH, "Gorehowl", "WARRIOR" }, { NE, "Nethra", "WARLOCK" } } })
+    local after, nm, gap, sure = K.NextMmr(g1, g1.seats[ME])
+    CHECK(after == 1824 and nm == g2 and gap == 5 * MIN and sure == true, "K: your MMR after a game is your pre-match MMR in the next", tostring(after) .. " " .. tostring(gap))
+    after, nm, gap, sure = K.NextMmr(g1, g1.seats[SH])
+    CHECK(after == 1771 and sure == true, "K: a teammate queued with you again: theirs too, surely")
+    after, nm, gap, sure = K.NextMmr(g1, g1.seats[GH])
+    CHECK(after == 1801 and sure == false, "K: an opponent met again: reported, not sure")
+    local none, why = K.NextMmr(g1, g1.seats[LS])
+    CHECK(none == nil and why == "UNKNOWN", "K: a player not in your next game: unknown", why)
+    none, why = K.NextMmr(g2, g2.seats[ME])
+    CHECK(none == nil and why == "PENDING", "K: the newest game: its change is still to come", why)
+
+    -- 3. A skirmish in between is skipped; another bracket and an alt never count
+    local g3 = Game(T0 + 900, { rated = false, rows = { Row("Devinp", 0, 0), Row("Shiv", 0, 0) } })
+    local sm, sr = select(5, K.ScoreLine(g3, g3.seats[ME]))
+    CHECK(sm == nil and sr == nil, "K: a skirmish's MMR 0 and change 0 read as none")
+    eq(K.NextMmr(g3, g3.seats[ME]), nil, "K: a skirmish has no MMR to move")
+    Game(T0 + 1200, { rated = true, bracket = 3, rows = { Row("Devinp", 1650, 14), Row("Shiv", 1600, 14) } })
+    Game(T0 + 1500, { rated = true, me = "Altchar", rows = { Row("Altchar", 1500, 10), Row("Shiv", 1400, 10) } })
+    none, why = K.NextMmr(g2, g2.seats[ME])
+    CHECK(none == nil and why == "PENDING", "K: a skirmish, a 3v3 and an alt's game are not your next 2v2", why)
+    local g4 = Game(T0 + 1800, { rated = true, rows = { Row("Devinp", 1810, -12), Row("Shiv", 1760, -11) } })
+    after = K.NextMmr(g2, g2.seats[ME])
+    eq(after, 1810, "K: ...the next rated 2v2 is")
+    eq(K.NextMmr(g2, g2.seats[SH]), 1760, "K: and the teammate's, past the skirmish they played with you")
+
+    -- 4. Past half an hour only your own number is trusted
+    local g5 = Game(T0 + 1800 + 120 + 2 * 3600, { rated = true, rows = { Row("Devinp", 1830, 11), Row("Shiv", 1780, 12) } })
+    after, nm, gap = K.NextMmr(g4, g4.seats[ME])
+    CHECK(after == 1830 and gap == 2 * 3600, "K: yours, two hours later: still your next game")
+    none, why = K.NextMmr(g4, g4.seats[SH])
+    CHECK(none == nil and why == "UNKNOWN", "K: a teammate two hours later may have played without you")
+
+    -- 5. A rated game without a board in between ends the search: two games' worth is not one
+    local g6 = Game(T0 + 10000, { rated = nil, result = "LEFT" })
+    Game(T0 + 10300, { rated = true, rows = { Row("Devinp", 1790, -15), Row("Shiv", 1750, -14) } })
+    none, why = K.NextMmr(g5, g5.seats[ME])
+    CHECK(none == nil and why == "UNKNOWN", "K: a left game between hides the change", why)
+    eq(K.NextMmr(g6, g6.seats[ME]), nil, "K: the left game itself has no board, so no MMR")
+
+    -- 6. Names: a realm suffix still matches; a namesake of another class does not
+    local h1 = Game(T0 + 20000, { rated = true, rows = { Row("Devinp", 1700, 10), Row("Shiv", 1650, 10) } })
+    Game(T0 + 20300, { rated = true, shivName = "Shiv-Nightslayer", rows = { Row("Devinp", 1715, 9), Row("Shiv-Nightslayer", 1662, 9) } })
+    eq(K.NextMmr(h1, h1.seats[SH]), 1662, "K: Shiv and Shiv-Nightslayer are one player")
+    local h2 = K.GetMatch("last")
+    Game(T0 + 20600, { rated = true, shivClass = "PRIEST", rows = { Row("Devinp", 1722, 8), Row("Shiv", 1900, 8) } })
+    none, why = K.NextMmr(h2, h2.seats[SH])
+    CHECK(none == nil and why == "UNKNOWN", "K: a Shiv of another class is someone else")
+
+    -- 7. The board merged again onto a CLOSED match: the late ratings land,
+    -- an unseen player is seated, and no match is brought back to life
+    local late = Game(T0 + 30000, { rated = nil, rows = { Row("Devinp", 0, 0), Row("Shiv", 0, 0) } })
+    eq(late.rated, nil, "K: a board with no ratings yet does not decide rated")
+    local rev = late.sbRev
+    K.MergeScoreboard(late, { Row("Devinp", 0, 0), Row("Shiv", 0, 0) }, 1)
+    eq(late.sbRev, rev, "K: the same board again changes nothing")
+    K.MergeScoreboard(late, { Row("Devinp", 1740, 13), Row("Shiv", 1690, 12), Row("Hidden", 1720, -12, { faction = 0 }) }, 1)
+    CHECK(late.sbRev == rev + 1, "K: the late ratings count as a change of the board")
+    CHECK(late.seats[ME].sb.mmr == 1740 and late.seats[ME].sb.ratingChange == 13, "K: ...and land on the closed match")
+    eq(late.rated, true, "K: a late rating change marks it rated")
+    local hidden = late.seats["Score-Hidden"]
+    CHECK(hidden and hidden.team == "them" and hidden.fromScoreboard, "K: an unseen player on the late board takes a seat")
+    eq(K.Live(), nil, "K: merging onto a closed match never makes it live again")
+    eq(late.bracket, 3, "K: a third enemy on the late board makes it a 3v3, as it would before the result")
+
+    -- 8. The store keeps the board's revision and every reading round-trips
+    local store = K.Export(20)   -- strips the live bookkeeping first
+    local snap = K.Serialize(late)
+    local K2 = LoadArena()
+    CHECK(K2.Import(store) > 0, "K: the matches import")
+    local back
+    for _, mm in ipairs(K2.GetMatches()) do if mm.id == late.id then back = mm end end
+    eq(back and K2.Serialize(back), snap, "K: a re-merged match round-trips byte-identically")
+    local b1
+    for _, mm in ipairs(K2.GetMatches()) do if mm.id == g1.id then b1 = mm end end
+    eq(b1 and K2.NextMmr(b1, b1.seats[ME]), 1824, "K: the next-game reading works on an imported history")
+end
+
+-- ===========================================================================
+-- Stage L: debuff uptime (D32) — the debuffs one side kept on one player,
+-- the window from the gates to their death, the drops, the healing-reduced
+-- union, and what never counts (their own team's debuffs, buffs, a source
+-- that is no seat)
+-- ===========================================================================
+
+do
+    local L = LoadArena()
+    local WA, PA, RO = "Player-0-WARR", "Player-0-PALA", "Player-0-ROGU"
+    local DR, PR = "Player-1-DRU", "Player-1-PRI"
+    local m = L.Begin(T0, "Nagrand Arena")
+    L.SetSeat("us", WA, "Bonecrush", "WARRIOR", "Orc", "player")
+    L.SetSeat("us", PA, "Lightbringer", "PALADIN", "BloodElf", "party1")
+    L.SetSeat("us", RO, "Shiv", "ROGUE", "Undead", "party2")
+    L.SetSeat("them", DR, "Leafshade", "DRUID", "NightElf", "arena1", "Resto")
+    L.SetSeat("them", PR, "Vespera", "PRIEST", "Human", "arena2")
+    L.SetGates(T0 + 60)
+    local function On(ts, sub, sg, sn, dg, dn, id, name, kind)
+        L.OnCleu(T0 + ts, sub, nil, sg, sn, sg and (sg:find("^Player%-1") and F_ENEMY or F_PARTY) or 0, 0,
+            dg, dn, dg:find("^Player%-1") and F_ENEMY or F_PARTY, 0, id, name, 1, kind or "DEBUFF")
+    end
+    -- Mortal Strike: three stretches, two drops (10 s, then 15 s)
+    On(65, "SPELL_AURA_APPLIED", WA, "Bonecrush", DR, "Leafshade", 30330, "Mortal Strike")
+    On(70, "SPELL_AURA_REFRESH", WA, "Bonecrush", DR, "Leafshade", 30330, "Mortal Strike")
+    On(75, "SPELL_AURA_REFRESH", WA, "Bonecrush", DR, "Leafshade", 30330, "Mortal Strike")
+    On(85, "SPELL_AURA_REMOVED", WA, "Bonecrush", DR, "Leafshade", 30330, "Mortal Strike")
+    On(95, "SPELL_AURA_APPLIED", WA, "Bonecrush", DR, "Leafshade", 30330, "Mortal Strike")
+    On(105, "SPELL_AURA_REMOVED", WA, "Bonecrush", DR, "Leafshade", 30330, "Mortal Strike")
+    On(120, "SPELL_AURA_APPLIED", WA, "Bonecrush", DR, "Leafshade", 30330, "Mortal Strike")
+    -- Judgement of Justice: faded and judged again the same second — one stretch
+    On(62, "SPELL_AURA_APPLIED", PA, "Lightbringer", DR, "Leafshade", 20184, "Judgement of Justice")
+    On(82, "SPELL_AURA_REMOVED", PA, "Lightbringer", DR, "Leafshade", 20184, "Judgement of Justice")
+    On(82, "SPELL_AURA_APPLIED", PA, "Lightbringer", DR, "Leafshade", 20184, "Judgement of Justice")
+    On(100, "SPELL_AURA_REMOVED", PA, "Lightbringer", DR, "Leafshade", 20184, "Judgement of Justice")
+    -- Wound Poison, stacking, overlapping both Mortal Strikes' edges
+    On(80, "SPELL_AURA_APPLIED", RO, "Shiv", DR, "Leafshade", 27189, "Wound Poison V")
+    On(82, "SPELL_AURA_APPLIED_DOSE", RO, "Shiv", DR, "Leafshade", 27189, "Wound Poison V")
+    On(98, "SPELL_AURA_REMOVED", RO, "Shiv", DR, "Leafshade", 27189, "Wound Poison V")
+    -- Repentance broken by a blow with no REMOVED after it: the break ends it
+    On(108, "SPELL_AURA_APPLIED", PA, "Lightbringer", DR, "Leafshade", 20066, "Repentance")
+    L.OnCleu(T0 + 110, "SPELL_AURA_BROKEN_SPELL", nil, WA, "Bonecrush", F_PARTY, 0, DR, "Leafshade", F_ENEMY, 0,
+        20066, "Repentance", 1, 30330, "Mortal Strike", 1, "DEBUFF")
+    -- Never counted: their own priest's Weakened Soul, a buff, a source with no seat
+    On(70, "SPELL_AURA_APPLIED", PR, "Vespera", DR, "Leafshade", 6788, "Weakened Soul")
+    On(85, "SPELL_AURA_REMOVED", PR, "Vespera", DR, "Leafshade", 6788, "Weakened Soul")
+    On(70, "SPELL_AURA_APPLIED", PR, "Vespera", DR, "Leafshade", 25218, "Power Word: Shield", "BUFF")
+    L.OnCleu(T0 + 90, "SPELL_AURA_APPLIED", nil, "Creature-0-DUMMY", "Dummy", 0xa48, 0,
+        DR, "Leafshade", F_ENEMY, 0, 1, "Creature Curse", 1, "DEBUFF")
+    -- On us: their priest's Shadow Word: Pain on the warrior
+    On(70, "SPELL_AURA_APPLIED", PR, "Vespera", WA, "Bonecrush", 25368, "Shadow Word: Pain")
+    On(88, "SPELL_AURA_REMOVED", PR, "Vespera", WA, "Bonecrush", 25368, "Shadow Word: Pain")
+    -- Damage: the priest takes the most (the one trained) — the shared
+    -- helpers drive Stage A's engine, so this stage calls its own
+    local function Hit(ts, dg, dn, amount)
+        L.OnCleu(T0 + ts, "SPELL_DAMAGE", nil, WA, "Bonecrush", F_ME, 0, dg, dn, F_ENEMY, 0,
+            30330, "Mortal Strike", 1, amount, 0, 1, 0, 0, 0, false, false, false, false)
+    end
+    Hit(66, DR, "Leafshade", 1000)
+    Hit(67, PR, "Vespera", 3000)
+
+    -- Live, mid-way: an open Mortal Strike counts to the cursor
+    local u = {}
+    L.Uptime(m, DR, 125, u)
+    local live
+    for i = 1, u.n do if u.rows[i].name == "Mortal Strike" then live = u.rows[i] end end
+    near(live and live.secs or 0, 35, "L: live, the open Mortal Strike counts to the cursor (20 + 10 + 5)")
+    eq(L.UptimeTarget(m), PR, "L: the drawer opens on the enemy who took the most damage")
+
+    Hit(129, DR, "Leafshade", 2500)
+    L.OnCleu(T0 + 130, "UNIT_DIED", nil, nil, nil, 0x80000000, 0, DR, "Leafshade", F_ENEMY, 0)
+    L.Finish(T0 + 140, "WIN")
+
+    -- The whole match: gates (60) to the druid's death (130) = 70 s
+    L.Uptime(m, DR, m.tEnd, u)
+    CHECK(u.t0 == 60 and u.tFull == 130 and u.t1 == 130 and u.span == 70, "L: the window runs from the gates to their death",
+        string.format("%s %s %s %s", u.t0, u.tFull, u.t1, u.span))
+    eq(u.died, 130, "L: their death is in the window")
+    eq(u.n, 4, "L: four debuffs from the other team")
+    local byName = {}
+    for i = 1, u.n do byName[u.rows[i].name] = u.rows[i] end
+    CHECK(not byName["Weakened Soul"] and not byName["Power Word: Shield"] and not byName["Creature Curse"],
+        "L: their own team's debuff, a buff and a seatless source never count")
+    local ms, jj, wp = byName["Mortal Strike"], byName["Judgement of Justice"], byName["Wound Poison V"]
+    CHECK(byName["Repentance"] and byName["Repentance"].secs == 2, "L: a broken debuff ends at the break, REMOVED or not")
+    CHECK(u.rows[1] == ms and u.rows[2] == jj and u.rows[3] == wp, "L: rows by seconds up, most first")
+    near(ms.secs, 40, "L: Mortal Strike up 40 s (closed by the death)")
+    near(ms.pct, 40 / 70, "L: ...57% of the time alive")
+    CHECK(ms.n == 3 and ms.longest == 20 and ms.first == 65, "L: ...in three stretches, the longest 20 s, first at 65",
+        string.format("%s %s %s", ms.n, ms.longest, ms.first))
+    CHECK(ms.gap == 15 and ms.gapAt == 105, "L: ...the longest drop 15 s from 1:45", string.format("%s %s", ms.gap, tostring(ms.gapAt)))
+    near(ms.srcs[WA] or 0, 40, "L: ...all of it the warrior's")
+    CHECK(ms.ivN == 6 and ms.iv[1] == 65 and ms.iv[2] == 85 and ms.iv[5] == 120 and ms.iv[6] == 130, "L: ...its stretches for the strip")
+    CHECK(jj.n == 1 and jj.secs == 38, "L: a fade and a judgement the same second is one stretch", jj.n .. " " .. jj.secs)
+    CHECK(jj.gap == 30 and jj.gapAt == 100, "L: the drop after the last fade counts (100 to the death)")
+    -- Healing reduced: MS [65,85] [95,105] [120,130] ∪ WP [80,98] = [65,105] + [120,130]
+    local h = u.heal
+    CHECK(h ~= nil, "L: a healing-reduced row")
+    CHECK(h and h.secs == 50 and h.n == 2 and h.gap == 15 and h.gapAt == 105, "L: ...the union of Mortal Strike and Wound Poison",
+        h and string.format("%s %s %s %s", h.secs, h.n, h.gap, tostring(h.gapAt)))
+    CHECK(h and h.srcs["Mortal Strike"] == 37 and h.srcs["Wound Poison V"] == 13, "L: ...credited to whichever was on first")
+
+    -- As of a cursor: 1:30 (window 60-90)
+    L.Uptime(m, DR, 90, u)
+    eq(u.span, 30, "L: the cursor shortens the window")
+    eq(u.died, nil, "L: a death after the cursor is not in it")
+    CHECK(u.rows[1].name == "Judgement of Justice" and u.rows[1].secs == 28, "L: at the cursor JoJ leads (28 s)")
+    CHECK(u.rows[2].name == "Mortal Strike" and u.rows[2].secs == 20 and u.rows[2].gap == 5 and u.rows[2].gapAt == 85,
+        "L: ...Mortal Strike 20 s, dropped 5 s ago")
+    CHECK(u.heal and u.heal.secs == 25, "L: ...healing reduced 25 s")
+    L.Uptime(m, DR, 50, u)
+    CHECK(u.span == 0 and u.n == 0 and u.heal == nil, "L: before the gates there is nothing to read")
+
+    -- The other side, on the same out table: rows never leak between targets
+    L.Uptime(m, WA, m.tEnd, u)
+    CHECK(u.n == 1 and #u.rows == 1 and u.rows[1].name == "Shadow Word: Pain", "L: on our warrior: their priest's dot alone")
+    CHECK(u.tFull == 140 and u.span == 80 and u.heal == nil, "L: ...alive to the end, no healing reduced")
+    near(u.rows[1].srcs[PR] or 0, 18, "L: ...credited to their priest")
+    CHECK(next(u.rows[1].srcs, next(u.rows[1].srcs)) == nil, "L: a reused row keeps no stale casters")
+    L.Uptime(m, "Player-9-NOBODY", m.tEnd, u)
+    CHECK(u.n == 0 and #u.rows == 0, "L: an unknown seat reads empty")
+    m.seats[DR].auraDropped = 2
+    L.Uptime(m, DR, m.tEnd, u)
+    eq(u.dropped, 2, "L: intervals past the cap are reported")
+    m.seats[DR].auraDropped = 0
+
+    -- The store keeps every interval: an imported match reads the same
+    local store = L.Export(20)
+    local L2 = LoadArena()
+    CHECK(L2.Import(store) > 0, "L: the match imports")
+    local back = L2.GetMatches()[1]
+    local u2 = L2.Uptime(back, DR, back.tEnd, {})
+    CHECK(u2.n == 4 and u2.rows[1].secs == 40 and u2.heal and u2.heal.secs == 50, "L: an imported match reads the same uptime")
+end
+
+-- ===========================================================================
+-- Stage M: the breakdown (D33) — one seat's damage by ability and by
+-- target, its healing by spell and by whom it landed on, whole match and as
+-- of a cursor, adding up to the METERS band's numbers at any second
+-- ===========================================================================
+
+do
+    local M = LoadArena()
+    local MA, PR = "Player-0-MAGE", "Player-0-PRI"
+    local WA, DR = "Player-1-WAR", "Player-1-DRU"
+    local WE, TOTEM = "Pet-0-ELEM", "Creature-0-GROUND"
+    local m = M.Begin(T0, "Blade's Edge Arena")
+    M.SetSeat("us", PR, "Vespers", "PRIEST", "Dwarf", "party1", "Disc")
+    M.SetSeat("us", MA, "Frostweaver", "MAGE", "Human", "player", "Frost")
+    M.SetSeat("them", WA, "Gorehowl", "WARRIOR", "Orc", "arena1")
+    M.SetSeat("them", DR, "Leafshade-Mograine", "DRUID", "Tauren", "arena2", "Resto")
+    M.SetOwner(WE, MA, "Water Elemental")
+    M.SetGates(T0 + 60)
+    local function Dmg(ts, sg, sn, sf, dg, dn, df, id, name, amount, absorbed, crit)
+        M.OnCleu(T0 + ts, "SPELL_DAMAGE", nil, sg, sn, sf, 0, dg, dn, df, 0,
+            id, name, 16, amount, 0, 16, 0, 0, absorbed or 0, crit or false, false, false, false)
+    end
+    local function Heal(ts, sub, dg, dn, df, id, name, amount, over)
+        M.OnCleu(T0 + ts, sub, nil, PR, "Vespers", F_PARTY, 0, dg, dn, df, 0, id, name, 2, amount, over or 0, 0, false)
+    end
+    -- The mage: Frostbolts on both, one into a shield, one wholly absorbed
+    Dmg(65, MA, "Frostweaver", F_ME, WA, "Gorehowl", F_ENEMY, 27072, "Frostbolt", 2000)
+    Dmg(70, MA, "Frostweaver", F_ME, DR, "Leafshade", F_ENEMY, 27079, "Fire Blast", 900)
+    Dmg(80, MA, "Frostweaver", F_ME, WA, "Gorehowl", F_ENEMY, 27072, "Frostbolt", 2500, 0, true)
+    Dmg(85, WE, "Water Elemental", F_FPET, WA, "Gorehowl", F_ENEMY, 31707, "Waterbolt", 1100)
+    Dmg(90, MA, "Frostweaver", F_ME, DR, "Leafshade", F_ENEMY, 27072, "Frostbolt", 1200, 300)
+    Dmg(100, MA, "Frostweaver", F_ME, WA, "Gorehowl", F_ENEMY, 27072, "Frostbolt", 1800)
+    M.OnCleu(T0 + 108, "SPELL_DAMAGE", nil, MA, "Frostweaver", F_ME, 0, TOTEM, "Grounding Totem", 0xa48, 0,
+        27079, "Fire Blast", 4, 150, 0, 4, 0, 0, 0, false, false, false, false)
+    M.OnCleu(T0 + 110, "SPELL_MISSED", nil, MA, "Frostweaver", F_ME, 0, WA, "Gorehowl", F_ENEMY, 0,
+        27072, "Frostbolt", 16, "ABSORB", false, 700, false)
+    M.OnCleu(T0 + 112, "SPELL_MISSED", nil, MA, "Frostweaver", F_ME, 0, DR, "Leafshade", F_ENEMY, 0,
+        12826, "Polymorph", 64, "RESIST", false, 0, false)
+    -- The priest: a Flash Heal on the mage, a Renew tick on herself, a
+    -- Greater Heal that was all overheal, a shield, a Smite
+    Heal(75, "SPELL_HEAL", MA, "Frostweaver", F_ME, 25235, "Flash Heal", 1500, 200)
+    Heal(85, "SPELL_PERIODIC_HEAL", PR, "Vespers", F_PARTY, 25222, "Renew", 400)
+    Heal(95, "SPELL_HEAL", MA, "Frostweaver", F_ME, 25213, "Greater Heal", 3000, 3000)
+    M.OnCleu(T0 + 100, "SPELL_ABSORBED", nil, WA, "Gorehowl", F_ENEMY, 0, MA, "Frostweaver", F_ME, 0,
+        30330, "Mortal Strike", 1, PR, "Vespers", F_PARTY, 0, 25218, "Power Word: Shield", 2, 1000, false)
+    Dmg(105, PR, "Vespers", F_PARTY, WA, "Gorehowl", F_ENEMY, 25364, "Smite", 800)
+    -- The warrior spreads 10 a hit over 42 dummies, then one more past the cap
+    for i = 1, 42 do
+        M.OnCleu(T0 + 70, "SWING_DAMAGE", nil, WA, "Gorehowl", F_ENEMY, 0, "Creature-0-D" .. i, "Dummy " .. i, 0xa48, 0,
+            10, 0, 1, 0, 0, 0, false, false, false, false)
+    end
+    M.OnCleu(T0 + 120, "SWING_DAMAGE", nil, WA, "Gorehowl", F_ENEMY, 0, "Creature-0-D50", "Dummy 50", 0xa48, 0,
+        10, 0, 1, 0, 0, 0, false, false, false, false)
+    M.Finish(T0 + 130, "WIN")
+
+    eq(M.BreakdownSeat(m), MA, "M: the drawer opens on you")
+    local DMG, HEAL = M.StatByKey("DMG"), M.StatByKey("HEAL")
+    local o = M.Breakdown(m, MA, nil, {})
+    local d = o.dmg
+    eq(o.whole, false, "M: a whole-match read is no fallback")
+    eq(d.full, m.seats[MA].dmg, "M: the abilities add up to the mage's damage")
+    eq(d.total, d.full, "M: ...and at the end the cursor reads the whole match")
+    eq(d.n, 3, "M: Frostbolt, Waterbolt, Fire Blast; the resisted Polymorph did no damage")
+    CHECK(d.rows[1].key == "Frostbolt" and d.rows[1].full == 8500, "M: Frostbolt leads with 8500 (a shield's share and a full absorb in it)",
+        d.rows[1].key .. " " .. d.rows[1].full)
+    CHECK(d.rows[2].key == "Water Elemental: Waterbolt" and d.rows[2].pet == "Water Elemental" and d.rows[2].name == "Waterbolt",
+        "M: the pet's ability is the mage's, under the pet's name")
+    CHECK(d.rows[3].key == "Fire Blast" and d.rows[3].full == 1050, "M: Fire Blast, the totem's 150 in it")
+    CHECK(d.rows[1].rec.crit == 1 and d.rows[1].rec.count == 5 and d.rows[1].rec.max == 2500, "M: a row carries its record (hits, crits, biggest)")
+    eq(d.onN, 3, "M: three targets")
+    CHECK(d.on[1].key == "Gorehowl" and d.on[1].full == 8100 and d.on[1].guid == WA, "M: the warrior took 8100, and is a seat")
+    CHECK(d.on[2].key == "Leafshade" and d.on[2].guid == DR, "M: a target named without a realm finds the seat with one")
+    CHECK(d.on[3].key == "Grounding Totem" and d.on[3].guid == nil and d.on[3].full == 150, "M: a totem is a target with no seat")
+    local h = o.heal
+    eq(h.full, m.seats[MA].heal + m.seats[MA].absorb, "M: the mage healed nothing")
+    eq(h.n, 0, "M: ...and lists nothing")
+
+    local p = M.Breakdown(m, PR, nil, {})
+    h = p.heal
+    eq(h.full, 2700, "M: the priest's healing, shields included")
+    eq(h.full, m.seats[PR].heal + m.seats[PR].absorb, "M: ...the HEAL stat exactly")
+    eq(h.n, 4, "M: four spells, the all-overheal Greater Heal among them")
+    CHECK(h.rows[1].key == "Flash Heal" and h.rows[2].key == "Power Word: Shield" and h.rows[3].key == "Renew"
+        and h.rows[4].key == "Greater Heal" and h.rows[4].full == 0 and h.rows[4].rec.overheal == 3000,
+        "M: by healing done, the wasted Greater Heal last with its overheal")
+    eq(h.onN, 2, "M: two players healed")
+    CHECK(h.on[1].key == "Frostweaver" and h.on[1].full == 2300 and h.on[1].guid == MA, "M: the mage got the Flash Heal and the shield's 1000")
+    CHECK(h.on[2].key == "Vespers" and h.on[2].full == 400, "M: the priest's Renew on herself")
+    eq(p.dmg.full, 800, "M: the priest's Smite")
+
+    -- As of 1:25.5 (bucket 86): the METERS band's numbers, the whole-match order
+    o = M.Breakdown(m, MA, 85.5, o)
+    d = o.dmg
+    eq(d.total, 6500, "M: at the cursor: two Frostbolts, the Waterbolt that second, the Fire Blast")
+    eq(d.total, M.SeatValueAt(m, m.seats[MA], DMG, 85.5), "M: ...the meters band's DMG at the cursor")
+    CHECK(d.rows[1].key == "Frostbolt" and d.rows[1].value == 4500, "M: Frostbolt 4500 so far, still first")
+    CHECK(d.rows[3].key == "Fire Blast" and d.rows[3].value == 900, "M: Fire Blast without the later totem")
+    CHECK(d.on[1].value == 5600 and d.on[2].value == 900 and d.on[3].value == 0, "M: targets as of the cursor; the totem listed at 0")
+    eq(d.full, 10650, "M: the whole match rides along")
+    p = M.Breakdown(m, PR, 85.5, p)
+    eq(p.heal.total, 1700, "M: the priest's healing at the cursor: the Flash Heal and the Renew")
+    eq(p.heal.total, M.SeatValueAt(m, m.seats[PR], HEAL, 85.5), "M: ...the meters band's HEAL at the cursor")
+    CHECK(p.heal.rows[2].key == "Power Word: Shield" and p.heal.rows[2].value == 0, "M: the shield not absorbed yet")
+    CHECK(p.heal.on[1].value == 1300 and p.heal.on[2].value == 400, "M: healed as of the cursor")
+    o = M.Breakdown(m, MA, 50, o)
+    CHECK(o.dmg.total == 0 and o.dmg.n == 3, "M: before the gates: every row listed, nothing done")
+
+    -- Past the cap: names fold into (other), its series too
+    local w = M.Breakdown(m, WA, nil, {})
+    local other
+    for i = 1, w.dmg.onN do if w.dmg.on[i].key == "(other)" then other = w.dmg.on[i] end end
+    eq(w.dmg.onN, 41, "M: forty names and (other)")
+    CHECK(other and other.full == 30, "M: (other) holds the two past the cap and the late one")
+    w = M.Breakdown(m, WA, 100, w)
+    other = nil
+    for i = 1, w.dmg.onN do if w.dmg.on[i].key == "(other)" then other = w.dmg.on[i] end end
+    CHECK(other and other.value == 20, "M: ...and reads its own cursor")
+    eq(w.dmg.total, M.SeatValueAt(m, m.seats[WA], DMG, 100), "M: the warrior's total at the cursor")
+
+    -- A reused out table on an unknown seat holds no stale rows
+    M.Breakdown(m, "Player-9-NOBODY", nil, o)
+    CHECK(o.dmg.n == 0 and #o.dmg.rows == 0 and o.dmg.onN == 0 and #o.dmg.on == 0 and o.heal.n == 0,
+        "M: an unknown seat reads empty")
+
+    -- The store keeps the series: an imported match reads the same cursor
+    local store = M.Export(20)
+    local M2 = LoadArena()
+    CHECK(M2.Import(store) > 0, "M: the match imports")
+    local back = M2.GetMatches()[1]
+    local b2 = M2.Breakdown(back, PR, 85.5, {})
+    CHECK(b2.whole == false and b2.heal.total == 1700 and b2.heal.on[1].key == "Frostweaver", "M: an imported match reads the same at the cursor")
+    -- A match saved before the breakdown: no series, no healed names; it
+    -- reads whole-match at any cursor and says so
+    back.keySeries = nil
+    for _, seat in pairs(back.seats) do
+        seat.healTargets, seat.healTargetsN, seat.sTargets, seat.sHealTargets = nil, nil, nil, nil
+        for _, rec in pairs(seat.spells) do rec.s = nil end
+        for _, rec in pairs(seat.heals) do rec.s = nil end
+    end
+    local old = M2.Export(20)
+    local M3 = LoadArena()
+    CHECK(M3.Import(old) > 0, "M: an old store imports")
+    local oldM = M3.GetMatches()[1]
+    local b3 = M3.Breakdown(oldM, PR, 85.5, {})
+    CHECK(b3.whole == true and b3.heal.total == 2700 and b3.heal.onN == 0, "M: an old store reads the whole match, healed names unknown")
+    eq(M3.Breakdown(oldM, PR, nil, {}).whole, false, "M: ...and at the end it is no fallback")
+end
+
 if fails > 0 then
     io.write(string.format("RESULT: %d/%d FAILED\n", fails, checks))
     os.exit(1)

@@ -34,7 +34,9 @@
 --     drained and drunk, trinkets, and every book cooldown seen — the
 --     book is Commander Arena Frames' when it is installed.
 --   * Per-second series (damage, healing, taken, casts) and HP snapshots,
---     so the replay can show the state of the board at any second.
+--     so the replay can show the state of the board at any second — and
+--     per ability and per target, damage and healing both, with whom each
+--     heal landed on, for the replay's BREAKDOWN at any second (D33).
 --   * A bounded ledger of MOMENTS — the discrete events worth reading in
 --     a timeline — in the order they happened.
 --
@@ -310,6 +312,8 @@ local function NewMatch(id, ts)
         runTime = nil,          -- server's match age at the end (s)
         scored = false,         -- scoreboard merged
         tLast = 0,              -- newest combat-log time seen (keeps END last)
+        keySeries = true,       -- abilities and targets carry per-second series (D33);
+                                -- a match stored before them reads whole-match only
     }
 end
 
@@ -334,10 +338,14 @@ local function NewSeat(guid, team)
         heals = {}, healsN = 0,
         takenSpells = {}, takenSpellsN = 0, -- damage-taken records
         targets = {}, targetsN = 0,      -- name -> damage
+        healTargets = {}, healTargetsN = 0, -- name -> healing (effective + absorbs)
         sources = {}, sourcesN = 0,      -- name -> damage taken
         ccSpells = {}, ccSpellsN = 0,    -- CC applied by aura name
         castSpells = {}, castSpellsN = 0,
         sDmg = nil, sHeal = nil, sTaken = nil, sCasts = nil,
+        -- The breakdown's cursor (D33): name -> bucket -> amount, keyed as
+        -- `targets` / `healTargets` are; a record's own series is rec.s
+        sTargets = nil, sHealTargets = nil,
         sHp = nil,              -- bucket -> hp per mille (last snapshot that second)
         hpMax = nil,
         sPow = nil,             -- bucket -> power per mille
@@ -382,18 +390,20 @@ local function Rec(seat, mapField, nField, key, name, pet, id)
     return rec
 end
 
+-- Returns the key the amount landed under (OTHER_NAMES past the cap)
 local function Tally(seat, mapField, nField, key, amount)
     local map = seat[mapField]
     if map[key] ~= nil then
         map[key] = map[key] + amount
-        return
+        return key
     end
     if seat[nField] < NAME_CAP then
         seat[nField] = seat[nField] + 1
         map[key] = amount
-    else
-        map[OTHER_NAMES] = (map[OTHER_NAMES] or 0) + amount
+        return key
     end
+    map[OTHER_NAMES] = (map[OTHER_NAMES] or 0) + amount
+    return OTHER_NAMES
 end
 
 local function PetKey(petName, spellName)
@@ -483,13 +493,15 @@ end
 -- Seats. team = "us" | "them". Nil fields mean "not right now", never
 -- "not any more": a stealthed enemy answers nil to every unit query and
 -- must not have its identity erased.
-function A.SetSeat(team, guid, name, class, race, token, spec)
-    if not live or not guid then return end
-    local seat = live.seats[guid]
+-- Seats on a given match: the live one (SetSeat), or a closed one when
+-- the scoreboard is read again after the result (MergeScoreboard)
+local function SeatOn(m, team, guid, name, class, race, token, spec)
+    if not m or not guid then return end
+    local seat = m.seats[guid]
     if not seat then
         seat = NewSeat(guid, team)
-        live.seats[guid] = seat
-        local tm = live.teams[team]
+        m.seats[guid] = seat
+        local tm = m.teams[team]
         tm.n = tm.n + 1
         tm.order[tm.n] = guid
     elseif seat.team ~= team then
@@ -502,9 +514,13 @@ function A.SetSeat(team, guid, name, class, race, token, spec)
     if token then seat.token = token end
     if spec then seat.spec = spec end
     -- Bracket: the larger roster, snapped to a real arena size
-    local n = max(live.teams.us.n, live.teams.them.n)
-    live.bracket = n <= 2 and 2 or (n <= 3 and 3 or 5)
+    local n = max(m.teams.us.n, m.teams.them.n)
+    m.bracket = n <= 2 and 2 or (n <= 3 and 3 or 5)
     return seat
+end
+
+function A.SetSeat(team, guid, name, class, race, token, spec)
+    return SeatOn(live, team, guid, name, class, race, token, spec)
 end
 
 function A.SetOwner(minionGuid, ownerGuid, minionName)
@@ -733,6 +749,13 @@ local function Series(seat, field, b, amount)
     s[b] = (s[b] or 0) + amount
 end
 
+-- One name's series in a seat's name -> series map (the breakdown's targets)
+local function NameSeries(seat, field, key, b, amount)
+    local by = seat[field]
+    if not by then by = {}; seat[field] = by end
+    Series(by, key, b, amount)
+end
+
 local function CreditDamage(m, seat, petName, ts, spellName, spellId, target, amount, absorbed, crit)
     seat.dmg = seat.dmg + amount
     seat.hits = seat.hits + 1
@@ -746,9 +769,13 @@ local function CreditDamage(m, seat, petName, ts, spellName, spellId, target, am
     if absorbed > 0 then rec.absorbed = rec.absorbed + absorbed end
     if not rec.min or amount < rec.min then rec.min = amount end
     if not rec.max or amount > rec.max then rec.max = amount end
-    if target then Tally(seat, "targets", "targetsN", target, amount) end
+    local tkey = target and Tally(seat, "targets", "targetsN", target, amount)
     local b = Bucket(m, ts)
-    if b then Series(seat, "sDmg", b, amount) end
+    if b then
+        Series(seat, "sDmg", b, amount)
+        Series(rec, "s", b, amount)
+        if tkey then NameSeries(seat, "sTargets", tkey, b, amount) end
+    end
 end
 
 local function CreditTaken(m, seat, ts, spellName, spellId, source, srcGuid, amount, absorbed, crit)
@@ -769,7 +796,9 @@ local function CreditTaken(m, seat, ts, spellName, spellId, source, srcGuid, amo
     lh.guid, lh.t, lh.name, lh.id = srcGuid, Rel(m, ts), spellName, spellId
 end
 
-local function CreditHealing(m, seat, petName, ts, spellName, spellId, effective, over, crit, isAbsorb)
+-- `target`: whom it landed on (the healed, or the one whose damage a
+-- shield took); a heal that was all overheal names no one
+local function CreditHealing(m, seat, petName, ts, spellName, spellId, effective, over, crit, isAbsorb, target)
     if isAbsorb then
         seat.absorb = seat.absorb + effective
     else
@@ -782,8 +811,13 @@ local function CreditHealing(m, seat, petName, ts, spellName, spellId, effective
     rec.count = rec.count + 1
     rec.overheal = rec.overheal + over
     if crit then rec.crit = rec.crit + 1 end
+    local tkey = target and effective > 0 and Tally(seat, "healTargets", "healTargetsN", target, effective)
     local b = Bucket(m, ts)
-    if b then Series(seat, "sHeal", b, effective) end
+    if b then
+        Series(seat, "sHeal", b, effective)
+        if effective > 0 then Series(rec, "s", b, effective) end
+        if tkey then NameSeries(seat, "sHealTargets", tkey, b, effective) end
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1146,6 +1180,9 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
             Anomaly("aura break with unexpected layout")
             return
         end
+        -- A broken aura is gone: its interval ends here, a REMOVED after it
+        -- or none (the uptime drawer reads these intervals)
+        CloseAura(dst, a13, Rel(m, ts))
         if not dst.openCC[a13] then return end
         local t = Rel(m, ts)
         local breaker = SeatOf(m, sg, sn, sf)
@@ -1374,7 +1411,7 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         local seat, pet = SeatOf(m, cg, cn, cf)
         if not seat then return end
         CreditHealing(m, seat, pet, ts, spellName, type(shieldId) == "number" and shieldId or nil,
-            amount, 0, crit and true or false, true)
+            amount, 0, crit and true or false, true, type(dn) == "string" and dn ~= "" and dn or nil)
         return
     end
 
@@ -1487,7 +1524,8 @@ function A.OnCleu(ts, sub, hideCaster, sg, sn, sf, srf, dg, dn, df, drf,
         if not src then return end
         local effective = amount - over
         if effective < 0 then effective = 0 end
-        CreditHealing(m, src, pet, ts, spellName, spellId, effective, over, crit and true or false, false)
+        CreditHealing(m, src, pet, ts, spellName, spellId, effective, over, crit and true or false, false,
+            type(dn) == "string" and dn ~= "" and dn or nil)
         return
     end
 end
@@ -1507,23 +1545,39 @@ local function ShortName(name)
     return name
 end
 
+local SCORE_FIELDS = { "kb", "hk", "deaths", "dmg", "heal", "ratingChange", "mmr" }
+
+local function SameScore(a, b)
+    if not a then return false end
+    for i = 1, #SCORE_FIELDS do
+        local k = SCORE_FIELDS[i]
+        if a[k] ~= b[k] then return false end
+    end
+    return true
+end
+
 -- `ourFaction` (GetBattlefieldArenaFaction, 0/1) lets a row for a player the
 -- log never saw — a 5v5 healer who stayed out of range all game — take a
 -- seat of its own, with the server's numbers as its only numbers. Such a
 -- seat has a synthetic guid and `fromScoreboard = true`; the board says
 -- "server" beside its values because there is nothing else to say.
+--
+-- Merging again is safe and is how a closed match takes the board's later
+-- answers (the Scoreboard option re-reads it while the board is up: the
+-- ratings can land a beat after the winner). Each merge replaces the rows
+-- it names; `m.sbRev` counts the merges that changed a number, so a
+-- reader can tell the board moved.
 function A.MergeScoreboard(m, rows, ourFaction)
     if not m or type(rows) ~= "table" then return 0 end
     local byName = {}
     for guid, seat in pairs(m.seats) do
         if seat.name then byName[ShortName(seat.name)] = seat end
     end
-    local merged = 0
+    local merged, changed = 0, false
     for _, row in ipairs(rows) do
         local seat = row.name and byName[ShortName(row.name)]
         if not seat and row.name and type(ourFaction) == "number" and type(row.faction) == "number" then
-            live = m -- SetSeat writes to the live match; the merge runs just before Finish
-            seat = A.SetSeat(row.faction == ourFaction and "us" or "them",
+            seat = SeatOn(m, row.faction == ourFaction and "us" or "them",
                 "Score-" .. ShortName(row.name), row.name, row.classToken, row.race)
             if seat then
                 seat.fromScoreboard = true
@@ -1531,19 +1585,24 @@ function A.MergeScoreboard(m, rows, ourFaction)
             end
         end
         if seat then
-            seat.sb = {
+            local sb = {
                 kb = tonumber(row.kb) or 0, hk = tonumber(row.hk) or 0,
                 deaths = tonumber(row.deaths) or 0,
                 dmg = tonumber(row.dmg) or 0, heal = tonumber(row.heal) or 0,
                 ratingChange = tonumber(row.ratingChange),
                 mmr = tonumber(row.mmr),
             }
+            if not SameScore(seat.sb, sb) then
+                seat.sb = sb
+                changed = true
+            end
             if row.classToken and not seat.class then seat.class = row.classToken end
             if row.race and not seat.race then seat.race = row.race end
             merged = merged + 1
         end
     end
-    m.scored = merged > 0
+    if changed then m.sbRev = (m.sbRev or 0) + 1 end
+    m.scored = m.scored or merged > 0
     -- A rating change on anyone marks the match rated
     if m.rated == nil then
         for _, seat in pairs(m.seats) do
@@ -1616,6 +1675,99 @@ function A.OurRating(m)
         return tm.ratingBefore, tm.ratingAfter, tm.ratingAfter - tm.ratingBefore
     end
     return nil
+end
+
+-- One seat's line on the replay's SCOREBOARD: the whole match, the
+-- server's numbers when its board reached us and the combat log's when
+-- it did not (a match we left, a live one). Deaths always come from the
+-- log: the TBC arena scoreboard answers 0 deaths for every player (all of
+-- Devin's saved games, 2026-10-20; Blizzard's board hides the column in
+-- arenas). A skirmish answers MMR 0 and rating change 0 — no ratings,
+-- not ratings of zero — so both come back nil there.
+-- Returns dmg, heal, kb, deaths, mmr, ratingChange, fromServer.
+function A.ScoreLine(m, seat)
+    local deaths = seat.deaths or 0
+    local sb = seat.sb
+    if not sb then
+        return seat.dmg, seat.heal + seat.absorb, seat.kills, deaths, nil, nil, false
+    end
+    local mmr = sb.mmr
+    if not mmr or mmr <= 0 or m.rated == false then mmr = nil end
+    local change = sb.ratingChange
+    if not mmr and change == 0 then change = nil end
+    if m.rated == false then change = nil end
+    return sb.dmg or 0, sb.heal or 0, sb.kb or 0, deaths, mmr, change, true
+end
+
+-- How a player's MMR moved in a match. The client never says: the TBC
+-- scoreboard ends at preMatchMMR (GetBattlefieldScore answers 14 values;
+-- ArenaArmory's dump of Devin's rated games has no fifteenth). What it
+-- moved TO is the pre-match MMR of that player's NEXT game — Devin's own
+-- saved games show it moving every game, usually about twice the rating
+-- change, always the same way. That reading is only this match's change
+-- when the next game we hold really is their next game:
+--   * it is the next kept match of YOUR character in the same bracket
+--     (a skirmish in between is skipped — it carries no MMR; a rated
+--     match without a scoreboard in between ends the search, since two
+--     games would be in the number)
+--   * you: always — every game you play is the next one recorded
+--   * a teammate: within NEXT_GAME_GAP of this match's end and on your
+--     team again — still queued with you, they played nothing in between
+--   * an opponent met again within NEXT_GAME_GAP: reported, but not
+--     `sure` (they may have played a game of their own while you queued)
+-- Returns mmrAfter, nextMatch, gapSeconds, sure — or nil and why:
+-- "PENDING" (no later game of yours in this bracket yet: it may still
+-- come) or "UNKNOWN" (it came and cannot say). A skirmish, or a seat with
+-- no pre-match MMR, returns plain nil.
+local NEXT_GAME_GAP = 30 * 60
+
+local function PlayerSeatOf(m)
+    for _, s in pairs(m.seats) do
+        if s.token == "player" then return s end
+    end
+end
+
+local function SameName(a, b)
+    return a ~= nil and b ~= nil and ShortName(a) == ShortName(b)
+end
+
+function A.NextMmr(m, seat)
+    if not (m and seat and seat.sb) or m.rated == false then return nil end
+    if not seat.sb.mmr or seat.sb.mmr <= 0 then return nil end
+    local me = PlayerSeatOf(m)
+    if not (me and me.name) then return nil, "UNKNOWN" end
+    local idx
+    for i = 1, #matches do
+        if matches[i] == m then idx = i; break end
+    end
+    if not idx then return nil, "PENDING" end   -- the live match: its next game has not begun
+    local endTs = m.tsStart + (m.tEnd or m.dur or 0)
+    for i = idx - 1, 1, -1 do   -- newest first: the later matches sit before it
+        local n = matches[i]
+        local nme = PlayerSeatOf(n)
+        if n.bracket == m.bracket and n.rated ~= false and nme and SameName(nme.name, me.name) then
+            local gap = n.tsStart - endTs
+            local isMe = seat == me
+            if not isMe and gap > NEXT_GAME_GAP then return nil, "UNKNOWN" end
+            local found
+            if isMe then
+                found = nme
+            else
+                for _, s in pairs(n.seats) do
+                    if s ~= nme and SameName(s.name, seat.name)
+                        and (not s.class or not seat.class or s.class == seat.class) then
+                        found = s
+                        break
+                    end
+                end
+            end
+            local after = found and found.sb and found.sb.mmr
+            if not after or after <= 0 then return nil, "UNKNOWN" end
+            local sure = isMe or (seat.team == "us" and found.team == "us")
+            return after, n, gap, sure
+        end
+    end
+    return nil, "PENDING"
 end
 
 local function CloseOpen(m, t)
@@ -1698,7 +1850,8 @@ A.STATS = {
     { key = "HEAL", label = "HEALING", rateLabel = "HPS", color = "statHeal",
         value = function(s) return s.heal + s.absorb end,
         series = "sHeal",
-        lists = { { title = "SPELLS", field = "heals", records = true } } },
+        lists = { { title = "SPELLS", field = "heals", records = true },
+                  { title = "HEALED", field = "healTargets" } } },
     { key = "TAKEN", label = "DMG TAKEN", rateLabel = "DTPS", color = "statTaken",
         value = function(s) return s.taken end,
         series = "sTaken",
@@ -2202,6 +2355,314 @@ function A.SeatName(m, guid)
 end
 
 -- ---------------------------------------------------------------------------
+-- Debuff uptime on one seat (the replay's UPTIME drawer, D32): every
+-- debuff the OTHER team kept on them — the seconds it was up, its share of
+-- the time they were alive, the separate stretches, the longest drop — as
+-- of `t`. The window runs from the gates to `t` or their death, whichever
+-- came first. A debuff counts from the moment it landed to its logged fade
+-- (a refresh or a stack extends it), the same intervals the cards draw.
+--
+-- Healing reduction is one more row, out.heal: the union of the suite's
+-- healing-cut debuffs (PartyFrames' HEAL category: Mortal Strike, Aimed
+-- Shot, Wound Poison of any rank), because "was their healer under a
+-- Mortal Strike effect" is one question whoever pressed it. Its `srcs` are
+-- keyed by debuff name, a row's by the caster's seat guid.
+--
+-- `out` is reused between calls (the drawer repaints at 2 Hz):
+-- out.rows[1..out.n], seconds descending, each { name, id, secs, pct, n
+-- (stretches), first, longest, gap, gapAt (the longest drop and where it
+-- began, the tail after the last fade included), srcs, iv = { s1, e1, s2,
+-- e2, ... } (stretches clipped to the window), ivN }; out.t0, out.t1,
+-- out.tFull (their death or the end: where a strip ends), out.span,
+-- out.died (their death, when it fell inside the window), out.dropped
+-- (intervals past AURA_CAP the seat never recorded).
+-- ---------------------------------------------------------------------------
+
+local HEAL_CUT_IDS = { 12294, 19434, 13218 }  -- rank 1 of each; the name covers every rank
+local HEAL_CUT_EN = { "Mortal Strike", "Aimed Shot", "Wound Poison" }
+local healCutNames = nil
+
+-- The English names always, and the client's own when it names them
+-- differently (a localized client's log speaks its language)
+local function IsHealCut(name)
+    if not healCutNames then
+        healCutNames = {}
+        for i, id in ipairs(HEAL_CUT_IDS) do
+            healCutNames[#healCutNames + 1] = HEAL_CUT_EN[i]
+            local n = GetSpellInfo and GetSpellInfo(id)
+            if type(n) == "string" and n ~= "" and n ~= HEAL_CUT_EN[i] then healCutNames[#healCutNames + 1] = n end
+        end
+    end
+    for i = 1, #healCutNames do
+        local p = healCutNames[i]
+        -- "Wound Poison" through "Wound Poison V"
+        if name == p or name:sub(1, #p + 1) == p .. " " then return true end
+    end
+    return false
+end
+
+local function DiedAt(m, guid)
+    for i = 1, #m.deaths do
+        local d = m.deaths[i]
+        if d.guid == guid then return d.t end
+    end
+    return nil
+end
+
+local function UpReset(r)
+    r.secs, r.n, r.longest, r.gap, r.gapAt, r.first, r.cover, r.segAt = 0, 0, 0, 0, nil, nil, nil, nil
+    r.pct, r.ivN = 0, 0
+    for k in pairs(r.srcs) do r.srcs[k] = nil end
+    return r
+end
+
+-- One interval [s, e) into a row. Intervals arrive in start order (sorted
+-- below; the log already appends them that way), so `cover` — how far the
+-- row is covered already — is all a union needs: an overlap or a touch
+-- extends the open stretch, anything later opens a new one past a drop.
+local function UpAdd(r, s, e, key)
+    local add
+    if r.cover and s <= r.cover then
+        if e <= r.cover then return end
+        add = e - r.cover
+        r.iv[r.ivN] = e
+    else
+        if r.cover then
+            local gap = s - r.cover
+            if gap > r.gap then r.gap, r.gapAt = gap, r.cover end
+        else
+            r.first = s
+        end
+        r.n = r.n + 1
+        r.segAt = s
+        add = e - s
+        r.iv[r.ivN + 1], r.iv[r.ivN + 2] = s, e
+        r.ivN = r.ivN + 2
+    end
+    r.cover = e
+    r.secs = r.secs + add
+    if key then r.srcs[key] = (r.srcs[key] or 0) + add end
+    if e - r.segAt > r.longest then r.longest = e - r.segAt end
+end
+
+local function UpFinish(r, t1, span)
+    if r.cover and t1 - r.cover > r.gap then r.gap, r.gapAt = t1 - r.cover, r.cover end
+    r.pct = span > 0 and r.secs / span or 0
+    for i = r.ivN + 1, #r.iv do r.iv[i] = nil end
+end
+
+local function UptimeOrder(x, y)
+    if x.secs ~= y.secs then return x.secs > y.secs end
+    if x.first ~= y.first then return x.first < y.first end
+    return x.name < y.name
+end
+
+local upByName = {}
+local upList = {}       -- the seat's qualifying intervals, sorted by start
+
+local function ByStart(x, y) return x.t < y.t end
+
+function A.Uptime(m, guid, t, out)
+    out.rows = out.rows or {}
+    out.pool = out.pool or {}
+    out.n, out.heal, out.died, out.dropped = 0, nil, nil, 0
+    local rows = out.rows
+    local seat = m and guid and m.seats[guid]
+    if not seat then
+        out.t0, out.t1, out.tFull, out.span = 0, 0, 0, 0
+        for i = 1, #rows do rows[i] = nil end
+        return out
+    end
+    local t0 = m.tGates or 0
+    local died = DiedAt(m, guid)
+    local tFull = max(died or m.tEnd or t or t0, t0)
+    local t1 = max(min(t or tFull, tFull), t0)
+    out.t0, out.t1, out.tFull, out.span = t0, t1, tFull, t1 - t0
+    if died and died <= t1 then out.died = died end
+    out.dropped = seat.auraDropped or 0
+    for k in pairs(upByName) do upByName[k] = nil end
+    local heal = out.healRow or { srcs = {}, iv = {} }
+    out.healRow = heal
+    UpReset(heal)
+    local n, k = 0, 0
+    if out.span > 0 then
+        for i = 1, seat.aurasN do
+            local a = seat.auras[i]
+            local src = a.src and m.seats[a.src]
+            if not a.buff and src and src.team ~= seat.team and a.t < t1 and min(a.t2 or t1, t1) > max(a.t, t0) then
+                k = k + 1
+                upList[k] = a
+            end
+        end
+    end
+    for i = k + 1, #upList do upList[i] = nil end
+    table.sort(upList, ByStart)
+    for i = 1, k do
+        local a = upList[i]
+        local s, e = max(a.t, t0), min(a.t2 or t1, t1)
+        local r = upByName[a.name]
+        if not r then
+            n = n + 1
+            r = out.pool[n]
+            if not r then
+                r = { srcs = {}, iv = {} }
+                out.pool[n] = r
+            end
+            UpReset(r)
+            r.name, r.id = a.name, a.id
+            upByName[a.name] = r
+            rows[n] = r
+        end
+        UpAdd(r, s, e, a.src)
+        if IsHealCut(a.name) then UpAdd(heal, s, e, a.name) end
+    end
+    for i = n + 1, #rows do rows[i] = nil end
+    for i = 1, n do UpFinish(rows[i], t1, out.span) end
+    table.sort(rows, UptimeOrder)
+    out.n = n
+    if heal.secs > 0 then
+        UpFinish(heal, t1, out.span)
+        out.heal = heal
+    end
+    return out
+end
+
+-- The seat the UPTIME drawer opens on: the enemy who took the most damage
+-- (the one you trained), else the first enemy, else your own first seat
+function A.UptimeTarget(m)
+    if not m then return nil end
+    local best, bestTaken
+    local them = m.teams.them
+    for i = 1, them.n do
+        local seat = m.seats[them.order[i]]
+        if seat and (not best or seat.taken > bestTaken) then best, bestTaken = seat, seat.taken end
+    end
+    if best then return best.guid end
+    local us = m.teams.us
+    return us.n > 0 and us.order[1] or nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Damage and healing done by one seat (the replay's BREAKDOWN drawer, D33):
+-- what their damage was made of and whom it hit, what their healing was
+-- made of and whom it landed on, as of `t` (nil = the whole match).
+--
+-- The whole-match numbers are the seat's own record maps (spells, heals,
+-- targets, healTargets), so each list adds up to the seat's DMG or HEAL
+-- exactly. As of a cursor, a row sums its per-second series up to the
+-- bucket SeatValueAt reads, so the totals are the METERS band's numbers
+-- at any second. A match stored before the series existed (no
+-- m.keySeries) reads the whole match at every cursor and says so
+-- (out.whole).
+--
+-- `out` is reused (the drawer repaints at 2 Hz): out.dmg and out.heal,
+-- each { total (as of t), full (whole match), n, rows[1..n], onN,
+-- on[1..onN] }. A row is { key, name, id, pet, rec (the whole-match
+-- record: hits, crits, misses, overheal), value (as of t), full }; an
+-- `on` row is { key (the name), guid (their seat, when the name is one),
+-- value, full }. Rows sort by the whole match so nothing jumps while the
+-- cursor scrubs; a row with nothing yet at the cursor stays, at 0.
+-- ---------------------------------------------------------------------------
+
+local NO_ROWS = {}
+
+-- A sparse series summed up to bucket b
+local function SparseSumTo(s, b)
+    if not s then return 0 end
+    local total = 0
+    for k, v in pairs(s) do
+        if k <= b then total = total + v end
+    end
+    return total
+end
+
+local function BreakdownOrder(x, y)
+    if x.full ~= y.full then return x.full > y.full end
+    return x.key < y.key
+end
+
+-- The seat a target name is: the exact name, else the one seat whose name
+-- matches it without a realm (the log and the roster can disagree on it)
+local function SeatGuidByName(m, name)
+    local short, found = name:match("^[^%-]+"), nil
+    for guid, seat in pairs(m.seats) do
+        if seat.name == name then return guid end
+        if seat.name and seat.name:match("^[^%-]+") == short then
+            if found then return nil end
+            found = guid
+        end
+    end
+    return found
+end
+
+local function FillBreakdown(m, sec, recMap, onMap, onSeries, b, isHeal)
+    local rows, on = sec.rows, sec.on
+    local n, total, full = 0, 0, 0
+    for key, rec in pairs(recMap or NO_ROWS) do
+        if rec.total > 0 or (isHeal and rec.overheal > 0) then
+            n = n + 1
+            local r = sec.pool[n]
+            if not r then r = {}; sec.pool[n] = r end
+            r.key, r.name, r.id, r.pet, r.rec = key, rec.name, rec.id, rec.pet, rec
+            r.full = rec.total
+            r.value = b and SparseSumTo(rec.s, b) or rec.total
+            total, full = total + r.value, full + r.full
+            rows[n] = r
+        end
+    end
+    for i = n + 1, #rows do rows[i] = nil end
+    table.sort(rows, BreakdownOrder)
+    local k = 0
+    for key, amount in pairs(onMap or NO_ROWS) do
+        if amount > 0 then
+            k = k + 1
+            local r = sec.onPool[k]
+            if not r then r = {}; sec.onPool[k] = r end
+            r.key, r.full = key, amount
+            r.guid = SeatGuidByName(m, key)
+            r.value = b and SparseSumTo(onSeries and onSeries[key], b) or amount
+            on[k] = r
+        end
+    end
+    for i = k + 1, #on do on[i] = nil end
+    table.sort(on, BreakdownOrder)
+    sec.n, sec.onN, sec.total, sec.full = n, k, total, full
+end
+
+function A.Breakdown(m, guid, t, out)
+    for _, field in ipairs({ "dmg", "heal" }) do
+        local sec = out[field]
+        if not sec then
+            sec = { rows = {}, on = {}, pool = {}, onPool = {} }
+            out[field] = sec
+        end
+    end
+    local seat = m and guid and m.seats[guid]
+    out.whole = t ~= nil and not (m and m.keySeries)
+    local b = nil
+    if t ~= nil and not out.whole then b = min(floor(max(t, 0)) + 1, SERIES_CAP) end
+    if not seat then
+        FillBreakdown(m, out.dmg, nil, nil, nil, b, false)
+        FillBreakdown(m, out.heal, nil, nil, nil, b, true)
+        return out
+    end
+    FillBreakdown(m, out.dmg, seat.spells, seat.targets, seat.sTargets, b, false)
+    FillBreakdown(m, out.heal, seat.heals, seat.healTargets, seat.sHealTargets, b, true)
+    return out
+end
+
+-- The seat the BREAKDOWN drawer opens on: yours, else your team's first,
+-- else the enemy's
+function A.BreakdownSeat(m)
+    if not m then return nil end
+    for guid, seat in pairs(m.seats) do
+        if seat.token == "player" then return guid end
+    end
+    if m.teams.us.n > 0 then return m.teams.us.order[1] end
+    return m.teams.them.n > 0 and m.teams.them.order[1] or nil
+end
+
+-- ---------------------------------------------------------------------------
 -- Insights: the match read back as findings. Pure derivation from what the
 -- ledger and the seats already hold — nothing here is a new measurement,
 -- which is why every line can point at the moment it came from.
@@ -2496,6 +2957,10 @@ local function ValidMatch(m)
         -- rebuilt from the DISPEL moments on first read)
         seat.dispelFails = seat.dispelFails or 0
         seat.shatters = seat.shatters or 0
+        -- and whom the healing landed on, which a pre-breakdown store never
+        -- kept (its m.keySeries is nil too: the drawer reads it whole-match)
+        seat.healTargets = seat.healTargets or {}
+        seat.healTargetsN = seat.healTargetsN or 0
     end
     if m.dlog ~= nil and (type(m.dlog) ~= "table" or type(m.dlogN) ~= "number") then
         m.dlog, m.dlogN = nil, nil

@@ -17,13 +17,30 @@
 --               deaths / control / kicks / trinkets as markers, a cursor
 --               you drag, a play button that runs the clock
 --   METERS      one table per team: damage, healing, taken, control,
---               kicks, kills/deaths — as of the cursor
+--               kicks, kills/deaths — as of the cursor; a click on a
+--               player opens their BREAKDOWN
+--   SCOREBOARD  (the Scoreboard option, D31) one table per team, the whole
+--               match whatever the cursor: damage, healing, killing blows,
+--               deaths, MMR going in, rating change, and how the MMR moved
 --   MOMENTS     the ledger around the cursor; click one to jump there
 --   DISPEL LOG  a drawer to the right (header button DISPELS): every
 --               dispel of the match cast by cast — who pressed what, and
 --               which auras it took off whom, offensive and defensive,
 --               Mass Dispel's shattered shields included — with a per-seat
 --               tally above it, both read as of the cursor
+--   UPTIME      (the Uptime option, D32) the same drawer's other page
+--               (header button UPTIME; one drawer shows at a time): every
+--               debuff one side kept on one player — Mortal Strike,
+--               Judgement of Justice, the poisons — how long it was up, its
+--               share of the time they were alive, its longest drop, and a
+--               strip of the whole match showing where it fell off. Opens
+--               on the enemy who took the most damage; a portrait click or
+--               the drawer's own menu picks anyone else
+--   BREAKDOWN   (the Breakdown option, D33) the drawer's third page
+--               (header button BREAKDOWN): one player's damage, ability by
+--               ability and whom it hit, and their healing, spell by spell
+--               and whom it landed on, as of the cursor. Opens on you; a
+--               METERS row, a portrait or the drawer's menu picks anyone
 --
 -- The cursor is the whole idea: every band reads the match AS OF the
 -- cursor time, so dragging it back to 1:12 shows the cards, the bars, the
@@ -73,6 +90,13 @@ local METER_COLS = { -- key, label, color, width
     { "DMG", "DMG", "statDmg", 40 }, { "HEAL", "HEAL", "statHeal", 40 }, { "TAKEN", "TAKEN", "statTaken", 40 },
     { "CC", "CC", "statCC", 36 }, { "KICKS", "KICK", "statUtil", 30 }, { "KILLS", "K/D", "statDeath", 30 },
 }
+-- The scoreboard band's columns, the same 216 px as the meters' so the
+-- name column lines up under it: key, label, head color, width
+local SCORE_COLS = {
+    { "DMG", "DMG", "statDmg", 40 }, { "HEAL", "HEAL", "statHeal", 40 },
+    { "KB", "KB", "statDeath", 20 }, { "D", "D", "statDeath", 18 },
+    { "MMR", "MMR", "text", 34 }, { "RTG", "RTG±", "text", 30 }, { "MMRD", "MMR±", "text", 34 },
+}
 local FEED_ROWS = 6
 local DLOG_W = 300           -- the dispel log drawer (the window widens by it when open)
 local DLOG_LINES_MAX = 80    -- pooled log lines; as many show as the height fits
@@ -120,19 +144,34 @@ local view = {
     dlogFollowT = nil,  -- ...until the cursor moves again
     dlogUs = true, dlogThem = true,  -- filters: whose casts
     dlogOff = true, dlogDef = true,  -- filters: which side of a dispel
+    upt = false,        -- the uptime drawer is open instead (db.ArenaUptimeOpen)
+    uptFor = nil,       -- the match the uptime target was picked in
+    uptGuid = nil,      -- ...and whose debuffs it reads (nil = A.UptimeTarget)
+    uptOffset = 0,      -- its scroll (rows)
+    uptApplied = nil,   -- the Uptime option as the header last drew it
+    bd = false,         -- the breakdown drawer is open instead (db.ArenaBreakdownOpen)
+    bdFor = nil,        -- the match the breakdown's player was picked in
+    bdGuid = nil,       -- ...and whose damage and healing it reads (nil = A.BreakdownSeat)
+    bdOffset = 0,       -- its scroll (lines)
+    bdApplied = nil,    -- the Breakdown option as the header last drew it
 }
 
-local root, content, head, matchBtn, shareBtn, dlogBtn, sumText
+local root, content, head, matchBtn, shareBtn, dlogBtn, uptBtn, sumText
 local side = {}         -- the match list: frame, rows, foot
 local teams = {}        -- [1] us, [2] them: { head, cards = {} }
 local vsBar = {}
 local plot, ctrl, axis = {}, {}, {}
 local meters = {}       -- [1], [2]: { head, rows = {} }
+local score = {}        -- [1], [2]: the scoreboard band's tables, same shape
 local feed = {}
 local dlog = {}         -- the dispel log drawer: frame, chips, tally, lines
+local upt = {}          -- the uptime drawer: frame, target, heal row, rows, and its
+                        -- entry points (Build, Layout, Repaint, ShowFor, SetOpen)
+local bd = {}           -- the breakdown drawer: frame, header button, lines, and the
+                        -- same entry points plus On (the option)
 local hint
 local bands = {}
-local layoutRows = nil
+local layoutKey = nil
 local BuildSidebar -- forward
 local stateScratch = {}
 local onScratch = {}        -- guid -> { n, names } : who is on this seat at the cursor
@@ -178,6 +217,20 @@ local function GateTime(m, t)
 end
 
 local function Esc(color) return U.EscOf(color) end
+
+-- The Uptime option (D32): off, the header has no UPTIME button and the
+-- portraits take no clicks — the replay exactly as it was
+local function UptimeOn()
+    local db = U.DB and U.DB()
+    return db and db.ArenaUptime and true or false
+end
+
+-- The Breakdown option (D33): off, no BREAKDOWN button, the meters rows
+-- take no clicks — the replay exactly as it was
+function bd.On()
+    local db = U.DB and U.DB()
+    return db and db.ArenaBreakdown and true or false
+end
 
 local function SeatLabel(m, guid, plain)
     local seat = guid and m.seats[guid]
@@ -476,6 +529,16 @@ local function BuildCard(parent, index, teamIndex)
         if self.guid then U.ArenaSeatTooltip(self, Match()) end
     end)
     card.portraitBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    card.portraitBtn:SetScript("OnClick", function(self)
+        if not self.guid then return end
+        if view.bd and bd.On() then
+            bd.ShowFor(self.guid)
+        elseif UptimeOn() then
+            upt.ShowFor(self.guid)
+        elseif bd.On() then
+            bd.ShowFor(self.guid)
+        end
+    end)
     card.ring = card.portraitBtn:CreateTexture(nil, "BACKGROUND")
     card.ring:SetTexture(WHITE)
     card.ring:SetPoint("TOPLEFT", card.portraitBtn, "TOPLEFT", -2, 2)
@@ -832,10 +895,33 @@ local function BuildMeters(parent, y)
         end
         f.rows = {}
         for r = 1, MAX_SEATS do
-            local row = CreateFrame("Frame", nil, f)
+            -- A row opens the breakdown drawer on its player (the Breakdown
+            -- option; off, the rows take no mouse at all)
+            local row = CreateFrame("Button", nil, f)
+            row.meterRow = r
             row:SetHeight(ROW_H)
             row:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -(r * ROW_H))
             row:SetPoint("RIGHT", f, "RIGHT", 0, 0)
+            row.hover = row:CreateTexture(nil, "HIGHLIGHT")
+            row.hover:SetTexture(WHITE)
+            row.hover:SetVertexColor(1, 1, 1, THEME.hover[4])
+            row.hover:SetAllPoints()
+            row:EnableMouse(false)
+            row:SetScript("OnClick", function(self)
+                if self.guid and bd.On() then bd.ShowFor(self.guid) end
+            end)
+            row:SetScript("OnEnter", function(self)
+                local m = Match()
+                local seat = m and self.guid and m.seats[self.guid]
+                if not seat then return end
+                local c, th = ClassColor(seat.class), THEME.tipHint
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(ShortName(seat.name or "?"), c[1], c[2], c[3])
+                GameTooltip:AddLine("Click for their damage and healing, ability by ability, and whom it landed on",
+                    th[1], th[2], th[3], true)
+                GameTooltip:Show()
+            end)
+            row:SetScript("OnLeave", function() GameTooltip:Hide() end)
             row.name = MakeText(row, THEME.fontSizeSmall, "LEFT")
             row.name:SetPoint("LEFT", row, "LEFT", 4, 0)
             row.name:SetWidth(COL_W - 6 - METER_COLS_W)
@@ -852,6 +938,79 @@ local function BuildMeters(parent, y)
             f.rows[r] = row
         end
         meters[i] = f
+    end
+end
+
+-- The Scoreboard option (D31): read where every feature flag is read
+local function ScoreOn()
+    local db = U.DB and U.DB()
+    return db and db.ArenaScoreboard and true or false
+end
+
+local SCORE_COLS_W = 0
+for _, spec in ipairs(SCORE_COLS) do SCORE_COLS_W = SCORE_COLS_W + spec[4] end
+
+local function ScoreRowEnter(self)
+    if self.guid then U.ArenaSeatTooltip(self, Match()) end
+end
+
+local function BuildScore(parent, y)
+    for i = 1, 2 do
+        local f = CreateFrame("Frame", nil, parent)
+        f:SetWidth(COL_W)
+        if i == 1 then
+            f:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, y)
+        else
+            f:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -PAD, y)
+        end
+        f.head = CreateFrame("Frame", nil, f)
+        f.head:SetHeight(ROW_H)
+        f.head:SetPoint("TOPLEFT")
+        f.head:SetPoint("TOPRIGHT")
+        f.head.fill = MakeFill(f.head, THEME.chrome)
+        f.head.name = MakeText(f.head, THEME.fontSizeSmall, "LEFT")
+        f.head.name:SetPoint("LEFT", f.head, "LEFT", 4, 0)
+        f.head.name:SetWidth(COL_W - 6 - SCORE_COLS_W)
+        f.head.name:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        f.head.cols = {}
+        local x = COL_W - 2
+        for c = #SCORE_COLS, 1, -1 do
+            local spec = SCORE_COLS[c]
+            local fs = MakeText(f.head, THEME.fontSizeSmall, "RIGHT")
+            fs:SetPoint("RIGHT", f.head, "LEFT", x, 0)
+            fs:SetWidth(spec[4])
+            local col = THEME[spec[3]] or THEME.text
+            fs:SetTextColor(col[1], col[2], col[3])
+            fs:SetText(spec[2])
+            f.head.cols[c] = fs
+            x = x - spec[4]
+        end
+        f.rows = {}
+        for r = 1, MAX_SEATS do
+            -- A row is the seat's tooltip, the one the cards' portraits open
+            local row = CreateFrame("Frame", nil, f)
+            row:SetHeight(ROW_H)
+            row:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -(r * ROW_H))
+            row:SetPoint("RIGHT", f, "RIGHT", 0, 0)
+            row:EnableMouse(true)
+            row:SetScript("OnEnter", ScoreRowEnter)
+            row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            row.name = MakeText(row, THEME.fontSizeSmall, "LEFT")
+            row.name:SetPoint("LEFT", row, "LEFT", 4, 0)
+            row.name:SetWidth(COL_W - 6 - SCORE_COLS_W)
+            row.cols = {}
+            local rx = COL_W - 2
+            for c = #SCORE_COLS, 1, -1 do
+                local spec = SCORE_COLS[c]
+                local fs = MakeText(row, THEME.fontSizeSmall, "RIGHT")
+                fs:SetPoint("RIGHT", row, "LEFT", rx, 0)
+                fs:SetWidth(spec[4])
+                row.cols[c] = fs
+                rx = rx - spec[4]
+            end
+            f.rows[r] = row
+        end
+        score[i] = f
     end
 end
 
@@ -1289,10 +1448,59 @@ end
 -- never moves
 local function ApplyDrawer()
     if not built then return end
-    root:SetWidth(view.dlog and (W + DLOG_W) or W)
+    local on, bdOn = UptimeOn(), bd.On()
+    if (view.upt and not on) or (view.bd and not bdOn) then
+        -- An option went off with its page open: the dispel log comes back
+        -- as it was saved
+        view.upt = view.upt and on
+        view.bd = view.bd and bdOn
+        local db = U.DB and U.DB()
+        view.dlog = not (db and db.ArenaDispelLog == false)
+    end
+    view.uptApplied, view.bdApplied = on, bdOn
+    root:SetWidth((view.dlog or view.upt or view.bd) and (W + DLOG_W) or W)
     dlog.frame:SetShown(view.dlog)
+    upt.frame:SetShown(view.upt)
+    bd.frame:SetShown(view.bd)
     local c = view.dlog and THEME.accent or THEME.text
     dlogBtn.text:SetTextColor(c[1], c[2], c[3])
+    uptBtn:SetShown(on)
+    c = view.upt and THEME.accent or THEME.text
+    uptBtn.text:SetTextColor(c[1], c[2], c[3])
+    bd.btn:SetShown(bdOn)
+    c = view.bd and THEME.accent or THEME.text
+    bd.btn.text:SetTextColor(c[1], c[2], c[3])
+    -- The page buttons right to left, DISPELS, UPTIME, BREAKDOWN, each
+    -- only while its option is on; the match menu takes the rest
+    local left = on and uptBtn or dlogBtn
+    bd.btn:SetPoint("RIGHT", left, "LEFT", -2, 0)
+    if bdOn then left = bd.btn end
+    matchBtn:SetPoint("RIGHT", left, "LEFT", 0, 0)
+end
+
+-- The drawer shows one page: opening the uptime or breakdown page closes
+-- the dispel log for now (its saved state is left alone, so the option
+-- going off brings it back); opening any page closes the others
+function upt.SetOpen(open)
+    view.upt = open and true or false
+    local db = U.DB and U.DB()
+    if db then db.ArenaUptimeOpen = view.upt end
+    if view.upt then
+        view.dlog, view.bd = false, false
+        if db then db.ArenaBreakdownOpen = false end
+    end
+    ApplyDrawer()
+end
+
+function bd.SetOpen(open)
+    view.bd = open and true or false
+    local db = U.DB and U.DB()
+    if db then db.ArenaBreakdownOpen = view.bd end
+    if view.bd then
+        view.dlog, view.upt = false, false
+        if db then db.ArenaUptimeOpen = false end
+    end
+    ApplyDrawer()
 end
 
 local function DlogLayout(rows, rootH)
@@ -1456,6 +1664,821 @@ local function RepaintDispelLog(m, t, atEnd)
         row:Show()
     end
 end
+
+-- ---------------------------------------------------------------------------
+-- Uptime drawer (the Uptime option, D32): every debuff one side kept on
+-- one player, the whole match on a strip per debuff. The rows' ORDER and
+-- the strips are the whole match, so nothing jumps while the cursor
+-- scrubs; the NUMBERS are as of the cursor, and the strip past the cursor
+-- is veiled — the way every other band reads. (One do-block: the file's
+-- main chunk is at Lua's 200-local ceiling, so only `upt` reaches out.)
+-- ---------------------------------------------------------------------------
+
+do
+    local UPT_ROWS_MAX = 40
+    local UPT_SEGS_MAX = 32       -- coverage quads per strip; past it the rest merge into the last
+    local UPT_NAME_W = 92
+    local UPT_STRIP_X = 114
+    local UPT_STRIP_W = 106
+    local UPT_UP_W, UPT_PCT_W = 32, 32
+    local UPT_TOP = ROW_H * 4 + 12   -- title, target, heads, healing reduced
+    local uptFull, uptCur = {}, {}  -- A.Uptime's out tables: the whole match, the cursor
+    local uptNow = uptFull        -- the cursor's reading (uptFull itself at the end)
+    local uptByName = {}          -- name -> the cursor's row
+    local uptSrcs = {}            -- tooltip scratch: { key, secs }
+
+    -- Whose debuffs: the one picked in this match, else the default
+    local function UptimeGuid(m)
+        if not m then return nil end
+        if view.uptFor ~= m then view.uptFor, view.uptGuid, view.uptOffset = m, nil, 0 end
+        if view.uptGuid and m.seats[view.uptGuid] then return view.uptGuid end
+        return A.UptimeTarget(m)
+    end
+
+    function upt.ShowFor(guid)
+        local m = Match()
+        if not m then return end
+        view.uptFor, view.uptGuid, view.uptOffset = m, guid, 0
+        if not view.upt then upt.SetOpen(true) end
+        RepaintAll()
+    end
+
+    local function UptimeTargetMenu()
+        local m = Match()
+        if not m then return end
+        local current = UptimeGuid(m)
+        for _, key in ipairs({ "them", "us" }) do
+            local tm = m.teams[key]
+            if tm.n > 0 then
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = key == "them" and "ENEMY" or "YOUR TEAM"
+                info.isTitle, info.notCheckable = true, true
+                UIDropDownMenu_AddButton(info)
+                for i = 1, tm.n do
+                    local seat = m.seats[tm.order[i]]
+                    if seat then
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = SeatLabel(m, seat.guid) .. (seat.spec and (ESC.dim .. " · " .. seat.spec .. "|r") or "")
+                        info.checked = seat.guid == current
+                        local guid = seat.guid
+                        info.func = function() view.uptFor, view.uptGuid, view.uptOffset = m, guid, 0; RepaintAll() end
+                        UIDropDownMenu_AddButton(info)
+                    end
+                end
+            end
+        end
+    end
+
+    -- A click on the strip moves the cursor to that second; anywhere else on
+    -- the row, to the start of its longest drop
+    local function UptimeRowClick(self)
+        local m = Match()
+        local r = self.full
+        if not (m and r) then return end
+        local x = MouseX(self) - UPT_STRIP_X
+        local t
+        if x >= 0 and x <= UPT_STRIP_W then
+            t = uptFull.t0 + x / UPT_STRIP_W * max(uptFull.tFull - uptFull.t0, 1)
+        elseif r.gapAt and r.gap > 0 then
+            t = r.gapAt
+        else
+            return
+        end
+        SetCursor(m, t)
+        view.playing = false
+        RepaintAll()
+    end
+
+    local function SrcOrder(x, y) return x[2] > y[2] end
+
+    local function UptimeRowEnter(self)
+        local m = Match()
+        local r = self.full
+        if not (m and r) then return end
+        local c = self.cur
+        local td, tf, th = THEME.tipDim, THEME.tipFaint, THEME.tipHint
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.isHeal then
+            GameTooltip:SetText("Healing reduced", THEME.danger[1], THEME.danger[2], THEME.danger[3])
+            GameTooltip:AddLine("Any of Mortal Strike, Aimed Shot or Wound Poison on them: the debuffs that cut the healing they take (Mortal Strike and Aimed Shot by half, Wound Poison 10% a stack).",
+                th[1], th[2], th[3], true)
+        else
+            local shown = false
+            if r.id and GameTooltip.SetSpellByID then shown = pcall(GameTooltip.SetSpellByID, GameTooltip, r.id) end
+            if not shown then GameTooltip:SetText(r.name or "?", THEME.tipText[1], THEME.tipText[2], THEME.tipText[3]) end
+        end
+        GameTooltip:AddLine(" ")
+        if c and c.secs > 0 then
+            GameTooltip:AddDoubleLine("UP", format("%s of %s alive (%d%%)", FmtTime(c.secs), FmtTime(uptNow.span), floor(c.pct * 100 + 0.5)),
+                td[1], td[2], td[3], tf[1], tf[2], tf[3])
+            GameTooltip:AddDoubleLine("FIRST ON", GateTime(m, c.first), td[1], td[2], td[3], tf[1], tf[2], tf[3])
+            GameTooltip:AddDoubleLine("STRETCHES", format("%d, the longest %s", c.n, FmtTime(c.longest)), td[1], td[2], td[3], tf[1], tf[2], tf[3])
+            if c.gap >= 0.5 then
+                GameTooltip:AddDoubleLine("LONGEST DROP", format("%s from %s", FmtTime(c.gap), GateTime(m, c.gapAt)),
+                    td[1], td[2], td[3], tf[1], tf[2], tf[3])
+            end
+            local n = 0
+            for key, secs in pairs(c.srcs) do
+                n = n + 1
+                local e = uptSrcs[n] or {}
+                uptSrcs[n] = e
+                e[1], e[2] = key, secs
+            end
+            for i = n + 1, #uptSrcs do uptSrcs[i] = nil end
+            table.sort(uptSrcs, SrcOrder)
+            for i = 1, n do
+                local e = uptSrcs[i]
+                local who = self.isHeal and e[1] or SeatLabel(m, e[1])
+                GameTooltip:AddDoubleLine(i == 1 and (self.isHeal and "FROM" or "BY") or " ", who .. ESC.dim .. "  " .. FmtTime(e[2]) .. "|r",
+                    td[1], td[2], td[3], tf[1], tf[2], tf[3])
+            end
+        else
+            GameTooltip:AddLine(format("Not on them yet at the cursor: first on at %s", GateTime(m, r.first)), tf[1], tf[2], tf[3])
+        end
+        if uptNow ~= uptFull and uptNow.t1 < uptFull.t1 then
+            GameTooltip:AddLine(format("Whole match: %s (%d%%)", FmtTime(r.secs), floor(r.pct * 100 + 0.5)), td[1], td[2], td[3])
+        end
+        GameTooltip:AddLine("Click the strip to move the cursor there, the name to jump to the longest drop", th[1], th[2], th[3])
+        GameTooltip:Show()
+    end
+
+    local function MakeUptRow(parent)
+        local row = CreateFrame("Button", nil, parent)
+        row:SetHeight(ROW_H)
+        row.hover = row:CreateTexture(nil, "HIGHLIGHT")
+        row.hover:SetTexture(WHITE)
+        row.hover:SetVertexColor(1, 1, 1, THEME.hover[4])
+        row.hover:SetAllPoints()
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(12, 12)
+        row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
+        row.name = MakeText(row, THEME.fontSizeSmall, "LEFT")
+        row.name:SetPoint("LEFT", row, "LEFT", 18, 0)
+        row.name:SetWidth(UPT_NAME_W)
+        row.strip = CreateFrame("Frame", nil, row)
+        row.strip:SetSize(UPT_STRIP_W, ROW_H - 4)
+        row.strip:SetPoint("LEFT", row, "LEFT", UPT_STRIP_X, 0)
+        row.strip.fill = MakeFill(row.strip, THEME.barBack)
+        row.segs = {}
+        -- Past the cursor: veiled, with the cursor's own line on it
+        row.veil = row.strip:CreateTexture(nil, "OVERLAY")
+        row.veil:SetTexture(WHITE)
+        row.veil:SetVertexColor(THEME.bg[1], THEME.bg[2], THEME.bg[3], 0.65)
+        row.tick = row.strip:CreateTexture(nil, "OVERLAY")
+        row.tick:SetTexture(WHITE)
+        row.tick:SetVertexColor(THEME.accent[1], THEME.accent[2], THEME.accent[3], 0.9)
+        row.tick:SetWidth(1)
+        row.up = MakeText(row, THEME.fontSizeSmall, "RIGHT")
+        row.up:SetPoint("RIGHT", row, "LEFT", UPT_STRIP_X + UPT_STRIP_W + 4 + UPT_UP_W, 0)
+        row.up:SetWidth(UPT_UP_W)
+        row.up:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        row.pct = MakeText(row, THEME.fontSizeSmall, "RIGHT")
+        row.pct:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        row.pct:SetWidth(UPT_PCT_W)
+        row:SetScript("OnClick", UptimeRowClick)
+        row:SetScript("OnEnter", UptimeRowEnter)
+        row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        return row
+    end
+
+    function upt.Build()
+        local f = CreateFrame("Frame", nil, root)
+        upt.frame = f
+        f:SetWidth(DLOG_W)
+        f:SetPoint("TOPLEFT", root, "TOPLEFT", W, -HEAD_H)
+        f:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", W, 0)
+        f.fill = MakeFill(f, { 0, 0, 0, 0.25 })
+        local edge = f:CreateTexture(nil, "BORDER")
+        edge:SetTexture(WHITE)
+        edge:SetVertexColor(THEME.edge[1], THEME.edge[2], THEME.edge[3], 1)
+        edge:SetWidth(1)
+        edge:SetPoint("TOPLEFT")
+        edge:SetPoint("BOTTOMLEFT")
+        upt.title = MakeText(f, THEME.fontSizeSmall, "LEFT")
+        upt.title:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -3)
+        upt.title:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        upt.title:SetText("DEBUFF UPTIME")
+        upt.count = MakeText(f, THEME.fontSizeSmall, "RIGHT")
+        upt.count:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -3)
+        upt.count:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        -- Whose debuffs: a menu of every seat, enemies first
+        local target = CreateFrame("Button", nil, f)
+        upt.target = target
+        target:SetHeight(ROW_H)
+        target:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -(ROW_H + 3))
+        target:SetPoint("RIGHT", f, "RIGHT", -4, 0)
+        target.text = MakeText(target, THEME.fontSizeSmall, "LEFT")
+        target.text:SetPoint("LEFT", target, "LEFT", 2, 0)
+        target.text:SetPoint("RIGHT", target, "RIGHT", -2, 0)
+        target.hover = target:CreateTexture(nil, "HIGHLIGHT")
+        target.hover:SetTexture(WHITE)
+        target.hover:SetVertexColor(1, 1, 1, THEME.hover[4])
+        target.hover:SetAllPoints()
+        target:SetScript("OnClick", function(self) OpenMenu(UptimeTargetMenu, self) end)
+        Commander.UI.AttachTooltip(target, "Whose debuffs", "Click to pick the player. A click on a card's portrait picks them too. The drawer opens on the enemy who took the most damage: the one you trained.")
+        -- Column heads; the strip's own head is its two ends in match time
+        local heads = CreateFrame("Frame", nil, f)
+        upt.heads = heads
+        heads:SetHeight(ROW_H)
+        heads:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -(ROW_H * 2 + 6))
+        heads:SetPoint("RIGHT", f, "RIGHT", -4, 0)
+        local function Head(justify, text)
+            local fs = MakeText(heads, THEME.fontSizeSmall, justify)
+            fs:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+            fs:SetText(text)
+            return fs
+        end
+        local h = Head("LEFT", "DEBUFF")
+        h:SetPoint("LEFT", heads, "LEFT", 18, 0)
+        heads.from = Head("LEFT", "")
+        heads.from:SetPoint("LEFT", heads, "LEFT", UPT_STRIP_X, 0)
+        heads.to = Head("RIGHT", "")
+        heads.to:SetPoint("RIGHT", heads, "LEFT", UPT_STRIP_X + UPT_STRIP_W, 0)
+        h = Head("RIGHT", "UP")
+        h:SetPoint("RIGHT", heads, "LEFT", UPT_STRIP_X + UPT_STRIP_W + 4 + UPT_UP_W, 0)
+        h:SetWidth(UPT_UP_W)
+        h = Head("RIGHT", "%")
+        h:SetPoint("RIGHT", heads, "RIGHT", -2, 0)
+        h:SetWidth(UPT_PCT_W)
+        -- Healing reduced: always the first row, under its own rule
+        local heal = MakeUptRow(f)
+        upt.heal = heal
+        heal.isHeal = true
+        heal:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -(ROW_H * 3 + 8))
+        heal:SetPoint("RIGHT", f, "RIGHT", -4, 0)
+        heal.icon:Hide()
+        heal.name:SetText("HEALING REDUCED")
+        heal.name:SetTextColor(THEME.danger[1], THEME.danger[2], THEME.danger[3])
+        local rule = f:CreateTexture(nil, "BORDER")
+        rule:SetTexture(WHITE)
+        rule:SetVertexColor(THEME.edge[1], THEME.edge[2], THEME.edge[3], 0.6)
+        rule:SetHeight(1)
+        rule:SetPoint("TOPLEFT", heal, "BOTTOMLEFT", 0, -1)
+        rule:SetPoint("TOPRIGHT", heal, "BOTTOMRIGHT", 0, -1)
+        -- The debuffs
+        local list = CreateFrame("Frame", nil, f)
+        upt.list = list
+        list:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -UPT_TOP)
+        list:SetPoint("RIGHT", f, "RIGHT", -4, 0)
+        list:SetPoint("BOTTOM", f, "BOTTOM", 0, ROW_H + 4)
+        list:EnableMouseWheel(true)
+        list:SetScript("OnMouseWheel", function(_, delta)
+            view.uptOffset = max(0, view.uptOffset - delta * 3)
+            RepaintAll()
+        end)
+        upt.rows = {}
+        for i = 1, UPT_ROWS_MAX do
+            local row = MakeUptRow(list)
+            row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(i - 1) * ROW_H)
+            row:SetPoint("RIGHT", list, "RIGHT", 0, 0)
+            upt.rows[i] = row
+        end
+        upt.empty = MakeText(list, THEME.fontSizeSmall, "LEFT")
+        upt.empty:SetPoint("TOPLEFT", list, "TOPLEFT", 8, -2)
+        upt.empty:SetPoint("RIGHT", list, "RIGHT", -4, 0)
+        upt.empty:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        upt.foot = MakeText(f, THEME.fontSizeSmall, "LEFT")
+        upt.foot:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 4)
+        upt.foot:SetPoint("RIGHT", f, "RIGHT", -6, 0)
+        upt.foot:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+    end
+
+    function upt.Layout(rootH)
+        if not upt.frame then return end
+        upt.visible = max(min(floor((rootH - HEAD_H - UPT_TOP - ROW_H - 8) / ROW_H), UPT_ROWS_MAX), 1)
+    end
+
+    -- The coverage quads of one strip, scaled to the window [t0, t0 + tspan];
+    -- stretches closer than a pixel share a quad
+    local function PaintStrip(row, r, t0, tspan, color)
+        local segs = row.segs
+        local scale = UPT_STRIP_W / tspan
+        local k, lastX2 = 0, -1
+        local iv = r and r.iv
+        for i = 1, (r and r.ivN or 0), 2 do
+            local x1 = max((iv[i] - t0) * scale, 0)
+            local x2 = min((iv[i + 1] - t0) * scale, UPT_STRIP_W)
+            if k > 0 and (x1 - lastX2 < 1 or k >= UPT_SEGS_MAX) then
+                if x2 > lastX2 then
+                    lastX2 = x2
+                    segs[k]:SetWidth(max(lastX2 - segs[k].x1, 1))
+                end
+            else
+                k = k + 1
+                local q = segs[k]
+                if not q then
+                    q = row.strip:CreateTexture(nil, "ARTWORK")
+                    q:SetTexture(WHITE)
+                    segs[k] = q
+                end
+                q.x1 = x1
+                q:ClearAllPoints()
+                q:SetPoint("TOPLEFT", row.strip, "TOPLEFT", x1, 0)
+                q:SetPoint("BOTTOMLEFT", row.strip, "BOTTOMLEFT", x1, 0)
+                q:SetWidth(max(x2 - x1, 1))
+                q:SetVertexColor(color[1], color[2], color[3], 0.85)
+                q:Show()
+                lastX2 = x2
+            end
+        end
+        for i = k + 1, #segs do segs[i]:Hide() end
+    end
+
+    local function PaintUptRow(row, full, cur, t0, tspan, color, cx)
+        row.full, row.cur = full, cur
+        PaintStrip(row, full, t0, tspan, color)
+        if cx then
+            row.veil:ClearAllPoints()
+            row.veil:SetPoint("TOPLEFT", row.strip, "TOPLEFT", cx, 0)
+            row.veil:SetPoint("BOTTOMRIGHT", row.strip, "BOTTOMRIGHT", 0, 0)
+            row.veil:Show()
+            row.tick:ClearAllPoints()
+            row.tick:SetPoint("TOP", row.strip, "TOPLEFT", cx, 1)
+            row.tick:SetPoint("BOTTOM", row.strip, "BOTTOMLEFT", cx, -1)
+            row.tick:Show()
+        else
+            row.veil:Hide()
+            row.tick:Hide()
+        end
+        if cur and cur.secs > 0 then
+            row.up:SetText(FmtTime(cur.secs))
+            row.pct:SetText(format("%d%%", floor(cur.pct * 100 + 0.5)))
+            row.pct:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
+        else
+            row.up:SetText("")
+            row.pct:SetText("—")
+            row.pct:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        end
+    end
+
+    function upt.Repaint(m, t, atEnd)
+        if not view.upt or not upt.frame then return end
+        local guid = UptimeGuid(m)
+        local seat = guid and m.seats[guid]
+        local full = A.Uptime(m, guid, m and EndTime(m) or 0, uptFull)
+        local cur = atEnd and full or A.Uptime(m, guid, t, uptCur)
+        uptNow = cur
+        if seat then
+            upt.target.text:SetText(ESC.dim .. "ON|r  " .. SeatLabel(m, guid)
+                .. (seat.spec and (ESC.dim .. "  " .. seat.spec .. "|r") or "") .. ESC.dim .. "   (click to change)|r")
+            upt.count:SetText(cur.span > 0 and format(cur.died and "%s TO DEATH" or "%s ALIVE", FmtTime(cur.span)) or "")
+        else
+            upt.target.text:SetText(ESC.dim .. "No players recorded|r")
+            upt.count:SetText("")
+        end
+        local t0, tspan = full.t0, max(full.tFull - full.t0, 1)
+        upt.heads.from:SetText(m and GateTime(m, full.t0) or "")
+        upt.heads.to:SetText(m and seat and GateTime(m, full.tFull) or "")
+        -- The applying side wears its team color: your debuffs on them blue,
+        -- theirs on you red
+        local color = (seat and seat.team == "us") and THEME.teamThem or THEME.teamUs
+        local cx = nil
+        if not atEnd and m and seat then
+            cx = min(max((t - t0) / tspan * UPT_STRIP_W, 0), UPT_STRIP_W)
+        end
+        -- Healing reduced: the union row, painted red
+        if full.heal then
+            PaintUptRow(upt.heal, full.heal, cur.heal, t0, tspan, THEME.danger, cx)
+            upt.heal:SetAlpha(1)
+        else
+            PaintUptRow(upt.heal, nil, nil, t0, tspan, THEME.danger, nil)
+            upt.heal.full = nil
+            upt.heal:SetAlpha(0.5)
+        end
+        for k in pairs(uptByName) do uptByName[k] = nil end
+        for i = 1, cur.n do uptByName[cur.rows[i].name] = cur.rows[i] end
+        local V = upt.visible or 1
+        local maxOff = max(full.n - V, 0)
+        if view.uptOffset > maxOff then view.uptOffset = maxOff end
+        local off = view.uptOffset
+        local shown = 0
+        for i = 1, UPT_ROWS_MAX do
+            local row = upt.rows[i]
+            local r = i <= V and full.rows[off + i] or nil
+            if r then
+                shown = shown + 1
+                row.icon:SetTexture(IconTexture(r))
+                row.name:SetText(r.name)
+                local c = uptByName[r.name]
+                row.name:SetTextColor(c and THEME.text[1] or THEME.textDim[1], c and THEME.text[2] or THEME.textDim[2],
+                    c and THEME.text[3] or THEME.textDim[3])
+                PaintUptRow(row, r, c, t0, tspan, color, cx)
+                row:Show()
+            else
+                row.full, row.cur = nil, nil
+                row:Hide()
+            end
+        end
+        if shown == 0 then
+            local side = seat and (seat.team == "us" and "the enemy" or "your team") or nil
+            upt.empty:SetText(seat and format("No debuffs from %s on %s", side, ShortName(seat.name or "?")) or "")
+            upt.empty:Show()
+        else
+            upt.empty:Hide()
+        end
+        if full.dropped > 0 then
+            upt.foot:SetText(Esc(THEME.danger) .. format("%d auras past the record cap are missing|r", full.dropped))
+        elseif full.n > V then
+            upt.foot:SetText(format("%d–%d of %d · SCROLL FOR MORE", off + 1, min(off + V, full.n), full.n))
+        else
+            upt.foot:SetText("CLICK A STRIP TO MOVE THE CURSOR")
+        end
+    end
+end -- the uptime drawer
+
+-- ---------------------------------------------------------------------------
+-- Breakdown drawer (the Breakdown option, D33): one player's damage, ability
+-- by ability and whom it hit, and their healing, spell by spell and whom it
+-- landed on — one scrolling list, the side they did more of first. As on
+-- the uptime page the ORDER is the whole match, so nothing jumps while the
+-- cursor scrubs; the NUMBERS and bars are as of the cursor, and a line with
+-- nothing yet stays listed, dimmed. (A do-block like the uptime drawer's,
+-- reaching out only through `bd`.)
+-- ---------------------------------------------------------------------------
+
+do
+    local BD_LINES_MAX = 60
+    local BD_TOP = ROW_H * 2 + 8         -- title, player
+    local BD_NAME_X = 18
+    local BD_AMT_W, BD_PCT_W = 46, 34
+    local BD_BAR_W = DLOG_W - 8 - (BD_NAME_X - 2)
+    local SECTION = {
+        dmg = { label = "DAMAGE", rate = "DPS", color = "statDmg", rows = "ABILITIES", on = "TARGETS",
+            none = "No damage done", onTip = "DAMAGE ON THEM" },
+        heal = { label = "HEALING", rate = "HPS", color = "statHeal", rows = "SPELLS", on = "HEALED",
+            none = "No healing done", onTip = "HEALING ON THEM" },
+    }
+    local DMG_FIRST, HEAL_FIRST = { "dmg", "heal" }, { "heal", "dmg" }
+    local bdOut = {}                     -- A.Breakdown's out table
+    local bdFlat, bdFlatN = {}, 0        -- the list's lines: { kind, key, r, max }
+    local bdDur = 1                      -- the rate's divisor at the cursor
+    local bdScrubbed = false             -- the cursor is before the end
+
+    local function BreakdownGuid(m)
+        if not m then return nil end
+        if view.bdFor ~= m then view.bdFor, view.bdGuid, view.bdOffset = m, nil, 0 end
+        if view.bdGuid and m.seats[view.bdGuid] then return view.bdGuid end
+        return A.BreakdownSeat(m)
+    end
+
+    function bd.ShowFor(guid)
+        local m = Match()
+        if not m then return end
+        view.bdFor, view.bdGuid, view.bdOffset = m, guid, 0
+        if not view.bd then bd.SetOpen(true) end
+        RepaintAll()
+    end
+
+    local function BreakdownMenu()
+        local m = Match()
+        if not m then return end
+        local current = BreakdownGuid(m)
+        for _, key in ipairs({ "us", "them" }) do
+            local tm = m.teams[key]
+            if tm.n > 0 then
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = key == "us" and "YOUR TEAM" or "ENEMY"
+                info.isTitle, info.notCheckable = true, true
+                UIDropDownMenu_AddButton(info)
+                for i = 1, tm.n do
+                    local seat = m.seats[tm.order[i]]
+                    if seat then
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = SeatLabel(m, seat.guid) .. (seat.spec and (ESC.dim .. " · " .. seat.spec .. "|r") or "")
+                        info.checked = seat.guid == current
+                        local guid = seat.guid
+                        info.func = function() view.bdFor, view.bdGuid, view.bdOffset = m, guid, 0; RepaintAll() end
+                        UIDropDownMenu_AddButton(info)
+                    end
+                end
+            end
+        end
+    end
+
+    local function Push(kind, key, r, top)
+        bdFlatN = bdFlatN + 1
+        local d = bdFlat[bdFlatN]
+        if not d then d = {}; bdFlat[bdFlatN] = d end
+        d.kind, d.key, d.r, d.max = kind, key, r, top
+    end
+
+    local function TopValue(list, n)
+        local top = 0
+        for i = 1, n do
+            if list[i].value > top then top = list[i].value end
+        end
+        return top
+    end
+
+    local function Flatten(out)
+        bdFlatN = 0
+        for _, key in ipairs(out.heal.full > out.dmg.full and HEAL_FIRST or DMG_FIRST) do
+            local sec = out[key]
+            Push("head", key)
+            if sec.n == 0 then
+                Push("none", key)
+            else
+                Push("sub", key, "rows")
+                local top = TopValue(sec.rows, sec.n)
+                for i = 1, sec.n do Push("row", key, sec.rows[i], top) end
+                if sec.onN > 0 then
+                    Push("sub", key, "on")
+                    top = TopValue(sec.on, sec.onN)
+                    for i = 1, sec.onN do Push("on", key, sec.on[i], top) end
+                end
+            end
+        end
+    end
+
+    local function Pct(v, total)
+        return format("%d%%", floor(v / total * 100 + 0.5))
+    end
+
+    local function LineEnter(self)
+        local m = Match()
+        local d = self.desc
+        if not (m and d) then return end
+        local spec, sec = SECTION[d.key], bdOut[d.key]
+        local sc = THEME[spec.color]
+        local td, tf, th = THEME.tipDim, THEME.tipFaint, THEME.tipHint
+        local function line(label, value, color)
+            color = color or tf
+            GameTooltip:AddDoubleLine(label, value, td[1], td[2], td[3], color[1], color[2], color[3])
+        end
+        local whole = bdScrubbed and not bdOut.whole
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if d.kind == "head" then
+            GameTooltip:SetText(spec.label, sc[1], sc[2], sc[3])
+            line(whole and ("AS OF " .. GateTime(m, Cursor(m))) or "WHOLE MATCH",
+                format("%s  (%s %s)", FmtNum(sec.total), FmtNum(sec.total / bdDur), spec.rate), sc)
+            if whole then line("WHOLE MATCH", FmtNum(sec.full)) end
+            local seat = m.seats[BreakdownGuid(m) or ""]
+            if seat and d.key == "heal" then
+                if seat.absorb > 0 then line("SHIELDS ABSORBED", FmtNum(seat.absorb) .. ESC.dim .. "  (whole match)|r") end
+                local cast = seat.heal + seat.overheal
+                if cast > 0 then line("OVERHEAL", format("%s  (%s of their heals)", FmtNum(seat.overheal), Pct(seat.overheal, cast))) end
+            end
+        elseif d.kind == "row" then
+            local r, rec = d.r, d.r.rec
+            local shown = false
+            if r.id and GameTooltip.SetSpellByID then shown = pcall(GameTooltip.SetSpellByID, GameTooltip, r.id) end
+            if not shown then GameTooltip:SetText(r.key, THEME.tipText[1], THEME.tipText[2], THEME.tipText[3]) end
+            GameTooltip:AddLine(" ")
+            if r.pet then line("BY THEIR PET", r.pet) end
+            if r.value > 0 then
+                line(whole and ("AS OF " .. GateTime(m, Cursor(m))) or "WHOLE MATCH",
+                    format("%s  (%s of their %s)", FmtNum(r.value), Pct(r.value, sec.total), spec.label:lower()), sc)
+            else
+                line("AS OF " .. GateTime(m, Cursor(m)), "nothing yet")
+            end
+            if whole then line("WHOLE MATCH", format("%s  (%s)", FmtNum(r.full), sec.full > 0 and Pct(r.full, sec.full) or "0%")) end
+            if rec.count > 0 then
+                line(d.key == "heal" and "HEALS" or "HITS", tostring(rec.count))
+                line("CRITS", format("%d  (%s)", rec.crit, Pct(rec.crit, rec.count)))
+                line("AVERAGE", FmtNum(r.full / rec.count))
+            end
+            if d.key == "dmg" then
+                if rec.max then line("BIGGEST", FmtNum(rec.max)) end
+                if rec.miss > 0 then line("MISSED", tostring(rec.miss), THEME.danger) end
+                if rec.absorbed > 0 then line("INTO SHIELDS", FmtNum(rec.absorbed)) end
+            elseif rec.overheal > 0 then
+                line("OVERHEAL", format("%s  (%s)", FmtNum(rec.overheal), Pct(rec.overheal, rec.total + rec.overheal)))
+            end
+            if whole then GameTooltip:AddLine("Hits, crits and the rest count the whole match", th[1], th[2], th[3]) end
+        elseif d.kind == "on" then
+            local r = d.r
+            local seat = r.guid and m.seats[r.guid]
+            if seat then
+                local c = ClassColor(seat.class)
+                GameTooltip:SetText(ShortName(seat.name or r.key), c[1], c[2], c[3])
+                local tc = seat.team == "us" and THEME.teamUs or THEME.teamThem
+                GameTooltip:AddLine((seat.team == "us" and "YOUR TEAM" or "ENEMY") .. "  ·  " .. (seat.spec and (seat.spec .. " ") or "") .. (seat.class or "?"),
+                    tc[1], tc[2], tc[3])
+            else
+                GameTooltip:SetText(r.key, THEME.tipText[1], THEME.tipText[2], THEME.tipText[3])
+                GameTooltip:AddLine("Not a player: a pet, a totem or a guardian", td[1], td[2], td[3])
+            end
+            if r.value > 0 then
+                line(spec.onTip, format("%s  (%s)", FmtNum(r.value), Pct(r.value, sec.total)), sc)
+            else
+                line(spec.onTip, "nothing yet")
+            end
+            if whole then line("WHOLE MATCH", FmtNum(r.full)) end
+        else
+            return
+        end
+        GameTooltip:Show()
+    end
+
+    local function MakeLine(parent)
+        local line = CreateFrame("Button", nil, parent)
+        line:SetHeight(ROW_H)
+        line.fill = MakeFill(line, THEME.chrome)
+        line.bar = line:CreateTexture(nil, "BORDER")
+        line.bar:SetTexture(WHITE)
+        line.bar:SetPoint("TOPLEFT", line, "TOPLEFT", BD_NAME_X - 2, -1)
+        line.bar:SetPoint("BOTTOMLEFT", line, "BOTTOMLEFT", BD_NAME_X - 2, 1)
+        line.hover = line:CreateTexture(nil, "HIGHLIGHT")
+        line.hover:SetTexture(WHITE)
+        line.hover:SetVertexColor(1, 1, 1, THEME.hover[4])
+        line.hover:SetAllPoints()
+        line.icon = line:CreateTexture(nil, "ARTWORK")
+        line.icon:SetSize(12, 12)
+        line.icon:SetPoint("LEFT", line, "LEFT", 2, 0)
+        line.name = MakeText(line, THEME.fontSizeSmall, "LEFT")
+        line.name:SetPoint("LEFT", line, "LEFT", BD_NAME_X, 0)
+        line.name:SetWidth(DLOG_W - 8 - BD_NAME_X - BD_AMT_W - BD_PCT_W - 4)
+        line.amt = MakeText(line, THEME.fontSizeSmall, "RIGHT")
+        line.amt:SetPoint("RIGHT", line, "RIGHT", -(BD_PCT_W + 2), 0)
+        line.amt:SetWidth(BD_AMT_W)
+        line.pct = MakeText(line, THEME.fontSizeSmall, "RIGHT")
+        line.pct:SetPoint("RIGHT", line, "RIGHT", -2, 0)
+        line.pct:SetWidth(BD_PCT_W)
+        line.pct:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        -- A section head's total and rate, across both number columns
+        line.right = MakeText(line, THEME.fontSizeSmall, "RIGHT")
+        line.right:SetPoint("RIGHT", line, "RIGHT", -2, 0)
+        line.right:SetWidth(DLOG_W - 8 - 80)
+        line:SetScript("OnEnter", LineEnter)
+        line:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        return line
+    end
+
+    function bd.Build()
+        local f = CreateFrame("Frame", nil, root)
+        bd.frame = f
+        f:SetWidth(DLOG_W)
+        f:SetPoint("TOPLEFT", root, "TOPLEFT", W, -HEAD_H)
+        f:SetPoint("BOTTOMLEFT", root, "BOTTOMLEFT", W, 0)
+        f.fill = MakeFill(f, { 0, 0, 0, 0.25 })
+        local edge = f:CreateTexture(nil, "BORDER")
+        edge:SetTexture(WHITE)
+        edge:SetVertexColor(THEME.edge[1], THEME.edge[2], THEME.edge[3], 1)
+        edge:SetWidth(1)
+        edge:SetPoint("TOPLEFT")
+        edge:SetPoint("BOTTOMLEFT")
+        bd.title = MakeText(f, THEME.fontSizeSmall, "LEFT")
+        bd.title:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -3)
+        bd.title:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        bd.title:SetText("DAMAGE & HEALING")
+        bd.count = MakeText(f, THEME.fontSizeSmall, "RIGHT")
+        bd.count:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -3)
+        bd.count:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+        -- Whose numbers: a menu of every seat, your team first
+        local target = CreateFrame("Button", nil, f)
+        bd.target = target
+        target:SetHeight(ROW_H)
+        target:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -(ROW_H + 3))
+        target:SetPoint("RIGHT", f, "RIGHT", -4, 0)
+        target.text = MakeText(target, THEME.fontSizeSmall, "LEFT")
+        target.text:SetPoint("LEFT", target, "LEFT", 2, 0)
+        target.text:SetPoint("RIGHT", target, "RIGHT", -2, 0)
+        target.hover = target:CreateTexture(nil, "HIGHLIGHT")
+        target.hover:SetTexture(WHITE)
+        target.hover:SetVertexColor(1, 1, 1, THEME.hover[4])
+        target.hover:SetAllPoints()
+        target:SetScript("OnClick", function(self) OpenMenu(BreakdownMenu, self) end)
+        Commander.UI.AttachTooltip(target, "Whose damage and healing", "Click to pick the player. A click on their row in the meters, or on their portrait while this drawer is open, picks them too. The drawer opens on you.")
+        local list = CreateFrame("Frame", nil, f)
+        bd.list = list
+        list:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -BD_TOP)
+        list:SetPoint("RIGHT", f, "RIGHT", -4, 0)
+        list:SetPoint("BOTTOM", f, "BOTTOM", 0, ROW_H + 4)
+        list:EnableMouseWheel(true)
+        list:SetScript("OnMouseWheel", function(_, delta)
+            view.bdOffset = max(0, view.bdOffset - delta * 3)
+            RepaintAll()
+        end)
+        bd.lines = {}
+        for i = 1, BD_LINES_MAX do
+            local line = MakeLine(list)
+            line.bdLine = i
+            line:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(i - 1) * ROW_H)
+            line:SetPoint("RIGHT", list, "RIGHT", 0, 0)
+            bd.lines[i] = line
+        end
+        bd.foot = MakeText(f, THEME.fontSizeSmall, "LEFT")
+        bd.foot:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 4)
+        bd.foot:SetPoint("RIGHT", f, "RIGHT", -6, 0)
+        bd.foot:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+    end
+
+    function bd.Layout(rootH)
+        if not bd.frame then return end
+        bd.visible = max(min(floor((rootH - HEAD_H - BD_TOP - ROW_H - 8) / ROW_H), BD_LINES_MAX), 1)
+    end
+
+    local function PaintLine(line, d, m, out)
+        line.desc = d
+        local spec, sec = SECTION[d.key], out[d.key]
+        local sc = THEME[spec.color]
+        local kind = d.kind
+        local numbered = kind == "row" or kind == "on"
+        line.fill:SetShown(kind == "head")
+        line.right:SetShown(kind == "head")
+        line:EnableMouse(kind == "head" or numbered)
+        line:SetAlpha((numbered and d.r.value <= 0) and 0.55 or 1)
+        if not numbered then
+            line.icon:Hide()
+            line.bar:Hide()
+            line.amt:SetText("")
+            line.pct:SetText("")
+            if kind == "head" then
+                line.name:SetText(spec.label)
+                line.name:SetTextColor(sc[1], sc[2], sc[3])
+                line.right:SetText(sec.full > 0 and format("%s  ·  %s %s", FmtNum(sec.total), FmtNum(sec.total / bdDur), spec.rate) or "—")
+                line.right:SetTextColor(sc[1], sc[2], sc[3])
+            else
+                line.name:SetText(kind == "none" and spec.none or (d.r == "on" and spec.on or spec.rows))
+                line.name:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+            end
+            return
+        end
+        local r, v = d.r, d.r.value
+        if kind == "row" then
+            line.icon:SetTexture(IconTexture(r))
+            line.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            line.icon:Show()
+            line.name:SetText(r.key)
+            line.name:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3])
+        else
+            local seat = r.guid and m.seats[r.guid]
+            local coords = seat and seat.class and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[seat.class]
+            if coords then
+                line.icon:SetTexture(CLASS_RING)
+                line.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                line.icon:Show()
+            else
+                line.icon:Hide()
+            end
+            if seat then
+                line.name:SetText(SeatLabel(m, r.guid))
+            else
+                line.name:SetText(ShortName(r.key))
+                line.name:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+            end
+        end
+        if v > 0 then
+            line.amt:SetText(FmtNum(v))
+            line.amt:SetTextColor(sc[1], sc[2], sc[3])
+            line.pct:SetText(sec.total > 0 and Pct(v, sec.total) or "")
+            line.bar:SetWidth(max(v / max(d.max, 1) * BD_BAR_W, 1))
+            line.bar:SetVertexColor(sc[1], sc[2], sc[3], 0.22)
+            line.bar:Show()
+        else
+            line.amt:SetText("—")
+            line.amt:SetTextColor(THEME.textDim[1], THEME.textDim[2], THEME.textDim[3])
+            line.pct:SetText("")
+            line.bar:Hide()
+        end
+    end
+
+    function bd.Repaint(m, t, atEnd)
+        if not view.bd or not bd.frame then return end
+        local guid = BreakdownGuid(m)
+        local seat = guid and m.seats[guid]
+        local out = A.Breakdown(m, guid, (not atEnd) and t or nil, bdOut)
+        bdScrubbed = not atEnd
+        bdDur = m and A.DurationAt(m, t) or 1
+        if seat then
+            bd.target.text:SetText(ESC.dim .. "BY|r  " .. SeatLabel(m, guid)
+                .. (seat.spec and (ESC.dim .. "  " .. seat.spec .. "|r") or "") .. ESC.dim .. "   (click to change)|r")
+        else
+            bd.target.text:SetText(ESC.dim .. "No players recorded|r")
+        end
+        if not m then
+            bd.count:SetText("")
+        elseif atEnd or out.whole then
+            bd.count:SetText(IsLive(m) and "LIVE" or "WHOLE MATCH")
+        else
+            bd.count:SetText("AS OF " .. GateTime(m, t))
+        end
+        if seat then Flatten(out) else bdFlatN = 0 end
+        local V = bd.visible or 1
+        local maxOff = max(bdFlatN - V, 0)
+        if view.bdOffset > maxOff then view.bdOffset = maxOff end
+        local off = view.bdOffset
+        for i = 1, BD_LINES_MAX do
+            local line = bd.lines[i]
+            local k = off + i
+            if i <= V and k <= bdFlatN then
+                PaintLine(line, bdFlat[k], m, out)
+                line:Show()
+            else
+                line.desc = nil
+                line:Hide()
+            end
+        end
+        if out.whole then
+            bd.foot:SetText(Esc(THEME.danger) .. "Saved before the breakdown kept time: the whole match at any cursor|r")
+        elseif bdFlatN > V then
+            bd.foot:SetText(format("%d–%d of %d · SCROLL FOR MORE", off + 1, min(off + V, bdFlatN), bdFlatN))
+        else
+            bd.foot:SetText("HOVER A LINE FOR HITS, CRITS AND OVERHEAL")
+        end
+    end
+end -- the breakdown drawer
 
 -- ---------------------------------------------------------------------------
 -- Sidebar: the match history, newest first, the live match on top
@@ -1659,10 +2682,34 @@ local function BuildWindow()
         view.dlog = not view.dlog
         local db = U.DB and U.DB()
         if db then db.ArenaDispelLog = view.dlog end
+        if view.dlog and (view.upt or view.bd) then
+            view.upt, view.bd = false, false
+            if db then db.ArenaUptimeOpen, db.ArenaBreakdownOpen = false, false end
+        end
         ApplyDrawer()
         RepaintAll()
     end)
     Commander.UI.AttachTooltip(dlogBtn, "Dispel Log", "Every dispel of the match, cast by cast — who pressed what, and which auras it took off whom, offensive and defensive, Mass Dispel's shattered shields included — with a per-seat tally. Read as of the cursor. Click to show or hide the drawer.")
+    uptBtn = U.MakeHeaderButton(head, "CENTER")
+    uptBtn.headerRole = "arenaUptime"
+    uptBtn:SetWidth(58)
+    uptBtn:SetPoint("RIGHT", dlogBtn, "LEFT", -2, 0)
+    uptBtn.text:SetText("UPTIME")
+    uptBtn:SetScript("OnClick", function()
+        upt.SetOpen(not view.upt)
+        RepaintAll()
+    end)
+    bd.btn = U.MakeHeaderButton(head, "CENTER")
+    bd.btn.headerRole = "arenaBreakdown"
+    bd.btn:SetWidth(80)
+    bd.btn:SetPoint("RIGHT", uptBtn, "LEFT", -2, 0)
+    bd.btn.text:SetText("BREAKDOWN")
+    bd.btn:SetScript("OnClick", function()
+        bd.SetOpen(not view.bd)
+        RepaintAll()
+    end)
+    Commander.UI.AttachTooltip(bd.btn, "Damage & Healing", "One player's damage, ability by ability and whom it hit, and their healing, spell by spell and whom it landed on. Read as of the cursor. Opens on you; click a player in the meters, a portrait, or the drawer's name to read anyone else. Click to show or hide the drawer.")
+    Commander.UI.AttachTooltip(uptBtn, "Debuff Uptime", "Every debuff one side kept on one player — Mortal Strike, Judgement of Justice, the poisons — how long it was up, its share of the time they were alive, and where it dropped, on a strip of the whole match. Opens on the enemy who took the most damage; click a portrait or the drawer's name to read anyone else. Click to show or hide the drawer.")
     matchBtn:SetPoint("RIGHT", dlogBtn, "LEFT", 0, 0)
 
     -- The content column sits right of the sidebar; every band anchors to
@@ -1675,6 +2722,8 @@ local function BuildWindow()
     content:SetWidth(CONTENT_W)
     BuildSidebar()
     BuildDispelLog()
+    upt.Build()
+    bd.Build()
 
     local y = -(HEAD_H + PAD)
     sumText = MakeText(content, THEME.fontSizeSmall, "LEFT")
@@ -1710,9 +2759,11 @@ local function BuildWindow()
     end
     bands.timeline = Band(PLOT_H + AXIS_H)
     bands.meters = Band(ROW_H * (MAX_SEATS + 1))
+    bands.score = Band(ROW_H * (MAX_SEATS + 1))
     bands.feed = Band(FEED_H)
     BuildTimeline(bands.timeline, 0)
     BuildMeters(bands.meters, 0)
+    BuildScore(bands.score, 0)
     BuildFeed(bands.feed, 0)
 
     hint = MakeText(content, THEME.fontSizeSmall, "CENTER")
@@ -1767,7 +2818,9 @@ local function BuildWindow()
     root:SetScript("OnHide", function() view.playing = false; view.dragging = false end)
     built = true
     local db = U.DB and U.DB()
-    view.dlog = not (db and db.ArenaDispelLog == false)
+    view.bd = bd.On() and db.ArenaBreakdownOpen == true
+    view.upt = not view.bd and UptimeOn() and db.ArenaUptimeOpen == true
+    view.dlog = not view.upt and not view.bd and not (db and db.ArenaDispelLog == false)
     ApplyDrawer()
 end
 
@@ -1779,8 +2832,10 @@ local function BoardRows(m)
 end
 
 local function Layout(rows)
-    if layoutRows == rows then return end
-    layoutRows = rows
+    local scoreOn = ScoreOn()
+    local key = rows * 2 + (scoreOn and 1 or 0)
+    if layoutKey == key then return end
+    layoutKey = key
     local teamH = TEAM_HEAD_H + 2 + rows * (CARD_H + CARD_GAP) - CARD_GAP
     for i = 1, 2 do teams[i]:SetHeight(teamH) end
     local y = -(HEAD_H + PAD + SUM_H + PAD + teamH + PAD)
@@ -1788,11 +2843,18 @@ local function Layout(rows)
     y = y - (PLOT_H + AXIS_H + PAD)
     bands.meters:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
     y = y - (ROW_H * (rows + 1) + PAD)
+    bands.score:SetShown(scoreOn)
+    if scoreOn then
+        bands.score:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+        y = y - (ROW_H * (rows + 1) + PAD)
+    end
     bands.feed:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
     y = y - (FEED_H + HINT_H + PAD)
     root:SetHeight(-y)
     side.visible = floor((-y - HEAD_H - ROW_H - ROW_H - 2) / SIDE_ROW_H)
     DlogLayout(rows, -y)
+    upt.Layout(-y)
+    bd.Layout(-y)
 end
 
 -- ---------------------------------------------------------------------------
@@ -2368,6 +3430,7 @@ local function RepaintMeters(m, t, rows)
             for r = 1, n do by[rowsData[r].seat.guid] = rowsData[r].value end
         end
     end
+    local clicks = bd.On()
     for i, teamKey in ipairs({ "us", "them" }) do
         local f = meters[i]
         local tm = m and m.teams[teamKey]
@@ -2378,6 +3441,8 @@ local function RepaintMeters(m, t, rows)
                 if seat and shown < rows then
                     shown = shown + 1
                     local row = f.rows[shown]
+                    row.guid = seat.guid
+                    row:EnableMouse(clicks)
                     row.name:SetText(Esc(ClassColor(seat.class)) .. ShortName(seat.name or "?") .. "|r")
                     for k, spec in ipairs(METER_COLS) do
                         local v = meterValues[spec[1]][seat.guid] or 0
@@ -2399,7 +3464,83 @@ local function RepaintMeters(m, t, rows)
                 end
             end
         end
-        for r = shown + 1, MAX_SEATS do f.rows[r]:Hide() end
+        for r = shown + 1, MAX_SEATS do
+            f.rows[r].guid = nil
+            f.rows[r]:Hide()
+        end
+    end
+end
+
+-- The scoreboard reads the whole match, never the cursor. It repaints when
+-- the match, its board (sbRev — the board is re-read after the result) or
+-- the kept list moves (a next game is what teaches an MMR change), and on
+-- every pass while the match is live
+local scoreFor = {}
+
+local function SetCell(fs, text, color)
+    fs:SetText(text)
+    fs:SetTextColor(color[1], color[2], color[3])
+end
+
+local function SignColor(v)
+    if v > 0 then return THEME.healTx elseif v < 0 then return THEME.danger end
+    return THEME.textDim
+end
+
+local function RepaintScore(m, rows)
+    if not ScoreOn() then return end
+    local list = A.GetMatches()
+    if not IsLive(m) and scoreFor.m == m and scoreFor.rev == (m and m.sbRev) and scoreFor.head == list[1]
+        and scoreFor.n == #list and scoreFor.rows == rows then
+        return
+    end
+    scoreFor.m, scoreFor.rev, scoreFor.head, scoreFor.n, scoreFor.rows = m, m and m.sbRev, list[1], #list, rows
+    local state = not m and "" or (IsLive(m) and " · LIVE" or (m.scored and " · FINAL" or " · LOG"))
+    local dim, text = THEME.textDim, THEME.text
+    for i, teamKey in ipairs({ "us", "them" }) do
+        local f = score[i]
+        f.head.name:SetText((i == 1 and "YOUR TEAM" or "ENEMY") .. state)
+        local tm = m and m.teams[teamKey]
+        local shown = 0
+        if tm then
+            for c = 1, tm.n do
+                local seat = m.seats[tm.order[c]]
+                if seat and shown < rows then
+                    shown = shown + 1
+                    local row = f.rows[shown]
+                    row.guid = seat.guid
+                    row.name:SetText(Esc(ClassColor(seat.class)) .. ShortName(seat.name or "?") .. "|r")
+                    local dmg, heal, kb, deaths, mmr, change, server = A.ScoreLine(m, seat)
+                    -- The combat log's numbers stand in where the server's
+                    -- board never reached us, dimmed so they never pass for it
+                    local vc = server and text or dim
+                    SetCell(row.cols[1], FmtNum(dmg), vc)
+                    SetCell(row.cols[2], FmtNum(heal), vc)
+                    SetCell(row.cols[3], tostring(kb), vc)
+                    SetCell(row.cols[4], tostring(deaths), deaths > 0 and THEME.danger or dim)
+                    if mmr then SetCell(row.cols[5], tostring(mmr), text) else SetCell(row.cols[5], "—", dim) end
+                    if change then
+                        SetCell(row.cols[6], format("%+d", change), SignColor(change))
+                    else
+                        SetCell(row.cols[6], "—", dim)
+                    end
+                    local after, why, _, sure = A.NextMmr(m, seat)
+                    if after then
+                        -- "~" marks an opponent met again: probably their next game, not surely
+                        SetCell(row.cols[7], format(sure and "%+d" or "~%+d", after - mmr), SignColor(after - mmr))
+                    elseif mmr and why == "PENDING" then
+                        SetCell(row.cols[7], "…", dim)
+                    else
+                        SetCell(row.cols[7], "—", dim)
+                    end
+                    row:Show()
+                end
+            end
+        end
+        for r = shown + 1, MAX_SEATS do
+            f.rows[r].guid = nil
+            f.rows[r]:Hide()
+        end
     end
 end
 
@@ -2471,8 +3612,12 @@ RepaintAll = function()
     RepaintTeams(m, t, atEnd)
     RepaintTimeline(m, t, atEnd)
     RepaintMeters(m, t, rows)
+    RepaintScore(m, rows)
     RepaintFeed(m, t)
+    if view.uptApplied ~= UptimeOn() or view.bdApplied ~= bd.On() then ApplyDrawer() end
     RepaintDispelLog(m, t, atEnd)
+    upt.Repaint(m, t, atEnd)
+    bd.Repaint(m, t, atEnd)
 end
 
 -- ---------------------------------------------------------------------------

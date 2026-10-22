@@ -206,6 +206,11 @@ WidgetMT.__index = function(self, key)
         rawset(self, key, fn)
         return fn
     end
+    if key == "SetTextColor" then
+        local fn = function(s, r, g, b, a) s.__textColor = { r, g, b, a } end
+        rawset(self, key, fn)
+        return fn
+    end
     if key == "SetWidth" then
         local fn = function(s, w) s.__w = w end
         rawset(self, key, fn)
@@ -1710,6 +1715,65 @@ do
     -- Meters table: six columns per team, values as of the cursor
     CHECK(fsMatching("^K/D$") and fsMatching("^KICK$"), "ARENA: meters table columns painted")
 
+    -- SCOREBOARD (D31, the Scoreboard option, on by default): the whole
+    -- match per team whatever the cursor, the server's numbers, the MMR
+    -- going in, the rating change, and the MMR change still to come
+    local function ScoreRow(guid)
+        return FindFrame(function(f) return f.guid == guid and type(f.cols) == "table" and #f.cols == 7 end)
+    end
+    local function TipLines(frame)
+        local lines = {}
+        local realDouble, realLine = GameTooltip.AddDoubleLine, GameTooltip.AddLine
+        GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = tostring(l) .. "=" .. tostring(r) end
+        GameTooltip.AddLine = function(_, l) lines[#lines + 1] = tostring(l) end
+        frame.__scripts.OnEnter(frame)
+        frame.__scripts.OnLeave(frame)
+        GameTooltip.AddDoubleLine, GameTooltip.AddLine = realDouble, realLine
+        return table.concat(lines, "|")
+    end
+    do
+        CHECK(CommanderMetersDB.ArenaScoreboard == true, "SCORE: the Scoreboard option is on by default")
+        CHECK(fsMatching("^YOUR TEAM · FINAL$") and fsMatching("^ENEMY · FINAL$"), "SCORE: both teams' boards, from the server")
+        CHECK(fsMatching("^RTG±$") and fsMatching("^MMR±$") and fsMatching("^KB$"), "SCORE: the column heads")
+        local fw, gh = ScoreRow("Player-0-CMARENA01"), ScoreRow("Player-1-CMARENA11")
+        CHECK(fw ~= nil and gh ~= nil, "SCORE: a row per seat, carrying its guid")
+        if fw and gh then
+            CHECK(fw.cols[1].__text == "31.2k" and fw.cols[2].__text == "0" and fw.cols[3].__text == "2",
+                "SCORE: the mage's server damage, healing and killing blows", fw.cols[1].__text)
+            CHECK(fw.cols[5].__text == "1912" and fw.cols[6].__text == "+14", "SCORE: his MMR going in and his rating change")
+            CHECK(fw.cols[6].__textColor and math.abs(fw.cols[6].__textColor[1] - 0.3) < 1e-6, "SCORE: a gain reads green")
+            CHECK(fw.cols[7].__text == "…", "SCORE: no next game yet: the MMR change is still to come", fw.cols[7].__text)
+            CHECK(gh.cols[4].__text == "1" and gh.cols[4].__textColor and math.abs(gh.cols[4].__textColor[1] - 0.85) < 1e-6,
+                "SCORE: the warrior's death, in red")
+            CHECK(gh.cols[6].__text == "-13" and math.abs(gh.cols[6].__textColor[1] - 0.85) < 1e-6, "SCORE: a loss reads red")
+            local tip = TipLines(fw)
+            Errors("SCORE: row tooltip clean")
+            CHECK(tip:find("KILLING BLOWS / DEATHS=2 / 0", 1, true) and tip:find("RATING CHANGE=+14", 1, true)
+                and tip:find("MMR=1912", 1, true), "SCORE: the row opens the seat's tooltip with the board's lines", tip)
+            CHECK(tip:find("after your next game in this bracket", 1, true), "SCORE: the tooltip says when the MMR change will show")
+            -- The board is the whole match: scrubbing never moves it
+            view.t = 30
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(fw.cols[1].__text == "31.2k", "SCORE: scrubbed to 0:30, the board still reads the whole match")
+            view.t = nil
+            report.__scripts.OnUpdate(report, 0.6)
+            -- The flag: off removes the band and gives the window its height back
+            local onH = report.__h
+            CommanderMetersDB.ArenaScoreboard = false
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(fw.__parent.__parent.__shown == false, "SCORE: option off hides the band")
+            CHECK(onH and report.__h and math.abs((onH - report.__h) - 60) < 1e-6,
+                "SCORE: ...and the window loses its 4 rows + gap (3v3)", tostring(onH) .. " -> " .. tostring(report.__h))
+            tip = TipLines(fw)
+            CHECK(not tip:find("next game", 1, true) and tip:find("KILLING BLOWS / DEATHS=2 / 0", 1, true),
+                "SCORE: option off: the seat tooltip is as it was", tip)
+            CommanderMetersDB.ArenaScoreboard = true
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(fw.__parent.__parent.__shown ~= false and report.__h == onH, "SCORE: option on again: the band is back")
+            Errors("SCORE: toggling the option repaints clean")
+        end
+    end
+
     -- Scrubbing: the wheel nudges the cursor off the end, skip returns it
     local plotFrame
     for _, f in ipairs(frames) do
@@ -2006,6 +2070,318 @@ do
             pr.__scripts.OnLeave(pr)
         end
     end
+    -- The UPTIME drawer (D32): the debuffs one side kept on one player
+    do
+        CommanderMetersDB.ViewMode = "DMG"
+        view.t = nil
+        view.playing = false
+        report.__scripts.OnUpdate(report, 0.6)
+        local LOCK, DRUID = "Player-1-CMARENA13", "Player-1-CMARENA12"
+        local btn = FindButton(function(f) return f.headerRole == "arenaUptime" end)
+        CHECK(btn ~= nil and btn.__shown ~= false, "UPT: the replay header has an UPTIME button")
+        CHECK(view.upt == false and view.dlog == true, "UPT: closed by default; the dispel log keeps the drawer")
+        local function Row(name)
+            return FindButton(function(f) return f.full and f.__shown and not f.isHeal and f.full.name == name end)
+        end
+        local heal = FindButton(function(f) return f.isHeal end)
+        if btn then
+            btn.__scripts.OnClick(btn)
+            report.__scripts.OnUpdate(report, 0.6)
+            Errors("UPT: repaint clean")
+            CHECK(view.upt == true and view.dlog == false, "UPT: the button opens it in the dispel log's place")
+            CHECK(report.__w == 1112, "UPT: the window widens by the drawer, once", report.__w)
+            CHECK(CommanderMetersDB.ArenaUptimeOpen == true, "UPT: the choice is remembered")
+            CHECK(fsMatching("^DEBUFF UPTIME$"), "UPT: titled")
+            -- Opens on the enemy who took the most damage: the warlock,
+            -- alive from the gates (1:00) to her death (1:50)
+            CHECK(fsMatching("Nethra"), "UPT: opens on the enemy the team trained (the warlock)")
+            CHECK(fsMatching("^0:50 TO DEATH$"), "UPT: the window is her 50 s alive")
+            local wp = Row("Wound Poison V")
+            CHECK(wp and wp.pct.__text == "84%" and wp.up.__text == "0:42", "UPT: Wound Poison up 42 of her 50 s",
+                wp and (wp.up.__text .. " " .. wp.pct.__text))
+            local fb = Row("Frostbolt")
+            CHECK(fb and fb.pct.__text == "63%", "UPT: the Frostbolt chill 63%", fb and fb.pct.__text)
+            CHECK(wp and fb and wp.__points and fb.__points, "UPT: rows are laid out")
+            local first = FindButton(function(f) return f.full and f.__shown and not f.isHeal end)
+            CHECK(first and first.full.name == "Wound Poison V", "UPT: the longest-up debuff leads", first and first.full.name)
+            CHECK(heal and heal.pct.__text == "84%", "UPT: healing reduced = the Wound Poison's 84%", heal and heal.pct.__text)
+            CHECK(Row("Cheap Shot") ~= nil and Row("Kidney Shot") ~= nil, "UPT: the stuns count as debuffs too")
+            CHECK(Row("Gift of the Wild") == nil and Row("Fel Armor") == nil, "UPT: buffs never do")
+            CHECK(wp and wp.segs[1] and wp.segs[1].__shown ~= false, "UPT: a strip quad per stretch")
+            CHECK(wp and wp.veil.__shown == false, "UPT: no veil at the end of the match")
+            for _, r in ipairs({ wp, fb, heal }) do
+                if r then r.__scripts.OnEnter(r); r.__scripts.OnLeave(r) end
+            end
+            Errors("UPT: row tooltips clean")
+            -- A portrait click picks the druid
+            local druidCard = FindButton(function(f) return f.guid == DRUID and f.__parent and f.__parent.cardIndex end)
+            CHECK(druidCard and druidCard.__scripts.OnClick, "UPT: portraits take a click")
+            if druidCard then
+                druidCard.__scripts.OnClick(druidCard)
+                report.__scripts.OnUpdate(report, 0.6)
+                Errors("UPT: druid repaint clean")
+                CHECK(view.uptGuid == DRUID and fsMatching("Leafshade"), "UPT: ...and the drawer reads them")
+                CHECK(fsMatching("^1:20 TO DEATH$"), "UPT: the druid's 80 s alive")
+                local cp = Row("Crippling Poison")
+                CHECK(cp and cp.pct.__text == "24%", "UPT: Crippling Poison 19 of 80 s, dropped while sheeped", cp and cp.pct.__text)
+                CHECK(cp and cp.full.gap == 9 and cp.full.gapAt == 124, "UPT: ...its longest drop 9 s from 2:04")
+                CHECK(Row("Polymorph") ~= nil and Row("Sap") ~= nil, "UPT: the druid's control is on the list")
+                local sap = Row("Sap")
+                CHECK(sap and sap.pct.__text == "11%", "UPT: the Sap the Frostbolt broke ends at the break (8.8 s)", sap and sap.pct.__text)
+                -- The name jumps to the longest drop; the strip to the second clicked
+                if cp then
+                    cp.__scripts.OnClick(cp)
+                    CHECK(view.t and math.abs(view.t - 124) < 1e-6, "UPT: clicking the name jumps to the longest drop", view.t)
+                    local realCursor = GetCursorPosition
+                    GetCursorPosition = function() return 114 + 53, 0 end
+                    cp.__scripts.OnClick(cp)
+                    GetCursorPosition = realCursor
+                    CHECK(view.t and math.abs(view.t - 100) < 1e-6, "UPT: clicking the strip's middle moves the cursor to 1:40", view.t)
+                end
+                -- Scrubbed: the numbers as of the cursor, the strip past it veiled
+                view.t = 128
+                report.__scripts.OnUpdate(report, 0.6)
+                local wp2 = Row("Wound Poison V")
+                CHECK(wp2 and wp2.pct.__text == "24%", "UPT: at 2:08 Wound Poison is 16.5 of 68 s", wp2 and wp2.pct.__text)
+                CHECK(wp2 and wp2.veil.__shown == true and wp2.tick.__shown == true, "UPT: the strip past the cursor is veiled")
+                CHECK(fsMatching("^1:08 ALIVE$"), "UPT: the window is as of the cursor")
+                local fb2 = Row("Frostbolt")
+                CHECK(fb2 and fb2.pct.__text == "—" and fb2.__alpha ~= 0, "UPT: a debuff not landed yet stays listed, unread")
+                if fb2 then fb2.__scripts.OnEnter(fb2); fb2.__scripts.OnLeave(fb2) end
+                Errors("UPT: a future row's tooltip clean")
+                view.t = nil
+            end
+            -- The drawer's own menu: every seat, enemies first
+            local target = FindButton(function(f) return f.__scripts.OnClick and f.text and f.text.__text and f.text.__text:find("click to change", 1, true) end)
+            CHECK(target ~= nil, "UPT: the target is a menu")
+            if target then
+                target.__scripts.OnClick(target)
+                CHECK(#menuCaptured == 8, "UPT: two team titles and six seats", #menuCaptured)
+                CHECK(menuCaptured[1] and menuCaptured[1].isTitle and menuCaptured[1].text == "ENEMY", "UPT: enemies first")
+                local mage
+                for _, info in ipairs(menuCaptured) do
+                    if info.text and info.text:find("Frostweaver", 1, true) and info.func then mage = info end
+                end
+                if mage then mage.func() end
+                report.__scripts.OnUpdate(report, 0.6)
+                CHECK(view.uptGuid == "Player-0-CMARENA01", "UPT: picking our mage reads her")
+                local ms = Row("Mortal Strike")
+                CHECK(ms and ms.pct.__text == "34%", "UPT: the warrior's Mortal Strike on the mage, 27.5 of 81 s", ms and ms.pct.__text)
+                CHECK(heal and heal.pct.__text == "34%", "UPT: ...is her healing reduced", heal and heal.pct.__text)
+                CHECK(ms and ms.segs[1] and ms.segs[1].__color and ms.segs[1].__color[1] > 0.8 and ms.segs[1].__color[3] < 0.5,
+                    "UPT: their debuffs on us wear their team's red")
+            end
+            local list = FindButton(function(f) return f.full and f.__shown and not f.isHeal end)
+            list = list and list.__parent
+            if list and list.__scripts.OnMouseWheel then
+                list.__scripts.OnMouseWheel(list, -1)
+                report.__scripts.OnUpdate(report, 0.6)
+                Errors("UPT: the wheel clean")
+            end
+            -- DISPELS takes the drawer back
+            local dbtn = FindButton(function(f) return f.headerRole == "arenaDispels" end)
+            dbtn.__scripts.OnClick(dbtn)
+            CHECK(view.dlog == true and view.upt == false and CommanderMetersDB.ArenaUptimeOpen == false,
+                "UPT: DISPELS closes the uptime page")
+            CHECK(report.__w == 1112, "UPT: ...the window keeps one drawer's width")
+            -- Flag off with the drawer open: the dispel log comes back as saved
+            btn.__scripts.OnClick(btn)
+            CommanderMetersDB.ArenaUptime = false
+            report.__scripts.OnUpdate(report, 0.6)
+            Errors("UPT: flag off repaint clean")
+            CHECK(btn.__shown == false, "UPT: off, the header has no UPTIME button")
+            CHECK(view.upt == false and view.dlog == true and report.__w == 1112, "UPT: ...and the dispel log is back")
+            CommanderMetersDB.ArenaBreakdown = false
+            if druidCard then druidCard.__scripts.OnClick(druidCard) end
+            CHECK(view.upt == false and view.bd == false, "UPT: off (and the breakdown off), a portrait click opens nothing")
+            CommanderMetersDB.ArenaBreakdown = true
+            CommanderMetersDB.ArenaUptime = true
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(btn.__shown ~= false and view.upt == false and view.dlog == true, "UPT: on again: the button is back, the drawer as it was")
+        end
+    end
+    -- The BREAKDOWN drawer (D33): one player's damage and healing, by
+    -- ability and by whom it landed on
+    do
+        CommanderMetersDB.ViewMode = "DMG"
+        view.t = nil
+        view.playing = false
+        report.__scripts.OnUpdate(report, 0.6)
+        local Fmt = CommanderMeters_UI.FmtNum
+        local MAGE, ROGUE, PRIEST = "Player-0-CMARENA01", "Player-0-CMARENA02", "Player-0-CMARENA03"
+        local DRUID = "Player-1-CMARENA12"
+        local btn = FindButton(function(f) return f.headerRole == "arenaBreakdown" end)
+        local uptBtn = FindButton(function(f) return f.headerRole == "arenaUptime" end)
+        local dlogBtn = FindButton(function(f) return f.headerRole == "arenaDispels" end)
+        local matchBtn = FindButton(function(f) return f.headerRole == "arenaMatch" end)
+        local function RightOf(f)
+            for _, pt in ipairs(f and f.__points or {}) do
+                if pt.point == "RIGHT" then return pt.rel end
+            end
+        end
+        CHECK(btn ~= nil and btn.__shown ~= false, "BD: the replay header has a BREAKDOWN button")
+        CHECK(RightOf(btn) == uptBtn and RightOf(matchBtn) == btn, "BD: left of UPTIME; the match menu ends at it")
+        CHECK(view.bd == false and view.dlog == true, "BD: closed by default; the dispel log keeps the drawer")
+        local function Lines(pred)
+            local out = {}
+            for _, f in ipairs(frames) do
+                if f.__kind == "Button" and f.bdLine and f.__shown and f.desc and (not pred or pred(f.desc)) then
+                    out[#out + 1] = f
+                end
+            end
+            table.sort(out, function(x, y) return x.bdLine < y.bdLine end)
+            return out
+        end
+        local function Row(key) return Lines(function(d) return d.kind == "row" and d.r.key == key end)[1] end
+        local function On(key) return Lines(function(d) return d.kind == "on" and d.r.key == key end)[1] end
+        local function Heads() return Lines(function(d) return d.kind == "head" end) end
+        local function Tip(f)
+            local lines = {}
+            local realAdd = GameTooltip.AddDoubleLine
+            GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = tostring(l) .. "=" .. tostring(r) end
+            f.__scripts.OnEnter(f)
+            f.__scripts.OnLeave(f)
+            GameTooltip.AddDoubleLine = realAdd
+            return table.concat(lines, "|")
+        end
+        if btn then
+            btn.__scripts.OnClick(btn)
+            report.__scripts.OnUpdate(report, 0.6)
+            Errors("BD: repaint clean")
+            CHECK(view.bd == true and view.dlog == false and view.upt == false, "BD: the button opens it in the dispel log's place")
+            CHECK(report.__w == 1112, "BD: the window widens by the drawer, once", report.__w)
+            CHECK(CommanderMetersDB.ArenaBreakdownOpen == true, "BD: the choice is remembered")
+            CHECK(fsMatching("^DAMAGE & HEALING$") and fsMatching("^WHOLE MATCH$"), "BD: titled; at the end it reads the whole match")
+            -- Opens on you: the mage, damage first, no healing
+            local heads = Heads()
+            CHECK(view.bdGuid == nil and #heads == 2 and heads[1].desc.key == "dmg" and heads[2].desc.key == "heal",
+                "BD: opens on you (the mage): damage leads")
+            CHECK(heads[1] and heads[1].right.__text:find(Fmt(tm.seats[MAGE].dmg), 1, true) and heads[1].right.__text:find("DPS", 1, true),
+                "BD: the damage head is the mage's DMG and DPS", heads[1] and heads[1].right.__text)
+            CHECK(fsMatching("^No healing done$"), "BD: a frost mage healed nothing, and says so")
+            local fb = Row("Frostbolt")
+            CHECK(fb and fb.amt.__text == Fmt(34260) and fb.pct.__text == "86%", "BD: Frostbolt 34.3k, 86% of it",
+                fb and (fb.amt.__text .. " " .. fb.pct.__text))
+            CHECK(fb and fb.icon.__shown ~= false and fb.bar.__shown ~= false and fb.bar.__w and fb.bar.__w > 270, "BD: the top row's bar runs full")
+            local wb = Row("Water Elemental: Waterbolt")
+            CHECK(wb and wb.amt.__text == Fmt(2200), "BD: the Water Elemental's Waterbolts are the mage's")
+            local il = Row("Ice Lance")
+            CHECK(fb and il and fb.bdLine < il.bdLine and il.bdLine < wb.bdLine, "BD: abilities by damage, most first")
+            local net = On("Nethra")
+            CHECK(net and net.amt.__text == Fmt(25430) and net.name.__text:find("Nethra", 1, true), "BD: the warlock took 25.4k of it")
+            local gore = On("Gorehowl")  -- the mock knows the warrior's class coords only
+            CHECK(gore and gore.icon.__shown ~= false and tostring(gore.icon.__texture):find("UI%-Classes%-Circles"),
+                "BD: a player target wears their class")
+            CHECK(fsMatching("^ABILITIES$") and fsMatching("^TARGETS$"), "BD: the damage lists' heads")
+            local tip = fb and Tip(fb) or ""
+            CHECK(tip:find("HITS=", 1, true) and tip:find("CRITS=", 1, true) and tip:find("BIGGEST=", 1, true),
+                "BD: an ability's tooltip: hits, crits, the biggest", tip)
+            if wb then CHECK(Tip(wb):find("BY THEIR PET=Water Elemental", 1, true), "BD: ...and names the pet") end
+            if net then Tip(net) end
+            if heads[1] then Tip(heads[1]) end
+            Errors("BD: tooltips clean")
+            -- Scrubbed: the numbers as of the cursor, the order the whole match's
+            view.t = 100
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(fsMatching("^AS OF 0:40$"), "BD: the drawer says it reads the cursor")
+            fb, il = Row("Frostbolt"), Row("Ice Lance")
+            CHECK(fb and fb.amt.__text == Fmt(14100), "BD: Frostbolt 14.1k by 0:40", fb and fb.amt.__text)
+            CHECK(il and il.amt.__text == "—" and il.__alpha == 0.55 and il.bar.__shown == false, "BD: Ice Lance not cast yet: listed, dimmed")
+            CHECK(fb and il and fb.bdLine < il.bdLine, "BD: the order holds while scrubbing")
+            heads = Heads()
+            local cell
+            for _, f in ipairs(frames) do
+                if f.meterRow and f.guid == MAGE and f.__shown then cell = f.cols[1].__text end
+            end
+            CHECK(heads[1] and cell == Fmt(16300) and heads[1].right.__text:find(cell, 1, true),
+                "BD: the head's damage is the meters band's DMG at the cursor", cell)
+            CHECK(Tip(fb):find("WHOLE MATCH=", 1, true), "BD: a scrubbed tooltip carries the whole match too")
+            Errors("BD: scrubbed repaint clean")
+            -- A meters row opens their breakdown: the druid heals, so healing leads
+            view.t = nil
+            local druidRow = FindButton(function(f) return f.meterRow and f.guid == DRUID end)
+            CHECK(druidRow and druidRow.__scripts.OnClick, "BD: the meters rows take a click")
+            if druidRow then
+                Tip(druidRow)
+                druidRow.__scripts.OnClick(druidRow)
+                report.__scripts.OnUpdate(report, 0.6)
+                Errors("BD: druid repaint clean")
+                heads = Heads()
+                CHECK(view.bdGuid == DRUID and heads[1] and heads[1].desc.key == "heal", "BD: the druid's breakdown, healing first")
+                CHECK(fsMatching("^No damage done$") and fsMatching("^HEALED$") and fsMatching("^SPELLS$"), "BD: no damage; the healing lists' heads")
+                local lb, rj = Row("Lifebloom"), Row("Rejuvenation")
+                CHECK(lb and lb.amt.__text == Fmt(4800) and rj and rj.amt.__text == Fmt(2570), "BD: Lifebloom, then Rejuvenation")
+                local onW = On("Gorehowl")
+                CHECK(onW and onW.amt.__text == Fmt(2630), "BD: the warrior got 2.6k of her healing")
+                CHECK(Tip(rj):find("OVERHEAL=", 1, true), "BD: a spell's tooltip carries its overheal")
+            end
+            -- A portrait click with the drawer open picks the player for it
+            local priestCard = FindButton(function(f) return f.guid == PRIEST and f.__parent and f.__parent.cardIndex end)
+            if priestCard then
+                priestCard.__scripts.OnClick(priestCard)
+                report.__scripts.OnUpdate(report, 0.6)
+                CHECK(view.bdGuid == PRIEST and view.bd == true and view.upt == false, "BD: a portrait click reads the priest here, not in the uptime page")
+                local sh = Row("Power Word: Shield")
+                CHECK(sh and sh.amt.__text == Fmt(1480), "BD: the shield's absorbs are healing")
+                CHECK(Row("Shadow Word: Pain") ~= nil and Heads()[1].desc.key == "heal", "BD: her Shadow Word: Pain under her healing")
+                CHECK(Tip(Heads()[1]):find("SHIELDS ABSORBED=", 1, true), "BD: the healing head names the shields and the overheal")
+            end
+            -- The drawer's own menu: every seat, your team first
+            local target = FindButton(function(f) return f.__scripts.OnClick and f.text and f.text.__text and f.text.__text:find("BY|r", 1, true) end)
+            CHECK(target ~= nil, "BD: the player is a menu")
+            if target then
+                target.__scripts.OnClick(target)
+                CHECK(#menuCaptured == 8 and menuCaptured[1].isTitle and menuCaptured[1].text == "YOUR TEAM", "BD: two titles and six seats, yours first",
+                    #menuCaptured)
+                local rogue
+                for _, info in ipairs(menuCaptured) do
+                    if info.text and info.text:find("Shiv", 1, true) and info.func then rogue = info end
+                end
+                if rogue then rogue.func() end
+                report.__scripts.OnUpdate(report, 0.6)
+                CHECK(view.bdGuid == ROGUE and Row("Sinister Strike") ~= nil and Row("Eviscerate") ~= nil and Row("Melee") ~= nil,
+                    "BD: picking the rogue reads her strikes, finishers and swings")
+            end
+            local list = Lines()[1]
+            list = list and list.__parent
+            if list and list.__scripts.OnMouseWheel then
+                list.__scripts.OnMouseWheel(list, -1)
+                report.__scripts.OnUpdate(report, 0.6)
+                Errors("BD: the wheel clean")
+            end
+            -- A match saved before the breakdown reads whole at any cursor, and says so
+            tm.keySeries = nil
+            view.t = 100
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(fsMatching("^WHOLE MATCH$") and fsMatching("Saved before the breakdown kept time"), "BD: an old match says it reads the whole match")
+            tm.keySeries = true
+            view.t = nil
+            -- One page at a time: UPTIME takes the drawer, BREAKDOWN takes it back, DISPELS too
+            uptBtn.__scripts.OnClick(uptBtn)
+            CHECK(view.upt == true and view.bd == false and CommanderMetersDB.ArenaBreakdownOpen == false, "BD: UPTIME closes the breakdown page")
+            btn.__scripts.OnClick(btn)
+            CHECK(view.bd == true and view.upt == false and CommanderMetersDB.ArenaUptimeOpen == false, "BD: BREAKDOWN closes the uptime page")
+            CHECK(report.__w == 1112, "BD: ...the window keeps one drawer's width")
+            dlogBtn.__scripts.OnClick(dlogBtn)
+            CHECK(view.dlog == true and view.bd == false and CommanderMetersDB.ArenaBreakdownOpen == false, "BD: DISPELS closes the breakdown page")
+            -- Flag off with the drawer open: the dispel log comes back as saved
+            btn.__scripts.OnClick(btn)
+            CommanderMetersDB.ArenaBreakdown = false
+            report.__scripts.OnUpdate(report, 0.6)
+            Errors("BD: flag off repaint clean")
+            CHECK(btn.__shown == false and RightOf(matchBtn) == uptBtn, "BD: off, the header has no BREAKDOWN button")
+            CHECK(view.bd == false and view.dlog == true and report.__w == 1112, "BD: ...and the dispel log is back")
+            if druidRow then druidRow.__scripts.OnClick(druidRow) end
+            CHECK(view.bd == false, "BD: off, a meters row opens nothing")
+            if priestCard then priestCard.__scripts.OnClick(priestCard) end
+            CHECK(view.upt == true and view.bd == false, "BD: off, a portrait click is the uptime page's again")
+            dlogBtn.__scripts.OnClick(dlogBtn)
+            CommanderMetersDB.ArenaBreakdown = true
+            report.__scripts.OnUpdate(report, 0.6)
+            CHECK(btn.__shown ~= false and RightOf(matchBtn) == btn and view.bd == false and view.dlog == true,
+                "BD: on again: the button is back, the drawer as it was")
+        end
+    end
     io.write(string.format("ARENA: canned 3v3 serializes to %.0f KB (%d moments)\n", #A.Serialize(tm) / 1024, tm.ledgerN))
 
     local special = false
@@ -2257,6 +2633,13 @@ do
     CHECK(done.teams.us.name == "Home Team" and done.teams.us.ratingAfter == 1711, "ARENA: our team info from index 1 (our faction)")
     CHECK(done.teams.them.name == "Away Team", "ARENA: their team info from the other index")
     CHECK(done.rated == true, "ARENA: rated by rating change")
+    -- The Scoreboard option re-reads the board while it is up (the ratings
+    -- can land a beat after the winner): the later answer lands on the
+    -- CLOSED match, and nothing begins or comes back to life
+    scoreRows[1][14] = 1712
+    Fire("UPDATE_BATTLEFIELD_SCORE")
+    CHECK(done.seats[playerGuid].sb.mmr == 1712, "SCORE: a later board lands on the closed match")
+    CHECK(A.Live() == nil and A.GetMatches()[1] == done, "SCORE: and no match is begun or brought back")
     local wraith = done.seats["Score-Wraith"]
     CHECK(wraith and wraith.team == "them" and wraith.fromScoreboard and wraith.class == "WARLOCK",
         "ARENA: an unseen enemy on the scoreboard took a seat on THEM")
@@ -2272,12 +2655,25 @@ do
     instState.itype = "none"; instState.inInstance = false
     Fire("PLAYER_ENTERING_WORLD", false, false)
     CHECK(A.Live() == nil, "ARENA: leaving with no live match is quiet")
+    scoreRows[1][14] = 1713
+    Fire("UPDATE_BATTLEFIELD_SCORE")
+    CHECK(done.seats[playerGuid].sb.mmr == 1712, "SCORE: leaving the arena ends the re-reading")
     instState.itype = "arena"; instState.inInstance = true
     Fire("ZONE_CHANGED_NEW_AREA")
     CHECK(A.Live() ~= nil, "ARENA: zone change into an arena begins a match")
     A.OnCleu(ts + 100, "SWING_DAMAGE", nil, playerGuid, "Devinp", 0x511, 0, "Player-1-E1", "Rime", 0x548, 0, 100, 0, 1, 0, 0, 0, false, false, false, false)
+    CommanderMetersDB.ArenaScoreboard = false
     Fire("UPDATE_BATTLEFIELD_SCORE")
     CHECK(A.GetMatches()[1].result == "LOSS", "ARENA: the other faction winning is a LOSS")
+    do
+        local loss = A.GetMatches()[1]
+        CHECK(loss.seats[playerGuid].sb.mmr == 1713, "SCORE: the board is read at the result either way")
+        scoreRows[1][14] = 1690
+        Fire("UPDATE_BATTLEFIELD_SCORE")
+        CHECK(loss.seats[playerGuid].sb.mmr == 1713, "SCORE: with the option off it is read once, as before")
+    end
+    CommanderMetersDB.ArenaScoreboard = true
+    scoreRows[1][14] = 1700
     -- Leaving mid-match with no winner archives as LEFT only if played
     winner = nil
     Fire("ZONE_CHANGED_NEW_AREA") -- still in the arena: a new match begins
@@ -2319,6 +2715,48 @@ do
     Fire("PLAYER_LOGOUT")
     CHECK(CommanderMetersArenaLog == nil, "ARENA: Keep Matches 0 writes no history")
     CommanderMetersDB.ArenaKeepMatches = 10
+
+    -- SCOREBOARD: the canned match learns its MMR change from Frostweaver's
+    -- next 3v3 (Devinp's games between are another character's)
+    do
+        local canned
+        for _, mm in ipairs(A.GetMatches()) do
+            if mm.seats["Player-0-CMARENA01"] then canned = mm end
+        end
+        local t1 = canned.tsStart + canned.tEnd + 300
+        local nx = A.Begin(t1, "Ruins of Lordaeron")
+        A.SetSeat("us", "Player-0-CMARENA01", "Frostweaver", "MAGE", "Human", "player")
+        A.SetSeat("us", "Player-0-CMARENA02", "Shiv", "ROGUE", "NightElf", "party1")
+        A.SetSeat("us", "Player-0-CMARENA03", "Vespers", "PRIEST", "Dwarf", "party2")
+        A.SetSeat("them", "Player-1-CMARENA11", "Gorehowl", "WARRIOR", "Orc", "arena1")
+        A.SetSeat("them", "Player-1-ZED", "Zed", "ROGUE", "Undead", "arena2")
+        A.SetSeat("them", "Player-1-YARN", "Yarn", "PRIEST", "Undead", "arena3")
+        A.OnCleu(t1 + 70, "SWING_DAMAGE", nil, "Player-0-CMARENA01", "Frostweaver", 0x511, 0, "Player-1-ZED", "Zed", 0x548, 0,
+            100, 0, 1, 0, 0, 0, false, false, false, false)
+        nx.rated = true
+        A.MergeScoreboard(nx, {
+            { name = "Frostweaver", kb = 0, hk = 0, deaths = 0, dmg = 100, heal = 0, ratingChange = -10, mmr = 1930 },
+            { name = "Shiv", kb = 0, hk = 0, deaths = 0, dmg = 0, heal = 0, ratingChange = -10, mmr = 1925 },
+            { name = "Vespers", kb = 0, hk = 0, deaths = 0, dmg = 0, heal = 0, ratingChange = -10, mmr = 0 },
+            { name = "Gorehowl", kb = 1, hk = 0, deaths = 0, dmg = 0, heal = 0, ratingChange = 9, mmr = 1850 },
+        }, 1)
+        A.Finish(t1 + 120, "LOSS")
+        CommanderMetersArena_Open(nil, canned.id)
+        report.__scripts.OnUpdate(report, 0.6)
+        Errors("SCORE: the canned match repaints clean beside its next game")
+        local fw, sh, ve = ScoreRow("Player-0-CMARENA01"), ScoreRow("Player-0-CMARENA02"), ScoreRow("Player-0-CMARENA03")
+        local gh, lf = ScoreRow("Player-1-CMARENA11"), ScoreRow("Player-1-CMARENA12")
+        CHECK(fw and fw.cols[7].__text == "+18", "SCORE: your MMR change, from your next game (1912 → 1930)", fw and fw.cols[7].__text)
+        CHECK(sh and sh.cols[7].__text == "+21", "SCORE: a teammate who queued with you again", sh and sh.cols[7].__text)
+        CHECK(gh and gh.cols[7].__text == "~-26", "SCORE: an opponent met again: marked not sure", gh and gh.cols[7].__text)
+        CHECK(lf and lf.cols[7].__text == "—", "SCORE: an opponent you never met again: unknown")
+        CHECK(ve and ve.cols[7].__text == "—", "SCORE: a next game with no MMR for them: unknown")
+        local tip = fw and TipLines(fw) or ""
+        CHECK(tip:find("MMR=1912 → 1930  (+18)", 1, true) and tip:find("your pre-match MMR in your next game (5 min later)", 1, true),
+            "SCORE: the tooltip shows the move and where it was read", tip)
+        tip = gh and TipLines(gh) or ""
+        CHECK(tip:find("They were not on your team", 1, true), "SCORE: an opponent's reading says why it is not sure", tip)
+    end
 
     -- Forget drops everything and the open report paints an empty state clean
     CommanderMeters_ArenaForget()

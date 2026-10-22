@@ -1520,3 +1520,223 @@ feed, which is the only way to know an enemy's rating.
   carry no rating suffix: on a replayed match it would read as the match's
   number.
 
+
+## D31. The scoreboard, and an MMR change the game never reports (2026-10-20)
+
+Devin: "For the commander Arena Replay I want to be able to also see each
+player's total damage, total healing, killing blow, etc for each player as
+well as everyone's individual mmr and mmr change. make sure you make this
+an optional feature flagged behaviors."
+
+- **One flag, `ArenaScoreboard`, default on** (he asked to see it; the flag
+  is the off switch). Off restores 2.5.1 exactly: no band, the seat
+  tooltip's old scoreboard lines, the board read once at the result. The
+  checkbox ("Scoreboard in the Replay") pairs with Record Arena Matches,
+  so the settings page gains no row. One key past the D12 ceiling; the
+  justification is that he asked for a flag by name.
+- **A SCOREBOARD band under the meters**, split by team like every band
+  since D27 pass 9: DMG · HEAL · KB · D · MMR · RTG± · MMR±, in the same
+  216 px of columns as the meters so the names line up. It reads the
+  WHOLE match whatever the cursor (the server only knows the end), which
+  its head says: "YOUR TEAM · FINAL". A match whose board never reached us
+  (left, live) shows the combat log's numbers dimmed under "· LOG" /
+  "· LIVE", and dashes for the ratings. A row opens the seat tooltip the
+  card portraits open. Heights: 2v2 +46 px, 3v3 +60, 5v5 864 → 952.
+  *Rejected*: more columns on the meters band (93 px of names would be
+  left for none), and one table for both teams (D27 pass 9).
+- **Killing blows from the server, deaths from the log.** The TBC arena
+  board answers 0 deaths for every player — every one of Devin's saved
+  matches, wins included, and Blizzard's own board hides the column in
+  arenas. The server's KB is kept: in his 2v2s the log's 6-second kill
+  window sometimes gave both kills to one seat where the server split them.
+- **A skirmish has no ratings, not ratings of zero.** The board answers MMR
+  0 and change 0 there (all of Devin's skirmishes); both read as "—". A
+  rated +0 is still "+0".
+- **MMR change is LEARNED, never invented.** `GetBattlefieldScore` stops at
+  preMatchMMR (14 values — ArenaArmory's store of Devin's rated games has
+  no fifteenth, and no `C_PvP.GetScoreInfo` on this branch). His own
+  pre-match MMR moves every game, usually about twice the rating change and
+  always the same way, so the change is what the next game says it moved
+  to. `A.NextMmr` accepts only a next game that really is the next one:
+  YOUR character's next kept match of the same bracket (a skirmish
+  between is skipped; a rated game without a board between ends the
+  search — two games would be in the number; an alt's games never count).
+  Yours is always trusted; a teammate's when they are in that game within
+  30 minutes (queued with you, they played nothing between); an opponent
+  met again within 30 minutes is shown with "~" and the tooltip says why.
+  "…" means it may still come; "—" means it cannot. *Rejected*: an Elo
+  estimate (an unknown K presented as a number), and a per-name ledger
+  that would trust any later sighting.
+- **The board is read again after the result** (flag on), on every
+  `UPDATE_BATTLEFIELD_SCORE` while still in the arena, for at most two
+  minutes, onto the CLOSED match. Ratings can arrive a beat after the
+  winner (ArenaArmory retries 20 s for it); Blizzard's board requests
+  data every frame while shown, so the event keeps coming. A merge bumps
+  `m.sbRev` only when a number changed, so a frame-rate stream of equal
+  boards repaints nothing. `MergeScoreboard` now seats unseen players on
+  the match it is given (`SeatOn`) instead of setting the engine's `live`
+  to it — merging onto a closed match must never bring it back to life.
+
+Harness: arena 519 → 552 (Stage K: the line, deaths from the log, a
+skirmish's zeros, a rated +0, the next game for you / a teammate / an
+opponent / an absentee, PENDING vs UNKNOWN, skirmish / other bracket / alt
+skipped, the 30-minute gap, a boardless game between, realm suffixes and a
+namesake of another class, the re-merge onto a closed match, the store
+round trip, an imported history); UI 405 → 437 (the band's heads, server
+values and colors, the cursor not moving it, the row tooltip, the flag off
+and on with the window height, the late board on the live path, leaving
+ending the re-read, flag off reading once, the canned match learning
++18 / +21 / ~-26 / — / — from a next game). Rendered at 3v3 and 5v5.
+Unverified in game — A43, A44.
+
+## D32. Debuff uptime on one player (2026-10-21)
+
+Devin: "I want to be able to see spell uptime like judgement of justice and
+mortal strike on a specific target like a resto druid for example to make
+sure we were training him properly."
+
+- **Nothing new is recorded.** Every seat already keeps its buff and debuff
+  intervals (Stage G's aura record, `AURA_CAP` 600, saved with the match)
+  for the cards' icon rows; `A.Uptime(m, guid, t, out)` reads them. So
+  every match already in the store, and every one the replay has kept
+  since the aura rows shipped, has uptime the moment the code loads.
+- **One flag, `ArenaUptime`, default on**, like D31: off, the header has
+  no UPTIME button, portraits take no clicks, the drawer state reverts to
+  the dispel log as saved — the replay exactly as 2.6.0 drew it. One more
+  key past the D12 ceiling (and `ArenaUptimeOpen` for the drawer, the
+  `ArenaDispelLog` pattern); a flag was asked for on the last feature and
+  the same reasoning holds.
+- **The dispel log's drawer, a second page.** An UPTIME header button
+  beside DISPELS; one drawer shows at a time (two side by side would make
+  the window 1412 px). Opening UPTIME closes the dispel log without
+  touching its saved state, so the flag going off brings it back.
+- **Which debuffs: the OTHER team's, every one.** A debuff counts when its
+  caster's seat (a pet's owner) is on the other side of the target. Their
+  own team's (Weakened Soul, Forbearance), buffs, and a source that is no
+  seat never count. CC stays in: how long their healer spent sheeped is
+  the same question as how long they wore Mortal Strike.
+- **The window is the time they were alive**: from the gates to the cursor
+  or their death. The percentage divides by that, so a druid killed at
+  1:20 is judged on 80 seconds, not the match.
+- **Order and strips are the whole match; numbers are the cursor's.** Rows
+  sort by whole-match seconds so nothing jumps while scrubbing; UP and %
+  read as of the cursor like every band (D27); the strip past the cursor
+  is veiled, with the cursor's tick on it. Strips wear the applying
+  team's color (team chrome, D27 pass 9).
+- **HEALING REDUCED is its own row**: the union of Mortal Strike, Aimed
+  Shot and Wound Poison of any rank — PartyFrames' HEAL category, the
+  suite's one list of healing cuts. "Was the healer under a Mortal Strike
+  effect" is one question whoever pressed it. Hex of Weakness (20%) is
+  left out: not in the suite's list, and a 20% cut is not the same answer.
+- **Who it opens on: the enemy who took the most damage** — the one the
+  team trained, by definition. A portrait click (flag on) or the drawer's
+  own menu picks anyone else, own team included (MS uptime on your healer).
+- **Per row: seconds, %, first on, stretches, the longest drop** (the tail
+  after the last fade counts — a debuff that fell off for the last 20
+  seconds of a kill is the finding). Click the strip: the cursor goes to
+  that second. Click the name: to the start of the longest drop.
+- **A broken aura's interval now ends at the break.** `SPELL_AURA_BROKEN`
+  closed the CC moment but left the aura record open when no REMOVED
+  followed — the canned match's broken Sap read 94% uptime (and its icon
+  stayed on the druid's card to the end). A REMOVED after the break is a
+  no-op on a closed interval.
+- **Intervals are sorted by start before the union**, though the log
+  appends them that way: cheap, and the union is wrong without it.
+- **The main chunk hit Lua's 200-local ceiling**; the drawer lives in one
+  `do` block and reaches out only through `upt` (Build, Layout, Repaint,
+  ShowFor, SetOpen).
+
+Harness: arena 552 → 585 (Stage L: three Mortal Strike stretches and their
+drops, a fade and a judgement the same second as one stretch, the tail
+drop, the healing-reduced union and its credit, their own team's debuff /
+a buff / a seatless source never counting, the window to their death and
+to a cursor, before the gates, an open debuff on a live match, the
+default target, a reused out table, an unknown seat, the cap's dropped
+count, a broken debuff, the store round trip); UI 437 → 486 (the button,
+the drawer in the dispel log's place, the default target and its window,
+values and order, buffs absent, a portrait click, the name and strip
+clicks, the scrubbed veil, a not-yet-landed row, the target menu, their
+Mortal Strike on our mage in red, DISPELS taking the drawer back, flag off
+and on). The canned match gained poisons and Frostbolt chills on the
+warlock and druid and the warrior's Mortal Strike on the mage. Rendered.
+Unverified in game — A45, A46.
+
+## D33. Damage and healing by player, ability by ability (2026-10-22)
+
+Devin: "In the arena replay window I want to be able to see damage done by
+person and healing done by person."
+
+The METERS band already had each player's DMG and HEAL as of the cursor, so
+what was missing is what those totals were made of: which abilities, and
+whom they landed on. This adds that, one player at a time.
+
+- **A third drawer page, BREAKDOWN**, beside UPTIME and DISPELS; one page
+  shows at a time (D32's rule, now across three). The header reads right
+  to left DISPELS, UPTIME, BREAKDOWN, each only while its option is on;
+  the match menu ends at the leftmost.
+- **One flag, `ArenaBreakdown`, default on**, plus `ArenaBreakdownOpen` for
+  the drawer, the D31/D32 pattern. Off: no button, the meters rows take no
+  mouse, the drawer state reverts to the dispel log as saved.
+- **One scrolling list**: DAMAGE (ABILITIES, then TARGETS) and HEALING
+  (SPELLS, then HEALED), each line an icon, the name, the amount, its share
+  of the section and a bar against the section's top line. The side the
+  player did more of over the whole match leads, so a healer opens on
+  healing and the order never flips while scrubbing.
+- **Order is the whole match; numbers are the cursor's** (D32's rule). A
+  line with nothing yet at the cursor stays listed, dimmed, "—". The
+  section totals are the METERS band's DMG and HEAL at the same second: a
+  line sums its per-second series to the bucket `SeatValueAt` reads, and
+  every series is credited where the seat's own is.
+- **New in the record: per-second series per ability and per target, and
+  whom healing landed on.** A record keeps `rec.s` (bucket -> amount);
+  a seat keeps `sTargets` / `sHealTargets` (name -> series) and a new
+  `healTargets` map (name -> healing). The engine never kept heal targets
+  before. Past `NAME_CAP` names fold into "(other)" as before, with their
+  own series. Weight: the canned 3v3 went 82 -> 87 KB for the series alone.
+- **Healing is the HEAL stat**: effective healing plus shield absorbs,
+  each shield credited to the player it protected (A47). A heal that was
+  all overheal lists under SPELLS at 0 with its overheal in the tooltip,
+  and names no one under HEALED.
+- **Targets are the log's names**, matched to a seat for the class icon
+  and colour (exact, else the one realm-less match, A48). A pet, totem or
+  guardian shows uncoloured and its tooltip says it is not a player.
+  A pet's abilities are its owner's, under "Pet: Spell" (the engine's
+  existing fold), and the tooltip names the pet.
+- **Hover a line** for hits, crits, average, biggest, missed and absorbed
+  (damage) or overheal (healing). Records keep no per-second counts, so
+  these are the whole match, and a scrubbed tooltip says so beside the
+  cursor's amount.
+- **Who it opens on: you** (the `player` token), else your team's first.
+  Pick anyone with a click on their METERS row (the new way in, and the
+  obvious one: the row that shows their total), a portrait while the
+  drawer is open, or the drawer's own menu (your team first).
+- **Portrait clicks**: while the breakdown is open they pick its player;
+  otherwise they open uptime as before, or the breakdown when the Uptime
+  option is off. D32's "a portrait click opens nothing" check now holds
+  with both options off.
+- **A match stored before 2.8.0** has no series (`m.keySeries` is nil):
+  the drawer reads its whole match at any cursor, says so in red at the
+  foot, and has no HEALED names. Nothing is guessed from the totals.
+- **The canned match** gained the rest of a breakdown, queued straight
+  with no casts and no HP moves so health, cast bars and deaths stay
+  exactly as scripted: the mage's Water Elemental, Ice Lance and Fire
+  Blast; the priest's shield absorbs, Renew, Prayer of Mending and Shadow
+  Word: Pain; the druid's Rejuvenation and Regrowth.
+- **The drawer lives in one `do` block** reaching out through `bd` (Build,
+  Layout, Repaint, ShowFor, SetOpen, On), like D32's.
+
+Harness: arena 585 -> 629 (Stage M: the abilities and targets adding up to
+DMG, a shield's share and a full absorb in a Frostbolt, a resisted
+Polymorph absent, the pet's ability under the owner, a realm-less target
+finding its seat, a totem with no seat, the priest's healing with shields,
+the all-overheal Greater Heal, healed names, the cursor's totals equal to
+`SeatValueAt` for DMG and HEAL, order held while scrubbing, before the
+gates, the "(other)" fold and its cursor, an unknown seat on a reused out
+table, the store round trip, an old store reading whole); UI 486 -> 540
+(the button and its place, the drawer in the dispel log's place, opening
+on the mage, heads, rows, shares, bars, the pet line, a class icon, the
+tooltips, the scrubbed numbers against the METERS cell, a dimmed future
+line, a meters row opening the druid with healing first, a portrait picking
+the priest, the menu, the wheel, an old match's foot, the three pages
+taking turns, flag off and on). Renderer: `breakdown[=guid]`. Rendered.
+Unverified in game — A47, A48.
