@@ -8,13 +8,13 @@ Frames change ships:
 
 ```bash
 cd Commander_PartyFrames/Harness    # or name the files by full path
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE              # 764 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PRIEST            # 557 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID             # 496 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PALADIN           # 509 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE clickcast    # 58 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID clickcast   # 58 checks
-python3 settings_reach.py                                               # 148 keys across 4 pages, exit 0
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE              # 767 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PRIEST            # 560 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID             # 499 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PALADIN           # 512 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE clickcast    # 64 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID clickcast   # 64 checks
+python3 settings_reach.py                                               # 149 keys across 4 pages, exit 0
 ```
 
 The AddOns path is absolute at the top of the smoke (`ADDONS`): adjust it if
@@ -41,7 +41,7 @@ failures each that are PRE-EXISTING (the same 5 on the last commit's files,
 checked on a `git archive` copy, 2026-10-05): their expected class order is
 the mage's; they are not documented runs. Since 5.44.0 the PRIEST clickcast
 run also checks Team Shields on the secure board (a dial per seat, the bound
-rows under the dial line): 60 checks since 5.45.0, the same 5 pre-existing failures.
+rows under the dial line): 66 checks since 5.46.0, the same 5 pre-existing failures.
 
 **Team Shields and Mending Wasted (5.44.0).** The PRIEST run adds two
 sections at the end of the Mending tracker. Mending Wasted, in a mock party:
@@ -57,6 +57,13 @@ when hurt or fighting, the Mending badge with its charges and a green ring
 inside twenty yards (UnitPosition stub), red when everyone walks off, no
 ring when a teammate cannot be placed, and Include Yourself / Team Shield
 Dials switching seats off.
+
+**5.46.0: no tooltips in an arena.** Hide Tooltips In Arena (on by default)
+gates every hover tooltip the board owns through `util.TipsHushed()`. The
+clickcast runs hover the self row inside an arena in FULL and EXTRAS and
+check nothing is shown and the unit attribute is untouched, then that
+switching it off or standing in a battleground brings the tooltip back; the
+sorted runs hover an ability-strip cell in and out of an arena.
 
 **5.45.1: no numbers, Weakened Soul in red.** The team dials write nothing on
 the face or the Mending badge (checked), and Weakened Soul is a RED wipe

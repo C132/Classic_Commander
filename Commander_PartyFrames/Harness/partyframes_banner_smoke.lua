@@ -1216,6 +1216,30 @@ if SECURE then
         "...still, after hovering in every mode",
         tostring(selfRow:GetAttribute("unit")))
 
+    -- Hide Tooltips In Arena: inside an arena the row says nothing in ANY
+    -- mode, and only there — a battleground keeps its tooltip
+    CHECK(tipShown == true, "(the row has notes to show before the arena check)")
+    local keepKind = instanceKind
+    instanceKind = "arena"
+    for _, mode in ipairs({ "FULL", "EXTRAS" }) do
+        db.RowTooltip = mode
+        Hover()
+        CHECK(tipShown == false and #tipLines == 0 and tipUnit == nil,
+            "in an arena, hovering a row shows nothing (" .. mode .. ")", #tipLines)
+    end
+    CHECK(selfRow:GetAttribute("unit") == "player",
+        "and the hushed hover leaves the unit attribute alone",
+        tostring(selfRow:GetAttribute("unit")))
+    db.HideArenaTooltips = false
+    Hover()
+    CHECK(tipShown == true, "switched off, the arena row tooltip comes back")
+    db.HideArenaTooltips = true
+    instanceKind = "pvp"
+    Hover()
+    CHECK(tipShown == true, "a battleground keeps the row tooltip")
+    instanceKind = keepKind
+    db.RowTooltip = "EXTRAS"
+
     -- --- Nearby Raid on secure rows ---------------------------------------
     -- The hard case for the whole feature. Secure attributes may not be
     -- rewritten in combat, so a re-pick landed mid-fight cannot take effect —
@@ -4335,6 +4359,33 @@ local function CheckAbilityScope()
     local both = Strips()
     CHECK(both >= 2, "with two rows on the board, two strips are drawn", both)
     local bothTall = _G.CommanderPartyFramesFrame.__h
+
+    -- Hide Tooltips In Arena reaches the strip's cells too: their tooltip
+    -- opens to the right of a cell, which is straight over the row's debuffs
+    local cell
+    for _, f in ipairs(allFrames) do
+        if not cell and f.cells and f.__shown then
+            for _, c in ipairs(f.cells) do
+                if c.frame.__shown and c.frame._e then cell = c.frame; break end
+            end
+        end
+    end
+    CHECK(cell ~= nil, "a drawn strip has a hoverable cell")
+    if cell then
+        local tip, baseShow = _G.GameTooltip, _G.GameTooltip.Show
+        local shown
+        tip.Show = function() shown = true end
+        local function HoverCell() shown = false; cell.__scripts.OnEnter(cell) end
+        local keepKind = instanceKind
+        instanceKind = "arena"
+        HoverCell()
+        CHECK(shown == false, "in an arena, hovering an ability cell shows nothing")
+        instanceKind = "none"
+        HoverCell()
+        CHECK(shown == true, "outside one, the cell keeps its tooltip")
+        instanceKind = keepKind
+        tip.Show = baseShow
+    end
 
     CommanderPartyFramesDB.AbilityBarOnlySelf = true
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)

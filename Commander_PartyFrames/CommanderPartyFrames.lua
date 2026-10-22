@@ -2489,6 +2489,7 @@ function util.BlessSlotClick(self)
 end
 
 function util.BlessSlotTooltip(self)
+    if util.TipsHushed() then return end
     local want, have = self.blessWant, self.blessHave
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:AddLine(self.rowName or "Blessing", 1, 1, 1)
@@ -3299,6 +3300,15 @@ function util.InArena()
     if not IsInInstance then return false end
     local _, kind = IsInInstance()
     return kind == "arena"
+end
+-- Every hover tooltip on the board asks this first. In an arena the cursor
+-- crosses the board on its way to a click-cast, and whatever tooltip it
+-- leaves behind is anchored beside the thing hovered — on top of the next
+-- row's debuffs, which are the reason you are looking at the board at all.
+-- A tooltip only reads back what the board already draws or explains a
+-- control you set up at the gate, so in there it costs nothing to lose.
+function util.TipsHushed()
+    return DB("HideArenaTooltips", true) and util.InArena() or false
 end
 function util.ResetArenaCooldowns()
     local keep = {}
@@ -4295,6 +4305,7 @@ function util.BuildPortalRow(ids, row, count)
                 hl:SetVertexColor(1, 1, 1, 0.25)
                 b:SetScript("PostClick", function() SafeSetShown(util.portalPop, false) end)
                 b:SetScript("OnEnter", function(self)
+                    if util.TipsHushed() then return end
                     GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
                     GameTooltip:SetText(self.tipName or "")
                     GameTooltip:Show()
@@ -4534,6 +4545,7 @@ function util.PlaceSwitchers(segs)
                 SafeSetShown(sw.pop, not sw.pop:IsShown())
             end)
             sw.btn:SetScript("OnEnter", function(self)
+                if util.TipsHushed() then return end
                 GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
                 GameTooltip:SetText(sw.def.label)
                 GameTooltip:AddLine("Click to switch", 0.8, 0.8, 0.8)
@@ -5229,6 +5241,7 @@ function blizz.EnsureButton()
     hl:SetColorTexture(1, 1, 1, 0.25)
     b:SetScript("OnClick", function() blizz.Toggle() end)
     b:SetScript("OnEnter", function(self)
+        if util.TipsHushed() then return end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
         GameTooltip:SetText(blizz.Hidden() and "Default party/raid frames: hidden"
             or "Default party/raid frames: shown")
@@ -5302,6 +5315,7 @@ local function EnsureSettingsButton()
         if f then f("") end
     end)
     settingsBtn:SetScript("OnEnter", function(self)
+        if util.TipsHushed() then return end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
         GameTooltip:SetText("Party Frames settings")
         GameTooltip:Show()
@@ -5373,6 +5387,7 @@ function near.EnsureButton()
         if enter and GameTooltip:IsOwned(self) then enter(self) end
     end)
     b:SetScript("OnEnter", function(self)
+        if util.TipsHushed() then return end
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
         GameTooltip:SetText("Nearby Raid")
         local n = #near.slots + (DB("IncludeSelf", true) and 1 or 0)
@@ -5462,6 +5477,7 @@ local function EnsureMageUtilButtons()
         hl:SetTexture("Interface\\Buttons\\WHITE8X8")
         hl:SetVertexColor(1, 1, 1, 0.25)
         b:SetScript("OnEnter", function(self)
+            if util.TipsHushed() then return end
             GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
             GameTooltip:SetText(tipTitle)
             GameTooltip:AddLine(self.tip1 or tip1, 0.8, 0.8, 0.8)
@@ -8194,7 +8210,7 @@ end
 --   OFF     nothing
 local function BuildRowTooltip(self)
     local mode = DB("RowTooltip", "EXTRAS")
-    if mode == "OFF" then return end
+    if mode == "OFF" or util.TipsHushed() then return end
     if not self.unitToken or not UnitExists(self.unitToken) then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:ClearLines()
@@ -8616,7 +8632,7 @@ end
 -- explains the whole grammar in words.
 local function AbilityCellEnter(self)
     local e = self._e
-    if not e then return end
+    if not e or util.TipsHushed() then return end
     local now = GetTime()
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(e.dispName, 1, 1, 1)

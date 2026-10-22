@@ -99,6 +99,10 @@ local DefaultSettings = {
     -- what the board has to add; OFF shows nothing. None of them touch the
     -- unit attribute that makes @mouseover macros work.
     RowTooltip = "EXTRAS",
+    -- In an arena, hovering ANYTHING on the board shows no tooltip — rows,
+    -- ability cells, banner buttons, the blessing slot. They anchor beside
+    -- what you hovered, which on this board is the next row's debuffs.
+    HideArenaTooltips = true,
     -- Per-button click-cast bindings (spell ID, or "TARGET" / "NONE")
     ClickLeft = 17,             -- left-click   = Power Word: Shield ("bubble")
     ClickRight = 139,           -- right-click  = Renew
@@ -2166,7 +2170,7 @@ local function AddClickSection(panel)
     })
     panel:AddDropdown({
         label = "Row Tooltip",
-        tooltip = "What hovering a row shows. This is the click-cast board's tooltip only: it has never existed on the sorted board, and it is entirely separate from what makes @mouseover macros work — that is the row's unit attribute, which every option here leaves alone. Your macros keep working whichever you pick.\n\nUnit + Board Notes is the game's own unit tooltip with the board's extra lines under it. Board Notes Only drops the unit half — the name, level, health and buff list a party frame is already telling you — and keeps just what the board itself has to add, such as the forecast's breakdown of which dot and which hot make up the pending numbers. It shows nothing at all when the board has nothing to add, so a quiet row stays quiet. Off means hovering a row does nothing.\n\nThe ability strip's cells and the paladin's blessing slot keep their own tooltips whichever you pick: those explain a control you can click rather than describing a unit.",
+        tooltip = "What hovering a row shows. This is the click-cast board's tooltip only: it has never existed on the sorted board, and it is entirely separate from what makes @mouseover macros work — that is the row's unit attribute, which every option here leaves alone. Your macros keep working whichever you pick.\n\nUnit + Board Notes is the game's own unit tooltip with the board's extra lines under it. Board Notes Only drops the unit half — the name, level, health and buff list a party frame is already telling you — and keeps just what the board itself has to add, such as the forecast's breakdown of which dot and which hot make up the pending numbers. It shows nothing at all when the board has nothing to add, so a quiet row stays quiet. Off means hovering a row does nothing.\n\nThe ability strip's cells and the paladin's blessing slot keep their own tooltips whichever you pick: those explain a control you can click rather than describing a unit. Inside an arena none of them show at all while Hide Tooltips In Arena, under Board, is on.",
         options = {
             { text = "Unit + Board Notes", value = "FULL" },
             { text = "Board Notes Only", value = "EXTRAS" },
@@ -2745,6 +2749,13 @@ local function AddPageHead(panel, ui)
             tooltip = "Hide Blizzard's own party frames — and its raid frames — and run on this board alone. The raid manager tab on the left edge stays, since it holds the ready check, world markers and tank assignment. The header's stacked-rows button toggles the same setting, and |cffffd100/cpf blizzard|r works from anywhere — worth knowing, because this board is Priest/Mage/Druid/Paladin only and can hide itself. Changes apply out of combat; switching the module off gives the default frames back.",
             get = function() return CommanderPartyFramesDB.HideBlizzardParty end,
             set = function(value) CommanderPartyFramesDB.HideBlizzardParty = value end,
+            isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
+        })
+        panel:AddCheckbox({
+            label = "Hide Tooltips In Arena",
+            tooltip = "Inside an arena, hovering anything on the board shows no tooltip at all: the rows, the ability strip's cells, the banner and header buttons, the blessing slot. Every one of them opens beside what you hovered, and on this board that is the next row's debuffs — the thing you were looking for. Clicks and @mouseover macros work exactly the same; only the tooltip goes. Battlegrounds and the open world keep them.",
+            get = function() return CommanderPartyFramesDB.HideArenaTooltips end,
+            set = function(value) CommanderPartyFramesDB.HideArenaTooltips = value end,
             isEnabled = function() return CommanderPartyFramesDB.EnableShield end,
         })
         panel:AddDropdown({
