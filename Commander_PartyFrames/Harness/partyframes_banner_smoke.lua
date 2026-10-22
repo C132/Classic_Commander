@@ -5003,12 +5003,14 @@ local function CheckPets()
             PumpFrame(f, 10)
         end
     end
-    -- Ally rows only: the personal block (elemental / My Shields) is half-height
+    -- Ally rows only: the personal block (elemental / My Shields) is half-height.
+    -- A pet row carries no name (5.47.0), so it is keyed by its GUID instead.
     local function ShownRows()
         local byName, order = {}, {}
         for _, f in ipairs(allFrames) do
             if f.bar and f.spellIcon and f.__shown and f.__h ~= 11 then
                 local nm = f.name and f.name.__text or ""
+                if nm == "" and f._guid then nm = f._guid end
                 order[#order + 1] = nm
                 byName[nm] = f
             end
@@ -5033,24 +5035,35 @@ local function CheckPets()
     Fire("GROUP_ROSTER_UPDATE"); Pump()
     local rows, order = ShownRows()
     local stripsWith, rowsWith = StripCount(), #order
-    CHECK(rows["Minion"] ~= nil, "an ally's pet gets its own row")
+    local PET = "partypet1-guid"
+    CHECK(rows[PET] ~= nil, "an ally's pet gets its own row")
     CHECK(rows["Mate"] ~= nil, "...alongside its owner")
-    if rows["Minion"] then
+    CHECK(rows["Minion"] == nil, "...and no row is labelled with the pet's name")
+    if rows[PET] then
+        -- No name anywhere on a pet row, so a named row always means a player
+        local pr = rows[PET]
+        CHECK(pr.name.__text == "" and pr.name.__shown ~= true,
+            "a pet row writes no name beside its icon", tostring(pr.name.__text))
+        CHECK(pr.left.__text ~= "Minion",
+            "...and none on its bar: a state word or nothing", tostring(pr.left.__text))
+        CHECK(rows["Mate"] == nil or (rows["Mate"].name.__shown == true
+            and rows["Mate"].left.__text ~= ""),
+            "while its owner keeps their name in both places")
         -- A pet has no class icon of its own, and its owner's alone cannot
         -- tell two warlocks' minions apart — so the one identity slot is its
         -- portrait, the same answer the elemental row already gives
-        CHECK(rows["Minion"].unitIcon.__texture == "portrait:partypet1",
+        CHECK(rows[PET].unitIcon.__texture == "portrait:partypet1",
             "the pet's single identity slot is its portrait",
-            tostring(rows["Minion"].unitIcon.__texture))
+            tostring(rows[PET].unitIcon.__texture))
         CHECK(rows["Mate"] == nil or rows["Mate"].unitIcon.__texture ~= "portrait:party1",
             "...while a player keeps their class icon")
-        CHECK(rows["Minion"].bar.__shown == true and rows["Minion"].barBG.__shown == true,
+        CHECK(rows[PET].bar.__shown == true and rows[PET].barBG.__shown == true,
             "and it is a real row: a health bar, not a label")
     end
 
     local iMate, iMinion
     for i, nm in ipairs(order) do
-        if nm == "Mate" then iMate = i elseif nm == "Minion" then iMinion = i end
+        if nm == "Mate" then iMate = i elseif nm == PET then iMinion = i end
     end
     CHECK(iMate and iMinion and iMate < iMinion,
         "an equally urgent player outranks the pet, even when the pet is the hurt one",
@@ -5058,13 +5071,13 @@ local function CheckPets()
 
     -- An aura landing on someone's pet has to reach the board like any ally's
     Fire("UNIT_AURA", "partypet1")
-    CHECK(ShownRows()["Minion"] ~= nil, "a pet's aura event keeps its row on the board")
+    CHECK(ShownRows()[PET] ~= nil, "a pet's aura event keeps its row on the board")
 
     CommanderPartyFramesDB.IncludePets = false
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Fire("GROUP_ROSTER_UPDATE"); Pump()
     local offRows, offOrder = ShownRows()
-    CHECK(offRows["Minion"] == nil, "switching Include Pets off takes the row back off")
+    CHECK(offRows[PET] == nil, "switching Include Pets off takes the row back off")
     CHECK(#offOrder == rowsWith - 1, "and costs the board exactly one row",
         rowsWith .. " -> " .. #offOrder)
     CHECK(StripCount() == stripsWith,
@@ -5079,10 +5092,10 @@ local function CheckPets()
     Fire("UNIT_PET", "player"); Pump()
     local own = ShownRows()
     if CLASS == "MAGE" then
-        CHECK(own["Mine"] == nil,
+        CHECK(own["pet-guid"] == nil,
             "your elemental stays off the ALLY board — its personal row is the better one")
     else
-        CHECK(own["Mine"] ~= nil, "your own pet is an ally row like anyone else's")
+        CHECK(own["pet-guid"] ~= nil, "your own pet is an ally row like anyone else's")
     end
 
     petOut = false
@@ -5956,7 +5969,10 @@ function CheckNearby()
         local out = {}
         for _, f in ipairs(allFrames) do
             if f.strip and f.dispels and f.swipe and f.__shown and not f.personal then
-                out[#out + 1] = tostring(f.name and f.name.__text or "?")
+                -- A pet row carries no name (5.47.0): it is listed by its unit
+                local nm = f.name and f.name.__text or "?"
+                if nm == "" and f._guid then nm = (f._guid:gsub("%-guid$", "")) end
+                out[#out + 1] = tostring(nm)
             end
         end
         return table.concat(out, " ")
@@ -6084,19 +6100,19 @@ function CheckNearby()
     CommanderPartyFramesDB.RowOrder = "CLASS_DIST"
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     Fire("GROUP_ROSTER_UPDATE"); DrawOnce(); DrawOnce()
-    CHECK(RowNames() == "party2 party4 partyp party3 party1 Tester",
+    CHECK(RowNames() == "party2 party4 partypet4 party3 party1 Tester",
         "Sort Rows groups the party by class, closest-first, the pet under its owner's class",
         RowNames())
     CommanderPartyFramesDB.RowOrder = "CLASS_NAME"
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     DrawOnce()
-    CHECK(RowNames() == "party2 party4 partyp party1 party3 Tester",
+    CHECK(RowNames() == "party2 party4 partypet4 party1 party3 Tester",
         "class then name keeps the groups and puts the priests in alphabetical order",
         RowNames())
     CommanderPartyFramesDB.RowOrder = "URGENCY"
     Commander.Notify(COMMANDER_PARTYFRAMES_EVENTS.UPDATE)
     DrawOnce()
-    CHECK(RowNames() ~= "party2 party4 partyp party3 party1 Tester",
+    CHECK(RowNames() ~= "party2 party4 partypet4 party3 party1 Tester",
         "and Urgency hands the board back to its own sort", RowNames())
     CHECK(#caughtErrors == 0, "the party board's class order draws without erroring", caughtErrors[1])
     UnitClass = realClass

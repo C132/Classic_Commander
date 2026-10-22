@@ -9872,6 +9872,12 @@ local function PaintRow(row, r, now, index)
 
     if r.selfSpell then
         -- name already set above; nothing to do here
+    elseif r.isPet then
+        -- A pet row writes no name anywhere — here or on its bar. Every row
+        -- that does carry one is then a player, so the two read apart at a
+        -- glance; the pet's portrait is the identity it keeps.
+        row.name:SetText("")
+        row.name:Hide()
     elseif row._nameSlot then
         local cc = r.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[r.class]
         row.name:SetTextColor(cc and cc.r or 0.9, cc and cc.g or 0.9, cc and cc.b or 0.9)
@@ -10290,10 +10296,14 @@ local function PaintRow(row, r, now, index)
     -- Which words get to take the name off the bar at all is the player's
     -- call, kind by kind (util.BarText): a word the settings have turned off
     -- is a row with nothing to say there, and the name comes back.
+    -- Except on a pet: its state words still show, but with nothing to say it
+    -- says nothing, so a name on a bar always means a player.
     local word = util.BarText(r)
     if word or r.selfSpell then
         row.left:SetTextColor(1, 1, 1)
         row.left:SetText(word or r.mainText or "")
+    elseif r.isPet then
+        row.left:SetText("")
     else
         local cc = r.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[r.class]
         row.left:SetTextColor(cc and cc.r or 0.9, cc and cc.g or 0.9, cc and cc.b or 0.9)

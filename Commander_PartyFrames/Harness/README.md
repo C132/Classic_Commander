@@ -8,10 +8,10 @@ Frames change ships:
 
 ```bash
 cd Commander_PartyFrames/Harness    # or name the files by full path
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE              # 767 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PRIEST            # 560 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID             # 499 checks
-/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PALADIN           # 512 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE              # 771 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PRIEST            # 564 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID             # 503 checks
+/opt/homebrew/bin/luajit partyframes_banner_smoke.lua PALADIN           # 516 checks
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua MAGE clickcast    # 64 checks
 /opt/homebrew/bin/luajit partyframes_banner_smoke.lua DRUID clickcast   # 64 checks
 python3 settings_reach.py                                               # 149 keys across 4 pages, exit 0
@@ -57,6 +57,13 @@ when hurt or fighting, the Mending badge with its charges and a green ring
 inside twenty yards (UnitPosition stub), red when everyone walks off, no
 ring when a teammate cannot be placed, and Include Yourself / Team Shield
 Dials switching seats off.
+
+**5.47.0: pet rows carry no name.** A pet row writes nothing in its name
+slot and nothing on its bar unless it has a state word, so a named row is
+always a player. The pet section finds the pet row by its GUID now, and
+checks the name slot is blank and hidden, the bar never shows the pet's
+name, and the owner keeps theirs in both places. The Sort Rows check lists
+a nameless row by its unit (`partypet4`).
 
 **5.46.0: no tooltips in an arena.** Hide Tooltips In Arena (on by default)
 gates every hover tooltip the board owns through `util.TipsHushed()`. The
