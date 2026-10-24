@@ -1115,6 +1115,41 @@ fixes Orders' DECISIONS (D37, D42) had left to this module:
   plain button that stands in without the GoButton is not greyed by Orders'
   state and keeps the ORDERS_OFF words, which are true for it. Go harness F.
 
+**D47 — No hole in the quest dialog's reward buttons, whoever left it.**
+(1.7.1, 2026-10-24.) Field report: opening the Wanted daily (quest 11371,
+one item, 16g 39s) died in Blizzard's own code, "attempt to index field
+'?' (a nil value)" at TBC/QuestInfo.lua:513, with
+`QuestInfoRewardsFrame.RewardButtons` holding slots 1, 2, 4 and -1.
+`QuestInfo_ShowRewards` hides every slot above the quest's count with
+`for i = count + 1, #RewardButtons`; over 1, 2, 4 `#` answered 4 and slot 3
+was nil. Blizzard only ever asks `QuestInfo_GetRewardButton` for 1, 2, 3
+in turn, so the hole was another addon's: RXPGuides 4.11.23 (and 4.11.27,
+the latest on 2026-10-24) marks its best reward by asking that factory
+for its pick outright. Its quest-log hook (`SelectQuestLogEntry`, which
+this module's model calls on every read, so the window trips it far more
+than the stock log would) asks for the gold pick by its LOG choice number
+when no `QuestLogItem` button answers to the UPGRADE pick, which is -1
+whenever there is none: a 4-choice quest makes slot 4 in the dialog's
+frame. Its turn-in path asks for -1 outright. Both are RXP's bugs.
+The fix here, because RXP's files are replaced on every update and the
+bug is still upstream: a post-hook on `QuestInfo_GetRewardButton` asks
+Blizzard's own function for every slot missing under the one just asked
+for, and hides what it makes until the dialog lays it out
+(`CommanderQuestLogQuestFrame.lua`). Blizzard's own calls never leave a
+hole, so on them it only reads. Slots under 1, fractions and slots past
+`MAX_NUM_ITEMS` (10) are no reward slot and `#` never lands on them, so
+they are left alone. The buttons it adds carry this addon's taint, next to
+the one above them that carries RXP's, and the dialog reads both in the
+same pass; nothing protected happens there. It runs whatever the settings
+say, since it draws nothing. Rejected: patching RXPGuides in place (lost
+on its next update, and not ours); replacing `QuestInfo_GetRewardButton`
+(taints every caller); deleting the stray slots (orphans a named frame,
+and the next ask makes a second one under the same global name). Quest
+dialog harness J, which first shows the unguarded dialog dying as the
+client did (the mock's `#` takes the highest border, as the client's did).
+Not yet seen in game: `/dump CommanderQuestLog.QuestFrame._State().filled`
+counts the buttons it has made.
+
 ## Assumptions worth re-checking in game
 
 The Zones tab, the Questie adapter and the map drawer keep theirs in

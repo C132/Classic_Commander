@@ -23,10 +23,17 @@ window's Go buttons over the suite's own `Commander.UI.GoButton`.
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/standing_smoke.lua           # 609 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_reps_harness.lua    # 192 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_rep_everywhere_harness.lua  # 203 checks
-/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questframe_harness.lua       # 72 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questframe_harness.lua       # 86 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_goto_harness.lua    # 72 checks
 python3 Commander_QuestLog/Harness/make_reputations.py --check                   # exit 0: the data file is current
 ```
+
+**1.7.1 (the reward-button hole, D47).** The quest dialog harness 72 -> 86:
+section J (13) and one check in I (the late hook covers the reward
+buttons too). `questframe_mock.lua` now builds the dialog's reward buttons
+as Blizzard does (the XML's first, the rest from `QuestInfo_GetRewardButton`,
+the hide-unused loop by `#`), which the rep-everywhere harness also runs
+on; every other count is unchanged.
 
 **1.7.0 ("Go to", D45).** The contract harness 25 -> 60 (sections F-K) and
 the new `questlog_goto_harness.lua` (67); every other count is unchanged.
@@ -936,7 +943,7 @@ and a recording Commander Orders.
 `CQL_UI`, `CQL_ZONES`, `CQL_QUESTFRAME` and `CQL_MAP` load mutated copies;
 56 single-line breaks were caught when written.
 
-# questframe_harness.lua — the NPC quest dialog's line (72 checks)
+# questframe_harness.lua — the NPC quest dialog's line (86 checks)
 
 Drives `CommanderQuestLogQuestFrame.lua` over `questframe_mock.lua` (the
 2.5.6 dialog as Blizzard builds it) on `questlog_mock.lua`, with
@@ -961,6 +968,13 @@ Drives `CommanderQuestLogQuestFrame.lua` over `questframe_mock.lua` (the
   **I** what cannot be answered gets no line; an error is reported and the
   dialog drawn all the same; a client without the dialog at load is hooked
   at PLAYER_LOGIN.
+- **J** (D47) another addon asking for a reward button out of turn, as
+  RXPGuides' marks do (slot 4 from a quest-log choice number, -1 for no
+  pick): unguarded, the stock dialog alone keeps the report's list (-1, 1,
+  2, 4) and the next dialog dies on slot 3; with the module the hole is
+  filled by Blizzard's own factory, hidden, Blizzard's own calls fill
+  nothing, a fraction, 0 and slot 12 fill nothing, and the next dialog
+  draws its one reward with the line under it.
 
 `CQL_QUESTFRAME` loads a mutated copy.
 

@@ -31,7 +31,12 @@
 --   I  what cannot be answered gets no line: a quest Questie does not know,
 --      no rules, no Questie; an error in the line's code is reported and
 --      the dialog is drawn all the same; a client without the dialog at
---      load is hooked at PLAYER_LOGIN.
+--      load is hooked at PLAYER_LOGIN;
+--   J  another addon asking for a reward button out of turn (RXPGuides'
+--      marks: a quest-log choice number, -1 for no pick): without the hook
+--      the next dialog dies on the hole, as in the 2026-10-24 report; with
+--      it the hole is filled with hidden buttons, Blizzard's own calls fill
+--      nothing, no reward slot is invented, and the next dialog draws (D47).
 --
 --   luajit Commander_QuestLog/Harness/questframe_harness.lua
 --   CQL_QUESTFRAME=/path/copy.lua luajit .../questframe_harness.lua   -- a mutated copy
@@ -87,6 +92,7 @@ local function Boot(opts)
     mock.state.log = {}
     if opts.noDialog then
         QuestInfo_Display, QuestInfo_ShowRewards, QuestFrameDetailPanel, QuestFrameRewardPanel = nil, nil, nil, nil
+        QuestInfo_GetRewardButton = nil
         dialog = nil
     else
         dialog = QF.Install(mock)
@@ -385,6 +391,7 @@ dialog.Close()
 for event in pairs(mock.eventRegistry) do mock.eventRegistry[event] = nil end
 CommanderQuestLog = nil
 QuestInfo_Display, QuestInfo_ShowRewards, QuestFrameDetailPanel, QuestFrameRewardPanel = nil, nil, nil, nil
+QuestInfo_GetRewardButton = nil
 local lateOk = pcall(mock.Load, MODULE .. "CommanderQuestLogDB.lua")
 lateOk = lateOk and pcall(mock.Load, QUESTFRAME_FILE)
 local late = CommanderQuestLog
@@ -393,6 +400,80 @@ dialog = QF.Install(mock)
 frames = dialog.frames
 mock.Fire("PLAYER_LOGIN")
 CHECK(late.QuestFrame._State().hooked == true, "I: ...and hooks it at PLAYER_LOGIN")
+QuestInfo_GetRewardButton(frames.QuestInfoRewardsFrame, 3)
+CHECK(late.QuestFrame._State().filled == 1 and frames.QuestInfoRewardsFrame.RewardButtons[2] ~= nil,
+    "I: ...the reward-button hook with it", late.QuestFrame._State().filled)
+
+-- ===========================================================================
+-- J. Another addon's reward button, asked for out of turn (D47)
+-- ===========================================================================
+
+-- The slots in a rewards frame's list, in order: "-1,1,2,4"
+local function Slots(rewards)
+    local keys = {}
+    for key in pairs(rewards.RewardButtons) do keys[#keys + 1] = key end
+    table.sort(keys)
+    for i, key in ipairs(keys) do keys[i] = tostring(key) end
+    return table.concat(keys, ",")
+end
+
+-- What RXPGuides 4.11 does from its quest-log hook (SelectQuestLogEntry, which
+-- the window's model calls on every read): asks the dialog's factory for its
+-- gold pick, a log choice number, and for -1 when it has no upgrade pick
+local function TheirMarks(rewards)
+    QuestInfo_GetRewardButton(rewards, 4)
+    QuestInfo_GetRewardButton(rewards, -1)
+end
+
+local TWO = { id = 10326, title = "More Marks of Kil'jaeden", money = 500, items = 2 }
+local WANTED = { id = 9355, title = JOB.title, money = 163900, items = 1 }      -- the report's shape: one item, 16g 39s
+
+-- Without the hook: the stock dialog alone, the hole, and the report's error
+for event in pairs(mock.eventRegistry) do mock.eventRegistry[event] = nil end
+local bare = QF.Install(mock)
+bare.TurnIn(TWO)
+TheirMarks(bare.frames.QuestInfoRewardsFrame)
+CHECK(Slots(bare.frames.QuestInfoRewardsFrame) == "-1,1,2,4", "J: unguarded, their marks leave the report's list",
+    Slots(bare.frames.QuestInfoRewardsFrame))
+local bareOk, bareErr = pcall(bare.Offer, WANTED)
+CHECK(not bareOk and tostring(bareErr):find("index", 1, true),
+    "J: ...and the next dialog dies on slot 3 (the mock breaks as the client did)", bareErr)
+
+Boot()
+local rewards = frames.QuestInfoRewardsFrame
+dialog.TurnIn(TWO)
+CHECK(Slots(rewards) == "1,2" and Q.QuestFrame._State().filled == 0,
+    "J: Blizzard's own calls (1, 2 in turn) fill nothing", Slots(rewards))
+TheirMarks(rewards)
+CHECK(Slots(rewards) == "-1,1,2,3,4", "J: their marks: the hole under 4 is filled, -1 is left where it is", Slots(rewards))
+CHECK(Q.QuestFrame._State().filled == 1, "J: ...one button made", Q.QuestFrame._State().filled)
+local third = rewards.RewardButtons[3]
+CHECK(third and third.__name == "QuestInfoRewardsFrameQuestInfoItem3" and third.__shown == false,
+    "J: ...by Blizzard's own factory, under its own name, hidden until the dialog lays it out")
+dialog.Close()
+local ok, err = pcall(dialog.Offer, WANTED)
+CHECK(ok, "J: the next dialog draws (one reward, as in the report)", err)
+local function SlotShown(slot)
+    local button = rewards.RewardButtons[slot]
+    return button ~= nil and button.__shown
+end
+CHECK(SlotShown(1) and not SlotShown(2) and not SlotShown(3) and not SlotShown(4),
+    "J: ...its one reward shown, every slot above hidden")
+CHECK(Seen() == "Reputation: +275 Honor Hold", "J: ...and the line under it", Seen())
+dialog.Close()
+ok, err = pcall(dialog.TurnIn, { id = 10326, title = TWO.title, items = 3, choices = 2 })
+CHECK(ok and Slots(rewards) == "-1,1,2,3,4,5" and Q.QuestFrame._State().filled == 1,
+    "J: a quest with five rewards uses the filled slot and makes the fifth itself", Slots(rewards))
+dialog.Close()
+
+-- No reward slot is invented: a fraction, 0, and past the most a quest has
+QuestInfo_GetRewardButton(rewards, 7.5)
+QuestInfo_GetRewardButton(rewards, 0)
+QuestInfo_GetRewardButton(rewards, 12)
+CHECK(Q.QuestFrame._State().filled == 1 and rewards.RewardButtons[6] == nil,
+    "J: a fraction, 0 and slot 12 (past MAX_NUM_ITEMS) fill nothing", Q.QuestFrame._State().filled)
+CHECK(#dialog.writes == 0, "J: no field written by the module's own code", table.concat(dialog.writes, ","))
+CHECK(#mock.caughtErrors == 0, "J: no error reported", mock.caughtErrors[1])
 
 -- ===========================================================================
 -- Hygiene

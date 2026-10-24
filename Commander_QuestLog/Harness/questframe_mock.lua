@@ -34,6 +34,16 @@
 --     ORIGINAL element functions, so a hooksecurefunc on the global
 --     QuestInfo_ShowRewards fires only for Blizzard's direct calls
 --     (QUEST_ITEM_UPDATE), never inside a Display -- as in game.
+--   * The reward buttons (TBC/QuestInfo.lua:380-387, 510-515): the XML's
+--     first (QuestInfoRewardsFrameQuestInfoItem1, hidden) in
+--     QuestInfoRewardsFrame.RewardButtons, the rest made shown by the global
+--     QuestInfo_GetRewardButton(rewardsFrame, index) at whatever index it is
+--     asked for. ShowRewards hides every slot above the quest's count, by #,
+--     before asking for 1 .. count in turn through the global (so its hooks
+--     see Blizzard's own calls). Over a list with a hole # may answer any
+--     border; the client answered the highest (4 over 1, 2, 4 -- the
+--     2026-10-24 report, slot 3 indexed), so the mock does too: another
+--     addon's out-of-turn call breaks the next dialog here as it does there.
 --   * The detail panel hides its alpha-dependent text (objectives, rewards)
 --     and fades it in once the description has typed out (FinishFade here).
 --   * Each panel's OnShow hides the others; QuestFrame's OnHide hides all four.
@@ -166,6 +176,8 @@ function QF.Install(mock, opts)
         rewards.MoneyFrame = NewWidget("Frame")
         rewards.MoneyFrame.__parent = rewards
         rewards.ItemReceiveText.__parent = rewards
+        rewards.buttonTemplate = "LargeQuestRewardItemButtonTemplate"
+        rewards.RewardButtons = { Widget("Button", "QuestInfoRewardsFrameQuestInfoItem1", rewards, false) }
         frames.QuestInfoSpacerFrame = Widget("Frame", "QuestInfoSpacerFrame", frames.QuestInfoFrame, true)
         frames.QuestInfoSpacerFrame:SetSize(5, 5)
     end)()
@@ -184,7 +196,7 @@ function QF.Install(mock, opts)
     function GetSuggestedGroupNum() return handle.quest and handle.quest.groupSize or 0 end
     function GetRewardMoney() return handle.quest and handle.quest.money or 0 end
     function GetNumQuestRewards() return handle.quest and handle.quest.items or 0 end
-    function GetNumQuestChoices() return 0 end
+    function GetNumQuestChoices() return handle.quest and handle.quest.choices or 0 end
     function GetQuestBackgroundMaterial() return handle.material end
     -- MATERIAL_TEXT_COLOR_TABLE: text, then title colour
     function GetMaterialTextColors(material)
@@ -218,17 +230,42 @@ function QF.Install(mock, opts)
         frames.QuestInfoGroupSize:Hide()
         return nil
     end
+    QuestInfo_GetRewardButton = Blizzard(function(rewardsFrame, index)
+        local rewardButtons = rewardsFrame.RewardButtons
+        if not rewardButtons[index] then
+            rewardButtons[index] = Widget("Button", rewardsFrame.__name .. "QuestInfoItem" .. index, rewardsFrame, true)
+        end
+        return rewardButtons[index]
+    end)
+
+    -- # over a list with a hole, as the client answered it: the highest border
+    local function Length(list)
+        local border = 0
+        for key in pairs(list) do
+            if type(key) == "number" and key > border and key % 1 == 0 and list[key + 1] == nil then border = key end
+        end
+        return border
+    end
+
     local function ShowRewards()
         local rewards = frames.QuestInfoRewardsFrame
-        local money, items = GetRewardMoney(), GetNumQuestRewards()
-        if money == 0 and items == 0 then
+        local money, items, choices = GetRewardMoney(), GetNumQuestRewards(), GetNumQuestChoices()
+        local totalRewards = items + choices
+        if money == 0 and totalRewards == 0 then
             rewards:Hide()
             return nil
         end
+        -- Hide unused rewards
+        local rewardButtons = rewards.RewardButtons
+        for i = totalRewards + 1, Length(rewardButtons) do
+            rewardButtons[i]:ClearAllPoints()
+            rewardButtons[i]:Hide()
+        end
+        for index = 1, totalRewards do QuestInfo_GetRewardButton(rewards, index):Show() end
         local last = rewards.ItemReceiveText
         if money > 0 then last = rewards.MoneyFrame end
         rewards:Show()
-        rewards:SetHeight(20 + items * 40 + (money > 0 and 20 or 0))
+        rewards:SetHeight(20 + totalRewards * 40 + (money > 0 and 20 or 0))
         return rewards, last
     end
     local function ShowRewardText()

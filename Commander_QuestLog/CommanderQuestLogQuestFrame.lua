@@ -43,11 +43,30 @@
 --
 -- No taint: the line is a plain, nameless frame of our own with one
 -- FontString, parented to the scroll child the dialog is drawing into. The
--- dialog is joined through hooksecurefunc on two global functions and
+-- dialog is joined through hooksecurefunc on three global functions and
 -- HookScript on two panels -- post-hooks only, nothing replaced -- and no
--- field of any Blizzard frame or table is ever written. Colours are the
--- dialog's own: GetMaterialTextColors for the material it was drawn with,
--- dark ink on the parchment. No glyphs (D11).
+-- field of any Blizzard frame or table is ever written by this file's code.
+-- Colours are the dialog's own: GetMaterialTextColors for the material it
+-- was drawn with, dark ink on the parchment. No glyphs (D11).
+--
+-- The third hook keeps the dialog standing when another addon asks for a
+-- reward button out of turn (D47). QuestInfo_GetRewardButton(rewardsFrame,
+-- index) makes the button an index asks for and files it at that index in
+-- RewardButtons; QuestInfo_ShowRewards then hides every slot above the
+-- quest's count, `for i = count + 1, #RewardButtons` (TBC/QuestInfo.lua:512).
+-- Blizzard asks for 1, 2, 3 in turn. RXPGuides (4.11, its best-reward marks)
+-- asks for its pick outright: a quest-log choice number (4, while the dialog
+-- had only ever made 1 and 2) and -1 for "no pick". That leaves a hole (1, 2,
+-- 4), # may answer 4, and the next dialog dies on slot 3: "attempt to index
+-- field '?' (a nil value)" at QuestInfo.lua:513 (field report, 2026-10-24).
+-- So after every call, any slot missing under the one asked for is asked of
+-- Blizzard's own function, and what it makes stays hidden until the dialog
+-- lays it out. Blizzard's own calls never leave a hole, so on them the hook
+-- only reads. A slot under 1, a fraction or one past MAX_NUM_ITEMS is no
+-- reward slot and is left alone (# never lands on it). The buttons it adds
+-- carry this addon's taint as the one above them carries the other addon's;
+-- the dialog reads both in the same pass, and nothing it does there is
+-- protected. It runs whatever the settings say: it draws nothing.
 --
 -- Settings: EnableQuestLog, ShowRepEverywhere and RepInQuestDialog, all read
 -- as "~= false", so a saved table from before they existed shows the line.
@@ -62,6 +81,8 @@ local GAP = 10                       -- under the element it hangs from, as Ques
 local WIDTH = 275                    -- QUEST_TEMPLATE_DETAIL's contentWidth (the reward template's is 285)
 local MIN_HEIGHT = 12
 local OBSERVED_WORDS = "seen in game"
+-- The most reward buttons a quest uses (Blizzard's MAX_NUM_ITEMS, Classic/QuestFrame.lua)
+local MAX_REWARD_SLOTS = tonumber(MAX_NUM_ITEMS) or 10
 -- The parchment's text colour, for a client without GetMaterialTextColors
 local FALLBACK_INK = { 0.18, 0.12, 0.06 }
 
@@ -75,6 +96,8 @@ local S = {
     panel = nil, parent = nil, material = nil,
     questId = nil, alphaSource = nil,
     lastError = nil,
+    -- Reward buttons made to fill a hole another addon left (D47)
+    filled = 0,
 }
 
 -- ---------------------------------------------------------------------------
@@ -278,6 +301,25 @@ local function Show()
 end
 
 -- ---------------------------------------------------------------------------
+-- The reward buttons: no hole under a slot another addon asked for (D47)
+-- ---------------------------------------------------------------------------
+
+-- After QuestInfo_GetRewardButton(rewardsFrame, index): every slot under
+-- index is a button, made by the same function when one is missing
+local function FillRewardGaps(rewardsFrame, index)
+    if type(index) ~= "number" or index <= 1 or index > MAX_REWARD_SLOTS or index % 1 ~= 0 then return end
+    local buttons = type(rewardsFrame) == "table" and rewardsFrame.RewardButtons
+    if type(buttons) ~= "table" then return end
+    for slot = 1, index - 1 do
+        if buttons[slot] == nil then
+            local button = QuestInfo_GetRewardButton(rewardsFrame, slot)
+            if button and button.Hide then button:Hide() end
+            S.filled = S.filled + 1
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Hooks
 -- ---------------------------------------------------------------------------
 
@@ -315,6 +357,9 @@ local function Install()
     if type(_G.QuestInfo_ShowRewards) == "function" then
         hooksecurefunc("QuestInfo_ShowRewards", Guarded(OnShowRewards))
     end
+    if type(_G.QuestInfo_GetRewardButton) == "function" then
+        hooksecurefunc("QuestInfo_GetRewardButton", Guarded(FillRewardGaps))
+    end
     local detail, reward = _G.QuestFrameDetailPanel, _G.QuestFrameRewardPanel
     if detail and detail.HookScript then detail:HookScript("OnHide", Guarded(OnPanelHide("DETAIL"))) end
     if reward and reward.HookScript then reward:HookScript("OnHide", Guarded(OnPanelHide("REWARD"))) end
@@ -344,7 +389,7 @@ end
 
 function F._State()
     return { hooked = S.hooked, panel = S.panel, questId = S.questId, parent = S.parent,
-             alphaSource = S.alphaSource, lastError = S.lastError }
+             alphaSource = S.alphaSource, lastError = S.lastError, filled = S.filled }
 end
 
 function F._Holder() return S.holder, S.text end
