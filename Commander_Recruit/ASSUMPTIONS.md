@@ -99,3 +99,19 @@ board filled (307 seen, 25 rated across the three brackets), and the sweep butto
 - **A33 — Unknown: the scale of /who's `gender` number.** Recruit reads 2 as male and 3 as female,
   as `UnitSex` does. If /who uses 0/1 instead, players known only from /who get the male race icon;
   ladder, GUID and unit sightings are unaffected.
+- **A34 — A guess: what a sweep learned of a player fades over about 20 minutes** (R23, `E.RELAX`).
+  Too long and a player who logged in after being proved offline is missed for a while; too short
+  and a second sweep re-asks what the first just answered. Tune by whether a sweep started 10-20
+  minutes after the last finds new people for its presses.
+- **A35 — The forecast's "~N to go" is within about 30% on the model** (R23). On the live realm,
+  compare the number at press 1 with how many presses the sweep took.
+- **A36 — /who's `n-` matches anywhere in a name** (R26), not only at the start. Blizzard's own tags
+  have `x-` for an exact name, so `n-` is a partial match; anywhere vs start is learned from the
+  first answers, and fragments switch themselves off after two that point to start-only. Test: /who
+  70 n-"ell" -- names like "Bellar" or "Shelly" should be listed.
+- **A37 — Only the group finder gives another realm's players without a realm** (R27). /who, chat
+  (`arg2`), `GetUnitName(unit, true)`, guild and friends are taken to write another realm's player
+  as "Name-Realm", so a bare name from any of them is ours. Ladder L8 saw the finder list
+  Nightslayer players bare. If another source turns out to do it too, add it beside "lfg" in
+  `E.Note`'s `finderOnly`. Test: a Nightslayer player whispering or in Trade shows as
+  "Name-Nightslayer" in the tooltip's title.

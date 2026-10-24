@@ -705,8 +705,8 @@ CHECK(two[2].name.__text == "Smashy" and two[2].record.__text == "30-20", "...wi
 local five = Shown(Col(5))
 CHECK(#five == 1 and five[1].name.__text == "Smashy", "5v5 has its own order")
 CHECK(Col(2).count.__text == "2 online", "the column counts its players", Col(2).count.__text)
-CHECK(win.status.__text:find("^2 rated players online, of 52"), "the status counts rated and seen", win.status.__text)
-CHECK(win.foot.__text:find("^50 online with no rating"), "the unrated are counted below", win.foot.__text)
+CHECK(win.status.__text:find("^2 rated players online, of 53"), "the status counts rated and seen (you among them, R25)", win.status.__text)
+CHECK(win.foot.__text:find("^51 online with no rating"), "the unrated are counted below", win.foot.__text)
 
 -- A click whispers, a right-click invites; a bare name is used bare
 -- With Commander Contacts: the conversation with them, history and all
@@ -744,15 +744,66 @@ CHECK(sawBare, "a group finder name with no realm is asked for bare (Ladder L8)"
 local three = Shown(Col(3))
 CHECK(three[1] and three[1].name.__text == "Lfgguy" and three[1].rating.__text == 2250, "the group finder fills the board")
 
+ratings["Talker-Nightslayer"] = R(nil, 2400, nil)
 Fire("CHAT_MSG_CHANNEL", "lfm 3s", "Talker-Nightslayer", "", "2. Trade", "", "", 0, 2, "Trade", 0, 1, "Player-T")
 CHECK(CommanderRecruit.Book().players["Talker-Nightslayer"] and CommanderRecruit.Book().players["Talker-Nightslayer"].class == "ROGUE",
     "a channel line is a sighting, its class from the GUID")
+
+-- Hide other realms (R27), on by default
+do
+    local list = win.search
+    local function Names(size)
+        local out = {}
+        for _, r in ipairs(Shown(Col(size))) do out[#out + 1] = r.name.__text end
+        return table.concat(out, ",")
+    end
+    Repaint()
+    CHECK(CommanderRecruitDB.HideOtherRealms == true and list.hideAway.__checked == true,
+        "other realms: Hide other realms is on by default")
+    CHECK(not Names(3):find("Talker"), "other realms: a rated player written with another realm is hidden", Names(3))
+    local askedTalker = false
+    for _, w in ipairs(asked) do if w == "Talker-Nightslayer" then askedTalker = true end end
+    CHECK(not askedTalker, "other realms: ...and never asked about, so the feed is handed no Nightslayer names")
+    CHECK(win.status.__text:find("1 from other realms hidden"), "other realms: the header counts them", win.status.__text)
+
+    -- A bare group finder name the feed has on another realm only
+    CommanderLadder = { Lookup = function(name, realm, anyRealm)
+        if name == "Farguy" and anyRealm then return { [3] = { 2300, 10, 2 } } end
+    end }
+    lfg[8] = { { name = "Farguy", classFilename = "MAGE", level = 70 } }
+    ratings["Farguy"] = R(nil, 2300, nil)
+    Fire("LFG_LIST_SEARCH_RESULTS_RECEIVED")
+    Repaint()
+    CHECK(not Names(3):find("Farguy"), "other realms: a group finder name the feed has only elsewhere is hidden", Names(3))
+    CHECK(Names(3):find("Lfgguy"), "other realms: ...one the feed cannot place stays", Names(3))
+    CHECK(win.status.__text:find("2 from other realms hidden"), "other realms: ...and is counted", win.status.__text)
+
+    -- Switched off: both come back marked *, and neither can be watched
+    list.hideAway.__scripts.OnClick(list.hideAway)
+    Repaint()
+    CHECK(CommanderRecruitDB.HideOtherRealms == false and list.hideAway.__checked == false,
+        "other realms: the switch turns it off")
+    local shown = Names(3)
+    CHECK(shown:find("Talker|cff888888*|r", 1, true) and shown:find("Farguy|cff888888*|r", 1, true),
+        "other realms: ...both come back, marked *", shown)
+    CHECK(not win.status.__text:find("other realms"), "other realms: ...and the header stops counting", win.status.__text)
+    CHECK(not CommanderRecruit.CanFriend(CommanderRecruit.Book().players["Farguy-Dreamscythe"]),
+        "other realms: a finder name placed elsewhere cannot be watched")
+    list.hideAway.__scripts.OnClick(list.hideAway)
+    Repaint()
+    CHECK(CommanderRecruitDB.HideOtherRealms == true and not Names(3):find("Talker") and not Names(3):find("Farguy"),
+        "other realms: on again, hidden again", Names(3))
+    CommanderLadder = nil
+    lfg[8] = nil
+    CommanderRecruit.Book().players["Farguy-Dreamscythe"] = nil
+end
 Fire("CHAT_MSG_SAY", "zug", "Grunt", "", "", "", "", 0, 0, "", 0, 2, "Player-ORC")
 CHECK(CommanderRecruit.Book().players["Grunt-Dreamscythe"] == nil, "say from the other faction is not")
 Fire("CHAT_MSG_SAY", "hi", "Gnomey", "", "", "", "", 0, 0, "", 0, 3, "Player-GNOME")
 CHECK(CommanderRecruit.Book().players["Gnomey-Dreamscythe"] ~= nil, "say from your own faction is")
 Fire("CHAT_MSG_GUILD", "hey", "Devinp", "", "", "", "", 0, 0, "", 0, 4, "Player-ME")
-CHECK(CommanderRecruit.Book().players["Devinp-Dreamscythe"] == nil, "you are not your own recruit")
+CHECK(CommanderRecruit.Book().players["Devinp-Dreamscythe"] and CommanderRecruit.Book().players["Devinp-Dreamscythe"].source == "self",
+    "your own chat line is no sighting: you are listed as yourself (R25)")
 
 guild = { { name = "Mate-Dreamscythe", level = 70, class = "MAGE", zone = "Ironforge", online = true } }
 Fire("GUILD_ROSTER_UPDATE")
@@ -1030,6 +1081,13 @@ CHECK(next(CommanderRecruit.Book().players) == nil, "Forget All empties the book
 -- R. The steered sweep (R20): Commander Ladder's roster aims each /who
 -- ===========================================================================
 do
+    -- these fixtures are sized for the stop at 1 (R20); R23's stop is checked on its own
+    local stopWas = CommanderRecruit_Engine.MIN_EXPECT
+    CommanderRecruit_Engine.MIN_EXPECT = 1.0
+    local depthWas = CommanderRecruitDB.SweepDepth
+    CommanderRecruitDB.SweepDepth = 1
+    local fragmentsWere = CommanderRecruit_Engine.NAME_FRAGMENTS
+    CommanderRecruit_Engine.NAME_FRAGMENTS = false -- class and guild logic only (R26 has its own section)
     local DAY = 86400
     local function L(name, class, race, guild, best, faction)
         return { key = name .. "-Dreamscythe", name = name, faction = faction or "A", class = class, race = race,
@@ -1056,7 +1114,7 @@ do
     Repaint()
     local bar = function() return win.sweepBar.text.__text end
     CHECK(rosterAsked[1] == "Dreamscythe", "steer: the roster is asked for our realm", rosterAsked[1])
-    CHECK(bar():find("^Sweep: not started · aimed by the ladder at 16 rated Alliance here · first: arena matches %(~10 rated%) · ready"),
+    CHECK(bar():find("^Sweep: not started · aimed by the ladder at 16 rated Alliance here, ~%d+ presses for ~%d+ of them · first: arena matches %(~10 rated%) · ready"),
         "steer: the bar says the sweep is aimed, at how many, and what it asks first", bar())
     local sent0 = #who.sent
     CommanderRecruit_SweepStep()
@@ -1075,6 +1133,7 @@ do
     Advance(5)
     Repaint()
     CHECK(bar():find("next: Ruins of Lordaeron %(~5%.0 rated%) · ready"), "steer: the bar says what kind of query is next", bar())
+    CHECK(bar():find("^Sweep: 1 asked, ~%d+ to go"), "steer: the bar counts what was asked and the presses forecast to go (R23)", bar())
     CommanderRecruit_SweepStep()
     CHECK(who.sent[#who.sent].text == '70-70 z-"Ruins of Lordaeron"', "steer: then the Ruins of Lordaeron")
     Advance(9) -- no answer: counted as nobody
@@ -1126,8 +1185,8 @@ do
     Commander.Notify(COMMANDER_RECRUIT_EVENTS.UPDATE)
     Advance(6)
     Repaint()
-    CHECK(bar():find("again from: Paladin %(~1%.5 rated%)"),
-        "steer: done, the bar says what a press starts again with (a new sweep forgets who it proved offline)", bar())
+    CHECK(bar():find("again from: nothing worth a /who now"),
+        "steer: done, a new sweep right after remembers who it just proved offline and what it just asked (R23)", bar())
     CommanderRecruit.Clear()
     Advance(6)
     Repaint()
@@ -1160,6 +1219,9 @@ do
     Advance(9)
     CommanderLadder = nil
     CommanderRecruit.Clear()
+    CommanderRecruit_Engine.MIN_EXPECT = stopWas
+    CommanderRecruitDB.SweepDepth = depthWas
+    CommanderRecruit_Engine.NAME_FRAGMENTS = fragmentsWere
 end
 
 -- ===========================================================================
@@ -1167,6 +1229,16 @@ end
 -- switch classes off; the sweep follows it
 -- ===========================================================================
 do
+    -- these fixtures are sized for the stop at 1 (R20); R23's stop is checked on its own
+    local stopWas = CommanderRecruit_Engine.MIN_EXPECT
+    CommanderRecruit_Engine.MIN_EXPECT = 1.0
+    local depthWas = CommanderRecruitDB.SweepDepth
+    CommanderRecruitDB.SweepDepth = 1
+    local fragmentsWere = CommanderRecruit_Engine.NAME_FRAGMENTS
+    CommanderRecruit_Engine.NAME_FRAGMENTS = false -- class and guild logic only (R26 has its own section)
+    -- the session remembers what section R asked and found (R23): start this one clean
+    wipe(CommanderRecruit.Learned().askedAt)
+    wipe(CommanderRecruit.Learned().players)
     local function L(name, class, guild)
         return { key = name .. "-Dreamscythe", name = name, faction = "A", class = class, race = "Human",
             guild = guild, last = now - 3600, best = 2100 }
@@ -1291,6 +1363,9 @@ do
     CommanderRecruit.Clear()
     who.results, who.total = {}, 0
     ratings["Pri1-Dreamscythe"], ratings["Pal1-Dreamscythe"] = nil, nil
+    CommanderRecruit_Engine.MIN_EXPECT = stopWas
+    CommanderRecruitDB.SweepDepth = depthWas
+    CommanderRecruit_Engine.NAME_FRAGMENTS = fragmentsWere
 end
 
 -- ===========================================================================
@@ -1364,6 +1439,87 @@ do
         ratings[name .. "-Dreamscythe"] = nil
     end
     who.results, who.total = {}, 0
+    CommanderRecruit.Clear()
+end
+
+-- ===========================================================================
+-- K. Under 70 is never asked about, so the feed is not handed their names (R24)
+-- ===========================================================================
+do
+    CommanderRecruit.Clear()
+    win:Show()
+    who.results = {
+        { fullName = "Lowbie", level = 42, filename = "MAGE", raceStr = "Gnome", gender = 2, area = "Ironforge", fullGuildName = "" },
+        { fullName = "Capped", level = 70, filename = "MAGE", raceStr = "Gnome", gender = 2, area = "Ironforge", fullGuildName = "" },
+    }
+    who.total = 2
+    local before = #asked
+    Fire("WHO_LIST_UPDATE")
+    Repaint()
+    local askedNow = {}
+    for i = before + 1, #asked do askedNow[asked[i]] = true end
+    CHECK(not askedNow["Lowbie"] and askedNow["Capped"], "level: a level 42 is not asked for a rating, a level 70 is")
+    CHECK(win.foot.__text:find("^2 online with no rating known yet: /reload hands them to the Ladder feed"),
+        "level: the footer counts the 70 only and says how the names reach the feed", win.foot.__text)
+    who.results, who.total = {}, 0
+    CommanderRecruit.Clear()
+end
+
+-- ===========================================================================
+-- Z. Sweep Depth reaches the sweep (R26)
+-- ===========================================================================
+do
+    CommanderRecruit.Clear()
+    local deep = {}
+    for i = 1, 8 do
+        deep[i] = { key = "Deep" .. i .. "-Dreamscythe", name = "Deep" .. i, faction = "A", class = "MAGE", race = "Gnome",
+            best = 1900, last = now }
+    end
+    CommanderLadder = { Roster = function() return deep end }
+    CommanderRecruitDB.SweepDepth = 0.5
+    Advance(10)
+    CommanderRecruit_SweepStep()
+    CHECK(CommanderRecruit.Sweep() and CommanderRecruit.Sweep().minExpect == 0.5, "depth: a new sweep takes Sweep Depth",
+        CommanderRecruit.Sweep() and CommanderRecruit.Sweep().minExpect)
+    CommanderRecruitDB.SweepDepth = 1
+    Commander.Notify(COMMANDER_RECRUIT_EVENTS.UPDATE)
+    CHECK(CommanderRecruit.Sweep().minExpect == 1, "depth: a change reaches the sweep under way")
+    CommanderRecruitDB.SweepDepth = 2
+    Advance(10)
+    CommanderLadder = nil
+    CommanderRecruit.Clear()
+end
+
+-- ===========================================================================
+-- Y. You are always on your own board (R25)
+-- ===========================================================================
+do
+    local before = #asked
+    ratings["player"] = R(1834, 1700, 1896)
+    CommanderRecruit.Clear()
+    win:Show()
+    Repaint()
+    local me = CommanderRecruit.Book().players["Devinp-Dreamscythe"]
+    CHECK(me and me.self and me.source == "self" and me.class == "PRIEST" and me.level == 70,
+        "self: you are in the book with no sighting at all, as yourself")
+    local askedSelf = false
+    for i = before + 1, #asked do if asked[i] == "player" then askedSelf = true end end
+    CHECK(askedSelf, "self: your ratings are asked for by unit, so Muster answers with your live ones")
+    local mine
+    for _, row in ipairs(Shown(Col(2))) do if row.name.__text == "Devinp" then mine = row end end
+    CHECK(mine and mine.rating.__text == 1834, "self: your row is on the 2v2 board with your rating", mine and mine.rating.__text)
+    Advance(16 * 60)
+    Repaint()
+    mine = nil
+    for _, row in ipairs(Shown(Col(5))) do if row.name.__text == "Devinp" then mine = row end end
+    CHECK(mine ~= nil, "self: and stays there past the freshness window")
+    if mine then
+        GameTooltip.__lines = {}
+        mine.__scripts.OnEnter(mine)
+        CHECK(table.concat(GameTooltip.__lines, " | "):find("via you %(always listed%)"), "self: the tooltip says why",
+            table.concat(GameTooltip.__lines, " | "))
+    end
+    ratings["player"] = nil
     CommanderRecruit.Clear()
 end
 

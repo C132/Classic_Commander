@@ -10,6 +10,12 @@
 --      answers counted, offline proved, arena zones on a timer, the fallback
 --   F  a simulated peak hour: steered against the fixed plan
 --   G  race and talent-tree icons (R22): atlases, sex, trees, the book keeps them
+--   J  name fragments (R26): pieces, coverage until n- is known, the start-only
+--      fallback; the sweep's own depth
+--   H  fewer queries (R23): the stop at 2, odds and asked queries remembered across
+--      sweeps and fading back, the forecast of presses left
+--   K  another realm (R27): written realms, bare group finder names placed by the
+--      feed, other sources settling them as ours, the board's skip
 
 local ADDONS = "/Applications/World of Warcraft/_anniversary_/Interface/AddOns"
 
@@ -165,6 +171,11 @@ end
 
 -- === E: the steered sweep (R20) ============================================
 do
+    -- these fixtures are sized for the stop at 1 (R20); R23's stop is checked on its own
+    local stopWas = E.MIN_EXPECT
+    E.MIN_EXPECT = 1.0
+    local fragmentsWere = E.NAME_FRAGMENTS
+    E.NAME_FRAGMENTS = false -- class and guild logic only (R26 has its own section)
     local NOW = 1792300000
     local DAY = 86400
     EQ(E.Activity(NOW - 3600, NOW), 1.0, "E logged in today counts fully")
@@ -314,7 +325,9 @@ do
     local f, o = 50 / 60, E.ONLINE_SHARE
     CHECK(Near(s2.byKey["Lo2-Dreamscythe"].odds, o * (1 - f) / (1 - o * f)),
         "E ...but those it might have listed and did not are less likely on (Bayes)", s2.byKey["Lo2-Dreamscythe"].odds)
-    local c3 = ByText(E.SteerCandidates(Steer(s2.learned), {}, NOW))[qq.text]
+    local l3only = E.NewLearned()
+    l3only.totals = s2.learned.totals -- only what /who said of the totals, not who it found (R23)
+    local c3 = ByText(E.SteerCandidates(Steer(l3only), {}, NOW))[qq.text]
     CHECK(c3 and Near(c3.expect, 5 * E.ONLINE_SHARE * 50 / 60), "E a pair that capped counts for its share of 50 next time",
         c3 and c3.expect)
     local s6 = Steer(E.NewLearned())
@@ -365,6 +378,8 @@ do
     EQ(fixed.queue[1].label, "Warrior", "E the fixed plan's query has a label")
     E.SweepResult(fixed, 50, 90)
     EQ(E.SweepNext(fixed).label, "Orc Warrior", "E ...and a race split says the race")
+    E.MIN_EXPECT = stopWas
+    E.NAME_FRAGMENTS = fragmentsWere
 end
 
 -- === G: race and talent-tree icons (R22) ===================================
@@ -391,6 +406,150 @@ do
     CHECK(p.race == "Gnome" and p.sex == "F", "G a sighting keeps race and sex; a later one without them forgets neither")
     E.Note(book, { fullName = "Sly", sex = "X" }, 300, "who", "Dreamscythe")
     EQ(p.sex, "F", "G only M or F is a sex")
+end
+
+-- === I: under 70 is never asked about (R24) ===============================
+do
+    local asked = {}
+    local function For(p) asked[#asked + 1] = p.key; return { [2] = { rating = 1500, wins = 1, played = 2 } } end
+    local players = {
+        { key = "Low-R", level = 42, at = 1 }, { key = "Cap-R", level = 70, at = 1 }, { key = "Unknown-R", at = 1 },
+    }
+    local board = E.Board(players, For, { ratedLevel = E.LEVEL })
+    CHECK(#asked == 2 and asked[1] ~= "Low-R" and asked[2] ~= "Low-R",
+        "I a player known to be under 70 is never asked about (arena is a level 70 queue)", table.concat(asked, ","))
+    CHECK(board.online == 3 and board.low == 1 and #board[2] == 2 and board.unrated == 0,
+        "I ...still counted online, not as unrated; level 70 and unknown are asked")
+    asked = {}
+    E.Board(players, For, {})
+    EQ(#asked, 3, "I without ratedLevel everyone is asked, as before")
+end
+
+-- === J: name fragments and sweep depth (R26) =================================
+do
+    local NOW = 1792300000
+    EQ(table.concat(E.Fragments("Pallypwr"), ","), "pal,all,lly,lyp,ypw,pwr", "J a name's three-letter pieces, lower case, once each")
+    EQ(table.concat(E.Fragments("Abbé"), ","), "abb", "J only plain letters make a piece")
+    EQ(#E.Fragments("Ox"), 0, "J too short: none")
+    EQ(E.NameQuery("ell"), '70-70 n-"ell"', "J the query")
+    -- Twelve rated players with "ell" in their names, spread over classes, no guilds
+    local roster, classes = {}, { "MAGE", "PRIEST", "ROGUE", "WARLOCK" }
+    local names = { "Bellar", "Kellin", "Shelly", "Wellsy", "Dellan", "Ellwyn", "Nellie", "Tellus", "Mellow", "Jellybean", "Zellgar", "Ellana" }
+    for i, n in ipairs(names) do
+        roster[i] = { key = n .. "-Dreamscythe", faction = "H", class = classes[(i % 4) + 1], race = "Scourge",
+            last = NOW - 3600, best = 1800 }
+    end
+    local learned = E.NewLearned()
+    learned.arenas.arena, learned.arenas.ruins = { est = 0, at = NOW }, { est = 0, at = NOW }
+    local function New(opts)
+        opts = opts or {}
+        opts.faction, opts.names, opts.now, opts.learned = "Horde", {}, NOW, opts.learned or learned
+        return E.NewSteeredSweep(roster, opts)
+    end
+    local sweep = New()
+    CHECK(sweep.fragments.ell and #sweep.fragments.ell == 12, "J a piece twelve of them share is a query", sweep.fragments.ell and #sweep.fragments.ell)
+    local nameQ
+    for _, c in ipairs(E.SteerCandidates(sweep, {}, NOW)) do if c.kind == "name" and c.frag == "ell" then nameQ = c end end
+    CHECK(nameQ and nameQ.text == '70-70 n-"ell"' and nameQ.label == 'names with "ell"' and math.abs(nameQ.expect - 3) < 1e-9,
+        "J offered: twelve at 0.25 worth three finds", nameQ and nameQ.expect)
+    -- An answer whose names all START with "ell": n- may match the start only, so the others are not taken for offline
+    E.SweepSent(sweep, nameQ, NOW, {})
+    E.SweepResult(sweep, 2, 2, nil, { ["Ellwyn-Dreamscythe"] = true, ["Ellana-Dreamscythe"] = true })
+    CHECK(learned.nameMatch == nil, "J no name with it inside: not yet known to match anywhere")
+    CHECK(sweep.byKey["Bellar-Dreamscythe"].odds > 0, "J so Bellar (ell inside) is not proved offline")
+    -- A second sweep's answer with "ell" inside a name settles it
+    local s2 = New()
+    local q2 = { kind = "name", frag = "ell", text = '70-70 n-"ell"', expect = 3, matches = 20 }
+    E.SweepSent(s2, q2, NOW, {})
+    E.SweepResult(s2, 2, 2, nil, { ["Bellar-Dreamscythe"] = true, ["Shelly-Dreamscythe"] = true })
+    EQ(learned.nameMatch, "anywhere", "J a listed name with it inside: n- matches anywhere")
+    CHECK(s2.byKey["Kellin-Dreamscythe"].odds == 0, "J then every unlisted one is offline")
+    -- Start only: two answers listing a few names, none with it inside -> name fragments off for the session
+    local l3 = E.NewLearned()
+    l3.arenas.arena, l3.arenas.ruins = { est = 0, at = NOW }, { est = 0, at = NOW }
+    for _ = 1, 2 do
+        local s3 = New({ learned = l3 })
+        local q3 = { kind = "name", frag = "ell", text = '70-70 n-"ell"', expect = 3, matches = 20 }
+        E.SweepSent(s3, q3, NOW, {})
+        E.SweepResult(s3, 3, 3, nil, { ["Ellwyn-Dreamscythe"] = true, ["Ellana-Dreamscythe"] = true, ["Ellbow-Dreamscythe"] = true })
+    end
+    CHECK(l3.namesOff, "J two answers with names but none with it inside: n- matches the start only, fragments off")
+    local anyName = false
+    for _, c in ipairs(E.SteerCandidates(New({ learned = l3 }), {}, NOW)) do if c.kind == "name" then anyName = true end end
+    CHECK(not anyName, "J ...and no name query is offered again")
+    -- Depth: the stop is the sweep's own
+    local function Count(minExpect)
+        local l = E.NewLearned()
+        l.arenas.arena, l.arenas.ruins = { est = 0, at = NOW }, { est = 0, at = NOW }
+        return #E.SteerCandidates(New({ learned = l, minExpect = minExpect }), {}, NOW)
+    end
+    CHECK(Count(0.5) > Count(2), "J a deeper sweep has more worth a press", Count(0.5) .. " vs " .. Count(2))
+    local live = New({ minExpect = 2 })
+    E.SteerOptions(live, { minExpect = 0.5 })
+    EQ(live.minExpect, 0.5, "J the depth applies to a sweep under way")
+end
+
+-- === H: fewer queries (R23): the stop at 2, memory across sweeps, the forecast ===
+do
+    local NOW = 1792300000
+    EQ(E.MIN_EXPECT, 2.0, "H a query must be worth two rated players to be asked")
+    -- What an answer taught fades back to the login's odds
+    EQ(E.Relax(0.25, nil, NOW), 0.25, "H nothing learned: the login's odds")
+    EQ(E.Relax(0.25, { odds = 0, at = NOW }, NOW), 0, "H proved offline just now: no odds")
+    CHECK(math.abs(E.Relax(0.25, { odds = 0, at = NOW }, NOW + E.RELAX) - 0.25 * (1 - math.exp(-1))) < 1e-9,
+        "H ...most of the way back after the relax time")
+    CHECK(math.abs(E.Relax(0.25, { odds = 1, at = NOW }, NOW + 6 * E.RELAX) - 0.25) < 0.01, "H found long ago: back to the login's")
+
+    local names = { MAGE = "Mage", Troll = "Troll", Scourge = "Undead", BloodElf = "Blood Elf" }
+    local roster = {}
+    for i = 1, 12 do
+        roster[i] = { key = "M" .. i .. "-Dreamscythe", faction = "H", class = "MAGE",
+            race = i <= 8 and "Troll" or "Scourge", last = NOW - 3600, best = 1900 }
+    end
+    local learned = E.NewLearned()
+    learned.arenas.arena = { est = 0, at = NOW }   -- the arenas out of the way
+    learned.arenas.ruins = { est = 0, at = NOW }
+    local function New(at) return E.NewSteeredSweep(roster, { faction = "Horde", names = names, now = at, learned = learned }) end
+    local s1 = New(NOW)
+    local q = E.SweepNext(s1, {}, NOW)
+    EQ(q and q.text, '70-70 c-"Mage"', "H the mages, asked whole (12 x 0.25 = 3 worth)")
+    -- The forecast plays the sweep forward without touching it
+    local before = s1.byKey["M1-Dreamscythe"].odds
+    local presses, finds = E.SteerForecast(s1, {}, NOW)
+    CHECK(presses == 1 and math.abs(finds - 3) < 1e-9, "H forecast: one press for ~3 (one answer under 50 settles the pairs)",
+        presses .. "/" .. finds)
+    CHECK(s1.byKey["M1-Dreamscythe"].odds == before and not s1.asked['70-70 c-"Mage"'] and s1.forecastArenas == nil,
+        "H ...and leaves the sweep as it was")
+    CHECK(s1.forecast and s1.forecast.presses == 1, "H ...kept for the bar")
+    local d, t = E.SweepProgress(s1)
+    CHECK(d == 0 and t == 1, "H the bar's count is the forecast, not the queries worth a press now", d .. "/" .. t)
+    E.SweepSent(s1, q, NOW, {})
+    CHECK(s1.forecast == nil, "H a send makes the forecast old")
+    -- Three mages on, the other nine offline: remembered
+    E.SweepResult(s1, 3, 3, nil, { ["M1-Dreamscythe"] = true, ["M2-Dreamscythe"] = true, ["M9-Dreamscythe"] = true })
+    EQ(learned.players["M1-Dreamscythe"].odds, 1, "H a find is remembered as on")
+    EQ(learned.players["M3-Dreamscythe"].odds, 0, "H a player proved offline is remembered as off")
+    EQ(learned.askedAt['70-70 c-"Mage"'], NOW, "H and when the query went out")
+    -- A new sweep a minute later: nothing worth a press, the board or not
+    local s2 = New(NOW + 60)
+    CHECK(E.SweepNext(s2, {}, NOW + 60) == nil, "H a sweep right after asks nothing: the class was just asked, its players just proved off")
+    -- Ten minutes on the class may be asked again, but nine players proved off are still mostly off
+    local s3 = New(NOW + E.REASK + 1)
+    local seen = { ["M1-Dreamscythe"] = true, ["M2-Dreamscythe"] = true, ["M9-Dreamscythe"] = true }
+    CHECK(E.SweepNext(s3, seen, NOW + E.REASK + 1) == nil, "H ten minutes later, nine proved off are not yet worth two finds")
+    -- An hour on, they are anyone again
+    local s4 = New(NOW + 3600)
+    local q4 = E.SweepNext(s4, seen, NOW + 3600)
+    EQ(q4 and q4.text, '70-70 c-"Mage"', "H an hour later the class is worth asking again")
+    -- The stop: one Troll pair of three active is under two, not asked
+    local small = {}
+    for i = 1, 3 do small[i] = { key = "S" .. i .. "-Dreamscythe", faction = "H", class = "MAGE", race = "Troll", last = NOW, best = 1900 } end
+    local l5 = E.NewLearned()
+    l5.arenas.arena, l5.arenas.ruins = { est = 0, at = NOW }, { est = 0, at = NOW }
+    local s5 = E.NewSteeredSweep(small, { faction = "Horde", names = names, now = NOW, learned = l5 })
+    CHECK(E.SweepNext(s5, {}, NOW) == nil and E.SweepFinished(s5), "H three active players (0.75 worth) are not worth a press")
+    local p5, f5 = E.SteerForecast(s5, {}, NOW)
+    CHECK(p5 == 0 and f5 == 0, "H a finished sweep forecasts nothing")
 end
 
 -- === F: a simulated peak hour ==============================================
@@ -483,6 +642,11 @@ end
 
 -- === O: the player's search order (R21) =====================================
 do
+    -- these fixtures are sized for the stop at 1 (R20); R23's stop is checked on its own
+    local stopWas = E.MIN_EXPECT
+    E.MIN_EXPECT = 1.0
+    local fragmentsWere = E.NAME_FRAGMENTS
+    E.NAME_FRAGMENTS = false -- class and guild logic only (R26 has its own section)
     EQ(table.concat(E.ClassOrder(nil), ","), table.concat(E.CLASS_ORDER, ","), "O no saved order: the default")
     local o = E.ClassOrder({ "ROGUE", "BOGUS", "PRIEST", "ROGUE" })
     EQ(o[1] .. "," .. o[2] .. "," .. o[3], "ROGUE,PRIEST,WARRIOR", "O a saved order first, unknowns and repeats dropped")
@@ -542,6 +706,49 @@ do
     E.SteerOptions(base, { order = { "PRIEST" }, inOrder = true })
     EQ(E.SteerCandidates(base, {}, now)[3].class, nil, "O options apply to a sweep under way (the guild, for its priests)")
     EQ(E.SteerCandidates(base, {}, now)[4].class, "PRIEST", "O ...then the priests' own queries")
+    E.MIN_EXPECT = stopWas
+    E.NAME_FRAGMENTS = fragmentsWere
+end
+
+-- === K: another realm (R27) ==================================================
+do
+    local book = E.NewBook()
+    local home = "Dreamscythe"
+    local function Elsewhere(name) return name == "Visitor" or name == "Settled" end
+    local written = E.Note(book, { fullName = "Talker-Nightslayer" }, 100, "chat", home)
+    CHECK(E.OtherRealm(written, home, Elsewhere), "K a name written with another realm is another realm's")
+    local ours = E.Note(book, { fullName = "Mate-Dreamscythe" }, 100, "guild", home)
+    CHECK(not E.OtherRealm(ours, home, Elsewhere), "K a name written with ours is ours")
+    local visitor = E.Note(book, { fullName = "Visitor" }, 100, "lfg", home)
+    CHECK(visitor.finderOnly == true, "K a bare group finder name is the finder's alone")
+    CHECK(E.OtherRealm(visitor, home, Elsewhere), "K ...and another realm's when the feed has it only elsewhere")
+    CHECK(not E.OtherRealm(visitor, home, nil), "K ...but nobody able to tell keeps them")
+    local stranger = E.Note(book, { fullName = "Stranger" }, 100, "lfg", home)
+    CHECK(not E.OtherRealm(stranger, home, Elsewhere), "K a finder name the feed cannot place stays")
+    local settled = E.Note(book, { fullName = "Settled" }, 100, "lfg", home)
+    E.Note(book, { fullName = "Settled" }, 110, "who", home)
+    CHECK(settled.finderOnly == false and not E.OtherRealm(settled, home, Elsewhere),
+        "K any other source giving the bare name settles it as ours, whatever the feed says")
+    E.Note(book, { fullName = "Settled" }, 120, "lfg", home)
+    CHECK(settled.finderOnly == false, "K ...and a later finder listing does not unsettle it")
+    local bareWho = E.Note(book, { fullName = "Visitor2" }, 100, "who", home)
+    CHECK(not E.OtherRealm(bareWho, home, function() return true end), "K a bare /who name is ours")
+    CHECK(not E.OtherRealm(nil, home, Elsewhere), "K no player is no realm")
+
+    local asked = {}
+    local function For(p)
+        asked[#asked + 1] = p.key
+        return { [2] = { rating = 2000, wins = 1, played = 2 } }
+    end
+    local players = { written, ours, visitor, stranger }
+    local function Skip(p) return E.OtherRealm(p, home, Elsewhere) end
+    local board = E.Board(players, For, { skip = Skip })
+    EQ(#board[2], 2, "K skipped players are off the board")
+    EQ(board.away, 2, "K ...counted as away")
+    EQ(board.online, 2, "K ...and not as online")
+    EQ(#asked, 2, "K ...and never asked about, so the feed is handed no names")
+    board = E.Board(players, For)
+    CHECK(#board[2] == 4 and board.away == 0, "K without skip everyone stays")
 end
 
 io.write(string.format("%d checks, %d failed\n", checks, fails))

@@ -3,8 +3,8 @@
 Three luajit checks, all in-addon. Run all three before any change.
 
 ```bash
-/opt/homebrew/bin/luajit recruit_engine_smoke.lua   # the engine, no mock — 146 checks
-/opt/homebrew/bin/luajit recruit_ui_harness.lua     # wiring under a WoW mock — 183 checks
+/opt/homebrew/bin/luajit recruit_engine_smoke.lua   # the engine, no mock — 197 checks
+/opt/homebrew/bin/luajit recruit_ui_harness.lua     # wiring under a WoW mock — 205 checks
 /opt/homebrew/bin/luajit globals_lint.lua           # 3 files, 0 undeclared globals
 ```
 
@@ -157,3 +157,39 @@ sex; nothing known leaves both empty; an atlas the client lacks is not drawn; ra
 name are chained so names stay in one column; the tooltip names race and tree; without the ladder
 the race comes from the game alone. The mock now records SetAtlas, and has C_Texture, UnitRace and
 UnitSex. The layout check expects 280-wide columns and the 1064-wide window.
+
+1.12.0 (R23). The engine smoke's section H: the stop at 2; odds fading back from proved-offline and
+found; the forecast plays a sweep forward without touching it, is kept for the bar and goes old on
+a send; a find and a proof are remembered with when the query went out; a sweep right after asks
+nothing, ten minutes later nine players proved off are still not worth a press, an hour later the
+class is; three active players are not worth one; a finished sweep forecasts nothing. Sections E
+and O of the smoke and R and O of the UI harness pin the stop at 1, which their fixtures were sized
+for; the UI's order section starts with a clean session memory. Section R checks the bar reads
+"1 asked, ~N to go", and that a sweep started right after one ends remembers it.
+
+R24: the engine smoke's section I (a player known under 70 is never asked about, counted online
+not unrated; unknown level and 70 are asked; without ratedLevel everyone is, as before) and the UI
+harness's section K (a level 42 from /who is not asked, a 70 is; the footer counts the 70 and says
+/reload hands names to the feed).
+
+1.13.0. R25, the UI harness's section Y: you are in the book with no sighting, as yourself; your
+ratings are asked for by unit; your row is on the board with your rating and stays past the
+freshness window; the tooltip says "via you (always listed)"; your own chat line is no sighting.
+R26, the engine smoke's section J: a name's pieces (plain letters, once each), the name query; a
+piece twelve rated players share is offered worth three; an answer of names that only start with
+it proves nobody else offline; one with it inside settles that n- matches anywhere and the rest
+go offline; two start-only answers switch fragments off for the session; a deeper sweep offers
+more; depth applies to a sweep under way. The UI harness's section Z: Sweep Depth reaches a new
+sweep and a sweep under way. Sections E and O (smoke) and R and O (UI) also pin fragments off and,
+in the UI, Sweep Depth at 1, which their fixtures were sized for.
+
+1.14.0 (R27). The engine smoke's section K: a name written with another realm is another realm's
+and one written with ours is ours; a bare group finder name is the finder's alone, another realm's
+when the feed has it only elsewhere, kept when nobody can tell or the feed cannot place it; any
+other source giving the bare name settles it as ours for good; a bare /who name is ours; the
+board's skip leaves those players off, counts them as away and not online, and never asks about
+them. The UI harness, after the channel sighting in section D: Hide other realms is on by
+default; a rated Nightslayer player from chat is off the board, never asked about, and counted in
+the header; with a Commander Ladder `Lookup` mock, a group finder name the feed has only on another
+realm is hidden while one it cannot place stays; switched off, both come back marked `*`, the
+header stops counting and the finder name cannot be watched; switched on, both are hidden again.

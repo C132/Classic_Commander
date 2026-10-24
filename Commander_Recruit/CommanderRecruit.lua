@@ -101,11 +101,29 @@ local function RaceToken(name)
 end
 
 -- ---------------------------------------------------------------------------
+-- Realms (R27)
+-- ---------------------------------------------------------------------------
+
+-- A bare name the Ladder feed has on another realm and not on ours (L8)
+local function LadderElsewhere(name)
+    if not (CommanderLadder and CommanderLadder.Lookup) then return false end
+    local ok, ours = pcall(CommanderLadder.Lookup, name, homeRealm)
+    if not ok or ours then return false end
+    local okAny, other = pcall(CommanderLadder.Lookup, name, homeRealm, true)
+    return okAny and other ~= nil
+end
+
+local function IsOtherRealm(p)
+    return E.OtherRealm(p, homeRealm, LadderElsewhere)
+end
+
+-- ---------------------------------------------------------------------------
 -- Ratings
 -- ---------------------------------------------------------------------------
 
 local function RatingsFor(p)
-    local who = p.bare and p.name or p.key
+    -- Yourself by unit: Muster has your own ratings live (R25)
+    local who = p.self and "player" or (p.bare and p.name or p.key)
     if CommanderMuster and CommanderMuster.RatingsFor then
         local ok, ratings = pcall(CommanderMuster.RatingsFor, who)
         if ok then return ratings end
@@ -327,9 +345,10 @@ end
 -- From a click: AddFriend has restrictions, like SendWho
 -- Can this player be friended at all? Not from another realm: Devin confirmed
 -- on 2026-10-17 that a Dreamscythe character cannot friend a Nightslayer one
--- (R11). A bare name is the game's own realm-less name and is tried as such.
+-- (R11). A bare name is the game's own realm-less name and is tried as such,
+-- unless the group finder alone gave it and the feed has it elsewhere (R27).
 function CommanderRecruit.CanFriend(p)
-    return p and (p.bare or not p.realm or p.realm == homeRealm) and true or false
+    return p and not IsOtherRealm(p) or false
 end
 
 function CommanderRecruit.ToggleWatch(p)
@@ -427,7 +446,8 @@ local function SearchOptions()
             if isOff and E.CLASS_RACES[class] then off[class] = true end
         end
     end
-    return { order = E.ClassOrder(db.SweepOrder), off = off, inOrder = db.SweepInOrder and true or false }
+    return { order = E.ClassOrder(db.SweepOrder), off = off, inOrder = db.SweepInOrder and true or false,
+        minExpect = tonumber(db.SweepDepth) or E.MIN_EXPECT }
 end
 CommanderRecruit.SearchOptions = SearchOptions
 
@@ -436,7 +456,8 @@ CommanderRecruit.SearchOptions = SearchOptions
 local function NewPlan()
     local names, search = WhoNames(), SearchOptions()
     return E.NewSteeredSweep(LadderRoster(), { faction = faction, names = names, minRating = db.MinRating,
-        now = time(), learned = learned, order = search.order, off = search.off, inOrder = search.inOrder })
+        now = time(), learned = learned, order = search.order, off = search.off, inOrder = search.inOrder,
+        minExpect = search.minExpect })
         or E.NewSweep(faction, names, nil, search)
 end
 
@@ -479,7 +500,9 @@ local PREVIEW_EVERY = 5
 local function Preview()
     if not preview or GetTime() - previewAt >= PREVIEW_EVERY then
         preview = NewPlan()
-        preview.peek = E.SweepNext(preview, SeenSet(), time())
+        local seen = SeenSet()
+        preview.peek = E.SweepNext(preview, seen, time())
+        if preview.mode == "steered" and preview.peek then E.SteerForecast(preview, seen, time()) end
         previewAt = GetTime()
     end
     return preview
@@ -498,21 +521,28 @@ local function SweepState()
     local ready = wait <= 0
     local when = ready and "ready" or string.format("in %ds", math.ceil(wait))
     local steered = sweep and sweep.mode == "steered"
+    -- "4 of 12 queries" for the fixed plan; a steered sweep's count is the
+    -- forecast (R23): "4 asked, ~24 to go (~85 rated)"
     local function Count()
         local done, total = E.SweepProgress(sweep)
-        return done, (steered and "~" or "") .. total, total > 0 and done / total or 1
+        local fraction = total > 0 and done / total or 1
+        if not steered then return string.format("%d of %d queries", done, total), fraction end
+        local found = sweep.forecast and sweep.forecast.finds or 0
+        return string.format("%d asked, ~%d to go%s", done, total - done,
+            found >= 1 and string.format(" (~%d rated)", math.floor(found + 0.5)) or ""), fraction
     end
     if awaiting then
-        local done, of, fraction = Count()
-        return string.format("Sweep: %d of %s queries · waiting for /who to answer: %s...", done, of,
-            Describe(awaiting.q)), false, fraction
+        local count, fraction = Count()
+        return string.format("Sweep: %s · waiting for /who to answer: %s...", count, Describe(awaiting.q)), false, fraction
     end
     -- Under way: the next query is chosen now, and none left means done
-    local q = sweep and not E.SweepFinished(sweep) and E.SweepNext(sweep, SeenSet(), time()) or nil
+    local seen = SeenSet()
+    local q = sweep and not E.SweepFinished(sweep) and E.SweepNext(sweep, seen, time()) or nil
     if q then
         nextQuery, nextSweep = q, sweep
-        local done, of, fraction = Count()
-        return string.format("Sweep: %d of %s queries · next: %s · %s", done, of, Describe(q), when), ready, fraction
+        if steered then E.SteerForecast(sweep, seen, time()) end
+        local count, fraction = Count()
+        return string.format("Sweep: %s · next: %s · %s", count, Describe(q), when), ready, fraction
     end
     -- Not started, or done: what the next press starts with
     local plan = Preview()
@@ -522,8 +552,11 @@ local function SweepState()
         or (allOff and "every class is unchecked in the search order: check one to sweep")
         or "nothing worth a /who now: the rest are on the board, proved offline or long inactive"
     if not sweep then
+        local fc = plan.forecast
         local how = plan.mode == "steered"
-            and string.format("aimed by the ladder at %d rated %s here", plan.rated, faction or "")
+            and string.format("aimed by the ladder at %d rated %s here%s", plan.rated, faction or "",
+                fc and fc.presses > 0 and string.format(", ~%d presses for ~%d of them", fc.presses,
+                    math.floor(fc.finds + 0.5)) or "")
             or "each press asks /who for the next class at level 70"
         return string.format("Sweep: not started · %s · first: %s", how, first), ready and plan.peek ~= nil, 0
     end
@@ -859,7 +892,7 @@ local function PaintColumn(col, list)
             local p = entry.player
             row.rank:SetText(i + col.offset)
             local label = p.name or p.key
-            if p.realm and p.realm ~= homeRealm and not p.bare then label = label .. "|cff888888*|r" end
+            if IsOtherRealm(p) then label = label .. "|cff888888*|r" end
             row.name:SetText(label)
             row.name:SetTextColor(ClassColor(p.class))
             row.rating:SetText(entry.rating)
@@ -903,8 +936,24 @@ local function CachedRatings(p)
     return hit.r or nil
 end
 
+-- You are online: always on your own board (R25). Every other source skips
+-- you (your chat lines, your target), and /who lists you only by luck -- a
+-- crowded class past its 50, no guild to ask. Noted straight into the book,
+-- not through Note, so it does not mark the board dirty every build.
+local function NoteSelf()
+    if not (IsOn() and UnitName) then return end
+    local name = UnitName("player")
+    if not name or name == "" then return end
+    local _, class = UnitClass("player")
+    local race = UnitRace and select(2, UnitRace("player"))
+    local p = E.Note(book, { fullName = name, class = class, level = UnitLevel("player"), race = race,
+        sex = UnitSex and E.Sex(UnitSex("player")), guid = UnitGUID("player") }, time(), "self", homeRealm)
+    if p then p.self = true end
+end
+
 local function BuildBoard(settings)
     local now = GetTime()
+    NoteSelf()
     if now - ratingsPrunedAt > RATINGS_KEEP then
         for key, hit in pairs(ratingsCache) do
             if now - hit.at > RATINGS_KEEP then ratingsCache[key] = nil end
@@ -912,7 +961,10 @@ local function BuildBoard(settings)
         ratingsPrunedAt = now
     end
     local fresh = E.Fresh(book, time(), (settings.FreshMinutes or 15) * 60, KEEP)
-    return E.Board(fresh, CachedRatings, { minRating = settings.MinRating })
+    -- Another realm's players are left off before they are asked about, so
+    -- they hand the feed no names either (R27)
+    return E.Board(fresh, CachedRatings, { minRating = settings.MinRating, ratedLevel = E.LEVEL,
+        skip = settings.HideOtherRealms and IsOtherRealm or nil })
 end
 
 local function PaintRows()
@@ -959,12 +1011,14 @@ local function Rebuild()
         if rated[key] then n = n + 1 else hidden = hidden + 1 end
     end
     local watched, watchedOn = CommanderRecruit.WatchCounts()
-    window.status:SetText(string.format("%d rated players online, of %d seen in the last %d min%s%s",
+    window.status:SetText(string.format("%d rated players online, of %d seen in the last %d min%s%s%s",
         n, board.online, db.FreshMinutes or 15,
         hidden > 0 and string.format(" · %d of unchecked classes hidden", hidden) or "",
+        board.away > 0 and string.format(" · %d from other realms hidden", board.away) or "",
         watched > 0 and string.format(" · watching %d, %d on", watched, watchedOn) or ""))
     local partial = sweep and E.SweepFinished(sweep) and #sweep.partial > 0
-    window.foot:SetText(string.format("%d online with no rating known yet (they are looked up at the next feed run)%s",
+    -- The names reach the feed only when the game saves (a /reload or logging out), R24
+    window.foot:SetText(string.format("%d online with no rating known yet: /reload hands them to the Ladder feed%s",
         board.unrated, partial and " · the last sweep was partial: some queries past /who's 50" or ""))
 end
 
@@ -1029,6 +1083,7 @@ local function PaintSearch()
     end
     list.inOrder:SetChecked(search.inOrder)
     list.hideOff:SetChecked(db.SweepHideOff and true or false)
+    list.hideAway:SetChecked(db.HideOtherRealms and true or false)
 end
 
 -- Every change to the list: a steered sweep under way takes it on the next
@@ -1250,9 +1305,16 @@ local function BuildSearchList(f)
             MarkDirty()
             Paint(true)
         end)
+    list.hideAway = Switch("Hide other realms", below - 48,
+        "On the board, show only players on your own realm. A name written with another realm is hidden; so is a group finder name, which comes with no realm at all, when the Ladder feed has it on another realm and not on yours. A name nobody can place stays.",
+        function()
+            db.HideOtherRealms = not db.HideOtherRealms
+            MarkDirty()
+            Paint(true)
+        end)
     list.reset = CreateFrame("Button", nil, list, "UIPanelButtonTemplate")
     list.reset:SetSize(64, 20)
-    list.reset:SetPoint("TOPLEFT", list, "TOPLEFT", 12, below - 52)
+    list.reset:SetPoint("TOPLEFT", list, "TOPLEFT", 12, below - 76)
     list.reset:SetText("Reset")
     list.reset:SetScript("OnClick", CommanderRecruit.ResetSearch)
     Commander.UI.AttachTooltip(list.reset, "Reset",
@@ -1465,6 +1527,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
         pcall(frame.RegisterEvent, frame, "PLAYER_ENTERING_WORLD")
         Commander.AddListener(COMMANDER_RECRUIT_EVENTS.UPDATE, function()
             MarkDirty()
+            -- A setting such as Sweep Depth reaches a sweep under way on its next press
+            preview = nil
+            if sweep and sweep.mode == "steered" then E.SteerOptions(sweep, SearchOptions()) end
             if window and not IsOn() then window:Hide() end
             CommanderRecruit.RefreshSocialButton()
             Paint(true)

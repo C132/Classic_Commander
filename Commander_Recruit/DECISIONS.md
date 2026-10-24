@@ -397,3 +397,111 @@ the entries - might need to update the client to have that info." Each row is no
   window from 974 to 1064 wide; the name keeps the width it had. If 1064 is too wide at Devin's UI
   scale, the age column (30) is the next thing to give.
 - The tooltip adds "Night Elf · Subtlety (talents, from the ladder feed)".
+
+## R23 — Fewer queries, and an honest count (1.12.0, 2026-10-18)
+
+Devin, with a screenshot reading "Sweep: 4 of ~101 queries": "the total queries is kind of nuts
+right now." Measured on the real roster (2,318 Dreamscythe players described): the count was the
+queries worth a press at that moment, which overstated the sweep 2-3x (it said ~126-132 at press
+4 where Horde sweeps took 34-71), and the stop at 1 expected find let a crowded evening run to 71
+presses, the last 35 finding under two rated players each. Three changes:
+
+- **The stop is 2 expected finds** (was 1). On the same model Horde sweeps take 28-41 presses and
+  Alliance 13-18, against the fixed plan's 26-35, still finding more than it (Horde 305-384 vs
+  226-371; Alliance 73-102 vs 64-107).
+- **The count is a forecast.** `E.SteerForecast` plays the sweep forward on expectations: each pick
+  leaves its players odds(1 - share it shows) unfound, until nothing is worth a press. Within
+  about 30% of what sweeps then took (Horde: said 37, took 28-41; Alliance: said 16, took
+  13-18). Recomputed after each send or answer, an option change, or ten seconds. The bar reads
+  "Sweep: 4 asked, ~24 to go (~85 rated) · next: ..." and, before a sweep, "aimed by the ladder at
+  N rated Horde here, ~28 presses for ~120 of them".
+- **A sweep remembers the one before.** What answers taught about each player (found: odds 1;
+  proved offline: 0; a capped answer's discount) is kept for the session and fades back to their
+  login odds over about 20 minutes (`E.RELAX`), and a guild, class or pair asked in the last 10
+  minutes (`E.REASK`) is not asked by a new sweep. A sweep started right after one ends now takes
+  0-1 presses instead of redoing all ~30-40. (R20 said a new sweep forgets; it no longer does.)
+
+What still costs a full sweep: twenty minutes on, the board has dropped everyone (Online For, 15
+minutes by default), so they are unseen again and worth re-finding. A player seen 15 minutes ago
+is very likely still on (sessions run hours); a longer Online For (30-45) would roughly halve how
+often that happens. Left as Devin's setting.
+
+## R24 — Under 70 is never asked about; the footer says how names reach the feed (1.12.0)
+
+Part of tracing two group-finder players with no rating (Ladder L12): the board asked Muster about
+every player seen, all levels, and every one Muster could not rate was handed to the feed --
+lowbies included, who cannot have an arena rating (arena is a level 70 queue in TBC). Now a player
+known to be under 70 is not asked (`E.Board` opts.ratedLevel), counts as online but not as
+unrated, and never reaches the wanted list. Unknown level is still asked. Nothing is filtered by
+rating: Lowest Rating Shown stays Devin's (his is 0, everyone rated). The footer now reads "N online
+with no rating known yet: /reload hands them to the Ladder feed", since the names travel in saved
+variables, written only at a /reload or logout.
+
+## R25 — You are always on your own board (1.13.0, 2026-10-23)
+
+Devin: "it seems like sweep can still miss players for instance I don't even see myself now."
+He was Pallypwr: a Blood Elf Holy Paladin, rated 1834 / 1700 / 1896, no guild. Every Horde paladin is
+a Blood Elf, so his class/race query is one of the most crowded and caps at 50; with no guild no
+guild query reaches him; and every other source skips the player on purpose (his own chat lines,
+his own target). So nothing put him on the board unless he happened to be in the 50. Now each
+board build notes the player straight into the book (source "self", shown as "you (always
+listed)"), never through Note so it does not mark the board dirty every build, and asks Muster for
+his ratings by unit ("player"), which Muster answers with his live ones.
+
+## R26 — Name fragments, and how deep a sweep goes (1.13.0, 2026-10-23)
+
+The rest of "the sweep can still miss players", measured on the real roster: of the Horde's 1,807
+rated players active in three days, 39% are in guilds with 8+ of them, 53% in smaller guilds and 8%
+in none (Alliance 865: 25% / 67% / 8%). A guild query is worth a press (2 finds) only with about 8+
+active members, so more than half of the rated players are reachable only through their
+class/race query, and the big ones always cap (Orc Warrior 232 rated active, Tauren Druid 199,
+Blood Elf Paladin 196). No query of ours reached past those 50.
+
+- **Name fragments.** /who's `n-` matches part of a name (`x-` is Blizzard's exact-name tag; both in
+  the 2.5.6.70006 string table), so `70-70 n-"ell"` lists everyone of ours at 70 with "ell" in their
+  name -- a few percent of them, under 50, whatever their class, race or guild. The sweep builds
+  the 150 most shared three-letter pieces of the roster's own names (`E.Fragments`, plain letters
+  only; at least 6 rated players each) and offers them like any query: their unfound players' odds
+  times the share of 50, labelled 'names with "ell"'.
+- **Safe until known.** Until an answer lists a name with the piece past its first letter, only
+  names STARTING with it count as covered, so nobody is taken for offline on a guess. Two answers
+  with no such name (listing a few, or far fewer than expected) mean n- matches the start only:
+  fragments are dropped for the session (modelled: 2 wasted presses).
+- **Sweep Depth** (settings, saved): the fewest rated finds a /who must be worth -- Quick 2 (the
+  default, R23's stop), Thorough 1, Deep 0.5 -- carried on the sweep (`minExpect`), and taken by a
+  sweep under way on its next press. A bug found on the way: new sweeps never got it (NewPlan did
+  not pass it); fixed and checked.
+- **The trade-off, modelled** on the real roster with ~1,500 unrated level 70s on: Quick finds
+  about 71% of the rated Horde online in ~52 presses (Alliance 58% in 22); Thorough 81% in ~104 (72%
+  in 43); Deep 90% in ~188 (81% in 85). Fragments add 4-8 points at Thorough and Deep, and replace
+  most of the small guild queries. The ceiling is /who itself: 50 a press, about one level 70 in six
+  rated.
+- **The forecast had to get cheap.** Played forward query by query it took 120-230 ms with the JIT
+  off (a hitch every few seconds mid-sweep); it now looks once and updates only the queries that
+  share each pick's players: 5-7 ms, same counts.
+
+## R27 — Hide other realms (1.14.0, 2026-10-24)
+
+Devin: "I don't want my recruit addon showing people from other servers, add another check box to
+hide people from other servers." R11 already said he wants only his realm, but kept other-realm
+players on the board (marked `*`) for whispering. Now a "Hide other realms" switch sits under
+"Hide unchecked classes", saved as `HideOtherRealms`, ON by default since that is what he asked
+for twice.
+
+- **Who is another realm's** (`E.OtherRealm`). A name written with a realm says so itself. A bare
+  name is ours, except one only the group finder has given: it lists Nightslayer players with no
+  realm (Ladder L8), so for those the Ladder feed decides. Our realm's ladder having the name
+  makes it ours; only another realm's having it makes it theirs; nobody able to tell keeps it on
+  the board. Any other source giving the same bare name settles it as ours for good
+  (`p.finderOnly`, A37).
+- **Left off before they are asked about.** `E.Board` takes `opts.skip`: a skipped player is not
+  asked for ratings, not counted online, and counted as `away`. So with the switch on, other-realm
+  names no longer reach Muster, and through it the feed's wanted list. A bare finder name the feed
+  cannot place is still asked, which is how the feed learns where it lives and the next /reload
+  hides it.
+- **The header says so**: "· N from other realms hidden", beside the unchecked classes' count.
+- **One answer everywhere.** The grey `*` and the watch dot (`CanFriend`) now ask the same question,
+  so a finder name the feed places elsewhere is marked `*` and cannot be watched when the switch
+  is off, like a written one.
+- Reset leaves the switch alone, as it does Hide unchecked classes. The sweep needed nothing: it is
+  steered by our realm's roster only.

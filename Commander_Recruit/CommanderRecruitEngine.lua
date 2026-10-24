@@ -36,10 +36,10 @@ E.LEVEL = 70                -- arena is a level-70 queue in TBC
 
 -- Which source a sighting came from, best first: a /who or a roster is the
 -- server saying "online"; a chat line or a listing is the player acting
-E.SOURCES = { "who", "probe", "guild", "friend", "lfg", "chat", "seen" }
+E.SOURCES = { "self", "who", "probe", "guild", "friend", "lfg", "chat", "seen" }
 E.SOURCE_LABEL = {
-    who = "/who", probe = "ladder probe", guild = "guild", friend = "friend", lfg = "group finder",
-    chat = "chat", seen = "seen",
+    self = "you (always listed)", who = "/who", probe = "ladder probe", guild = "guild", friend = "friend",
+    lfg = "group finder", chat = "chat", seen = "seen",
 }
 
 -- ---------------------------------------------------------------------------
@@ -85,6 +85,15 @@ function E.Note(book, s, now, source, homeRealm)
         -- A written realm settles a guess made earlier
         p.bare = false
     end
+    -- The group finder gives the other realm's players with no realm (Ladder
+    -- L8); every other source writes it (R27). So a bare name only the group
+    -- finder has given could be on either realm, and any other sighting
+    -- settles it as ours.
+    if source == "lfg" then
+        if p.finderOnly == nil then p.finderOnly = true end
+    else
+        p.finderOnly = false
+    end
     p.at = now
     p.source = source or p.source
     if s.class and s.class ~= "" then p.class = s.class end
@@ -96,6 +105,20 @@ function E.Note(book, s, now, source, homeRealm)
     if s.zone and s.zone ~= "" then p.zone = s.zone end
     if s.guid then p.guid = s.guid end
     return p
+end
+
+-- Is this player on another realm, as far as anyone can tell (R27)? A written
+-- realm says so itself. A bare name is ours unless only the group finder has
+-- given it; then `elsewhere(name)` decides: true when the Ladder feed has the
+-- name on another realm and not on ours. When nobody can tell, they are not
+-- another realm's.
+function E.OtherRealm(p, homeRealm, elsewhere)
+    if type(p) ~= "table" then return false end
+    if not p.bare then
+        return p.realm ~= nil and homeRealm ~= nil and p.realm ~= homeRealm
+    end
+    if not p.finderOnly or type(elsewhere) ~= "function" then return false end
+    return elsewhere(p.name) and true or false
 end
 
 -- Somebody a server answer says is not online (a friend gone offline, a
@@ -126,18 +149,30 @@ end
 
 -- `ratingsFor(p)` answers Muster's shape: { [2|3|5] = { rating, wins,
 -- played, at, source, best } } or nil. Returns
---   { [2] = { rows }, [3] = { rows }, [5] = { rows }, unrated = n, online = n }
+--   { [2] = { rows }, [3] = { rows }, [5] = { rows }, unrated = n, online = n, away = n }
 -- where a row is { player, rating, wins, lost, best, ratedAt }, highest
 -- rating first; ties go to the more recently seen, then the name.
 -- opts.minRating hides anyone below it in that bracket; opts.classes, when
--- given, is a set of class tokens to keep.
+-- given, is a set of class tokens to keep. opts.ratedLevel: a player known
+-- to be below it is never asked about -- arena is a level 70 queue, so they
+-- cannot be rated, and asking hands their name to the feed for nothing
+-- (R24); they count as online, not as unrated. opts.skip(p), when given,
+-- leaves a player off entirely: not asked, not online, counted as `away`
+-- (another realm's, R27).
 function E.Board(players, ratingsFor, opts)
     opts = opts or {}
     local minRating = tonumber(opts.minRating) or 0
-    local board = { unrated = 0, online = 0 }
+    local ratedLevel = tonumber(opts.ratedLevel)
+    local board = { unrated = 0, online = 0, low = 0, away = 0 }
     for _, size in ipairs(E.BRACKETS) do board[size] = {} end
     for _, p in ipairs(players) do
-        if not (opts.classes and p.class and not opts.classes[p.class]) then
+        if opts.skip and opts.skip(p) then
+            board.away = board.away + 1
+        elseif opts.classes and p.class and not opts.classes[p.class] then
+            -- not this class
+        elseif ratedLevel and p.level and p.level < ratedLevel then
+            board.online, board.low = board.online + 1, board.low + 1
+        else
             board.online = board.online + 1
             local ratings = ratingsFor(p)
             local any = false
@@ -402,7 +437,10 @@ end
 function E.SweepProgress(sweep)
     if not sweep then return 0, 0 end
     if sweep.mode == "steered" then
-        return sweep.done, sweep.done + (sweep.finished and 0 or (sweep.remaining or 0))
+        if sweep.finished then return sweep.done, sweep.done end
+        -- the forecast (R23) when there is one, else what is worth a press now
+        local left = sweep.forecast and sweep.forecast.presses or sweep.remaining or 0
+        return sweep.done, sweep.done + left + (sweep.inflight and 1 or 0)
     end
     return sweep.done, sweep.total
 end
@@ -435,7 +473,9 @@ end
 
 E.FACTION_LETTER = { Alliance = "A", Horde = "H" }
 E.ONLINE_SHARE = 0.25       -- of the recently active, roughly how many are on at a busy hour
-E.MIN_EXPECT = 1.0          -- a query expected to find fewer new rated players is not asked
+E.MIN_EXPECT = 2.0          -- a query expected to find fewer new rated players is not asked (R23: was 1)
+E.RELAX = 1200              -- what a sweep learned of a player's odds fades back to their login's over ~this (R23)
+E.REASK = 600               -- a guild, class or pair asked this recently is not asked again by a new sweep
 E.ARENA_REPEAT = 180        -- seconds before an arena zone is asked again
 E.ARENA_RETRY = 900         -- ...or, once it has stopped finding anyone, this long
 E.TOTAL_KEEP = 1800         -- a total /who gave is trusted this long
@@ -453,7 +493,39 @@ E.ARENAS = {
 -- How much a rated player counts, by days since their last login
 E.ACTIVITY = { { 1, 1.0 }, { 3, 0.7 }, { 7, 0.45 }, { 14, 0.2 }, { 30, 0.08 } }
 E.ACTIVITY_OLD, E.ACTIVITY_UNKNOWN = 0.02, 0.3
-local KIND_ORDER = { arena = 1, class = 2, guild = 3, pair = 4 }
+local KIND_ORDER = { arena = 1, class = 2, guild = 3, pair = 4, name = 5 }
+
+-- Name fragments (R26): /who's n- matches part of a name, so `70-70 n-"ell"`
+-- lists everyone of ours at 70 with "ell" in their name -- a few percent of
+-- them, under 50 -- whatever their class, race or guild. It reaches the
+-- rated players a capped class/race query cannot (past its 50) and no guild
+-- query will (guildless, or a guild too small to be worth a press). Built
+-- from the roster's own names: the most shared three-letter pieces.
+E.NAME_FRAGMENTS = true
+E.FRAGMENT_LEN = 3
+E.FRAGMENT_MIN = 6          -- shared by fewer rated players of ours: not a query
+E.FRAGMENT_KEEP = 150       -- the most shared kept as queries
+
+function E.NameQuery(fragment, level)
+    level = level or E.LEVEL
+    return string.format('%d-%d n-"%s"', level, level, fragment)
+end
+
+-- The distinct lower-case letter fragments of a name, in order
+function E.Fragments(name, len)
+    len = len or E.FRAGMENT_LEN
+    local out, seen = {}, {}
+    for word in tostring(name or ""):lower():gmatch("[a-z]+") do
+        for i = 1, #word - len + 1 do
+            local piece = word:sub(i, i + len - 1)
+            if not seen[piece] then
+                seen[piece] = true
+                out[#out + 1] = piece
+            end
+        end
+    end
+    return out
+end
 local TIER_REST = 99        -- in order: a query no single searched class makes worth a press
 
 function E.Activity(last, now)
@@ -470,7 +542,17 @@ end
 -- estimate and when it was last asked; per query text the last total /who
 -- gave and when; how many /who lists per rated player of ours, per kind
 function E.NewLearned()
-    return { arenas = {}, totals = {}, perRated = { class = E.PER_RATED.class, guild = E.PER_RATED.guild } }
+    return { arenas = {}, totals = {}, perRated = { class = E.PER_RATED.class, guild = E.PER_RATED.guild },
+        players = {}, askedAt = {} }
+end
+
+-- A player's odds now: their login's (`prior`), or what an answer taught us
+-- `rec` = { odds, at }, fading back to the prior (R23). Found online is odds
+-- 1, proved offline 0; twenty minutes later most of that has worn off.
+function E.Relax(prior, rec, now)
+    if type(rec) ~= "table" or not rec.at then return prior end
+    local fade = math.exp(-math.max(0, (tonumber(now) or 0) - rec.at) / E.RELAX)
+    return prior + ((tonumber(rec.odds) or prior) - prior) * fade
 end
 
 function E.ZoneQuery(zone, level)
@@ -512,6 +594,7 @@ function E.NewSteeredSweep(roster, opts)
         byKey = {}, guilds = {}, pairs = {}, classes = {}, asked = {}, offline = {}, foundKeys = {},
         rated = 0, guildCount = 0 }
     local any = false
+    local fragments = {}
     for _, r in ipairs(roster) do
         if type(r) == "table" and r.key and r.faction == letter and races[r.race]
             and E.CLASS_RACES[r.class] and E.CLASS_RACES[r.class][r.race] then
@@ -519,7 +602,9 @@ function E.NewSteeredSweep(roster, opts)
             if (tonumber(r.best) or 0) >= minRating then
                 local p = { key = r.key, class = r.class, race = r.race, guild = r.guild,
                     w = E.Activity(r.last, now) }
-                p.odds = math.min(0.95, p.w * E.ONLINE_SHARE)
+                p.prior = math.min(0.95, p.w * E.ONLINE_SHARE)
+                local learnedNow = opts.learned and opts.learned.players
+                p.odds = E.Relax(p.prior, learnedNow and learnedNow[p.key], now)
                 sweep.byKey[p.key] = p
                 sweep.rated = sweep.rated + 1
                 if p.guild then
@@ -528,10 +613,25 @@ function E.NewSteeredSweep(roster, opts)
                 end
                 Add(sweep.pairs, p.class .. ":" .. p.race, p)
                 Add(sweep.classes, p.class, p)
+                p.lname = (r.key:match("^([^%-]+)") or r.key):lower()
+                if E.NAME_FRAGMENTS then
+                    for _, piece in ipairs(E.Fragments(p.lname)) do Add(fragments, piece, p) end
+                end
             end
         end
     end
     if not any then return nil end
+    -- The most shared name fragments, as queries (R26)
+    local ranked = {}
+    for piece, list in pairs(fragments) do
+        if #list >= E.FRAGMENT_MIN then ranked[#ranked + 1] = piece end
+    end
+    table.sort(ranked, function(a, b)
+        if #fragments[a] ~= #fragments[b] then return #fragments[a] > #fragments[b] end
+        return a < b
+    end)
+    sweep.fragments = {}
+    for i = 1, math.min(#ranked, E.FRAGMENT_KEEP) do sweep.fragments[ranked[i]] = fragments[ranked[i]] end
     E.SteerOptions(sweep, opts)
     return sweep
 end
@@ -545,10 +645,13 @@ end
 -- otherwise the most expected finds first, as before, the order unused.
 function E.SteerOptions(sweep, opts)
     if not sweep then return end
+    sweep.forecast = nil
     opts = opts or {}
     sweep.off = opts.off or {}
     sweep.ranks = E.ClassRanks(opts.order, sweep.off)
     sweep.inOrder = opts.inOrder and true or false
+    -- How deep (R26): a query worth fewer expected finds than this is not asked
+    sweep.minExpect = tonumber(opts.minExpect) or E.MIN_EXPECT
 end
 
 -- A list's players: the odds of those not on the board (expected new finds
@@ -599,6 +702,7 @@ function E.SteerCandidates(sweep, seen, now)
     seen, now = seen or {}, tonumber(now) or 0
     local out, learned, level, names = {}, sweep.learned, sweep.level, sweep.names
     local off, ranks, inOrder = sweep.off or {}, sweep.ranks or {}, sweep.inOrder
+    local stop = sweep.minExpect or E.MIN_EXPECT
     -- An arena zone's worth is in rated players of every class: only the
     -- share of them still searched counts
     local share, all = 0, 0
@@ -612,12 +716,12 @@ function E.SteerCandidates(sweep, seen, now)
         local est = st and st.est or a.prior
         local since = st and st.at and now - st.at or math.huge
         local expect
-        if est >= E.MIN_EXPECT then
+        if est >= stop then
             if since >= E.ARENA_REPEAT then expect = est end
         elseif since >= E.ARENA_RETRY then
-            expect = E.MIN_EXPECT -- quiet lately: tried now and then, last of all
+            expect = stop -- quiet lately: tried now and then, last of all
         end
-        if expect and share > 0 then
+        if expect and share > 0 and not (sweep.forecastArenas and sweep.forecastArenas[a.kind]) then
             out[#out + 1] = { kind = "arena", arena = a.kind, text = E.ZoneQuery(a.zone, level),
                 label = a.label, expect = expect * share, tier = 0, tierExpect = expect * share }
         end
@@ -626,17 +730,19 @@ function E.SteerCandidates(sweep, seen, now)
     -- its matches that fits in 50. A class expected past 50 is not offered.
     local function Offer(q, list, perRated, atLeast)
         if sweep.asked[q.text] or (q.class and off[q.class]) then return end
+        local askedAt = learned.askedAt and learned.askedAt[q.text]
+        if askedAt and now - askedAt < E.REASK then return end -- a sweep before this one asked it
         local unfound, on, n, byClass = Weigh(list, seen, off)
         local matches = Matches(learned, q.text, on, perRated, now, atLeast)
         if q.kind == "class" and matches > E.WHO_CAP then return end
         local fit = math.min(1, E.WHO_CAP / math.max(matches, 1))
-        q.expect = unfound * fit
+        q.expect, q.fit, q.matches = unfound * fit, fit, matches
         q.targets = n
-        if q.expect < E.MIN_EXPECT then return end
+        if q.expect < stop then return end
         q.tier, q.tierExpect = TIER_REST, q.expect
         for class, odds in pairs(byClass) do
             local rank = ranks[class]
-            if rank and rank < q.tier and odds * fit >= E.MIN_EXPECT then
+            if rank and rank < q.tier and odds * fit >= stop then
                 q.tier, q.tierExpect = rank, odds * fit
             end
         end
@@ -662,6 +768,12 @@ function E.SteerCandidates(sweep, seen, now)
     for guild, list in pairs(sweep.guilds) do
         Offer({ kind = "guild", guild = guild, text = E.GuildQuery(guild, level), label = "<" .. guild .. ">" },
             list, perGuild)
+    end
+    if not learned.namesOff then
+        for piece, list in pairs(sweep.fragments or {}) do
+            Offer({ kind = "name", frag = piece, text = E.NameQuery(piece, level),
+                label = string.format('names with "%s"', piece) }, list, perClass)
+        end
     end
     table.sort(out, function(a, b)
         if inOrder then
@@ -710,7 +822,9 @@ function E.SteerSent(sweep, q, now, seen)
         st.at = q.sentAt
     else
         sweep.asked[q.text] = true
+        sweep.learned.askedAt[q.text] = q.sentAt
     end
+    sweep.forecast = nil
 end
 
 -- The rated players of ours a query would list
@@ -718,7 +832,36 @@ local function Members(sweep, q)
     if q.kind == "class" then return sweep.classes[q.class] or {} end
     if q.kind == "guild" then return sweep.guilds[q.guild] or {} end
     if q.kind == "pair" then return sweep.pairs[q.pair] or {} end
+    if q.kind == "name" then return (sweep.fragments or {})[q.frag] or {} end
     return {}
+end
+
+-- Whether /who's n- is known to match anywhere in a name (R26): until an
+-- answer lists a name with the fragment past its first letter, only names
+-- that START with it count as covered -- the rest may simply not have been
+-- asked about, and must not be taken for offline. An answer with no such
+-- name that still listed a few, or matched far fewer than expected, is a
+-- strike; two strikes mean n- matches the start only, and name fragments
+-- are dropped for the session.
+local function LearnNameMatch(learned, q, shown, total, answer)
+    if q.kind ~= "name" or learned.nameMatch == "anywhere" then return end
+    local inside = false
+    for key in pairs(answer) do
+        local name = (key:match("^([^%-]+)") or key):lower()
+        local at = name:find(q.frag, 1, true)
+        if at and at > 1 then inside = true break end
+    end
+    if inside then
+        learned.nameMatch = "anywhere"
+    elseif shown >= 3 or math.max(shown, total) < (q.matches or 0) / 4 then
+        learned.startOnly = (learned.startOnly or 0) + 1
+        if learned.startOnly >= 2 then learned.namesOff = true end
+    end
+end
+
+local function Covered(learned, q, p)
+    if q.kind ~= "name" or learned.nameMatch == "anywhere" then return true end
+    return p.lname and p.lname:sub(1, #q.frag) == q.frag or false
 end
 
 -- The answer to the query in flight. New rated finds are counted (rated
@@ -737,9 +880,13 @@ function E.SteerResult(sweep, shown, total, unanswered, answer)
     if not q then return nil end
     sweep.inflight = nil
     sweep.done = sweep.done + 1
+    sweep.forecast = nil
     shown, total = tonumber(shown) or 0, tonumber(total) or 0
     answer = answer or {}
     local learned = sweep.learned
+    local at = q.sentAt or 0
+    -- What this answer taught about a player, kept for the sweeps after (R23)
+    local function Remember(p, odds) learned.players[p.key] = { odds = odds, at = at } end
     local finds, ratedListed = 0, 0
     if unanswered then
         sweep.unanswered[#sweep.unanswered + 1] = q.text
@@ -751,6 +898,7 @@ function E.SteerResult(sweep, shown, total, unanswered, answer)
                     sweep.foundKeys[key] = true
                     finds = finds + 1
                 end
+                Remember(sweep.byKey[key], 1)
             end
         end
         sweep.found = sweep.found + finds
@@ -766,19 +914,22 @@ function E.SteerResult(sweep, shown, total, unanswered, answer)
         return nil
     end
     if unanswered then return nil end
+    LearnNameMatch(learned, q, shown, total, answer)
     local capped = total > shown or shown >= E.WHO_CAP
     local f = capped and shown / math.max(total, shown, 1) or 1
     if capped and total <= shown then f = 0.5 end -- exactly 50 and no total: half, a guess
     local gone = {}
     for _, p in ipairs(Members(sweep, q)) do
-        if not answer[p.key] then
+        if not answer[p.key] and Covered(learned, q, p) then
             if f >= 1 then
                 -- on the board a minute ago or not: not on now
                 p.odds = 0
                 sweep.offline[p.key] = true
                 if q.kind ~= "guild" then gone[#gone + 1] = p.key end
+                Remember(p, 0)
             elseif not q.seen[p.key] and p.odds > 0 then
                 p.odds = p.odds * (1 - f) / (1 - p.odds * f)
+                Remember(p, p.odds)
             end
         end
     end
@@ -793,4 +944,71 @@ function E.SteerResult(sweep, shown, total, unanswered, answer)
         end
     end
     return gone
+end
+
+-- How many more presses the sweep should take, and how many rated players
+-- they should find (R23): the sweep played forward on expectations, each pick
+-- taking its share of its players' odds (a query that shows a share f of its
+-- matches leaves odds(1 - f) unfound, on average) until nothing is worth a
+-- press. The count of queries worth a press NOW overstates it two or three
+-- times: one answer makes many others worthless. Kept until the next answer,
+-- send or option change, or ten seconds.
+E.FORECAST_KEEP = 10
+E.FORECAST_MAX = 150
+
+function E.SteerForecast(sweep, seen, now)
+    if sweep.finished then return 0, 0 end
+    now = tonumber(now) or 0
+    local fc = sweep.forecast
+    if fc and now - fc.at < E.FORECAST_KEEP then return fc.presses, fc.finds end
+    seen = seen or {}
+    local stop = sweep.minExpect or E.MIN_EXPECT
+    -- One full look, then each pick updates only the queries sharing its
+    -- players (R26: rescoring everything each step took 120-230 ms
+    -- interpreted, a visible hitch). A query's share of 50 is held where it
+    -- was; values only fall, so one under the stop never comes back.
+    local list = E.SteerCandidates(sweep, seen, now)
+    local value, fit, members, memberOf, odds = {}, {}, {}, {}, {}
+    for i, q in ipairs(list) do
+        value[i] = q.expect
+        if q.kind ~= "arena" then
+            fit[i], members[i] = q.fit or 1, Members(sweep, q)
+            for _, p in ipairs(members[i]) do
+                if not seen[p.key] and p.odds > 0 then
+                    odds[p.key] = p.odds
+                    local of = memberOf[p.key]
+                    if not of then
+                        of = {}
+                        memberOf[p.key] = of
+                    end
+                    of[#of + 1] = i
+                end
+            end
+        end
+    end
+    local presses, finds, taken = 0, 0, {}
+    while presses < E.FORECAST_MAX do
+        local best, bestValue = nil, stop
+        for i = 1, #list do
+            if not taken[i] and value[i] >= bestValue then best, bestValue = i, value[i] end
+        end
+        if not best then break end
+        taken[best] = true
+        presses, finds = presses + 1, finds + bestValue
+        if members[best] then
+            local keep = 1 - fit[best]
+            for _, p in ipairs(members[best]) do
+                local old = odds[p.key]
+                if old and old > 0 then
+                    local new = old * keep
+                    odds[p.key] = new
+                    for _, j in ipairs(memberOf[p.key]) do
+                        if not taken[j] then value[j] = value[j] - (old - new) * fit[j] end
+                    end
+                end
+            end
+        end
+    end
+    sweep.forecast = { presses = presses, finds = finds, at = now }
+    return presses, finds
 end

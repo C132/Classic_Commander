@@ -22,6 +22,8 @@ local DefaultSettings = {
     SweepOff = false,           -- { [class] = true } for classes not searched
     SweepInOrder = false,       -- ask down the order instead of most rated finds first
     SweepHideOff = true,        -- the board shows only the classes searched
+    HideOtherRealms = true,     -- the board shows only your realm's players (R27)
+    SweepDepth = 2,             -- a steered /who must be worth this many rated finds (R26): 2, 1 or 0.5
     -- false (not nil) so Restore Defaults clears a saved drag
     Pos = false,
 }
@@ -51,6 +53,15 @@ local function UnwatchAll()
         removed, removed == 1 and "" or "s",
         kept > 0 and string.format(", %d you already had stay%s", kept, kept == 1 and "s" or "") or ""))
 end
+
+-- How deep a steered sweep goes (R26): the fewest rated players a /who must
+-- be expected to find. The numbers in the tooltips are from a model of the
+-- realm's real roster with ~1,500 unrated level 70s on.
+local DEPTH_OPTIONS = {
+    { text = "Quick (stop under 2 a press)", value = 2 },
+    { text = "Thorough (under 1)", value = 1 },
+    { text = "Deep (under 0.5)", value = 0.5 },
+}
 
 local MIN_OPTIONS = {
     { text = "Everyone rated", value = 0 },
@@ -112,6 +123,15 @@ local function CreateOptionsPanel()
         width = 180,
         get = function() return CommanderRecruitDB.MinRating end,
         set = function(value) CommanderRecruitDB.MinRating = value end,
+        isEnabled = IsOn,
+    })
+    panel:AddDropdown({
+        label = "Sweep Depth",
+        tooltip = "How far a sweep keeps asking. Each /who lists at most 50 players and about one in six level 70s is rated, so the last rated players cost the most presses. On a model of your realm's roster, a busy evening: Quick finds about 70% of the rated Horde online in ~50 presses (Alliance ~60% in ~22); Thorough about 80% in ~100 (Alliance ~70% in ~40); Deep about 90% in ~190 (Alliance ~80% in ~85). A sweep under way takes a change on its next press.",
+        options = DEPTH_OPTIONS,
+        width = 220,
+        get = function() return CommanderRecruitDB.SweepDepth end,
+        set = function(value) CommanderRecruitDB.SweepDepth = value end,
         isEnabled = IsOn,
     })
 
