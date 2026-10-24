@@ -99,6 +99,10 @@ local DefaultSettings = {
     -- what the board has to add; OFF shows nothing. None of them touch the
     -- unit attribute that makes @mouseover macros work.
     RowTooltip = "EXTRAS",
+    -- Their arena ratings (Commander Muster) at the end of the notes-only
+    -- tooltip. Off: that one line is enough to open the tooltip, and once
+    -- the Ladder feed knows your group, it opened on every row you crossed.
+    RowTooltipRatings = false,
     -- In an arena, hovering ANYTHING on the board shows no tooltip — rows,
     -- ability cells, banner buttons, the blessing slot. They anchor beside
     -- what you hovered, which on this board is the next row's debuffs.
@@ -2179,6 +2183,16 @@ local function AddClickSection(panel)
         get = function() return CommanderPartyFramesDB.RowTooltip end,
         set = function(value) CommanderPartyFramesDB.RowTooltip = value end,
         isEnabled = function() return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ClickCast end,
+    })
+    panel:AddCheckbox({
+        label = "Ratings In Board Notes",
+        tooltip = "End Board Notes Only with the ally's arena ratings, from Commander Muster. That line is enough on its own to open the tooltip, so once Muster knows your group's ratings — and with the Ladder feed it knows most rated players on the realm — every row you cross shows one. Off by default, which keeps a quiet row quiet.\n\nUnit + Board Notes is the game's own unit tooltip, and Muster adds its ratings line there itself; this setting does not reach it.",
+        get = function() return CommanderPartyFramesDB.RowTooltipRatings end,
+        set = function(value) CommanderPartyFramesDB.RowTooltipRatings = value end,
+        isEnabled = function()
+            return CommanderPartyFramesDB.EnableShield and CommanderPartyFramesDB.ClickCast
+                and CommanderPartyFramesDB.RowTooltip == "EXTRAS"
+        end,
     })
     AddClickMatrix(panel)
 end

@@ -8222,9 +8222,13 @@ local function BuildRowTooltip(self)
         util.ForecastTooltip(UnitGUID and UnitGUID(self.unitToken))
     end
     -- Their arena ratings, from Commander Muster (an OptionalDep), after the
-    -- board's notes. The row never shows them, so they are no repeat of it.
-    -- FULL already has them: SetUnit is where Muster adds its own Arena line.
-    if mode ~= "FULL" and CommanderMuster and CommanderMuster.RatingsLine then
+    -- board's notes, when asked for. The row never shows them, so they are no
+    -- repeat of it, but they are enough to open the tooltip on their own, and
+    -- with the Ladder feed nearly every rated ally has them: on by default,
+    -- notes-only meant a tooltip on every row. FULL already has them: SetUnit
+    -- is where Muster adds its own Arena line.
+    if mode ~= "FULL" and DB("RowTooltipRatings", false)
+        and CommanderMuster and CommanderMuster.RatingsLine then
         local ratings = CommanderMuster.RatingsLine(self.unitToken)
         if ratings then GameTooltip:AddDoubleLine("Arena", ratings, 1, 0.82, 0, 1, 1, 1) end
     end
