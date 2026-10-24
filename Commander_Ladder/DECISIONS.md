@@ -147,3 +147,77 @@ six times, the wanted-name lookups stop there (as the profile refresh already di
 is written anyway. This matters more now that the LaunchAgent runs at 06:00, 18:00 and at each
 login (Devin's ask, 2026-10-18; L7's plist, outside the repo).
 
+## L12 — Wanted names: remembered when unrated, a quick run, one run at a time (1.4.0, 2026-10-18)
+
+Devin, with two group-finder players Recruit had no rating for (Udeadmon and Desmurigor,
+Dreamscythe, rated 1448-1555, so below the leaderboard's cut-off, which is Blizzard's, not ours:
+roughly 1630-1790): "still missing a lot of data on players". Traced:
+
+- **They never reached the feed.** Wanted names travel in SavedVariables, which the game writes
+  only at a /reload or logout; the saved list was from 03:56 and the two were seen after that.
+- **The list was noise.** 1,000 wishes, the cap, covered only the last ~2.5 hours of sweeping:
+  869 bare names, 384 of them already in the data, and every run looked the same few hundred
+  unrated level 70s up again, about eight requests each (a bare name is tried on every realm,
+  L8) -- most of a 20-45 minute run.
+
+Changes:
+
+- **Unrated is remembered.** A wish looked up and found unrated or nowhere goes in `checked.json`
+  beside the profile cache and is skipped for two days (`RECHECK_UNRATED`), so a run looks up
+  only names it has not seen lately. Found rated, it leaves the list. Nothing is filtered by rating:
+  any rated player found is written, whatever the number.
+- **`ladder_feed.py wanted`**, a quick run: the last data file as it stands (descriptions kept),
+  plus the wanted names it lacks, plus profiles for new home players only. No ladders, no weekly
+  refresh. Minutes once `checked.json` has filled. For right after a /reload.
+- **One run at a time.** `run` and `wanted` take a lock (`run.lock` in the cache folder); a second
+  waits for the first.
+- **The cap is 3,000** wishes (was 1,000): hours of sweeping instead of 2.5. Recruit also stops
+  asking about players under 70 (its R24), who cannot be rated.
+
+So a player Recruit sees reaches the board after: a /reload (or logout), a feed run (06:00, 18:00,
+login, or `wanted` by hand -- or, since L13, on its own right after the save), and another /reload.
+
+## L13 — The quick run starts itself when the game saves (1.4.0, 2026-10-20)
+
+Devin said yes to running `wanted` whenever the game writes Commander_Ladder's saved variables. A
+second user LaunchAgent, `~/Library/LaunchAgents/com.commander.ladder-wanted.plist` (outside the
+repo, beside L7's), watches `WTF/Account/RETROTEC1/SavedVariables/Commander_Ladder.lua`
+(`WatchPaths`) and runs `ladder_feed.py wanted --notify`, at most once a minute
+(`ThrottleInterval` 60), never at load. Same log as L7.
+
+- **The save first.** launchd starts it the instant the file changes, possibly mid-write, so with
+  `--notify` the run first waits until the file is five seconds old (`settle`, 60 s at most).
+- **One run at a time.** It takes L12's lock, so it waits out a full 06:00/18:00/login run.
+- **Nothing new, nothing written.** A quick run that finds no one and fetches no profile leaves the
+  data file alone.
+- **A notification** ("N new rated players found. /reload to see them.") when it found someone,
+  through `osascript` with the text as an argument, never through a shell.
+
+The loop is now: /reload (the game saves the names it wants) -> a minute or two later, the
+notification -> /reload again. Off: `launchctl bootout gui/$(id -u)/com.commander.ladder-wanted`.
+Tested 2026-10-20 by touching the file with the game closed: the run started within a second.
+
+## L14 — A home player's brackets the ladders left out; one kept-alive connection (1.4.0, 2026-10-21)
+
+Devin, with Attackboss-Dreamscythe's tooltip showing only 3v3 1698: "Why do I not see this guy's
+5s? ... my data is out of date". Asked live: 2v2 1619 (49-46), 3v3 1698, 5v5 1724 (62-43). The ladders
+list only the top ~5,000 a bracket (cut-offs that night: 2v2 1681, 3v3 1637, 5v5 1789), so he was
+on the 3v3 ladder alone -- and once a player is in the data the wanted lookup (L4, L8) never asks for
+anything more. Every home player in the top 5,000 of one bracket showed only that bracket.
+
+- **Asked for.** A full run fetches, for each home-realm player, every bracket the ladders did not
+  list this run (`refresh_brackets`, `/pvp-bracket/{2v2|3v3|5v5}`): about once a day each (20 hours,
+  less up to 8, fixed per name), oldest first, at most 3,000 players a run, and at once when a
+  bracket has just gone missing (fallen off its ladder). A 404 is unrated. Cached in
+  `brackets.json` beside the profile cache; a wanted name just looked up (all three brackets) is
+  recorded there too, so it is not asked again the same day.
+- **Merged.** `merge_brackets` fills the left-out brackets from the cache; the ladder's own number
+  always wins; a bracket now unrated drops an old carried number. Carried-over home players (off
+  every ladder) get all three refreshed the same way, so they no longer age up to a week.
+- **Cost.** About 4,400 home players, most missing one or two brackets: ~7,500 requests a day, split
+  between the two daily runs. Affordable because:
+- **One connection, kept alive.** `keepalive_fetch` (now `Api`'s default) holds one HTTPS
+  connection per host: 97 ms a request against 253 ms for a new TLS connection each (measured, 30
+  requests). A dropped connection is opened once more; a second failure is a 599, retried as L11
+  says. `urlopen_fetch` stays as the plain fallback.
+- Other realms (Nightslayer) are still ladder-only: Devin plays and friends on Dreamscythe.

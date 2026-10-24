@@ -30,7 +30,7 @@
 CommanderLadder = _G.CommanderLadder or {}
 local L = CommanderLadder
 
-local MAX_WANTED = 1000           -- names held for the next feed run
+local MAX_WANTED = 3000           -- names held for the next feed run (1000 filled in ~2.5 hours of sweeping, L12)
 local WANT_KEEP = 14 * 86400      -- a wish not renewed in two weeks is dropped
 
 local wantedCount                 -- counted lazily from the saved table

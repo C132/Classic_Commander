@@ -300,6 +300,314 @@ class NetworkFailures(unittest.TestCase):
         self.assertTrue(any("wanted names stopped" in line for line in lines), lines)
 
 
+class WantedNames(unittest.TestCase):
+    """L12: names found unrated are not looked up again for two days, and the quick `wanted` run
+    adds the game's wanted names to the last data file without the ladders."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.saved = (feed.connect, feed.read_wanted, feed.read_previous, feed.write_atomically, feed.PROFILE_CACHE)
+        feed.PROFILE_CACHE = Path(self.tmp.name) / "profiles.json"
+        self.written = {}
+        real_write = self.saved[3]
+        feed.write_atomically = lambda path, text, suffix=".lua": (
+            self.written.__setitem__("text", text) if suffix == ".lua" else real_write(path, text, suffix=suffix))
+
+    def tearDown(self):
+        (feed.connect, feed.read_wanted, feed.read_previous, feed.write_atomically, feed.PROFILE_CACHE) = self.saved
+
+    def routes(self):
+        return {
+            "/data/wow/realm/index": [(200, {}, REALM_INDEX)],
+            "/data/wow/pvp-season/index": [(200, {}, {"current_season": {"id": 3}})],
+            "/pvp-leaderboard/": [(200, {}, LEADERBOARD)],
+            "/character/dreamscythe/polypopin/pvp-bracket/": [(200, {}, {"rating": 1534})],
+            "/character/dreamscythe/udeadmon/pvp-bracket/": [(200, {}, {"rating": 1511,
+                                                                      "season_match_statistics": {"won": 18, "lost": 16}})],
+            "/character/dreamscythe/udeadmon?": [(200, {}, SUMMARY)],
+            "/character/dreamscythe/lowbie?": [(200, {}, {"level": 70})],
+        }
+
+    def go(self, wanted, previous=None, quick=False):
+        api, fetch, _ = make_api(self.routes())
+        feed.connect = lambda: api
+        feed.read_wanted = lambda: wanted
+        feed.read_previous = lambda: previous
+        lines = []
+        code = feed.run(lines.append, quick=quick)
+        return code, [c[0] for c in fetch.calls], lines
+
+    def test_unrated_names_wait_two_days(self):
+        wanted = {"Lowbie-*Dreamscythe": 300, "Udeadmon-*Dreamscythe": 200, "Plain-Dreamscythe": 100}
+        _, urls, _ = self.go(wanted)
+        self.assertTrue(any("/lowbie/pvp-bracket" in u for u in urls), "first run: looked up")
+        self.assertIn('["Udeadmon-Dreamscythe"]', self.written["text"], "a rated one below the ladder is found")
+        checked = feed.load_checked()
+        self.assertIn("Lowbie-*Dreamscythe", checked, "an unrated one is remembered")
+        self.assertIn("Plain-Dreamscythe", checked, "so is a name with a realm that is nobody rated")
+        self.assertNotIn("Udeadmon-*Dreamscythe", checked, "a rated one is not")
+        _, urls2, lines = self.go(wanted)
+        self.assertFalse(any("/lowbie" in u or "/plain" in u for u in urls2), "the next run skips them")
+        self.assertTrue(any("2 skipped as unrated lately" in line for line in lines), lines)
+        # two days on, asked again
+        stale = {k: v - feed.RECHECK_UNRATED - 1 for k, v in feed.load_checked().items()}
+        feed.checked_path().write_text(json.dumps(stale))
+        _, urls3, _ = self.go(wanted)
+        self.assertTrue(any("/lowbie/pvp-bracket" in u for u in urls3), "after two days, looked up again")
+
+    def test_entry_round_trips_its_description(self):
+        raw = {"2": {"1": 1500, "2": 5, "3": 4}, "t": 9,
+               "w": {"1": "H", "2": "ROGUE", "3": "BloodElf", "4": 77, "5": "Gank", "sex": "F", "spec": "SUBTLETY"}}
+        self.assertEqual(feed.entry_from_json(raw, keep_who=True)["w"],
+                         ("H", "ROGUE", "BloodElf", 77, "Gank", "F", "SUBTLETY"))
+        self.assertNotIn("w", feed.entry_from_json(raw), "a full run's carry-over leaves it to the profiles")
+
+    def test_quick_run_adds_to_the_last_file(self):
+        previous = {"generated": 1, "season": 3, "namespace": "dynamic-classicann-us", "players": {
+            "Zed-LivingFlame": {"5": {"1": 1888, "2": 10, "3": 2}, "t": 5},
+            "Bootii-Dreamscythe": {"2": {"1": 1512, "2": 11, "3": 10}, "t": 5,
+                                   "w": {"1": "H", "2": "ROGUE", "3": "BloodElf", "4": 77, "5": "Gank",
+                                         "sex": "F", "spec": "SUBTLETY"}},
+        }}
+        # Bootii's profile is cached: a quick run must not refresh it
+        feed.save_cache({"Bootii-Dreamscythe": {"f": "H", "c": "ROGUE", "r": "BloodElf", "g": "Gank", "l": 77,
+                                                "x": "F", "s": "SUBTLETY", "v": feed.PROFILE_SCHEMA, "at": 1}})
+        code, urls, lines = self.go({"Udeadmon-*Dreamscythe": 200}, previous=previous, quick=True)
+        self.assertEqual(code, 0)
+        self.assertFalse(any("/pvp-leaderboard/" in u for u in urls), "no ladders")
+        self.assertFalse(any("/character/dreamscythe/bootii" in u for u in urls), "a cached profile is not refreshed")
+        text = self.written["text"]
+        self.assertIn('["Zed-LivingFlame"] = { [5] = { 1888, 10, 2 }, t = 5 }', text, "the last file's players stay")
+        self.assertIn('w = { "H", "ROGUE", "BloodElf", 77, "Gank", sex = "F", spec = "SUBTLETY" }', text,
+                      "with their descriptions")
+        self.assertIn('["Udeadmon-Dreamscythe"] = { [2] = { 1511, 18, 16 }', text, "the wanted one is added")
+        self.assertIn('w = { "H", "ROGUE", "BloodElf"', text.split('["Udeadmon-Dreamscythe"]')[1].split("\n")[0],
+                      "and described: a new home player's profile is fetched")
+        self.assertIn("season = 3", text)
+        self.assertTrue(any("(wanted names only)" in line for line in lines), lines)
+
+    def test_runs_take_turns(self):
+        import threading
+        order = []
+        with feed.run_lock():
+            def second():
+                with feed.run_lock():
+                    order.append("second")
+            t = threading.Thread(target=second)
+            t.start()
+            t.join(0.3)
+            order.append("first done")
+        t.join(2)
+        self.assertEqual(order, ["first done", "second"], "a second run waits for the lock")
+
+    def test_quick_run_with_nothing_new_writes_nothing(self):
+        previous = {"generated": 1, "season": 3, "players": {"Zed-LivingFlame": {"5": {"1": 1888, "2": 10, "3": 2}, "t": 5}}}
+        told = []
+        api, fetch, _ = make_api(self.routes())
+        feed.connect = lambda: api
+        feed.read_wanted = lambda: {"Zed-LivingFlame": 9}   # already in the data
+        feed.read_previous = lambda: previous
+        lines = []
+        self.assertEqual(feed.run(lines.append, quick=True, notify_found=told.append), 0)
+        self.assertNotIn("text", self.written, "the data file is left alone")
+        self.assertEqual(told, [], "and nothing is announced")
+        self.assertIn("nothing new", lines[0])
+
+    def test_quick_run_announces_what_it_found(self):
+        previous = {"generated": 1, "season": 3, "players": {"Zed-LivingFlame": {"5": {"1": 1888, "2": 10, "3": 2}, "t": 5}}}
+        told = []
+        api, fetch, _ = make_api(self.routes())
+        feed.connect = lambda: api
+        feed.read_wanted = lambda: {"Udeadmon-*Dreamscythe": 9}
+        feed.read_previous = lambda: previous
+        self.assertEqual(feed.run(lambda *_: None, quick=True, notify_found=told.append), 0)
+        self.assertEqual(told, ["1 new rated player found. /reload to see them."])
+
+    def test_quick_run_needs_a_file(self):
+        code, _, lines = self.go({"Udeadmon-*Dreamscythe": 200}, previous=None, quick=True)
+        self.assertEqual(code, 1)
+        self.assertNotIn("text", self.written)
+        self.assertIn("run the full feed first", lines[0])
+
+
+class SaveWatch(unittest.TestCase):
+    """L13: the save-watching run waits for the game to finish writing, and says when it found someone."""
+
+    def test_settle_waits_for_a_fresh_save(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "Commander_Ladder.lua"
+        path.write_text("x")
+        t = [os.path.getmtime(path) + 1.0]   # written a second ago
+        slept = []
+        waited = feed.settle([str(path)], clock=lambda: t[0],
+                             sleep=lambda d: (slept.append(d), t.__setitem__(0, t[0] + d)))
+        self.assertAlmostEqual(waited, feed.SAVE_SETTLE - 1.0, places=3, msg="until the file is SAVE_SETTLE old")
+        t2 = [os.path.getmtime(path) + 100]
+        self.assertEqual(feed.settle([str(path)], clock=lambda: t2[0], sleep=lambda d: None), 0, "an old file: no wait")
+
+    def test_settle_gives_up(self):
+        t = [1000.0]
+        waited = feed.settle(["/nonexistent/x.lua"], clock=lambda: t[0], sleep=lambda d: None)
+        self.assertLessEqual(waited, feed.SAVE_SETTLE_MAX, "never waits past the cap")
+
+    def test_notify_passes_text_as_an_argument(self):
+        calls = []
+        feed.notify('3 new; "quoted" & $(rm -rf ~)', runner=lambda cmd, **kw: calls.append(cmd))
+        cmd = calls[0]
+        self.assertEqual(cmd[0], "osascript")
+        self.assertEqual(cmd[-1], '3 new; "quoted" & $(rm -rf ~)', "the text is an argv item, not script")
+        self.assertNotIn("rm -rf", cmd[2], "and never inside the script")
+
+    def test_notify_failure_is_quiet(self):
+        def boom(cmd, **kw):
+            raise OSError("no osascript")
+        feed.notify("x", runner=boom)
+
+
+class OffLadderBrackets(unittest.TestCase):
+    """L14: a home player on one ladder still gets the brackets that ladder left out."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.saved_cache = feed.PROFILE_CACHE
+        feed.PROFILE_CACHE = Path(self.tmp.name) / "profiles.json"
+        self.addCleanup(setattr, feed, "PROFILE_CACHE", self.saved_cache)
+
+    def test_refresh_asks_only_for_what_the_ladders_left_out(self):
+        now = 1792600000
+        api, fetch, _ = make_api({
+            "/attackboss/pvp-bracket/2v2": [(200, {}, {"rating": 1619, "season_match_statistics": {"won": 49, "lost": 46}})],
+            "/attackboss/pvp-bracket/5v5": [(200, {}, {"rating": 1724, "season_match_statistics": {"won": 62, "lost": 43}})],
+        })
+        players = {"Attackboss-Dreamscythe": {3: (1698, 50, 55), "t": now},
+                   "Allthree-Dreamscythe": {2: (1, 1, 1), 3: (1, 1, 1), 5: (1, 1, 1), "t": now},
+                   "Zed-Nightslayer": {3: (1800, 1, 1), "t": now}}
+        on_ladder = {"Attackboss-Dreamscythe": {3}, "Allthree-Dreamscythe": {2, 3, 5}, "Zed-Nightslayer": {3}}
+        cache = {}
+        self.assertEqual(feed.refresh_brackets(api, "ns", players, on_ladder, {}, cache, now), 1)
+        urls = [c[0] for c in fetch.calls if "/character/" in c[0]]
+        self.assertEqual(len(urls), 2, "2v2 and 5v5 for Attackboss; nothing for one on all three; another realm not at all")
+        self.assertFalse(any("pvp-bracket/3v3" in u for u in urls), "the ladder's own bracket is not asked")
+        self.assertEqual(cache["Attackboss-Dreamscythe"], {"2": [1619, 49, 46], "5": [1724, 62, 43], "at": now})
+        self.assertEqual(feed.merge_brackets(players, on_ladder, cache), 2)
+        self.assertEqual(players["Attackboss-Dreamscythe"],
+                         {2: (1619, 49, 46), 3: (1698, 50, 55), 5: (1724, 62, 43), "t": now})
+        # The next run within the day asks nothing...
+        fetch.calls.clear()
+        self.assertEqual(feed.refresh_brackets(api, "ns", players, on_ladder, {}, cache, now + 3600), 0)
+        # ...unless a bracket has just gone missing: off the 3v3 ladder today, 3v3 is asked at once
+        api2, fetch2, _ = make_api({"/attackboss/pvp-bracket/3v3": [(404, {}, b"")]})
+        off_3s = {"Allthree-Dreamscythe": {2, 3, 5}, "Zed-Nightslayer": {3}}
+        self.assertEqual(feed.refresh_brackets(api2, "ns", players, off_3s, {}, cache, now + 3600), 1)
+        self.assertEqual(cache["Attackboss-Dreamscythe"]["3"], 0, "a 404 is unrated")
+        self.assertEqual(sum(1 for c in fetch2.calls if "pvp-bracket" in c[0]), 3,
+                         "a refresh of a player asks every bracket now missing")
+        # A day later, asked again
+        self.assertEqual(feed.refresh_brackets(api, "ns", players, on_ladder, {}, cache, now + 2 * 86400), 1)
+
+    def test_merge_lets_the_ladder_win_and_drops_an_unrated_bracket(self):
+        players = {"A-Dreamscythe": {2: (1700, 1, 1), 5: (1500, 3, 3), "t": 1}}
+        cache = {"A-Dreamscythe": {"2": [1600, 9, 9], "5": 0, "at": 1}}
+        feed.merge_brackets(players, {"A-Dreamscythe": {2}}, cache)
+        self.assertEqual(players["A-Dreamscythe"][2], (1700, 1, 1), "the ladder's number wins")
+        self.assertNotIn(5, players["A-Dreamscythe"], "unrated now: an old carried number goes")
+
+    def test_full_run_gives_attackboss_his_5s(self):
+        board3 = {"entries": [{"character": {"name": "Attackboss", "realm": {"slug": "dreamscythe"}}, "rating": 1698,
+                               "season_match_statistics": {"won": 50, "lost": 55}}]}
+        api, fetch, _ = make_api({
+            "/data/wow/realm/index": [(200, {}, REALM_INDEX)],
+            "/data/wow/pvp-season/index": [(200, {}, {"current_season": {"id": 3}})],
+            "/pvp-leaderboard/3v3": [(200, {}, board3)],
+            "/pvp-leaderboard/": [(200, {}, {"entries": []})],
+            "/character/dreamscythe/polypopin/pvp-bracket/": [(200, {}, {"rating": 1534})],
+            "/attackboss/pvp-bracket/2v2": [(200, {}, {"rating": 1619, "season_match_statistics": {"won": 49, "lost": 46}})],
+            "/attackboss/pvp-bracket/5v5": [(200, {}, {"rating": 1724, "season_match_statistics": {"won": 62, "lost": 43}})],
+        })
+        written = {}
+        saved = (feed.connect, feed.read_wanted, feed.read_previous, feed.write_atomically)
+        real_write = feed.write_atomically
+        feed.connect = lambda: api
+        feed.read_wanted = lambda: {}
+        feed.read_previous = lambda: None
+        feed.write_atomically = lambda path, text, suffix=".lua": (
+            written.__setitem__("text", text) if suffix == ".lua" else real_write(path, text, suffix=suffix))
+        try:
+            self.assertEqual(feed.run(lambda *_: None), 0)
+        finally:
+            feed.connect, feed.read_wanted, feed.read_previous, feed.write_atomically = saved
+        self.assertIn('["Attackboss-Dreamscythe"] = { [2] = { 1619, 49, 46 }, [3] = { 1698, 50, 55 }, '
+                      '[5] = { 1724, 62, 43 }', written["text"])
+
+
+class KeepAlive(unittest.TestCase):
+    """L14: one HTTPS connection per host, kept open."""
+
+    def setUp(self):
+        self.made = []
+        test = self
+
+        class Conn:
+            def __init__(self, host, timeout=30):
+                self.host, self.requests, self.closed = host, [], False
+                test.made.append(self)
+
+            def request(self, method, target, body=None, headers=None):
+                if getattr(test, "fail_next", 0):
+                    test.fail_next -= 1
+                    raise ConnectionResetError("reset")
+                self.requests.append((method, target, body, headers))
+
+            def getresponse(self):
+                class R:
+                    status = 200
+                    def read(self):
+                        return b'{"ok": 1}'
+                    def getheader(self, name):
+                        return None
+                    def getheaders(self):
+                        return [("Content-Type", "application/json")]
+                return R()
+
+            def close(self):
+                self.closed = True
+
+        self.saved = feed.http.client.HTTPSConnection
+        feed.http.client.HTTPSConnection = Conn
+        feed._connections.clear()
+        self.addCleanup(setattr, feed.http.client, "HTTPSConnection", self.saved)
+        self.addCleanup(feed._connections.clear)
+
+    def test_one_connection_is_reused(self):
+        for i in range(3):
+            status, _, body = feed.keepalive_fetch(f"https://us.api.blizzard.com/x?i={i}", {"Authorization": "Bearer t"})
+            self.assertEqual((status, body), (200, b'{"ok": 1}'))
+        self.assertEqual(len(self.made), 1, "three requests, one connection")
+        self.assertEqual(self.made[0].requests[1][1], "/x?i=1", "path and query sent as the target")
+        self.assertEqual(self.made[0].requests[0][3]["Authorization"], "Bearer t")
+
+    def test_a_dropped_connection_is_opened_again(self):
+        feed.keepalive_fetch("https://us.api.blizzard.com/a", {})
+        self.fail_next = 1
+        status, _, _ = feed.keepalive_fetch("https://us.api.blizzard.com/b", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(len(self.made), 2, "reconnected once")
+        self.assertTrue(self.made[0].closed)
+
+    def test_two_failures_are_a_network_error(self):
+        self.fail_next = 2
+        self.assertEqual(feed.keepalive_fetch("https://us.api.blizzard.com/c", {})[0], feed.NETWORK_ERROR)
+
+    def test_post_for_the_token(self):
+        feed.keepalive_fetch("https://oauth.battle.net/token", {"Content-Type": "x"}, data=b"grant_type=client_credentials")
+        method, target, body, _ = self.made[0].requests[0]
+        self.assertEqual((method, target, body), ("POST", "/token", b"grant_type=client_credentials"))
+        self.assertEqual(self.made[0].host, "oauth.battle.net")
+
+
 class Keychain(unittest.TestCase):
 
     def test_missing_item_says_so_without_values(self):

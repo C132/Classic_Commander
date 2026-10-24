@@ -4,6 +4,8 @@
     python3 -I ladder_feed.py probe   # check credentials, namespaces and endpoints; changes nothing
     python3 -I ladder_feed.py fields  # the field names of one ladder entry and one profile summary
     python3 -I ladder_feed.py run     # pull the ladders + wanted profiles, write CommanderLadderData.lua
+    python3 -I ladder_feed.py wanted  # quick: only the names the game wants, added to the last data file
+    python3 -I ladder_feed.py wanted --notify   # the same, as the save-watching LaunchAgent runs it (L13)
 
 The game only tells an addon another player's rating through an inspect (own faction, ~28 yards).
 Everyone else comes from here: the same web API ironforge.pro reads. Commander_Muster merges it
@@ -23,6 +25,8 @@ Standard library only. Run with `python3 -I` so nothing beside this file is impo
 """
 
 import base64
+import contextlib
+import fcntl
 import glob
 import http.client
 import json
@@ -61,6 +65,12 @@ NETWORK_ERROR = 599          # urlopen_fetch's status for a timeout, reset or DN
 REQUESTS_PER_SECOND = 20     # the API allows 100/s
 REQUESTS_PER_HOUR = 30000    # the API allows 36,000/h
 MAX_WANTED_PER_RUN = 800     # names looked up by profile in one run (3 requests each)
+RECHECK_UNRATED = 2 * 86400  # a wanted name found unrated or nowhere is not looked up again for this long (L12)
+SAVE_SETTLE = 5              # a SavedVariables file written less than this many seconds ago is still being written
+BRACKETS_MAX_AGE = 20 * 3600     # a home player's off-ladder brackets are fetched again after this (L14)...
+BRACKETS_SPREAD = 8 * 3600       # ...or up to this much sooner, fixed per name: about once a day each
+MAX_BRACKET_PLAYERS_PER_RUN = 3000
+SAVE_SETTLE_MAX = 60         # ...but never wait longer than this for it
 CARRY_SECONDS = 7 * 86400    # how long an entry not refreshed this run is kept
 
 PROBE_CHARACTER = ("dreamscythe", "polypopin")
@@ -147,11 +157,40 @@ def urlopen_fetch(url, headers, data=None, timeout=30):
         return NETWORK_ERROR, {}, b""
 
 
+_connections = {}   # host -> an open HTTPSConnection, reused across requests (L14)
+
+
+def keepalive_fetch(url, headers, data=None, timeout=30):
+    """urlopen_fetch over one kept-alive HTTPS connection per host (L14): ~100 ms a request against
+    ~250 ms for a new TLS connection each. A dropped connection is opened again once; a second
+    failure comes back as NETWORK_ERROR, which Api.get retries. Never raises."""
+    parts = urllib.parse.urlsplit(url)
+    host, target = parts.netloc, parts.path + (f"?{parts.query}" if parts.query else "")
+    headers = {"User-Agent": "CommanderLadder", **headers}
+    for attempt in (1, 2):
+        conn = _connections.get(host)
+        if conn is None:
+            conn = http.client.HTTPSConnection(host, timeout=timeout)
+            _connections[host] = conn
+        try:
+            conn.request("POST" if data is not None else "GET", target, body=data, headers=headers)
+            response = conn.getresponse()
+            body = response.read()
+            if (response.getheader("Connection") or "").lower() == "close":
+                conn.close()
+                _connections.pop(host, None)
+            return response.status, dict(response.getheaders()), body
+        except (OSError, http.client.HTTPException):
+            conn.close()
+            _connections.pop(host, None)
+    return NETWORK_ERROR, {}, b""
+
+
 class Api:
     """The Blizzard API with a token, a rate limit and a 429 backoff. `fetch` and `clock` are
     injectable so the tests run with no network."""
 
-    def __init__(self, client_id, client_secret, fetch=urlopen_fetch, clock=time.monotonic,
+    def __init__(self, client_id, client_secret, fetch=keepalive_fetch, clock=time.monotonic,
                  sleep=time.sleep):
         self._id, self._secret = client_id, client_secret
         self._fetch, self._clock, self._sleep = fetch, clock, sleep
@@ -337,6 +376,35 @@ def lua_global(path, name, luajit=LUAJIT):
         return None
 
 
+def settle(paths=None, clock=time.time, sleep=time.sleep):
+    """Wait until every SavedVariables file is SAVE_SETTLE seconds old (L13): launchd starts the
+    quick run the moment the game touches the file, possibly before it has finished writing it."""
+    paths = paths if paths is not None else glob.glob(SV_GLOB)
+    waited = 0
+    while waited < SAVE_SETTLE_MAX:
+        try:
+            newest = max(os.path.getmtime(p) for p in paths) if paths else 0
+        except OSError:
+            newest = clock()
+        gap = SAVE_SETTLE - (clock() - newest)
+        if gap <= 0:
+            return waited
+        step = min(gap, SAVE_SETTLE_MAX - waited)
+        sleep(step)
+        waited += step
+    return waited
+
+
+def notify(text, runner=subprocess.run):
+    """A macOS notification (L13), for the save-watching run: it tells Devin when a /reload will
+    load what it found. The text goes as an argument, never through a shell; failures are ignored."""
+    script = 'on run argv\n display notification (item 1 of argv) with title "Commander Ladder"\nend run'
+    try:
+        runner(["osascript", "-e", script, text], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def read_wanted(paths=None, luajit=LUAJIT):
     """{ "Name-Realm": lastSeenEpoch } merged from every account's SavedVariables."""
     out = {}
@@ -429,8 +497,9 @@ def write_atomically(path, text, suffix=".lua"):
         raise
 
 
-def entry_from_json(raw):
-    """A carried-over entry from read_previous's JSON (bracket keys arrive as strings)."""
+def entry_from_json(raw, keep_who=False):
+    """A carried-over entry from read_previous's JSON (bracket keys arrive as strings).
+    keep_who: also the `w` description (L9, L10), for a quick run that rewrites the file (L12)."""
     entry = {}
     for size in (2, 3, 5):
         b = raw.get(str(size))
@@ -438,6 +507,10 @@ def entry_from_json(raw):
             entry[size] = (int(b["1"]), int(b["2"]), int(b["3"]))
     if entry and raw.get("t") is not None:
         entry["t"] = int(raw["t"])
+        who = raw.get("w")
+        if keep_who and isinstance(who, dict) and who.get("2") and who.get("3"):
+            entry["w"] = (str(who.get("1") or ""), str(who["2"]), str(who["3"]), int(who.get("4") or 0),
+                          str(who.get("5") or ""), str(who.get("sex") or ""), str(who.get("spec") or ""))
         return entry
     return None
 
@@ -503,6 +576,126 @@ def parse_specs(payload):
     return best
 
 
+@contextlib.contextmanager
+def run_lock():
+    """One feed run at a time (L12): the LaunchAgent's, a manual one and a quick one all write the
+    same files. A second run waits for the first to finish, then goes on with fresh files."""
+    path = Path(PROFILE_CACHE).parent / "run.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def checked_path():
+    """Where the wanted names found unrated are remembered (L12): beside the profile cache."""
+    return Path(PROFILE_CACHE).parent / "checked.json"
+
+
+def load_checked():
+    """{ wish key: epoch it was last looked up and found unrated or nowhere }, or {}."""
+    try:
+        checked = json.loads(checked_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {k: int(v) for k, v in checked.items() if isinstance(v, (int, float))} if isinstance(checked, dict) else {}
+
+
+def save_checked(checked, now):
+    path = checked_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    keep = {k: v for k, v in checked.items() if now - v < 2 * RECHECK_UNRATED}
+    write_atomically(path, json.dumps(keep, ensure_ascii=False, sort_keys=True), suffix=".json")
+
+
+def brackets_path():
+    """Home players' off-ladder brackets (L14): beside the profile cache."""
+    return Path(PROFILE_CACHE).parent / "brackets.json"
+
+
+def load_brackets():
+    """{ "Name-Realm": { "2": [rating, won, lost] or 0 (unrated), ..., "at": epoch } }, or {}."""
+    try:
+        cache = json.loads(brackets_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return cache if isinstance(cache, dict) else {}
+
+
+def save_brackets(cache, keep, now):
+    keep = set(keep)
+    kept = {k: v for k, v in cache.items() if k in keep or now - int((v or {}).get("at") or 0) < PROFILE_FORGET}
+    path = brackets_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_atomically(path, json.dumps(kept, ensure_ascii=False, sort_keys=True), suffix=".json")
+
+
+def brackets_max_age(key):
+    return BRACKETS_MAX_AGE - zlib.crc32(key.encode("utf-8")) % BRACKETS_SPREAD
+
+
+def refresh_brackets(api, namespace, players, on_ladder, by_name, cache, now, limit=None, say=print):
+    """The brackets the ladders left out for each home-realm player (L14). A ladder lists only the
+    top ~5,000 of a bracket, so a player on the 3v3 ladder shows no 2v2 or 5v5 unless asked for:
+    those are fetched from the profile (`pvp-bracket`), about once a day, oldest first, and at once
+    when a bracket has just gone missing (fallen off its ladder). A 404 is unrated (0). Returns
+    how many players were asked about."""
+    limit = MAX_BRACKET_PLAYERS_PER_RUN if limit is None else limit
+    due = []
+    for key in players:
+        if key.partition("-")[2] not in HOME_REALMS:
+            continue
+        missing = [size for size in (2, 3, 5) if size not in on_ladder.get(key, ())]
+        if not missing:
+            continue
+        rec = cache.get(key) or {}
+        at = int(rec.get("at") or 0)
+        if now - at < brackets_max_age(key) and all(str(size) in rec for size in missing):
+            continue
+        due.append((at, key, missing))
+    due.sort()
+    asked = 0
+    for _, key, missing in due[:limit]:
+        name, _, realm = key.partition("-")
+        base = f"/profile/wow/character/{urllib.parse.quote(slug_for(realm, by_name))}/{urllib.parse.quote(name.lower())}"
+        rec = dict(cache.get(key) or {})
+        try:
+            for size in missing:
+                label = f"{size}v{size}"
+                parsed = parse_bracket(api.get(f"{base}/pvp-bracket/{label}", namespace))
+                rec[str(size)] = list(parsed) if parsed else 0
+        except FeedError as err:
+            say(f"Commander Ladder: off-ladder brackets stopped after {asked}: {err}")
+            break
+        rec["at"] = now
+        cache[key] = rec
+        asked += 1
+    return asked
+
+
+def merge_brackets(players, on_ladder, cache):
+    """Fill each home player's brackets the ladders left out from the cache (L14); a ladder's own
+    number always wins. Returns how many brackets were filled."""
+    filled = 0
+    for key, entry in players.items():
+        rec = cache.get(key)
+        if not rec:
+            continue
+        for size in (2, 3, 5):
+            if size in on_ladder.get(key, ()):
+                continue
+            value = rec.get(str(size))
+            if isinstance(value, list) and len(value) == 3:
+                entry[size] = (int(value[0]), int(value[1]), int(value[2]))
+                filled += 1
+            elif value == 0 and size in entry:
+                del entry[size]   # unrated now: an old number would mislead
+    return filled
+
+
 def load_cache(path=None):
     """The profile cache, { "Name-Realm": {f, c, r, g, l, at} or {gone, at} }, or {}."""
     path = Path(path or PROFILE_CACHE)
@@ -524,7 +717,7 @@ def profile_max_age(key):
     return PROFILE_MAX_AGE - zlib.crc32(key.encode("utf-8")) % PROFILE_SPREAD
 
 
-def refresh_profiles(api, namespace, keys, by_name, cache, now, limit=None, say=print):
+def refresh_profiles(api, namespace, keys, by_name, cache, now, limit=None, say=print, only_new=False):
     """Fetch the summary of every key in `keys` whose cached one is missing or about a week old
     (profile_max_age), the never-fetched first, then the oldest; at most `limit`. A 404 (renamed,
     moved, deleted) is cached as gone and asked again in a week. A spent request budget stops the
@@ -535,8 +728,11 @@ def refresh_profiles(api, namespace, keys, by_name, cache, now, limit=None, say=
         # a described record from before PROFILE_SCHEMA lacks fields: fetched again now
         return bool(rec) and not rec.get("gone") and int(rec.get("v") or 1) < PROFILE_SCHEMA
 
-    due = [k for k in keys if now - int((cache.get(k) or {}).get("at") or 0) >= profile_max_age(k)
-           or stale(cache.get(k))]
+    if only_new:   # a quick run (L12): only players the cache has never seen
+        due = [k for k in keys if k not in cache]
+    else:
+        due = [k for k in keys if now - int((cache.get(k) or {}).get("at") or 0) >= profile_max_age(k)
+               or stale(cache.get(k))]
     due.sort(key=lambda k: (int((cache.get(k) or {}).get("at") or 0), k))
     fetched = 0
     for key in due[:limit]:
@@ -785,7 +981,10 @@ def fields(say=print):
     return 0
 
 
-def run(say=print):
+def run(say=print, quick=False, notify_found=None):
+    """The feed. quick (L12, `wanted`): no ladders and no weekly profile refresh -- the last data
+    file as it stands, plus the names the game wants that it lacks, plus the profiles of new home
+    players. Minutes, not the full run's half hour; for right after a /reload."""
     try:
         api = connect()
         api.token()
@@ -796,16 +995,30 @@ def run(say=print):
     found = discover(api, lambda *_: None)
     by_slug, by_name = found["realms"]
     players = {}
+    ladder_sizes = {}  # key -> the bracket sizes this run's ladders listed them in (L14)
     season = None
     namespace = found["dynamic"] or ""
+    previous = read_previous()
 
-    for prefix, board_season in found["boards"]:
-        season = max(season or 0, board_season)
-        for label, size in BRACKETS.items():
-            board = api.get(f"{prefix}/pvp-leaderboard/{label}", found["dynamic"])
-            for key, value in parse_leaderboard(board, by_slug).items():
-                players.setdefault(key, {"t": now})[size] = value
-    from_ladder = len(players)
+    if quick:
+        if not previous:
+            say("Commander Ladder: no data file to add to yet; run the full feed first")
+            return 1
+        season = previous.get("season")
+        namespace = previous.get("namespace") or namespace
+        for key, raw in (previous.get("players") or {}).items():
+            entry = entry_from_json(raw, keep_who=True) if isinstance(raw, dict) else None
+            if entry:
+                players[key] = entry
+    else:
+        for prefix, board_season in found["boards"]:
+            season = max(season or 0, board_season)
+            for label, size in BRACKETS.items():
+                board = api.get(f"{prefix}/pvp-leaderboard/{label}", found["dynamic"])
+                for key, value in parse_leaderboard(board, by_slug).items():
+                    players.setdefault(key, {"t": now})[size] = value
+                    ladder_sizes.setdefault(key, set()).add(size)
+    from_ladder = 0 if quick else len(players)
 
     profile_ns = None
     for ns in PROFILE_NAMESPACES:
@@ -815,7 +1028,9 @@ def run(say=print):
             break
 
     wanted = read_wanted()
-    looked_up = 0
+    checked = load_checked()
+    looked = {}
+    looked_up = skipped = found_now = 0
     if profile_ns:
         # A "Name-*" wish has no realm (the game had a bare name, L8). The realms with
         # players on this season's ladder are tried busiest first, then every other realm the
@@ -833,12 +1048,15 @@ def run(say=print):
 
         def look(name, realm):
             slug = by_name.get(realm) or realm.lower()
-            entry = {"t": now}
+            entry, every = {"t": now}, {"at": now}
             for label, size in BRACKETS.items():
                 path = f"/profile/wow/character/{urllib.parse.quote(slug)}/{urllib.parse.quote(name.lower())}/pvp-bracket/{label}"
                 parsed = parse_bracket(api.get(path, profile_ns))
                 if parsed:
                     entry[size] = parsed
+                every[str(size)] = list(parsed) if parsed else 0
+            if len(entry) > 1 and realm in HOME_REALMS:
+                looked[f"{name}-{realm}"] = every   # all three just asked: no need again today (L14)
             return entry if len(entry) > 1 else None
 
         # Newest wishes first; names already on the ladder need no profile call
@@ -849,12 +1067,17 @@ def run(say=print):
                     break
                 if key in players:
                     continue
+                # Looked up lately and nobody rated (L12): not again yet
+                if key in checked and now - checked[key] < RECHECK_UNRATED:
+                    skipped += 1
+                    continue
                 name, _, realm = key.partition("-")
                 if realm.startswith("*"):
                     # One realm's ladder already has the name: the game matches it by name
                     if on_ladder.get(name.lower()) == 1:
                         continue
                     looked_up += 1
+                    rated_somewhere = False
                     # "*Dreamscythe": the game's own realm is asked first, as the game asks it first
                     home = realm[1:]
                     order = ([home] if home else []) + [r for r in any_realms if r != home]
@@ -866,35 +1089,62 @@ def run(say=print):
                         entry = look(name, candidate)
                         if entry:
                             players[f"{name}-{candidate}"] = entry
+                            found_now += 1
+                            checked.pop(key, None)
+                            rated_somewhere = True
                             break
                         # Lives here but unrated: someone of that name elsewhere may be the
                         # one the game saw (a bare name could be either)
+                    if not rated_somewhere:
+                        checked[key] = now
                     continue
                 entry = look(name, realm)
                 looked_up += 1
                 if entry:
                     players[key] = entry
+                    found_now += 1
+                    checked.pop(key, None)
+                else:
+                    checked[key] = now
         except FeedError as err:
             say(f"Commander Ladder: wanted names stopped after {looked_up}: {err}")
+        save_checked(checked, now)
 
-    previous = read_previous()
-    carried = carry_over(previous, players, now, season)
+    carried = len(players) - from_ladder if quick else carry_over(previous, players, now, season)
+
+    # The brackets the ladders left out, for the home realm's players (L14): a full run only
+    bracketed = filled = 0
+    home_keys = sorted(k for k in players if k.partition("-")[2] in HOME_REALMS)
+    if profile_ns and home_keys and not quick:
+        brackets = load_brackets()
+        brackets.update(looked)
+        bracketed = refresh_brackets(api, profile_ns, players, ladder_sizes, by_name, brackets, now, say=say)
+        filled = merge_brackets(players, ladder_sizes, brackets)
+        save_brackets(brackets, home_keys, now)
 
     # Who the home realm's rated players are, for Recruit's sweep (L9)
     profiled = described = 0
-    home_keys = sorted(k for k in players if k.partition("-")[2] in HOME_REALMS)
     if profile_ns and home_keys:
         cache = load_cache()
-        profiled = refresh_profiles(api, profile_ns, home_keys, by_name, cache, now, say=say)
+        profiled = refresh_profiles(api, profile_ns, home_keys, by_name, cache, now, say=say, only_new=quick)
         prune_cache(cache, home_keys, now)
         save_cache(cache)
         described = attach_profiles(players, cache, previous)
 
+    if quick and not found_now and not profiled:
+        # Nothing new: the data file stays as it is, and the game has nothing to /reload for
+        say(f"Commander Ladder (wanted names only): nothing new ({looked_up} looked up, {skipped} skipped as "
+            f"unrated lately), {api.requests} requests.")
+        return 0
     data = {"generated": now, "region": REGION, "namespace": namespace, "season": season, "players": players}
     write_atomically(DATA_FILE, render_lua(data))
-    say(f"Commander Ladder: {len(players)} players written ({from_ladder} from the ladder, "
-        f"{looked_up} wanted names looked up, {carried} carried over, {described} described, "
-        f"{profiled} profiles fetched), {api.requests} requests. /reload in game to load them.")
+    if notify_found and found_now:
+        notify_found(f"{found_now} new rated player{'s' if found_now != 1 else ''} found. /reload to see them.")
+    say(f"Commander Ladder{' (wanted names only)' if quick else ''}: {len(players)} players written "
+        f"({from_ladder} from the ladder, {looked_up} wanted names looked up, {skipped} skipped as unrated "
+        f"lately, {carried} carried over, {described} described, {profiled} profiles fetched, "
+        f"{bracketed} asked for off-ladder brackets, {filled} brackets filled in), "
+        f"{api.requests} requests. /reload in game to load them.")
     return 0
 
 
@@ -904,14 +1154,22 @@ def main(argv):
         if command == "probe":
             return probe()
         if command == "run":
-            return run()
+            with run_lock():
+                return run()
+        if command == "wanted":
+            # Run by the save-watching LaunchAgent with --notify (L13): let the save finish first
+            watched = "--notify" in argv[2:]
+            if watched:
+                settle()
+            with run_lock():
+                return run(quick=True, notify_found=notify if watched else None)
         if command == "fields":
             return fields()
     except FeedError as err:
         print(f"Commander Ladder: {err}", file=sys.stderr)
         return 1
     print(__doc__.strip().splitlines()[0])
-    print("usage: python3 -I ladder_feed.py probe|fields|run")
+    print("usage: python3 -I ladder_feed.py probe|fields|run|wanted [--notify]")
     return 2
 
 

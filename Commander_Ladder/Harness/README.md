@@ -3,7 +3,7 @@
 Three offline checks. Run all three before any change:
 
 ```bash
-python3 -I ../Tools/test_ladder_feed.py          # the feed script, fixtures only — 38 tests
+python3 -I ../Tools/test_ladder_feed.py          # the feed script, fixtures only — 56 tests
 /opt/homebrew/bin/luajit ladder_harness.lua      # the addon under the WoW mock — 51 checks
 /opt/homebrew/bin/luajit globals_lint.lua        # 2 files, 0 undeclared globals
 ```
@@ -34,6 +34,19 @@ None of them touch the network or the Keychain.
   no talents or a 404; one talents request per described player; a record from before them is
   fetched again at once while a gone one waits its week; the line writes `sex` and `spec` by name
   and loads back.
+- **Wanted names (L12):** unrated and nowhere names are remembered and skipped for two days, then
+  asked again; a rated one leaves the list; a quick run keeps the last file's players and their
+  descriptions, adds the wanted ones, fetches only new home players' profiles and no ladders, and
+  refuses without a file; two runs take turns on the lock.
+- **Off-ladder brackets (L14):** only the brackets the ladders left out are asked, only for home
+  players; a fresh record is not asked again the same day but a bracket just gone missing is; a 404
+  is unrated; the ladder's number wins the merge and an unrated bracket drops an old one; a full
+  run gives a 3v3-ladder player his 2v2 and 5v5. Keep-alive: one connection for many requests,
+  path and query as the target, a dropped one reopened once, two failures a 599, POST for the
+  token.
+- **The save watch (L13):** a fresh save is waited out until it is five seconds old, never past the
+  cap; a quick run with nothing new writes nothing and announces nothing; one that finds someone
+  says how many; the notification's text goes to osascript as an argument, and a failure is quiet.
 - **Network failures (L11):** a timeout, a DNS failure, or a timeout while reading an error's body
   comes back as a status and is retried; failing wanted-name lookups still let the ladder be
   written.
@@ -46,7 +59,7 @@ It loads the real shared framework plus the addon's two files. The mock is the g
 - **No data file:** every call is nil and nothing errors.
 - **Lookup:** by bare name, by name and realm, by `Name-Realm`, and with a realm containing a
   space.
-- **Want:** renewal, the two-week expiry, and the 1000-name cap keeping the newest.
+- **Want:** renewal, the two-week expiry, and the 3000-name cap keeping the newest.
 - **Roster (L9):** only our realm's described players, every `w` field by name, best of the
   brackets, nil for no guild or login, built once, another realm by name, nobody when off, and a
   line with `w` still read as ratings.

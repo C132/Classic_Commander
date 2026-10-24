@@ -526,20 +526,20 @@ do
 
     -- Old wishes go after two weeks; the cap holds the newest
     CommanderLadderWanted["Old-Dreamscythe"] = now - 15 * 86400
-    for i = 1, 1005 do CommanderLadderWanted["P" .. i .. "-Dreamscythe"] = now - 2000 + i end
+    for i = 1, 3005 do CommanderLadderWanted["P" .. i .. "-Dreamscythe"] = now - 4000 + i end
     CommanderLadder.ClearWanted()
     CHECK(next(CommanderLadderWanted) == nil and CommanderLadder.WantedCount() == 0, "clear empties the list")
-    for i = 1, 1005 do CommanderLadderWanted["P" .. i .. "-Dreamscythe"] = now - 2000 + i end
+    for i = 1, 3005 do CommanderLadderWanted["P" .. i .. "-Dreamscythe"] = now - 4000 + i end
     CommanderLadderWanted["Old-Dreamscythe"] = now - 15 * 86400
     -- A fresh login: the count is taken again from the saved table
     Load(ADDONS .. "/Commander_Ladder/CommanderLadder.lua")
     CommanderLadder.Want("New")
     local n = 0
     for _ in pairs(CommanderLadderWanted) do n = n + 1 end
-    CHECK(n == 1000, "the list is capped at 1000", n)
+    CHECK(n == 3000, "the list is capped at 3000", n)
     CHECK(CommanderLadderWanted["Old-Dreamscythe"] == nil, "a two-week-old wish is dropped")
     CHECK(CommanderLadderWanted["New-Dreamscythe"] ~= nil, "the newest wish survives the cap")
-    CHECK(CommanderLadderWanted["P1-Dreamscythe"] == nil and CommanderLadderWanted["P1005-Dreamscythe"] ~= nil,
+    CHECK(CommanderLadderWanted["P1-Dreamscythe"] == nil and CommanderLadderWanted["P3005-Dreamscythe"] ~= nil,
         "the oldest go first")
 end
 
