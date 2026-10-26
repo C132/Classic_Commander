@@ -1150,6 +1150,137 @@ client did (the mock's `#` takes the highest border, as the client's did).
 Not yet seen in game: `/dump CommanderQuestLog.QuestFrame._State().filled`
 counts the buttons it has made.
 
+**D48 — The Attunements tab is a raw tab that reads the client, not a
+Catalogue instance.** (1.8.0.) `Q.RegisterTab` with its own pools; works
+with Questie absent because every detector is a client call
+(`C_QuestLog.IsQuestFlaggedCompleted`, keyring scan plus
+`C_Item.GetItemCount`, `GetFactionInfoByID`, `C_SpellBook.IsSpellKnown`,
+`GetSkillLineInfo`, `GetSavedInstanceInfo` 14 returns). Questie and Orders
+only enrich (phase vote, last-resort starter place, Go buttons). Rejected: a
+Catalogue spec (READY-gated, quest rows only, fixed briefing); lifting the
+READY gate in the Catalogue (touches three tabs for one).
+
+**D49 — Phase is the highest of four votes and the sheet says why.**
+Calendar table of five epoch starts, Questie's `activePhases.TBC`, in-game
+evidence stored account-wide (`AttunePhaseSeen`: lockouts on 568/580/585,
+the nine Zul'Aman and Isle quest flags, instances entered), and the player's
+setting which wins outright. Evidence never lowers the phase. The phase
+button, the overview and `/cql status` print the winning source and every
+vote. Rejected: trusting Questie alone (12.1.0 hard-codes 3); per-character
+evidence only (a lockout is a realm fact).
+
+**D50 — One completion word, one status model.** Steps: Done, Ready, In log,
+Next, To do, n/m, a standing word, Locked, Set/Not set, Failed, Optional,
+Not needed, the phase name, Unchecked. Guides: Done, n/m, Not needed, the
+phase name, n badges. The mechanism (flag, keyring, lockout, marked,
+implied, consumed, waived, ledger) lives in the reason line and tooltip.
+Optional and note steps never count; a detected Done beats every lock, mark
+and waiver; unlock proof (the key in hand, the final quest flagged) forces a
+guide Done. Rejected: Attuned/Unlocked/Marked/Killed as words; counts in the
+60-px column other than the ratio and the badge count.
+
+**D51 — Lessons live on the course page, never in the navigator.** The
+262-px navigator lists modules and courses; the briefing lists the lessons
+as a single-open accordion with the current one banded, auto-selected and
+scrolled into view on open. Steps outside the phase window and finished
+steps fold into one line each. Rejected: step rows under the selected guide
+(titles of 30-50 characters in 130-180 px; the other 25 guides pushed off
+screen).
+
+**D52 — Go keys: quest steps share the Log's `quest:<id>`, everything else
+is `attune:<guide>:<step>:<i>`.** Quest places go through
+`Q.Questie.GoOrPrint` so D45's turn-in and abandon cleanup and the lit Going
+state are shared; the engine also removes attune keys on
+QUEST_TURNED_IN/QUEST_REMOVED. Doors are `{ entrance = { instance = id } }`
+queries (Orders' table, 585 included); outdoor places carry authored
+coordinates so a spec Go works without Orders' locator. No Show on Map in
+1.8.0 (`OpenWorldMap` raises on 2.5.6; Magisters' Terrace has no uiMap).
+
+**D53 — Marks are per character and dated; the account ledger is the only
+cross-character fact, and only detection writes it.**
+`CommanderQuestLogChar.Attune.marks["GUIDE:step"] = serverTime`, guide marks
+for account-wide raids, weekly marks with an `until`.
+`CommanderQuestLogDB.AttuneAccount[guide] = { char, at }` written only when
+an account-wide guide is Done by detection (every counted step through its
+detector, implication or consumption, or the unlock proof); a guide Done
+through marks never writes it, so an alt's Shift-click cannot become a
+permanent account-wide fact. Read by alts as "Done by Name-Realm". Restore
+Defaults keeps marks, the ledger, the folds and the phase evidence.
+Rejected: writing the ledger from any Done (one mis-click would be permanent
+for every character).
+
+**D54 — The data file is generated from the research bundles with every
+correction applied.** `Harness/make_attunements.py` with `--check`, modelled
+on make_reputations.py; BADGES_PHASE_1..5 merge into one recurring BADGES
+guide (steps deduplicated, windows stamped, one spend note by phase, vendors
+as SPEND places); FLYING_BASIC and FLYING_EPIC merge into FLYING with
+alternative groups preferring Flight Form for druids; PHASES becomes the
+phase notes; `detectedBy` prose is dropped and the engine states its own
+"Checked" and "How the tab knows". The research bundles live in the repo,
+`Harness/attune_research/research-0.json` to `research-6.json` (git-tracked,
+the generator's default `--research` path), so `--check` runs on another
+day; the three 280 percent mount ids added from memory (33999, 32458, 34061;
+A80) are asked of Wowhead's tooltip endpoint only when the generator is run
+with the opt-in `--verify-ids` flag, which reports each as ok, MISMATCH or
+unreachable; an ordinary run and `--check` say the ids shipped unasked. Proved by `attune_data_smoke.lua` and the generator's
+`--check`, and by two harnesses rather than one:
+`questlog_attune_engine_harness.lua` (the phase, the detectors, side and
+class, scoring, marks, events) and `questlog_attunements_harness.lua` (the
+tab's registration, rows and toolbar, briefing, Go, card, settings and
+slash, the Questie-absent run, hygiene). Rejected: typing 250 KB by hand;
+carrying the research's API-speak to the sheet.
+
+**D55 — Detection is memoised per dirty domain and never expands the
+player's UI.** Each client domain has a generation; a step's result is
+reused until a domain it read changes; `QUEST_LOG_UPDATE` while
+`Q.IsExpanding()` is dropped; per-id `IsQuestFlaggedCompleted` instead of
+`GetQuestsCompleted`; `GetSkillLineInfo` walked without `ExpandSkillHeader`
+(the riding spell answers a collapsed header; Lockpicking reads Unchecked);
+CLEU registered only inside the maps a KILL step names. Rejected:
+expand-and-restore of skill headers (fires SKILL_LINES_CHANGED into our own
+invalidation); CHAT_MSG_LOOT parsing.
+
+**D56 — Alternatives, implication and consumption are authored, never
+inferred.** `guide.alternatives` groups (key or Lockpicking, the Talon King
+inside the key group; riding or Flight Form) scored by the best group with a
+class preference; `impliedBy` stamped only on five chains QuestieDB confirms
+linear, minus authored sibling pairs (Arcane Disturbances and Restless
+Activity are both required by Contact from Dalaran's preQuestGroup, so
+neither implies the other); `consumedBy` from a hand table of fragments
+handed in with a later quest (none on Tempest Keep, whose trials are their
+own turn-ins and carry `questId` instead); `questIds` carry a mode (ANY,
+ALL, CHAIN) because the TK Cipher steps are sub-chains, not pools; the same
+quest on two steps makes the first an `accept` step. Rejected:
+back-propagating Done along authored order (TK's pools and BT's twins would
+produce false Dones); "any flagged counts" for every list (a character with
+only Enraged Spirits of Fire and Earth would read the air spirits done).
+
+**D57 — A guide has a `minLevel`, a daily never counts, and a lock is a
+status while "current" is a pointer.** Every guide carries `minLevel` (its
+LEVEL step, else the highest `level` on a quest step, else a hand table of
+70s and the pledge's 60); Continue's "first" rule and the page's level
+notice read it, so a level-41 character is never told to start Medivh's
+Journal. `daily = true` steps keep their live word but never count outside
+the recurring Badges guide (a Netherwing-Exalted drake rider would otherwise
+bounce between 31/34 and Done every morning). A level-locked step stays
+Locked even as the current step; the band and the card point at it ("Locked:
+Reach level 68"), and only an OPEN or UNKNOWN current step takes the word
+Next. Unlock proof waives everything but the LEVEL step, so a level-62 alt
+holding a Communal key reads 2/3, not Done. A Done LEVEL step is progress
+like any other counted step: the guide's ratio counts it (a level-70 druid
+with neither form nor mount reads 1/4 on the level step alone), the card's
+note reads "Start here" only while nothing is done and "Next" from the first
+Done step on, and Continue's "started" rule (the first needed guide with
+something done) reads the same number; so a fresh level 70 is continued on
+Karazhan at 1/11 with Arcane Disturbances next, and the "first" rule, which
+passes over a guide whose hard prerequisite is not Done, is reached only
+below 68. Rejected: a second notion of progress for Continue that leaves the
+LEVEL step out (with this data it sends a fresh 70 to the Gruul's Lair door,
+because Karazhan's hard Caverns of Time prerequisite passes Karazhan over
+and Nightbane needs Karazhan, when Karazhan is the attunement to begin at
+70; and the card would then say "Next" on a guide the tooltip calls the
+first you can start).
+
 ## Assumptions worth re-checking in game
 
 The Zones tab, the Questie adapter and the map drawer keep theirs in

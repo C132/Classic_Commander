@@ -263,8 +263,8 @@ end
 CHECK(type(REP) == "table" and type(REP.Refresh) == "function" and REP.tab and REP.tab.id == "REP",
     "A: Q.Reps is a catalogue instance registered as REP")
 local tabs = Q.Tabs()
-CHECK(#tabs == 3 and tabs[1].id == "LOG" and tabs[2].id == "ZONE" and tabs[3].id == "REP",
-    "A: the strip is Log, Zones, Reputations, in that order", #tabs)
+CHECK(#tabs == 4 and tabs[1].id == "LOG" and tabs[2].id == "ZONE" and tabs[3].id == "REP" and tabs[4].id == "ATTUNE",
+    "A: the strip is Log, Zones, Reputations, Attunements, in that order", #tabs)
 CHECK(REP.tab.label == "Reputations" and REP.tab.width == 78 and REP.tab.order == 30,
     "A: the button says Reputations, 78 px wide, after the Zones tab")
 CHECK(#newGlobals == 0, "A: loading the tab publishes no global", table.concat(newGlobals, ","))

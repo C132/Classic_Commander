@@ -1,0 +1,1803 @@
+{
+ "topic": "badges",
+ "data": {
+  "guides": [
+   {
+    "key": "BADGE_VENDORS",
+    "title": "Badge of Justice vendors and daily-quest givers",
+    "category": "BADGES",
+    "faction": "BOTH",
+    "summary": "Where Badges of Justice (item 29434) are spent and who hands out the badge-paying dailies. G'eras in Shattrath is the base vendor from Phase 1 and gains stronger stock in Phase 4; the Isle of Quel'Danas vendors (Smith Hauthaa, Kayri, Shaani) and their Shattrath mirrors (Anwehu, Ontuvo) arrive in Phase 5 behind the Shattered Sun Offensive island progression. Wind Trader Zhareem gives the heroic daily that pays 2 badges; Nether-Stalker Mah'duun gives the normal daily that pays an Ethereum Prison Key and no badges.",
+    "unlocks": "Knowing every counter that takes badges lets the player route a week of farming to the item they actually want.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "G'eras from Phase 1 (expanded stock Phase 4). Isle of Quel'Danas vendors from Phase 5 and only after the realm's Shattered Sun Offensive effort reaches the relevant stage. Anniversary 2026 dates: P1 2026-02-05, P2 2026-05-14, P3 2026-08-27, P4 scheduled 2026-10-22, P5 TBA autumn 2026."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "talk_geras",
+      "title": "Find G'eras on the Terrace of Light",
+      "kind": "TALK",
+      "giver": {
+       "npcId": 18525,
+       "name": "G'eras",
+       "zone": "Shattrath City",
+       "x": 50.8,
+       "y": 42.3
+      },
+      "detail": "G'eras is a naaru on the upper walkway of the Terrace of Light in Shattrath City (Questie spawn 50.8, 42.3; the wiki describes him as standing in the central dome and notes he was moved to the upper walkway in patch 2.4, which is the layout the 2.5.x client uses). He is the only badge vendor from Phase 1 to Phase 4. His launch stock is the 2.0 and 2.1 catalogue: trinkets at 41 badges (Icon of the Silver Crescent, Bloodlust Brooch, Essence of the Martyr), necklaces, rings, cloaks and off-hands at 25, shields at 33, Searing Sunblade at 50, class relics at 15, fire resistance pieces at 20 and 30, and Primal Nether at 10. In Phase 4 he adds the 2.3 and 2.4 Shattrath catalogue (helms 50, bracers 35, gloves, belts, boots and shoulders 60, legs and chests 75, Battlemaster trinkets 75, relics 20) and Nether Vortex at 15.",
+      "detectedBy": "MERCHANT_SHOW while the merchant unit's GUID resolves to npc 18525, or GossipFrame/target npc 18525.",
+      "optional": false,
+      "phases": {
+       "from": 1,
+       "to": 5
+      }
+     },
+     {
+      "key": "talk_zhareem",
+      "title": "Pick up the heroic daily from Wind Trader Zhareem",
+      "kind": "TALK",
+      "giver": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "detail": "Wind Trader Zhareem stands in the Lower City outside the World's End Tavern (Questie spawn 75.1, 36.7), beside Nether-Stalker Mah'duun. He offers one random Wanted quest per day that must be completed on Heroic difficulty and pays 2 Badges of Justice plus about 13 to 25 gold and 350 reputation with the Consortium and the dungeon's faction. On the Anniversary realms the daily is available from Phase 1 (TBC Classic had it at launch too). The pool is 15 quests, one per heroic dungeon, and gains Magisters' Terrace (quest 11499) in Phase 5. You cannot hold two Wanted quests at once and the quest resets at the daily reset.",
+      "detectedBy": "Gossip or quest frame open on npc 24369; the daily itself is tracked by the quest ids in the phase guides.",
+      "optional": false,
+      "phases": {
+       "from": 1,
+       "to": 5
+      }
+     },
+     {
+      "key": "talk_mahduun",
+      "title": "Know that Mah'duun's normal daily pays no badges",
+      "kind": "TALK",
+      "giver": {
+       "npcId": 24370,
+       "name": "Nether-Stalker Mah'duun",
+       "zone": "Shattrath City",
+       "x": 75.5,
+       "y": 37.2
+      },
+      "detail": "Nether-Stalker Mah'duun stands next to Zhareem (Questie spawn 75.5, 37.2) and offers the non-heroic daily: kill a handful of named trash mobs in one of eight dungeons (quests 11364, 11371, 11376, 11383, 11385, 11387, 11389 and, from Phase 5, 11500). The reward is one Ethereum Prison Key, about 16 gold and 250 reputation with the Consortium and the dungeon's faction; it never pays Badges of Justice. It is still worth doing on the way to a heroic because the key opens Ethereum Prisons in Netherstorm and feeds the Mana-Tombs stasis chain that pays 5 badges once. Note that the task brief had the two NPCs the wrong way round; the quest text confirms Zhareem is the heroic (badge) daily and Mah'duun the normal one.",
+      "detectedBy": "Gossip or quest frame open on npc 24370; informational only.",
+      "optional": true,
+      "phases": {
+       "from": 1,
+       "to": 5
+      }
+     },
+     {
+      "key": "talk_hauthaa",
+      "title": "Buy Sunwell-tier badge gear from Smith Hauthaa",
+      "kind": "TALK",
+      "giver": {
+       "npcId": 25046,
+       "name": "Smith Hauthaa",
+       "zone": "Isle of Quel'Danas",
+       "x": 50.6,
+       "y": 40.8
+      },
+      "detail": "Smith Hauthaa stands at her anvil behind the Sun's Reach Armory on the Isle of Quel'Danas (Questie spawn 50.6, 40.8). She is a Phase 5 vendor and is gated by the realm-wide Shattered Sun Offensive effort: she appears once the Sun's Reach Armory has been retaken (SSO stage 2 complete) and only starts selling once the Anvil and Forge behind the armory has been built by the realm completing the daily Making Ready (quest 11535), after which the follow-up daily Don't Stop Now.... (11536) keeps it running. Her catalogue is the 2.4 badge gear: chests and legs at 100 badges, belts, boots and gloves at 75, rings and necklaces at 60, two-handers and main weapons at 150, one-handers at 105 and off-hand weapons at 45. Anwehu in Shattrath mirrors her stock under the same gate.",
+      "detectedBy": "MERCHANT_SHOW on npc 25046; before the forge is built she exists but opens no merchant window.",
+      "optional": false,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     },
+     {
+      "key": "talk_anwehu",
+      "title": "Use Anwehu in Shattrath as Hauthaa's mirror",
+      "kind": "TALK",
+      "giver": {
+       "npcId": 27667,
+       "name": "Anwehu",
+       "zone": "Shattrath City",
+       "x": 48.1,
+       "y": 42.9
+      },
+      "detail": "Anwehu (added in patch 2.4.2) stands on the Terrace of Light behind Exarch Nasuun and the Shattrath portal to the Isle (Questie spawn 48.1, 42.9, matching the wiki's 48.1, 42.9). He sells exactly Smith Hauthaa's badge gear at the same prices and obeys the same gate: no sales until the realm has built the Anvil and Forge through Making Ready. Handy when you are already in Shattrath turning in the heroic daily. Ontuvo (npc 27666, 48.6, 40.9) next to him mirrors Shaani's epic gems at 15 badges each.",
+      "detectedBy": "MERCHANT_SHOW on npc 27667.",
+      "optional": true,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     },
+     {
+      "key": "talk_kayri",
+      "title": "Trade badges for Veteran's PvP pieces at Kayri",
+      "kind": "TALK",
+      "giver": {
+       "npcId": 26089,
+       "name": "Kayri",
+       "zone": "Isle of Quel'Danas",
+       "x": 50.2,
+       "y": 39.8
+      },
+      "detail": "Kayri, Exotic Gear Purveyor, stands by the Sun's Reach Armory (Questie spawn 50.2, 39.8) and sells Veteran's (Season 2) belts and boots for 40 badges and bracers for 25 badges, the PvP waist, wrist and feet slots that are otherwise honour purchases. She is listed as available from Shattered Sun Offensive stage 3 (armory and harbour retaken). Good value for arena players who would rather spend badges than honour on these three slots.",
+      "detectedBy": "MERCHANT_SHOW on npc 26089.",
+      "optional": true,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     },
+     {
+      "key": "talk_shaani",
+      "title": "Buy uncut epic gems from Shaani for 15 badges",
+      "kind": "TALK",
+      "giver": {
+       "npcId": 25950,
+       "name": "Shaani",
+       "zone": "Isle of Quel'Danas",
+       "x": 51.5,
+       "y": 32.5
+      },
+      "detail": "Shaani, Jewelcrafting Supplies, stands near the Sun's Reach Sanctum (Questie spawn 51.5, 32.5) and sells uncut epic gems (Crimson Spinel, Empyrean Sapphire, Lionseye, Shadowsong Amethyst, Pyrestone, Seaspray Emerald) for 15 badges each. She begins selling once the realm has retaken Sun's Reach Harbor and activated the Alchemy Lab (the wiki lists her as stage 4C). Ontuvo in Shattrath mirrors her stock. This is the cheapest reliable epic-gem source once badge gear is finished.",
+      "detectedBy": "MERCHANT_SHOW on npc 25950.",
+      "optional": true,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/item/29434?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18525?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25046?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24369?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24370?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/27667?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/26089?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25950?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/27666?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Badge_of_Justice",
+     "https://warcraft.wiki.gg/wiki/G%27eras",
+     "https://warcraft.wiki.gg/wiki/Smith_Hauthaa",
+     "https://warcraft.wiki.gg/wiki/Anwehu",
+     "https://warcraft.wiki.gg/wiki/Wind_Trader_Zhareem",
+     "https://warcraft.wiki.gg/wiki/Nether-Stalker_Mah%27duun",
+     "https://warcraft.wiki.gg/wiki/Shattered_Sun_Offensive",
+     "https://warcrafttavern.com/tbc/guides/badge-of-justice-guide-farming-vendors-rewards",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc"
+    ],
+    "notes": "Coordinates are Questie's baked TBC spawn table (CBOR rows X-Npc-<id>-7 in QuestieDB_TBC.toc, decoded in the scratchpad); Anwehu's Questie spawn matches the wiki to one decimal, which validates the decoder. Prices are from Warcraft Tavern's TBC Classic badge guide and match the TBC-era catalogue; the wiki pages show gold prices because they render the retail vendor table."
+   },
+   {
+    "key": "BADGES_PHASE_1",
+    "title": "Badges of Justice: Phase 1 weekly route",
+    "category": "BADGES",
+    "faction": "BOTH",
+    "summary": "In Phase 1 the only renewable badge sources are heroic dungeon bosses (one badge each) and Wind Trader Zhareem's heroic daily (two badges). Karazhan, Gruul and Magtheridon drop no badges yet. A player who does the daily every day and laps the heroics can bank roughly 60 badges a week, enough for a 41-badge trinket and a 25-badge slot every fortnight.",
+    "unlocks": "G'eras's launch catalogue: 41-badge trinkets, 25-badge necks, rings, cloaks and off-hands, 33-badge shields and 10-badge Primal Nethers.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": 2,
+     "notes": "Anniversary Phase 1 began 2026-02-05 (TBC Classic 2021-06-01). This route is superseded by BADGES_PHASE_2 when Phase 2 opens; the sources themselves do not change until Phase 4."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "heroic_daily",
+      "title": "Do Zhareem's heroic daily: 2 badges",
+      "kind": "QUEST",
+      "questId": null,
+      "questIds": [
+       11354,
+       11362,
+       11363,
+       11368,
+       11369,
+       11370,
+       11372,
+       11373,
+       11374,
+       11375,
+       11378,
+       11382,
+       11384,
+       11386,
+       11388
+      ],
+      "questName": "Wanted: (heroic boss item), one of fifteen",
+      "giver": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "turnIn": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "detail": "Each day Wind Trader Zhareem in Shattrath's Lower City offers one random Wanted quest that is completable only on Heroic difficulty and pays 2 Badges of Justice, gold and 350 reputation with the Consortium and the dungeon's faction. The pool is one quest per heroic: Nazan's Riding Crop (11354, Ramparts), Keli'dan's Feathered Stave (11362, Blood Furnace), Bladefist's Seal (11363, Shattered Halls), The Heart of Quagmirran (11368, Slave Pens), A Black Stalker Egg (11369, Underbog), The Warlord's Treatise (11370, Steamvault), The Headfeathers of Ikiss (11372, Sethekk), Shaffar's Wondrous Pendant (11373, Mana-Tombs), The Exarch's Soul Gem (11374, Auchenai Crypts), Murmur's Whisper (11375, Shadow Labyrinth), The Epoch Hunter's Head (11378, Old Hillsbrad), Aeonus's Hourglass (11382, Black Morass), A Warp Splinter Clipping (11384, Botanica), Pathaleon's Projector (11386, Mechanar) and The Scroll of Skyriss (11388, Arcatraz). The item drops from the end boss, so the daily is also a full heroic clear worth 2 to 5 more badges. Nether-Stalker Mah'duun's normal daily next to him pays an Ethereum Prison Key, not badges. Seven dailies a week is 14 badges on its own.",
+      "detectedBy": "Any of the listed quest ids flagged completed (C_QuestLog.IsQuestFlaggedCompleted, which clears at the daily reset for dailies) or present in the quest log.",
+      "optional": false,
+      "phases": {
+       "from": 1,
+       "to": 4
+      }
+     },
+     {
+      "key": "heroics_overview",
+      "title": "Lap the heroics: 1 badge per boss",
+      "kind": "MANUAL",
+      "instances": [
+       {
+        "name": "Hellfire Ramparts",
+        "instanceMapId": 543,
+        "badges": 3
+       },
+       {
+        "name": "The Blood Furnace",
+        "instanceMapId": 542,
+        "badges": 3
+       },
+       {
+        "name": "The Shattered Halls",
+        "instanceMapId": 540,
+        "badges": 4,
+        "bonus": 1
+       },
+       {
+        "name": "The Slave Pens",
+        "instanceMapId": 547,
+        "badges": 3
+       },
+       {
+        "name": "The Underbog",
+        "instanceMapId": 546,
+        "badges": 4
+       },
+       {
+        "name": "The Steamvault",
+        "instanceMapId": 545,
+        "badges": 3
+       },
+       {
+        "name": "Mana-Tombs",
+        "instanceMapId": 557,
+        "badges": 3,
+        "bonus": 1
+       },
+       {
+        "name": "Auchenai Crypts",
+        "instanceMapId": 558,
+        "badges": 2
+       },
+       {
+        "name": "Sethekk Halls",
+        "instanceMapId": 556,
+        "badges": 2,
+        "bonus": 1
+       },
+       {
+        "name": "Shadow Labyrinth",
+        "instanceMapId": 555,
+        "badges": 4
+       },
+       {
+        "name": "Old Hillsbrad Foothills",
+        "instanceMapId": 560,
+        "badges": 3
+       },
+       {
+        "name": "The Black Morass",
+        "instanceMapId": 269,
+        "badges": 3
+       },
+       {
+        "name": "The Mechanar",
+        "instanceMapId": 554,
+        "badges": 4
+       },
+       {
+        "name": "The Botanica",
+        "instanceMapId": 553,
+        "badges": 5
+       },
+       {
+        "name": "The Arcatraz",
+        "instanceMapId": 552,
+        "badges": 4
+       }
+      ],
+      "detail": "Every boss in a heroic dungeon drops exactly one Badge of Justice for each player, and each heroic can be entered once per day per character. Full-clear totals: Ramparts 3, Blood Furnace 3, Shattered Halls 4 (5 if the Shattered Hand Executioner is killed before he executes the prisoners), Slave Pens 3, Underbog 4, Steamvault 3, Mana-Tombs 3 (4 with Yor), Auchenai Crypts 2, Sethekk Halls 2 (3 with Anzu), Shadow Labyrinth 4, Old Hillsbrad 3, Black Morass 3, Mechanar 4, Botanica 5 and Arcatraz 4, which is 50 badges for one lap of all fifteen or 53 with the bonus bosses. In Phase 1 heroic keys still need Revered with the dungeon's faction (Honor Hold or Thrallmar, Cenarion Expedition, Lower City, Keepers of Time, the Sha'tar). Pick the dungeons with the most badges per hour: Mechanar, Botanica, Shattered Halls, Underbog, Shadow Labyrinth and Arcatraz.",
+      "detectedBy": "Badge count (GetItemCount 29434) rising while inside one of the listed instance map ids, or saved-instance encounter info for that heroic; otherwise a manual tick.",
+      "optional": false
+     },
+     {
+      "key": "heroic_mechanar",
+      "title": "Clear heroic Mechanar: 4 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "The Mechanar",
+       "instanceMapId": 554,
+       "heroic": true,
+       "boss": "Pathaleon the Calculator",
+       "npcIds": [
+        19220
+       ]
+      },
+      "detail": "The Mechanar is the fastest heroic for a geared five: Gatewatcher Gyro-Kill, Gatewatcher Iron-Hand, Nethermancer Sepethrea and Pathaleon the Calculator each drop a badge, four in about half an hour. Entry needs the Warpforged Key from the Sha'tar. Pathaleon's Projector (daily 11386) drops from the last boss. Bring interrupts for the Sunseeker Astromages and kill the Legion Cache groups cleanly before the Sepethrea stairs.",
+      "detectedBy": "UNIT_DIED for npc 19220 inside instance 554 on Heroic, or the saved-instance lock for Mechanar showing the final boss dead.",
+      "optional": true
+     },
+     {
+      "key": "heroic_botanica",
+      "title": "Clear heroic Botanica: 5 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "The Botanica",
+       "instanceMapId": 553,
+       "heroic": true,
+       "boss": "Warp Splinter",
+       "npcIds": [
+        17977
+       ]
+      },
+      "detail": "The Botanica has five bosses (Commander Sarannis, High Botanist Freywinn, Thorngrin the Tender, Laj, Warp Splinter), the most badges of any heroic, though the long corridors make it slower than Mechanar. A Warp Splinter Clipping (daily 11384) drops from Warp Splinter. Crowd control the Sunseeker Gene-Splicers and keep the tank away from Thorngrin's Sacrifice. Sha'tar Revered (Phase 1 to 3) for the Warpforged Key.",
+      "detectedBy": "UNIT_DIED for npc 17977 inside instance 553 on Heroic, or the Botanica saved-instance lock.",
+      "optional": true
+     },
+     {
+      "key": "heroic_shattered_halls",
+      "title": "Clear heroic Shattered Halls: 4 badges (5 with the Executioner)",
+      "kind": "KILL",
+      "instance": {
+       "name": "The Shattered Halls",
+       "instanceMapId": 540,
+       "heroic": true,
+       "boss": "Warchief Kargath Bladefist",
+       "npcIds": [
+        16808,
+        20923,
+        17301
+       ]
+      },
+      "detail": "Heroic Shattered Halls adds Blood Guard Porung as a fourth boss alongside Grand Warlock Nethekurse, Warbringer O'mrogg and Warchief Kargath Bladefist, four badges. The Shattered Hand Executioner in the final gauntlet drops a fifth badge if he is killed before the 55 minute timer executes the hostages, which also completes the Trial of the Naaru: Mercy quest. Bladefist's Seal (daily 11363) drops from Kargath. This is the hardest heroic in Phase 1; bring two interrupts and a solid tank for the Legionnaire packs.",
+      "detectedBy": "UNIT_DIED for npc 16808 (and 17301 for the bonus badge) inside instance 540 on Heroic.",
+      "optional": true
+     },
+     {
+      "key": "bonus_bosses",
+      "title": "Add the three optional bosses: Yor, Anzu, the Executioner",
+      "kind": "KILL",
+      "instance": {
+       "name": "Mana-Tombs",
+       "instanceMapId": 557,
+       "heroic": true,
+       "boss": "Yor",
+       "npcIds": [
+        22930,
+        23035,
+        17301
+       ]
+      },
+      "detail": "Three heroic bosses only exist if you bring the right key or class. Yor in heroic Mana-Tombs is released from the stasis chamber past Nexus-Prince Shaffar with The Eye of Haramad (item 32092, the permanent key from quest 10982 at Consortium Exalted) or a single-use Shaffar's Stasis Chamber Key from the repeatable quest 10981 (one Mark of the Nexus-King each), and drops a badge. Anzu in heroic Sethekk Halls is summoned by a druid who has completed the Swift Flight Form chain and drops a badge. The Shattered Hand Executioner in heroic Shattered Halls drops a badge when killed before the hostages are executed. Each is worth one badge per run on top of the dungeon's total.",
+      "detectedBy": "UNIT_DIED for npc 22930 (instance 557), 23035 (instance 556) or 17301 (instance 540) on Heroic.",
+      "optional": true
+     },
+     {
+      "key": "stasis_quest",
+      "title": "One-off: Stasis Chambers of the Mana-Tombs, 5 badges",
+      "kind": "QUEST",
+      "questId": 10977,
+      "questName": "Stasis Chambers of the Mana-Tombs",
+      "giver": {
+       "npcId": 22919,
+       "name": "Image of Commander Ameer",
+       "zone": "Blade's Edge Mountains",
+       "x": 52.9,
+       "y": 15
+      },
+      "turnIn": {
+       "npcId": 22919,
+       "name": "Image of Commander Ameer",
+       "zone": "Blade's Edge Mountains",
+       "x": 52.9,
+       "y": 15
+      },
+      "instance": {
+       "name": "Mana-Tombs",
+       "instanceMapId": 557,
+       "heroic": true,
+       "boss": "Yor",
+       "npcIds": [
+        22930
+       ]
+      },
+      "detail": "The Ethereum Prison chain from Commander Ameer at the Protectorate Watch Post in Netherstorm (A Mission of Mercy 10970, Ethereum Secrets 10971, Ethereum Prisoner I.D. Catalogue 10972, A Thousand Worlds 10973, then Stasis Chambers of Bash'ir 10974, Purging the Chambers of Bash'ir 10975 and The Mark of the Nexus-King 10976 at the Image of Commander Ameer at Bash'ir's Landing) ends in Stasis Chambers of the Mana-Tombs. Use the Mana-Tombs Stasis Chamber Key (item 32069) on the chamber behind Shaffar in heroic Mana-Tombs, kill Yor, and turn in for 5 Badges of Justice and 500 Consortium reputation. Ethereum Prison Keys from Mah'duun's normal daily and Netherstorm drops feed the chain. It is a one-time payout available from Phase 1.",
+      "detectedBy": "Quest 10977 flagged completed.",
+      "optional": true
+     },
+     {
+      "key": "spend_p1",
+      "title": "Spend: what to buy first in Phase 1",
+      "kind": "MANUAL",
+      "detail": "G'eras's Phase 1 catalogue is the 2.0 and 2.1 stock. Buy the 41-badge trinket for your role first (Icon of the Silver Crescent for casters, Bloodlust Brooch for melee and hunters, Essence of the Martyr for healers), because trinkets are the slots Karazhan fills worst. Next the 25-badge pieces that beat your pre-raid item: necklaces (Manasurge Pendant, Necklace of the Juggernaut, Choker of Vile Intent, Necklace of Eternal Hope, Brooch of Deftness), rings (Ring of Cryptic Dreams, Band of Halos, Ring of Arathi Warlords, Ring of Unyielding Force), cloaks (Bishop's Cloak, Blood Knight War Cloak, Farstrider Defender's Cloak) and off-hands (Talisman of Kalecgos, Orb of the Soul-Eater, Khadgar's Knapsack, Tears of Heaven, Sapphiron's Wing Bone, Fetish of the Primal Gods, Flametongue Seal, Voodoo Shaker). Shields are 33 (Azure-Shield of Coldarra, Light-Bearer's Faith Shield, Mazthoril Honor Shield), Searing Sunblade 50 and Gnomeregan Auto-Blocker 600 41. Primal Nether is 10 badges; only buy it when a crafted epic is waiting on it. Fire resistance sets (20 per hands and feet, 30 per chest and legs) are not needed until Hyjal and Black Temple.",
+      "detectedBy": "Manual tick; optionally the badge balance (GetItemCount 29434) crossing 41.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/11354?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10977?dataEnv=5&locale=0",
+     "https://wotlkdb.com/?quest=11354",
+     "https://wotlkdb.com/?quest=10977",
+     "https://warcraft.wiki.gg/wiki/Badge_of_Justice",
+     "https://warcraft.wiki.gg/wiki/Stasis_Chambers_of_the_Mana-Tombs",
+     "https://warcraft.wiki.gg/wiki/Nexus-Prince_Shaffar%27s_Personal_Chamber",
+     "https://warcraft.wiki.gg/wiki/Wind_Trader_Zhareem",
+     "https://warcrafttavern.com/tbc/guides/badge-of-justice-guide-farming-vendors-rewards",
+     "https://www.iggm.com/news/wow-tbc-classic-anniversary-phase-1-dungeon-profession-pvp-dailies",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_DungeonsAndRaids/data-tbc.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc"
+    ],
+    "notes": "Heroic per-instance totals agree between the wiki and Warcraft Tavern. The 2-badge daily reward is confirmed by the wotlkdb reward icon (createIcon(42, 1, 2)), Warcraft Tavern and an Anniversary Phase 1 guide. Instance map ids are the Map.dbc InstanceIDs the client reports in GetInstanceInfo; AtlasLoot lists the area ids instead."
+   },
+   {
+    "key": "BADGES_PHASE_2",
+    "title": "Badges of Justice: Phase 2 weekly route",
+    "category": "BADGES",
+    "faction": "BOTH",
+    "summary": "Phase 2 opens Serpentshrine Cavern and Tempest Keep but adds no badge drops; raids keep paying nothing until Phase 4. The route is unchanged: Zhareem's heroic daily for two badges and heroic bosses for one each. The new Ogri'la and Skyguard dailies pay Apexis and gold, not badges.",
+    "unlocks": "The same G'eras catalogue as Phase 1; this phase is for finishing your 25 and 41 badge slots and stockpiling for the Phase 4 stock.",
+    "phase": {
+     "introduced": 2,
+     "requiredUntil": 3,
+     "notes": "Anniversary Phase 2 began 2026-05-14 (TBC Classic 2021-09-15). Heroic keys still require Revered."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "heroic_daily",
+      "title": "Do Zhareem's heroic daily: 2 badges",
+      "kind": "QUEST",
+      "questId": null,
+      "questIds": [
+       11354,
+       11362,
+       11363,
+       11368,
+       11369,
+       11370,
+       11372,
+       11373,
+       11374,
+       11375,
+       11378,
+       11382,
+       11384,
+       11386,
+       11388
+      ],
+      "questName": "Wanted: (heroic boss item), one of fifteen",
+      "giver": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "turnIn": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "detail": "Unchanged from Phase 1: one random heroic Wanted quest a day from Wind Trader Zhareem in the Lower City, 2 Badges of Justice plus gold and 350 reputation with the Consortium and the dungeon faction. The fifteen quest ids are listed in the Phase 1 course; the target item drops from the end boss of that day's heroic. Doing it every day is 14 badges a week before any dungeon drops. Mah'duun's normal daily beside him pays an Ethereum Prison Key and no badges.",
+      "detectedBy": "Any of the listed quest ids flagged completed today or in the quest log.",
+      "optional": false,
+      "phases": {
+       "from": 1,
+       "to": 4
+      }
+     },
+     {
+      "key": "heroics_overview",
+      "title": "Lap the heroics: 1 badge per boss",
+      "kind": "MANUAL",
+      "instances": [
+       {
+        "name": "Hellfire Ramparts",
+        "instanceMapId": 543,
+        "badges": 3
+       },
+       {
+        "name": "The Blood Furnace",
+        "instanceMapId": 542,
+        "badges": 3
+       },
+       {
+        "name": "The Shattered Halls",
+        "instanceMapId": 540,
+        "badges": 4,
+        "bonus": 1
+       },
+       {
+        "name": "The Slave Pens",
+        "instanceMapId": 547,
+        "badges": 3
+       },
+       {
+        "name": "The Underbog",
+        "instanceMapId": 546,
+        "badges": 4
+       },
+       {
+        "name": "The Steamvault",
+        "instanceMapId": 545,
+        "badges": 3
+       },
+       {
+        "name": "Mana-Tombs",
+        "instanceMapId": 557,
+        "badges": 3,
+        "bonus": 1
+       },
+       {
+        "name": "Auchenai Crypts",
+        "instanceMapId": 558,
+        "badges": 2
+       },
+       {
+        "name": "Sethekk Halls",
+        "instanceMapId": 556,
+        "badges": 2,
+        "bonus": 1
+       },
+       {
+        "name": "Shadow Labyrinth",
+        "instanceMapId": 555,
+        "badges": 4
+       },
+       {
+        "name": "Old Hillsbrad Foothills",
+        "instanceMapId": 560,
+        "badges": 3
+       },
+       {
+        "name": "The Black Morass",
+        "instanceMapId": 269,
+        "badges": 3
+       },
+       {
+        "name": "The Mechanar",
+        "instanceMapId": 554,
+        "badges": 4
+       },
+       {
+        "name": "The Botanica",
+        "instanceMapId": 553,
+        "badges": 5
+       },
+       {
+        "name": "The Arcatraz",
+        "instanceMapId": 552,
+        "badges": 4
+       }
+      ],
+      "detail": "Every heroic boss still drops one badge per player and every heroic locks once a day. Totals per full clear: Ramparts 3, Blood Furnace 3, Shattered Halls 4 plus 1 for the Executioner, Slave Pens 3, Underbog 4, Steamvault 3, Mana-Tombs 3 plus 1 for Yor, Auchenai Crypts 2, Sethekk 2 plus 1 for Anzu, Shadow Labyrinth 4, Old Hillsbrad 3, Black Morass 3, Mechanar 4, Botanica 5, Arcatraz 4: 50 badges for the lap, 53 with bonus bosses. Phase 2 raiders in SSC and TK gear clear Mechanar, Botanica, Arcatraz, Underbog and Shadow Labyrinth quickly, so those five are the badge-per-hour picks. Karazhan, Gruul, Magtheridon, SSC and TK drop no badges in this phase.",
+      "detectedBy": "Badge count rising while inside one of the listed instance ids, or the heroic's saved-instance encounter info; otherwise manual.",
+      "optional": false
+     },
+     {
+      "key": "bonus_bosses",
+      "title": "Add Yor, Anzu and the Executioner where you can",
+      "kind": "KILL",
+      "instance": {
+       "name": "Mana-Tombs",
+       "instanceMapId": 557,
+       "heroic": true,
+       "boss": "Yor",
+       "npcIds": [
+        22930,
+        23035,
+        17301
+       ]
+      },
+      "detail": "Yor (heroic Mana-Tombs, needs The Eye of Haramad from quest 10982 at Consortium Exalted or a single-use Shaffar's Stasis Chamber Key from repeatable quest 10981), Anzu (heroic Sethekk Halls, summoned by a druid who finished the Swift Flight Form chain, which Phase 2 makes complete) and the Shattered Hand Executioner (heroic Shattered Halls, killed before the hostage timer runs out) each add one badge to the run. Phase 2 adds Swift Flight Form, so more druids can summon Anzu now.",
+      "detectedBy": "UNIT_DIED for npc 22930, 23035 or 17301 on Heroic in the matching instance.",
+      "optional": true
+     },
+     {
+      "key": "stasis_quest",
+      "title": "One-off: Stasis Chambers of the Mana-Tombs, 5 badges",
+      "kind": "QUEST",
+      "questId": 10977,
+      "questName": "Stasis Chambers of the Mana-Tombs",
+      "giver": {
+       "npcId": 22919,
+       "name": "Image of Commander Ameer",
+       "zone": "Blade's Edge Mountains",
+       "x": 52.9,
+       "y": 15
+      },
+      "turnIn": {
+       "npcId": 22919,
+       "name": "Image of Commander Ameer",
+       "zone": "Blade's Edge Mountains",
+       "x": 52.9,
+       "y": 15
+      },
+      "instance": {
+       "name": "Mana-Tombs",
+       "instanceMapId": 557,
+       "heroic": true,
+       "boss": "Yor",
+       "npcIds": [
+        22930
+       ]
+      },
+      "detail": "If you skipped it in Phase 1, the Ethereum Prison chain (10970 to 10976, then 10977) still pays 5 Badges of Justice once for killing Yor in heroic Mana-Tombs with the Mana-Tombs Stasis Chamber Key (item 32069). Ethereum Prison Keys from Mah'duun's normal daily and Netherstorm prisons supply the chain's earlier steps. Turn in at the Image of Commander Ameer at Bash'ir's Landing in Blade's Edge Mountains.",
+      "detectedBy": "Quest 10977 flagged completed.",
+      "optional": true
+     },
+     {
+      "key": "no_new_sources",
+      "title": "Know what does not pay badges in Phase 2",
+      "kind": "MANUAL",
+      "detail": "Phase 2's new content pays no Badges of Justice: Ogri'la and Sha'tari Skyguard dailies reward Apexis Shards, gold and reputation; SSC and TK bosses drop no badges until Phase 4; arena and honour are separate currencies. The wiki's badge page mentions the Shartuul's Transporter event in Blade's Edge awarding three badges, but the quest id and its Anniversary availability could not be confirmed, so treat it as a rumour until seen in game. Put spare time into heroics and bank badges for the Phase 4 catalogue (helms 50, legs and chests 75).",
+      "detectedBy": "Informational; manual tick.",
+      "optional": true
+     },
+     {
+      "key": "spend_p2",
+      "title": "Spend: what to buy first in Phase 2",
+      "kind": "MANUAL",
+      "detail": "The G'eras catalogue is still the launch stock, so the priorities are the same as Phase 1: the 41-badge role trinket (Icon of the Silver Crescent, Bloodlust Brooch, Essence of the Martyr) if you still lack it, then 25-badge necks, rings, cloaks and off-hands that beat your Karazhan drops, shields at 33, Searing Sunblade at 50. Primal Nether at 10 badges is now worth buying for the Phase 2 crafted epics if your guild's drops are slow. Once your 25 and 41 slots are done, stop spending and bank: Phase 4 brings 50-badge helms, 60-badge boots, belts, gloves and shoulders, 75-badge legs and chests and 15-badge Nether Vortex, and there is no badge cap.",
+      "detectedBy": "Manual tick.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://warcraft.wiki.gg/wiki/Badge_of_Justice",
+     "https://us.forums.blizzard.com/en/wow/t/burning-crusade-classic-patch-notes-version-254/1205431",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://warcrafttavern.com/tbc/guides/badge-of-justice-guide-farming-vendors-rewards",
+     "https://nether.wowhead.com/tooltip/quest/10977?dataEnv=5&locale=0",
+     "https://wotlkdb.com/?quest=10977"
+    ],
+    "notes": "No Phase 2 badge changes exist in either TBC Classic (2.5.2) or the Anniversary Phase 2 feature list; the raid badge change is explicitly a 2.5.4 / Anniversary Phase 4 item."
+   },
+   {
+    "key": "BADGES_PHASE_3",
+    "title": "Badges of Justice: Phase 3 weekly route",
+    "category": "BADGES",
+    "faction": "BOTH",
+    "summary": "Phase 3 opens Mount Hyjal and Black Temple but still adds no badge drops; the sources remain the heroic daily and heroic bosses. This is the last phase before badges explode in Phase 4, so the sensible play is to keep the daily streak, run the fast heroics and bank for the Phase 4 catalogue. Fire resistance gear from G'eras becomes relevant for Hyjal and Black Temple.",
+    "unlocks": "The launch G'eras catalogue plus a banked balance ready for the Phase 4 stock the day it opens.",
+    "phase": {
+     "introduced": 3,
+     "requiredUntil": 4,
+     "notes": "Anniversary Phase 3 began 2026-08-27 (TBC Classic 2022-01-27). Heroic keys still Revered; the Honored change is a Phase 4 item on both timelines."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "heroic_daily",
+      "title": "Do Zhareem's heroic daily: 2 badges",
+      "kind": "QUEST",
+      "questId": null,
+      "questIds": [
+       11354,
+       11362,
+       11363,
+       11368,
+       11369,
+       11370,
+       11372,
+       11373,
+       11374,
+       11375,
+       11378,
+       11382,
+       11384,
+       11386,
+       11388
+      ],
+      "questName": "Wanted: (heroic boss item), one of fifteen",
+      "giver": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "turnIn": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "detail": "Still the best badges per minute in the game: one random heroic Wanted quest a day from Wind Trader Zhareem (Lower City, 75.1, 36.7), 2 Badges of Justice, gold and 350 reputation with the Consortium and the dungeon's faction. The fifteen ids cover every heroic; the item drops from that heroic's final boss. Fourteen badges a week for seven short runs, and the run itself pays 2 to 5 more.",
+      "detectedBy": "Any of the listed quest ids flagged completed today or in the quest log.",
+      "optional": false,
+      "phases": {
+       "from": 1,
+       "to": 4
+      }
+     },
+     {
+      "key": "heroics_overview",
+      "title": "Lap the heroics: 1 badge per boss",
+      "kind": "MANUAL",
+      "instances": [
+       {
+        "name": "Hellfire Ramparts",
+        "instanceMapId": 543,
+        "badges": 3
+       },
+       {
+        "name": "The Blood Furnace",
+        "instanceMapId": 542,
+        "badges": 3
+       },
+       {
+        "name": "The Shattered Halls",
+        "instanceMapId": 540,
+        "badges": 4,
+        "bonus": 1
+       },
+       {
+        "name": "The Slave Pens",
+        "instanceMapId": 547,
+        "badges": 3
+       },
+       {
+        "name": "The Underbog",
+        "instanceMapId": 546,
+        "badges": 4
+       },
+       {
+        "name": "The Steamvault",
+        "instanceMapId": 545,
+        "badges": 3
+       },
+       {
+        "name": "Mana-Tombs",
+        "instanceMapId": 557,
+        "badges": 3,
+        "bonus": 1
+       },
+       {
+        "name": "Auchenai Crypts",
+        "instanceMapId": 558,
+        "badges": 2
+       },
+       {
+        "name": "Sethekk Halls",
+        "instanceMapId": 556,
+        "badges": 2,
+        "bonus": 1
+       },
+       {
+        "name": "Shadow Labyrinth",
+        "instanceMapId": 555,
+        "badges": 4
+       },
+       {
+        "name": "Old Hillsbrad Foothills",
+        "instanceMapId": 560,
+        "badges": 3
+       },
+       {
+        "name": "The Black Morass",
+        "instanceMapId": 269,
+        "badges": 3
+       },
+       {
+        "name": "The Mechanar",
+        "instanceMapId": 554,
+        "badges": 4
+       },
+       {
+        "name": "The Botanica",
+        "instanceMapId": 553,
+        "badges": 5
+       },
+       {
+        "name": "The Arcatraz",
+        "instanceMapId": 552,
+        "badges": 4
+       }
+      ],
+      "detail": "One badge per heroic boss, one lockout per heroic per day. Full-clear totals are unchanged: Ramparts 3, Blood Furnace 3, Shattered Halls 4 (plus the Executioner), Slave Pens 3, Underbog 4, Steamvault 3, Mana-Tombs 3 (plus Yor), Auchenai Crypts 2, Sethekk 2 (plus Anzu), Shadow Labyrinth 4, Old Hillsbrad 3, Black Morass 3, Mechanar 4, Botanica 5, Arcatraz 4, so 50 for the lap and 53 with the bonus bosses. Tier 5 and Tier 6 groups can chain Mechanar, Botanica, Arcatraz, Underbog and Shadow Labyrinth in under three hours for 21 badges. Hyjal and Black Temple bosses drop no badges in this phase.",
+      "detectedBy": "Badge count rising while inside one of the listed instance ids, or saved-instance encounter info; otherwise manual.",
+      "optional": false
+     },
+     {
+      "key": "bonus_bosses",
+      "title": "Add Yor, Anzu and the Executioner where you can",
+      "kind": "KILL",
+      "instance": {
+       "name": "Mana-Tombs",
+       "instanceMapId": 557,
+       "heroic": true,
+       "boss": "Yor",
+       "npcIds": [
+        22930,
+        23035,
+        17301
+       ]
+      },
+      "detail": "Yor in heroic Mana-Tombs (The Eye of Haramad from quest 10982 at Consortium Exalted, or a single-use Shaffar's Stasis Chamber Key from repeatable quest 10981), Anzu in heroic Sethekk Halls (druid summon) and the Shattered Hand Executioner in heroic Shattered Halls (beat the hostage timer) each add a badge to the run.",
+      "detectedBy": "UNIT_DIED for npc 22930, 23035 or 17301 on Heroic in the matching instance.",
+      "optional": true
+     },
+     {
+      "key": "stasis_quest",
+      "title": "One-off: Stasis Chambers of the Mana-Tombs, 5 badges",
+      "kind": "QUEST",
+      "questId": 10977,
+      "questName": "Stasis Chambers of the Mana-Tombs",
+      "giver": {
+       "npcId": 22919,
+       "name": "Image of Commander Ameer",
+       "zone": "Blade's Edge Mountains",
+       "x": 52.9,
+       "y": 15
+      },
+      "turnIn": {
+       "npcId": 22919,
+       "name": "Image of Commander Ameer",
+       "zone": "Blade's Edge Mountains",
+       "x": 52.9,
+       "y": 15
+      },
+      "instance": {
+       "name": "Mana-Tombs",
+       "instanceMapId": 557,
+       "heroic": true,
+       "boss": "Yor",
+       "npcIds": [
+        22930
+       ]
+      },
+      "detail": "Still available if undone: the Ethereum Prison chain (10970 to 10976) then Stasis Chambers of the Mana-Tombs pays 5 Badges of Justice once for killing Yor in heroic Mana-Tombs with the Mana-Tombs Stasis Chamber Key (item 32069).",
+      "detectedBy": "Quest 10977 flagged completed.",
+      "optional": true
+     },
+     {
+      "key": "bank_for_p4",
+      "title": "Bank badges for the Phase 4 catalogue",
+      "kind": "MANUAL",
+      "detail": "Phase 4 (Zul'Aman) makes every Karazhan, Gruul, Magtheridon, SSC, TK and Zul'Aman boss plus Kazzak and Doomwalker drop badges and gives G'eras the 2.3 and 2.4 Shattrath stock. The first purchases on day one of Phase 4 are the 75-badge legs and chests and the 50-badge helms, so a balance of 125 to 200 at the phase change turns straight into upgrades. There is no cap on Badges of Justice. If you still lack a 41-badge trinket or a 25-badge slot, buy it; otherwise hold.",
+      "detectedBy": "Manual tick; optionally the badge balance (GetItemCount 29434) at or above 125.",
+      "optional": true
+     },
+     {
+      "key": "spend_p3",
+      "title": "Spend: what to buy first in Phase 3",
+      "kind": "MANUAL",
+      "detail": "The catalogue is the launch stock until Phase 4. Fire resistance now matters: G'eras sells four Inferno sets (Infernoweave cloth, Inferno Hardened leather, Inferno Forged mail, Inferno Tempered plate) at 20 badges for gloves and boots and 30 for chest and legs; the Illidan Flames of Azzinoth tank and Hyjal trash soakers want them, everyone else does not. Beyond that the priorities are unchanged: 41-badge role trinkets, 25-badge necks, rings, cloaks and off-hands, 33-badge shields, 50-badge Searing Sunblade, 10-badge Primal Nether for Tier 6 era crafted items. Relics (Libram of Repentance, Totem of the Pulsing Earth, Everbloom Idol) are 15.",
+      "detectedBy": "Manual tick.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://warcraft.wiki.gg/wiki/Badge_of_Justice",
+     "https://us.forums.blizzard.com/en/wow/t/burning-crusade-classic-patch-notes-version-254/1205431",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://warcrafttavern.com/tbc/guides/badge-of-justice-guide-farming-vendors-rewards",
+     "https://www.warcrafttavern.com/tbc/news/zulaman-arrives-october-22nd-for-tbc-anniversary/"
+    ],
+    "notes": "Fire resistance prices (20 and 30) are from Warcraft Tavern's catalogue list."
+   },
+   {
+    "key": "BADGES_PHASE_4",
+    "title": "Badges of Justice: Phase 4 weekly route",
+    "category": "BADGES",
+    "faction": "BOTH",
+    "summary": "Phase 4 (Zul'Aman) is when badges become a raid currency: every boss in Karazhan, Zul'Aman, Gruul's Lair, Magtheridon's Lair, Serpentshrine Cavern and Tempest Keep drops them, as do Doom Lord Kazzak and Doomwalker, and two Zul'Aman quests pay 15 badges once. G'eras gains the 2.3 and 2.4 Shattrath catalogue plus Nether Vortex, and heroic keys drop to Honored. A guild that clears Karazhan, Zul'Aman and the 25-man tier can bank over 80 badges a week before touching a heroic.",
+    "unlocks": "G'eras's expanded catalogue: 50-badge helms, 60-badge boots, belts, gloves and shoulders, 75-badge legs and chests, 75-badge Battlemaster trinkets, 15-badge Nether Vortex.",
+    "phase": {
+     "introduced": 4,
+     "requiredUntil": 5,
+     "notes": "TBC Classic patch 2.5.4 (2022-03-22). Anniversary Phase 4 was scheduled for 2026-10-22 15:00 PDT with the same list (Kazzak, Doomwalker, Karazhan, Gruul, Magtheridon, SSC, TK, Zul'Aman); Hyjal and Black Temple are excluded until Phase 5. Zul'Aman has a 3-day lockout, so it can be cleared twice some weeks."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "heroic_daily",
+      "title": "Do Zhareem's heroic daily: 2 badges",
+      "kind": "QUEST",
+      "questId": null,
+      "questIds": [
+       11354,
+       11362,
+       11363,
+       11368,
+       11369,
+       11370,
+       11372,
+       11373,
+       11374,
+       11375,
+       11378,
+       11382,
+       11384,
+       11386,
+       11388
+      ],
+      "questName": "Wanted: (heroic boss item), one of fifteen",
+      "giver": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "turnIn": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "detail": "Unchanged: one random heroic Wanted quest a day from Wind Trader Zhareem (Lower City, 75.1, 36.7) for 2 Badges of Justice, gold and 350 reputation. In Phase 4 heroics are tuned down to their 2.4.3 state and keys only need Honored, so the daily is a 20-minute job. The fifteen ids are the full heroic pool; the item drops from the end boss.",
+      "detectedBy": "Any of the listed quest ids flagged completed today or in the quest log.",
+      "optional": false,
+      "phases": {
+       "from": 1,
+       "to": 4
+      }
+     },
+     {
+      "key": "karazhan",
+      "title": "Karazhan full clear: 22 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "Prince Malchezaar",
+       "npcIds": [
+        16152,
+        15687,
+        16457,
+        17521,
+        17533,
+        17534,
+        18168,
+        15691,
+        15688,
+        16524,
+        15689,
+        16816,
+        15690,
+        17225
+       ]
+      },
+      "detail": "From Phase 4 every Karazhan encounter drops 2 Badges of Justice per player: Attumen the Huntsman, Moroes, Maiden of Virtue, the Opera event (Big Bad Wolf, Romulo and Julianne, or the Wizard of Oz Crone), the Curator, Terestian Illhoof, Shade of Aran, Netherspite, the Chess event chest, Prince Malchezaar and Nightbane, eleven encounters for 22 badges a week. Nightbane needs the Blackened Urn summon. The wiki calls Karazhan the best badge farm in the game: a Tier 6 group clears it in ninety minutes with no competition for loot. Weekly lockout, 10 players, no attunement from Phase 4.",
+      "detectedBy": "Saved-instance encounter info for instance 532 showing bosses dead this lockout, or UNIT_DIED for the listed npc ids inside Karazhan; badge count rises by 2 per boss.",
+      "optional": false,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "zulaman",
+      "title": "Zul'Aman full clear: 13 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Zul'Aman",
+       "instanceMapId": 568,
+       "heroic": false,
+       "boss": "Zul'jin",
+       "npcIds": [
+        23576,
+        23574,
+        23578,
+        23577,
+        24239,
+        23863
+       ]
+      },
+      "detail": "Nalorakk, Akil'zon, Jan'alai, Halazzi and Hex Lord Malacrass drop 2 badges each and Zul'jin 3, which is the instance's 13 total (the per-boss split is derived from that total and the wiki's rule that the end boss sometimes drops three). Zul'Aman is a 10-player raid in the Ghostlands with a 3-day lockout and no attunement, so a guild can run it twice in some weeks for 26 badges. The timed hostage run for the Amani War Bear is independent of badge drops.",
+      "detectedBy": "Saved-instance encounter info for instance 568, or UNIT_DIED for the listed npc ids inside Zul'Aman.",
+      "optional": false,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "za_quests",
+      "title": "One-off Zul'Aman quests: 15 badges",
+      "kind": "QUEST",
+      "questId": 11171,
+      "questIds": [
+       11171,
+       11163
+      ],
+      "questName": "Hex Lord? Hah! and Undercover Sister",
+      "giver": {
+       "npcId": 23559,
+       "name": "Budd Nedreck",
+       "zone": "Ghostlands",
+       "x": 70.3,
+       "y": 67.8
+      },
+      "turnIn": {
+       "npcId": 23858,
+       "name": "Donna Brascoe",
+       "zone": "Ghostlands",
+       "x": 70.5,
+       "y": 68.3
+      },
+      "instance": {
+       "name": "Zul'Aman",
+       "instanceMapId": 568,
+       "heroic": false,
+       "boss": "Hex Lord Malacrass and Zul'jin",
+       "npcIds": [
+        24239,
+        23863
+       ]
+      },
+      "detail": "Two quests at Budd's camp in Hatchet Hills outside Zul'Aman pay badges once. Hex Lord? Hah! (11171) from Budd Nedreck (70.3, 67.8) asks you to kill Hex Lord Malacrass and pays 5 Badges of Justice; it follows X Marks... Your Doom! (11166), which follows A Troll Among Trolls (11165). Undercover Sister (11163) from Donna Brascoe (70.5, 68.3) pays 10 Badges of Justice after you have turned in Blood of the Warlord (11178), the Blood of Zul'jin that drops from Zul'jin and is handed to Budd. Both are one-time, so do them on your first full clear.",
+      "detectedBy": "Quests 11171 and 11163 flagged completed.",
+      "optional": true,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "gruul_mag",
+      "title": "Gruul's Lair and Magtheridon's Lair: 8 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Gruul's Lair",
+       "instanceMapId": 565,
+       "heroic": false,
+       "boss": "Gruul the Dragonkiller",
+       "npcIds": [
+        18831,
+        19044,
+        17257
+       ]
+      },
+      "detail": "High King Maulgar and Gruul the Dragonkiller drop 5 badges between them (the wiki's instance total; the split is read as 2 and 3) and Magtheridon in his lair (instance 544) drops 3. Both are 25-player weekly lockouts that a Tier 6 raid clears in half an hour each, so they are worth keeping on the calendar purely for badges and Tier 4 tokens for alts.",
+      "detectedBy": "Saved-instance encounter info for instances 565 and 544, or UNIT_DIED for npcs 18831, 19044 and 17257.",
+      "optional": true,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "ssc_tk",
+      "title": "Serpentshrine Cavern and Tempest Keep: 20 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Serpentshrine Cavern",
+       "instanceMapId": 548,
+       "heroic": false,
+       "boss": "Lady Vashj",
+       "npcIds": [
+        21216,
+        21217,
+        21215,
+        21214,
+        21213,
+        21212,
+        19514,
+        19516,
+        18805,
+        19622
+       ]
+      },
+      "detail": "Serpentshrine Cavern's six bosses (Hydross the Unstable, the Lurker Below, Leotheras the Blind, Fathom-Lord Karathress, Morogrim Tidewalker, Lady Vashj) drop 12 badges, 2 each, and Tempest Keep: The Eye's four (Al'ar, Void Reaver, High Astromancer Solarian, Kael'thas Sunstrider; instance 550) drop 8. Both are weekly 25-player lockouts and lose their attunement in Phase 4, so a Tier 6 guild can farm them for badges and Tier 5 tokens for newer raiders.",
+      "detectedBy": "Saved-instance encounter info for instances 548 and 550, or UNIT_DIED for the listed npc ids.",
+      "optional": true,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "world_bosses",
+      "title": "Doom Lord Kazzak and Doomwalker: 2 badges each",
+      "kind": "KILL",
+      "instance": {
+       "name": "Outland world bosses",
+       "instanceMapId": 530,
+       "heroic": false,
+       "boss": "Doom Lord Kazzak and Doomwalker",
+       "npcIds": [
+        18728,
+        17711
+       ]
+      },
+      "detail": "From Phase 4 Doom Lord Kazzak (Throne of Kil'jaeden, Hellfire Peninsula) and Doomwalker (outside the Black Temple, Shadowmoon Valley) drop Badges of Justice; loot data lists 2 per kill at a guaranteed rate. Their loot is bind-on-equip from Phase 4. Both are contested world spawns on a multi-day timer, so this is an opportunistic 4 badges rather than a weekly plan.",
+      "detectedBy": "UNIT_DIED for npc 18728 or 17711 in Outland (instance map 530), or badge count rising by 2 at the kill.",
+      "optional": true,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "heroics_overview",
+      "title": "Heroics still pay 1 per boss, now Honored keys",
+      "kind": "MANUAL",
+      "instances": [
+       {
+        "name": "Hellfire Ramparts",
+        "instanceMapId": 543,
+        "badges": 3
+       },
+       {
+        "name": "The Blood Furnace",
+        "instanceMapId": 542,
+        "badges": 3
+       },
+       {
+        "name": "The Shattered Halls",
+        "instanceMapId": 540,
+        "badges": 4,
+        "bonus": 1
+       },
+       {
+        "name": "The Slave Pens",
+        "instanceMapId": 547,
+        "badges": 3
+       },
+       {
+        "name": "The Underbog",
+        "instanceMapId": 546,
+        "badges": 4
+       },
+       {
+        "name": "The Steamvault",
+        "instanceMapId": 545,
+        "badges": 3
+       },
+       {
+        "name": "Mana-Tombs",
+        "instanceMapId": 557,
+        "badges": 3,
+        "bonus": 1
+       },
+       {
+        "name": "Auchenai Crypts",
+        "instanceMapId": 558,
+        "badges": 2
+       },
+       {
+        "name": "Sethekk Halls",
+        "instanceMapId": 556,
+        "badges": 2,
+        "bonus": 1
+       },
+       {
+        "name": "Shadow Labyrinth",
+        "instanceMapId": 555,
+        "badges": 4
+       },
+       {
+        "name": "Old Hillsbrad Foothills",
+        "instanceMapId": 560,
+        "badges": 3
+       },
+       {
+        "name": "The Black Morass",
+        "instanceMapId": 269,
+        "badges": 3
+       },
+       {
+        "name": "The Mechanar",
+        "instanceMapId": 554,
+        "badges": 4
+       },
+       {
+        "name": "The Botanica",
+        "instanceMapId": 553,
+        "badges": 5
+       },
+       {
+        "name": "The Arcatraz",
+        "instanceMapId": 552,
+        "badges": 4
+       }
+      ],
+      "detail": "Heroics are unchanged at one badge per boss (50 for a full lap, 53 with Yor, Anzu and the Executioner) but Phase 4 lowers the key requirement to Honored and tunes every heroic to its final 2.4.3 difficulty, so alts and fresh 70s can join the badge economy at once. With raids now paying, heroics become the top-up: Mechanar (4), Botanica (5) and Shattered Halls (5) remain the best per hour.",
+      "detectedBy": "Badge count rising inside one of the listed instance ids, or saved-instance encounter info; otherwise manual.",
+      "optional": true
+     },
+     {
+      "key": "spend_p4",
+      "title": "Spend: what to buy first in Phase 4",
+      "kind": "MANUAL",
+      "detail": "G'eras now sells the 2.3 and 2.4 Shattrath catalogue. Buy in order of slot value: 75-badge legs (Shifting Camouflage Pants, Natural Life Leggings, Pantaloons of Arcane Annihilation, Achromic Trousers of the Naaru, High Justicar's Legplates, Unwavering Legguards, Bloodthirster's Wargreaves, Shallow-grave Trousers, Pants of Splendid Recovery, Blessed Elunite Coverings, Vestments of Hibernation) and 75-badge chests (Chestguard of the Stoic Guardian, Hauberk of the Furious Elements), then 50-badge helms (Cowl of Naaru Blessings, Mana-Binders Cowl, Warpstalker Helm, Storm Master's Helmet, Mask of the Deceiver, Cowl of Beastly Rage, Faceguard of Determination, Helmet of the Steadfast Champion), then 60-badge boots, belts, gloves and shoulders (Treads of the Life Path, Iron-tusk Girdle, Gauntlets of Sniping, Gnarled Ironwood Pauldrons and the rest), 35-badge bracers, 35-badge Brooch of Deftness and the 75-badge Battlemaster trinkets for PvP. Relics (Idol of Terror, Libram of Divine Purpose, Totem of Living Water, Skycall Totem and others) are 20. Nether Vortex at 15 badges unblocks Tier 6 era crafting and is no longer soulbound, so buying for guild crafters is sensible. Only buy from the launch stock (41 trinkets, 25 slots) where it still beats your raid gear.",
+      "detectedBy": "Manual tick; optionally badge balance at or above 75.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://us.forums.blizzard.com/en/wow/t/burning-crusade-classic-patch-notes-version-254/1205431",
+     "https://timesaver.gg/blog/tbc-anniversary-october-22-patch-changes",
+     "https://www.warcrafttavern.com/tbc/news/zulaman-arrives-october-22nd-for-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://warcraft.wiki.gg/wiki/Badge_of_Justice",
+     "https://warcraft.wiki.gg/wiki/Undercover_Sister",
+     "https://warcraft.wiki.gg/wiki/Hex_Lord%3F_Hah!",
+     "https://wotlkdb.com/?quest=11171",
+     "https://wotlkdb.com/?quest=11163",
+     "https://wotlkdb.com/?quest=11178",
+     "https://wotlkdb.com/?npc=17711",
+     "https://wotlkdb.com/?npc=18728",
+     "https://warcrafttavern.com/tbc/guides/badge-of-justice-guide-farming-vendors-rewards",
+     "https://nether.wowhead.com/tooltip/quest/11171?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11163?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23863?dataEnv=5&locale=0",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc"
+    ],
+    "notes": "Raid totals (Karazhan 22, Zul'Aman 13, Gruul 5, Magtheridon 3, SSC 12, TK 8) agree between the wiki and Warcraft Tavern. Quest badge counts come from wotlkdb's reward icon quantities (createIcon(42, 1, 5) for 11171, 10 for 11163) and the wiki for 11163; Blood of the Warlord (11178) pays no badges. World-boss counts (2 each) are from wotlkdb loot rows (stack 2 to 2 at 100 percent)."
+   },
+   {
+    "key": "BADGES_PHASE_5",
+    "title": "Badges of Justice: Phase 5 weekly route",
+    "category": "BADGES",
+    "faction": "BOTH",
+    "summary": "Phase 5 (Fury of the Sunwell) finishes the badge economy: Mount Hyjal, Black Temple and Sunwell Plateau bosses drop badges, heroic Magisters' Terrace adds four more and joins the heroic daily pool, and the Isle of Quel'Danas vendors Smith Hauthaa, Kayri and Shaani (mirrored in Shattrath by Anwehu and Ontuvo) open behind the Shattered Sun Offensive progression. A full raid week is now worth well over a hundred badges, and the 100-badge chests and 150-badge weapons are the end of the road.",
+    "unlocks": "Smith Hauthaa's Sunwell-tier badge gear (chests and legs 100, belts, boots and gloves 75, rings and necks 60, weapons 150, 105 and 45), Kayri's Veteran's PvP pieces (40 and 25) and Shaani's epic gems (15).",
+    "phase": {
+     "introduced": 5,
+     "requiredUntil": null,
+     "notes": "TBC Classic Phase 5 2022-05-12 (patch 2.5.4a). Anniversary Phase 5 is TBA, listed as autumn 2026. On TBC Classic all six Sunwell bosses opened at once, but the island vendors still depended on the realm's daily-quest progress; expect the same on Anniversary."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "heroic_daily",
+      "title": "Do Zhareem's heroic daily: 2 badges (now 16 dungeons)",
+      "kind": "QUEST",
+      "questId": null,
+      "questIds": [
+       11354,
+       11362,
+       11363,
+       11368,
+       11369,
+       11370,
+       11372,
+       11373,
+       11374,
+       11375,
+       11378,
+       11382,
+       11384,
+       11386,
+       11388,
+       11499
+      ],
+      "questName": "Wanted: (heroic boss item), one of sixteen",
+      "giver": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "turnIn": {
+       "npcId": 24369,
+       "name": "Wind Trader Zhareem",
+       "zone": "Shattrath City",
+       "x": 75.1,
+       "y": 36.7
+      },
+      "detail": "The heroic daily is unchanged at 2 Badges of Justice, gold and 350 reputation, but the pool grows to sixteen with Wanted: The Signet Ring of Prince Kael'thas (11499), completable only in heroic Magisters' Terrace, where the ring drops from Kael'thas Sunstrider. Mah'duun's normal pool likewise gains Wanted: Sisters of Torment (11500) for Magisters' Terrace, still paying an Ethereum Prison Key and no badges. Fourteen badges a week for the daily alone.",
+      "detectedBy": "Any of the listed quest ids flagged completed today or in the quest log.",
+      "optional": false,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     },
+     {
+      "key": "heroic_mgt",
+      "title": "Heroic Magisters' Terrace: 4 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Magisters' Terrace",
+       "instanceMapId": 585,
+       "heroic": true,
+       "boss": "Kael'thas Sunstrider",
+       "npcIds": [
+        24723,
+        24744,
+        24560,
+        24664
+       ]
+      },
+      "detail": "Heroic Magisters' Terrace on the Isle of Quel'Danas drops one badge from each of Selin Fireheart, Vexallus, Priestess Delrissa and Kael'thas Sunstrider, four per run, plus the heroic daily's 2 when 11499 is up. Normal mode drops no badges. The heroic key (Magister's Terrace Key) comes from the Hard to Kill and Magisters' Terrace quest chain rather than reputation. Kael'thas also drops the Phoenix Hatchling and the Swift White Hawkstrider on heroic.",
+      "detectedBy": "UNIT_DIED for npc 24664 inside instance 585 on Heroic, or the Magisters' Terrace saved-instance lock.",
+      "optional": false,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     },
+     {
+      "key": "karazhan",
+      "title": "Karazhan full clear: 22 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "Prince Malchezaar",
+       "npcIds": [
+        16152,
+        15687,
+        16457,
+        17521,
+        17533,
+        17534,
+        18168,
+        15691,
+        15688,
+        16524,
+        15689,
+        16816,
+        15690,
+        17225
+       ]
+      },
+      "detail": "Karazhan remains the single best badge farm: 2 badges from each of its eleven encounters (Attumen, Moroes, Maiden, Opera, Curator, Illhoof, Aran, Netherspite, Chess, Prince, Nightbane) for 22 a week, cleared by a Sunwell-geared ten in about an hour. Nightbane still needs the Blackened Urn.",
+      "detectedBy": "Saved-instance encounter info for instance 532, or UNIT_DIED for the listed npc ids inside Karazhan.",
+      "optional": false,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "zulaman",
+      "title": "Zul'Aman full clear: 13 badges (3-day lockout)",
+      "kind": "KILL",
+      "instance": {
+       "name": "Zul'Aman",
+       "instanceMapId": 568,
+       "heroic": false,
+       "boss": "Zul'jin",
+       "npcIds": [
+        23576,
+        23574,
+        23578,
+        23577,
+        24239,
+        23863
+       ]
+      },
+      "detail": "Zul'Aman's six bosses pay 13 badges (2 each, 3 from Zul'jin) and the 3-day lockout means two clears in some weeks for 26. The one-time quests Hex Lord? Hah! (11171, 5 badges) and Undercover Sister (11163, 10 badges) are still there if you skipped them in Phase 4.",
+      "detectedBy": "Saved-instance encounter info for instance 568, or UNIT_DIED for the listed npc ids.",
+      "optional": false,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "hyjal_bt",
+      "title": "Mount Hyjal and Black Temple: 28 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Black Temple",
+       "instanceMapId": 564,
+       "heroic": false,
+       "boss": "Illidan Stormrage",
+       "npcIds": [
+        17767,
+        17808,
+        17888,
+        17842,
+        17968,
+        22887,
+        22898,
+        22841,
+        22871,
+        22948,
+        23420,
+        22947,
+        22949,
+        22917
+       ]
+      },
+      "detail": "From Phase 5 the Tier 6 raids drop badges: Hyjal Summit (instance 534; Rage Winterchill, Anetheron, Kaz'rogal, Azgalor, Archimonde) pays 10, 2 per boss, and Black Temple (instance 564; High Warlord Naj'entus, Supremus, Shade of Akama, Teron Gorefiend, Gurtogg Bloodboil, Reliquary of Souls, Mother Shahraz, the Illidari Council, Illidan Stormrage) pays 18, 2 per boss. The 2.5.4 Classic notes explicitly left these two out of Phase 4, and the original 2.4 patch made every raid boss drop badges, which is why they are placed here; no attunement is needed from Phase 4.",
+      "detectedBy": "Saved-instance encounter info for instances 534 and 564, or UNIT_DIED for the listed npc ids (23420 Essence of Anger ends the Reliquary, 22949 Gathios the Shatterer ends the Council).",
+      "optional": true,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     },
+     {
+      "key": "sunwell",
+      "title": "Sunwell Plateau: 12 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Sunwell Plateau",
+       "instanceMapId": 580,
+       "heroic": false,
+       "boss": "Kil'jaeden",
+       "npcIds": [
+        24850,
+        24882,
+        25038,
+        25166,
+        25165,
+        25741,
+        25315
+       ]
+      },
+      "detail": "Sunwell Plateau's six encounters (Kalecgos, Brutallus, Felmyst, the Eredar Twins Grand Warlock Alythess and Lady Sacrolash, M'uru, Kil'jaeden) drop 2 badges each for 12 a week. Every badge from Sunwell is a bonus on top of the best loot in the expansion; even a guild stuck on Brutallus banks 4 a week.",
+      "detectedBy": "Saved-instance encounter info for instance 580, or UNIT_DIED for the listed npc ids (25741 M'uru; Entropius is the second form).",
+      "optional": true,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     },
+     {
+      "key": "t5_and_below",
+      "title": "Gruul, Magtheridon, SSC, TK and the world bosses: 32 badges",
+      "kind": "KILL",
+      "instance": {
+       "name": "Serpentshrine Cavern",
+       "instanceMapId": 548,
+       "heroic": false,
+       "boss": "Lady Vashj",
+       "npcIds": [
+        18831,
+        19044,
+        17257,
+        21216,
+        21217,
+        21215,
+        21214,
+        21213,
+        21212,
+        19514,
+        19516,
+        18805,
+        19622,
+        18728,
+        17711
+       ]
+      },
+      "detail": "The Phase 4 sources keep paying: Gruul's Lair 5 (instance 565), Magtheridon's Lair 3 (544), Serpentshrine Cavern 12 (548), Tempest Keep 8 (550) and Doom Lord Kazzak and Doomwalker 2 each. A Sunwell guild that still runs the Tier 4 and Tier 5 lockouts for alts and badges adds 28 a week plus the opportunistic 4 from world bosses.",
+      "detectedBy": "Saved-instance encounter info for instances 565, 544, 548 and 550, or UNIT_DIED for the listed npc ids.",
+      "optional": true,
+      "phases": {
+       "from": 4,
+       "to": 5
+      }
+     },
+     {
+      "key": "heroics_overview",
+      "title": "Heroics: 1 per boss, 57 for a full lap",
+      "kind": "MANUAL",
+      "instances": [
+       {
+        "name": "Hellfire Ramparts",
+        "instanceMapId": 543,
+        "badges": 3
+       },
+       {
+        "name": "The Blood Furnace",
+        "instanceMapId": 542,
+        "badges": 3
+       },
+       {
+        "name": "The Shattered Halls",
+        "instanceMapId": 540,
+        "badges": 4,
+        "bonus": 1
+       },
+       {
+        "name": "The Slave Pens",
+        "instanceMapId": 547,
+        "badges": 3
+       },
+       {
+        "name": "The Underbog",
+        "instanceMapId": 546,
+        "badges": 4
+       },
+       {
+        "name": "The Steamvault",
+        "instanceMapId": 545,
+        "badges": 3
+       },
+       {
+        "name": "Mana-Tombs",
+        "instanceMapId": 557,
+        "badges": 3,
+        "bonus": 1
+       },
+       {
+        "name": "Auchenai Crypts",
+        "instanceMapId": 558,
+        "badges": 2
+       },
+       {
+        "name": "Sethekk Halls",
+        "instanceMapId": 556,
+        "badges": 2,
+        "bonus": 1
+       },
+       {
+        "name": "Shadow Labyrinth",
+        "instanceMapId": 555,
+        "badges": 4
+       },
+       {
+        "name": "Old Hillsbrad Foothills",
+        "instanceMapId": 560,
+        "badges": 3
+       },
+       {
+        "name": "The Black Morass",
+        "instanceMapId": 269,
+        "badges": 3
+       },
+       {
+        "name": "The Mechanar",
+        "instanceMapId": 554,
+        "badges": 4
+       },
+       {
+        "name": "The Botanica",
+        "instanceMapId": 553,
+        "badges": 5
+       },
+       {
+        "name": "The Arcatraz",
+        "instanceMapId": 552,
+        "badges": 4
+       },
+       {
+        "name": "Magisters' Terrace",
+        "instanceMapId": 585,
+        "badges": 4
+       }
+      ],
+      "detail": "Sixteen heroics now, one badge per boss and one lockout each per day: the fifteen Outland heroics total 50 (53 with Yor, Anzu and the Executioner) and Magisters' Terrace adds 4. Keys need Honored. With raids paying most of the weekly total, heroics are the fill-in for off-nights and the way alts catch up; Magisters' Terrace, Mechanar and Botanica are the best per hour.",
+      "detectedBy": "Badge count rising inside one of the listed instance ids, or saved-instance encounter info; otherwise manual.",
+      "optional": true
+     },
+     {
+      "key": "sso_supplies",
+      "title": "Isle dailies: a chance of a badge in Shattered Sun Supplies",
+      "kind": "QUEST",
+      "questId": null,
+      "questIds": [
+       11513,
+       11514,
+       11520,
+       11521
+      ],
+      "questName": "Intercepting the Mana Cells, Maintaining the Sunwell Portal, Discovering Your Roots, Rediscovering Your Roots",
+      "giver": {
+       "npcId": 24932,
+       "name": "Exarch Nasuun",
+       "zone": "Shattrath City",
+       "x": 49.1,
+       "y": 42.5
+      },
+      "detail": "No Shattered Sun Offensive daily pays Badges of Justice directly; they pay gold and Shattered Sun Offensive reputation. A few of them reward a bag of Shattered Sun Supplies (item 35232) that holds a level 68 green and, by community reports from TBC Classic, roughly a 15 percent chance of a Badge of Justice. The wiki lists the bag on Intercepting the Mana Cells (11513) and its follow-up Maintaining the Sunwell Portal (11514) from Exarch Nasuun on the Terrace of Light, and Discovering Your Roots (11520) and Rediscovering Your Roots (11521) from Mar'nah at Sun's Reach Harbor once the harbour phase is open. Treat this as a few bonus badges a month, not a plan.",
+      "detectedBy": "Any of the listed quest ids flagged completed today; the badge itself shows as GetItemCount 29434 rising when the bag is opened.",
+      "optional": true,
+      "phases": {
+       "from": 5,
+       "to": 5
+      }
+     },
+     {
+      "key": "spend_p5",
+      "title": "Spend: what to buy first in Phase 5",
+      "kind": "MANUAL",
+      "detail": "Smith Hauthaa on the Isle (and Anwehu in Shattrath) sell the Sunwell-tier badge gear once the realm has built the Anvil and Forge: chests and legs at 100 badges (Ecclesiastical Cuirass, Tunic of the Dark Hour, Scaled Drakeskin Chestguard, Breastplate of Ire, Shroud of the Lore'nial, Leggings of the Pursuit, Sunguard Legplates, Grovewalker's Leggings and the rest), belts, boots and gloves at 75 (Belt of the Silent Path, Boots of Incantations, Gauntlets of Rapidity, Blue's Greaves of the Righteous Guardian, Enslaved Doomguard Soulgrips), rings and necklaces at 60 (Angelista's Revenge, Ring of the Stalwart Protector, Fused Nethergon Band, Anveena's Touch) and weapons at 150 (The Blade of Harbingers, Crossbow of Relentless Strikes, Scryer's Blade of Focus, Gavel of Naaru Blessings, Staff of the Forest Lord), 105 (Vanir's Right Fist of Brutality, Blade of Serration) and 45 (Swift Blade of Uncertainty, Vanir's Left Fist of Savagery and Brutality, The Mutilator). Buy the 100-badge chest or legs that beats your Tier 6 piece first, then the 150-badge weapon if Sunwell is not dropping yours, then 75-badge slots. Kayri's Veteran's belts and boots (40) and bracers (25) cover PvP slots, and Shaani or Ontuvo sell uncut epic gems at 15 each, the best use of leftover badges once gear is done. G'eras's Phase 4 catalogue (75 legs and chests, 50 helms) remains the cheaper fill for alts.",
+      "detectedBy": "Manual tick; optionally badge balance at or above 100.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://warcraft.wiki.gg/wiki/Badge_of_Justice",
+     "https://warcraft.wiki.gg/wiki/Smith_Hauthaa",
+     "https://warcraft.wiki.gg/wiki/Anwehu",
+     "https://warcraft.wiki.gg/wiki/Shattered_Sun_Offensive",
+     "https://warcraft.wiki.gg/wiki/Shattered_Sun_Supplies",
+     "https://worldofwarcraft.blizzard.com/en-us/news/23789253/burning-crusade-classic-face-the-fury-of-the-sunwell-on-may-12",
+     "https://us.forums.blizzard.com/en/wow/t/burning-crusade-classic-patch-notes-version-254/1205431",
+     "https://warcrafttavern.com/tbc/guides/badge-of-justice-guide-farming-vendors-rewards",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://nether.wowhead.com/tooltip/quest/11499?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11500?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11535?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24664?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25315?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/35232?dataEnv=5&locale=0",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc"
+    ],
+    "notes": "Raid totals (Hyjal 10, Black Temple 18, Sunwell 12, heroic Magisters' Terrace 4) agree between the wiki and Warcraft Tavern; the per-boss figure of 2 is each total divided by its boss count. Hauthaa, Kayri and Shaani prices are from Warcraft Tavern's catalogue."
+   }
+  ],
+  "uncertain": [
+   "Per-boss split inside Zul'Aman (2,2,2,2,2 and Zul'jin 3) and Gruul's Lair (Maulgar 2, Gruul 3) is derived from the confirmed instance totals (13 and 5) and the wiki's rule that the end boss sometimes drops three; no per-boss source was found. Karazhan's 22 likewise implies 2 from the Chess event chest without a separate confirmation.",
+   "Hyjal Summit and Black Temple badge drops are placed in Phase 5 by inference: the 2.5.4 Classic notes (Phase 4) list every other raid and secondary coverage says they were excluded, and the original 2.4 patch gave all raid bosses badges. No explicit TBC Classic Phase 5 or Anniversary Phase 5 note naming Hyjal and Black Temple was found.",
+   "Doom Lord Kazzak and Doomwalker badge count (2 each) comes from wotlkdb's 3.3.5a loot rows (stack 2 to 2, 100 percent); the 2.5.4 Classic notes confirm they drop badges but give no number. Their inclusion in Anniversary Phase 4 rests on a secondary article (timesaver.gg) relaying the announcement, not on Blizzard's own Anniversary notes.",
+   "Anniversary Phase 4 (Zul'Aman) was scheduled for 2026-10-22 15:00 PDT; no post-launch confirmation was found as of 2026-10-24 and the installed Questie still reports Phase 3, so the addon's own phase detection should decide whether BADGES_PHASE_4 is current.",
+   "Anniversary Phase 5 date is TBA (listed as autumn 2026); whether Anniversary opens all Sunwell bosses at once as TBC Classic did, and how fast the Isle of Quel'Danas vendors unlock, is not known.",
+   "Smith Hauthaa's exact gate: the wiki says she appears when the Sun's Reach Armory is retaken and sells once the Anvil and Forge is built through the daily Making Ready (11535); the Badge of Justice page labels her availability Phase 3B of the Offensive. Which world-state flag the addon can read for the forge was not researched; MERCHANT_SHOW on npc 25046 is the safe detector.",
+   "Anwehu (27667) and Ontuvo (27666) were added in patch 2.4.2; they exist in the 2.5.6 client database with Questie spawns but their presence on Anniversary Phase 5 realms is unverified.",
+   "Shattered Sun Supplies (35232) containing a Badge of Justice at about 15 percent is reported by TBC Classic community guides (bittsguides, Warcraft Tavern); the wiki item page does not mention a badge. The exact set of Isle dailies that award the bag on TBC-era servers is also uncertain: the wiki lists 11513, 11514, 11520 and 11521, while Warcraft Tavern says six dailies award it.",
+   "The wiki's Badge of Justice page says the Shartuul's Transporter event (Blade's Edge, Ogri'la) awards three badges; the quest id and Anniversary availability were not confirmed, so it is mentioned only as a rumour in BADGES_PHASE_2.",
+   "Heroic daily gold varies by source (13g20s in the database, 24g60s and 25g in guides); only the 2 Badges of Justice reward is treated as confirmed.",
+   "Primal Nether at 10 badges from G'eras in Phase 1: Warcraft Tavern's Phase 1 list and the Wowhead item label (Phase 1) support it, but a TBC Classic beta note said Primal Nether and Nether Vortex would reach the badge vendor in a later phase; check G'eras in game.",
+   "G'eras coordinates (50.8, 42.3) are Questie's spawn for the post-2.4 upper-walkway position; the wiki text still describes the central dome. Kayri's unlock stage (SSO stage 3) and Shaani's (Alchemy Lab / stage 4C) are from the wiki's vendor table and were not confirmed in game.",
+   "Instance map ids (532 Karazhan, 568 Zul'Aman, 565 Gruul, 544 Magtheridon, 548 SSC, 550 TK, 534 Hyjal, 564 Black Temple, 580 Sunwell, 585 Magisters' Terrace, 269 Black Morass, 560 Old Hillsbrad, 540 to 547 Hellfire and Coilfang, 552 to 558 Tempest Keep and Auchindoun) are the standard Map.dbc InstanceIDs from knowledge; AtlasLoot stores area ids (3457 etc.) instead, so they were not cross-checked against an installed file.",
+   "The heroics-overview steps are kind MANUAL with an extra 'instances' array because one step covers fifteen dungeons; the daily steps carry 'questIds' (a pool, any one completed today) with questId null. Mechanar's 4 badges assumes both Gatewatchers drop one each, consistent with the instance total but not confirmed per boss."
+  ],
+  "notes": "Key correction to the task premise: Wind Trader Zhareem (npc 24369) gives the HEROIC-only Wanted dailies that pay 2 Badges of Justice (quests 11354, 11362, 11363, 11368, 11369, 11370, 11372, 11373, 11374, 11375, 11378, 11382, 11384, 11386, 11388 and, from Phase 5, 11499), and Nether-Stalker Mah'duun (npc 24370) gives the NORMAL-mode kill dailies (11364, 11371, 11376, 11383, 11385, 11387, 11389, 11500) that pay an Ethereum Prison Key and no badges. Every quest and NPC id emitted was confirmed by name on the Wowhead Anniversary tooltip endpoint (JSON saved under the scratchpad tt/ folder); quest tooltips do not include rewards, so badge quantities were read from wotlkdb reward icons (createIcon(42, 1, N)): 2 for the heroic daily, 5 for Hex Lord? Hah! (11171), 10 for Undercover Sister (11163), 5 for Stasis Chambers of the Mana-Tombs (10977), none for Blood of the Warlord (11178). Phase mapping used (TBC Classic and Anniversary agree): P1 Karazhan/Gruul/Magtheridon, P2 SSC/TK, P3 Hyjal/Black Temple, P4 Zul'Aman, P5 Sunwell/Magisters' Terrace; Anniversary dates 2026-02-05, 2026-05-14, 2026-08-27, 2026-10-22 (scheduled), TBA. Badge sources by phase: P1 to P3 heroic bosses (1 each) and the heroic daily (2); P4 adds Karazhan 22, Zul'Aman 13, Gruul 5, Magtheridon 3, SSC 12, TK 8, Kazzak 2, Doomwalker 2, the two ZA quests and G'eras's expanded stock with Nether Vortex (15); P5 adds Hyjal 10, Black Temple 18, Sunwell 12, heroic Magisters' Terrace 4 and the Isle vendors. Coordinates came from QuestieDB_TBC.toc's baked CBOR NPC rows, decoded with /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/qdb_decode.py (Anwehu's decoded spawn matched the wiki's 48.1, 42.9). Prerequisite guide keys were left empty because the heroic-key and attunement guides are produced by other researchers; the Phase 1 to 3 routes implicitly need the heroic key guides (Revered until Phase 4, Honored after)."
+ },
+ "verify": {
+  "checked": 128,
+  "mismatches": [],
+  "corrections": [
+   {
+    "guideKey": "BADGES_PHASE_1",
+    "stepKey": "stasis_quest",
+    "field": "detail / instance",
+    "from": "Use the Mana-Tombs Stasis Chamber Key (item 32069) on the chamber behind Shaffar in heroic Mana-Tombs, kill Yor, and turn in for 5 Badges; instance.boss = Yor, npcIds [22930]",
+    "to": "Use the key on the Mana-Tombs Stasis Chamber near the FRONT of heroic Mana-Tombs (room after Pandemonius, right side). It releases the Consortium ethereal Ambassador Pax'ivi; no boss kill is required for 10977. Yor lives in Shaffar's personal chamber and is opened only with Shaffar's Stasis Chamber Key (repeatable 10981, one Mark of the Nexus-King each) or The Eye of Haramad (10982, Consortium Exalted). Drop boss/npcIds from this step's instance block. Also note A Thousand Worlds (10973) only becomes available at Consortium Revered.",
+    "reason": "Quest text (Wowhead tooltip 10977 and warcraft.wiki.gg) says the forged key 'will open the stasis chamber near the front'; wiki Notes: 'The Mana-Tombs Stasis Chamber is in the room after Pandemonius, to the right. When you open it, it releases ... Ambassador Pax'ivi.' The 5-badge reward itself is confirmed (wotlkdb createIcon(42,1,5)). Same fix applies to the stasis_quest copies in BADGES_PHASE_2 and BADGES_PHASE_3."
+   },
+   {
+    "guideKey": "BADGES_PHASE_4",
+    "stepKey": "za_quests",
+    "field": "detail (chain)",
+    "from": "Hex Lord? Hah! (11171) ... follows X Marks... Your Doom! (11166), which follows A Troll Among Trolls (11165)",
+    "to": "Hex Lord? Hah! (11171) follows X Marks... Your Doom! (11166), which follows Promises, Promises... (11132), which follows Oooh, Shinies! (11130, from Griftah in Shattrath, turned in to Budd). A Troll Among Trolls (11165) is Prigmon's separate Zungam chain (Tuskin' Raiders -> A Troll Among Trolls -> Playin' With Dolls) and is not a prerequisite.",
+    "reason": "warcraft.wiki.gg infoboxes: X Marks... Your Doom! Previous = Promises, Promises...; Promises, Promises... Previous = Oooh, Shinies!; A Troll Among Trolls starts at Prigmon, ends at Zungam, Previous = Tuskin' Raiders. Warcraft Tavern also names Oooh, Shinies! as the chain start. Ids from the wiki's Wowhead links (11132, 11130)."
+   },
+   {
+    "guideKey": "BADGES_PHASE_4",
+    "stepKey": "ssc_tk",
+    "field": "detail",
+    "from": "Both are weekly 25-player lockouts and lose their attunement in Phase 4",
+    "to": "Both lost their attunement at the START of Phase 3 (Anniversary 2026-08-27; TBC Classic 2022-01-27), when the direct skips to Lady Vashj and Kael'thas also opened. Phase 4 (2.5.4) removed only the Hyjal and Black Temple attunements.",
+    "reason": "Blizzard via Warcraft Tavern (2026-08-24): 'Attunements for SSC and TK are no longer required when the new raids open' (Phase 3). Blizzard 2.5.4 notes list only Hyjal/BT under 'With the release of Zul'Aman'. Gfinity confirms the same for TBC Classic Phase 3."
+   },
+   {
+    "guideKey": "BADGES_PHASE_4",
+    "stepKey": "karazhan",
+    "field": "detail",
+    "from": "Weekly lockout, 10 players, no attunement from Phase 4",
+    "to": "Weekly lockout, 10 players. Karazhan's gate needs one Master's Key holder in the raid (or a rogue / blacksmith skeleton key) in every phase; Phase 4 changed nothing about Karazhan access.",
+    "reason": "The 2.5.4 patch notes contain no Karazhan attunement change; warcraft.wiki.gg The Master's Key: 'only one person needs to possess the key' (2.4.0 behaviour, which the 2.5.x client uses). One Anniversary guide site (Conquest Capped) claims per-player keys, so phrase as 'one key holder' rather than 'no attunement'."
+   },
+   {
+    "guideKey": "BADGES_PHASE_4",
+    "stepKey": "karazhan",
+    "field": "detail / detectedBy",
+    "from": "every Karazhan encounter drops 2 Badges of Justice per player ... badge count rises by 2 per boss",
+    "to": "Attumen the Huntsman drops 1, Prince Malchezaar drops 3, the other nine encounters (Moroes, Maiden, Opera, Curator, Illhoof, Aran, Netherspite, Chess, Nightbane) drop 2 each; total still 22. Detection must accept +1, +2 or +3 per kill.",
+    "reason": "wotlkdb loot rows: Attumen 16152 stack [1,1], Prince 15690 stack [3,3], Moroes/Maiden/Big Bad Wolf/Curator/Illhoof/Aran/Netherspite/Nightbane [2,2]; sums to the wiki's 22. Wiki Badge page: 'the first boss of a raid instance may drop only one and the end boss in some cases drops three'. Apply to the karazhan copy in BADGES_PHASE_5 too."
+   },
+   {
+    "guideKey": "BADGES_PHASE_4",
+    "stepKey": "zulaman",
+    "field": "detail",
+    "from": "Nalorakk, Akil'zon, Jan'alai, Halazzi and Hex Lord Malacrass drop 2 badges each and Zul'jin 3",
+    "to": "Nalorakk drops 1, Akil'zon, Jan'alai and Halazzi 2 each, Hex Lord Malacrass 3 and Zul'jin 3 (13 total).",
+    "reason": "wotlkdb loot rows: Nalorakk 23576 [1,1], Akil'zon 23574 / Jan'alai 23578 / Halazzi 23577 [2,2], Malacrass 24239 [3,3], Zul'jin 23863 [3,3]; sums to the wiki total of 13. Apply to the zulaman copy in BADGES_PHASE_5."
+   },
+   {
+    "guideKey": "BADGES_PHASE_5",
+    "stepKey": "sunwell",
+    "field": "detail",
+    "from": "drop 2 badges each for 12 a week",
+    "to": "Kalecgos (via Sathrovarr), Brutallus, Felmyst, the Eredar Twins and M'uru (via Entropius) drop 2 each and Kil'jaeden drops 3 per wotlkdb (13 total); the wiki table says 12. Say '2 per boss, 3 from Kil'jaeden; 12-13 total' and do not hard-code +2 detection.",
+    "reason": "wotlkdb: 24892 Sathrovarr [2,2], 24882 [2,2], 25038 [2,2], 25165/25166 [2,2], 25840 Entropius [2,2], 25315 Kil'jaeden [3,3]; warcraft.wiki.gg Badge table lists Sunwell Plateau 12. Sources conflict by one badge."
+   },
+   {
+    "guideKey": "BADGES_PHASE_1",
+    "stepKey": "spend_p1",
+    "field": "detail",
+    "from": "necklaces (... Brooch of Deftness), ... off-hands (... Fetish of the Primal Gods, ... Voodoo Shaker) at 25 badges in the Phase 1 catalogue",
+    "to": "Remove Brooch of Deftness, Fetish of the Primal Gods and Voodoo Shaker from the Phase 1 list: all three are 35-badge items in G'eras's Phase 4 (2.3) stock. All other named Phase 1 items (41 trinkets incl. Gnomeregan Auto-Blocker 600, 25 necks/rings/cloaks/off-hands, 33 shields, 50 Searing Sunblade, 15 relics, 20/30 Inferno sets, 10 Primal Nether) check out.",
+    "reason": "Warcraft Tavern badge guide tables: Brooch of Deftness 35, Fetish of the Primal Gods 35, Voodoo Shaker 35, all in the 'Phase 4 - G'eras' table, none in the 'Phase 1 to Phase 3' table. The guide's own spend_p4 already lists Brooch of Deftness at 35."
+   },
+   {
+    "guideKey": "BADGES_PHASE_2",
+    "stepKey": "no_new_sources",
+    "field": "detail",
+    "from": "The wiki's badge page mentions the Shartuul's Transporter event in Blade's Edge awarding three badges, but the quest id and its Anniversary availability could not be confirmed, so treat it as a rumour",
+    "to": "The Shartuul's Transporter event (Ogri'la Honored, Blade's Edge) pays Ogri'la reputation and Depleted items only on the 2.5.x client; its 3 Badges of Justice were added in patch 3.0.2 (Wrath) and do not exist in TBC. Drop the rumour.",
+    "reason": "warcraft.wiki.gg Shartuul's Transporter (event): 'As of patch 3.0.2, completion of the event awards 3x Badge of Justice in addition to the other previous loot items.' The Badge of Justice page's one-line mention is this later behaviour."
+   },
+   {
+    "guideKey": "BADGES_PHASE_5",
+    "stepKey": "sso_supplies",
+    "field": "questIds / questName / detail",
+    "from": "questIds [11513, 11514, 11520, 11521]",
+    "to": "questIds [11513, 11514, 11520, 11521, 11516, 11877]: also Blast the Gateway (11516, Magistrix Seyla at the Throne of Kil'jaeden, Hellfire Peninsula; needs The Missing Magistrix) and Sunfury Attack Plans (11877, Isle of Quel'Danas) award Shattered Sun Supplies. The Multiphase Survey stopped awarding it in 2.4.2.",
+    "reason": "warcraft.wiki.gg Shattered Sun Supplies: 'reward from the following daily quests: Blast the Gateway; Discovering/Rediscovering Your Roots; Intercepting the Mana Cells/Maintaining the Sunwell Portal; Sunfury Attack Plans; The Multiphase Survey - no longer awarded'. Ids: Blast the Gateway 11516 (wiki Wowhead link), Sunfury Attack Plans 11877 (Wowhead Anniversary tooltip name match)."
+   },
+   {
+    "guideKey": "BADGE_VENDORS",
+    "stepKey": "talk_kayri",
+    "field": "detail",
+    "from": "She is listed as available from Shattered Sun Offensive stage 3 (armory and harbour retaken)",
+    "to": "She appears at the commencement of SSO phase 3, i.e. as soon as the Sun's Reach Armory (the phase 2 objective) is retaken, the same moment Smith Hauthaa and Anwehu appear; retaking the Harbor (phase 3's objective) is not required.",
+    "reason": "warcraft.wiki.gg Kayri: 'added at the commencement of phase 3'; Badge of Justice vendor table: Kayri 'Phase 3', Smith Hauthaa 'Phase 3B' (Anvil, selling), Shaani 'Phase 4C'; SSO page: Phase 1 Sanctum, Phase 2 Armory (+2B Portal), Phase 3 Harbor (+3B Anvil), Phase 4 (+Alchemy Lab/Monument). The Harbor is retaken at the END of phase 3."
+   },
+   {
+    "guideKey": "BADGES_PHASE_4",
+    "stepKey": "spend_p4",
+    "field": "detail",
+    "from": "75-badge legs (... Blessed Elunite Coverings, Vestments of Hibernation) and 75-badge chests (Chestguard of the Stoic Guardian, Hauberk of the Furious Elements)",
+    "to": "Move Vestments of Hibernation to the 75-badge chest list (it is a leather chest, not legs).",
+    "reason": "Item is a chest piece; price 75 confirmed in the Warcraft Tavern Phase 4 table."
+   },
+   {
+    "guideKey": "BADGES_PHASE_5",
+    "stepKey": "phase.notes",
+    "field": "phase.notes",
+    "from": "TBC Classic Phase 5 2022-05-12 (patch 2.5.4a)",
+    "to": "TBC Classic Phase 5 (2.5.4a) went live 2022-05-10 with the Isle of Quel'Danas; Sunwell Plateau opened 2022-05-12.",
+    "reason": "warcraft.wiki.gg Burning Crusade Classic timeline: '10 May 2022: Phase 5 ... Sunwell Plateau raid (opened 12 May 2022)'; Warcraft Tavern phases table: May 10, 2022."
+   },
+   {
+    "guideKey": "BADGES_PHASE_4",
+    "stepKey": "phase.notes",
+    "field": "phase.notes",
+    "from": "TBC Classic patch 2.5.4 (2022-03-22)",
+    "to": "TBC Classic patch 2.5.4 released 2022-03-22; Zul'Aman / Phase 4 content opened 2022-03-24.",
+    "reason": "warcraft.wiki.gg: '22 March 2022: Patch 2.5.4 released ... 24 March 2022: Phase 4 (The Gods of Zul'Aman) went live'; Warcraft Tavern lists March 24, 2022."
+   },
+   {
+    "guideKey": "BADGES_PHASE_1",
+    "stepKey": "bonus_bosses",
+    "field": "detail",
+    "from": "Yor in heroic Mana-Tombs is released from the stasis chamber past Nexus-Prince Shaffar",
+    "to": "Yor is released from Shaffar's personal stasis chamber in Nexus-Prince Shaffar's room (in front of him, at the end of the instance)",
+    "reason": "warcraft.wiki.gg Yor: 'a summoned boss in front of Nexus-Prince Shaffar in the Mana-Tombs ... only summonable in Heroic mode'. Wording only; the key requirements stated are correct."
+   }
+  ],
+  "unverifiable": [
+   "That Wind Trader Zhareem's and Nether-Stalker Mah'duun's dungeon dailies were live from Anniversary Phase 1 (2026-02-05): only iggm.com asserts it; Warcraft Tavern's Phase 1 content list is silent and the NPCs were a 2.3.0 addition in original TBC (they were available at TBC Classic launch).",
+   "The fifth heroic Shattered Halls badge from the Shattered Hand Executioner: asserted by the warcraft.wiki.gg Badge of Justice page and Warcraft Tavern, but the Executioner's own wiki page lists only Unused Axe of the Executioner as a drop; not checked against a loot database.",
+   "The ~15 percent Badge of Justice chance in Shattered Sun Supplies is a community figure (Warcraft Tavern repeats 15%); the wiki gives no rate.",
+   "Exact Karazhan gate behaviour on the Anniversary client (one key holder vs every player): wiki and Wowhead comments say one key, Conquest Capped's Anniversary guide says all; no Blizzard statement found.",
+   "Whether Anniversary Phase 5 island vendors will depend on realm-wide SSO daily progress as on TBC Classic (stated as an expectation; Phase 5 has no date).",
+   "Sunwell Plateau badge total: wotlkdb per-boss rows sum to 13 (Kil'jaeden 3), the wiki table says 12.",
+   "Kazzak/Doomwalker 2 badges each rests on wotlkdb 3.3.5 loot rows (stack [2,2], 100%); no 2.5.x loot source checked."
+  ],
+  "verdict": "All 128 cited ids resolve to their claimed names and coordinates on the Anniversary endpoint, but the guide has real structural errors: quest 10977 opens the front stasis chamber (Ambassador Pax'ivi), not Yor's; the Zul'Aman badge-quest prerequisite is Promises, Promises... (11132) not A Troll Among Trolls; SSC/TK attunement ended in Phase 3 not 4; Karazhan was never a Phase 4 attunement change; Brooch of Deftness, Fetish of the Primal Gods and Voodoo Shaker are 35-badge Phase 4 stock, not 25-badge Phase 1; Karazhan and Zul'Aman per-boss badge splits are wrong (totals right); the Shartuul badges are a 3.0.2 addition; two Supplies dailies (11516, 11877) are missing; Kayri's gate is the Armory, not the Harbor.",
+  "notes": "Method: every npc/item/quest id in the task list and in the guide JSON (128 ids: 12 vendor/quest-giver NPCs, 67 boss NPCs, 4 items, 45 quests) was fetched from https://nether.wowhead.com/tooltip/<kind>/<id>?dataEnv=5&locale=0 with a 0.3 s sleep; raw JSON is in /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/factcheck/raw/ and the comparison script is parse.py there. Name matches: 128/128 (the seven unnamed Mah'duun dailies 11364/11371/11376/11383/11385/11387/11389 resolve to Wanted: Shattered Hand Centurions / Coilfang Myrmidons / Malicious Instructors / Rift Lords / Sunseeker Channelers / Tempest-Forge Destroyers / Arcatraz Sentinels, i.e. the 8-dungeon normal pool with 11500). Item 29434's Anniversary tooltip carries the 'Phase 1' tag. Coordinates: all 12 NPC spawns match Wowhead's map coords within 0.3 and the zone ids (3703 Shattrath, 4080 Isle, 3522 Blade's Edge, 3433 Ghostlands) match the claimed zones. CONFIRMED (no change needed): heroic daily = 2 badges + 13g20 + 350 rep with Consortium and the dungeon faction (wiki Zhareem page, wotlkdb 11354); normal daily = Ethereum Prison Key + 250 rep (wiki Mah'duun, wotlkdb 11364; gold 8g80 on wotlkdb vs 16g39 on the wiki); 10977 = 5 badges + 500 Consortium (wotlkdb; the wiki infobox omits the badges), 11171 = 5, 11163 = 10, 11178 = none; chain 10970-10976 order (wiki Previous/Next); 10982 needs Consortium Exalted, 10981 repeatable one Mark per single-use key; Kayri 25 (bracers, 15 items) / 40 (belts+boots, 30 items) badges (wotlkdb 26089 cost rows + Tavern); Shaani/Ontuvo gems 15; Hauthaa 100/75/60/150/105/45 and every named Hauthaa item incl. Shroud of the Lore`nial (wiki spells it with a backtick); G'eras P4 prices 75/50/60/35/75/20 and Nether Vortex 15, no longer soulbound (2.5.4 notes); Anwehu added 2.4.2 at 48.1,42.9 and gated on the Anvil like Hauthaa; Hauthaa appears when the Armory is retaken and sells only after Making Ready (11535) builds the Anvil (SSO 3B), Don't Stop Now.... (11536) follows; Shaani sells after the Alchemy Lab (4C); G'eras moved to the upper walkway in 2.4.0. 2.5.4 'Updates' (Blizzard forum post fetched): badges from Kazzak, Doomwalker, all KZ/Gruul/Mag/SSC/TK/ZA bosses; G'eras new wares; Hyjal/BT attunement removed; heroic keys to Honored; heroics set to 2.4.3 state; ZA 3-day lockout, no attunement. Anniversary dates confirmed from Warcraft Tavern's roadmap: prepatch 2026-01-13, P1 2026-02-05, P2 2026-05-14, P3 2026-08-27, P4 2026-10-22 (15:00 PDT, same change list incl. Honored keys and badge drops, per Blizzard's quoted announcement), P5 TBA autumn 2026; TBC Classic P1 2021-06-01, P2 2021-09-15, P3 2022-01-27. Heroic key factions (Honor Hold/Thrallmar, Cenarion Expedition, Lower City, Keepers of Time, Sha'tar) and Revered-until-P4 are right (wiki Heroic mode page: original TBC reduced to Honored in 2.3, Classic in 2.5.4). Instance map ids (543/542/540/547/546/545/557/558/556/555/560/269/554/553/552/585/532/568/565/544/548/550/534/564/580/530) are the standard Map.dbc InstanceIDs; none is wrong. Raid totals KZ 22, ZA 13, Gruul 5 (Maulgar 2 + Gruul 3 confirmed by wotlkdb), Mag 3, SSC 12, TK 8, Hyjal 10, BT 18 match the wiki; per-boss wotlkdb rows show first-boss-1 / end-boss-3 patterns only in KZ, ZA and (KJ) Sunwell; SSC, TK, Hyjal and BT are a flat 2 (Vashj, Kael, Archimonde, Illidan all [2,2]). Heroic per-dungeon totals (50, 53 with Yor/Anzu/Executioner) match the wiki table exactly. Note for the detection code: badge-count deltas per raid kill are 1, 2 or 3, not a constant."
+ }
+}

@@ -1,0 +1,1330 @@
+{
+ "topic": "dungeon-keys",
+ "data": {
+  "guides": [
+   {
+    "key": "SHADOW_LABYRINTH_KEY",
+    "title": "Shadow Labyrinth Key",
+    "category": "DUNGEON",
+    "faction": "BOTH",
+    "summary": "The Shadow Labyrinth is the hardest wing of Auchindoun and sits behind a locked gate on the south side of the courtyard. The key is not a quest reward: it waits in the Talon King's Coffer that appears when Talon King Ikiss dies in Sethekk Halls, and every party member who does not yet own one may take one. Only one person in a group needs it, and a rogue with 350 Lockpicking can open the gate instead.",
+    "unlocks": "Opens the south gate of Auchindoun so your party can enter the Shadow Labyrinth on normal difficulty (heroic additionally needs the Auchenai Key from Lower City reputation).",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Normal-mode dungeon keys stay in force through every TBC Classic and Anniversary phase. The Phase 4 changes (heroic keys at Honored, raid attunements lifted, dungeon difficulty reduced) do not touch this gate. The key only left the game in Cataclysm 4.0.3a. Since patch 2.3.0 (part of the 2.5.x Anniversary client) the key is taken from the coffer rather than rolled for off the boss."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_65",
+      "title": "Reach level 65",
+      "kind": "LEVEL",
+      "level": 65,
+      "detail": "Sethekk Halls and the Shadow Labyrinth both admit characters from level 65, though both are tuned for 68 to 70. Sethekk Halls is the eastern wing of Auchindoun in the Bone Wastes of Terokkar Forest; the Shadow Labyrinth gate is the southern one in the same courtyard. Plan to do this run around level 68 or later so Ikiss and the Labyrinth are worth the trip.",
+      "detectedBy": "UnitLevel('player') >= 65.",
+      "optional": false
+     },
+     {
+      "key": "kill_ikiss",
+      "title": "Defeat Talon King Ikiss in Sethekk Halls",
+      "kind": "KILL",
+      "instance": {
+       "name": "Sethekk Halls",
+       "instanceMapId": 556,
+       "heroic": false,
+       "boss": "Talon King Ikiss",
+       "npcIds": [
+        18473
+       ],
+       "zoneId": 3791,
+       "x": 32.6,
+       "y": 23.9,
+       "subzone": "Halls of Mourning"
+      },
+      "detail": "Enter Sethekk Halls (east wing of Auchindoun, Terokkar Forest, any difficulty) and clear through Darkweaver Syth to the final room, the Halls of Mourning, where Talon King Ikiss waits. Ikiss blinks across the room and follows each blink with a large Arcane Explosion, so spread out, keep health high, and break line of sight behind the pillars when he vanishes; he also polymorphs a random player. Normal mode is enough, and the coffer appears on heroic too. Bring the usual five with a tank, healer and three damage dealers; at 70 in dungeon gear the fight is short.",
+      "detectedBy": "COMBAT_LOG_EVENT_UNFILTERED UNIT_DIED for destGUID npc 18473 while GetInstanceInfo() reports instance map 556, or the key appearing in the keyring.",
+      "optional": false
+     },
+     {
+      "key": "loot_key",
+      "title": "Take the key from the Talon King's Coffer",
+      "kind": "ITEM",
+      "itemId": 27991,
+      "itemName": "Shadow Labyrinth Key",
+      "count": 1,
+      "object": {
+       "objectId": 187372,
+       "name": "The Talon King's Coffer",
+       "zoneId": 3791
+      },
+      "detail": "When Ikiss dies, The Talon King's Coffer (object 187372) spawns beside his body in the Halls of Mourning. Walk up and open it: it hands a Shadow Labyrinth Key to every party member who does not already own one, so nobody needs to roll. The key binds when picked up, is unique and lives on the keyring. Do not leave the room before everyone has opened the coffer, because a player who misses it must kill Ikiss again on another run.",
+      "detectedBy": "GetItemCount(27991, true) > 0 (the second argument includes the keyring).",
+      "optional": false
+     },
+     {
+      "key": "lockpick_alt",
+      "title": "Or bring a rogue with 350 Lockpicking",
+      "kind": "SKILL",
+      "skill": {
+       "name": "Lockpicking",
+       "skillLineId": 633,
+       "rank": 350
+      },
+      "detail": "The Shadow Labyrinth Gate is a lock-level 350 object, so a rogue whose Lockpicking is 350 can open it for the whole party without any key. This step and the key step are alternatives: either one satisfies the gate. Lockpicking caps at 350 at level 70 and is raised quickly on the locked adamantite chests in Outland dungeons or the footlockers in Zangarmarsh and Netherstorm.",
+      "detectedBy": "Player class is ROGUE and GetSkillLineInfo for Lockpicking (skill line 633) reports rank >= 350; treated as satisfied when this player can open the door, and as a hint otherwise.",
+      "optional": true
+     },
+     {
+      "key": "open_gate",
+      "title": "Open the south gate of Auchindoun",
+      "kind": "MANUAL",
+      "detail": "Ride into the Auchindoun courtyard in the Bone Wastes of Terokkar Forest (the Ring of Observance, roughly 35, 65 on the zone map) and go to the southern gate, which carries the Shadow Labyrinth name. With the key on your keyring simply right-click the gate; it opens for everyone with you, and the instance portal behind it performs no key check of its own. Only one key per party is needed, so one holder can escort a fresh group.",
+      "detectedBy": "GetInstanceInfo() reports instance map 555 (Shadow Labyrinth) at any point after the key is held.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/item/27991?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18473?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/object/187372?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Shadow_Labyrinth_Key",
+     "https://warcraft.wiki.gg/api.php?action=parse&page=The%20Talon%20King%27s%20Coffer (Elinks object 187372)",
+     "https://warcraft.wiki.gg/wiki/Lockpicking (via search snippet: Shadow Labyrinth Gate, Shattered Halls Door, Arcatraz Door all lock level 350)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/support/DropTables/tbcItemDrops.lua (27991 has no NPC drop entry)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua (lines 110, 591-595)"
+    ],
+    "notes": "Wowhead's Anniversary tooltip lists the key under Ikiss with a 24.9 percent figure; that is loot-report noise from the coffer, which gives one key per eligible player. Questie's TBC drop table has no NPC source for 27991, consistent with the coffer being the only source."
+   },
+   {
+    "key": "SHATTERED_HALLS_KEY",
+    "title": "Shattered Halls Key",
+    "category": "DUNGEON",
+    "faction": "BOTH",
+    "summary": "The Shattered Halls is the top wing of Hellfire Citadel and its door is locked. The key comes from a short four-quest chain that starts with a mold looted from Smith Gorlunk in Shadowmoon Valley, continues with your faction's smith in Hellfire Peninsula, and ends with killing a Fel Reaver so you can fire the mold in its remains. Only one key per party is needed, and a rogue with 350 Lockpicking can open the door instead.",
+    "unlocks": "Opens the Shattered Halls door at the summit of Hellfire Citadel for normal difficulty (heroic also needs the Flamewrought Key from Honor Hold or Thrallmar reputation).",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Available from Phase 1 and never lifted during TBC Classic or the Anniversary phases; the Phase 4 heroic-key relaxation concerns the Flamewrought Key, not this door. Removed from the game only in Cataclysm 4.0.3a."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_68",
+      "title": "Reach level 68",
+      "kind": "LEVEL",
+      "level": 68,
+      "detail": "The Primed Key Mold requires level 68 to begin its quest and Hotter than Hell is a level 70 group quest, so start this chain at 68 and expect to finish it at 70. Smith Gorlunk is a level 69 humanoid who can be soloed by most classes at 70, while the Fel Reaver is a level 70 elite that wants a small group.",
+      "detectedBy": "UnitLevel('player') >= 68.",
+      "optional": false
+     },
+     {
+      "key": "primed_key_mold",
+      "title": "Kill Smith Gorlunk for the Primed Key Mold",
+      "kind": "ITEM",
+      "itemId": 31239,
+      "item": {
+       "A": 31239,
+       "H": 31241
+      },
+      "itemName": "Primed Key Mold",
+      "count": 1,
+      "kill": {
+       "npcId": 22037,
+       "name": "Smith Gorlunk",
+       "zone": "Shadowmoon Valley",
+       "zoneId": 3520,
+       "x": 67.2,
+       "y": 36.4,
+       "subzone": "Ata'mal Terrace"
+      },
+      "detail": "Fly or ride to the Ata'mal Terrace, the raised platform east of the Black Temple in Shadowmoon Valley (67.2, 36.4), and kill Smith Gorlunk, a level 69 Illidari blacksmith who stands at his anvil among the Dragonmaw and Ashtongue guards. He drops the Primed Key Mold for your faction: Alliance characters receive item 31239 and Horde characters item 31241, both bind-on-pickup and unique, with the outline of Hellfire Citadel engraved on the back. Right-click the mold to accept Entry Into the Citadel. He respawns quickly, so a group can each take a turn.",
+      "detectedBy": "GetItemCount(31239) or GetItemCount(31241) > 0, or the Entry Into the Citadel quest (10754 Alliance / 10755 Horde) already in the log or completed, since the mold is handed in.",
+      "optional": false
+     },
+     {
+      "key": "entry_into_citadel",
+      "title": "Turn in Entry Into the Citadel at your Hellfire base",
+      "kind": "QUEST",
+      "quest": {
+       "A": 10754,
+       "H": 10755
+      },
+      "questName": "Entry Into the Citadel",
+      "giver": {
+       "item": true,
+       "itemId": 31239,
+       "itemIdHorde": 31241,
+       "name": "Primed Key Mold (the item starts the quest)"
+      },
+      "turnIn": {
+       "A": {
+        "npcId": 16819,
+        "name": "Force Commander Danath Trollbane",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 56.6,
+        "y": 66.4
+       },
+       "H": {
+        "npcId": 3230,
+        "name": "Nazgrel",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 55,
+        "y": 36,
+        "approximate": true
+       }
+      },
+      "detail": "Carry the mold to Hellfire Peninsula. Alliance players hand it to Force Commander Danath Trollbane inside the keep at Honor Hold (56.6, 66.4); Horde players hand it to Nazgrel at the back of the Thrallmar stronghold behind General Krakork (about 55, 36). The commander recognises the engraving as the Shattered Halls door and sends you to the camp's master blacksmith with the follow-up quest.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10754) for Alliance or (10755) for Horde.",
+      "optional": false
+     },
+     {
+      "key": "grand_master_smith",
+      "title": "Show the mold to Grand Master Dumphry or Rohok",
+      "kind": "QUEST",
+      "quest": {
+       "A": 10762,
+       "H": 10756
+      },
+      "questName": "Grand Master Dumphry (A) / Grand Master Rohok (H)",
+      "giver": {
+       "A": {
+        "npcId": 16819,
+        "name": "Force Commander Danath Trollbane",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 56.6,
+        "y": 66.4
+       },
+       "H": {
+        "npcId": 3230,
+        "name": "Nazgrel",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 55,
+        "y": 36,
+        "approximate": true
+       }
+      },
+      "turnIn": {
+       "A": {
+        "npcId": 16823,
+        "name": "Humphry (Grand Master Dumphry)",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 56.8,
+        "y": 63.8
+       },
+       "H": {
+        "npcId": 16583,
+        "name": "Rohok",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 53.2,
+        "y": 38.2
+       }
+      },
+      "detail": "Take the mold (the quest hands you the provided copy, item 31245) to your faction's Master Blacksmithing trainer. For the Alliance that is the dwarf at the anvil just north-west of the Honor Hold keep (56.8, 63.8); the quest calls him Dumphry but the NPC nameplate reads Humphry. For the Horde it is Rohok at the forge in Thrallmar (53.2, 38.2). He agrees to cast a key from the mold once you fetch the materials.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10762) for Alliance or (10756) for Horde.",
+      "optional": false
+     },
+     {
+      "key": "smiths_request",
+      "title": "Bring Fel Iron, Arcane Dust and Motes of Fire",
+      "kind": "QUEST",
+      "quest": {
+       "A": 10763,
+       "H": 10757
+      },
+      "questName": "Dumphry's Request (A) / Rohok's Request (H)",
+      "giver": {
+       "A": {
+        "npcId": 16823,
+        "name": "Humphry",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 56.8,
+        "y": 63.8
+       },
+       "H": {
+        "npcId": 16583,
+        "name": "Rohok",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 53.2,
+        "y": 38.2
+       }
+      },
+      "turnIn": {
+       "A": {
+        "npcId": 16823,
+        "name": "Humphry",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 56.8,
+        "y": 63.8
+       },
+       "H": {
+        "npcId": 16583,
+        "name": "Rohok",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 53.2,
+        "y": 38.2
+       }
+      },
+      "materials": [
+       {
+        "itemId": 23445,
+        "itemName": "Fel Iron Bar",
+        "count": 4
+       },
+       {
+        "itemId": 22445,
+        "itemName": "Arcane Dust",
+        "count": 2
+       },
+       {
+        "itemId": 22574,
+        "itemName": "Mote of Fire",
+        "count": 4
+       }
+      ],
+      "detail": "The smith needs 4 Fel Iron Bars (item 23445), 2 Arcane Dust (22445) and 4 Motes of Fire (22574). All three are cheap on the auction house; otherwise Fel Iron Ore is mined all over Hellfire Peninsula and Zangarmarsh and smelted by any miner, Arcane Dust comes from disenchanting Outland greens, and Motes of Fire drop from the fire elementals at the Throne of Kil'jaeden in north-east Hellfire or the Hand of Gul'dan in Shadowmoon Valley. Hand everything to the same smith; he gives you the Unfired Key Mold for the last step.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10763) for Alliance or (10757) for Horde; while in progress, GetItemCount for the three materials shows how far along the player is.",
+      "optional": false
+     },
+     {
+      "key": "hotter_than_hell",
+      "title": "Fire the mold in a dead Fel Reaver",
+      "kind": "QUEST",
+      "quest": {
+       "A": 10764,
+       "H": 10758
+      },
+      "questName": "Hotter than Hell",
+      "giver": {
+       "A": {
+        "npcId": 16823,
+        "name": "Humphry",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 56.8,
+        "y": 63.8
+       },
+       "H": {
+        "npcId": 16583,
+        "name": "Rohok",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 53.2,
+        "y": 38.2
+       }
+      },
+      "turnIn": {
+       "A": {
+        "npcId": 16823,
+        "name": "Humphry",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 56.8,
+        "y": 63.8
+       },
+       "H": {
+        "npcId": 16583,
+        "name": "Rohok",
+        "zone": "Hellfire Peninsula",
+        "zoneId": 3483,
+        "x": 53.2,
+        "y": 38.2
+       }
+      },
+      "kill": {
+       "npcId": 18733,
+       "name": "Fel Reaver",
+       "zone": "Hellfire Peninsula",
+       "zoneId": 3483,
+       "roams": true,
+       "x": 48,
+       "y": 55,
+       "approximate": true
+      },
+      "providedItem": {
+       "itemId": 31251,
+       "itemName": "Unfired Key Mold"
+      },
+      "requiredItem": {
+       "itemId": 31252,
+       "itemName": "Charred Key Mold"
+      },
+      "detail": "Hotter than Hell is a level 70 three-player group quest. Find a Fel Reaver, the giant level 70 elite machine that stomps across the whole of Hellfire Peninsula (Wowhead records more than five hundred spawn points from the far west near Expedition Point to the eastern Throne of Kil'jaeden; listen for its roar and look for a giant on the minimap). Pull it with a tank and healer, kill it, and immediately use the Unfired Key Mold (item 31251) while standing at its remains; the mold turns into the Charred Key Mold (31252). Use the mold straight away because the corpse does not last long, and every player on the quest can plunge their own mold into the same corpse. Return the charred mold to the smith and he hands over the Shattered Halls Key.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10764) for Alliance or (10758) for Horde; GetItemCount(31252) > 0 shows the Fel Reaver part is done before the turn-in.",
+      "optional": false
+     },
+     {
+      "key": "shattered_halls_key",
+      "title": "Hold the Shattered Halls Key",
+      "kind": "ITEM",
+      "itemId": 28395,
+      "itemName": "Shattered Halls Key",
+      "count": 1,
+      "detail": "The reward for Hotter than Hell is the Shattered Halls Key (item 28395), bind-on-pickup, unique, stored on the keyring. One key per party is enough: the locked door stands outside the instance portal, so whoever holds it opens the way and the rest simply walk through. If you destroy it, the smith does not offer the chain again, so keep it on the keyring.",
+      "detectedBy": "GetItemCount(28395, true) > 0.",
+      "optional": false
+     },
+     {
+      "key": "lockpick_alt",
+      "title": "Or bring a rogue with 350 Lockpicking",
+      "kind": "SKILL",
+      "skill": {
+       "name": "Lockpicking",
+       "skillLineId": 633,
+       "rank": 350
+      },
+      "detail": "The Shattered Halls Door is lock level 350, so a level 70 rogue with maxed Lockpicking opens it for the party without the key. This and the key step are alternatives; a group needs one or the other, not both.",
+      "detectedBy": "Player class is ROGUE and Lockpicking (skill line 633) rank >= 350.",
+      "optional": true
+     },
+     {
+      "key": "open_door",
+      "title": "Open the Shattered Halls door atop Hellfire Citadel",
+      "kind": "MANUAL",
+      "detail": "Enter Hellfire Citadel from the courtyard in the middle of Hellfire Peninsula (around 47, 53), where the Hellfire Ramparts and Blood Furnace portals are. Take the long central ramp up the citadel to its summit; the Shattered Halls door is the large gate at the top, directly in front of the instance portal. Right-click it with the key on your keyring and lead the party in. The dungeon is a level 70 instance with a minimum entry level of 65.",
+      "detectedBy": "GetInstanceInfo() reports instance map 540 (The Shattered Halls) at any point after the key is held.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10754?dataEnv=5&locale=0 (and 10755, 10756, 10757, 10758, 10762, 10763, 10764)",
+     "https://nether.wowhead.com/tooltip/item/28395?dataEnv=5&locale=0 (and 31239, 31241, 31245, 31251, 31252, 23445, 22445, 22574, 28394 which is Ryngo's Band of Ingenuity)",
+     "https://nether.wowhead.com/tooltip/npc/22037?dataEnv=5&locale=0 (and 18733, 16819, 16823, 16583, 3230)",
+     "https://warcraft.wiki.gg/wiki/Shattered_Halls_Key",
+     "https://warcraft.wiki.gg/api.php?action=parse&page=Primed%20Key%20Mold (Elinks-versions: Alliance starter 31239, Horde starter 31241, Provided 31245)",
+     "https://warcraft.wiki.gg/wiki/Thrallmar",
+     "https://www.warcrafttavern.com/tbc/guides/horde-leveling-guide-hellfire-peninsula-level-58-61/ (search snippet placing Nazgrel at 55, 36)",
+     "https://wowclassicdb.com/tbc/quest/10758 (search snippet: required level 68, recommended 70)"
+    ],
+    "notes": "Chain order per faction: Alliance 10754 -> 10762 -> 10763 -> 10764; Horde 10755 -> 10756 -> 10757 -> 10758. The quest text names the Alliance smith Dumphry but the NPC (16823) is called Humphry in game. The task's suggested mold id 28394 is wrong (it is a ring); the molds are 31239/31241/31245, 31251 and 31252."
+   },
+   {
+    "key": "ARCATRAZ_KEY",
+    "title": "Key to the Arcatraz",
+    "category": "DUNGEON",
+    "faction": "BOTH",
+    "summary": "The Arcatraz is the prison satellite of Tempest Keep in Netherstorm and its door is locked. The key comes from a long Consortium chain that starts at Area 52, moves through Eco-Dome Midrealm and the Stormspire, triangulates an ata'mal crystal, delivers it to A'dal, and ends with two boss kills in the Mechanar and the Botanica. You need flying to reach any of the Tempest Keep dungeons, and a rogue with 350 Lockpicking can open the door instead of the key.",
+    "unlocks": "Opens the Arcatraz door on normal difficulty, which is also where the third Karazhan key fragment and the Kael'thas attunement visit to Seer Udalo take place (heroic also needs the Warpforged Key from The Sha'tar).",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Available from Phase 1 and never lifted on TBC Classic or the Anniversary realms; the Phase 4 changes relax heroic keys and raid attunements only. The key stopped being required in Cataclysm 4.0.3a. Earlier steps also award Consortium reputation."
+    },
+    "prerequisites": [
+     "FLYING_BASIC"
+    ],
+    "steps": [
+     {
+      "key": "level_67",
+      "title": "Reach level 67",
+      "kind": "LEVEL",
+      "level": 67,
+      "detail": "The Consortium quests at Area 52 open around level 67, which is also when most players reach Netherstorm. Full Triangle and the two dungeon bosses are level 70 content, and you need Expert Riding (level 70, or Flight Form at 68 for druids) before the final step, so the chain is normally finished at 70.",
+      "detectedBy": "UnitLevel('player') >= 67.",
+      "optional": false
+     },
+     {
+      "key": "assisting_consortium",
+      "title": "Accept Assisting the Consortium in the Area 52 inn",
+      "kind": "QUEST",
+      "questId": null,
+      "quest": {
+       "ALDOR": 10263,
+       "SCRYERS": 10264
+      },
+      "questAnyOf": [
+       10263,
+       10264
+      ],
+      "questName": "Assisting the Consortium",
+      "giver": {
+       "ALDOR": {
+        "npcId": 19467,
+        "name": "Anchorite Karja",
+        "zone": "Netherstorm",
+        "zoneId": 3523,
+        "x": 32,
+        "y": 64.2
+       },
+       "SCRYERS": {
+        "npcId": 19468,
+        "name": "Spymaster Thalodien",
+        "zone": "Netherstorm",
+        "zoneId": 3523,
+        "x": 32,
+        "y": 64
+       }
+      },
+      "turnIn": {
+       "npcId": 19880,
+       "name": "Nether-Stalker Khay'ji",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 32.4,
+       "y": 64.2
+      },
+      "detail": "This breadcrumb is optional. Inside the Area 52 inn, Anchorite Karja offers it to Aldor characters (quest 10263) and Spymaster Thalodien to Scryers (10264); both send you to Nether-Stalker Khay'ji, who stands just outside the inn door. If you have not chosen a Shattrath faction, or the breadcrumb is not shown, you can skip it and talk to Khay'ji directly for Consortium Crystal Collection.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10263) or (10264); step is optional and may be skipped.",
+      "optional": true
+     },
+     {
+      "key": "crystal_collection",
+      "title": "Kill Pentatharon for the Arklon Crystal Artifact",
+      "kind": "QUEST",
+      "questId": 10265,
+      "questName": "Consortium Crystal Collection",
+      "giver": {
+       "npcId": 19880,
+       "name": "Nether-Stalker Khay'ji",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 32.4,
+       "y": 64.2
+      },
+      "turnIn": {
+       "npcId": 19880,
+       "name": "Nether-Stalker Khay'ji",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 32.4,
+       "y": 64.2
+      },
+      "kill": {
+       "npcId": 20215,
+       "name": "Pentatharon",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 42.2,
+       "y": 72.4,
+       "subzone": "Arklon Ruins"
+      },
+      "requiredItem": {
+       "itemId": 28829,
+       "itemName": "Arklon Crystal Artifact",
+       "count": 1
+      },
+      "detail": "Khay'ji wants an Arklon Crystal Artifact (item 28829). Ride south-east from Area 52 to the Arklon Ruins (42, 72), the old draenei ruins on the plateau, and kill Pentatharon, a level 69 dreadlord who patrols among the ruins' demons; he drops the artifact roughly nine times in ten. He is soloable at 68 to 70 with a defensive cooldown, and the ruins are shared with other Area 52 quests so do them in one trip. Return to Khay'ji.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10265); GetItemCount(28829) > 0 shows the kill is done.",
+      "optional": false
+     },
+     {
+      "key": "heap_of_ethereals",
+      "title": "Collect 10 Zaxxis Insignias at The Heap",
+      "kind": "QUEST",
+      "questId": 10262,
+      "questName": "A Heap of Ethereals",
+      "giver": {
+       "npcId": 19880,
+       "name": "Nether-Stalker Khay'ji",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 32.4,
+       "y": 64.2
+      },
+      "turnIn": {
+       "npcId": 19880,
+       "name": "Nether-Stalker Khay'ji",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 32.4,
+       "y": 64.2
+      },
+      "requiredItem": {
+       "itemId": 29209,
+       "itemName": "Zaxxis Insignia",
+       "count": 10
+      },
+      "mobs": [
+       {
+        "npcId": 18875,
+        "name": "Zaxxis Raider"
+       },
+       {
+        "npcId": 19642,
+        "name": "Zaxxis Stalker"
+       },
+       {
+        "npcId": 20287,
+        "name": "Zaxxis Ambusher"
+       },
+       {
+        "npcId": 19641,
+        "name": "Warp-Raider Nesaad"
+       }
+      ],
+      "location": {
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 27,
+       "y": 79,
+       "subzone": "The Heap"
+      },
+      "detail": "Go to The Heap, the ethereal scrapyard south-west of Area 52 (about 26 to 29, 77 to 81), and kill Zaxxis Raiders, Zaxxis Stalkers and Zaxxis Ambushers until you hold 10 Zaxxis Insignias (item 29209, roughly a 60 percent drop). Do this together with the next step, because Warp-Raider Nesaad lives in the same camp and also carries insignias. Spare insignias are not wasted: Khay'ji later takes them in the repeatable Another Heap of Ethereals for Consortium reputation.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10262); while active, GetItemCount(29209) out of 10.",
+      "optional": false
+     },
+     {
+      "key": "warp_raider_nesaad",
+      "title": "Kill Warp-Raider Nesaad",
+      "kind": "QUEST",
+      "questId": 10205,
+      "questName": "Warp-Raider Nesaad",
+      "giver": {
+       "npcId": 19880,
+       "name": "Nether-Stalker Khay'ji",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 32.4,
+       "y": 64.2
+      },
+      "turnIn": {
+       "npcId": 19880,
+       "name": "Nether-Stalker Khay'ji",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 32.4,
+       "y": 64.2
+      },
+      "kill": {
+       "npcId": 19641,
+       "name": "Warp-Raider Nesaad",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 28,
+       "y": 78.4,
+       "subzone": "The Heap"
+      },
+      "detail": "Warp-Raider Nesaad is a level 69 ethereal who walks among the Zaxxis at The Heap (28, 78), south-west of Area 52. He hits harder than his guards but is soloable; pull him away from the Stalkers and Ambushers, or kill the nearby pack first. This quest can be taken at the same time as A Heap of Ethereals and the two are done in one visit. Report back to Khay'ji.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10205).",
+      "optional": false
+     },
+     {
+      "key": "request_for_assistance",
+      "title": "Report to Gahruj at Eco-Dome Midrealm",
+      "kind": "QUEST",
+      "questId": 10266,
+      "questName": "Request for Assistance",
+      "giver": {
+       "npcId": 19880,
+       "name": "Nether-Stalker Khay'ji",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 32.4,
+       "y": 64.2
+      },
+      "turnIn": {
+       "npcId": 20066,
+       "name": "Gahruj",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 46.6,
+       "y": 57,
+       "subzone": "Midrealm Post, Eco-Dome Midrealm"
+      },
+      "detail": "Khay'ji sends you to Gahruj at the Midrealm Post, the small Consortium camp just inside the southern entrance of Eco-Dome Midrealm (46.6, 57.0), north-east of Area 52 along the road. Simply speak to him to complete the quest and pick up Rightful Repossession.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10266).",
+      "optional": false
+     },
+     {
+      "key": "rightful_repossession",
+      "title": "Recover 10 Boxes of Surveying Equipment at Manaforge Duro",
+      "kind": "QUEST",
+      "questId": 10267,
+      "questName": "Rightful Repossession",
+      "giver": {
+       "npcId": 20066,
+       "name": "Gahruj",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 46.6,
+       "y": 57
+      },
+      "turnIn": {
+       "npcId": 20066,
+       "name": "Gahruj",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 46.6,
+       "y": 57
+      },
+      "requiredItem": {
+       "itemId": 28913,
+       "itemName": "Box of Surveying Equipment",
+       "count": 10
+      },
+      "location": {
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "subzone": "Manaforge Duro",
+       "x": 60,
+       "y": 62,
+       "approximate": true
+      },
+      "detail": "Follow the road south-east out of Eco-Dome Midrealm to Manaforge Duro, the blood elf manaforge on the floating island directly west of Tempest Keep. The Boxes of Surveying Equipment (item 28913, stackable to 20) are crates lying on the ground around the manaforge and its camps, guarded by Sunfury blood elves of level 68 to 70; loot ten of them. Clear the elves near each crate rather than fighting through the whole base, and pick up the other Duro quests from the Stormspire first if you want to save a trip. Return to Gahruj.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10267); while active, GetItemCount(28913) out of 10.",
+      "optional": false
+     },
+     {
+      "key": "audience_with_prince",
+      "title": "Deliver the equipment to the Image of Nexus-Prince Haramad",
+      "kind": "QUEST",
+      "questId": 10268,
+      "questName": "An Audience with the Prince",
+      "giver": {
+       "npcId": 20066,
+       "name": "Gahruj",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 46.6,
+       "y": 57
+      },
+      "turnIn": {
+       "npcId": 20084,
+       "name": "Image of Nexus-Prince Haramad",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 45.8,
+       "y": 36,
+       "subzone": "The Stormspire"
+      },
+      "detail": "Carry the surveying equipment north to the Stormspire, the ethereal city in the middle of northern Netherstorm. Take the ramps to the top; the Image of Nexus-Prince Haramad (45.8, 36.0) floats inside the building beside the flight master. Speak to him to finish the quest; he then gives you the Triangulation Device and the two triangulation quests.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10268).",
+      "optional": false
+     },
+     {
+      "key": "triangulation_one",
+      "title": "Find Triangulation Point One near Manaforge Ultris",
+      "kind": "QUEST",
+      "questId": 10269,
+      "questName": "Triangulation Point One",
+      "giver": {
+       "npcId": 20084,
+       "name": "Image of Nexus-Prince Haramad",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 45.8,
+       "y": 36
+      },
+      "turnIn": {
+       "npcId": 20092,
+       "name": "Dealer Hazzin",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 58.4,
+       "y": 31.4,
+       "subzone": "Protectorate Watch Post"
+      },
+      "providedItem": {
+       "itemId": 29018,
+       "itemName": "Triangulation Device"
+      },
+      "location": {
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 66,
+       "y": 33.8,
+       "approximate": true
+      },
+      "detail": "Fly or ride east from the Stormspire across the bridge to the Manaforge Ultris island. Within about a hundred yards of the first point (roughly 66.0, 33.8, east of the manaforge) use the Triangulation Device (item 29018, five second cooldown); it faces you toward the point and, once you are close, projects a holographic marker. Walk into the marker to get credit for First triangulation point discovered, then hand in to Dealer Hazzin at the Protectorate Watch Post by the north-west bridge of the island (58.4, 31.4). Watch for the void creatures around Ultris.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10269).",
+      "optional": false
+     },
+     {
+      "key": "triangulation_two",
+      "title": "Find Triangulation Point Two near Manaforge Ara",
+      "kind": "QUEST",
+      "questId": 10275,
+      "questName": "Triangulation Point Two",
+      "giver": {
+       "npcId": 20092,
+       "name": "Dealer Hazzin",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 58.4,
+       "y": 31.4
+      },
+      "turnIn": {
+       "npcId": 20112,
+       "name": "Wind Trader Tuluman",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 34.4,
+       "y": 38,
+       "subzone": "Tuluman's Landing"
+      },
+      "location": {
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 28.9,
+       "y": 41.2,
+       "approximate": true
+      },
+      "detail": "Cross Netherstorm to the far west: Manaforge Ara sits on the western island, reached by the bridge from Tuluman's Landing. The second point is at roughly 28.9, 41.2 beside the manaforge; use the Triangulation Device again within a hundred yards, follow the arrow, and step into the holographic marker. Then return across the bridge to Wind Trader Tuluman at Tuluman's Landing (34.4, 38.0) to report the second point. Manaforge Ara is full of level 68 to 70 Sunfury and fel orcs, so skirt the edges.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10275).",
+      "optional": false
+     },
+     {
+      "key": "full_triangle",
+      "title": "Kill Culuthas for the Ata'mal Crystal",
+      "kind": "QUEST",
+      "questId": 10276,
+      "questName": "Full Triangle",
+      "giver": {
+       "npcId": 20112,
+       "name": "Wind Trader Tuluman",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 34.4,
+       "y": 38
+      },
+      "turnIn": {
+       "npcId": 20084,
+       "name": "Image of Nexus-Prince Haramad",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 45.8,
+       "y": 36
+      },
+      "kill": {
+       "npcId": 20138,
+       "name": "Culuthas",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 53.4,
+       "y": 21.4,
+       "subzone": "Ruins of Farahlon"
+      },
+      "requiredItem": {
+       "itemId": 29026,
+       "itemName": "Ata'mal Crystal",
+       "count": 1,
+       "alsoAccept": [
+        29106,
+        31087
+       ]
+      },
+      "detail": "The triangle points to the Ruins of Farahlon in north-eastern Netherstorm. Culuthas, a level 70 elite demon, stands among the ruins at about 53.4, 21.4 guarded by packs of Hounds and Eyes of Culuthas (49 to 52, 19 to 25). This is a group quest: bring at least one partner, or a well geared level 70 with cooldowns, and pull Culuthas away from the hounds. He drops the Ata'mal Crystal (item 29026) about nine times in ten. Take the crystal back to the Image of Nexus-Prince Haramad at the Stormspire.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10276); GetItemCount(29026) > 0 (or 29106 / 31087) shows the kill is done before the turn-in.",
+      "optional": false
+     },
+     {
+      "key": "special_delivery",
+      "title": "Deliver the Ata'mal Crystal to A'dal in Shattrath",
+      "kind": "QUEST",
+      "questId": 10280,
+      "questName": "Special Delivery to Shattrath City",
+      "giver": {
+       "npcId": 20084,
+       "name": "Image of Nexus-Prince Haramad",
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 45.8,
+       "y": 36
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "zoneId": 3703,
+       "x": 54,
+       "y": 44.6,
+       "subzone": "Terrace of Light"
+      },
+      "detail": "Haramad asks you to carry the crystal to A'dal, the naaru in the centre of the Terrace of Light in Shattrath City (54.0, 44.6). Take the Stormspire or Area 52 flight path to Shattrath and speak to A'dal; he explains that the crystal is one of the ata'mal shards and offers How to Break Into the Arcatraz.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10280).",
+      "optional": false
+     },
+     {
+      "key": "kill_warp_splinter",
+      "title": "Kill Warp Splinter in the Botanica for the Top Shard",
+      "kind": "KILL",
+      "questId": 10704,
+      "instance": {
+       "name": "The Botanica",
+       "instanceMapId": 553,
+       "heroic": false,
+       "boss": "Warp Splinter",
+       "npcIds": [
+        17977
+       ],
+       "zoneId": 3847,
+       "x": 36.3,
+       "y": 39.8
+      },
+      "requiredItem": {
+       "itemId": 31085,
+       "itemName": "Top Shard of the Arcatraz Key",
+       "count": 1
+      },
+      "detail": "With How to Break Into the Arcatraz in your log, fly up to the Botanica, the garden satellite of Tempest Keep in eastern Netherstorm, and clear it to the final boss Warp Splinter, a level 72 elite treant. He summons saplings that walk to him and heal him, so kill or kite the saplings away and burn him between summons. He drops the Top Shard of the Arcatraz Key (item 31085) for everyone on the quest. This step and the Mechanar step can be done in either order; both instances have a minimum entry level of 65 and need flying to reach (or a warlock summon).",
+      "detectedBy": "GetItemCount(31085) > 0, or UNIT_DIED for npc 17977 while in instance map 553 with quest 10704 active.",
+      "optional": false
+     },
+     {
+      "key": "kill_pathaleon",
+      "title": "Kill Pathaleon the Calculator in the Mechanar for the Bottom Shard",
+      "kind": "KILL",
+      "questId": 10704,
+      "instance": {
+       "name": "The Mechanar",
+       "instanceMapId": 554,
+       "heroic": false,
+       "boss": "Pathaleon the Calculator",
+       "npcIds": [
+        19220
+       ],
+       "zoneId": 3849,
+       "x": 37.7,
+       "y": 18.4
+      },
+      "requiredItem": {
+       "itemId": 31086,
+       "itemName": "Bottom Shard of the Arcatraz Key",
+       "count": 1
+      },
+      "detail": "Fly to the Mechanar, the lower satellite of Tempest Keep, and clear it past the Gatewatchers, Nethermancer Sepethrea and the elevator gauntlet to Pathaleon the Calculator, a level 72 elite blood elf. He summons Nether Wraiths that must be killed quickly and later mind-controls a player; at low health he enrages with Disgruntled Anger, so save cooldowns for the end. He drops the Bottom Shard of the Arcatraz Key (item 31086) for everyone on the quest. Do this in either order with the Botanica step.",
+      "detectedBy": "GetItemCount(31086) > 0, or UNIT_DIED for npc 19220 while in instance map 554 with quest 10704 active.",
+      "optional": false
+     },
+     {
+      "key": "break_into_arcatraz",
+      "title": "Return both shards to A'dal",
+      "kind": "QUEST",
+      "questId": 10704,
+      "questName": "How to Break Into the Arcatraz",
+      "giver": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "zoneId": 3703,
+       "x": 54,
+       "y": 44.6
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "zoneId": 3703,
+       "x": 54,
+       "y": 44.6
+      },
+      "detail": "Once you hold both the Top and Bottom Shards, return to A'dal on the Terrace of Light. He fuses them into the Key to the Arcatraz and hands it over. This quest requires level 70 and is the last required step; the Arcatraz quest Harbinger of Doom that follows is optional.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10704).",
+      "optional": false
+     },
+     {
+      "key": "arcatraz_key",
+      "title": "Hold the Key to the Arcatraz",
+      "kind": "ITEM",
+      "itemId": 31084,
+      "itemName": "Key to the Arcatraz",
+      "count": 1,
+      "detail": "The Key to the Arcatraz (item 31084, bind-on-pickup, unique, keyring) unlocks the Arcatraz satellite of Tempest Keep. One key per party is enough because the locked door stands outside the instance portal. If you ever lose it, A'dal will give a replacement to a character who completed the quest.",
+      "detectedBy": "GetItemCount(31084, true) > 0.",
+      "optional": false
+     },
+     {
+      "key": "lockpick_alt",
+      "title": "Or bring a rogue with 350 Lockpicking",
+      "kind": "SKILL",
+      "skill": {
+       "name": "Lockpicking",
+       "skillLineId": 633,
+       "rank": 350
+      },
+      "detail": "The Arcatraz Door is lock level 350; a level 70 rogue with Lockpicking at 350 opens it for the whole party without the key. This and the key step are alternatives. The rogue still needs flying or a summon to reach the platform.",
+      "detectedBy": "Player class is ROGUE and Lockpicking (skill line 633) rank >= 350.",
+      "optional": true
+     },
+     {
+      "key": "open_door",
+      "title": "Open the Arcatraz door on Tempest Keep",
+      "kind": "MANUAL",
+      "detail": "Tempest Keep is the great naaru fortress in eastern Netherstorm (around 74, 65). Fly up to the Arcatraz satellite, the tallest of the three dungeon platforms; the locked Arcatraz door stands in front of the instance portal on its landing. Right-click it with the key on your keyring and the party can enter. Players without flying can be summoned by a warlock inside, or through the meeting stone once two party members are already on the platform.",
+      "detectedBy": "GetInstanceInfo() reports instance map 552 (The Arcatraz) at any point after the key is held.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10265?dataEnv=5&locale=0 (and 10205, 10262, 10263, 10264, 10266, 10267, 10268, 10269, 10275, 10276, 10280, 10704)",
+     "https://nether.wowhead.com/tooltip/item/31084?dataEnv=5&locale=0 (and 31085, 31086, 31087, 28829, 28913, 29018, 29026, 29106, 29209)",
+     "https://nether.wowhead.com/tooltip/npc/19880?dataEnv=5&locale=0 (and 19467, 19468, 20215, 18875, 19641, 19642, 20287, 20066, 20084, 20092, 20112, 20138, 18481, 17977, 19220)",
+     "https://warcraft.wiki.gg/wiki/Key_to_the_Arcatraz",
+     "https://warcraft.wiki.gg/wiki/Culuthas",
+     "https://warcraft.wiki.gg/wiki/Warp-Raider_Nesaad",
+     "https://warcraft.wiki.gg/wiki/Consortium_Crystal_Collection",
+     "https://warcraft.wiki.gg/wiki/A_Heap_of_Ethereals",
+     "https://warcraft.wiki.gg/wiki/Rightful_Repossession",
+     "https://warcraft.wiki.gg/wiki/Triangulation_Point_One and /Triangulation_Point_Two (search snippets: points at 66, 33.8 and 28.9, 41.2)",
+     "https://warcraft.wiki.gg/api.php?action=parse&page=Full%20Triangle (Culuthas at 53.4, 21.4), Arklon%20Crystal%20Artifact (item 28829), Ata%27mal%20Crystal (item 29106), Manaforge%20Duro, Tempest%20Keep",
+     "https://www.warcrafttavern.com/tbc/guides/arcatraz-attunement/",
+     "https://icy-veins.com/tbc-classic/the-arcatraz-quests-guide (search snippet)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/support/DropTables/tbcItemDrops.lua (lines 18172-18206, 18927-18932: 28829 from 20215, 29026 from 20138, 29209 from 18875/19641/19642, 31085 from 17977, 31086 from 19220)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua (line 128: flying needed for Arcatraz)"
+    ],
+    "notes": "Confirmed order: (10263 or 10264) -> 10265 -> 10262 -> 10205 -> 10266 -> 10267 -> 10268 -> 10269 -> 10275 -> 10276 -> 10280 -> 10704. The ids suggested in the task (10422-10427, 10704-10707) belong to other Netherstorm and Akama quests; only 10704 was correct. Three items are named Ata'mal Crystal; Questie's TBC drop table ties 29026 to Culuthas, so the addon should accept any of 29026, 29106 and 31087."
+   },
+   {
+    "key": "FLYING_BASIC",
+    "title": "Expert Riding and a Flying Mount",
+    "category": "FLYING",
+    "faction": "BOTH",
+    "summary": "Flying in Outland needs the Expert Riding skill, trained only at level 70 from the two flight trainers in Shadowmoon Valley, plus a 60 percent flying mount sold next to the trainer. Together they cost about 900 gold. Flying is not a luxury: the Mechanar, Botanica and Arcatraz portals sit on Tempest Keep platforms that nothing but a flying mount, Flight Form or a warlock summon can reach.",
+    "unlocks": "Lets you fly anywhere in Outland, reach the three Tempest Keep dungeons, the Ogri'la and Skyguard plateaus and many level 70 quest hubs, and it is the prerequisite for Artisan Riding and the Netherwing and Skyguard mounts.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Flying mounts arrived with Phase 1 of the Anniversary TBC realms on 5 February 2026 (patch 2.5.5). Swift Flight Form for druids came with Phase 2 (14 May 2026). Nothing in later phases changes the level 70 requirement or the price."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_70",
+      "title": "Reach level 70 (68 for druid Flight Form)",
+      "kind": "LEVEL",
+      "level": 70,
+      "detail": "Expert Riding cannot be bought before level 70 on the TBC client, and it cannot be pre-purchased in the pre-patch. Druids are the exception: Flight Form is trained at level 68 and gives the same 60 percent flight. Start saving gold during the 60 to 70 climb, because the skill and mount together cost about 900 gold.",
+      "detectedBy": "UnitLevel('player') >= 70, or >= 68 when the class is DRUID.",
+      "optional": false
+     },
+     {
+      "key": "expert_riding",
+      "title": "Train Expert Riding in Shadowmoon Valley",
+      "kind": "SPELL",
+      "spellId": 34090,
+      "spellName": "Expert Riding (riding skill 225)",
+      "cost": "800 gold",
+      "giver": {
+       "A": {
+        "npcId": 20511,
+        "name": "Ilsa Blusterbrew",
+        "zone": "Shadowmoon Valley",
+        "zoneId": 3520,
+        "x": 37.4,
+        "y": 56.2,
+        "subzone": "Wildhammer Stronghold"
+       },
+       "H": {
+        "npcId": 20500,
+        "name": "Olrokk",
+        "zone": "Shadowmoon Valley",
+        "zoneId": 3520,
+        "x": 29.2,
+        "y": 29.2,
+        "subzone": "Shadowmoon Village"
+       }
+      },
+      "detail": "Travel to Shadowmoon Valley. Alliance players learn Expert Riding from Ilsa Blusterbrew at the gryphon stables of Wildhammer Stronghold (37.4, 56.2); Horde players from Olrokk at the wyvern stables of Shadowmoon Village (29.2, 29.2). The skill costs 800 gold at level 70 and raises riding to 225, which allows 60 percent speed flight in Outland only. On the Anniversary client there are no flying trainers in Hellfire Peninsula: Hargen Bronzewing and Wind Rider Jahubo were added in Wrath patch 3.2 and do not exist in this database. Artisan Riding (spell 34091, 5000 gold) is the later upgrade to 280 percent flight.",
+      "detectedBy": "IsSpellKnown(34090) or IsPlayerSpell(34090); alternatively GetSkillLineInfo for Riding reports rank >= 225.",
+      "optional": false
+     },
+     {
+      "key": "flight_form",
+      "title": "Druids: learn Flight Form at 68 instead",
+      "kind": "SPELL",
+      "spellId": 33943,
+      "spellName": "Flight Form",
+      "detail": "Druids train Flight Form from any druid trainer at level 68 for a few gold; it is an instant shapeshift giving 60 percent flight in Outland and does not require Expert Riding on the TBC client. A druid with Flight Form can skip the trainer and the mount purchase entirely and still reach Tempest Keep. Swift Flight Form (280 percent) at level 70 needs Artisan Riding plus the Phase 2 quest chain.",
+      "detectedBy": "IsSpellKnown(33943); satisfies the guide in place of Expert Riding plus a mount when the class is DRUID.",
+      "optional": true
+     },
+     {
+      "key": "flying_mount",
+      "title": "Buy a 60 percent flying mount",
+      "kind": "ITEM",
+      "itemId": null,
+      "items": {
+       "A": [
+        {
+         "itemId": 25470,
+         "itemName": "Golden Gryphon",
+         "spellId": 32235
+        },
+        {
+         "itemId": 25471,
+         "itemName": "Ebon Gryphon",
+         "spellId": 32239
+        },
+        {
+         "itemId": 25472,
+         "itemName": "Snowy Gryphon",
+         "spellId": 32240
+        }
+       ],
+       "H": [
+        {
+         "itemId": 25474,
+         "itemName": "Tawny Windrider",
+         "spellId": 32243
+        },
+        {
+         "itemId": 25475,
+         "itemName": "Blue Windrider",
+         "spellId": 32244
+        },
+        {
+         "itemId": 25476,
+         "itemName": "Green Windrider",
+         "spellId": 32245
+        }
+       ],
+       "ANY": [
+        {
+         "itemId": 34060,
+         "itemName": "Flying Machine Control",
+         "note": "Engineering, requires Expert Riding"
+        }
+       ]
+      },
+      "count": 1,
+      "cost": "100 gold",
+      "giver": {
+       "A": {
+        "npcId": 20510,
+        "name": "Brunn Flamebeard",
+        "zone": "Shadowmoon Valley",
+        "zoneId": 3520,
+        "x": 37.4,
+        "y": 56,
+        "subzone": "Wildhammer Stronghold"
+       },
+       "H": {
+        "npcId": 20494,
+        "name": "Dama Wildmane",
+        "zone": "Shadowmoon Valley",
+        "zoneId": 3520,
+        "x": 29.2,
+        "y": 29.4,
+        "subzone": "Shadowmoon Village"
+       }
+      },
+      "detail": "The mount vendor stands beside the trainer. Brunn Flamebeard at Wildhammer Stronghold sells the Golden, Ebon and Snowy Gryphons (items 25470, 25471, 25472) to the Alliance, and Dama Wildmane at Shadowmoon Village sells the Tawny, Blue and Green Windriders (25474, 25475, 25476) to the Horde; each costs 100 gold and needs riding skill 225. The mount is an item on the TBC client, so keep it in your bags; using it casts the matching summon spell. Engineers at 350 can build a Flying Machine Control (34060) instead. The epic 280 percent mounts cost 200 gold on top of Artisan Riding.",
+      "detectedBy": "GetItemCount of any listed mount item > 0 (the 2.5 client has no mount journal; the item stays in the bags after learning), or the player having the Flight Form spell.",
+      "optional": false
+     },
+     {
+      "key": "reach_tempest_keep",
+      "title": "Fly to the Tempest Keep dungeon platforms",
+      "kind": "MANUAL",
+      "location": {
+       "zone": "Netherstorm",
+       "zoneId": 3523,
+       "x": 74,
+       "y": 65,
+       "approximate": true,
+       "subzone": "Tempest Keep"
+      },
+      "detail": "Tempest Keep floats in eastern Netherstorm (around 74, 65) and its three satellites hold the Mechanar, the Botanica and the Arcatraz, each with a minimum entry level of 65. There is no ground path: mount up and fly to the platform in front of the portal you need, with the Arcatraz being the highest. Players without flying can be summoned by a warlock already inside, or through the meeting stone once two group members stand on the platform, as was true on original TBC from patch 2.4 and remains true on the Anniversary realms. The Botanica and Mechanar are also where the Arcatraz key shards and the second Karazhan key fragment pieces come from.",
+      "detectedBy": "GetInstanceInfo() reporting instance map 552, 553 or 554 at any point; otherwise shown as done once a flying mount or Flight Form is owned.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/spell/34090?dataEnv=5&locale=0 (and 34091, 33943, 32235, 32239, 32240, 32243, 32244, 32245)",
+     "https://nether.wowhead.com/tooltip/item/25470?dataEnv=5&locale=0 (and 25471, 25472, 25474, 25475, 25476, 34060)",
+     "https://nether.wowhead.com/tooltip/npc/20511?dataEnv=5&locale=0 (and 20500, 20510, 20494; 35093 and 35100 return Entity not found)",
+     "https://warcraft.wiki.gg/wiki/Ilsa_Blusterbrew",
+     "https://warcraft.wiki.gg/wiki/Olrokk",
+     "https://warcraft.wiki.gg/api.php?action=parse&page=Hargen%20Bronzewing and Wind%20Rider%20Jahubo (added in patch 3.2.0)",
+     "https://warcraft.wiki.gg/wiki/Tempest_Keep",
+     "https://www.warcrafttavern.com/tbc/guides/flying/",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://gamerjournalist.com/burning-crusade-classic-flying-mount-cost-and-trainer-locations/ (search snippet: 800 gold plus 100 gold)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_Collections/data-tbc.lua (lines 587-589)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua (line 128)"
+    ],
+    "notes": "The task's premise that the trainers are in Hellfire Peninsula is wrong for this client: both Expert Riding trainers are in Shadowmoon Valley. Wowhead's Anniversary tooltip labels spell 34090 simply Riding; it is the 225-rank Expert Riding spell and 34091 is Artisan Riding."
+   }
+  ],
+  "uncertain": [
+   "Nazgrel (npc 3230) Thrallmar position: the Wowhead Anniversary tooltip only returns his Orgrimmar spawn (32.4, 36.0 in zone 1637); the 55, 36 figure comes from leveling guides placing him at the back of the Thrallmar stronghold behind General Krakork and is marked approximate.",
+   "Boxes of Surveying Equipment (28913) ground-object positions at Manaforge Duro were not pinned; the island is directly west of Tempest Keep and the 60, 62 coordinate is an estimate.",
+   "Triangulation point coordinates (66.0, 33.8 and 28.9, 41.2) come from warcraft.wiki.gg via search snippets, not from the tooltip endpoint; the device works within roughly 100 yards so small errors do not matter.",
+   "Which Ata'mal Crystal item Full Triangle (10276) tracks: Questie's TBC drop table ties 29026 to Culuthas (90 percent), warcraft.wiki.gg links 29106, and 31087 is a third copy next to the key shards; the step lists 29026 and tells the addon to accept all three.",
+   "Level gates: 65 for Sethekk Halls, Shadow Labyrinth, Shattered Halls, Mechanar, Botanica and Arcatraz and 67 for the Consortium chain are from guides and memory of the TBC tables, not from the tooltip endpoint; the 68 gate on the Primed Key Mold and 70 on Hotter than Hell / How to Break Into the Arcatraz are confirmed by the tooltips.",
+   "Expert Riding reputation discount on the Anniversary realms: Warcraft Tavern's TBC Classic flying guide says no reputation discount applies to Expert or Artisan Riding, while Wrath-era pages say Honor Hold/Thrallmar discounts apply; 800 gold is given as the base price and the addon should not promise a discount.",
+   "Phase numbering: Warcraft Tavern's roadmap lists Phase 4 (Zul'Aman) launching 22 October 2026, two days before today, while the installed Questie still reports Phase 3; some sites call Zul'Aman Phase 3.5. None of the Phase 4 changes (heroic keys at Honored, raid attunements lifted, dungeon difficulty reduced) alters the four gates covered here.",
+   "Fel Reaver corpse window for the Unfired Key Mold is not documented anywhere consulted; guides only say to use the mold immediately after the kill.",
+   "Assisting the Consortium (10263 Aldor / 10264 Scryers) prerequisites: Warcraft Tavern says Aldor or Scryer alignment and level 67 and suggests You're Hired! if blocked; the breadcrumb is optional for the key and the addon should accept either id or neither.",
+   "Instance boss coordinates (Ikiss 32.6, 23.9; Warp Splinter 36.3, 39.8; Pathaleon 37.7, 18.4) are Wowhead instance-map percentages, not world-zone coordinates.",
+   "The Wowhead Anniversary tooltip lists Shadow Labyrinth Key 27991 as Dropped by Talon King Ikiss at 24.9 percent; Questie's TBC drop table has no NPC source and the wiki says it is looted from The Talon King's Coffer (object 187372, confirmed by tooltip) by everyone who lacks one. The coffer behaviour is what the guide describes.",
+   "Object ids for the three locked doors (Shattered Halls Door, Arcatraz Door, Shadow Labyrinth Gate) were not confirmed; the lock level 350 for all three comes from warcraft.wiki.gg's Lockpicking table via a search snippet.",
+   "Warlock summon and meeting-stone workaround for Tempest Keep on the Anniversary client is inferred from original TBC 2.4 behaviour and the pre-patch note that meeting stones can summon; not field-verified."
+  ],
+  "notes": "All quest, item, NPC, object and spell ids in the guides were confirmed by name through https://nether.wowhead.com/tooltip/<type>/<id>?dataEnv=5&locale=0 unless listed in uncertain. Corrections to the task brief: item 28394 is Ryngo's Band of Ingenuity, the Primed Key Mold is 31239 (Alliance starter), 31241 (Horde starter) and 31245 (provided copy); the Unfired and Charred Key Molds are 31251 and 31252; the Consortium chain is 10263/10264 -> 10265 -> 10262 -> 10205 -> 10266 -> 10267 -> 10268 -> 10269 -> 10275 -> 10276 -> 10280 -> 10704 (the brief's 10422-10427 and 10705-10707 are unrelated Netherstorm and Akama quests); the Alliance Shattered Halls chain is 10754 -> 10762 -> 10763 -> 10764 and the Horde chain 10755 -> 10756 -> 10757 -> 10758, with Dumphry's and Rohok's Request needing 4 Fel Iron Bar (23445), 2 Arcane Dust (22445) and 4 Mote of Fire (22574) and Hotter than Hell needing a Fel Reaver (18733) kill; the Alliance smith NPC 16823 is named Humphry; the only Expert Riding trainers on this client are Ilsa Blusterbrew 20511 and Olrokk 20500 in Shadowmoon Valley (the Hellfire trainers 35093/35100 are Wrath 3.2 additions and return Entity not found). Step objects use a few extra fields beyond the brief where one value per faction would be wrong: quest {A,H} as requested, item {A,H} on the mold step, giver/turnIn split into {A,H} (or {ALDOR,SCRYERS}) blocks, kill {npcId,...} for the overworld mob a quest needs, requiredItem/providedItem for quest items, materials[] for the reagent quest, items {A,H,ANY} for the mount step, and alsoAccept[] for the crystal variants. Instance map ids used: Shattered Halls 540, Arcatraz 552, Botanica 553, Mechanar 554, Shadow Labyrinth 555, Sethekk Halls 556. Zone ids used: Hellfire Peninsula 3483, Shadowmoon Valley 3520, Netherstorm 3523, Shattrath City 3703, Sethekk Halls 3791, Botanica 3847, Mechanar 3849. Lockpicking skill line id 633. Anniversary phase map used: P1 Karazhan/Gruul/Magtheridon (5 Feb 2026), P2 SSC/TK (14 May 2026), P3 Hyjal/BT (27 Aug 2026), P4 Zul'Aman (22 Oct 2026), P5 Sunwell/Magisters' Terrace (autumn 2026 TBA). None of the four guides has a phase in which its gate is removed, so requiredUntil is null everywhere."
+ },
+ "verify": {
+  "checked": 90,
+  "mismatches": [
+   {
+    "kind": "npc",
+    "id": 16823,
+    "claimed": "Humphry (Grand Master Dumphry) - the Alliance smith who finishes 10762 and starts/finishes 10763 and 10764, at Honor Hold 56.8, 63.8",
+    "actual": "Humphry, Master Blacksmithing Trainer, Honor Hold (Questie spawn 56.7, 63.6) - starts and ends NO quests. The chain's smith is a different NPC: 21209 Dumphry, Master Blacksmithing Trainer, Honor Hold faction, Questie spawn Hellfire Peninsula 51.1, 60.3 (the ruined tower outside Honor Hold Mine). Questie TBC: quest 10762 finishedBy [21209]; 10763 and 10764 startedBy/finishedBy [21209]; Wowhead TBC quest 10762 links npc 21209; warcraft.wiki.gg has separate Dumphry (21209) and Humphry (16823) pages."
+   }
+  ],
+  "corrections": [
+   {
+    "guideKey": "SHATTERED_HALLS_KEY",
+    "stepKey": "grand_master_smith",
+    "field": "turnIn.A",
+    "from": "{npcId:16823, name:'Humphry (Grand Master Dumphry)', x:56.8, y:63.8}",
+    "to": "{npcId:21209, name:'Dumphry', zone:'Hellfire Peninsula', zoneId:3483, x:51.1, y:60.3, subzone:'ruined tower outside Honor Hold Mine'}",
+    "reason": "Questie TBC quest 10762 finishedBy = [21209]; Wowhead Anniversary tooltip npc 21209 = Dumphry (Master Blacksmithing Trainer, Honor Hold); Wowhead TBC quest page links npc 21209; wiki Dumphry page places him in the ruined tower outside Honor Hold Mine; Questie spawn 51.1, 60.3. NPC 16823 Humphry has no quest starts/ends."
+   },
+   {
+    "guideKey": "SHATTERED_HALLS_KEY",
+    "stepKey": "grand_master_smith",
+    "field": "detail",
+    "from": "...the dwarf at the anvil just north-west of the Honor Hold keep (56.8, 63.8); the quest calls him Dumphry but the NPC nameplate reads Humphry...",
+    "to": "...Dumphry, the Grand Master Blacksmith, who stands in the ruined tower outside Honor Hold Mine, north-west of Honor Hold along the road (51.1, 60.3). Humphry, the blacksmithing trainer at the Honor Hold forge (56.7, 63.6), is a different dwarf and has no part in the chain...",
+    "reason": "Dumphry (21209) and Humphry (16823) are two NPCs on this client; the chain uses Dumphry."
+   },
+   {
+    "guideKey": "SHATTERED_HALLS_KEY",
+    "stepKey": "smiths_request",
+    "field": "giver.A and turnIn.A",
+    "from": "{npcId:16823, name:'Humphry', x:56.8, y:63.8}",
+    "to": "{npcId:21209, name:'Dumphry', zone:'Hellfire Peninsula', zoneId:3483, x:51.1, y:60.3}",
+    "reason": "Questie TBC quest 10763 startedBy/finishedBy = [21209]."
+   },
+   {
+    "guideKey": "SHATTERED_HALLS_KEY",
+    "stepKey": "hotter_than_hell",
+    "field": "giver.A and turnIn.A",
+    "from": "{npcId:16823, name:'Humphry', x:56.8, y:63.8}",
+    "to": "{npcId:21209, name:'Dumphry', zone:'Hellfire Peninsula', zoneId:3483, x:51.1, y:60.3}",
+    "reason": "Questie TBC quest 10764 startedBy/finishedBy = [21209]; wiki Hotter than Hell (Alliance) start/end = Dumphry."
+   },
+   {
+    "guideKey": "SHATTERED_HALLS_KEY",
+    "stepKey": "(guide)",
+    "field": "notes and sources",
+    "from": "The quest text names the Alliance smith Dumphry but the NPC (16823) is called Humphry in game. / sources: npc 16823",
+    "to": "The Alliance smith is NPC 21209 Dumphry at the ruined tower by Honor Hold Mine (51.1, 60.3); 16823 Humphry is the unrelated Honor Hold blacksmithing trainer. / sources: https://nether.wowhead.com/tooltip/npc/21209?dataEnv=5&locale=0",
+    "reason": "Same evidence as above."
+   },
+   {
+    "guideKey": "SHATTERED_HALLS_KEY",
+    "stepKey": "entry_into_citadel (turnIn.H) and grand_master_smith (giver.H)",
+    "field": "approximate",
+    "from": "x:55, y:36, approximate:true",
+    "to": "x:55.0, y:36.0 (drop approximate; also drop the Nazgrel item from the guide-level 'uncertain' list)",
+    "reason": "Questie TBC NPC 3230 Nazgrel: single spawn in zone 3483 at 55.0, 36.0; questEnds includes 10755, questStarts includes 10756; warcraft.wiki.gg Nazgrel page lists Thrallmar 55.0, 36.0. The Wowhead tooltip's 'Orgrimmar' is his reputation faction, not a location."
+   },
+   {
+    "guideKey": "SHADOW_LABYRINTH_KEY",
+    "stepKey": "level_65",
+    "field": "detail",
+    "from": "Sethekk Halls and the Shadow Labyrinth both admit characters from level 65",
+    "to": "Sethekk Halls is tuned for 67-69 and the Shadow Labyrinth for 70 (the client's group-finder ranges start at 66 and 69); the door's own level lock is not verified, so plan the run at 68 or later",
+    "reason": "The hard entry lock is server-side and sources conflict: wiki says 65 for Shadow Labyrinth, Warcraft Tavern says 65 (Sethekk) / 67 (Shadow Lab), LFGDungeons on build 2.5.6.70006 gives MinLevel 66 (Sethekk) and 69 (Shadow Lab). No source confirms 65 for Sethekk Halls."
+   },
+   {
+    "guideKey": "SHATTERED_HALLS_KEY",
+    "stepKey": "open_door",
+    "field": "detail",
+    "from": "The dungeon is a level 70 instance with a minimum entry level of 65.",
+    "to": "The dungeon is tuned for level 70 (group finder lists it from 69); the door's level lock is not verified.",
+    "reason": "Warcraft Tavern says min 67, LFGDungeons 2.5.6 says 69, no source says 65."
+   },
+   {
+    "guideKey": "ARCATRAZ_KEY",
+    "stepKey": "kill_warp_splinter",
+    "field": "detail",
+    "from": "both instances have a minimum entry level of 65 and need flying to reach",
+    "to": "both instances are level 70 dungeons (group finder lists the Mechanar from 68 and the Botanica from 69) and need flying to reach; the entry level lock itself is not verified",
+    "reason": "LFGDungeons 2.5.6: Mechanar MinLevel 68, Botanica 69, Arcatraz 69; Warcraft Tavern 67/67/68; wiki Arcatraz text says 65 but Mechanar infobox says 68. Conflicting; 65 is unsupported for Mechanar/Botanica."
+   },
+   {
+    "guideKey": "FLYING_BASIC",
+    "stepKey": "reach_tempest_keep",
+    "field": "detail",
+    "from": "each with a minimum entry level of 65",
+    "to": "all three tuned for level 70 (group finder from 68-69; the door level lock is not verified)",
+    "reason": "Same conflict as above."
+   },
+   {
+    "guideKey": "(all four guides)",
+    "stepKey": "(guide)",
+    "field": "uncertain: level gates entry",
+    "from": "the 68 gate on the Primed Key Mold and 70 on Hotter than Hell / How to Break Into the Arcatraz are confirmed by the tooltips",
+    "to": "the Primed Key Mold and every quest of the Shattered Halls chain (10754-10758, 10762-10764) require level 68 (quest level 70); every Consortium quest 10205-10280 requires level 67; How to Break Into the Arcatraz (10704) requires level 70",
+    "reason": "Questie TBC requiredLevel field: 68 for all eight Hellfire quests, 67 for 10205/10262-10280, 70 for 10704. The tooltip's 'Level 70' on Hotter than Hell is the quest level; wiki levelreq = 68. The step text 'level 70 three-player group quest' is fine (wiki groupsize 3)."
+   },
+   {
+    "guideKey": "ARCATRAZ_KEY",
+    "stepKey": "assisting_consortium",
+    "field": "detail",
+    "from": "If you have not chosen a Shattrath faction, or the breadcrumb is not shown, you can skip it",
+    "to": "The breadcrumb only appears once you have completed You're Hired! (10186) at Area 52 and Allegiance to the Aldor (10551) with Friendly Aldor standing (for 10263) or Allegiance to the Scryers (10552) with Friendly Scryers standing (for 10264); it is optional, so skip it and talk to Khay'ji directly when it is not offered",
+    "reason": "Questie TBC quest 10263: preQuestGroup [10551,10186], requiredMinRep [932 Aldor, 3000]; 10264: preQuestGroup [10552,10186], requiredMinRep [934 Scryers, 3000]; exclusiveTo each other; both are breadcrumbs for 10265 (breadcrumbForQuestId 10265). Names confirmed by tooltip."
+   },
+   {
+    "guideKey": "ARCATRAZ_KEY",
+    "stepKey": "full_triangle",
+    "field": "requiredItem.alsoAccept and detectedBy",
+    "from": "alsoAccept [29106, 31087]; GetItemCount(29026) > 0 (or 29106 / 31087) shows the kill is done before the turn-in",
+    "to": "track 29026 only; 29106 is the copy the Image of Nexus-Prince Haramad hands you for Special Delivery (10280) after Full Triangle is turned in, and 31087 is referenced by no quest",
+    "reason": "Questie TBC: 10276 objective item = 29026 (drop from 20138 at 90.5%); 10280 sourceItemId = 29106; 31087 appears in no quest record. Holding 29106 cannot mean 'kill done before turn-in', it means the turn-in already happened."
+   },
+   {
+    "guideKey": "ARCATRAZ_KEY",
+    "stepKey": "special_delivery",
+    "field": "providedItem",
+    "from": "(none)",
+    "to": "{itemId:29106, itemName:\"Ata'mal Crystal\"}",
+    "reason": "Questie TBC quest 10280 sourceItemId = 29106; Wowhead tooltip 29106 = Ata'mal Crystal."
+   },
+   {
+    "guideKey": "SHADOW_LABYRINTH_KEY (and the phase.notes of SHATTERED_HALLS_KEY, ARCATRAZ_KEY)",
+    "stepKey": "(guide)",
+    "field": "phase.notes",
+    "from": "The Phase 4 changes (heroic keys at Honored, raid attunements lifted, dungeon difficulty reduced)",
+    "to": "The Zul'Aman phase changes of 22 October 2026 (heroic dungeon keys at Honored, Battle for Mount Hyjal and Black Temple no longer attuned, heroic dungeons set to their final reduced difficulty), numbered Phase 4 by Warcraft Tavern and Phase 3.5 by warcraft.wiki.gg",
+    "reason": "Blizzard's 'BCCA: The Gods of Zul'Aman Now Live' article lists exactly: 'The reputation requirement to purchase Heroic dungeon keys has been reduced to Honored', 'The Battle for Mount Hyjal and The Black Temple will no longer require attunement to enter', 'All Heroic dungeons will be adjusted to their final, reduced difficulty state'. It does not nerf normal dungeons and does not number the phase."
+   },
+   {
+    "guideKey": "FLYING_BASIC",
+    "stepKey": "expert_riding",
+    "field": "detail and guide-level uncertain",
+    "from": "Expert Riding reputation discount on the Anniversary realms: ... the addon should not promise a discount",
+    "to": "No reputation discount applies to Expert or Artisan Riding on this client: Ilsa Blusterbrew and Olrokk carry no Honor Hold/Thrallmar faction on the Anniversary tooltip (Humphry and Rohok do), and faction discounts for flying trainers were only introduced in patch 3.2.0",
+    "reason": "Wowhead Anniversary tooltips npc 20511/20500 show no faction line; warcraft.wiki.gg Riding patch notes: 3.2.0 'Faction discounts now apply (Honor Hold for Alliance; Thrallmar for Horde)' and 'Can now be learned at level 60 for 600g', implying 800g at 70 with no discount before. Mount prices confirmed: ItemSparse 2.5.6.70006 BuyPrice 1,000,000 copper (100g), Requires Riding 225, level 70, BoP for 25470/25474."
+   },
+   {
+    "guideKey": "SHATTERED_HALLS_KEY",
+    "stepKey": "primed_key_mold / entry_into_citadel",
+    "field": "kill.x,y / turnIn.A.x,y (minor)",
+    "from": "Smith Gorlunk 67.2, 36.4; Danath 56.6, 66.4",
+    "to": "Smith Gorlunk 67.6, 36.2; Danath 56.6, 66.7",
+    "reason": "Questie TBC spawns (zone 3520 and 3483). Within tolerance; cosmetic."
+   }
+  ],
+  "unverifiable": [
+   "Hard entry-level lock on the dungeon doors for Sethekk Halls, Shadow Labyrinth, Shattered Halls, Mechanar, Botanica and Arcatraz: server-side data; warcraft.wiki.gg says 65 (Shadow Labyrinth, Arcatraz) but 68 in the Mechanar infobox, Warcraft Tavern says 65/67/67/67/67/68, and the client's LFGDungeons (build 2.5.6.70006) MinLevel is 66/69/69/68/69/69 (group-finder range, not the door). Wowhead TBC zone pages return HTTP 403; the CMaNGOS tbc-db dump is only published as a .sql.gz archive, which was not downloaded.",
+   "Fel Reaver corpse window for using the Unfired Key Mold (no source gives a duration).",
+   "Whether a destroyed Shattered Halls Key can be re-obtained from Dumphry/Rohok (guide says the chain is not re-offered; not confirmed either way).",
+   "Zul'Aman phase number on Anniversary: Warcraft Tavern 'Phase 4', warcraft.wiki.gg 'Phase 3.5', Blizzard's article gives no number; Sunwell is 'Phase 5' vs 'Phase 4' accordingly.",
+   "Warlock summon and meeting-stone workaround onto the Tempest Keep platforms on the Anniversary client (wiki states the warlock summon for original TBC; not field-verified).",
+   "Trainer prices: Expert Riding 800g and Flight Form 'a few gold' are server-side NPC trainer costs; 800g is only inferred from the wiki's 3.2.0 note that the price dropped to 600g.",
+   "Lockpicking leveling spots (adamantite chests in Outland dungeons, footlockers in Zangarmarsh and Netherstorm) - flavor text, not checked.",
+   "Auchindoun courtyard coordinate 'roughly 35, 65': Questie places the Shadow Labyrinth map pin at Terokkar Forest (3519) 39.6, 71.0; the Ring of Observance figure was not pinned.",
+   "Shadow Labyrinth Key source on the Anniversary client: Wowhead's tooltip says 'Dropped by Talon King Ikiss 24.9%', the wiki's 2.3.0 note says Ikiss no longer drops it and it is looted from The Talon King's Coffer (object 187372 exists on this client per tooltip); the coffer behaviour matches the 2.4.3-based client but was not field-verified. Questie's TBC drop table also lacks entries for the Primed Key Mold (31239/31241), so its silence on 27991 is weak evidence.",
+   "Dumphry's coordinates 51.1, 60.3 rest on Questie alone; the wiki gives only 'ruined tower outside Honor Hold Mine' and Wowhead's NPC page shows no coordinates."
+  ],
+  "verdict": "All 29 listed ids (and 61 more the guides lean on) resolve to the claimed names, chain orders and prerequisites hold, but the Alliance Shattered Halls smith is NPC 21209 Dumphry at Honor Hold Mine (51.1, 60.3), not 16823 Humphry, and the repeated 'minimum entry level 65' claims are unsupported.",
+  "notes": "METHOD. Every id in the task list plus every secondary id in the guide data (items 31241/31245/31251/31252/23445/22445/22574/28829/29209/28913/29018/29026/29106/31087/31085/31086/25470-25476/34060; npcs 18473/22037/16819/3230/16823/16583/18733/19467/19468/20215/18875/19641/19642/20287/20138/17977/19220/20511/20500/20510/20494/21209; object 187372; quests 10263/10264/10186/10551/10552/10882; spells 34090/34091/33943/32235/32239/32240/32243-32245) was fetched from nether.wowhead.com/tooltip/<type>/<id>?dataEnv=5&locale=0 with a 0.3 s sleep; 90 distinct ids, zero name mismatches. Structure was checked against 41 warcraft.wiki.gg pages (wikitext via api.php, after a rate-limit retry with a UA) and, independently, by decoding QuestieDB_TBC.toc's CBOR rows (X-Quest-*/X-Npc-* metadata) for the 21 chain quests and 26 NPCs; LFGDungeons, SkillLine, SpellEffect and ItemSparse were read from wago.tools build 2.5.6.70006 (wow_anniversary). Working files are in /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/fc (tt_*.json tooltips, wiki/*.json, questie_rows.txt, questie_npcs.txt, lfg.csv, skillline.csv).\n\nTHE ONE REAL ERROR. Dumphry and Humphry are two different dwarves. Questie TBC: 10762 startedBy [16819 Danath] finishedBy [21209]; 10763 and 10764 startedBy/finishedBy [21209]; NPC 21209 'Dumphry', subName 'Master Blacksmithing Trainer', factionID 1671 (Honor Hold), spawn Hellfire Peninsula 51.1, 60.3, questStarts [10055, 10078, 10763, 10764], questEnds [10055, 10078, 10762, 10763, 10764]; NPC 16823 'Humphry', same title, spawn 56.7, 63.6, no quest starts or ends. Wowhead tooltip 21209 = 'Dumphry, Master Blacksmithing Trainer, Level 60 Humanoid, Honor Hold'; Wowhead TBC quest 10762 objective links /tbc/npc=21209. Wiki: Dumphry page (Elinks-NPC 21209) 'located in the ruined tower outside Honor Hold Mine', with Grand Master Dumphry / Dumphry's Request / Hotter than Hell listed; Humphry page (16823) lists only Searching for New Materials. The guide's Alliance giver/turnIn for three steps, the 'nameplate reads Humphry' sentence, the notes line and the npc source must change. The Horde side (Nazgrel 3230 at 55.0, 36.0; Rohok 16583 at 53.1, 38.2) is correct.\n\nCONFIRMED (no change needed). Shattered Halls chain: A 10754 -> 10762 -> 10763 -> 10764, H 10755 -> 10756 -> 10757 -> 10758 (Questie preQuestSingle/nextQuestInChain and wiki); sourceItemId 31239 (A) / 31241 (H) on Entry Into the Citadel, 31245 on Grand Master Dumphry/Rohok, 31251 on Hotter than Hell; objectives 4x23445, 2x22445, 4x22574 and 31252; requiredRaces 1101 (A) / 690 (H); Smith Gorlunk 22037 starts both 10754 and 10755 (Shadowmoon 67.6, 36.2); reputation 946 Honor Hold / 947 Thrallmar; wiki Hotter than Hell groupsize 3, levelreq 68. Arcatraz chain: (10263|10264 breadcrumbs for 10265) -> 10265 -> 10262 -> 10205 -> 10266 -> 10267 -> 10268 -> 10269 -> 10275 -> 10276 -> 10280 -> 10704 -> (10882 Harbinger of Doom, optional), every link confirmed by Questie preQuestSingle and the wiki Questbox previous/next; requiredLevel 67 throughout, 70 on 10704; Consortium (933) rep 250/250/250/25/250/75/250/250/500, Sha'tar (935) 1000 on 10280 and 10704; 10276 wiki 'Suggested players: 2'; triangulation points 66, 33.8 and 28.9, 41.2 (wiki); Culuthas 53.5, 21.5; Pentatharon 42.5, 72.8 (Questie; the wiki's 47, 72 is the outlier); Nesaad 28.4, 79.5; Khay'ji 32.4, 64.2; Gahruj 46.7, 57.0; Haramad 45.9, 36.0; Hazzin 58.4, 31.3; Tuluman 34.6, 38.0; A'dal 54.0, 44.8; Karja 32.0, 64.2; Thalodien 32.0, 64.1; shards 31085 from 17977 and 31086 from 19220 (Questie drop table), wiki says party drops. Shadow Labyrinth Key: wiki confirms coffer loot for everyone lacking a key since 2.3.0, lock-level 350 for Shadow Labyrinth Gate, Shattered Halls Door and Arcatraz Door (Lockpicking table), 'not necessary to have the key to enter the instance gate'. Ids: instance maps 540/552/553/554/555/556 confirmed on the wiki InstanceID 2.5.1 list; zones 3483/3520/3523/3703/3791/3847/3849 (+3789 Shadow Lab, 3714 Shattered Halls, 3848 Arcatraz) confirmed in Questie's zones enum; SkillLine 633 = Lockpicking and 762 = Riding (wago.tools); spell 34090 effect 118 Skill 762 step 3 (225) and 34091 step 4 (300), i.e. Expert/Artisan although both are named 'Riding' on this client; Flight Form 33943 requires druid level 68 with no riding requirement; mounts 25470/25474 BuyPrice 100g, Riding 225, level 70, BoP; 34060 requires Engineering 350. Phase dates (Warcraft Tavern + wiki + Blizzard): pre-patch 13 Jan 2026 (2.5.5), P1 5 Feb 2026, P2 14 May 2026 incl. Swift Flight Form, P3 27 Aug 2026 (2.5.6), Zul'Aman 22 Oct 2026, Sunwell autumn 2026. Questie's ContentPhases blacklists none of these quests or NPCs. Ilsa Blusterbrew 37.5, 56.3; Brunn 37.6, 56.0; Olrokk 29.3, 29.3; Dama 29.1, 29.5.\n\nTASK-LIST LABELS. The list's combined labels for 10762/10756 ('Grand Master Dumphry (A) / Grand Master Rohok (H)') and 10763/10757 ('Dumphry's Request (A) / Rohok's Request (H)') match the per-faction tooltip names; 10704 was listed three times under three step titles and is one quest, 'How to Break Into the Arcatraz'."
+ }
+}

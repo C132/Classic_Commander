@@ -1,7 +1,7 @@
 # Commander_QuestLog harnesses
 
-Eleven luajit checks and one generator check, run from the AddOns root. Each
-resolves the AddOns root from its own file location, so it works in a git
+Fourteen luajit checks and two generator checks, run from the AddOns root.
+Each resolves the AddOns root from its own file location, so it works in a git
 worktree as well as in the live AddOns directory (and from any working
 directory), and exits non-zero if any check fails. Run them all before
 touching anything in the module. The first five are the 1.5.0 set: the window
@@ -11,7 +11,10 @@ real Commander Orders. The next five came with the Reputations tab (1.6.0):
 the generated reputation data, the reputation rules engine, the Reputations
 tab, reputation on every other surface, and the NPC's quest dialog. The
 eleventh came with "Go to" (1.7.0, DECISIONS D45, Commander Orders 3.1): the
-window's Go buttons over the suite's own `Commander.UI.GoButton`.
+window's Go buttons over the suite's own `Commander.UI.GoButton`. The last
+three came with the Attunements tab (1.8.0, DECISIONS D48-D57): the generated
+attunement data, the engine that ticks its guides off from the client, and the
+tab itself; the second generator check is that data file's.
 
 ```bash
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_harness.lua         # 525 checks
@@ -25,8 +28,46 @@ window's Go buttons over the suite's own `Commander.UI.GoButton`.
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_rep_everywhere_harness.lua  # 203 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questframe_harness.lua       # 86 checks
 /opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_goto_harness.lua    # 72 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/attune_data_smoke.lua        # 256 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_attune_engine_harness.lua  # 238 checks
+/opt/homebrew/bin/luajit Commander_QuestLog/Harness/questlog_attunements_harness.lua  # 192 checks
 python3 Commander_QuestLog/Harness/make_reputations.py --check                   # exit 0: the data file is current
+python3 Commander_QuestLog/Harness/make_attunements.py --check                   # exit 0: the data file is current
 ```
+
+**1.8.0 (Attunements, D48-D57).** Three new harnesses and a second generator
+check. One existing check moves with the tab strip: the Reputations harness's
+A check counted three tabs (Log, Zones, Reputations) and now meets Attunements
+as the fourth, since `mock.TocFiles` reads the TOC and the TOC lists the three
+new files; its expectation now reads four tabs with Attunements fourth, and every
+other count is unchanged. `attune_data_smoke.lua` (256 checks, D1-D34)
+loads the generated `CommanderQuestLogAttuneData.lua` alone and proves its
+shape: the five phases and rules rows, the 26 guides and their step kinds, the
+alternative groups, the unlock proofs, the account-wide gates, and every
+correction the research audit landed. `questlog_attune_engine_harness.lua` (238
+checks; sections A phase, B detectors, C side and class, D scoring and lists,
+I marks, L events) boots the engine over `questlog_mock.lua` with hand-built
+contexts and no window. `questlog_attunements_harness.lua` (192 checks; E
+registration and switch, F rows and toolbar, G briefing, H Go, J card, K
+settings, DB and slash, Q Questie absent, Z hygiene) drives the tab in the
+window over the same mock, the suite GoButton and a recording Orders 3.1
+stand-in with a six-row door table, and reloads the module files with the fake
+Questie uninstalled for Q. The engine and the tab are two harness files rather
+than one so the engine's checks need no window. `make_attunements.py --check`
+reads the research bundles from `attune_research/research-0.json` to
+`research-6.json` (git-tracked, the generator's default `--research` path) and
+exits 1 when the data file is stale. Mutation hooks: `CQL_ATTUNE_DATA`
+(another data file), `CQL_ATTUNE_ENGINE` (a mutated engine), `CQL_ATTUNE` (a
+mutated tab). Mutation runs, each to fail at least one check: no IsExpanding
+guard; GetQuestsCompleted used; ExpandSkillHeader called; CLEU registered
+everywhere; STATE_W 46; lessons drawn in the navigator; a detected Done shown
+Locked; impliedBy applied to Tempest Keep; linear back-propagation; a Show on
+Map button; PrepareOpen reading a third argument; evidence lowering the phase;
+the phase button warn-toned when set; the guide word "Attuned"; the tab using
+kit.LineGo (a door Go silent without Orders); a door target carrying spec and
+query together (Orders' table never asked); C_Timer.NewTicker for the calendar
+tick; a daily counted in Ogri'la; the ledger written from a guide mark; a
+positional phase capture.
 
 **1.7.1 (the reward-button hole, D47).** The quest dialog harness 72 -> 86:
 section J (13) and one check in I (the late hook covers the reward
@@ -110,6 +151,9 @@ CQL_REPS=/path/copy.lua     luajit .../questlog_reps_harness.lua   # a mutated R
 CQL_UI= / CQL_ZONES= / CQL_QUESTFRAME= / CQL_MAP=/path/copy.lua luajit .../questlog_rep_everywhere_harness.lua
 CQL_WITH_REPS=1             luajit .../questlog_rep_everywhere_harness.lua  # also load the Reputations tab (still 203)
 CQL_QUESTFRAME=/path/copy.lua luajit .../questframe_harness.lua    # a mutated quest-dialog file
+CQL_ATTUNE_DATA=/path/copy.lua luajit .../attune_data_smoke.lua  # another attunement data file
+CQL_ATTUNE_ENGINE=/path/copy.lua luajit .../questlog_attune_engine_harness.lua  # a mutated engine
+CQL_ATTUNE=/path/copy.lua   luajit .../questlog_attunements_harness.lua  # a mutated Attunements tab
 ```
 
 Three files in this folder are not harnesses but what the harnesses stand on:
@@ -124,7 +168,8 @@ The suite's own settings smoke (`Commander_Events/Harness/settings_ui_smoke.lua`
 89 checks) is worth a run after a change to the settings page: it exercises
 the framework this module's page is built on, including the fold-and-search
 layout a page with more than three sections gets (1.6.0 made it six, with
-Reputation between Zones & Completion and World Map). Commander Orders' own
+Reputation between Zones & Completion and World Map; 1.8.0 made it seven,
+Attunements after Reputation). Commander Orders' own
 harnesses (`Commander_Orders/Harness/*.lua`, their counts in that folder's
 README) boot the pins and the store the contract harness hands waypoints to;
 a change to the adapter's `A.Waypoint` / `A.GoSpec` is worth a run of them

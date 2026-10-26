@@ -1,0 +1,3003 @@
+{
+ "topic": "rep-unlocks",
+ "data": {
+  "guides": [
+   {
+    "key": "ALDOR_SCRYER_CHOICE",
+    "title": "Shattrath: Choose the Aldor or the Scryers",
+    "category": "UNLOCK",
+    "faction": "BOTH",
+    "summary": "Every character entering Shattrath City is asked to pick a side between the Aldor and the Scryers. The short introduction from the Haggard War Veteran leads to A'dal and Khadgar, whose City of Light tour ends with the two Allegiance quests. The choice sets your starting standing with both factions and decides which quartermaster, inscriptions and later Netherwing and Sunwell quests you will see.",
+    "unlocks": "Friendly standing with your chosen Shattrath faction (3500 reputation), access to its rise, quartermaster and repeatable turn-ins, and half-value spillover reputation with the Sha'tar up to the top of Friendly.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Available from TBC launch (Anniversary Phase 1, 5 February 2026). Never removed. Draenei start Friendly with the Aldor and Blood Elves start Friendly with the Scryers but can still choose either side through these quests."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "adal",
+      "title": "Speak with A'dal in the Terrace of Light",
+      "kind": "QUEST",
+      "questId": 10210,
+      "questName": "A'dal",
+      "giver": {
+       "npcId": 19684,
+       "name": "Haggard War Veteran",
+       "zone": "Shattrath City",
+       "x": 72.7,
+       "y": 55.2
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.8
+      },
+      "level": 60,
+      "detail": "A Haggard War Veteran stands at each entrance to Shattrath City (south-east gate 72.7, 55.2; also 61.8, 9.9 and 77.2, 43.4) and offers A'dal from level 60. Walk into the Terrace of Light and speak with the naaru A'dal at its centre. The quest pays 10 Sha'tar reputation and opens City of Light.",
+      "detectedBy": "Quest 10210 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "city_of_light",
+      "title": "Follow Khadgar's servant on the City of Light tour",
+      "kind": "QUEST",
+      "questId": 10211,
+      "questName": "City of Light",
+      "giver": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.8,
+       "y": 44.3
+      },
+      "turnIn": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.8,
+       "y": 44.3
+      },
+      "detail": "Khadgar stands beside A'dal. Accept City of Light and follow his servant as it walks the whole city, stopping at Lower City, the Aldor Rise and the Scryer's Tier while telling Shattrath's story. The tour takes several minutes and cannot be sped up; stay close to the servant or it waits for you. Return to Khadgar when the credit City of Light appears in your log. This quest is also a hard prerequisite for the Netherwing quest Kill Them All! much later.",
+      "detectedBy": "Quest 10211 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "allegiance",
+      "title": "Pledge allegiance to the Aldor or the Scryers",
+      "kind": "QUEST",
+      "questId": 10551,
+      "altQuestIds": [
+       10552
+      ],
+      "questName": "Allegiance to the Aldor / Allegiance to the Scryers",
+      "giver": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.8,
+       "y": 44.3
+      },
+      "turnIn": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.8,
+       "y": 44.3
+      },
+      "choice": [
+       {
+        "questId": 10551,
+        "questName": "Allegiance to the Aldor",
+        "factionId": 932
+       },
+       {
+        "questId": 10552,
+        "questName": "Allegiance to the Scryers",
+        "factionId": 934
+       }
+      ],
+      "detail": "After City of Light Khadgar offers both Allegiance to the Aldor (10551) and Allegiance to the Scryers (10552); accepting and completing one locks out the other. Each gives 3500 reputation with the chosen faction, putting you at Friendly, and makes the other side hostile. The Aldor favour priests, paladins and holy-themed inscriptions and sit on the Aldor Rise in the north-west; the Scryers favour blood elf lore and arcane inscriptions and sit on the Scryer's Tier in the south-east. Both sides turn in the same marks later (Marks of Kil'jaeden or Sargeras and Fel Armaments for the Aldor; Firewing or Sunfury Signets and Arcane Tomes for the Scryers). The choice can be reversed later only by grinding the other side back to Neutral through repeatable turn-ins in Lower City (Sha'nir 18597 at 64.5, 15.1 for the Aldor; Arcanist Adyria 18596 at 55.0, 22.5 for the Scryers), which wipes the first faction's progress.",
+      "detectedBy": "Quest 10551 or 10552 flagged complete; equivalently faction 932 or 934 is at least Friendly (standingID 5) while the other is Hostile.",
+      "optional": false
+     },
+     {
+      "key": "meet_your_leader",
+      "title": "Report to Ishanah or Voren'thal the Seer",
+      "kind": "QUEST",
+      "questId": 10554,
+      "altQuestIds": [
+       10553
+      ],
+      "questName": "Ishanah / Voren'thal the Seer",
+      "giver": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.8,
+       "y": 44.3
+      },
+      "turnIn": {
+       "npcId": 18538,
+       "name": "Ishanah (Aldor) or Voren'thal the Seer (Scryers, npc 18530 at 42.8, 91.7)",
+       "zone": "Shattrath City",
+       "x": 24,
+       "y": 29.7
+      },
+      "detail": "Khadgar immediately follows up with a breadcrumb to your new faction's leader: Ishanah (10554) in the Shrine of Unending Light on the Aldor Rise at 24.0, 29.7, or Voren'thal the Seer (10553) in the Seer's Library on the Scryer's Tier at 42.8, 91.7. Turning it in pays 10 reputation with your faction and 5 with the Sha'tar and introduces the first real Aldor or Scryer quests in Shattrath, Netherstorm and Shadowmoon Valley.",
+      "detectedBy": "Quest 10554 (Aldor) or 10553 (Scryers) flagged complete.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10210?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10211?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10551?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10552?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10553?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10554?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18166?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/19684?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18481?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18538?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18530?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18596?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18597?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/The_Sha%27tar",
+     "https://warcraft.wiki.gg/wiki/Aldor",
+     "https://warcraft.wiki.gg/wiki/Scryers",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc (baked quest/NPC rows decoded)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_Factions/data-tbc.lua"
+    ],
+    "notes": "Faction ids: The Aldor 932, The Scryers 934, The Sha'tar 935 (AtlasLoot and Questie reputation rewards agree). Sha'tar spillover, confirmed facts only: Aldor and Scryer quests, including the repeatable turn-ins, also pay the Sha'tar at half value (Allegiance to the Scryers = 3500 Scryers and 1750 Sha'tar; ten Marks of Kil'jaeden or Sargeras = 250 Aldor and 125 Sha'tar; Voren'thal's Visions = 250 Scryers, -275 Aldor, 125 Sha'tar). The spillover stops at 5999/6000 Friendly with the Sha'tar, so it never pushes you into Honored; Honored and beyond need Sha'tar quests or Tempest Keep dungeon runs (Mechanar, Botanica, Arcatraz). Questie's quest rows list only the direct reward (932 or 934, 3500); the Sha'tar gain is a server-side faction link, so the addon should read it from the player's actual standing rather than from a quest table. Reputation gained with one Shattrath faction costs 10 percent more with the other. The A'dal quest has a level 60 minimum in Questie."
+   },
+   {
+    "key": "FLYING_EPIC",
+    "title": "Flying: Expert and Artisan Riding",
+    "category": "FLYING",
+    "faction": "BOTH",
+    "summary": "Outland flight is bought in two steps from the riding trainers in Shadowmoon Valley at level 70. Expert Riding (225) and a 60 percent mount open the sky; Artisan Riding (300) and a 280 percent mount are the real investment at roughly 5200 gold. The Netherwing, Skyguard and Ogri'la daily hubs all assume you can fly, and Netherwing Ledge refuses you without Artisan Riding.",
+    "unlocks": "Riding skill 300 and an epic flying mount, which satisfy the Blood Oath of the Netherwing requirement, the Skyguard Skettis quests (225) and let you reach the Ogri'la plateau and Netherwing Ledge.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Available from TBC launch (Anniversary Phase 1). Costs are never discounted by reputation in TBC Classic. Druids learn Flight Form at 68 instead of Expert Riding; Swift Flight Form (Phase 2) still requires Artisan Riding."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_70",
+      "title": "Reach level 70",
+      "kind": "LEVEL",
+      "level": 70,
+      "detail": "Both flying ranks require level 70. Journeyman Riding (150) is also a prerequisite for Expert Riding, so finish your 60 percent ground mount training first. Save gold while levelling: Expert Riding plus a mount is 900 gold and Artisan Riding plus an epic mount is 5200 gold.",
+      "detectedBy": "UnitLevel('player') >= 70.",
+      "optional": false
+     },
+     {
+      "key": "learning_to_fly",
+      "title": "Take Nutral's breadcrumb to the riding trainer",
+      "kind": "QUEST",
+      "quest": {
+       "A": 11497,
+       "H": 11498
+      },
+      "questName": "Learning to Fly",
+      "giver": {
+       "npcId": 18940,
+       "name": "Nutral",
+       "zone": "Shattrath City",
+       "x": 64.1,
+       "y": 41.1
+      },
+      "turnIn": {
+       "npcId": 20511,
+       "name": "Ilsa Blusterbrew (Alliance) or Olrokk (Horde, npc 20500 at 29.3, 29.3)",
+       "zone": "Shadowmoon Valley",
+       "x": 37.5,
+       "y": 56.3
+      },
+      "detail": "Nutral, the flight master on the Terrace of Light in Shattrath, hands out Learning to Fly at level 70, pointing Alliance players to Ilsa Blusterbrew at Wildhammer Stronghold and Horde players to Olrokk at Shadowmoon Village. It is only a signpost and gives no riding skill; skip it if you already know where the trainers are.",
+      "detectedBy": "Quest 11497 (Alliance) or 11498 (Horde) flagged complete.",
+      "optional": true
+     },
+     {
+      "key": "expert_riding",
+      "title": "Train Expert Riding (225) for 800 gold",
+      "kind": "SKILL",
+      "skill": {
+       "name": "Riding",
+       "skillLineId": 762,
+       "rank": 225
+      },
+      "spellId": 34090,
+      "giver": {
+       "npcId": 20511,
+       "name": "Ilsa Blusterbrew (Alliance) or Olrokk (Horde, npc 20500 at 29.3, 29.3)",
+       "zone": "Shadowmoon Valley",
+       "x": 37.5,
+       "y": 56.3
+      },
+      "detail": "Ilsa Blusterbrew (Riding Trainer, Wildhammer Stronghold 37.5, 56.3) teaches Alliance; Olrokk (Shadowmoon Village 29.3, 29.3) teaches Horde. Expert Riding costs 800 gold and grants 60 percent flight speed in Outland. Reputation does not reduce the price in TBC Classic. Druids get the same effect from Flight Form at level 68 for about 8 gold.",
+      "detectedBy": "Riding skill line 762 at rank 225 or higher, or spell 34090 known (druids: Flight Form known).",
+      "optional": false
+     },
+     {
+      "key": "flying_mount",
+      "title": "Buy a 60 percent flying mount for 100 gold",
+      "kind": "ITEM",
+      "itemId": 25470,
+      "itemName": "Golden Gryphon",
+      "count": 1,
+      "anyOfItemIds": {
+       "A": [
+        25470,
+        25471,
+        25472
+       ],
+       "H": [
+        25474,
+        25475,
+        25476
+       ]
+      },
+      "giver": {
+       "npcId": 20510,
+       "name": "Brunn Flamebeard (Alliance) or Dama Wildmane (Horde, npc 20494 at 29.1, 29.5)",
+       "zone": "Shadowmoon Valley",
+       "x": 37.6,
+       "y": 56
+      },
+      "detail": "Brunn Flamebeard, Gryphon Keeper at Wildhammer Stronghold (37.6, 56.0), sells the Golden, Ebon and Snowy Gryphons; Dama Wildmane, Windrider Keeper at Shadowmoon Village (29.1, 29.5), sells the Tawny, Blue and Green Windriders. Each costs 100 gold. Any one of them is enough for Skettis, the Barrier Hills, Netherwing Fields and the Ogri'la plateau; only Netherwing Ledge's Blood Oath insists on the 300 skill.",
+      "detectedBy": "Any of the listed mount items in bags (TBC has no mount journal), or Expert Riding known and the player seen flying.",
+      "optional": true
+     },
+     {
+      "key": "artisan_riding",
+      "title": "Train Artisan Riding (300) for 5000 gold",
+      "kind": "SKILL",
+      "skill": {
+       "name": "Riding",
+       "skillLineId": 762,
+       "rank": 300
+      },
+      "spellId": 34091,
+      "giver": {
+       "npcId": 20511,
+       "name": "Ilsa Blusterbrew (Alliance) or Olrokk (Horde, npc 20500 at 29.3, 29.3)",
+       "zone": "Shadowmoon Valley",
+       "x": 37.5,
+       "y": 56.3
+      },
+      "detail": "The same two trainers teach Artisan Riding for 5000 gold once you have Expert Riding and are level 70. It raises flight speed to 280 percent and is the single requirement that Blood Oath of the Netherwing checks. No faction discount applies. Budget for the mount too, since the skill alone does not change your 60 percent mount.",
+      "detectedBy": "Riding skill line 762 at rank 300, or spell 34091 known.",
+      "optional": false
+     },
+     {
+      "key": "epic_flying_mount",
+      "title": "Buy a 280 percent flying mount for 200 gold",
+      "kind": "ITEM",
+      "itemId": 25473,
+      "itemName": "Swift Blue Gryphon",
+      "count": 1,
+      "anyOfItemIds": {
+       "A": [
+        25473,
+        25527,
+        25528,
+        25529
+       ],
+       "H": [
+        25477,
+        25531,
+        25532,
+        25533
+       ]
+      },
+      "giver": {
+       "npcId": 20510,
+       "name": "Brunn Flamebeard (Alliance) or Dama Wildmane (Horde, npc 20494 at 29.1, 29.5)",
+       "zone": "Shadowmoon Valley",
+       "x": 37.6,
+       "y": 56
+      },
+      "detail": "Brunn Flamebeard sells the Swift Blue, Red, Green and Purple Gryphons; Dama Wildmane sells the Swift Red, Green, Yellow and Purple Windriders. Each is 200 gold. Later alternatives at the same speed are the Netherwing drakes (one free from Barthamus at Netherwing Exalted, the rest from Drake Dealer Hurlunk), the Skyguard nether rays (160 gold at Skyguard Exalted from Grella) and the Cenarion War Hippogryph.",
+      "detectedBy": "Any of the listed mount items in bags, or a Netherwing drake or nether ray reins item in bags.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/spell/34090?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/spell/34091?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/spell/33388?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/spell/33391?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11497?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11498?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/25470?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/25473?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/25477?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/20511?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/20500?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/20510?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/20494?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18940?dataEnv=5&locale=0",
+     "https://www.warcrafttavern.com/tbc/guides/flying/",
+     "https://warcraft.wiki.gg/wiki/Riding",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc (NPC spawns and quest rows)"
+    ],
+    "notes": "All four riding spells (33388 Apprentice 75, 33391 Journeyman 150, 34090 Expert 225, 34091 Artisan 300) carry the plain name 'Riding' in the Anniversary tooltip data; 34092 Expert Riding and 34093 Artisan Riding are the trainer-side spells. Skill line 762 is Riding; Questie records Blood Oath of the Netherwing as requiredSkill 762 at 300 and every Skettis Skyguard quest as 762 at 225. All item names confirmed via the tooltip endpoint: Golden Gryphon 25470, Ebon Gryphon 25471, Snowy Gryphon 25472, Swift Blue Gryphon 25473, Swift Red Gryphon 25527, Swift Green Gryphon 25528, Swift Purple Gryphon 25529, Tawny Windrider 25474, Blue Windrider 25475, Green Windrider 25476, Swift Red Windrider 25477, Swift Green Windrider 25531, Swift Yellow Windrider 25532, Swift Purple Windrider 25533. Hargen Bronzewing and Wind Rider Jahubo (the Hellfire trainers) do not exist in the TBC Questie database; they were added in Wrath, so the Shadowmoon Valley trainers are the only ones."
+   },
+   {
+    "key": "OGRILA_UNLOCK",
+    "title": "Ogri'la: the Blade's Edge ogre plateau",
+    "category": "UNLOCK",
+    "faction": "BOTH",
+    "summary": "Mog'dorg the Wizened, atop the tower at the Circle of Blood, sends you after four of Gruul's sons and the warlock Vim'gol before Skulloc Soulgrinder can be destroyed. Only then does he point you to Chu'a'lor at Ogri'la, a plateau in western Blade's Edge reachable only by flying, where The Crystals opens the Apexis relic game, the Skyguard Outpost and four daily quests. Ogri'la reputation is earned almost entirely through those dailies, with Banish the Demons added at Honored.",
+    "unlocks": "Access to the Ogri'la and Skyguard Outpost daily quests, Apexis Shard and Crystal vendors (Jho'nass) at every standing, Sha'tari Skyguard reputation from the shared dailies, and Exalted gear and tabard.",
+    "phase": {
+     "introduced": 2,
+     "requiredUntil": null,
+     "notes": "Added in original patch 2.1; on Anniversary realms it arrived with Phase 2 (Overlords of Outland, 14 May 2026) and is never removed. Every quest requires level 70. Reaching the plateau needs a flying mount; Honored with the Sha'tari Skyguard later unlocks a Skyguard flight between Blackwind Landing and Ogri'la."
+    },
+    "prerequisites": [
+     "FLYING_EPIC"
+    ],
+    "steps": [
+     {
+      "key": "speak_with_ogre",
+      "title": "Hear V'eru's call and find Grok in Lower City",
+      "kind": "QUEST",
+      "questId": 10984,
+      "questName": "Speak with the Ogre",
+      "giver": {
+       "npcId": 22497,
+       "name": "V'eru",
+       "zone": "Shattrath City",
+       "x": 56.5,
+       "y": 49.1
+      },
+      "turnIn": {
+       "npcId": 22940,
+       "name": "Grok",
+       "zone": "Shattrath City",
+       "x": 64.9,
+       "y": 68.1
+      },
+      "detail": "The naaru V'eru in the Terrace of Light offers Speak with the Ogre at level 70. Grok, an ogre in the eastern Lower City near the Scryer's Tier lift, takes it and hands out Mog'dorg the Wizened. This is only a breadcrumb.",
+      "detectedBy": "Quest 10984 flagged complete.",
+      "optional": true
+     },
+     {
+      "key": "mogdorg_wizened",
+      "title": "Meet Mog'dorg atop the Circle of Blood tower",
+      "kind": "QUEST",
+      "questId": 10983,
+      "altQuestIds": [
+       10989,
+       11057
+      ],
+      "questName": "Mog'dorg the Wizened",
+      "giver": {
+       "npcId": 22940,
+       "name": "Grok",
+       "zone": "Shattrath City",
+       "x": 64.9,
+       "y": 68.1
+      },
+      "turnIn": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "detail": "Fly to the Circle of Blood arena in central Blade's Edge and land on top of the stone tower at 55.5, 44.9, where Mog'dorg the Wizened waits. Three breadcrumbs lead here and any one of them opens his chain: Mog'dorg the Wizened from Grok (10983), the same-named quest from the ogre Chort beside the tower (10989), or The Trouble Below from Chu'a'lor if you fly straight to Ogri'la first (11057).",
+      "detectedBy": "Any of quests 10983, 10989 or 11057 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "grulloc",
+      "title": "Take Grulloc's Dragon Skull (group)",
+      "kind": "QUEST",
+      "questId": 10995,
+      "questName": "Grulloc Has Two Skulls",
+      "giver": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "turnIn": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "kill": {
+       "npcId": 20216,
+       "name": "Grulloc",
+       "zone": "Blade's Edge Mountains",
+       "x": 60.9,
+       "y": 47.6
+      },
+      "detail": "Mog'dorg hands out Grulloc Has Two Skulls, Maggoc's Treasure Chest and Even Gronn Have Standards together; do them in any order. Grulloc, Son of Gruul, paces the valley east of the Circle of Blood around 60.9, 47.6 and is a five-player elite gronn. Kill him and loot Grulloc's Dragon Skull from the sack he leaves behind. Kiting classes can solo him with patience, but a group is the intended route.",
+      "detectedBy": "Quest 10995 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "maggoc",
+      "title": "Steal Maggoc's Treasure Chest (group)",
+      "kind": "QUEST",
+      "questId": 10996,
+      "questName": "Maggoc's Treasure Chest",
+      "giver": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "turnIn": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "kill": {
+       "npcId": 20600,
+       "name": "Maggoc",
+       "zone": "Blade's Edge Mountains",
+       "x": 58.6,
+       "y": 60.8
+      },
+      "detail": "Maggoc, Son of Gruul, wanders the southern reaches of Blade's Edge near 58.6, 60.8, south of the Circle of Blood toward Mok'Nathal Village. He is another five-player gronn; kill him and take Maggoc's Treasure Chest from the sack he drops. Can be done before or after Grulloc and Slaag.",
+      "detectedBy": "Quest 10996 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "slaag",
+      "title": "Bring Slaag's Standard from the Barrier Hills (group)",
+      "kind": "QUEST",
+      "questId": 10997,
+      "questName": "Even Gronn Have Standards",
+      "giver": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "turnIn": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "kill": {
+       "npcId": 22199,
+       "name": "Slaag",
+       "zone": "Terokkar Forest",
+       "x": 20.2,
+       "y": 18.1
+      },
+      "detail": "Slaag, Son of Gruul, lives in the Barrier Hills, the plateau above Shattrath City that is reachable only by flying (Terokkar Forest 20.2, 18.1, among the Gordunni ogres). Kill him with a group and loot Slaag's Standard. The Gordunni ogres here are also the targets of the Skyguard quest Threat from Above, so the two guides overlap nicely.",
+      "detectedBy": "Quest 10997 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "grimoire_business",
+      "title": "Summon Vim'gol the Vile for his grimoire (5 players)",
+      "kind": "QUEST",
+      "questId": 10998,
+      "questName": "Grim(oire) Business",
+      "giver": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "turnIn": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "kill": {
+       "npcId": 22911,
+       "name": "Vim'gol the Vile",
+       "zone": "Blade's Edge Mountains",
+       "x": 77.5,
+       "y": 31.2
+      },
+      "detail": "Once all three gronn quests are in, Mog'dorg offers Grim(oire) Business. Fly to Vim'gol's Circle in north-eastern Blade's Edge (77.5, 31.2), a ring of five small summoning circles. Five players must each stand in a circle at the same time to summon Vim'gol the Vile; while he casts Unholy Growth everyone must again stand in the circles to interrupt it. Kill him and loot Vim'gol's Vile Grimoire (item 32467).",
+      "detectedBy": "Quest 10998 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "soulgrinder",
+      "title": "Destroy Skulloc Soulgrinder (group)",
+      "kind": "QUEST",
+      "questId": 11000,
+      "questName": "Into the Soulgrinder",
+      "giver": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "turnIn": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "kill": {
+       "npcId": 22910,
+       "name": "Skulloc Soulgrinder",
+       "zone": "Blade's Edge Mountains",
+       "x": 60.7,
+       "y": 25.5
+      },
+      "detail": "Take Vim'gol's Grimoire to the Soulgrinder, a great machine north-east of Bladespire Hold at about 60.7, 25.5. Reading the grimoire there calls Skulloc Soulgrinder, a huge gronn spirit, while ogre spirits channel at the surrounding stones. The fight is tuned for a full group of five. Loot Skulloc's Soul and carry it back to Mog'dorg, who then sends you to Ogri'la.",
+      "detectedBy": "Quest 11000 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "ogre_heaven",
+      "title": "Fly to Ogri'la and speak with Chu'a'lor",
+      "kind": "QUEST",
+      "questId": 11009,
+      "questName": "Ogre Heaven",
+      "giver": {
+       "npcId": 22941,
+       "name": "Mog'dorg the Wizened",
+       "zone": "Blade's Edge Mountains",
+       "x": 55.5,
+       "y": 44.9
+      },
+      "turnIn": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "detail": "Ogre Heaven sends you west to Ogri'la, the ogre camp on the high plateau at the western edge of Blade's Edge between Forge Camp: Terror and Forge Camp: Wrath (28.8, 57.4). It can only be reached by flying mount or flight form. Chu'a'lor, the camp leader, takes the quest for 25 reputation. A Bladespire Supplicant near the Circle of Blood tower (55.8, 46.4) also offers the breadcrumb Speak with Mog'dorg (11022) if you lose track.",
+      "detectedBy": "Quest 11009 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "the_crystals",
+      "title": "Gather 5 Apexis Shards for The Crystals",
+      "kind": "QUEST",
+      "questId": 11025,
+      "questName": "The Crystals",
+      "giver": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "turnIn": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "itemId": 32569,
+      "itemName": "Apexis Shard",
+      "count": 5,
+      "detail": "Chu'a'lor asks for 5 Apexis Shards. They drop from almost every mob on the plateau (Apexis Flayers and the demons at the forge camps) and are also looted from the shard piles scattered across the plateau. The turn-in pays 250 Ogri'la reputation and unlocks every other Ogri'la and Skyguard Outpost quest in this guide.",
+      "detectedBy": "Quest 11025 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "apexis_relic",
+      "title": "Win the Apexis Relic game once",
+      "kind": "QUEST",
+      "questId": 11058,
+      "questName": "An Apexis Relic",
+      "giver": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "turnIn": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "detail": "Carry an Apexis Shard to any Apexis Relic on the plateau (the glowing pedestals surrounded by four coloured crystals) and start the memory game: repeat the sequence of colours the relic flashes, which grows each round. Four rounds of success grant the Apexis Vibrations buff that completes the quest; failing a round damages you. The first completion pays 250 Ogri'la and 250 Sha'tari Skyguard reputation and unlocks the daily version.",
+      "detectedBy": "Quest 11058 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "relic_emanation_daily",
+      "title": "Daily: The Relic's Emanation (350 Ogri'la)",
+      "kind": "QUEST",
+      "questId": 11080,
+      "questName": "The Relic's Emanation",
+      "daily": true,
+      "giver": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "turnIn": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "detail": "The daily repeat of the relic game: use one Apexis Shard at a relic and win enough rounds to gain Apexis Emanations, then return to Chu'a'lor for 350 Ogri'la reputation. With a group of five, 35 shards at a relic instead summon a dragon or demon that drops an Apexis Crystal, the currency for Revered and Exalted rewards.",
+      "detectedBy": "Quest 11080 flagged complete today (daily flag resets); counts as part of the daily loop, not a one-time gate.",
+      "optional": false
+     },
+     {
+      "key": "skyguard_ranger",
+      "title": "Help Torkus: Our Boy Wants To Be A Skyguard Ranger",
+      "kind": "QUEST",
+      "questId": 11030,
+      "questName": "Our Boy Wants To Be A Skyguard Ranger",
+      "giver": {
+       "npcId": 23316,
+       "name": "Torkus",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.4,
+       "y": 57.6
+      },
+      "turnIn": {
+       "npcId": 23316,
+       "name": "Torkus",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.4,
+       "y": 57.6
+      },
+      "detail": "Torkus, beside Chu'a'lor, wants an Unstable Flask of the Beast. The flasks come from Shard-Hide Boars, Apexis Flayers and the plateau's other beasts, which drop them readily. Pays 250 Ogri'la reputation and is the prerequisite for The Skyguard Outpost, so it is not optional. Its follow-ups A Father's Duty (11061, Unstable Flask of the Sorcerer from the forge camp demons, 250) and A Fel Whip For Gahk (11079, Gahk at 28.5, 58.1, 500) are optional reputation.",
+      "detectedBy": "Quest 11030 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "skyguard_outpost",
+      "title": "Report to Sky Commander Keller at the Skyguard Outpost",
+      "kind": "QUEST",
+      "questId": 11062,
+      "questName": "The Skyguard Outpost",
+      "giver": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "turnIn": {
+       "npcId": 23334,
+       "name": "Sky Commander Keller",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.4,
+       "y": 52.7
+      },
+      "detail": "Chu'a'lor sends you to the Sha'tari Skyguard camp just north of Ogri'la (27.4, 52.7). Sky Commander Keller takes the quest for 10 Skyguard reputation and opens the Outpost's quests: Bombing Run from Sky Sergeant Vanderlip and, through Chu'a'lor, Guardian of the Monument.",
+      "detectedBy": "Quest 11062 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "guardian_monument",
+      "title": "Kill an Apexis Guardian for Guardian of the Monument (group)",
+      "kind": "QUEST",
+      "questId": 11059,
+      "questName": "Guardian of the Monument",
+      "giver": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "turnIn": {
+       "npcId": 23233,
+       "name": "Chu'a'lor",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.8,
+       "y": 57.4
+      },
+      "kill": {
+       "npcId": 22275,
+       "name": "Apexis Guardian",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.4,
+       "y": 68.6
+      },
+      "detail": "An Apexis Guardian, an elite crystal golem, stands at each of the Apexis monuments on the plateau (around 27.4, 68.6 and 31.8, 63.8, with another far north at 60.0, 9.5). Bring a group, kill one and loot the Apexis Guardian's Head. The turn-in pays 500 Ogri'la and 500 Sha'tari Skyguard reputation, the largest single one-time reward here.",
+      "detectedBy": "Quest 11059 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "bombing_run",
+      "title": "Bomb 15 Fel Cannonball Stacks (Bombing Run)",
+      "kind": "QUEST",
+      "questId": 11010,
+      "altQuestIds": [
+       11102
+      ],
+      "questName": "Bombing Run",
+      "giver": {
+       "npcId": 23120,
+       "name": "Sky Sergeant Vanderlip",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.6,
+       "y": 52.9
+      },
+      "turnIn": {
+       "npcId": 23120,
+       "name": "Sky Sergeant Vanderlip",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.6,
+       "y": 52.9
+      },
+      "detail": "Sky Sergeant Vanderlip gives you Skyguard Bombs (item 32456). Fly over Forge Camp: Wrath (north of Ogri'la) or Forge Camp: Terror (south) and drop a bomb on 15 Fel Cannonball Stacks; the Legion's cannons fire at low fliers, so stay high and dive. Druids receive the flight-form version 11102 instead of 11010. Pays 500 Ogri'la and 500 Skyguard reputation and unlocks the daily Bomb Them Again! and Skyguard Khatie's Wrangle Some Aether Rays!.",
+      "detectedBy": "Quest 11010 or 11102 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "bomb_again_daily",
+      "title": "Daily: Bomb Them Again! (500 Ogri'la, 500 Skyguard)",
+      "kind": "QUEST",
+      "questId": 11023,
+      "questName": "Bomb Them Again!",
+      "daily": true,
+      "giver": {
+       "npcId": 23120,
+       "name": "Sky Sergeant Vanderlip",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.6,
+       "y": 52.9
+      },
+      "turnIn": {
+       "npcId": 23120,
+       "name": "Sky Sergeant Vanderlip",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.6,
+       "y": 52.9
+      },
+      "detail": "Same run as Bombing Run, every day: 15 Fel Cannonball Stacks at either forge camp. It is the best-paying daily on the plateau for both factions at once, so it anchors the daily loop together with Wrangle More Aether Rays!, The Relic's Emanation and, from Honored, Banish More Demons.",
+      "detectedBy": "Quest 11023 flagged complete today.",
+      "optional": false
+     },
+     {
+      "key": "wrangle_rays",
+      "title": "Wrangle Some Aether Rays!",
+      "kind": "QUEST",
+      "questId": 11065,
+      "questName": "Wrangle Some Aether Rays!",
+      "giver": {
+       "npcId": 23335,
+       "name": "Skyguard Khatie",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.9,
+       "y": 51.5
+      },
+      "turnIn": {
+       "npcId": 23335,
+       "name": "Skyguard Khatie",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.9,
+       "y": 51.5
+      },
+      "detail": "Skyguard Khatie gives you a Wrangling Rope (item 32698). Fight the Aether Rays drifting over the plateau south and east of Ogri'la down to low health, then use the rope on them to leash a ray; lead it back to the Outpost. Five rays complete the quest for 350 Ogri'la and 350 Skyguard reputation, unlocking the daily Wrangle More Aether Rays! (11066, same rewards) and Keller's To Rule The Skies (11078, Dragon Teeth, 500 Skyguard).",
+      "detectedBy": "Quest 11065 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "wrangle_more_daily",
+      "title": "Daily: Wrangle More Aether Rays! (350 and 350)",
+      "kind": "QUEST",
+      "questId": 11066,
+      "questName": "Wrangle More Aether Rays!",
+      "daily": true,
+      "giver": {
+       "npcId": 23335,
+       "name": "Skyguard Khatie",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.9,
+       "y": 51.5
+      },
+      "turnIn": {
+       "npcId": 23335,
+       "name": "Skyguard Khatie",
+       "zone": "Blade's Edge Mountains",
+       "x": 27.9,
+       "y": 51.5
+      },
+      "detail": "Daily repeat: rope five more Aether Rays back to Khatie for 350 Ogri'la and 350 Sha'tari Skyguard reputation. Combine with Bomb Them Again! and The Relic's Emanation for about 1200 Ogri'la a day before Honored.",
+      "detectedBy": "Quest 11066 flagged complete today.",
+      "optional": false
+     },
+     {
+      "key": "friendly",
+      "title": "Reach Friendly with Ogri'la",
+      "kind": "REP",
+      "factionId": 1038,
+      "standing": 5,
+      "detail": "About two days of dailies from Neutral. Friendly unlocks Jho'nass's Crystal Healing and Mana Potions (50 shards each) and the tiny thank-you quest A Special Thank You (11091, Chu'a'lor to Jho'nass at 28.1, 58.7, 10 reputation).",
+      "detectedBy": "Faction 1038 standingID >= 5.",
+      "optional": false
+     },
+     {
+      "key": "honored",
+      "title": "Reach Honored with Ogri'la",
+      "kind": "REP",
+      "factionId": 1038,
+      "standing": 6,
+      "detail": "Roughly five more days of dailies. Honored adds the Ogre Brews at Jho'nass and, more importantly, unlocks Kronk's Banish the Demons chain, which adds a fourth daily to the loop. Honored with the Sha'tari Skyguard (earned in parallel) also opens the Skyguard flight between Blackwind Landing and Ogri'la.",
+      "detectedBy": "Faction 1038 standingID >= 6.",
+      "optional": false
+     },
+     {
+      "key": "banish_demons",
+      "title": "Banish the Demons at the forge camps (Honored)",
+      "kind": "QUEST",
+      "questId": 11026,
+      "questName": "Banish the Demons",
+      "giver": {
+       "npcId": 23253,
+       "name": "Kronk",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.9,
+       "y": 57.9
+      },
+      "turnIn": {
+       "npcId": 23253,
+       "name": "Kronk",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.9,
+       "y": 57.9
+      },
+      "detail": "Kronk, next to Chu'a'lor, only speaks to Honored allies. He gives a Banishing Crystal (item 32696): fight the demons at Forge Camp: Wrath or Forge Camp: Terror down to low health and use the crystal to banish them, 15 in all. Pays 350 Ogri'la reputation and unlocks the daily Banish More Demons. The side quest A Crystalforged Darkrune (11060, Gahk) belongs to the Shartuul's Transporter event and is optional.",
+      "detectedBy": "Quest 11026 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "banish_more_daily",
+      "title": "Daily: Banish More Demons (350 Ogri'la)",
+      "kind": "QUEST",
+      "questId": 11051,
+      "questName": "Banish More Demons",
+      "daily": true,
+      "giver": {
+       "npcId": 23253,
+       "name": "Kronk",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.9,
+       "y": 57.9
+      },
+      "turnIn": {
+       "npcId": 23253,
+       "name": "Kronk",
+       "zone": "Blade's Edge Mountains",
+       "x": 28.9,
+       "y": 57.9
+      },
+      "detail": "Daily repeat of the banishing run for 350 Ogri'la reputation. With all four dailies the plateau pays about 1550 Ogri'la a day, so Revered follows in about eight days and Exalted in about fourteen more.",
+      "detectedBy": "Quest 11051 flagged complete today.",
+      "optional": false
+     },
+     {
+      "key": "revered",
+      "title": "Reach Revered with Ogri'la",
+      "kind": "REP",
+      "factionId": 1038,
+      "standing": 7,
+      "detail": "Revered opens Jho'nass's epic pieces: Apexis Cloak, Crystalforged Trinket, Ogri'la Aegis and Cerulean Crystal Rod, each for 1 Apexis Crystal and 50 Apexis Shards. Crystals come from the 35-shard group summons at any Apexis Relic.",
+      "detectedBy": "Faction 1038 standingID >= 7.",
+      "optional": false
+     },
+     {
+      "key": "exalted",
+      "title": "Reach Exalted with Ogri'la",
+      "kind": "REP",
+      "factionId": 1038,
+      "standing": 8,
+      "detail": "Exalted sells the Crystalline Crossbow, Crystal Orb of Enlightenment, Shard-bound Bracers and Vortex Walking Boots for 4 Apexis Crystals and 100 Shards each, plus the Ogri'la Tabard for 10 shards. There is no mount; the Skyguard side of the plateau is where the nether rays come from.",
+      "detectedBy": "Faction 1038 standingID == 8.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10984?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10983?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10995?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10996?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10997?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10998?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11000?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11009?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11025?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11058?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11080?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11030?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11062?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11059?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11010?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11102?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11023?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11065?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11066?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11026?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11051?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32569?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32572?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32467?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32456?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32698?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32696?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22941?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23233?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/20216?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/20600?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22199?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22911?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22910?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22275?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23334?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23120?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23335?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23253?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23316?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23428?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Ogri%27la_(faction)",
+     "https://warcraft.wiki.gg/wiki/Ogri%27la",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc (quest prerequisites, requiredMinRep, reputation rewards, NPC spawns)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_Factions/data-tbc.lua (faction 1038, ContentPhaseBC 2)"
+    ],
+    "notes": "Faction id Ogri'la 1038, Sha'tari Skyguard 1031. Questie encodes the gates as requiredMinRep: Banish the Demons and A Crystalforged Darkrune need 1038 at 9000 (Honored); A Special Thank You needs 3000 (Friendly). The two Bombing Run ids are class-split (11010 for every class except druids, mask 479; 11102 for druids, mask 1024). Dailies carry Questie specialFlags 1 and questFlags bit 4096. Quests confirmed but left out as optional reputation: A Father's Duty 11061, A Fel Whip For Gahk 11079, To Rule The Skies 11078, Assault on Bash'ir Landing! 11119, A Special Thank You 11091, A Crystalforged Darkrune 11060, Yous Have Da Darkrune? 11027, Speak with Mog'dorg 11022."
+   },
+   {
+    "key": "SKYGUARD_SKETTIS",
+    "title": "Sha'tari Skyguard: Skettis and Terokk",
+    "category": "UNLOCK",
+    "faction": "BOTH",
+    "summary": "Yuula in Shattrath recruits fliers with Expert Riding to kill ogres in the Barrier Hills, then sends them to Blackwind Landing above Skettis in Terokkar Forest. Two dailies, Fires Over Skettis and Escape from Skettis, carry the reputation, while the Severin and Hazzik chain through the Talonpriests ends with summoning Terokk himself. Skyguard reputation also flows from the Ogri'la plateau quests, and Exalted buys the five nether ray mounts from Grella.",
+    "unlocks": "Sha'tari Skyguard reputation, the Skyguard flight between Blackwind Landing and Ogri'la at Honored, the Terokk summon, and at Exalted the Riding Nether Ray mounts and Nether Ray Fry pet from Grella.",
+    "phase": {
+     "introduced": 2,
+     "requiredUntil": null,
+     "notes": "Added in original patch 2.1; Anniversary Phase 2 (14 May 2026). Never removed. Every Skettis quest requires level 70 and Riding 225 (Questie requiredSkill 762 at 225); the Blackwind Landing camp sits on a cliff reachable only by air."
+    },
+    "prerequisites": [
+     "FLYING_EPIC"
+    ],
+    "steps": [
+     {
+      "key": "threat_from_above",
+      "title": "Kill 20 Gordunni Ogres in the Barrier Hills",
+      "kind": "QUEST",
+      "questId": 11096,
+      "questName": "Threat from Above",
+      "giver": {
+       "npcId": 23449,
+       "name": "Yuula",
+       "zone": "Shattrath City",
+       "x": 64.3,
+       "y": 42.3
+      },
+      "turnIn": {
+       "npcId": 23449,
+       "name": "Yuula",
+       "zone": "Shattrath City",
+       "x": 64.3,
+       "y": 42.3
+      },
+      "detail": "Yuula, the Skyguard Recruitment Officer beside the Shattrath flight master, offers Threat from Above only to level 70 characters with Expert Riding. Fly up to the Barrier Hills, the plateau directly above Shattrath, and kill any 20 Gordunni Ogres (Slaag, the gronn for the Ogri'la quest Even Gronn Have Standards, roams here too). Return for 250 Skyguard reputation.",
+      "detectedBy": "Quest 11096 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "to_skettis",
+      "title": "Deliver the Explosives Package to Blackwind Landing",
+      "kind": "QUEST",
+      "questId": 11098,
+      "questName": "To Skettis!",
+      "giver": {
+       "npcId": 23449,
+       "name": "Yuula",
+       "zone": "Shattrath City",
+       "x": 64.3,
+       "y": 42.3
+      },
+      "turnIn": {
+       "npcId": 23048,
+       "name": "Sky Sergeant Doryn",
+       "zone": "Terokkar Forest",
+       "x": 64.5,
+       "y": 66.7
+      },
+      "detail": "Carry the Explosives Package (item 32848) to Sky Sergeant Doryn at Blackwind Landing, the Skyguard camp on the mountain ridge north of Skettis in south-eastern Terokkar Forest (64.5, 66.7). Pays 10 reputation and unlocks the two dailies and the camp's one-time quests.",
+      "detectedBy": "Quest 11098 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "fires_over_skettis_daily",
+      "title": "Daily: Fires Over Skettis (350 Skyguard)",
+      "kind": "QUEST",
+      "questId": 11008,
+      "questName": "Fires Over Skettis",
+      "daily": true,
+      "giver": {
+       "npcId": 23048,
+       "name": "Sky Sergeant Doryn",
+       "zone": "Terokkar Forest",
+       "x": 64.5,
+       "y": 66.7
+      },
+      "turnIn": {
+       "npcId": 23048,
+       "name": "Sky Sergeant Doryn",
+       "zone": "Terokkar Forest",
+       "x": 64.5,
+       "y": 66.7
+      },
+      "detail": "Doryn gives Skyguard Blasting Charges (item 32406). Fly low over the arakkoa huts of Skettis and drop charges on the Monstrous Kaliri Eggs sitting on the rooftops; 20 eggs complete it. Monstrous Kaliri birds patrol the air and dismount anyone they catch, so bomb from above and keep moving. 350 reputation a day.",
+      "detectedBy": "Quest 11008 flagged complete today.",
+      "optional": false
+     },
+     {
+      "key": "escape_from_skettis_daily",
+      "title": "Daily: Escape from Skettis (150 Skyguard)",
+      "kind": "QUEST",
+      "questId": 11085,
+      "questName": "Escape from Skettis",
+      "daily": true,
+      "giver": {
+       "npcId": 23383,
+       "name": "Skyguard Prisoner",
+       "zone": "Terokkar Forest",
+       "x": 68.4,
+       "y": 74.1
+      },
+      "turnIn": {
+       "npcId": 23048,
+       "name": "Sky Sergeant Doryn",
+       "zone": "Terokkar Forest",
+       "x": 64.5,
+       "y": 66.7
+      },
+      "detail": "A caged Skyguard Prisoner spawns at one of three cages in Skettis (68.4, 74.1; 75.1, 86.3; 61.0, 75.5). Free him and escort him on foot to the exit while arakkoa ambush along the path; stay mounted on the ground to keep pace. Report to Doryn for 150 reputation. Only one escort can be done per day.",
+      "detectedBy": "Quest 11085 flagged complete today.",
+      "optional": false
+     },
+     {
+      "key": "hungry_nether_rays",
+      "title": "Feed the Hungry Nether Ray",
+      "kind": "QUEST",
+      "questId": 11093,
+      "questName": "Hungry Nether Rays",
+      "giver": {
+       "npcId": 23415,
+       "name": "Skyguard Handler Deesak",
+       "zone": "Terokkar Forest",
+       "x": 63.5,
+       "y": 65.8
+      },
+      "turnIn": {
+       "npcId": 23415,
+       "name": "Skyguard Handler Deesak",
+       "zone": "Terokkar Forest",
+       "x": 63.5,
+       "y": 65.8
+      },
+      "detail": "Deesak hands you a Nether Ray Cage (item 32834). Place it in the woods just south of Blackwind Landing and kill Blackwind Warp Chasers next to the released Hungry Nether Ray so it can feed; ten meals complete it for 250 reputation. One-time only.",
+      "detectedBy": "Quest 11093 flagged complete.",
+      "optional": true
+     },
+     {
+      "key": "world_of_shadows",
+      "title": "Collect 6 Shadow Dust for Severin",
+      "kind": "QUEST",
+      "questId": 11004,
+      "questName": "World of Shadows",
+      "giver": {
+       "npcId": 23042,
+       "name": "Severin",
+       "zone": "Terokkar Forest",
+       "x": 64,
+       "y": 66.9
+      },
+      "turnIn": {
+       "npcId": 23042,
+       "name": "Severin",
+       "zone": "Terokkar Forest",
+       "x": 64,
+       "y": 66.9
+      },
+      "detail": "Severin, the Skyguard Medic, wants 6 Shadow Dust from the arakkoa of Skettis. The dust drops from every arakkoa in the town. He turns it into an Elixir of Shadows, a 20-minute buff that lets you see the shadow arakkoa and the Talonpriests. Pays 250 reputation and unlocks Secrets of the Talonpriests plus the repeatable More Shadow Dust (11006, 6 dust for another elixir and 150 reputation).",
+      "detectedBy": "Quest 11004 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "secrets_talonpriests",
+      "title": "Slay Talonpriests Ishaal, Skizzik and Zellek",
+      "kind": "QUEST",
+      "questId": 11005,
+      "questName": "Secrets of the Talonpriests",
+      "giver": {
+       "npcId": 23038,
+       "name": "Sky Commander Adaris",
+       "zone": "Terokkar Forest",
+       "x": 64.1,
+       "y": 66.9
+      },
+      "turnIn": {
+       "npcId": 23038,
+       "name": "Sky Commander Adaris",
+       "zone": "Terokkar Forest",
+       "x": 64.1,
+       "y": 66.9
+      },
+      "detail": "Drink an Elixir of Shadows in Skettis and hunt the three Talonpriests, who are invisible without it: Ishaal, Skizzik and Zellek each stand on a different hut platform in the town. Kill all three and return to Adaris for 250 reputation. Talonpriest Ishaal drops Ishaal's Almanac, which starts the next quest.",
+      "detectedBy": "Quest 11005 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "ishaals_almanac",
+      "title": "Bring Ishaal's Almanac to Adaris",
+      "kind": "QUEST",
+      "questId": 11021,
+      "questName": "Ishaal's Almanac",
+      "itemId": 32523,
+      "itemName": "Ishaal's Almanac",
+      "count": 1,
+      "turnIn": {
+       "npcId": 23038,
+       "name": "Sky Commander Adaris",
+       "zone": "Terokkar Forest",
+       "x": 64.1,
+       "y": 66.9
+      },
+      "detail": "Ishaal's Almanac (item 32523) drops from Talonpriest Ishaal and starts a quest when read. Hand it to Sky Commander Adaris for 75 reputation; he cannot decipher it and sends you to Shattrath.",
+      "detectedBy": "Quest 11021 flagged complete (or item 32523 in bags means the step is in progress).",
+      "optional": false
+     },
+     {
+      "key": "ally_lower_city",
+      "title": "Take the almanac to Rilak the Redeemed",
+      "kind": "QUEST",
+      "questId": 11024,
+      "questName": "An Ally in Lower City",
+      "giver": {
+       "npcId": 23038,
+       "name": "Sky Commander Adaris",
+       "zone": "Terokkar Forest",
+       "x": 64.1,
+       "y": 66.9
+      },
+      "turnIn": {
+       "npcId": 22292,
+       "name": "Rilak the Redeemed",
+       "zone": "Shattrath City",
+       "x": 52.5,
+       "y": 21
+      },
+      "detail": "Fly to Shattrath and find Rilak the Redeemed, the arakkoa in the north-western Lower City (52.5, 21.0). He reads the almanac and warns that Terokk's return is near. 75 reputation.",
+      "detectedBy": "Quest 11024 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "countdown_to_doom",
+      "title": "Return to Adaris with news of Terokk",
+      "kind": "QUEST",
+      "questId": 11028,
+      "questName": "Countdown to Doom",
+      "giver": {
+       "npcId": 22292,
+       "name": "Rilak the Redeemed",
+       "zone": "Shattrath City",
+       "x": 52.5,
+       "y": 21
+      },
+      "turnIn": {
+       "npcId": 23038,
+       "name": "Sky Commander Adaris",
+       "zone": "Terokkar Forest",
+       "x": 64.1,
+       "y": 66.9
+      },
+      "detail": "Carry Rilak's warning back to Sky Commander Adaris at Blackwind Landing for 75 reputation. Adaris passes you to Hazzik, the arakkoa defector standing in the camp.",
+      "detectedBy": "Quest 11028 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "hazziks_bargain",
+      "title": "Fetch Hazzik's Package from eastern Skettis",
+      "kind": "QUEST",
+      "questId": 11056,
+      "questName": "Hazzik's Bargain",
+      "giver": {
+       "npcId": 23306,
+       "name": "Hazzik",
+       "zone": "Terokkar Forest",
+       "x": 64.2,
+       "y": 67
+      },
+      "turnIn": {
+       "npcId": 23306,
+       "name": "Hazzik",
+       "zone": "Terokkar Forest",
+       "x": 64.2,
+       "y": 67
+      },
+      "detail": "Hazzik wants the package he left in his old dwelling in eastern Skettis. Fly to the eastern huts, loot Hazzik's Package from inside and bring it back. 75 reputation.",
+      "detectedBy": "Quest 11056 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "shabby_disguise",
+      "title": "Use the Shabby Arakkoa Disguise on Sahaak",
+      "kind": "QUEST",
+      "questId": 11029,
+      "questName": "A Shabby Disguise",
+      "giver": {
+       "npcId": 23306,
+       "name": "Hazzik",
+       "zone": "Terokkar Forest",
+       "x": 64.2,
+       "y": 67
+      },
+      "turnIn": {
+       "npcId": 23306,
+       "name": "Hazzik",
+       "zone": "Terokkar Forest",
+       "x": 64.2,
+       "y": 67
+      },
+      "detail": "Put on the Shabby Arakkoa Disguise (item 32741) in Skettis and walk, not fly, to the arakkoa Sahaak, who guards the Adversarial Bloodlines scroll on one of the central platforms. In disguise he will talk to you and hand over the Bloodlines; attacking or mounting breaks the disguise. 150 reputation.",
+      "detectedBy": "Quest 11029 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "adversarial_blood",
+      "title": "Summon and defeat the four descendants (group)",
+      "kind": "QUEST",
+      "questId": 11885,
+      "altQuestIds": [
+       11072
+      ],
+      "questName": "Adversarial Blood",
+      "giver": {
+       "npcId": 23306,
+       "name": "Hazzik",
+       "zone": "Terokkar Forest",
+       "x": 64.2,
+       "y": 67
+      },
+      "turnIn": {
+       "npcId": 23306,
+       "name": "Hazzik",
+       "zone": "Terokkar Forest",
+       "x": 64.2,
+       "y": 67
+      },
+      "itemId": 32620,
+      "itemName": "Time-Lost Scroll",
+      "count": 40,
+      "detail": "Collect Time-Lost Scrolls (item 32620) from the time-lost arakkoa, the shadowy ones visible only under the Elixir of Shadows. Ten scrolls used at the Skull Pile in the middle of a Skettis summoning circle call one of Terokk's adversaries' descendants: Akkarai, Karrog, Gezzarak the Huntress and Vakkiz the Windrager, each a group-worth elite. Kill all four and bring Akkarai's Talons, Karrog's Spine, Gezzarak's Claws and Vakkiz's Scale to Hazzik for 350 reputation. Tokens of the Descendants (11074, repeatable, 350) lets you repeat the summons for more reputation.",
+      "detectedBy": "Quest 11885 flagged complete (11072 is the retired duplicate id with no quest giver; accept either).",
+      "optional": false
+     },
+     {
+      "key": "terokks_downfall",
+      "title": "Summon and defeat Terokk (group)",
+      "kind": "QUEST",
+      "questId": 11073,
+      "questName": "Terokk's Downfall",
+      "giver": {
+       "npcId": 23038,
+       "name": "Sky Commander Adaris",
+       "zone": "Terokkar Forest",
+       "x": 64.1,
+       "y": 66.9
+      },
+      "turnIn": {
+       "npcId": 23038,
+       "name": "Sky Commander Adaris",
+       "zone": "Terokkar Forest",
+       "x": 64.1,
+       "y": 66.9
+      },
+      "itemId": 32720,
+      "itemName": "Time-Lost Offering",
+      "count": 1,
+      "kill": {
+       "npcId": 21838,
+       "name": "Terokk",
+       "zone": "Terokkar Forest",
+       "x": 66.2,
+       "y": 77.5
+      },
+      "detail": "Hazzik prepares a Time-Lost Offering (item 32720). Use it at the Ancient Skull Pile on Terokk's Rest, the island summoning circle in Blackwind Lake at the centre of Skettis (66.2, 77.5), to call Terokk, a level 72 elite meant for five players. He casts Shadow Bolt Volley, marks a Chosen One, and at low health shields himself; drag him into the blue smoke where Skyguard bombers strike to shatter the shield before his Frenzy ends the fight. Loot includes the Time-Lost Figurine; the turn-in pays 1000 Skyguard reputation.",
+      "detectedBy": "Quest 11073 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "honored",
+      "title": "Reach Honored with the Sha'tari Skyguard",
+      "kind": "REP",
+      "factionId": 1031,
+      "standing": 6,
+      "detail": "Honored unlocks Skyguard Rations at Grella and the Skyguard flight path between Blackwind Landing and the Skyguard Outpost at Ogri'la. The Ogri'la plateau quests pay Skyguard reputation at the same time as Ogri'la reputation, so running both hubs is the fastest route.",
+      "detectedBy": "Faction 1031 standingID >= 6.",
+      "optional": false
+     },
+     {
+      "key": "revered",
+      "title": "Reach Revered with the Sha'tari Skyguard",
+      "kind": "REP",
+      "factionId": 1031,
+      "standing": 7,
+      "detail": "Revered opens the two cloaks at Grella: Skyguard's Drape (item 32539) and Skywitch's Drape (item 32538).",
+      "detectedBy": "Faction 1031 standingID >= 7.",
+      "optional": false
+     },
+     {
+      "key": "exalted",
+      "title": "Reach Exalted and buy a Riding Nether Ray",
+      "kind": "REP",
+      "factionId": 1031,
+      "standing": 8,
+      "anyOfItemIds": [
+       32314,
+       32316,
+       32317,
+       32318,
+       32319
+      ],
+      "detail": "Grella, Skyguard Quartermaster at Blackwind Landing (64.3, 66.2), sells the Green (32314), Purple (32316), Red (32317), Silver (32318) and Blue (32319) Riding Nether Rays for 160 gold at Exalted (200 gold before the standing discount), the Nether Ray Fry pet (38628), the Skyguard Silver Cross (32770), Airman's Ribbon of Gallantry and the Skyguard Tabard. The rays are 280 percent mounts and need Artisan Riding.",
+      "detectedBy": "Faction 1031 standingID == 8; a Riding Nether Ray item in bags shows the mount was bought.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/11096?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11098?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11008?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11085?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11093?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11004?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11005?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11021?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11024?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11028?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11056?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11029?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11885?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11072?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11074?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11073?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32523?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32620?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32720?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32314?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32319?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/38628?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23449?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23048?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23038?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23306?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23042?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23383?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23415?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22292?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/21838?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23367?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Sha%27tari_Skyguard",
+     "https://warcraft.wiki.gg/wiki/Terokk",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc (quest chain, requiredSkill 762/225, reputation rewards, NPC spawns)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_Factions/data-tbc.lua (faction 1031 rewards)"
+    ],
+    "notes": "Faction id Sha'tari Skyguard 1031. Questie shows no reputation gate on Adversarial Blood or Terokk's Downfall; the chain is gated only by its prerequisites (World of Shadows through A Shabby Disguise), so Terokk can be summoned at any standing once the chain is done. Two ids share the name Adversarial Blood: 11885 is the live quest (has giver Hazzik and the Time-Lost Scroll requirement); 11072 is a retired duplicate with no quest giver. Ogri'la quests that also pay Skyguard reputation are listed in OGRILA_UNLOCK (An Apexis Relic 250, Guardian of the Monument 500, Bombing Run and Bomb Them Again! 500, Wrangle Some/More Aether Rays! 350, To Rule The Skies 500, The Skyguard Outpost and Assault on Bash'ir Landing! 10)."
+   },
+   {
+    "key": "NETHERWING_DAILIES",
+    "title": "Netherwing: from Mordenai to a Nether Drake",
+    "category": "UNLOCK",
+    "faction": "BOTH",
+    "summary": "Mordenai at Netherwing Fields in Shadowmoon Valley starts a nine-quest chain that frees Karynaku from Dragonmaw Fortress and lifts you from Hated to Neutral with the Netherwing in one turn-in. Artisan Riding then lets you swear the Blood Oath, take the Dragonmaw Illusion and work undercover at Dragonmaw Base Camp on Netherwing Ledge, where each standing unlocks more one-time quests and dailies. Exalted ends with Illidan himself and a free Netherwing drake from Barthamus in Shattrath.",
+    "unlocks": "Netherwing reputation to Exalted, one free Netherwing drake (280 percent flying mount) from the Lower City drakes and the right to buy the other five from Drake Dealer Hurlunk.",
+    "phase": {
+     "introduced": 3,
+     "requiredUntil": null,
+     "notes": "Added in original patch 2.1 but on TBC Classic and Anniversary realms it came with Phase 3 (Black Temple and Hyjal, 27 August 2026). Never removed. Level 70 throughout; the Hated-to-Neutral chain needs only a flying mount to reach Netherwing Ledge, but Blood Oath of the Netherwing and Enter the Taskmaster require Riding 300 (Artisan). Kill Them All! also requires City of Light from the Shattrath intro."
+    },
+    "prerequisites": [
+     "FLYING_EPIC",
+     "ALDOR_SCRYER_CHOICE"
+    ],
+    "steps": [
+     {
+      "key": "kindness",
+      "title": "Feed 8 Mature Netherwing Drakes",
+      "kind": "QUEST",
+      "questId": 10804,
+      "questName": "Kindness",
+      "giver": {
+       "npcId": 22113,
+       "name": "Mordenai",
+       "zone": "Shadowmoon Valley",
+       "x": 59.2,
+       "y": 58.7
+      },
+      "turnIn": {
+       "npcId": 22113,
+       "name": "Mordenai",
+       "zone": "Shadowmoon Valley",
+       "x": 59.2,
+       "y": 58.7
+      },
+      "detail": "Mordenai stands among the drakes at Netherwing Fields, east of Wildhammer Stronghold (59.2, 58.7). Kill Rocknail Flayers nearby for 8 Rocknail Flayer Carcasses (item 31372) and 5 Giblets (item 31373), then feed the carcasses to Mature Netherwing Drakes in the fields. Eight fed drakes finish the quest and start the chain toward Neltharaku.",
+      "detectedBy": "Quest 10804 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "seek_neltharaku",
+      "title": "Seek Out Neltharaku above the fields",
+      "kind": "QUEST",
+      "questId": 10811,
+      "questName": "Seek Out Neltharaku",
+      "giver": {
+       "npcId": 22113,
+       "name": "Mordenai",
+       "zone": "Shadowmoon Valley",
+       "x": 59.2,
+       "y": 58.7
+      },
+      "turnIn": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "detail": "Mordenai gives you a means to call Neltharaku, patron of the Netherwing flight, who circles high above Netherwing Fields near 61.3, 60.0. Use it in the fields and he descends to speak. Then listen to Neltharaku's Tale (10814), a short talk-only quest that must be completed before he gives work.",
+      "detectedBy": "Quest 10811 flagged complete (and 10814 Neltharaku's Tale for the follow-up).",
+      "optional": false
+     },
+     {
+      "key": "neltharakus_tale",
+      "title": "Listen to Neltharaku's Tale",
+      "kind": "QUEST",
+      "questId": 10814,
+      "questName": "Neltharaku's Tale",
+      "giver": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "turnIn": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "detail": "Accept the tale and let Neltharaku finish his story about the Dragonmaw enslaving his children; the credit The Tale of Neltharaku appears when he is done. Turn it in on the spot.",
+      "detectedBy": "Quest 10814 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "infiltrate_fortress",
+      "title": "Slay 15 Dragonmaw Orcs at Dragonmaw Fortress",
+      "kind": "QUEST",
+      "questId": 10836,
+      "questName": "Infiltrating Dragonmaw Fortress",
+      "giver": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "turnIn": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "detail": "Dragonmaw Fortress is the fel orc stronghold on the eastern cliffs of Shadowmoon Valley around 69, 60. Any Dragonmaw orc there counts; the Subjugators and Wyrmcallers on the lower terraces are the easiest 15. Return to Neltharaku.",
+      "detectedBy": "Quest 10836 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "to_netherwing_ledge",
+      "title": "Collect 12 Nethervine Crystals on Netherwing Ledge",
+      "kind": "QUEST",
+      "questId": 10837,
+      "questName": "To Netherwing Ledge!",
+      "giver": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "turnIn": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "detail": "Netherwing Ledge is the floating island off the south-eastern coast of Shadowmoon Valley and can only be reached by flying. Nethervine Crystals grow all over the ledge as small purple crystal nodes; gather 12 while avoiding the hostile Dragonmaw patrols, who are not yet friendly to you.",
+      "detectedBy": "Quest 10837 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "force_of_neltharaku",
+      "title": "Free 5 Enslaved Netherwing Drakes",
+      "kind": "QUEST",
+      "questId": 10854,
+      "questName": "The Force of Neltharaku",
+      "giver": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "turnIn": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "detail": "Neltharaku gives you an Enchanted Nethervine Crystal (item 31652). Use it on the Enslaved Netherwing Drakes chained around Dragonmaw Fortress; each freed drake flies off and some fight their captors on the way. Five freed drakes complete the quest.",
+      "detectedBy": "Quest 10854 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "karynaku",
+      "title": "Find Karynaku inside Dragonmaw Fortress",
+      "kind": "QUEST",
+      "questId": 10858,
+      "questName": "Karynaku",
+      "giver": {
+       "npcId": 21657,
+       "name": "Neltharaku",
+       "zone": "Shadowmoon Valley",
+       "x": 61.3,
+       "y": 60
+      },
+      "turnIn": {
+       "npcId": 22112,
+       "name": "Karynaku",
+       "zone": "Shadowmoon Valley",
+       "x": 69.9,
+       "y": 61.4
+      },
+      "detail": "Karynaku, Neltharaku's mate, is chained in the open courtyard of Dragonmaw Fortress at 69.9, 61.4, guarded by Zuluhed the Whacked and his retinue. Fly in and speak to her; she can be reached without fighting if you land beside her.",
+      "detectedBy": "Quest 10858 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "zuluhed",
+      "title": "Kill Zuluhed the Whacked and free Karynaku (group)",
+      "kind": "QUEST",
+      "questId": 10866,
+      "altQuestIds": [
+       10872
+      ],
+      "questName": "Zuluhed the Whacked",
+      "giver": {
+       "npcId": 22112,
+       "name": "Karynaku",
+       "zone": "Shadowmoon Valley",
+       "x": 69.9,
+       "y": 61.4
+      },
+      "turnIn": {
+       "npcId": 22112,
+       "name": "Karynaku",
+       "zone": "Shadowmoon Valley",
+       "x": 69.9,
+       "y": 61.4
+      },
+      "kill": {
+       "npcId": 11980,
+       "name": "Zuluhed the Whacked",
+       "zone": "Shadowmoon Valley",
+       "x": 71,
+       "y": 62.2
+      },
+      "detail": "Zuluhed the Whacked, Chieftain of the Dragonmaw, stands on the platform above Karynaku at 71.0, 62.2 with Dragonmaw guards and will summon Illidari help; he is a five-player elite. Kill him, loot Zuluhed's Key (item 31664) and use it on Zuluhed's Chains beside Karynaku to free her. Humans receive the id 10872 instead of 10866 (and 10871 instead of 10870 for the next step); both versions are identical.",
+      "detectedBy": "Quest 10866 or 10872 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "ally_of_netherwing",
+      "title": "Return to Mordenai as Ally of the Netherwing",
+      "kind": "QUEST",
+      "questId": 10870,
+      "altQuestIds": [
+       10871
+      ],
+      "questName": "Ally of the Netherwing",
+      "giver": {
+       "npcId": 22112,
+       "name": "Karynaku",
+       "zone": "Shadowmoon Valley",
+       "x": 69.9,
+       "y": 61.4
+      },
+      "turnIn": {
+       "npcId": 22113,
+       "name": "Mordenai",
+       "zone": "Shadowmoon Valley",
+       "x": 59.2,
+       "y": 58.7
+      },
+      "detail": "Karynaku sends you back to Mordenai. The turn-in grants 42000 Netherwing reputation at once, carrying you from the bottom of Hated to Neutral (a reputation buff can land you in Friendly). This is the end of the one-time chain; everything after it is gated by Riding 300 and your standing.",
+      "detectedBy": "Quest 10870 or 10871 flagged complete; equivalently faction 1015 standing is Neutral (4) or better.",
+      "optional": false
+     },
+     {
+      "key": "artisan_riding_gate",
+      "title": "Have Artisan Riding (300) before the Blood Oath",
+      "kind": "SKILL",
+      "skill": {
+       "name": "Riding",
+       "skillLineId": 762,
+       "rank": 300
+      },
+      "spellId": 34091,
+      "detail": "Blood Oath of the Netherwing and Enter the Taskmaster both carry a Riding 300 requirement in the quest data; Mordenai will not offer the oath without it. See the FLYING_EPIC guide for trainers and costs.",
+      "detectedBy": "Riding skill line 762 at rank 300, or spell 34091 known.",
+      "optional": false
+     },
+     {
+      "key": "blood_oath",
+      "title": "Swear the Blood Oath of the Netherwing",
+      "kind": "QUEST",
+      "questId": 11012,
+      "questName": "Blood Oath of the Netherwing",
+      "giver": {
+       "npcId": 22113,
+       "name": "Mordenai",
+       "zone": "Shadowmoon Valley",
+       "x": 59.2,
+       "y": 58.7
+      },
+      "turnIn": {
+       "npcId": 22113,
+       "name": "Mordenai",
+       "zone": "Shadowmoon Valley",
+       "x": 59.2,
+       "y": 58.7
+      },
+      "detail": "With Neutral standing and Artisan Riding, Mordenai offers the oath. Accepting and turning it in on the spot grants the Dragonmaw Illusion, a disguise that makes you look like a fel orc whenever you are on Netherwing Ledge or in Dragonmaw Fortress, so the Dragonmaw there treat you as one of their own (Dragonmaw Ascendants, Skybreakers and Transporters excepted). Your flying mount also appears as a nether drake there.",
+      "detectedBy": "Quest 11012 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "service_of_illidari",
+      "title": "Deliver the Illidari Service Papers to Overlord Mor'ghor",
+      "kind": "QUEST",
+      "questId": 11013,
+      "questName": "In Service of the Illidari",
+      "giver": {
+       "npcId": 22113,
+       "name": "Mordenai",
+       "zone": "Shadowmoon Valley",
+       "x": 59.2,
+       "y": 58.7
+      },
+      "turnIn": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "detail": "Fly to Dragonmaw Base Camp on the western side of Netherwing Ledge (66.3, 85.6) and present the Illidari Service Papers (item 32469) to Overlord Mor'ghor, who runs the camp for Illidan. 250 reputation. He hands you to the Taskmaster.",
+      "detectedBy": "Quest 11013 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "enter_taskmaster",
+      "title": "Report to Taskmaster Varkule Dragonbreath",
+      "kind": "QUEST",
+      "questId": 11014,
+      "questName": "Enter the Taskmaster",
+      "giver": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "turnIn": {
+       "npcId": 23140,
+       "name": "Taskmaster Varkule Dragonbreath",
+       "zone": "Shadowmoon Valley",
+       "x": 66.1,
+       "y": 86.4
+      },
+      "detail": "Taskmaster Varkule stands a few steps from Mor'ghor. Speaking with him unlocks the Neutral dailies: Netherwing Crystals and the gathering daily for your profession. During A Job Unfinished... (11041, started from a Partially Digested Hand found on Overmine Flayers, 250) you also slay Barash the Den Mother in the mine.",
+      "detectedBy": "Quest 11014 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "friend_inside",
+      "title": "Meet Yarzill the Merc, your friend on the inside",
+      "kind": "QUEST",
+      "questId": 11019,
+      "questName": "Your Friend On The Inside",
+      "giver": {
+       "npcId": 23141,
+       "name": "Yarzill the Merc",
+       "zone": "Shadowmoon Valley",
+       "x": 66,
+       "y": 86.5
+      },
+      "turnIn": {
+       "npcId": 23141,
+       "name": "Yarzill the Merc",
+       "zone": "Shadowmoon Valley",
+       "x": 66,
+       "y": 86.5
+      },
+      "detail": "Yarzill, a goblin at the camp who is secretly a Netherwing drake in disguise, reveals himself after In Service of the Illidari. Turning in his quest opens A Slow Death, The Not-So-Friendly Skies..., The Great Netherwing Egg Hunt and, at Friendly, Rise, Overseer!.",
+      "detectedBy": "Quest 11019 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "neutral_dailies",
+      "title": "Daily loop at Neutral: Netherwing Crystals and friends",
+      "kind": "QUEST",
+      "questId": 11015,
+      "questName": "Netherwing Crystals",
+      "daily": true,
+      "relatedDailyIds": [
+       11016,
+       11017,
+       11018,
+       11020,
+       11035
+      ],
+      "giver": {
+       "npcId": 23140,
+       "name": "Taskmaster Varkule Dragonbreath",
+       "zone": "Shadowmoon Valley",
+       "x": 66.1,
+       "y": 86.4
+      },
+      "turnIn": {
+       "npcId": 23140,
+       "name": "Taskmaster Varkule Dragonbreath",
+       "zone": "Shadowmoon Valley",
+       "x": 66.1,
+       "y": 86.4
+      },
+      "detail": "From Neutral the dailies are: Netherwing Crystals (11015, 30 crystals from mobs and nodes on the ledge, 250); one gathering daily matched to your profession at 350 skill, Nethercite Ore (11018, Mining), Netherdust Pollen (11017, Herbalism) or Nethermine Flayer Hide (11016, Skinning), 250 each; Yarzill's A Slow Death (11020, poison 12 Dragonmaw Peon Camps with Yarzill's Mutton and Fel Glands from the flayers, 250); and The Not-So-Friendly Skies... (11035, shoot down Dragonmaw Transporters with the flare gun and loot 10 Netherwing Relics, 250). Each is 250 reputation a day.",
+      "detectedBy": "Any of quests 11015, 11016, 11017, 11018, 11020, 11035 flagged complete today; these are repeatable and do not gate progress.",
+      "optional": false
+     },
+     {
+      "key": "egg_hunt",
+      "title": "Find a Netherwing Egg and keep handing them in",
+      "kind": "QUEST",
+      "questId": 11049,
+      "questName": "The Great Netherwing Egg Hunt",
+      "itemId": 32506,
+      "itemName": "Netherwing Egg",
+      "count": 1,
+      "giver": {
+       "npcId": 23141,
+       "name": "Yarzill the Merc",
+       "zone": "Shadowmoon Valley",
+       "x": 66,
+       "y": 86.5
+      },
+      "turnIn": {
+       "npcId": 23141,
+       "name": "Yarzill the Merc",
+       "zone": "Shadowmoon Valley",
+       "x": 66,
+       "y": 86.5
+      },
+      "detail": "Netherwing Eggs (item 32506) spawn randomly on the ledge, in the Netherwing Mines and in Dragonmaw Fortress, and occasionally drop from mobs or gathering nodes. The first egg completes The Great Netherwing Egg Hunt for 350 reputation; after that Accepting All Eggs (11050) takes every further egg for 250 each with no daily limit, which is the fastest way to shorten the grind.",
+      "detectedBy": "Quest 11049 flagged complete; an egg in bags means Accepting All Eggs (11050) can be turned in.",
+      "optional": false
+     },
+     {
+      "key": "friendly",
+      "title": "Reach Friendly with the Netherwing",
+      "kind": "REP",
+      "factionId": 1015,
+      "standing": 5,
+      "detail": "About one day of dailies after the chain. Friendly unlocks Rise, Overseer!, the Netherwing Mines dailies and the Booterang daily, lifting the daily income to roughly 1800 a day.",
+      "detectedBy": "Faction 1015 standingID >= 5.",
+      "optional": false
+     },
+     {
+      "key": "rise_overseer",
+      "title": "Rise, Overseer! (Friendly)",
+      "kind": "QUEST",
+      "questId": 11053,
+      "questName": "Rise, Overseer!",
+      "giver": {
+       "npcId": 23140,
+       "name": "Taskmaster Varkule Dragonbreath",
+       "zone": "Shadowmoon Valley",
+       "x": 66.1,
+       "y": 86.4
+      },
+      "turnIn": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "detail": "At Friendly the Taskmaster promotes you: speak with Overlord Mor'ghor for 250 reputation and the Overseer's Badge, a trinket that summons a Dragonmaw peon to fight for you in Shadowmoon Valley. The promotion opens Chief Overseer Mudlump's quests and The Netherwing Mines.",
+      "detectedBy": "Quest 11053 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "overseeing_booterang",
+      "title": "Overseeing and You, then the daily Booterang",
+      "kind": "QUEST",
+      "questId": 11054,
+      "questName": "Overseeing and You: Making the Right Choices",
+      "relatedDailyIds": [
+       11055
+      ],
+      "giver": {
+       "npcId": 23291,
+       "name": "Chief Overseer Mudlump",
+       "zone": "Shadowmoon Valley",
+       "x": 66.9,
+       "y": 86.1
+      },
+      "turnIn": {
+       "npcId": 23291,
+       "name": "Chief Overseer Mudlump",
+       "zone": "Shadowmoon Valley",
+       "x": 66.9,
+       "y": 86.1
+      },
+      "detail": "Mudlump wants 10 Knothide Leather and a Hardened Hide of Tyrantus (Tyrantus is the elite devilsaur in Netherstorm's Eco-Dome Farfield; the hide is also sold on the auction house). Turning it in (250) gives you the Booterang (item 32680) and unlocks the daily The Booterang: A Cure For The Common Worthless Peon (11055, 350): throw it at 20 lazy or sleeping Dragonmaw Peons around the mines and camp.",
+      "detectedBy": "Quest 11054 flagged complete; 11055 flagged complete today for the daily.",
+      "optional": false
+     },
+     {
+      "key": "netherwing_mines",
+      "title": "The Netherwing Mines and its dailies",
+      "kind": "QUEST",
+      "questId": 11075,
+      "questName": "The Netherwing Mines",
+      "relatedDailyIds": [
+       11076,
+       11077
+      ],
+      "giver": {
+       "npcId": 23140,
+       "name": "Taskmaster Varkule Dragonbreath",
+       "zone": "Shadowmoon Valley",
+       "x": 66.1,
+       "y": 86.4
+      },
+      "turnIn": {
+       "npcId": 23149,
+       "name": "Mistress of the Mines",
+       "zone": "Shadowmoon Valley",
+       "x": 65.4,
+       "y": 90.1
+      },
+      "detail": "Report to the Mistress of the Mines at the mine entrance south of the camp (65.4, 90.1) for 75 reputation. She and the Dragonmaw Foreman (64.0, 86.9) then offer two dailies worth 350 each: Picking Up The Pieces... (11076, 15 Nethermine Cargo crates lying in the mine tunnels) and Dragons are the Least of Our Problems (11077, 15 Nethermine Flayers and 5 Nethermine Ravagers inside the mine). Also in the mine: Crazed and Confused (11083, Ronag the Slave Driver at 71.6, 87.6, 350), and the Murkblood Escape Plans item (32726) starting The Great Murkblood Revolt (11081, 350) and Seeker of Truth (11082, interrogate a Murkblood Overseer, 500).",
+      "detectedBy": "Quest 11075 flagged complete; 11076 and 11077 flagged complete today for the dailies.",
+      "optional": false
+     },
+     {
+      "key": "honored",
+      "title": "Reach Honored with the Netherwing",
+      "kind": "REP",
+      "factionId": 1015,
+      "standing": 6,
+      "detail": "Honored (around day four) promotes you to Captain and unlocks Disrupting the Twilight Portal, the Soul Cannon chain and the Dragonmaw Races.",
+      "detectedBy": "Faction 1015 standingID >= 6.",
+      "optional": false
+     },
+     {
+      "key": "stand_tall_captain",
+      "title": "Stand Tall, Captain! (Honored)",
+      "kind": "QUEST",
+      "questId": 11084,
+      "questName": "Stand Tall, Captain!",
+      "giver": {
+       "npcId": 23140,
+       "name": "Taskmaster Varkule Dragonbreath",
+       "zone": "Shadowmoon Valley",
+       "x": 66.1,
+       "y": 86.4
+      },
+      "turnIn": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "detail": "Speak with Mor'ghor for 500 reputation and the Captain's Badge, whose peon follows you in every zone. Opens Disrupting the Twilight Portal, Illidari Lord Balthas's Soul Cannon quests and Ja'y Nosliw's Earning Your Wings....",
+      "detectedBy": "Quest 11084 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "twilight_portal_daily",
+      "title": "Daily: Disrupting the Twilight Portal (500)",
+      "kind": "QUEST",
+      "questId": 11086,
+      "questName": "Disrupting the Twilight Portal",
+      "daily": true,
+      "giver": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "turnIn": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "detail": "Kill 20 Deathshadow Agents, the Twilight's Hammer cultists around the portal on the eastern end of Netherwing Ledge. They die quickly and the quest pays 500 a day, the best daily on the ledge.",
+      "detectedBy": "Quest 11086 flagged complete today.",
+      "optional": false
+     },
+     {
+      "key": "soul_cannon",
+      "title": "Build the Soul Cannon and subdue Reth'hedron",
+      "kind": "QUEST",
+      "questId": 11089,
+      "questName": "The Soul Cannon of Reth'hedron",
+      "relatedQuestIds": [
+       11090
+      ],
+      "giver": {
+       "npcId": 23427,
+       "name": "Illidari Lord Balthas",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.7
+      },
+      "turnIn": {
+       "npcId": 23427,
+       "name": "Illidari Lord Balthas",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.7
+      },
+      "kill": {
+       "npcId": 22357,
+       "name": "Reth'hedron the Subduer",
+       "zone": "Nagrand",
+       "x": 10.1,
+       "y": 41.2
+      },
+      "detail": "Balthas wants 2 Felsteel Bars, an Adamantite Frame, a Khorium Power Core and a Flawless Arcane Essence (crafted or auction-house items) for 500 reputation. He then gives the Soul Cannon (item 32825) for Subdue the Subduer (11090, 500): fly to the far western shore of Nagrand (10.1, 41.2), fight Reth'hedron the Subduer, a huge elite, and fire the cannon at him when he is low to banish him. He hits hard; bring help or kite.",
+      "detectedBy": "Quest 11089 flagged complete; 11090 flagged complete for the second half.",
+      "optional": true
+     },
+     {
+      "key": "dragonmaw_races",
+      "title": "Win the six Dragonmaw Races",
+      "kind": "QUEST",
+      "questId": 11063,
+      "questName": "Earning Your Wings...",
+      "relatedQuestIds": [
+       11064,
+       11067,
+       11068,
+       11069,
+       11070,
+       11071
+      ],
+      "giver": {
+       "npcId": 22433,
+       "name": "Ja'y Nosliw",
+       "zone": "Shadowmoon Valley",
+       "x": 65.9,
+       "y": 87.2
+      },
+      "turnIn": {
+       "npcId": 22433,
+       "name": "Ja'y Nosliw",
+       "zone": "Shadowmoon Valley",
+       "x": 65.9,
+       "y": 87.2
+      },
+      "detail": "Ja'y Nosliw, the Skybreaker General, challenges you to six flying races against his riders, who stand in a line at about 65.2, 85 and each hand out their race: The Ballad of Oldie McOld (11064, 350), Trope the Filth-Belcher (11067, 350), Corlok the Vet (11068, 500), Wing Commander Ichman (11069, 500), Wing Commander Mulverick (11070, 500) and Captain Skyshatter (11071, 1000). Follow the racer closely as he flies a course over Shadowmoon Valley while dropping bombs and fire on you; falling too far behind fails the race. Each race must be won in order and reported to Ja'y. Together they pay 3200 reputation.",
+      "detectedBy": "Quest 11063 flagged complete; the race quests 11064, 11067, 11068, 11069, 11070, 11071 flagged complete mark each race won.",
+      "optional": true
+     },
+     {
+      "key": "revered",
+      "title": "Reach Revered with the Netherwing",
+      "kind": "REP",
+      "factionId": 1015,
+      "standing": 7,
+      "detail": "Revered (around day seven) promotes you to Commander and adds the Shattrath-faction quests and the group daily The Deadliest Trap Ever Laid.",
+      "detectedBy": "Faction 1015 standingID >= 7.",
+      "optional": false
+     },
+     {
+      "key": "hail_commander",
+      "title": "Hail, Commander! (Revered)",
+      "kind": "QUEST",
+      "questId": 11092,
+      "questName": "Hail, Commander!",
+      "giver": {
+       "npcId": 23140,
+       "name": "Taskmaster Varkule Dragonbreath",
+       "zone": "Shadowmoon Valley",
+       "x": 66.1,
+       "y": 86.4
+      },
+      "turnIn": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "detail": "Speak with Mor'ghor for 500 reputation and the Commander's Badge (45 Stamina trinket). This unlocks Kill Them All!.",
+      "detectedBy": "Quest 11092 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "kill_them_all",
+      "title": "Kill Them All! and the Commander (Aldor or Scryers)",
+      "kind": "QUEST",
+      "questId": 11099,
+      "altQuestIds": [
+       11094
+      ],
+      "questName": "Kill Them All!",
+      "relatedQuestIds": [
+       11100,
+       11095
+      ],
+      "giver": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "turnIn": {
+       "npcId": 21402,
+       "name": "Anchorite Ceyla at the Altar of Sha'tar (Aldor) or Arcanist Thelis at the Sanctum of the Stars (Scryers, npc 21955 at 56.2, 59.6)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.6,
+       "y": 28.4
+      },
+      "detail": "Mor'ghor orders you to lead a Dragonmaw attack on your own Shattrath faction's outpost and gives you the Dragonmaw Flare Gun (item 32842). Instead you warn them: Aldor players take Kill Them All! (11099) to Anchorite Ceyla at the Altar of Sha'tar (62.6, 28.4) and then Commander Arcus (11100, to Commander Arcus 23452 at 62.4, 29.3); Scryer players take 11094 to Arcanist Thelis at the Sanctum of the Stars (56.2, 59.6) and then Commander Hobb (11095, to Commander Hobb 23434 at 56.5, 58.6). The version offered depends on your Aldor or Scryer standing, and City of Light (10211) must be complete. 250 reputation.",
+      "detectedBy": "Quest 11099 or 11094 flagged complete, then 11100 or 11095.",
+      "optional": false
+     },
+     {
+      "key": "deadliest_trap_daily",
+      "title": "Daily group quest: The Deadliest Trap Ever Laid (500)",
+      "kind": "QUEST",
+      "questId": 11101,
+      "altQuestIds": [
+       11097
+      ],
+      "questName": "The Deadliest Trap Ever Laid",
+      "daily": true,
+      "giver": {
+       "npcId": 23452,
+       "name": "Commander Arcus (Aldor) or Commander Hobb (Scryers, npc 23434 at 56.5, 58.6)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.4,
+       "y": 29.3
+      },
+      "turnIn": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "detail": "Fire the flare gun at the Altar of Sha'tar (Aldor, 11101) or the Sanctum of the Stars (Scryers, 11097) to call the Dragonmaw assault, then help the defenders kill every wave of Dragonmaw forces. The waves hit hard and the quest is tagged for a group. Bring the Aldor Medals (item 32853) or Scryer Medals (item 32843) back to Mor'ghor, who believes the attack failed; 500 reputation a day.",
+      "detectedBy": "Quest 11101 or 11097 flagged complete today.",
+      "optional": false
+     },
+     {
+      "key": "exalted",
+      "title": "Reach Exalted with the Netherwing",
+      "kind": "REP",
+      "factionId": 1015,
+      "standing": 8,
+      "detail": "Exalted, usually two weeks after the chain if every daily is done (fewer with eggs), unlocks Bow to the Highlord. Drake Dealer Hurlunk (23489, at the camp 65.6, 85.9) also opens his stock of all six Reins of the Netherwing Drake.",
+      "detectedBy": "Faction 1015 standingID == 8.",
+      "optional": false
+     },
+     {
+      "key": "bow_to_highlord",
+      "title": "Bow to the Highlord and meet Illidan",
+      "kind": "QUEST",
+      "questId": 11107,
+      "questName": "Bow to the Highlord",
+      "relatedQuestIds": [
+       11108
+      ],
+      "giver": {
+       "npcId": 23140,
+       "name": "Taskmaster Varkule Dragonbreath",
+       "zone": "Shadowmoon Valley",
+       "x": 66.1,
+       "y": 86.4
+      },
+      "turnIn": {
+       "npcId": 23139,
+       "name": "Overlord Mor'ghor",
+       "zone": "Shadowmoon Valley",
+       "x": 66.3,
+       "y": 85.6
+      },
+      "detail": "Speak with Mor'ghor, then accept Lord Illidan Stormrage (11108): Illidan lands at the camp, sees through your disguise and the Netherwing drakes rise against the Dragonmaw in a scripted scene that ends with Mor'ghor dead and you flung into the air; a drake catches you and the quest credit Meeting with Illidan Stormrage is granted. Lord Illidan Stormrage pays 1000 reputation and sends you to Barthamus (23433) on the ridge above Shattrath's Lower City (66.6, 16.4).",
+      "detectedBy": "Quest 11107 flagged complete, then 11108.",
+      "optional": false
+     },
+     {
+      "key": "choose_drake",
+      "title": "Choose your free Netherwing drake in Shattrath",
+      "kind": "QUEST",
+      "questId": 11109,
+      "altQuestIds": [
+       11110,
+       11111,
+       11112,
+       11113,
+       11114
+      ],
+      "questName": "Jorus the Cobalt Netherwing Drake (or one of the other five)",
+      "giver": {
+       "npcId": 23462,
+       "name": "Jorus (Cobalt); Malfas 23464 (Purple), Onyxien 23463 (Onyx), Suraku 23461 (Azure), Voranaku 23466 (Violet), Zoya 23465 (Veridian)",
+       "zone": "Shattrath City",
+       "x": 67.9,
+       "y": 17
+      },
+      "turnIn": {
+       "npcId": 23462,
+       "name": "the drake you chose",
+       "zone": "Shattrath City",
+       "x": 67.9,
+       "y": 17
+      },
+      "anyOfItemIds": [
+       32857,
+       32858,
+       32859,
+       32860,
+       32861,
+       32862
+      ],
+      "detail": "Six Netherwing drakes rest beside Barthamus on the ridge above Shattrath (66 to 68, 17 to 19). Each offers its own quest and completing one rewards that drake's reins while locking out the other five: Jorus (11109, Cobalt, item 32859), Malfas (11110, Purple, 32860), Onyxien (11111, Onyx, 32857), Suraku (11112, Azure, 32858), Voranaku (11113, Violet, 32862) and Zoya (11114, Veridian, 32861). The remaining colours can be bought from Drake Dealer Hurlunk at Dragonmaw Base Camp for 200 gold each (160 with the Exalted discount). The drakes are 280 percent mounts and need Artisan Riding.",
+      "detectedBy": "Any of quests 11109 to 11114 flagged complete, or any Reins of the Netherwing Drake item (32857 to 32862) in bags.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10804?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10811?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10814?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10836?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10837?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10854?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10858?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10866?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10870?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10871?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10872?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11012?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11013?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11014?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11019?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11015?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11016?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11017?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11018?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11020?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11035?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11049?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11050?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11053?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11054?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11055?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11075?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11076?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11077?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11084?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11086?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11089?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11090?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11063?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11071?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11092?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11094?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11099?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11097?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11101?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11107?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11108?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11109?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32506?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31664?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32857?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32862?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22113?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/21657?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22112?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/11980?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23139?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23140?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23141?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23291?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23149?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23427?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22357?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22433?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/21402?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/21955?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23434?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23452?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23433?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23462?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23489?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Netherwing",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://www.warcrafttavern.com/tbc/guides/flying/",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc (requiredSkill 762/300 on 11012 and 11014, requiredMinRep gates, reputation rewards incl. 42000 on 10870, NPC spawns)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_Factions/data-tbc.lua (faction 1015 mounts)"
+    ],
+    "notes": "Faction id Netherwing 1015. Questie standing gates (requiredMinRep on 1015): 0 Neutral for 11012-11050, 3000 Friendly for 11053-11083, 9000 Honored for 11084-11090 and the races, 21000 Revered for 11092, 42000 Exalted for 11107-11114. Humans get race-split duplicates: 10872 Zuluhed the Whacked and 10871 Ally of the Netherwing (requiredRaces 1) in place of 10866 and 10870 (requiredRaces 1790, every other race); both pay the same. Kill Them All! and its follow-ups are split by Shattrath faction via requiredMinRep/requiredMaxRep on 932 and 934 (Aldor: 11099, 11100, 11101; Scryers: 11094, 11095, 11097) and need City of Light 10211. Daily quests are repeatable (Questie specialFlags 1) and reset at the daily reset; the one-time quests are the progress gates. Original patch 2.1 allowed 10 dailies per day, raised to 25 in patch 2.4; the Anniversary limit was not verified."
+   },
+   {
+    "key": "SHATTERED_SUN_OFFENSIVE",
+    "title": "Shattered Sun Offensive: Isle of Quel'Danas",
+    "category": "UNLOCK",
+    "faction": "BOTH",
+    "summary": "The Isle of Quel'Danas opens in the final phase with a short introduction from your Shattrath faction that leads to Exarch Larethor at the Shattered Sun Staging Area. The realm then reclaims Sun's Reach together: daily quests advance server-wide objectives from the Sanctum to the Armory, the Shattrath portal, the Harbor, the anvil, the Alchemy Lab and the Monument, each unlocking new dailies and vendors. Reputation comes from the dailies, the Outland dailies in Shattrath and the Throne of Kil'jaeden, and Magisters' Terrace; Exalted ends with the title of the Shattered Sun.",
+    "unlocks": "Shattered Sun Offensive reputation to Exalted, Eldara Dawnrunner's vendor list (Sunward Crest, Dawnforged Defender, the four Shattered Sun Pendants, Alchemist Stone recipes, Tabard of the Shattered Sun) and the title of the Shattered Sun from A Magnanimous Benefactor.",
+    "phase": {
+     "introduced": 5,
+     "requiredUntil": null,
+     "notes": "Original patch 2.4; TBC Classic Phase 5 (10 May 2022). On Anniversary realms it is scheduled for Phase 5 (Fury of the Sunwell), listed as Autumn 2026 with no date yet, so nothing in this guide is live as of 24 October 2026. The stage order is fixed but a realm's stage depends on realm-wide daily completions, so the addon should detect the stage from which quest ids are offered or completed rather than from a calendar."
+    },
+    "prerequisites": [
+     "ALDOR_SCRYER_CHOICE"
+    ],
+    "steps": [
+     {
+      "key": "intro_shattrath",
+      "title": "Crisis at the Sunwell or Duty Calls",
+      "kind": "QUEST",
+      "questId": 11481,
+      "altQuestIds": [
+       11482
+      ],
+      "questName": "Crisis at the Sunwell (Aldor) / Duty Calls (Scryers)",
+      "giver": {
+       "npcId": 18537,
+       "name": "Adyen the Lightwarden (Aldor) or Dathris Sunstriker (Scryers, npc 18594 at 54.6, 80.7)",
+       "zone": "Shattrath City",
+       "x": 30.7,
+       "y": 34.6
+      },
+      "turnIn": {
+       "npcId": 24813,
+       "name": "Exarch Larethor",
+       "zone": "Isle of Quel'Danas",
+       "x": 47.4,
+       "y": 30.7
+      },
+      "detail": "Aldor players take Crisis at the Sunwell (11481) from Adyen the Lightwarden on the Aldor Rise; Scryer players take Duty Calls (11482) from Dathris Sunstriker on the Scryer's Tier. Both send you to Exarch Larethor at the Shattered Sun Staging Area on the western shore of the Isle of Quel'Danas (47.4, 30.7). Reach the isle by the flight masters in Ironforge or Silvermoon City (and later the Shattrath portal). 10 reputation. The Shattrath naaru General Tiras'alan also offers Enter, the Deceiver... (11550, to Archmage Ne'thul, 25) as a second signpost.",
+      "detectedBy": "Quest 11481 or 11482 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "magisters_terrace_chain",
+      "title": "Magisters' Terrace, The Scryer's Scryer, Hard to Kill",
+      "kind": "QUEST",
+      "questId": 11488,
+      "questName": "Magisters' Terrace",
+      "relatedQuestIds": [
+       11490,
+       11492
+      ],
+      "instance": {
+       "name": "Magisters' Terrace",
+       "instanceMapId": 585,
+       "heroic": false,
+       "boss": "Kael'thas Sunstrider",
+       "npcIds": [
+        24664
+       ]
+      },
+      "giver": {
+       "npcId": 24813,
+       "name": "Exarch Larethor",
+       "zone": "Isle of Quel'Danas",
+       "x": 47.4,
+       "y": 30.7
+      },
+      "turnIn": {
+       "npcId": 24813,
+       "name": "Exarch Larethor",
+       "zone": "Isle of Quel'Danas",
+       "x": 47.4,
+       "y": 30.7
+      },
+      "detail": "Larethor sends you into normal Magisters' Terrace (entrance 61.2, 30.9) to find the spy Tyrith (11488, turn in to Tyrith inside, 250), who passes you to Kalecgos in The Scryer's Scryer (11490, 250). Kalecgos's Hard to Kill (11492, 250) asks for the Head of Kael'thas from the final boss on normal difficulty and, when turned in to Larethor, grants access to Heroic Magisters' Terrace. The Lower City dailies Wanted: The Signet Ring of Prince Kael'thas (11499, heroic only, 350) and Wanted: Sisters of Torment (11500, 250) then pay Shattered Sun and Lower City reputation, and a heroic clear is worth about 2800 reputation.",
+      "detectedBy": "Quests 11488, 11490 and 11492 flagged complete; 11492 complete is the heroic unlock.",
+      "optional": true
+     },
+     {
+      "key": "stage1_sanctum",
+      "title": "Stage 1: retake the Sun's Reach Sanctum",
+      "kind": "QUEST",
+      "questId": 11524,
+      "questName": "Erratic Behavior",
+      "daily": true,
+      "relatedDailyIds": [
+       11496,
+       11525,
+       11523
+      ],
+      "giver": {
+       "npcId": 24965,
+       "name": "Vindicator Xayann",
+       "zone": "Isle of Quel'Danas",
+       "x": 47.1,
+       "y": 30.7
+      },
+      "turnIn": {
+       "npcId": 24965,
+       "name": "Vindicator Xayann",
+       "zone": "Isle of Quel'Danas",
+       "x": 47.1,
+       "y": 30.7
+      },
+      "detail": "The first realm objective is the Sanctum. Two progress dailies advance it: Erratic Behavior (11524, Vindicator Xayann: place Attuned Crystal Cores in 5 defeated Erratic Sentries, 150) and The Sanctum Wards (11496, Captain Theris Dawnhearth at 47.5, 30.6: 4 Mana Remnants from Wretched Fiends and Devourers, then energize a Crystal Ward, 150). When the realm finishes the Sanctum these are replaced by the permanent dailies Further Conversions (11525) and Arm the Wards! (11523), same tasks and rewards. Also from day one: The Missing Magistrix (11526, Theris Dawnhearth, 75) leads through the portal at Dawning Square to Magistrix Seyla at the Throne of Kil'jaeden in Hellfire Peninsula (58.2, 17.6), who offers the Outland dailies Blood for Blood (11515, 250) and Blast the Gateway (11516, 250).",
+      "detectedBy": "Stage reached when 11525 or 11523 is offered or flagged complete; 11524 or 11496 completed today means the realm is still in stage 1.",
+      "optional": false
+     },
+     {
+      "key": "stage2_armory",
+      "title": "Stage 2: retake the Sun's Reach Armory",
+      "kind": "QUEST",
+      "questId": 11538,
+      "questName": "The Battle for the Sun's Reach Armory",
+      "daily": true,
+      "relatedDailyIds": [
+       11532,
+       11537,
+       11533
+      ],
+      "giver": {
+       "npcId": 25061,
+       "name": "Harbinger Inuuro",
+       "zone": "Isle of Quel'Danas",
+       "x": 47.6,
+       "y": 35.1
+      },
+      "turnIn": {
+       "npcId": 25061,
+       "name": "Harbinger Inuuro",
+       "zone": "Isle of Quel'Danas",
+       "x": 47.6,
+       "y": 35.1
+      },
+      "detail": "After the Sanctum the quest givers move inside it and the Armory becomes the objective. Progress dailies: The Battle for the Sun's Reach Armory (11538, Harbinger Inuuro: 6 Burning Legion demons and impale the Emissary of Hate with the Shattered Sun Banner, 250) and Distraction at the Dead Scar (11532, Battlemage Arynna at 47.5, 35.1: ride Ayren Cloudbreaker's dragonhawk over the Dead Scar and bomb 2 Pit Overlords, 3 Eredar Sorcerers and 12 Wrath Enforcers with Arcane Charges, 150). Completion replaces them with The Battle Must Go On (11537, 250) and The Air Strikes Must Continue (11533, 150) and opens the Armory's Exotic Gear Purveyors (badge and token gear).",
+      "detectedBy": "Stage reached when 11537 or 11533 is offered or flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "stage2b_portal",
+      "title": "Stage 2b: open the Shattrath portal",
+      "kind": "QUEST",
+      "questId": 11513,
+      "questName": "Intercepting the Mana Cells",
+      "daily": true,
+      "relatedDailyIds": [
+       11514,
+       11547,
+       11517,
+       11534
+      ],
+      "giver": {
+       "npcId": 24932,
+       "name": "Exarch Nasuun",
+       "zone": "Shattrath City",
+       "x": 49.1,
+       "y": 42.5
+      },
+      "turnIn": {
+       "npcId": 24932,
+       "name": "Exarch Nasuun",
+       "zone": "Shattrath City",
+       "x": 49.1,
+       "y": 42.5
+      },
+      "detail": "Once the Armory is taken, Tradesman Portanuus on the isle (47.3, 35.0) offers the breadcrumb Report to Nasuun (11517 or 11534, 10). Exarch Nasuun on the Terrace of Light in Shattrath gives the progress daily Intercepting the Mana Cells (11513: use the Bash'ir Phasing Device at Bash'ir Landing in Blade's Edge Mountains to loot 10 Smuggled Mana Cells, 250). Enough realm completions open the one-way portal from Shattrath (the alcove behind Nasuun) to the Sun's Reach Sanctum, after which the daily becomes Maintaining the Sunwell Portal (11514, 250) and Astromancer Darnarian in the Sanctum (47.5, 35.4) adds Know Your Ley Lines (11547, 250), which rewards a one-use scroll back to Shattrath.",
+      "detectedBy": "Stage reached when 11514 or 11547 is offered or flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "stage3_harbor",
+      "title": "Stage 3: retake the Sun's Reach Harbor",
+      "kind": "QUEST",
+      "questId": 11542,
+      "questName": "Intercept the Reinforcements",
+      "daily": true,
+      "relatedDailyIds": [
+       11539,
+       11543,
+       11540
+      ],
+      "giver": {
+       "npcId": 25108,
+       "name": "Vindicator Kaalan",
+       "zone": "Isle of Quel'Danas",
+       "x": 50.6,
+       "y": 39
+      },
+      "turnIn": {
+       "npcId": 25108,
+       "name": "Vindicator Kaalan",
+       "zone": "Isle of Quel'Danas",
+       "x": 50.6,
+       "y": 39
+      },
+      "detail": "Progress dailies from the Armory: Intercept the Reinforcements (11542, Vindicator Kaalan: ride Ayren Cloudbreaker's dragonhawk and burn the sails of the Sin'loren, Bloodoath and Dawnchaser with Flaming Oil, then kill 6 Dawnblade Reservists, 250) and Taking the Harbor (11539, Magister Ilastar at 49.3, 40.4: 6 Dawnblade Summoners, 6 Blood Knights, 3 Marksmen, 250). When the Harbor falls they become Keeping the Enemy at Bay (11543, 250) and Crush the Dawnblade (11540, 250), and Captain Valindria aboard the Silvermoon's Pride (53.8, 34.3) adds Disrupt the Greengill Coast (11541: free 10 Greengill Slaves with the Orb of Murloc Control, 250).",
+      "detectedBy": "Stage reached when 11543, 11540 or 11541 is offered or flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "stage3b_anvil",
+      "title": "Stage 3b: forge the anvil with Smith Hauthaa",
+      "kind": "QUEST",
+      "questId": 11535,
+      "questName": "Making Ready",
+      "daily": true,
+      "relatedDailyIds": [
+       11536,
+       11544
+      ],
+      "giver": {
+       "npcId": 25046,
+       "name": "Smith Hauthaa",
+       "zone": "Isle of Quel'Danas",
+       "x": 50.6,
+       "y": 40.8
+      },
+      "turnIn": {
+       "npcId": 25046,
+       "name": "Smith Hauthaa",
+       "zone": "Isle of Quel'Danas",
+       "x": 50.6,
+       "y": 40.8
+      },
+      "detail": "Smith Hauthaa behind the Armory offers the progress daily Making Ready (11535: kill Darkspine Myrmidons on the eastern shore, take their keys and loot 3 Darkspine Iron Ore from their chests, 250). When the realm completes the anvil she becomes the Badge of Justice vendor and the daily turns into Don't Stop Now.... (11536, 250) plus Ata'mal Armaments (11544: collect 5 Ata'mal Armaments from the Ashtongue in Shadowmoon Valley and cleanse them on her anvil, 350; rewards a weapon coating).",
+      "detectedBy": "Stage reached when 11536 or 11544 is offered or flagged complete; Smith Hauthaa selling badge gear.",
+      "optional": false
+     },
+     {
+      "key": "stage4_alchemy_lab",
+      "title": "Stage 4: build the Alchemy Lab",
+      "kind": "QUEST",
+      "questId": 11520,
+      "questName": "Discovering Your Roots",
+      "daily": true,
+      "relatedDailyIds": [
+       11521,
+       11546
+      ],
+      "giver": {
+       "npcId": 24975,
+       "name": "Mar'nah",
+       "zone": "Isle of Quel'Danas",
+       "x": 51.5,
+       "y": 32.5
+      },
+      "turnIn": {
+       "npcId": 24975,
+       "name": "Mar'nah",
+       "zone": "Isle of Quel'Danas",
+       "x": 51.5,
+       "y": 32.5
+      },
+      "detail": "Mar'nah the alchemist at Sun's Reach Harbor gives the progress daily Discovering Your Roots (11520: fly to Razorthorn Rise in Terokkar Forest, use Razorthorn Flayer Glands to make the flayers dig up 5 Razorthorn Roots, 350). When the lab is built it becomes Rediscovering Your Roots (11521, 350) and Open for Business (11546: 5 Bloodberries from bushes on the isle, 250, rewards a Bloodberry Elixir). Shaani (25950, 51.5, 32.5) then sells epic gems and jewelcrafting designs.",
+      "detectedBy": "Stage reached when 11521 or 11546 is offered or flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "stage4b_monument",
+      "title": "Stage 4b: fund the Monument to the Fallen",
+      "kind": "QUEST",
+      "questId": 11545,
+      "questName": "A Charitable Donation",
+      "daily": true,
+      "relatedDailyIds": [
+       11548
+      ],
+      "giver": {
+       "npcId": 25112,
+       "name": "Anchorite Ayuri",
+       "zone": "Isle of Quel'Danas",
+       "x": 48.6,
+       "y": 37.7
+      },
+      "turnIn": {
+       "npcId": 25112,
+       "name": "Anchorite Ayuri",
+       "zone": "Isle of Quel'Danas",
+       "x": 48.6,
+       "y": 37.7
+      },
+      "detail": "Anchorite Ayuri at Sun's Reach takes a 10 gold donation a day: A Charitable Donation (11545, 150) while the monument is being raised, then Your Continued Support (11548, 150) afterwards. Both stop being offered at Exalted (Questie requiredMaxRep 42000). The finished monument grants a buff to everyone on the isle.",
+      "detectedBy": "Stage reached when 11548 is offered or flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "outland_dailies",
+      "title": "Outland dailies: Sunfury Attack Plans and company",
+      "kind": "QUEST",
+      "questId": 11877,
+      "questName": "Sunfury Attack Plans",
+      "daily": true,
+      "relatedDailyIds": [
+       11875,
+       11880,
+       11515,
+       11516
+      ],
+      "giver": {
+       "npcId": 25140,
+       "name": "Lord Torvos",
+       "zone": "Shattrath City",
+       "x": 62.8,
+       "y": 36
+      },
+      "turnIn": {
+       "npcId": 25140,
+       "name": "Lord Torvos",
+       "zone": "Shattrath City",
+       "x": 62.8,
+       "y": 36
+      },
+      "detail": "Three Shattrath dailies pay 250 each from the start of the phase: Sunfury Attack Plans (11877, Lord Torvos: loot the plans from Sunfury blood elves in Netherstorm), Gaining the Advantage (11875, Emissary Mordin at 62.8, 35.6: 8 Nether Residue gathered with Herbalism, Mining or Skinning in Outland; gatherers only) and The Multiphase Survey (11880, Harbinger Haronem at 61.6, 52.2: 6 readings with the Multiphase Spectrographic Goggles around Oshu'gun in Nagrand). With Blood for Blood and Blast the Gateway from Magistrix Seyla these add 1250 a day on top of the isle.",
+      "detectedBy": "Any of 11877, 11875, 11880, 11515, 11516 flagged complete today.",
+      "optional": true
+     },
+     {
+      "key": "friendly",
+      "title": "Reach Friendly with the Shattered Sun Offensive",
+      "kind": "REP",
+      "factionId": 1077,
+      "standing": 5,
+      "detail": "Everyone starts Neutral. Friendly unlocks Naaru Rations at Eldara Dawnrunner, the quartermaster near the staging area (47.2, 30.8).",
+      "detectedBy": "Faction 1077 standingID >= 5.",
+      "optional": false
+     },
+     {
+      "key": "honored",
+      "title": "Reach Honored with the Shattered Sun Offensive",
+      "kind": "REP",
+      "factionId": 1077,
+      "standing": 6,
+      "detail": "Honored unlocks the enchanting formulas (Void Shatter, Enchant Chest - Defense) and the first jewelcrafting designs at Eldara Dawnrunner.",
+      "detectedBy": "Faction 1077 standingID >= 6.",
+      "optional": false
+     },
+     {
+      "key": "revered",
+      "title": "Reach Revered with the Shattered Sun Offensive",
+      "kind": "REP",
+      "factionId": 1077,
+      "standing": 7,
+      "detail": "Revered opens the weapon list (Legionfoe, Seeker's Gavel, Archmage's Guile, Truestrike Crossbow, K'iru's Presage, Bombardier's Blade, The Sunbreaker, Inuuro's Blade) and the meta-gem and figurine designs.",
+      "detectedBy": "Faction 1077 standingID >= 7.",
+      "optional": false
+     },
+     {
+      "key": "exalted",
+      "title": "Reach Exalted with the Shattered Sun Offensive",
+      "kind": "REP",
+      "factionId": 1077,
+      "standing": 8,
+      "detail": "Exalted sells the Sunward Crest and Dawnforged Defender shields, the Shattered Sun Pendants of Acumen, Might, Resolve and Restoration, the four Alchemist Stone recipes and the Tabard of the Shattered Sun (item 35221, 1 gold). About 20 dailies a day plus heroic Magisters' Terrace make this a two to three week grind.",
+      "detectedBy": "Faction 1077 standingID == 8.",
+      "optional": false
+     },
+     {
+      "key": "title_quest",
+      "title": "Donate 1000 gold for the title of the Shattered Sun",
+      "kind": "QUEST",
+      "questId": 11549,
+      "questName": "A Magnanimous Benefactor",
+      "giver": {
+       "npcId": 25163,
+       "name": "Anchorite Kairthos",
+       "zone": "Isle of Quel'Danas",
+       "x": 51.2,
+       "y": 33.1
+      },
+      "turnIn": {
+       "npcId": 25163,
+       "name": "Anchorite Kairthos",
+       "zone": "Isle of Quel'Danas",
+       "x": 51.2,
+       "y": 33.1
+      },
+      "detail": "At Exalted, Anchorite Kairthos at Sun's Reach Harbor offers A Magnanimous Benefactor: donate 1000 gold to Anchorite Ayuri's cause. The quest text itself promises the title of the Shattered Sun on completion, plus a final 500 reputation. It is one-time and the title is the only way to earn it.",
+      "detectedBy": "Quest 11549 flagged complete; the title of the Shattered Sun known.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/11481?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11482?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11488?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11490?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11492?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11499?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11500?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11524?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11496?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11525?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11523?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11526?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11515?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11516?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11538?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11532?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11537?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11533?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11513?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11514?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11547?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11542?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11539?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11543?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11540?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11541?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11535?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11536?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11544?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11520?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11521?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11546?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11545?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11548?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11549?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11550?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11877?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11875?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11880?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/35221?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24813?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18537?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18594?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24965?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24967?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25061?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25057?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24932?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25133?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25108?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25069?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25046?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24975?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25112?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25088?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25163?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24937?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25140?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/19202?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/19475?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25032?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25950?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24664?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Shattered_Sun_Offensive",
+     "https://www.warcrafttavern.com/tbc/guides/shattered-sun-offensive-reputation-guide/",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://warcraft.wiki.gg/wiki/Daily_quest",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/QuestieDB_TBC.toc (quest givers, reputation rewards, requiredMinRep/MaxRep on 1077, exclusiveTo links)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_Factions/data-tbc.lua (faction 1077, ContentPhaseBC 5)"
+    ],
+    "notes": "Faction id Shattered Sun Offensive 1077. Reputation per quest is from Questie's reputationReward and matches the wiki: 150 for the Sanctum, Air Strike and donation dailies, 250 for most others, 350 for Ata'mal Armaments and the Roots dailies, 500 for A Magnanimous Benefactor (which also has requiredMinRep 1077 at 42000). The stage grouping follows the Warcraft Wiki table (progress quests removed when their objective completes, replacement quests permanent); Questie confirms the pairs by giving the progress and replacement quests the same giver and items. Realm progress is not exposed by any API; the only reliable detector is which ids are offered. The Warcraft Tavern guide describes TBC Classic's rollout as time-based ('starting dailies rotate out after a set number of days'), which may mean Anniversary realms advance on a timer rather than on completion counts."
+   }
+  ],
+  "uncertain": [
+   "Anniversary current phase: the task says Questie reports Phase 3, but Warcraft Tavern and Kami Labs report Phase 4 (Zul'Aman, '3.5' in some posts) going live on 22 October 2026 with raid attunements removed and heroic keys lowered to Honored. Not confirmed against an official Blizzard post; the addon should verify the phase in-game. It does not change any guide here except the phase notes.",
+   "Shattered Sun Offensive on Anniversary: Phase 5 has no announced date ('Autumn 2026, TBA'); the whole SHATTERED_SUN_OFFENSIVE guide is written from original 2.4 and TBC Classic 2022 data. Whether Anniversary advances the isle by realm-wide completion counts (original) or a timer (Warcraft Tavern's description of TBC Classic) is unconfirmed, and the per-stage completion thresholds were not found in any fetchable source.",
+   "Magisters' Terrace instanceMapId 585 is from memory (TBC map id), not verified by the tooltip endpoint or local data; the Questie dungeon table only lists area id 4131 and entrance 61.2, 30.9.",
+   "Daily quest cap on Anniversary realms (10 in patch 2.1, 25 from 2.4 per the Warcraft Wiki) was not verified for TBC Classic 2.5.x.",
+   "Gaining the Advantage (11875) gathering requirement: Questie stores requiredRanks of Herbalism 182, Skinning 393 and Mining 186 at rank 4; the exact minimum skill value was not confirmed.",
+   "Nether drake price at Drake Dealer Hurlunk: the Warcraft Wiki says 200 gold each at Exalted, Warcraft Tavern says 160 gold (the Exalted discount applied); both agree one drake is free from the Shattrath drakes quest.",
+   "Blood Elf starting standing with the Aldor is given as Unfriendly on the wiki Aldor page and Hostile on the Scryers page; Draenei start Friendly with the Aldor and Unfriendly with the Scryers per the Aldor page only. Not verified in game.",
+   "Switching sides: the repeatable quests Strained Supplies (Sha'nir, Aldor) and Voren'thal's Visions (Arcanist Adyria, Scryers) were described from the wiki; Questie lists quest ids 10017/10019/10020 on Sha'nir and 10024/10025 on Adyria but their names were not confirmed with the tooltip endpoint, so no ids are emitted for them.",
+   "Ogri'la Tabard item id 32828 and Skyguard Tabard 32445 come from AtlasLoot and were not confirmed via the tooltip endpoint, so they are omitted from the steps.",
+   "Netherwing: Questie carries no riding requirement on Kindness through Ally of the Netherwing, only on Blood Oath (11012) and Enter the Taskmaster (11014); the statement that Netherwing Ledge itself is reachable only by flying is from the wiki and general knowledge, not from quest data.",
+   "Terokk's Downfall: no reputation gate exists in Questie or the wiki despite guides sometimes saying 'Revered'; treat the chain prerequisites as the only gate.",
+   "Shattered Sun stage sub-steps 2b (portal), 3b (anvil) and 4b (monument): their position relative to the main stages follows the Warcraft Wiki table; the Warcraft Tavern guide groups the same dailies slightly differently (for example it lists Intercepting the Mana Cells under its 'Phase 2' and Making Ready under 'Phase 3'), consistent with the wiki but not identical in labelling.",
+   "Ogri'la breadcrumb duplicates: 10983 (from Grok) and 10989 (from Chort) share the name Mog'dorg the Wizened; Questie marks them exclusive with 11057 The Trouble Below, so any one of the three opens the chain. Not verified which one Anniversary realms actually show first."
+  ],
+  "notes": "Method: every quest, item, NPC and spell id in the guides was fetched from https://nether.wowhead.com/tooltip/<type>/<id>?dataEnv=5&locale=0 and the returned name recorded (quest ranges 10190-10220, 10540-10560, 10800-11200, 11470-11560 and 11870-11890 were swept wholesale, cached in the scratchpad at /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/tt/). The faction endpoint does not exist ('Entity type is invalid'); faction ids come from AtlasLootClassic_Factions/data-tbc.lua and independently from Questie's reputationReward rows (932 Aldor, 934 Scryers, 935 Sha'tar, 1015 Netherwing, 1031 Sha'tari Skyguard, 1038 Ogri'la, 1077 Shattered Sun Offensive). Chain structure, standing gates (requiredMinRep), riding requirements (requiredSkill 762), reputation values, quest givers and spawn coordinates were decoded from the baked CBOR rows in QuestieDB/QuestieDB_TBC.toc with a small decoder (scratchpad qdb.py, qsum.py, npcsum.py); coordinates are Questie map-percent values for the parent zone. Standing ids used: 5 Friendly (3000), 6 Honored (9000), 7 Revered (21000), 8 Exalted (42000). Extra step fields beyond the requested schema: altQuestIds (equivalent ids for the same step, e.g. race-, class- or Shattrath-faction-split duplicates), relatedDailyIds / relatedQuestIds (ids folded into one lesson), daily (repeatable), anyOfItemIds (any one item proves the step), kill {npcId,...} for outdoor kill targets, choice (the Aldor/Scryer fork). Anniversary phase mapping verified against Warcraft Tavern's phase roadmap: P1 Karazhan/Gruul/Magtheridon (5 Feb 2026), P2 SSC/TK plus Ogri'la and Skyguard dailies (14 May 2026), P3 Hyjal/Black Temple plus Netherwing dailies (27 Aug 2026), P4 Zul'Aman (22 Oct 2026, attunements removed), P5 Sunwell, Magisters' Terrace and the Shattered Sun Offensive (Autumn 2026, no date). RXPGuides carries no TBC daily or reputation guides (its Dailies folder is Wrath content), so it contributed nothing here."
+ },
+ "verify": {
+  "checked": 215,
+  "mismatches": [
+   {
+    "kind": "item-name",
+    "id": 32467,
+    "claimed": "Vim'gol's Vile Grimoire (OGRILA_UNLOCK grimoire_business detail)",
+    "actual": "Vim'gol's Grimoire (the quest text says 'Vile Grimoire', the item does not)"
+   },
+   {
+    "kind": "quest-turnIn",
+    "id": 11488,
+    "claimed": "Magisters' Terrace turned in to Exarch Larethor (npc 24813)",
+    "actual": "Turned in to Tyrith (npc 24822) inside Magisters' Terrace; Larethor only starts it (Questie finishedBy 24822; tooltip: 'search Magisters' Terrace and find Tyrith')"
+   },
+   {
+    "kind": "quest-faction-split",
+    "id": 11099,
+    "claimed": "Kill Them All! -> Anchorite Ceyla (Aldor) or Arcanist Thelis (Scryers) under one id",
+    "actual": "11099 is the Aldor version (ends Anchorite Ceyla 21402, requires Aldor rep >= 1); the Scryers version is quest 11094 (ends Arcanist Thelis 21955, requires Scryers rep >= 1)"
+   },
+   {
+    "kind": "quest-faction-split",
+    "id": 11101,
+    "claimed": "The Deadliest Trap Ever Laid, giver Commander Arcus (Aldor) or Commander Hobb (Scryers) under one id",
+    "actual": "11101 is Aldor-only (Commander Arcus 23452 -> Mor'ghor); Scryers version is 11097 (Commander Hobb 23434 -> Mor'ghor). Both are flagged Daily (questFlags 4226, specialFlags 3), +500 Netherwing"
+   },
+   {
+    "kind": "quest-alt-ids",
+    "id": 11109,
+    "claimed": "Jorus the Cobalt Netherwing Drake (or one of the other five) under one id",
+    "actual": "11109 is Jorus only. Malfas 11110, Onyxien 11111, Suraku 11112, Voranaku 11113, Zoya 11114; all six mutually exclusive, all require 11108 Lord Illidan Stormrage"
+   },
+   {
+    "kind": "quest-missing-step",
+    "id": 11108,
+    "claimed": "(absent) Bow to the Highlord (11107) -> drake quest (11109)",
+    "actual": "Lord Illidan Stormrage (11108): Overlord Mor'ghor -> Barthamus (npc 23433, Lower City 66.6, 16.4), +1000 Netherwing; preQuestSingle of every drake quest"
+   },
+   {
+    "kind": "quest-missing-step",
+    "id": 11100,
+    "claimed": "(absent) Kill Them All! (11099) -> The Deadliest Trap Ever Laid (11101)",
+    "actual": "Commander Arcus (11100: Anchorite Ceyla -> Commander Arcus) / Commander Hobb (11095: Arcanist Thelis -> Commander Hobb) sits between them; 11101 preQuestGroup = [10211, 11100], 11097 preQuestGroup = [10211, 11095]"
+   },
+   {
+    "kind": "quest-missing-step",
+    "id": 11490,
+    "claimed": "(absent) Magisters' Terrace quest ends the heroic-access path at Larethor",
+    "actual": "The Scryer's Scryer (11490: Tyrith -> Kalecgos 24848, +250 SSO) then Hard to Kill (11492: Kalecgos -> Exarch Larethor, +250 SSO, Head of Kael'thas) complete the chain; Hard to Kill is the Heroic Magisters' Terrace attunement (wiki 4.2.0 note 'No longer required to enter Heroic Magisters' Terrace')"
+   },
+   {
+    "kind": "quest-objective",
+    "id": 11885,
+    "claimed": "Adversarial Blood: kill all four and bring Akkarai's Talons, Karrog's Spine, Gezzarak's Claws and Vakkiz's Scale to Hazzik",
+    "actual": "Live 11885 is kill credit for Darkscreecher Akkarai (23161), Karrog (23165), Gezzarak the Huntress (23163), Vakkiz the Windrager (23162); no tokens. Tokens are only the objective of retired 11072 and repeatable Tokens of the Descendants 11074"
+   },
+   {
+    "kind": "quest-mechanic",
+    "id": 11059,
+    "claimed": "Guardian of the Monument: an Apexis Guardian stands at each of the Apexis monuments; bring a group, kill one",
+    "actual": "The Apexis Guardian is summoned: a group spends 35 Apexis Shards at an Apexis Monument (object 185944) and wins six rounds of the relic game, then the Guardian spawns (Questie extraObjectives). Spawn points 27.4,68.6 / 31.8,63.6 / 28.4,46.4 / 33.5,51.5 / 60,9.2 / 64.4,10.4 / 69.2,14 confirm the monument sites"
+   },
+   {
+    "kind": "quest-phase",
+    "id": 11497,
+    "claimed": "Learning to Fly (11497 A / 11498 H) available from TBC launch (FLYING_EPIC phase 1)",
+    "actual": "Added in patch 2.3.0 (warcraft.wiki.gg) -> Anniversary Phase 4 (22 Oct 2026). Also only offered while Riding is below Expert (Questie requiredRanks 762 -3/-4/-5)"
+   },
+   {
+    "kind": "item-phase",
+    "id": 38628,
+    "claimed": "Nether Ray Fry pet sold by Grella at Exalted (SKYGUARD_SKETTIS exalted)",
+    "actual": "Item added in patch 2.4.3 (wiki); 40g at Exalted; cannot be on Anniversary before the Sunwell phase (Phase 5)"
+   }
+  ],
+  "corrections": [
+   {
+    "guideKey": "OGRILA_UNLOCK",
+    "stepKey": "grimoire_business",
+    "field": "detail",
+    "from": "loot Vim'gol's Vile Grimoire (item 32467)",
+    "to": "loot Vim'gol's Grimoire (item 32467)",
+    "reason": "Wowhead Anniversary tooltip names item 32467 'Vim'gol's Grimoire'; only the quest text says 'Vile'"
+   },
+   {
+    "guideKey": "OGRILA_UNLOCK",
+    "stepKey": "guardian_monument",
+    "field": "detail",
+    "from": "An Apexis Guardian, an elite crystal golem, stands at each of the Apexis monuments on the plateau (...). Bring a group, kill one and loot the Apexis Guardian's Head.",
+    "to": "Take a group of five to an Apexis Monument (the large relic sites at 27.4, 68.6; 31.8, 63.6; 28.4, 46.4; 33.5, 51.5; or far north at 60.0, 9.2 / 64.4, 10.4 / 69.2, 14.0), spend 35 Apexis Shards and win six rounds of the relic game; the Apexis Guardian then spawns. Kill it and loot the Apexis Guardian's Head.",
+    "reason": "Questie 11059 extraObjectives: 'Use 35 Apexis Shards to activate Apexis Monument. Apexis Guardian will spawn after six rounds'; Wowhead spawn list matches those sites"
+   },
+   {
+    "guideKey": "OGRILA_UNLOCK",
+    "stepKey": "friendly",
+    "field": "detail",
+    "from": "Friendly unlocks Jho'nass's Crystal Healing and Mana Potions (50 shards each)",
+    "to": "Friendly unlocks Jho'nass's Red and Blue Ogre Brew Special (AtlasLoot Friendly tier); Honored adds Red/Blue Ogre Brew and Apexis Crystal purchase. The Crystal Healing/Mana Potions (50 shards + 40s) carry no standing label on the wiki, so treat their gate as unverified.",
+    "reason": "AtlasLootClassic_Factions data-tbc.lua Ogrila (FactionID 1038) Friendly = 32910/32909 Ogre Brew Special, Honored = 32784/32783 + 32572; warcraft.wiki.gg lists the Crystal potions without a standing"
+   },
+   {
+    "guideKey": "FLYING_EPIC",
+    "stepKey": "learning_to_fly",
+    "field": "detail",
+    "from": "Nutral, the flight master on the Terrace of Light in Shattrath, hands out Learning to Fly at level 70",
+    "to": "Nutral hands out Learning to Fly at level 70 only to characters who have not yet trained Expert Riding. The quest was added in patch 2.3.0, so on Anniversary realms it exists from Phase 4 (22 October 2026), not from launch.",
+    "reason": "warcraft.wiki.gg Learning to Fly (Alliance): 'Patch 2.3.0 (2007-11-13): Added'; Questie requiredRanks [[762,-3],[762,-4],[762,-5]]; warcrafttavern Anniversary phase table"
+   },
+   {
+    "guideKey": "SKYGUARD_SKETTIS",
+    "stepKey": "adversarial_blood",
+    "field": "detail",
+    "from": "Kill all four and bring Akkarai's Talons, Karrog's Spine, Gezzarak's Claws and Vakkiz's Scale to Hazzik for 350 reputation.",
+    "to": "Kill all four (Darkscreecher Akkarai, Karrog, Gezzarak the Huntress, Vakkiz the Windrager) and return to Hazzik for 350 reputation; the live quest 11885 counts the kills (whole group gets credit) and needs no tokens. The tokens (Akkarai's Talons, Karrog's Spine, Gezzarak's Claws, Vakkiz's Scale) are only turned in for the repeatable Tokens of the Descendants (11074, 350).",
+    "reason": "Questie 11885 objectives are creature kills 23161/23165/23163/23162 with requiredSourceItems 32620; only 11072 (retired) and 11074 list items 32715-32718; wiki: patch 2.4 'removed the requirement to loot trophy tokens'"
+   },
+   {
+    "guideKey": "SKYGUARD_SKETTIS",
+    "stepKey": "exalted",
+    "field": "detail",
+    "from": "the Nether Ray Fry pet (38628)",
+    "to": "the Nether Ray Fry pet (38628, 40 gold; added in patch 2.4.3, so not before the Sunwell phase on Anniversary)",
+    "reason": "warcraft.wiki.gg Nether Ray Fry: 'Patch 2.4.3 (2008-07-15): Added', price 40g"
+   },
+   {
+    "guideKey": "NETHERWING_DAILIES",
+    "stepKey": "(step for quest 11099 Kill Them All!)",
+    "field": "altQuestIds / turnIn / detectedBy",
+    "from": "questId 11099 only, turn-in 'Anchorite Ceyla (Aldor) or Arcanist Thelis (Scryers)'",
+    "to": "questId 11099 (Aldor: Mor'ghor -> Anchorite Ceyla 21402 at Altar of Sha'tar 62.4, 28.4), altQuestIds [11094] (Scryers: Mor'ghor -> Arcanist Thelis 21955 at Sanctum of the Stars 56.2, 59.5); detectedBy 11099 or 11094 complete. Keep the City of Light requirement: Questie preQuestGroup is [10211, 11092] for both.",
+    "reason": "Questie rows 11099/11094; tooltips 11094 'Deliver ... to Arcanist Thelis at the Sanctum of the Stars'"
+   },
+   {
+    "guideKey": "NETHERWING_DAILIES",
+    "stepKey": "(new step between Kill Them All! and The Deadliest Trap Ever Laid)",
+    "field": "steps",
+    "from": "(missing)",
+    "to": "Add 'Commander Arcus' (11100, Anchorite Ceyla -> Commander Arcus 23452, 62.4, 29.4) with altQuestIds [11095] 'Commander Hobb' (Arcanist Thelis -> Commander Hobb 23434, 56.5, 58.5); gives the Dragonmaw Flare; no rep.",
+    "reason": "Questie: 11099 nextQuestInChain 11100, 11094 nextQuestInChain 11095; 11101 preQuestGroup [10211, 11100], 11097 preQuestGroup [10211, 11095]"
+   },
+   {
+    "guideKey": "NETHERWING_DAILIES",
+    "stepKey": "(step for quest 11101 The Deadliest Trap Ever Laid)",
+    "field": "altQuestIds / daily / detail",
+    "from": "questId 11101 only; giver 'Commander Arcus (Aldor) or Commander Hobb (Scryers)'",
+    "to": "questId 11101 (Aldor, Commander Arcus -> Overlord Mor'ghor, Aldor Medals), altQuestIds [11097] (Scryers, Commander Hobb -> Mor'ghor, Scryer Medals); daily:true (questFlags 4226, specialFlags 3; wiki 'daily, 3-person group'); +500 Netherwing.",
+    "reason": "Questie rows 11101/11097 and Wowhead tooltips both say 'Level 70 Daily'"
+   },
+   {
+    "guideKey": "NETHERWING_DAILIES",
+    "stepKey": "(new step after Bow to the Highlord 11107)",
+    "field": "steps",
+    "from": "(missing) 11107 -> 11109",
+    "to": "Add 'Lord Illidan Stormrage' (11108): Overlord Mor'ghor -> Barthamus (npc 23433, Shattrath Lower City 66.6, 16.4); Exalted; +1000 Netherwing; the six drake quests all require it.",
+    "reason": "Questie 11107 nextQuestInChain 11108; 11109-11114 preQuestSingle [11108]; wiki Lord Illidan Stormrage (quest)"
+   },
+   {
+    "guideKey": "NETHERWING_DAILIES",
+    "stepKey": "(step for quest 11109 drake choice)",
+    "field": "altQuestIds / giver / detectedBy",
+    "from": "questId 11109 'Jorus the Cobalt Netherwing Drake (or one of the other five)', giver 23462",
+    "to": "questId 11109 (Jorus 23462, Cobalt), altQuestIds [11110 Malfas 23464 Purple, 11111 Onyxien 23463 Onyx, 11112 Suraku 23461 Azure, 11113 Voranaku 23466 Violet, 11114 Zoya 23465 Veridian]; all exclusive; detectedBy any of 11109-11114 complete; drakes stand at Lower City 65-68, 17-20.",
+    "reason": "Questie exclusiveTo lists; tooltips confirm all six quest names and npc names"
+   },
+   {
+    "guideKey": "NETHERWING_DAILIES",
+    "stepKey": "(step for quest 11049 The Great Netherwing Egg Hunt)",
+    "field": "daily",
+    "from": "(if marked daily)",
+    "to": "one-time (+350), followed by the repeatable Accepting All Eggs (11050, +250 per egg)",
+    "reason": "Questie 11049 questFlags 136 with no specialFlags, nextQuestInChain 11050; wiki: 'The Great Netherwing Egg Hunt (+350), with repeatable Accepting All Eggs (+250)'"
+   },
+   {
+    "guideKey": "(Sunwell / Shattered Sun guide, key not visible in truncated JSON)",
+    "stepKey": "(step for quest 11488 Magisters' Terrace)",
+    "field": "turnIn",
+    "from": "npc 24813 Exarch Larethor",
+    "to": "npc 24822 Tyrith, inside Magisters' Terrace (normal); Exarch Larethor (47.4, 30.5, Shattered Sun Staging Area, Isle of Quel'Danas) only gives it. +250 Shattered Sun Offensive.",
+    "reason": "Questie 11488 startedBy 24813, finishedBy 24822; tooltip objective 'find Tyrith, a blood elf spy'"
+   },
+   {
+    "guideKey": "(Sunwell / Shattered Sun guide)",
+    "stepKey": "(new steps after Magisters' Terrace 11488)",
+    "field": "steps",
+    "from": "(missing)",
+    "to": "Add 'The Scryer's Scryer' (11490: Tyrith 24822 -> Kalecgos 24848, use the Scrying Orb on the MgT balcony, +250 SSO) and 'Hard to Kill' (11492: Kalecgos -> Exarch Larethor, Head of Kael'thas from normal Magisters' Terrace, +250 SSO). Completing Hard to Kill is the Heroic Magisters' Terrace attunement; detectedBy 11492 complete.",
+    "reason": "Questie chain 11488 -> 11490 -> 11492; Wowhead series 'Part 2 of 4'; wiki Hard to Kill patch 4.2.0 'No longer required to enter Heroic Magisters' Terrace'"
+   },
+   {
+    "guideKey": "(Sunwell / Shattered Sun guide)",
+    "stepKey": "(step for quest 11481 Crisis at the Sunwell)",
+    "field": "altQuestIds / turnIn zone",
+    "from": "11481 'Crisis at the Sunwell (Aldor) / Duty Calls (Scryers)'",
+    "to": "questId 11481 (Aldor, Adyen the Lightwarden 18537 at Aldor Rise 30.7, 34.6), altQuestIds [11482] (Scryers, Dathris Sunstriker 18594 at Scryer's Tier 54.6, 80.7); both end at Exarch Larethor 24813 on the Isle of Quel'Danas (47.4, 30.5), +10 SSO; requires the matching Shattrath faction (requiredMinRep 932/0 or 934/0).",
+    "reason": "Questie rows 11481/11482 (exclusiveTo each other); Wowhead npc 24813 zone 4080"
+   },
+   {
+    "guideKey": "(Sunwell / Shattered Sun guide)",
+    "stepKey": "(step for quest 11524 Erratic Behavior)",
+    "field": "reputation",
+    "from": "(if stated as 250)",
+    "to": "150 Shattered Sun Offensive per completion (daily)",
+    "reason": "Questie 11524 reputationReward [[1077,150]]"
+   },
+   {
+    "guideKey": "(Sunwell / Shattered Sun guide)",
+    "stepKey": "(steps for 11545 A Charitable Donation and 11549 A Magnanimous Benefactor)",
+    "field": "gating",
+    "from": "(unspecified)",
+    "to": "A Charitable Donation (11545) is a daily (+150) available only while below Exalted (requiredMaxRep 1077/42000); A Magnanimous Benefactor (11549) is one-time, requires Exalted (requiredMinRep 1077/42000), +500, costs 1000g and grants the 'of the Shattered Sun' title.",
+    "reason": "Questie rows 11545 (questFlags 4232, specialFlags 1) and 11549 (questFlags 136)"
+   },
+   {
+    "guideKey": "(Sunwell / Shattered Sun guide)",
+    "stepKey": "phase",
+    "field": "phase.introduced",
+    "from": "(unspecified)",
+    "to": "5 (Fury of the Sunwell, 'Autumn 2026', undated); Isle of Quel'Danas, Magisters' Terrace and Sunwell Plateau all arrive together; nothing in this guide is live as of 2026-10-24.",
+    "reason": "warcrafttavern Anniversary phase table: Phase 4 Zul'Aman 22 Oct 2026, Phase 5 Isle of Quel'Danas Autumn 2026"
+   }
+  ],
+  "unverifiable": [
+   "Whether Banish the Demons (11026) also pays +350 Sha'tari Skyguard on first completion: warcraft.wiki.gg says yes, Questie lists only Ogri'la 350.",
+   "The standing at which Jho'nass sells Crystal Healing/Mana Potions (wiki lists them without a standing; AtlasLoot omits them).",
+   "Whether The Deadliest Trap Ever Laid (11101/11097) can actually be repeated daily on Anniversary realms (flagged Daily in both Wowhead and Questie data; not field-tested).",
+   "Whether Anniversary Phase 4 (22 Oct 2026) actually enabled the 2.3.0 Learning to Fly quest, and whether Grella will sell the 2.4.3 Nether Ray Fry in Phase 5.",
+   "Daily reputation totals and 'days to standing' estimates in the Ogri'la steps (arithmetic not checked).",
+   "Apexis relic game round counts (the guide's 'four rounds' for Apexis Vibrations/Emanations) and the 35-shard summon details beyond what Questie states for Guardian of the Monument.",
+   "Wowhead places Ishanah (18538) and Adyen the Lightwarden (18537) in zone 3523 at 29.4, 13.8; this is a Wowhead map quirk for the Shrine of Unending Light. Questie TBC gives Ishanah at Shattrath 23.97, 29.73 (guide 24.0, 29.7 is right) and Adyen at 30.73, 34.62.",
+   "Sha'tar spillover amounts beyond the wiki's statements (half value, stops at 5999/6000 Friendly) were not checked against game data."
+  ],
+  "verdict": "Every claimed id/name pair in the list resolves to the claimed name (1 cosmetic item-name slip, Vim'gol's Grimoire); the real defects are structural: three missing chain links (Commander Arcus/Hobb, Lord Illidan Stormrage, The Scryer's Scryer + Hard to Kill), Aldor-only ids presented as both-faction (Kill Them All! 11099 vs 11094, Deadliest Trap 11101 vs 11097, drake 11109 vs 11110-11114), a wrong Magisters' Terrace turn-in (Tyrith, not Larethor), and outdated details (Adversarial Blood tokens, Apexis Guardian summon, Learning to Fly phase, Nether Ray Fry patch).",
+  "notes": "Method: 215 ids (144 unique ids from the task list + 71 ids referenced in the guide JSON: alt quest ids, kill NPCs, breadcrumb NPCs, mount/quest items, riding spells) were fetched from https://nether.wowhead.com/tooltip/<kind>/<id>?dataEnv=5&locale=0 with a 0.3s sleep; a further 64 quest/npc/item ids (Scryer variants, drake quests, Sunwell chain, Netherwing dailies, Tyrith, Barthamus, Chort, Jho'nass, Gahk, Kalecgos) were fetched for the structural pass. Faction endpoints do not exist on the tooltip API; faction ids were confirmed from AtlasLootClassic_Factions/data-tbc.lua: Aldor 932, Scryers 934, Sha'tar 935, Ogri'la 1038 (ContentPhaseBC 2), Sha'tari Skyguard 1031, Netherwing 1015, Shattered Sun Offensive 1077. Prerequisites, reputation requirements/rewards, daily flags, givers/finishers and the City of Light gate were read from the local Questie TBC database (QuestieDB_TBC.toc baked CBOR rows decoded with /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/qdecode.py; raw results in results.tsv, quests.txt, npcs.txt, quests2.txt in the same folder). warcraft.wiki.gg was fetched via WebFetch (curl is Cloudflare-blocked).\n\nConfirmed correct (no change): A'dal level 60 min, +10 Sha'tar; City of Light pre 10210; Allegiance 10551/10552 exclusive, +3500, pre City of Light; Ishanah 10554 / Voren'thal 10553 +10/+5; Draenei start Friendly with Aldor and Blood Elves with Scryers (wiki); Sha'tar half-value spillover capped at 5999/6000 (wiki); 110% cross-faction loss; Sha'nir 64.4,15.4 and Arcanist Adyria 54.8,22.4. Riding: no faction discount before patch 3.2.0 (wiki), Expert 800g/Artisan 5000g, all 14 mount item ids/names, Ilsa 37.5,56.2 / Olrokk 29.2,29.2 / Brunn 37.5,56.0 / Dama 29.2,29.5, Hellfire trainers are Wrath-era. Ogri'la: breadcrumb/exclusive set 10983/10989/11057 (Chort 22995, Bladespire Supplicant 23053), gronn trio inGroupWith with Grim(oire) Business needing all three (preQuestGroup), Soulgrinder at 60.6,25.4, Ogre Heaven +25, The Crystals +250 gating 11030/11058/11026, An Apexis Relic +250/+250, Relic's Emanation daily +350, Skyguard Ranger +250 -> The Skyguard Outpost (+10 Skyguard) -> Guardian of the Monument +500/+500 and Bombing Run (11010 classes 479 / 11102 druids 1024) +500/+500 -> Bomb Them Again! daily +500/+500 and Wrangle Some/More +350/+350, Banish the Demons requiredMinRep 1038/9000 (Honored) +350 and daily +350, A Crystalforged Darkrune Honored +10, A Special Thank You Friendly (3000) +10 to Jho'nass 23428 at 28.0,58.6, vendor tiers Revered 1 Crystal+50 Shards and Exalted 4 Crystals+100 Shards, tabard 10 shards. Skyguard: Threat from Above 20 Gordunni, requiredSkill 762/225 on the Skettis chain, To Skettis! +10, Fires Over Skettis daily 20 eggs +350, Escape from Skettis daily +150 with three cage spawns, Hungry Nether Rays one-time 10 meals +250, World of Shadows 6 dust +250 and More Shadow Dust +150, Secrets +250, Almanac (item-started 32523) +75, Ally in Lower City +75 to Rilak 52.4,20.8, Countdown +75, Hazzik's Bargain +75, Shabby Disguise +150, Adversarial Blood +350 with no rep gate, Tokens +350, Terokk's Downfall +1000 (Adaris both ends), Terokk at 66.2,77.5; Grella tiers per AtlasLoot (Exalted: rays 32314/32316/32317/32318/32319, Silver Cross 32770, Airman's Ribbon 32771, Tabard 32445; Revered drapes 32539/32538; Honored Rations; Friendly Enriched Terocone Juice); flight path at Honored. Netherwing: full Hated chain order and NPCs, Kindness 8 drakes / 8 carcasses / 5 giblets, Ally of the Netherwing +42000, Blood Oath requiredSkill 762/300 and Neutral, In Service +250, Enter the Taskmaster 762/300, Your Friend On The Inside (Yarzill, pre 11013), Netherwing Crystals daily +250, Rise Overseer! Friendly +250, Overseeing and You +250, The Netherwing Mines +75, Stand Tall Captain! Honored +500, Disrupting the Twilight Portal daily +500, Soul Cannon +500, Earning Your Wings Honored (leads to Dragonmaw Race 11064), Hail Commander! Revered (21000) +500, Kill Them All! preQuestGroup [10211 City of Light, 11092] +250 (so the guide's City of Light prerequisite is right), Bow to the Highlord Exalted (42000). Sunwell: Erratic Behavior (Xayann), Battle for the Sun's Reach Armory (Inuuro, phase 2->3; the phase-2 version is The Battle Must Go On 11537), Intercepting the Mana Cells (Nasuun, Shattrath 49.2,42.5, needs Bash'ir Phasing Device 34248), Intercept the Reinforcements (Kaalan, Armory), Making Ready (Hauthaa), Discovering Your Roots (Mar'nah, +350), Sunfury Attack Plans (Torvos, Shattrath 62.4,36.0), A Magnanimous Benefactor (Kairthos). Phases: Phase 2 Ogri'la/Skyguard/Swift Flight Form 14 May 2026, Phase 3 Netherwing 27 Aug 2026, Phase 4 Zul'Aman 22 Oct 2026, Phase 5 Quel'Danas autumn 2026 (warcrafttavern). All claimed NPC coordinates are within ~0.5 of Wowhead spawn data; Neltharaku's claimed 61.3,60.0 lies inside his 57-72 x 53-64 flight path."
+ }
+}

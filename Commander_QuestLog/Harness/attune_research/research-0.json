@@ -1,0 +1,840 @@
+{
+ "topic": "karazhan-cot",
+ "data": {
+  "guides": [
+   {
+    "key": "CAVERNS_OF_TIME_ACCESS",
+    "title": "Caverns of Time Access: Old Hillsbrad and the Black Morass",
+    "category": "DUNGEON",
+    "faction": "BOTH",
+    "summary": "The bronze dragonflight will not let you into their timeways until you have introduced yourself. A short chain at the bottom of the Caverns of Time in Tanaris opens Old Hillsbrad Foothills, and rescuing Thrall there opens The Black Morass. The Karazhan attunement cannot be finished without this chain, because Medivh is only reachable inside the Black Morass.",
+    "unlocks": "Finishing Return to Andormu lets you zone into The Black Morass on normal difficulty, which the Karazhan chain needs for The Master's Touch, and it carries you most of the way to Friendly with the Keepers of Time.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Available since the Anniversary TBC launch on 2026-02-05 and never relaxed on TBC Classic or Anniversary; the live-game removal only came in retail patch 4.2.0. Heroic difficulty for both Caverns of Time dungeons additionally needs the Key of Time (item 30635, Keepers of Time; Revered until the Zul'Aman update of 2026-10-22 lowered heroic keys to Honored). The CMaNGOS TBC database also gates heroic Old Hillsbrad on Return to Andormu (10285) and heroic Black Morass on Hero of the Brood (10298); those heroic gates are not verified on the live client. Blizzard's November 2025 development notes make raid and heroic attunements account-wide on Anniversary, but this dungeon chain is a per-character quest gate as far as any source states."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_66",
+      "title": "Reach level 66",
+      "kind": "LEVEL",
+      "level": 66,
+      "detail": "Every quest in this chain has a minimum level of 66, and the Old Hillsbrad and Black Morass portals refuse anyone lower. The dungeons themselves are tuned for 66 to 68 and 68 to 70 respectively, so most players do the Old Hillsbrad half at 66 to 68 and save the Black Morass for 70. If you are only here for the Karazhan key you can wait until 70 and do the whole thing in one evening.",
+      "detectedBy": "UnitLevel('player') is at least 66.",
+      "optional": false
+     },
+     {
+      "key": "to_the_masters_lair",
+      "title": "Speak to the Steward of Time at the cavern mouth",
+      "kind": "QUEST",
+      "questId": 10279,
+      "questName": "To The Master's Lair",
+      "giver": {
+       "npcId": 20142,
+       "name": "Steward of Time",
+       "zone": "Tanaris",
+       "x": 66,
+       "y": 49.6
+      },
+      "turnIn": {
+       "npcId": 20130,
+       "name": "Andormu",
+       "zone": "Tanaris",
+       "x": 58.5,
+       "y": 54.2
+      },
+      "detail": "The Caverns of Time entrance is the cave in the eastern mountains of Tanaris at about 65.7, 49.8; the Steward of Time stands just inside the tunnel. Take To The Master's Lair from him. He also offers a free dragon ride that drops you at the bottom of the cavern, which is far quicker than walking the spiral. Turn the quest in to the child Andormu, the small bronze dragon in the middle of the floor. The quest is identical for both factions and pays 10 Keepers of Time reputation.",
+      "detectedBy": "Quest 10279 is flagged complete (C_QuestLog.IsQuestFlaggedCompleted).",
+      "optional": false
+     },
+     {
+      "key": "the_caverns_of_time",
+      "title": "Follow the Custodian of Time around the cavern",
+      "kind": "QUEST",
+      "questId": 10277,
+      "questName": "The Caverns of Time",
+      "giver": {
+       "npcId": 20130,
+       "name": "Andormu",
+       "zone": "Tanaris",
+       "x": 58.5,
+       "y": 54.2
+      },
+      "turnIn": {
+       "npcId": 20130,
+       "name": "Andormu",
+       "zone": "Tanaris",
+       "x": 58.5,
+       "y": 54.2
+      },
+      "detail": "Andormu asks you to follow the Custodian of Time (npc 20129) on a guided tour of the cavern that takes roughly eight minutes. Stay with the Custodian until he finishes talking at each stop; the objective 'Caverns of Time Explained' completes when the tour ends. The tour is shared, so if several people are waiting one Custodian walks everyone round together. Turn in to Andormu for 250 Keepers of Time reputation. This is the quest Blizzard's own portal message names when it refuses entry to Old Hillsbrad.",
+      "detectedBy": "Quest 10277 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "old_hillsbrad",
+      "title": "Enter Old Hillsbrad and find Erozion",
+      "kind": "QUEST",
+      "questId": 10282,
+      "questName": "Old Hillsbrad",
+      "giver": {
+       "npcId": 20130,
+       "name": "Andormu",
+       "zone": "Tanaris",
+       "x": 58.5,
+       "y": 54.2
+      },
+      "turnIn": {
+       "npcId": 18723,
+       "name": "Erozion",
+       "zone": "Old Hillsbrad Foothills"
+      },
+      "instance": {
+       "name": "Old Hillsbrad Foothills",
+       "instanceMapId": 560,
+       "heroic": false,
+       "boss": null,
+       "npcIds": [
+        18723
+       ]
+      },
+      "detail": "Andormu now sends you into Old Hillsbrad Foothills. The portal is in the cavern below at about 55.5, 53.3 on the Tanaris map, the north west timeway. Walk the entrance tunnel to Erozion, the bronze drake disguised as a human, and hand in the quest; he is a few yards inside, before the first humans. Everybody in the group should turn this in and take the next quest themselves, because Erozion does not share it automatically.",
+      "detectedBy": "Quest 10282 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "tarethas_diversion",
+      "title": "Burn the five internment lodges at Durnholde",
+      "kind": "QUEST",
+      "questId": 10283,
+      "questName": "Taretha's Diversion",
+      "giver": {
+       "npcId": 18723,
+       "name": "Erozion",
+       "zone": "Old Hillsbrad Foothills"
+      },
+      "turnIn": {
+       "npcId": 17876,
+       "name": "Thrall",
+       "zone": "Old Hillsbrad Foothills"
+      },
+      "itemId": 25853,
+      "itemName": "Pack of Incendiary Bombs",
+      "count": 1,
+      "instance": {
+       "name": "Old Hillsbrad Foothills",
+       "instanceMapId": 560,
+       "heroic": false,
+       "boss": "Lieutenant Drake",
+       "npcIds": [
+        17848
+       ]
+      },
+      "detail": "Erozion gives you a Pack of Incendiary Bombs; if you ever lose it, talk to him again. Speak to the drake Brazen next to him for a flight to Durnholde Keep, or ride along the road. Inside the keep, use the pack on the barrel in each of the five internment lodges on the lower terrace; each use plants a charge and the lodge goes up in flames. When all five burn, the objective 'Internment Lodges Set Ablaze' completes and Lieutenant Drake comes out to fight. Then go up into the keep, take the stairs by the central room down to the prison and hand in to Thrall in his cell.",
+      "detectedBy": "Quest 10283 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "escape_from_durnholde",
+      "title": "Escort Thrall to Tarren Mill and kill the Epoch Hunter",
+      "kind": "QUEST",
+      "questId": 10284,
+      "questName": "Escape from Durnholde",
+      "giver": {
+       "npcId": 17876,
+       "name": "Thrall",
+       "zone": "Old Hillsbrad Foothills"
+      },
+      "turnIn": {
+       "npcId": 18723,
+       "name": "Erozion",
+       "zone": "Old Hillsbrad Foothills"
+      },
+      "instance": {
+       "name": "Old Hillsbrad Foothills",
+       "instanceMapId": 560,
+       "heroic": false,
+       "boss": "Epoch Hunter",
+       "npcIds": [
+        17862,
+        18096
+       ]
+      },
+      "detail": "Make sure every party member has accepted the quest before anyone tells Thrall to go, because the event only credits players on the quest. Thrall fights his way out of the keep, is ambushed on the road by Captain Skarloc and his guards, then rides to Tarren Mill where you clear the town, free Taretha at the inn and finally kill the Epoch Hunter when it lands outside. Keep Thrall alive and let him lead; if he dies the event resets and you talk to him in the prison again after a short wait. Taretha's cutscene completes 'Thrall's Destiny Fulfilled'. Run back to Erozion at the instance entrance to turn in for 1000 Keepers of Time reputation.",
+      "detectedBy": "Quest 10284 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "return_to_andormu",
+      "title": "Return to Andormu to open the Black Morass",
+      "kind": "QUEST",
+      "questId": 10285,
+      "questName": "Return to Andormu",
+      "giver": {
+       "npcId": 18723,
+       "name": "Erozion",
+       "zone": "Old Hillsbrad Foothills"
+      },
+      "turnIn": {
+       "npcId": 20130,
+       "name": "Andormu",
+       "zone": "Tanaris",
+       "x": 58.5,
+       "y": 54.2
+      },
+      "detail": "Erozion sends you back to the child Andormu on the cavern floor. Turning this in is the actual gate: the Black Morass portal checks that Return to Andormu is complete, and refuses with the message that you must first save Thrall. Pick one of Warchief's Mantle (29316), Tempest's Touch (29317), Southshore Sneakers (29318) or Tarren Mill Defender's Cinch (29319) and collect 3000 Keepers of Time reputation. From this moment you may zone into The Black Morass on normal difficulty.",
+      "detectedBy": "Quest 10285 is flagged complete; this is the flag the Black Morass entrance checks.",
+      "optional": false
+     },
+     {
+      "key": "the_black_morass",
+      "title": "Take The Black Morass from the adult Andormu",
+      "kind": "QUEST",
+      "questId": 10296,
+      "questName": "The Black Morass",
+      "giver": {
+       "npcId": 19932,
+       "name": "Andormu",
+       "zone": "Tanaris",
+       "x": 57.6,
+       "y": 59
+      },
+      "turnIn": {
+       "npcId": 20201,
+       "name": "Sa'at",
+       "zone": "The Black Morass"
+      },
+      "instance": {
+       "name": "The Black Morass",
+       "instanceMapId": 269,
+       "heroic": false,
+       "boss": null,
+       "npcIds": [
+        20201
+       ]
+      },
+      "detail": "Not needed for access, but take it before your first run. After Return to Andormu the adult Andormu (a second, level 70 Andormu standing a little south of the child at about 57.6, 59.0) offers The Black Morass. The portal is the south west timeway at about 57.1, 63.1 on the Tanaris map. Inside, Sa'at waits at the entrance; hand in to him for 250 reputation and he gives the next quest. Everyone who wants the Keepers of Time reputation from the dungeon quests needs this.",
+      "detectedBy": "Quest 10296 is flagged complete.",
+      "optional": true
+     },
+     {
+      "key": "opening_of_the_dark_portal",
+      "title": "Defend Medivh through eighteen waves",
+      "kind": "QUEST",
+      "questId": 10297,
+      "questName": "The Opening of the Dark Portal",
+      "giver": {
+       "npcId": 20201,
+       "name": "Sa'at",
+       "zone": "The Black Morass"
+      },
+      "turnIn": {
+       "npcId": 20201,
+       "name": "Sa'at",
+       "zone": "The Black Morass"
+      },
+      "itemId": 24289,
+      "itemName": "Chrono-beacon",
+      "count": 1,
+      "instance": {
+       "name": "The Black Morass",
+       "instanceMapId": 269,
+       "heroic": false,
+       "boss": "Aeonus",
+       "npcIds": [
+        17879,
+        17880,
+        17881,
+        15608
+       ]
+      },
+      "detail": "Sa'at hands you a Chrono-beacon. The event starts when someone walks within about ten yards of Medivh at the Dark Portal, after which time rifts open at four points and eighteen waves of infinite dragonkin come for him. Kill each Rift Lord or Rift Keeper fast, because the portal keeps spawning adds until it dies, and keep everything off Medivh's shield. Chrono Lord Deja comes at wave six, Temporus at twelve and Aeonus at eighteen. If Medivh dies the event resets after five minutes and Sa'at gives a new beacon. Return to Sa'at for 500 reputation.",
+      "detectedBy": "Quest 10297 is flagged complete.",
+      "optional": true
+     },
+     {
+      "key": "hero_of_the_brood",
+      "title": "Report to Andormu as Hero of the Brood",
+      "kind": "QUEST",
+      "questId": 10298,
+      "questName": "Hero of the Brood",
+      "giver": {
+       "npcId": 20201,
+       "name": "Sa'at",
+       "zone": "The Black Morass"
+      },
+      "turnIn": {
+       "npcId": 20130,
+       "name": "Andormu",
+       "zone": "Tanaris",
+       "x": 58.5,
+       "y": 54.2
+      },
+      "detail": "Sa'at sends you back to the child Andormu with the news. The reward is a choice of Band of the Guardian (29320), Time-bending Gem (29321), Keeper's Ring of Piety (29322) or Andormu's Tear (29323) plus 8000 Keepers of Time reputation, which is the single biggest reputation payment in the whole Caverns of Time. The CMaNGOS TBC database lists this quest as the gate for heroic Black Morass alongside the Key of Time, so finish it before you buy the key.",
+      "detectedBy": "Quest 10298 is flagged complete.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10279?dataEnv=5&locale=0 (and 10277, 10282, 10283, 10284, 10285, 10296, 10297, 10298)",
+     "https://nether.wowhead.com/tooltip/npc/20142?dataEnv=5&locale=0 (and 20130, 19932, 20129, 19950, 19935, 18723, 17876, 20201, 15608, 17848, 17862, 18096, 17879, 17880, 17881)",
+     "https://nether.wowhead.com/tooltip/item/25853?dataEnv=5&locale=0 (and 24289, 30635, 29316-29319, 29320-29323)",
+     "https://warcraft.wiki.gg/wiki/Black_Morass_(instance)",
+     "https://warcraft.wiki.gg/wiki/Caverns_of_Time",
+     "https://warcraft.wiki.gg/wiki/Old_Hillsbrad_Foothills",
+     "https://warcraft.wiki.gg/wiki/Quest:To_The_Master%27s_Lair",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Caverns_of_Time",
+     "https://warcraft.wiki.gg/wiki/Quest:Return_to_Andormu",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Black_Morass",
+     "https://warcraft.wiki.gg/wiki/Quest:Hero_of_the_Brood",
+     "https://www.warcrafttavern.com/tbc/guides/black-morass-attunement/",
+     "https://www.warcrafttavern.com/tbc/guides/attunements/",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite (quest_template, creature_questrelation, creature_involvedrelation, creature_template)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sql.gz (areatrigger_teleport rows 4320, 4321)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/Map.csv and AreaTable.csv and Faction.csv",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Orders/CommanderOrdersEntrances.lua (portal coordinates)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua"
+    ],
+    "notes": "Gate facts from the CMaNGOS TBC world database (the only machine-readable statement of the TBC-era rule found): Black Morass entrance (areatrigger 4320): required level 66, normal requires quest 10285 Return to Andormu, heroic requires quest 10298 Hero of the Brood plus Key of Time 30635, failure text 'You must first save Thrall in Old Hillsbrad by helping him escape from Durnholde Keep before you may enter the Black Morass.' Old Hillsbrad entrance (areatrigger 4321): required level 66, heroic requires quest 10285 plus Key of Time, failure text 'You must first complete the quest, The Caverns of Time, before you may enter Old Hillsbrad.' although the normal-mode required quest field is 0 in that database, so treat 10277 as the practical prerequisite. Every quest in the chain is the same id for both factions (To The Master's Lair RequiredRaces 1791 covers all ten races). Instance map ids confirmed from the client's Map.db2 dump: 560 'The Escape From Durnholde' (Old Hillsbrad Foothills, area 2367) and 269 'Opening of the Dark Portal' (The Black Morass, area 2366). Keepers of Time is faction 989 (Faction.db2); reputation per quest from quest_template: 10, 250, 10, 1000, 1000, 3000, 250, 500, 8000. Soridormi (npc 19935, patrols the cavern floor) is the Hyjal Vials of Eternity giver and is not part of this chain. Detection order for the addon: 10279 then 10277 then 10282 then 10283 then 10284 then 10285; 10296 to 10298 optional. Coordinates inside the two instances are omitted because the quest NPCs stand in instance maps."
+   },
+   {
+    "key": "KARAZHAN_ATTUNEMENT",
+    "title": "Karazhan Attunement: The Master's Key",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "Medivh's tower in Deadwind Pass is locked, and the Violet Eye wants a field agent to open it. Starting at level 68 you investigate the Master's Cellar for Archmage Alturus, carry his report to Khadgar in Shattrath, reassemble an apprentice's key from fragments hidden in Shadow Labyrinth, The Steamvault and The Arcatraz, and finally have Medivh himself enable it at the end of a Black Morass run. The reward is The Master's Key, which opens the Karazhan gate for your whole raid.",
+    "unlocks": "Return to Khadgar awards The Master's Key (item 24490, keyring), which opens the front gate of Karazhan (instance 532) and completes the raid attunement; on Anniversary realms that attunement then counts for every character on the Battle.net account.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Anniversary timeline: Phase 1 launched 2026-02-05 with Karazhan opening 2026-02-19; Phase 2 Overlords of Outland 2026-05-14; Phase 3 Black Temple 2026-08-27, which removed the Serpentshrine Cavern and Tempest Keep attunements; the Zul'Aman update of 2026-10-22 (called Phase 3.5 by Blizzard Watch and the wiki, Phase 4 by Warcraft Tavern and in this addon's five-phase numbering) removed the Mount Hyjal and Black Temple attunements and lowered heroic keys to Honored; Sunwell (Phase 5 in the five-phase numbering) is still to be announced. No Anniversary announcement through 2026-10-22 removes the Karazhan attunement or the Master's Key, and Warcraft Tavern's current Anniversary guide still presents it as required and account-wide, so requiredUntil is null. The original game's patch 2.4.0 (the Sunwell patch) said players no longer need the key to enter but the gates still require it to be unlocked; if Anniversary mirrors that at Phase 5 one key-holder per raid is still needed. Account-wide rule (Blizzard development notes, November 2025): once a character finishes the attunement the raid is unlocked for all characters on the account, so an alt may be able to enter with none of these quests complete."
+    },
+    "prerequisites": [
+     "CAVERNS_OF_TIME_ACCESS"
+    ],
+    "steps": [
+     {
+      "key": "level_68",
+      "title": "Reach level 68",
+      "kind": "LEVEL",
+      "level": 68,
+      "detail": "Every quest in the chain has a minimum level of 68, and Archmage Alturus will not talk business before then. The three key-fragment dungeons are level 70 content and the Black Morass finale is tuned for 70, so most people start the Deadwind Pass part at 68 while levelling and finish the dungeons at 70. The Karazhan portal itself tells players they must be at least 68 to enter.",
+      "detectedBy": "UnitLevel('player') is at least 68.",
+      "optional": false
+     },
+     {
+      "key": "archmage_alturus_breadcrumb",
+      "title": "Hear about Alturus from Apprentice Tasserel",
+      "kind": "QUEST",
+      "questId": 11216,
+      "questName": "Archmage Alturus",
+      "giver": {
+       "npcId": 23948,
+       "name": "Apprentice Tasserel",
+       "zone": "Shattrath City",
+       "x": 75.2,
+       "y": 33
+      },
+      "turnIn": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.5
+      },
+      "detail": "An optional breadcrumb. Apprentice Tasserel of the Violet Eye stands on the east side of Shattrath's Lower City and asks you to speak to Archmage Alturus outside Karazhan. Skipping it costs nothing: Alturus offers his two quests to anyone of level 68 whether or not you carried the message. Take it if you are already in Shattrath so the quest log points you to Deadwind Pass.",
+      "detectedBy": "Quest 11216 is flagged complete, or either 9824 or 9825 is complete or in the log (the breadcrumb is then moot).",
+      "optional": true
+     },
+     {
+      "key": "arcane_disturbances",
+      "title": "Take readings at the Underground Pond and Well",
+      "kind": "QUEST",
+      "questId": 9824,
+      "questName": "Arcane Disturbances",
+      "giver": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.5
+      },
+      "turnIn": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.5
+      },
+      "itemId": 24474,
+      "itemName": "Violet Scrying Crystal",
+      "count": 1,
+      "detail": "Archmage Alturus camps at the foot of Karazhan beside the stairs down into the Master's Cellar; he hands you the Violet Scrying Crystal and offers Restless Activity at the same time, so take both and do them together. For the Underground Pond reading, take the nearer staircase at about 47.7, 78.3, drop through the hole into the caves and head for the large blue patch on the minimap at about 42.9, 78.3, then use the crystal while standing in the water. For the Underground Well reading, come back up, take the farther staircase at about 48.9, 78.9, go down the ramps to the big chamber, turn right and follow the long hallway; the well is on your right at about 53.2, 90.2. Ghosts in the cellar are the same ones you need for Restless Activity. Turn in for 250 Violet Eye reputation and 4 gold 40 silver.",
+      "detectedBy": "Quest 9824 is flagged complete; while on the quest, its two objectives (Underground Well Reading, Underground Pond Reading) track progress.",
+      "optional": false
+     },
+     {
+      "key": "restless_activity",
+      "title": "Collect ten Ghostly Essences around the tower",
+      "kind": "QUEST",
+      "questId": 9825,
+      "questName": "Restless Activity",
+      "giver": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.5
+      },
+      "turnIn": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.5
+      },
+      "itemId": 24480,
+      "itemName": "Ghostly Essence",
+      "count": 10,
+      "detail": "Kill the undead that drift around the outside of Karazhan and through the Master's Cellar: Unliving Caretakers, Damned Souls, Restless Shades and Wailing Spectres all drop Ghostly Essence. Ten are needed and the drop rate is generous, so the two cellar trips for Arcane Disturbances usually finish this quest on their own. Hand in to Alturus for 250 Violet Eye reputation and 4 gold 40 silver. Both quests must be complete before he offers Contact from Dalaran.",
+      "detectedBy": "Quest 9825 is flagged complete; while on it, the Ghostly Essence count in bags tracks progress.",
+      "optional": false
+     },
+     {
+      "key": "contact_from_dalaran",
+      "title": "Carry Alturus's Report to Archmage Cedric",
+      "kind": "QUEST",
+      "questId": 9826,
+      "questName": "Contact from Dalaran",
+      "giver": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.5
+      },
+      "turnIn": {
+       "npcId": 18165,
+       "name": "Archmage Cedric",
+       "zone": "Alterac Mountains",
+       "x": 15.5,
+       "y": 54.5
+      },
+      "itemId": 24482,
+      "itemName": "Alturus's Report",
+      "count": 1,
+      "detail": "Alturus seals his findings in a report for his superiors. Archmage Cedric waits on the northern rim of the Dalaran crater in the Alterac Mountains, at about 15.5, 54.5, just across the border from Hillsbrad's Southshore. The quickest route is the Southshore flight point and a short ride north. The turn-in pays 75 Violet Eye reputation and Cedric immediately sends you on to Khadgar.",
+      "detectedBy": "Quest 9826 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "khadgar",
+      "title": "Deliver the report to Khadgar in Shattrath",
+      "kind": "QUEST",
+      "questId": 9829,
+      "questName": "Khadgar",
+      "giver": {
+       "npcId": 18165,
+       "name": "Archmage Cedric",
+       "zone": "Alterac Mountains",
+       "x": 15.5,
+       "y": 54.5
+      },
+      "turnIn": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.6,
+       "y": 44.2
+      },
+      "detail": "Khadgar stands on the Terrace of Light in the centre of Shattrath, a few paces from A'dal, at about 54.6, 44.2. He reads the report, explains that Medivh's tower is sealed by his apprentice's key, and offers Entry Into Karazhan. From here on every turn-in except the last two happens with Khadgar, so set your hearthstone in Shattrath. Reward is 75 Violet Eye reputation.",
+      "detectedBy": "Quest 9829 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "shadow_lab_key_access",
+      "title": "Bring a Shadow Labyrinth key-holder or a rogue",
+      "kind": "ITEM",
+      "itemId": 27991,
+      "itemName": "Shadow Labyrinth Key",
+      "count": 1,
+      "instance": {
+       "name": "Sethekk Halls",
+       "instanceMapId": 556,
+       "heroic": false,
+       "boss": "Talon King Ikiss",
+       "npcIds": [
+        18472,
+        18473
+       ]
+      },
+      "detail": "The Shadow Labyrinth door in Auchindoun is locked. One person in the party must carry the Shadow Labyrinth Key, or a rogue needs Lockpicking 350 to pick it. The key comes from the Talon King's Coffer, the chest that appears behind Talon King Ikiss after he dies in Sethekk Halls (the east wing of Auchindoun, Terokkar Forest 45.1, 65.6); Wowhead's Anniversary data attributes it to Ikiss at about one in four, which reflects one player looting the chest per run, so every member who wants a key should open the coffer. You do not personally need the key if a friend opens the door, so this step is optional for detection, but having your own key makes you the person every group wants.",
+      "detectedBy": "Item 27991 is present in the keyring or bags, or the player is a rogue with Lockpicking (skill line 633) at 350 or more; otherwise the step is informational.",
+      "optional": true
+     },
+     {
+      "key": "entry_into_karazhan",
+      "title": "Loot the First Key Fragment in Shadow Labyrinth",
+      "kind": "QUEST",
+      "questId": 9831,
+      "questName": "Entry Into Karazhan",
+      "giver": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.6,
+       "y": 44.2
+      },
+      "turnIn": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.6,
+       "y": 44.2
+      },
+      "itemId": 24514,
+      "itemName": "First Key Fragment",
+      "count": 1,
+      "instance": {
+       "name": "Shadow Labyrinth",
+       "instanceMapId": 555,
+       "heroic": false,
+       "boss": "Murmur",
+       "npcIds": [
+        18731,
+        18667,
+        18732,
+        18708,
+        22890
+       ]
+      },
+      "detail": "Shadow Labyrinth is the west wing of Auchindoun in the Bone Wastes, Terokkar Forest, portal at about 39.6, 73.8; the entrance needs level 65 and the locked door described above. The Arcane Container (object 182196) sits on the left side of Murmur's chamber at the very end of the dungeon, so the group clears Ambassador Hellmaw, Blackheart the Inciter, Grandmaster Vorpil and finally Murmur before anyone touches it. Opening the container spawns the First Fragment Guardian, a level 70 elite; kill it and loot the First Key Fragment from its corpse. Everyone on the quest can loot a fragment from the one guardian. Return to Khadgar for 250 Violet Eye reputation.",
+      "detectedBy": "Quest 9831 is flagged complete, or item 24514 is in bags while the quest is in the log.",
+      "optional": false
+     },
+     {
+      "key": "arcatraz_key_access",
+      "title": "Arrange Arcatraz access: key-holder, rogue, and flying",
+      "kind": "ITEM",
+      "itemId": 31084,
+      "itemName": "Key to the Arcatraz",
+      "count": 1,
+      "skill": {
+       "name": "Riding",
+       "skillLineId": 762,
+       "rank": 225
+      },
+      "detail": "The Arcatraz is the north-eastern satellite of Tempest Keep in Netherstorm, portal at about 74.6, 57.6, floating above the ground, so you need Expert Riding (225) and a flying mount, Druid flight form, or a warlock summon once two flyers are inside. Its door is locked: any one party member holding the Key to the Arcatraz opens it, or a rogue with Lockpicking 350 picks it. The key is the reward of How to Break Into the Arcatraz (quest 10704) from A'dal, which sends you for the Top Shard (31085) in The Botanica and the Bottom Shard (31086) in The Mechanar after the Consortium chain in Netherstorm. The Arcatraz portal itself requires level 68. Like the Shadow Labyrinth key, this is optional for you personally as long as someone in the group has it.",
+      "detectedBy": "Item 31084 is in the keyring or bags, or quest 10704 is flagged complete, or the player is a rogue with Lockpicking (633) at 350 or more; otherwise informational.",
+      "optional": true
+     },
+     {
+      "key": "second_fragment_steamvault",
+      "title": "Dive for the Second Key Fragment in The Steamvault",
+      "kind": "ITEM",
+      "itemId": 24487,
+      "itemName": "Second Key Fragment",
+      "count": 1,
+      "instance": {
+       "name": "The Steamvault",
+       "instanceMapId": 545,
+       "heroic": false,
+       "boss": "Hydromancer Thespia",
+       "npcIds": [
+        17797,
+        22891
+       ]
+      },
+      "detail": "The Steamvault is the eastern pipe of Coilfang Reservoir under the lake in Zangarmarsh; dive at the reservoir at about 50.4, 40.8 and the portal is at about 50.2, 33.3. The Arcane Container (object 182197) lies at the bottom of the pool to the right of the path leading to Hydromancer Thespia, just before her room; one route is to turn right down the ramp into the pool and jump left into the water. Opening it spawns the Second Fragment Guardian, which you fight in or beside the water, so watch the breath bar and kill it quickly. Loot the Second Key Fragment from the guardian. Thespia does not need to die, and this and the Arcatraz fragment can be done in either order. Leaving the instance with the quest abandoned deletes the fragment.",
+      "detectedBy": "Item 24487 is in bags, or objective 1 of quest 9832 is complete, or quest 9832 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "third_fragment_arcatraz",
+      "title": "Take the Third Key Fragment from The Arcatraz",
+      "kind": "ITEM",
+      "itemId": 24488,
+      "itemName": "Third Key Fragment",
+      "count": 1,
+      "instance": {
+       "name": "The Arcatraz",
+       "instanceMapId": 552,
+       "heroic": false,
+       "boss": "Zereketh the Unbound",
+       "npcIds": [
+        20870,
+        22892
+       ]
+      },
+      "detail": "Inside The Arcatraz, go past the staircase in front of you in Zereketh the Unbound's room and through a few guards into the first room beyond, the one with Negaton Screamers and Negaton Warp-Masters on the lower floor. The Arcane Container (object 182198) stands in the right-hand corner as you enter. Opening it spawns the Third Fragment Guardian, a level 70 elite; kill it and loot the Third Key Fragment. Zereketh can be skipped entirely, which makes this a very short run once the door is open. Everyone on the quest should loot before the group moves on.",
+      "detectedBy": "Item 24488 is in bags, or objective 2 of quest 9832 is complete, or quest 9832 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "the_second_and_third_fragments",
+      "title": "Return both fragments to Khadgar",
+      "kind": "QUEST",
+      "questId": 9832,
+      "questName": "The Second and Third Fragments",
+      "giver": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.6,
+       "y": 44.2
+      },
+      "turnIn": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.6,
+       "y": 44.2
+      },
+      "detail": "With the Second and Third Key Fragments in your bags, hearth to Shattrath and hand them to Khadgar on the Terrace of Light. He fuses the three pieces into the Restored Apprentice's Key, gives it to you, and sends you to the Caverns of Time for The Master's Touch. The turn-in pays 350 Violet Eye reputation. Before you accept the next quest, make sure Return to Andormu is complete, or the Black Morass portal will not let you in.",
+      "detectedBy": "Quest 9832 is flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "the_masters_touch",
+      "title": "Have Medivh enable the key after Aeonus falls",
+      "kind": "QUEST",
+      "questId": 9836,
+      "questName": "The Master's Touch",
+      "giver": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.6,
+       "y": 44.2
+      },
+      "turnIn": {
+       "npcId": 15608,
+       "name": "Medivh",
+       "zone": "The Black Morass"
+      },
+      "itemId": 24489,
+      "itemName": "Restored Apprentice's Key",
+      "count": 1,
+      "instance": {
+       "name": "The Black Morass",
+       "instanceMapId": 269,
+       "heroic": false,
+       "boss": "Aeonus",
+       "npcIds": [
+        17879,
+        17880,
+        17881,
+        15608
+       ]
+      },
+      "detail": "The Black Morass is the south-western timeway at the bottom of the Caverns of Time, portal at about 57.1, 63.1 on the Tanaris map; it requires level 66 and Return to Andormu complete (see the Caverns of Time guide). Run the full Opening of the Dark Portal event: eighteen waves of rifts with Chrono Lord Deja at six, Temporus at twelve and Aeonus at eighteen, keeping Medivh alive throughout. When Aeonus dies Medivh finishes opening the portal and becomes a quest giver for about half a minute, so stand next to him as the last boss falls and talk to him straight away. He completes The Master's Touch, converts the Restored Apprentice's Key, and offers Return to Khadgar on the spot; accept it before leaving. Reward 350 Violet Eye reputation.",
+      "detectedBy": "Quest 9836 is flagged complete (or quest 9837 is in the log or complete).",
+      "optional": false
+     },
+     {
+      "key": "return_to_khadgar",
+      "title": "Show Khadgar The Master's Key",
+      "kind": "QUEST",
+      "questId": 9837,
+      "questName": "Return to Khadgar",
+      "giver": {
+       "npcId": 15608,
+       "name": "Medivh",
+       "zone": "The Black Morass"
+      },
+      "turnIn": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.6,
+       "y": 44.2
+      },
+      "itemId": 24490,
+      "itemName": "The Master's Key",
+      "count": 1,
+      "detail": "Return to Khadgar on the Terrace of Light. He hands you The Master's Key, which goes to your keyring, and 500 Violet Eye reputation; the chain to this point has paid 2100 reputation in total. You are now attuned: the key opens the front gate of Karazhan in Deadwind Pass at about 46.6, 74.1 (there is also a side door at 46.5, 70.5), and one key-holder opening the gate lets the whole raid walk in. On Anniversary realms this completion also unlocks the raid for every other character on your Battle.net account. Khadgar offers The Violet Eye, a short courtesy quest back to Alturus.",
+      "detectedBy": "Quest 9837 is flagged complete, or item 24490 is present in the keyring (container KEYRING_CONTAINER) or bags.",
+      "optional": false
+     },
+     {
+      "key": "the_violet_eye",
+      "title": "Report back to Archmage Alturus",
+      "kind": "QUEST",
+      "questId": 9838,
+      "questName": "The Violet Eye",
+      "giver": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.6,
+       "y": 44.2
+      },
+      "turnIn": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.5
+      },
+      "detail": "Not required for entry. Khadgar asks you to tell Alturus the tower is open; the turn-in pays 75 Violet Eye reputation and unlocks the reputation chain inside Karazhan: Assessing the Situation (9840, find Koren inside), Keanna's Log (9843), A Demonic Presence (9844) and the Nightbane chain that ends with the Blackened Urn. Do it on your first trip to the raid since Alturus stands at the gate.",
+      "detectedBy": "Quest 9838 is flagged complete.",
+      "optional": true
+     },
+     {
+      "key": "enter_karazhan",
+      "title": "Open the gate and enter Karazhan",
+      "kind": "MANUAL",
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": null,
+       "npcIds": []
+      },
+      "detail": "Gather ten players, have a key-holder click the front gate of Karazhan at the foot of the tower in Deadwind Pass (about 46.6, 74.1) and zone in; the raid lockout is seven days. Attumen the Huntsman in the stables is the usual first pull. If you are an alt on an account that has already finished this chain you may be able to enter without the key under the Anniversary account-wide rule, but one Master's Key is still needed in the raid to open the gate.",
+      "detectedBy": "The player has been seen inside instance map 532 (IsInInstance with GetInstanceInfo instanceID 532), recorded once by the addon.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/9824?dataEnv=5&locale=0 (and 9825, 9826, 9829, 9831, 9832, 9836, 9837, 9838, 11216, 10704, 9840, 9843, 9844, 9645, 9644)",
+     "https://nether.wowhead.com/tooltip/item/24490?dataEnv=5&locale=0 (and 24474, 24480, 24482, 24514, 24487, 24488, 24489, 27991, 31084, 31085, 31086, 30635, 30634, 30633, 30623, 24140)",
+     "https://nether.wowhead.com/tooltip/npc/17613?dataEnv=5&locale=0 (and 18165, 18166, 23948, 15608, 22890, 22891, 22892, 18731, 18667, 18732, 18708, 17797, 17796, 17798, 20870, 20885, 20886, 20912, 18472, 18473, 17881, 17879, 17880)",
+     "https://nether.wowhead.com/tooltip/object/182196?dataEnv=5&locale=0 (and 182197, 182198)",
+     "https://warcraft.wiki.gg/wiki/Karazhan_attunement",
+     "https://warcraft.wiki.gg/wiki/The_Master%27s_Key",
+     "https://warcraft.wiki.gg/wiki/Instance_attunement",
+     "https://warcraft.wiki.gg/wiki/Arcane_Container",
+     "https://warcraft.wiki.gg/wiki/Archmage_Alturus",
+     "https://warcraft.wiki.gg/wiki/Archmage_Cedric",
+     "https://warcraft.wiki.gg/wiki/Quest:Archmage_Alturus",
+     "https://warcraft.wiki.gg/wiki/Quest:Arcane_Disturbances",
+     "https://warcraft.wiki.gg/wiki/Quest:Contact_from_Dalaran",
+     "https://warcraft.wiki.gg/wiki/Quest:Entry_Into_Karazhan",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Second_and_Third_Fragments",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Master%27s_Touch",
+     "https://warcraft.wiki.gg/wiki/Patch_2.4.0",
+     "https://warcraft.wiki.gg/wiki/Patch_2.5.2",
+     "https://warcraft.wiki.gg/wiki/Patch_2.5.3",
+     "https://warcraft.wiki.gg/wiki/Patch_2.5.4",
+     "https://warcraft.wiki.gg/wiki/Burning_Crusade_Classic",
+     "https://warcraft.wiki.gg/wiki/Burning_Crusade_Classic_Anniversary_Edition",
+     "https://www.warcrafttavern.com/tbc/guides/karazhan-attunement/",
+     "https://www.warcrafttavern.com/tbc/guides/attunements/",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://www.warcrafttavern.com/tbc/news/attunements-will-be-account-wide-in-tbc-classic-anniversary-edition/",
+     "https://www.warcrafttavern.com/tbc/news/phase-1-raids-are-now-open-in-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/news/phase-2-is-now-live-for-burning-crusade-anniversary-edition/",
+     "https://www.warcrafttavern.com/tbc/news/phase-3-launches-august-27th-for-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/news/zulaman-arrives-october-22nd-for-tbc-anniversary/",
+     "https://blizzardwatch.com/2026/10/09/burning-crusade-classic-anniversary-phase-3-5/",
+     "https://timesaver.gg/blog/tbc-anniversary-october-22-patch-changes",
+     "https://worldofwarcraft.blizzard.com/en-us/news/23716331/get-attuned-and-face-the-overlords-of-outland",
+     "https://worldofwarcraft.blizzard.com/en-us/news/23764312/",
+     "https://www.gfinityesports.com/article/serpentshrine-cavern-and-tempest-keep-attunements-removed-alongside-nerfs-next-week",
+     "https://us.forums.blizzard.com/en/wow/t/attunement-clarifications-please/878999",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite (quest_template, creature_questrelation, creature_involvedrelation, gameobject_template, gameobject, creature_template)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sql.gz (areatrigger_teleport rows 4131, 4135, 4364, 4407, 4468, 4406)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/Map.csv, AreaTable.csv, Faction.csv, SkillLine.csv",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Orders/CommanderOrdersEntrances.lua (portal coordinates)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua (Karazhan guide, cellar coordinates)"
+    ],
+    "notes": "All ids confirmed by the Wowhead Anniversary tooltip endpoint unless listed under uncertain. Chain order and givers from the CMaNGOS quest_template and relation tables: 9824 and 9825 share exclusive group -9824 (both offered together), 9826 requires both, then 9829, 9831, 9832, 9836, 9837, 9838; Medivh (npc 15608) ends 9836 and starts 9837. Reputation (The Violet Eye, faction 967): 250, 250, 75, 75, 250, 350, 350, 500 for a chain total of 2100, plus 75 for The Violet Eye; money 4 gold 40 silver on each of the first two; the only item reward is The Master's Key 24490 from Return to Khadgar. Quest source items: Violet Scrying Crystal 24474 (9824), Alturus's Report 24482 (9826), Restored Apprentice's Key 24489 (9836). Fragment items: First 24514, Second 24487, Third 24488. Arcane Containers from gameobject_template: 182196 (quest 9831, spawned on map 555 Shadow Labyrinth), 182197 (quest 9832, map 545 The Steamvault, z -66 so underwater), 182198 (quest 9832, map 552 The Arcatraz); each spawns a Fragment Guardian (22890, 22891, 22892) that carries the fragment. Instance map ids from the client's Map.db2: 555 Auchindoun: Shadow Labyrinth, 545 Coilfang: The Steamvault, 552 Tempest Keep: The Arcatraz, 269 Opening of the Dark Portal (The Black Morass), 560 The Escape From Durnholde (Old Hillsbrad), 556 Auchindoun: Sethekk Halls, 532 Karazhan. Portal level gates from CMaNGOS areatrigger_teleport: Shadow Labyrinth 65, Steamvault 55 (message says 65), Arcatraz 68, Karazhan 70 in the field but 68 in the message. The Karazhan entrance trigger has no item requirement; the Master's Key is consumed by the gate door, so the raid needs one key-holder to open it and nobody needs the key once inside. Lockpicking skill line 633, Riding skill line 762. Keyring: 2.5.x still has the keyring, so item checks for 24490, 27991, 31084 and the heroic keys must include container KEYRING_CONTAINER. Detection for account-unlocked alts is impossible from quest flags; the addon should remember completion per account (saved variables) and show an alt as unlocked when any character on the account has 9837 complete. Follow-ups after The Violet Eye (9840 Assessing the Situation, 9843 Keanna's Log, 9844 A Demonic Presence, 9645 The Master's Terrace, 9644 Nightbane with the Blackened Urn 24140) are reputation and Nightbane content and are not needed for entry."
+   }
+  ],
+  "uncertain": [
+   "Karazhan attunement on Anniversary: no announcement through the 2026-10-22 Zul'Aman update removes it (Phase 3 removed Serpentshrine and Tempest Keep, the Zul'Aman update removed Hyjal and Black Temple), and Warcraft Tavern's current Anniversary guide still presents it as required, so requiredUntil is null; whether a future Sunwell phase mirrors original patch 2.4.0 (key not needed to zone in, still needed to open the gates) is unknown.",
+   "TBC Classic 2021: gfinity (Dec 2021) claims Karazhan's attunement was removed at Phase 2, but cites no Blizzard source, and the Patch 2.5.2, 2.5.3 and 2.5.4 notes say nothing about Karazhan; 2.5.4 (March 2022) only removed Hyjal and Black Temple. Treat the 2021 Phase 2 claim as unverified.",
+   "Phase numbering: Blizzard Watch and the wiki call the 2026-10-22 Zul'Aman update Phase 3.5 with Sunwell as Phase 4; Warcraft Tavern's table and this addon's requested mapping call Zul'Aman Phase 4 and Sunwell Phase 5. Under the five-phase mapping the realm is in Phase 4 as of 2026-10-24, so the installed Questie's 'Phase 3' is either the 3.5 convention or stale.",
+   "Old Hillsbrad normal-mode gate: Blizzard's entry-failure text names 'The Caverns of Time' (10277), but the CMaNGOS TBC areatrigger row has required_quest_done 0 for normal (10285 for heroic), suggesting the normal gate may have been dropped by 2.4.3; 10277 is reported as the prerequisite regardless because the chain cannot continue without it.",
+   "Heroic Black Morass gate: CMaNGOS lists required_quest_done_heroic 10298 (Hero of the Brood) plus the Key of Time; not verified against the live client.",
+   "Shadow Labyrinth Key source: Wowhead's Anniversary tooltip says 'Dropped by Talon King Ikiss, 24.9 percent', while every TBC source places it in the Talon King's Coffer after Ikiss at 100 percent; the coffer's object id could not be confirmed (not found by name in the local database or the tooltip endpoint).",
+   "Wowhead's tooltip for Arcane Container 182196 reports zone 3848 (The Arcatraz) while the CMaNGOS spawn and its quest link (data1 = 9831) place it in Shadow Labyrinth (map 555); the CMaNGOS assignment is used. 182197 and 182198 return no zone from Wowhead.",
+   "Apprentice Tasserel breadcrumb (11216): the wiki says +5 Violet Eye reputation, the CMaNGOS row has 0; reward not stated in the guide.",
+   "Lockpicking 350 for the Shadow Labyrinth and Arcatraz doors is taken from the wiki and guides, not read from Lock.db2.",
+   "Karazhan entry level: the CMaNGOS trigger field says 70 while its message says 68; which the live client enforces is unverified.",
+   "Coordinates: Deadwind Pass cellar readings (pond 42.9, 78.3 via stairs 47.7, 78.3; well 53.2, 90.2 via stairs 48.9, 78.9) come from RXPGuides; Alturus, Cedric, Khadgar, Tasserel and the Caverns NPCs come from Wowhead tooltip map data; portal coordinates come from Commander_Orders' entrance table (uiMap fractions). In-instance NPC coordinates (Erozion, Thrall, Sa'at, Medivh) are omitted.",
+   "Account-wide attunement: Blizzard's November 2025 notes say raids unlock for all characters once the first character is attuned; whether an alt can also open the Karazhan gate without a Master's Key in the raid, and whether the Caverns of Time dungeon gate is per character, are not stated anywhere found.",
+   "Wowhead's tooltip endpoint has no faction entity, so The Violet Eye 967 and Keepers of Time 989 were confirmed from the client's Faction.db2 dump instead."
+  ],
+  "notes": "Two guides emitted: CAVERNS_OF_TIME_ACCESS (DUNGEON, 10 steps, 7 required) and KARAZHAN_ATTUNEMENT (RAID, 16 steps, 11 required, prerequisite CAVERNS_OF_TIME_ACCESS). Every quest, item, NPC and object id was confirmed against https://nether.wowhead.com/tooltip/... with dataEnv=5 (Anniversary) and the names recorded; chain structure, minimum levels, reputation values, givers and turn-ins came from the CMaNGOS TBC world database already cached locally at /Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite (plus the areatrigger_teleport rows read from the sibling tbcdb.sql.gz, no download), instance map ids from the cached Map.db2 CSV, factions from Faction.csv, skill lines from SkillLine.csv, portal coordinates from Commander_Orders/CommanderOrdersEntrances.lua. Key machine facts for the detector: Black Morass gate = quest 10285 complete (level 66); Karazhan attunement complete = quest 9837 complete or item 24490 in keyring; fragments 24514/24487/24488; containers 182196/182197/182198 on maps 555/545/552; guardians 22890/22891/22892; Medivh 15608 both ends The Master's Touch and starts Return to Khadgar. Phase facts: Anniversary P1 2026-02-05 (Karazhan 02-19), P2 2026-05-14, P3 2026-08-27 (SSC and TK attunements removed), Zul'Aman 2026-10-22 (Hyjal and BT attunements removed, heroic keys Honored), Sunwell TBA; the Karazhan attunement has not been removed on Anniversary as of 2026-10-24, and the Violet Eye follow-ups are not needed for entry. No files outside the scratchpad were written; scratch directory used: /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/wh."
+ },
+ "verify": {
+  "checked": 81,
+  "mismatches": [
+   {
+    "kind": "npc",
+    "id": 18472,
+    "claimed": "Talon King Ikiss",
+    "actual": "Darkweaver Syth",
+    "where": "KARAZHAN_ATTUNEMENT.steps.shadow_lab_key_access.instance.npcIds (not in the explicit id list, but in the guide JSON); Ikiss is 18473 only"
+   }
+  ],
+  "corrections": [
+   {
+    "guideKey": "KARAZHAN_ATTUNEMENT",
+    "stepKey": "shadow_lab_key_access",
+    "field": "instance.npcIds",
+    "from": "[18472, 18473]",
+    "to": "[18473]",
+    "reason": "Wowhead Anniversary tooltip npc/18472 = Darkweaver Syth (Sethekk Halls first boss); Talon King Ikiss is 18473."
+   },
+   {
+    "guideKey": "KARAZHAN_ATTUNEMENT",
+    "stepKey": "shadow_lab_key_access",
+    "field": "detail / uncertain (coffer object id)",
+    "from": "the coffer's object id could not be confirmed",
+    "to": "The Talon King's Coffer is gameobject 187372 (Wowhead Anniversary tooltip object/187372: 'The Talon King's Coffer', Container, zone 3791 Sethekk Halls); add objectId 187372 to the step and drop the uncertain entry. Wiki: key drops from Ikiss, and since patch 2.3.0 is also lootable from the coffer next to him, which is why Wowhead attributes it to Ikiss.",
+    "reason": "Id found on the same endpoint the agent used; neighbouring ids 187373/187374 do not exist."
+   },
+   {
+    "guideKey": "KARAZHAN_ATTUNEMENT",
+    "stepKey": "entry_into_karazhan",
+    "field": "detail",
+    "from": "Shadow Labyrinth is the west wing of Auchindoun in the Bone Wastes",
+    "to": "Shadow Labyrinth is the south wing of Auchindoun in the Bone Wastes",
+    "reason": "Commander_Orders entrance table: Shadow Labyrinth door 39.6,73.8 (south), Auchenai Crypts 34.2,65.6 (west), Mana-Tombs 39.6,57.5 (north), Sethekk Halls 45.1,65.6 (east); warcraft.wiki.gg Shadow_Labyrinth places the entrance at the south end of Auchindoun. The 39.6, 73.8 coordinate in the same sentence is correct."
+   },
+   {
+    "guideKey": "KARAZHAN_ATTUNEMENT",
+    "stepKey": "second_fragment_steamvault",
+    "field": "detail",
+    "from": "The Steamvault is the eastern pipe of Coilfang Reservoir under the lake in Zangarmarsh",
+    "to": "The Steamvault is the middle pipe of Coilfang Reservoir under the lake in Zangarmarsh, left of the Serpentshrine Cavern entrance, between the Slave Pens (west, 48.9, 35.5) and the Underbog (east, 54.4, 34.4)",
+    "reason": "Commander_Orders entrance table: Steamvault 50.2,33.3; Slave Pens 48.9,35.5; Underbog 54.4,34.4; SSC 51.9,32.6. The Underbog is the eastern pipe."
+   },
+   {
+    "guideKey": "CAVERNS_OF_TIME_ACCESS",
+    "stepKey": "(guide-level)",
+    "field": "phase.notes / heroic detection",
+    "from": "Heroic difficulty for both Caverns of Time dungeons additionally needs the Key of Time (item 30635 ...)",
+    "to": "Add: on Anniversary the account-wide heroic key is the Communal Key of Time (item 265849, Binds to account, 'Requires Keepers of Time - Friendly', unlocks heroic Caverns of Time), obtained from the Communal Time Pouch (item 265850, Alurmi in the Caverns of Time, 80 gold, Requires Keepers of Time - Revered, added in patch 2.5.6 on 2026-07-07). Heroic-access detection must accept item 30635 OR 265849 in keyring/bags. Sibling items: 265845/265846 Auchenai, 265847/265848 Warpforged.",
+    "reason": "Wowhead Anniversary tooltips item/265849 and item/265850, warcraft.wiki.gg Communal_Time_Pouch, and Blizzard's account-wide attunement notes (first character Revered, alts Friendly). The guide's heroic note omits the only mechanism that makes heroic attunement account-wide."
+   },
+   {
+    "guideKey": "KARAZHAN_ATTUNEMENT",
+    "stepKey": "the_masters_touch",
+    "field": "detail",
+    "from": "becomes a quest giver for about half a minute, so stand next to him as the last boss falls",
+    "to": "stays as a quest giver only briefly after the portal opens, so stand next to him as the last boss falls and turn in before leaving",
+    "reason": "No source found (wiki Quest:The_Master's_Touch, Black_Morass_(instance), Karazhan_attunement, TBC-era guides) gives a 30-second figure; the number is unsourced and should not be stated as fact."
+   }
+  ],
+  "unverifiable": [
+   "Return to Khadgar (9837) minimum level: CMaNGOS says 68, warcraft.wiki.gg says 'Level 70 (Requires 69)' (retail-era value); Wowhead's Anniversary tooltip carries no required level and the wowhead.com/tbc quest page did not render its Quick Facts. The guide's 'every quest in the chain has a minimum level of 68' may be off by one for the last quest.",
+   "Arcatraz portal level 68: wiki The_Arcatraz says minimum level 65 (post-Cataclysm value); the Wowhead TBC zone page did not render; only CMaNGOS supports 68.",
+   "Karazhan gate level (68 per message vs 70 per CMaNGOS field; wiki quotes only the lore description 'level 70').",
+   "Medivh's quest-giver window after Aeonus (no source gives a duration).",
+   "Heroic Caverns of Time quest gates (10285 for heroic Old Hillsbrad, 10298 for heroic Black Morass) on the live Anniversary client.",
+   "Key of Time lowered to Honored on 2026-10-22: Warcraft Tavern, timesaver.gg and Blizzard Watch report it, but Wowhead's Anniversary tooltips for 30635 and 265850 still read 'Requires Keepers of Time - Revered' as of 2026-10-24 (Wowhead data may lag the patch).",
+   "Black Morass normal gate quest: the wiki (Black_Morass_(instance), Karazhan_attunement) names 'Escape from Durnholde' as the key; CMaNGOS areatrigger 4320 names 10285 Return to Andormu. Both lead to the same turn-in moment, but if the live gate checks 10284 a player who has not yet turned in Return to Andormu could zone in while the detector shows the step incomplete.",
+   "Master's Cellar reading coordinates (pond 42.9,78.3 via stairs 47.7,78.3; well 53.2,90.2 via stairs 48.9,78.9) come from RXPGuides; the wiki confirms only the nearer-staircase/farther-staircase routing.",
+   "Whether an alt on an attuned account can enter Karazhan with no Master's Key in the raid; whether the Caverns of Time dungeon gate is per character.",
+   "Apprentice Tasserel breadcrumb reward: wiki +5 Violet Eye (added patch 2.3.0), CMaNGOS 0; guide omits it, which is fine."
+  ],
+  "verdict": "All 42 listed ids resolve to the claimed names on the Anniversary endpoint and the chain order, givers, levels, reputation values, faction ids (967/989) and instance ids (269/532/545/552/555/556/560) hold up; the only errors are npc 18472 (Darkweaver Syth, not Ikiss), two wrong wing labels (Shadow Labyrinth is the south wing, the Steamvault is the middle pipe), an unsourced 30-second Medivh window, and the omission of the Communal Key of Time (265849/265850) that makes heroic CoT access account-wide.",
+  "notes": "Method: every id in the list (42) plus every other id named in the guide text (39: reward items 29316-29323, 30635, 31085, 31086, 24140; npcs 20129, 19935, 17848, 17862, 18096, 17879-17881, 22890-22892, 18731, 18667, 18732, 18708, 17797, 20870, 18472, 18473; quests 9840, 9843, 9844, 9645, 9644; objects 182196-182198) was fetched from https://nether.wowhead.com/tooltip/<kind>/<id>?dataEnv=5&locale=0 with a 0.3 s sleep; raw results are in /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/fc/results.tsv and extra_results.tsv. The 'checked' count is those 81 id lookups. warcraft.wiki.gg blocks curl (wiki.gg challenge page, 403 on api.php), so the wiki pages were read through WebFetch. Confirmed against the wiki: Keepers of Time quest reputation 10/250/10/1000/1000/3000/250/500/8000 and faction id 989; Violet Eye chain 250/250/75/75/250/350/350/500 (+75 for The Violet Eye) totalling 2100, 4g40s on the first two, every Karazhan quest 'Requires 68' except the Return to Khadgar page which says 69; Return to Andormu 'Requires 66'; Hero of the Brood and Return to Andormu both end at the child Andormu (Wowhead objective text 'Return to the child, Andormu'); The Black Morass starts at the adult Andormu 19932 at 57.6,59.0 (Wowhead map data, wiki child=20130/adult=19932); Arcane Containers left of Murmur, underwater right of the path to Thespia, and in the Negaton Screamer room past Zereketh; guardians drop one fragment per quest-holder and fragments are deleted on leaving; lockpicking 350 for both doors; 2.4.0 'no longer required to enter Karazhan, but still required to open the gates'; Anniversary timeline Feb 5 / Feb 19 / May 14 / Aug 27 / Oct 22 (wiki calls it Phase 3.5, Sunwell Phase 4); Warcraft Tavern confirms SSC/TK attunements removed at Phase 3 and Hyjal/BT attunements removed plus heroic keys to Honored on Oct 22. NPC coordinates (Steward 66,49.6; Andormu 58.4-58.6,54.2; Alturus 47,75.4-75.6; Cedric 15.4-15.6,54.4-54.6; Khadgar 54.4-54.8,43.2-44.6; Tasserel 75-75.6,32.4-33.6) match Wowhead map data. Map.csv confirms 269 Opening of the Dark Portal, 532 Karazhan, 545 Coilfang: The Steamvault, 552 Tempest Keep: The Arcatraz, 555 Auchindoun: Shadow Labyrinth, 556 Auchindoun: Sethekk Halls, 560 The Escape From Durnholde; Faction.csv confirms 967 The Violet Eye and 989 Keepers of Time. No files outside the scratchpad were written."
+ }
+}

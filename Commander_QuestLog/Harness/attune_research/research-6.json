@@ -1,0 +1,316 @@
+{
+ "topic": "phases-timeline",
+ "data": {
+  "guides": [
+   {
+    "key": "PHASES",
+    "title": "Content phases and what each one changes",
+    "category": "UNLOCK",
+    "faction": "BOTH",
+    "summary": "Burning Crusade content arrives in phases, and each phase changes which raids are open, which attunements still gate a door, what reputation a heroic key costs and where Badges of Justice drop. This guide is the timeline the addon syncs to, numbered the way Questie numbers it, with the 2026 Anniversary dates beside the 2021 to 2022 Classic dates. Every other guide reads its phase rules from here.",
+    "unlocks": "Finishing it unlocks nothing in game; it tells the addon which phase is live so every other guide can hide steps that no longer apply and surface the ones that do.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Questie numbering 1 to 5 is used throughout: 1 Karazhan/Gruul/Magtheridon, 2 Serpentshrine Cavern/Tempest Keep, 3 Hyjal/Black Temple, 4 Zul'Aman (Blizzard calls it Phase 3.5 on Anniversary and Phase 4 in 2022), 5 Sunwell and the Isle of Quel'Danas (Blizzard calls it Phase 4 on Anniversary and Phase 5 in 2022). Live on Anniversary today, 2026-10-24: phase 4, since 22 October 2026 15:00 PDT. Installed Questie 12.1.0 still reports 3; upstream Questie 12.2.0 released 2026-10-23 reports 4."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "phase_1_t4",
+      "title": "Phase 1: Karazhan, Gruul and Magtheridon",
+      "kind": "MANUAL",
+      "phases": {
+       "from": 1,
+       "to": 1
+      },
+      "optional": false,
+      "detail": "Anniversary: patch 2.5.5 pre-patch 13 January 2026 (Dark Portal event, all normal 20th Anniversary realms moved into Burning Crusade), launch 5 February 2026 15:00 PST globally, Arena Season 1 from the 17 February 2026 weekly reset, Karazhan, Gruul's Lair and Magtheridon's Lair open 19 February 2026 15:00 PST. Classic 2021: pre-patch 18 May 2021, launch 1 June 2021 with the three raids open from day one, Arena Season 1 in mid June 2021 ending 7 September 2021. In this phase every heroic key (Flamewrought 30622 Alliance or 30637 Horde, Reservoir 30623, Auchenai 30633, Warpforged 30634, Key of Time 30635) costs Revered; on Anniversary the first character at Revered can also buy a Communal pouch (265842 or 265829 Flamewrought, 265844 Reservoir, 265846 Auchenai, 265848 Warpforged, 265850 Time Pouch from Alurmi 21643 for 80 gold) holding a Bind to Battle.net key an alt can use at Friendly. Karazhan needs The Master's Key 24490 from the Violet Eye chain (9837 Return to Khadgar, 9838 The Violet Eye) and on Anniversary a raid attunement done once unlocks that raid for the whole account. Badges of Justice 29434 drop only from heroic dungeon bosses, Wind Trader Zhareem 24369 pays 2 badges for the heroic daily, Nether-Stalker Mah'duun 24370 pays an Ethereum Prison Key for the normal daily, and G'eras 18525 in Shattrath is the only badge vendor. Flying mounts are available at 70 from launch (Expert Riding 800 gold, Artisan Riding 5000 gold); no raid boss drops badges yet, no Zul'Aman, no Isle.",
+      "detectedBy": "The resolved content phase equals 1; the addon resolves the phase from Questie's ContentPhases.activePhases.TBC when Questie 12.2.0 or newer is loaded, otherwise from its own dated table, and takes the higher of the two."
+     },
+     {
+      "key": "phase_2_t5",
+      "title": "Phase 2: Serpentshrine Cavern and Tempest Keep",
+      "kind": "MANUAL",
+      "phases": {
+       "from": 2,
+       "to": 2
+      },
+      "optional": false,
+      "detail": "Anniversary: Overlords of Outland, announced 15 April 2026 (Blizzard post 24272608), live 14 May 2026 15:00 PDT on all realms; Arena Season 1 ended 4 May 2026 22:00 PDT (US) and Season 2 began with the 19 May 2026 US reset (20 May EU). Classic 2021: patch 2.5.2 on 31 August 2021 (guild banks, group browser), Season 2 from 14 September 2021, Phase 2 unlock 15 September 2021 15:00 PDT. Both times the phase opened Serpentshrine Cavern and Tempest Keep (Anniversary in their post-nerf state), the Ogri'la and Sha'tari Skyguard daily hubs, the Druid Swift Flight Form chain and new profession recipes, and both raids required their attunement: SSC via 10901 The Cudgel of Kar'desh, TK via 10888 Trial of the Naaru: Magtheridon which awards The Tempest Key 31704. On Anniversary that requirement lasted the whole phase; on Classic 2021 Kaivax lifted the SSC and TK attunements together with the final nerfs at the 14 December 2021 US weekly reset (15 December EU), mid phase, which is why Questie's rule of 'attunement required while phase is below 3' is exact for Anniversary and roughly six weeks late for 2021. Heroic keys still cost Revered, badges still come only from heroics and the heroic daily, G'eras is still the only badge vendor, and Hyjal and Black Temple are closed. Questie hides the Phase 2 quests (10955 to 11011 flight form, 11004 to 11885 Ogri'la and Skyguard, 10460 to 10475 Hyjal ring quests, 95158 arena reset) until the phase is 2.",
+      "detectedBy": "The resolved content phase equals 2 (see phase_1_t4 for how the addon resolves the phase)."
+     },
+     {
+      "key": "phase_3_t6",
+      "title": "Phase 3: Hyjal and Black Temple",
+      "kind": "MANUAL",
+      "phases": {
+       "from": 3,
+       "to": 3
+      },
+      "optional": false,
+      "detail": "Anniversary: patch 2.5.6, announced 23 July 2026 (Blizzard post 24291476), raids opened 27 August 2026 15:00 PDT; Arena Season 2 ended 17 August 2026 22:00 PDT with unspent points converted to Honour at 1 to 10, Season 3 began 1 September 2026. Classic 2022: patch 2.5.3 on 18 January 2022 with Season 3 that week (Season 2 ended 11 January 2022), raids opened 27 January 2022 15:00 PST. Both times the phase opened the Battle for Mount Hyjal (entry needs 10445 The Vials of Eternity turned in to Soridormi 19935) and the Black Temple (entry needs the Medallion of Karabor 32649 or its Blessed form 32757 from the chain 10946 Ruse of the Ashtongue, 10947 An Artifact From the Past, 10944 The Secret Compromised, 10948 The Hostage Soul, 10949 Entry Into the Black Temple), added the Netherwing daily hub in Shadowmoon Valley with epic drakes at Exalted, epic gems from Hyjal mining, Black Temple drops and heroic bosses, and Indormi's designs. On Anniversary the SSC and TK attunements were removed when the new raids opened and the skips straight to Vashj and Kael'thas were enabled (Warcraft Tavern 24 and 27 August 2026 reporting Kaivax), and Blizzard added extra tier tokens to the new raids; Karazhan still needs the Master's Key. Heroic keys still cost Revered, no raid boss drops badges, G'eras is still the only badge vendor, Zul'Aman and the Isle are closed. Questie's policy rows drop 10901 and 11052 from 10944's prerequisites and 10888 from 11007's at this phase and unhide the Black Temple chain (10948, 10949, 10957, 10958, 10959, 10985), the Netherwing quests (11012 to 11114) and the Darkmoon decks.",
+      "detectedBy": "The resolved content phase equals 3 (see phase_1_t4 for how the addon resolves the phase)."
+     },
+     {
+      "key": "phase_4_za",
+      "title": "Phase 3.5 in Blizzard's words: Zul'Aman and the catch-up patch",
+      "kind": "MANUAL",
+      "phases": {
+       "from": 4,
+       "to": 4
+      },
+      "optional": false,
+      "detail": "Anniversary: The Gods of Zul'Aman, announced 8 October 2026, live 22 October 2026 15:00 PDT (Blizzard post 24310652 BCCA: The Gods of Zul'Aman Now Live); this is the phase live today, 24 October 2026, and Arena Season 4 did not start with it. Classic 2022: patch 2.5.4 on 22 March 2022 carried the same bundle and Zul'Aman opened 24 March 2022 at 15:00 PDT. Zul'Aman is a ten player raid in the Ghostlands with six bosses, no attunement, a three day lockout and the timed hostage run for the Amani War Bear 33809. The bundle, identical in both eras: the Battle for Mount Hyjal and the Black Temple no longer require attunement; the reputation requirement to buy heroic dungeon keys is reduced to Honored (standingID 6); all heroic dungeons move to their final reduced 2.4.3 difficulty; Badges of Justice now drop from Doomlord Kazzak and Doomwalker, every boss in Karazhan, Gruul's Lair and Magtheridon's Lair, every boss in Serpentshrine Cavern and Tempest Keep, and every boss in Zul'Aman, but not from Hyjal or Black Temple; G'eras sells more powerful wares and the Nether Vortex 30183; Primal Nether 23572 and Nether Vortex are no longer soulbound; Magtheridon's Black Sack of Gems and Brilliant Glass can hold epic gems; world boss loot becomes Bind on Equip; Outland faction vendors sell Greater Drums, Knothide Quiver and Knothide Ammo Pouch recipes. The heroic daily still pays 2 badges and G'eras is still the only badge vendor; the Isle, Magisters' Terrace and Sunwell remain closed. Questie unhides the Zul'Aman quests (9524, 9525, 11130 Oooh, Shinies!, 11132 Promises, Promises..., 11163 to 11166, 11171, 11178, 11195) at this phase; upstream Questie 12.2.0 of 23 October 2026 set TBC to 4 while the installed 12.1.0 still says 3.",
+      "detectedBy": "The resolved content phase equals 4 (see phase_1_t4); a saved instance named Zul'Aman, a completed 11130 or 11132, or a Badge of Justice looted inside Karazhan, Gruul's Lair, Magtheridon's Lair, SSC or TK are each proof the live phase is at least 4."
+     },
+     {
+      "key": "phase_5_sunwell",
+      "title": "Phase 4 in Blizzard's words: Fury of the Sunwell",
+      "kind": "MANUAL",
+      "phases": {
+       "from": 5,
+       "to": 5
+      },
+      "optional": false,
+      "detail": "Anniversary: not yet live; Blizzard's 2026 roadmap lists Fury of the Sunwell for autumn or later in 2026 and no date had been announced by 24 October 2026 (BlizzCon on 12 and 13 September 2026 gave none; World of Warcraft: Forever, a separate product, launches 4 November 2026). Classic 2022: patch 2.5.4a, the Isle of Quel'Danas and Arena Season 4 arrived after the 10 May 2022 US maintenance (Season 3 ended 3 May 2022), Sunwell Plateau opened 12 May 2022 15:00 PDT with all six bosses and no attunement, Season 4 ended 29 August 2022 and the Wrath pre-patch followed on 30 August 2022. Expect the same shape on Anniversary: the Isle with the Shattered Sun Offensive and its realm-wide progression (Questie models nine sub-phases in Modules/Quest/IsleOfQuelDanas.lua: Sun's Reach Sanctum, Sunwell Portal, Sun's Reach Armory, Anvil and Forge, Harbor, Alchemy Lab, Monument, Sun's Reach, Phase 5), Magisters' Terrace in normal and heroic, Sunwell Plateau, Arena Season 4, and new badge vendors on the Isle who unlock as the staging area is reinforced: Smith Hauthaa 25046 appears behind the Sun's Reach Armory once it is retaken and sells Black Temple level gear for badges after the Anvil and Forge are rebuilt (dailies 11535 Making Ready, 11538 The Battle for the Sun's Reach Armory, 11539 Taking the Harbor), Kayri for Veteran PvP pieces, Shaani 25950 for uncut epic gems, with Anwehu and Ontuvo mirroring them in Shattrath. The original 2.4.0 added badges to every raid boss that lacked them, so Hyjal and Black Temple badges are expected here but were not confirmed for 2022 or Anniversary. Questie unhides the Isle and Magisters' Terrace quests (11481 Crisis at the Sunwell, 11482 Duty Calls, 11488 Magisters' Terrace, 11496 to 11557, 11875 to 11880) at this phase, removes Lady Liadrin 17076 and M'uru 17544 from Shattrath, adds Lord Solanar Bloodwrath 25223, and swaps Children's Week 11975 for 10960.",
+      "detectedBy": "The resolved content phase equals 5 (see phase_1_t4); a completed or accepted 11481, 11482 or 11488, or a saved instance named Sunwell Plateau or Magisters' Terrace, is proof the live phase is at least 5."
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/<id>?dataEnv=5&locale=0 and /tooltip/item/<id> and /tooltip/npc/<id> (every id above confirmed by name)",
+     "https://warcraft.wiki.gg/wiki/World_of_Warcraft:_Burning_Crusade_Classic",
+     "https://warcraft.wiki.gg/wiki/World_of_Warcraft:_Burning_Crusade_Classic_Anniversary_Edition",
+     "https://warcraft.wiki.gg/wiki/Attunement",
+     "https://warcraft.wiki.gg/wiki/Patch_2.5.3",
+     "https://warcraft.wiki.gg/wiki/Patch_2.5.4",
+     "https://warcraft.wiki.gg/wiki/Patch_2.5.4a",
+     "https://warcraft.wiki.gg/wiki/Patch_2.3.0",
+     "https://warcraft.wiki.gg/wiki/Patch_2.4.0",
+     "https://warcraft.wiki.gg/wiki/Smith_Hauthaa",
+     "https://warcraft.wiki.gg/wiki/Communal_Time_Pouch",
+     "https://warcraft.wiki.gg/wiki/Badge_of_Justice",
+     "https://worldofwarcraft.blizzard.com/en-us/news/24310652 (BCCA: The Gods of Zul'Aman Now Live, 22 Oct 2026)",
+     "https://worldofwarcraft.blizzard.com/en-us/news/24272608 (Overlords of Outland Arrives May 14, 2026)",
+     "https://worldofwarcraft.blizzard.com/en-us/news/24291476 (Phase 3 announcement 23 Jul 2026, read via Warcraft Tavern)",
+     "https://worldofwarcraft.blizzard.com/en-us/news/24242436/wow-burning-crusade-classic-anniversary-edition-launches-on-february-5 (read via Warcraft Tavern)",
+     "https://worldofwarcraft.blizzard.com/en-us/news/23789253/burning-crusade-classic-face-the-fury-of-the-sunwell-on-may-12 (2022)",
+     "https://us.forums.blizzard.com/en/wow/t/new-raids-open-at-300-pm-pdt-on-august-27/2340643",
+     "https://us.forums.blizzard.com/en/wow/t/2294275/1 (Season 1 Ends on May 4, 2026)",
+     "https://us.forums.blizzard.com/en/wow/t/season-2-ends-on-august-17/2332698",
+     "https://us.forums.blizzard.com/en/wow/t/1221908/1 (Season 3 Ends May 3, 2022)",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://www.warcrafttavern.com/tbc/news/zulaman-arrives-october-22nd-for-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/news/phase-3-launches-august-27th-for-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/news/phase-3-is-now-live-for-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/news/extra-tier-tokens-will-drop-in-phase-3-raids-for-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/news/phase-2-arrives-on-may-14th-for-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/news/the-burning-crusade-launches-on-february-5-for-wow-classic-anniversary-edition/",
+     "https://www.warcrafttavern.com/tbc/news/attunements-will-be-account-wide-in-tbc-classic-anniversary-edition/",
+     "https://www.warcrafttavern.com/tbc/news/official-2-5-4-patch-notes-tbc-classic-phase-4/",
+     "https://www.warcrafttavern.com/tbc/guides/phase-4/",
+     "https://www.warcrafttavern.com/tbc/guides/phase-5/",
+     "https://warcrafttavern.com/tbc/guides/badge-of-justice-guide-farming-vendors-rewards",
+     "https://warcrafttavern.com/tbc/news/tbc-hotfixes-june-7-2021",
+     "https://www.warcrafttavern.com/tbc/news/sunwell-phase-5-content-coming-may-12-tbc-classic/",
+     "https://devtrackers.gg/warcraft/p/1c2aa931-burning-crusade-classic-patch-2-5-2-content-timeline",
+     "https://devtrackers.gg/warcraft/p/8f72482b-burning-crusade-classic-patch-notes-version-2-5-4",
+     "https://www.gfinityesports.com/article/serpentshrine-cavern-and-tempest-keep-attunements-removed-alongside-nerfs-next-week",
+     "https://x.com/Wowhead/status/1470855795604660226 (snowflake decodes to 2021-12-14 20:38 UTC)",
+     "https://www.icy-veins.com/wow-classic/news/burning-crusade-classic-anniversary-pvp-season-2-ending-on-august-17th/",
+     "https://blizzardwatch.com/2026/10/09/burning-crusade-classic-anniversary-phase-3-5/",
+     "https://mmos.com/news/mmorpg-news/tbc-classic-phase-3-black-temple-august-2026",
+     "https://timesaver.gg/blog/tbc-anniversary-october-22-patch-changes",
+     "https://www.iggm.com/news/wow-tbc-classic-anniversary-phase-1-dungeon-profession-pvp-dailies",
+     "https://raw.githubusercontent.com/Questie/Questie/master/Database/Corrections/ContentPhases/ContentPhases.lua",
+     "https://api.github.com/repos/Questie/Questie/releases (bundle/v12.2.0+v1.0.7, 2026-10-23)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/ContentPhases/ContentPhases.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/ContentPhases/BurningCrusade.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/QuestiePolicy/tbcPolicyCorrections.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/QuestieQuestBlacklist.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/QuestieNPCBlacklist.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/Holidays/quests/ChildrensWeek.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Modules/Quest/IsleOfQuelDanas.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Modules/QuestieInit.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/QuestieDB/src/corrections/enum/phases.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Questie-TBC.toc (12.1.0)"
+    ],
+    "notes": "Phase numbers in this guide and in the rule table are Questie's 1 to 5. The installed Questie (12.1.0, Interface 20506) sets ContentPhases.activePhases.TBC = 3 and is two days stale: Zul'Aman went live 22 October 2026 and Questie 12.2.0 (2026-10-23) sets it to 4. The addon should never trust Questie's number as a ceiling; take the maximum of Questie's value, its own dated table and any in-game proof (saved instances, completed phase-gated quests, badge loot in a raid)."
+   }
+  ],
+  "uncertain": [
+   "Hyjal and Black Temple bosses dropping Badges of Justice: the original patch 2.4.0 added badges to every raid boss that lacked them, but neither the 2022 Phase 5 announcement (Blizzard post 23789253) nor any fetched 2022 source states it for Classic, and the Anniversary 22 October 2026 list explicitly omits Hyjal and Black Temple. Treat hyjalBtBadges = true in phase 5 as assumed.",
+   "Whether the 22 October 2026 reduction of heroic key reputation to Honored also applies to the Anniversary Communal pouches (265829, 265842, 265844, 265846, 265848, 265850): their tooltips on the endpoint still read Requires Revered; the endpoint may lag the live client.",
+   "Kaivax's exact wording on the Anniversary Phase 3 removal of the SSC and TK attunements: Warcraft Tavern (24 and 27 August 2026), mmos.com and others report it as Blizzard's statement, but the fetched forum thread 2340643 showed only the raid-open time, extra tier tokens and player questions, not the attunement answer. Bolverk Games' claim that Karazhan, Gruul and Magtheridon attunements were also removed is unsupported: Gruul and Magtheridon never had one and every other source still requires the Master's Key for Karazhan.",
+   "Whether account-wide raid attunement on Anniversary lets an alt enter Karazhan without owning The Master's Key 24490 itself (Blizzard's PTR notes say the raid unlocks for the account; the gate mechanics were not described).",
+   "Anniversary Arena Season 2 start: Blizzard's forum post says the 19 May 2026 US reset (20 May EU); Warcraft Tavern's Phase 2 article says Season 2 starts with Phase 2 on 14 May. The forum date was used.",
+   "Classic 2021 Arena Season 1 start date (mid June 2021) was not confirmed by a fetched source; its end, 7 September 2021, is from Kaivax's 2.5.2 timeline.",
+   "Patch 2.5.4 date: the wiki and most mirrors say 22 March 2022, one Blizzard EU forum copy is dated 23 March; Zul'Aman opened 24 March 2022 at 15:00 PDT per Warcraft Tavern and realsport101, not confirmed from a Blizzard page.",
+   "Communal Time Pouch is dated patch 2.5.6 on 2026-07-07 by the wiki, while Blizzard's PTR development notes (November 2025) already described the Bind to Battle.net keys; whether the pouches existed from the 5 February 2026 launch or arrived with 2.5.6 was not settled.",
+   "Daily dungeon quests on Anniversary from launch (heroic daily 2 badges from Wind Trader Zhareem 24369, normal daily an Ethereum Prison Key from Nether-Stalker Mah'duun 24370) rests on March 2026 guides (iggm, Warcraft Tavern badge guide), not a Blizzard post; for 2021 the 7 June 2021 hotfix only confirms Mah'duun's normal daily being added, the heroic daily is assumed present from launch.",
+   "Realm names: no fetched page named Dreamscythe or Nightslayer; the wiki says every normal 20th Anniversary realm moved into Burning Crusade Classic Anniversary on 13 January 2026.",
+   "Faction IDs quoted in the notes (Honor Hold 946, Thrallmar 947, Cenarion Expedition 942, Lower City 1011, The Sha'tar 935, Keepers of Time 989, Shattered Sun Offensive 1077, The Violet Eye 967, Ashtongue Deathsworn 1012, Scale of the Sands 990, Netherwing 1015, Ogri'la 1038, Sha'tari Skyguard 1031) are from memory; the tooltip endpoint has no faction route and AtlasLoot's data file keys factions by name, so they were not confirmed here.",
+   "Hand of A'dal title for players attuned before the removal: documented for 2022 (Warcraft Tavern Phase 4 page), not mentioned in the Anniversary 22 October 2026 post.",
+   "Anniversary phase 5 (Fury of the Sunwell) date: none announced as of 24 October 2026; roadmap wording is autumn or later in 2026. The notes carry nil for its start timestamp.",
+   "Quest 10708 and 11052 both resolve to the name Akama's Promise on the endpoint (two versions of the same step); Questie uses 11052 in the pre-phase-3 group and 10708 plus 11052 afterwards."
+  ],
+  "notes": "## 1. Phase numbering (use Questie's)\n\n| Questie `activePhases.TBC` | Content | Blizzard 2021-22 name | Blizzard 2026 Anniversary name |\n|---|---|---|---|\n| 1 | Karazhan, Gruul's Lair, Magtheridon's Lair | Phase 1 | Phase 1 (The Burning Crusade) |\n| 2 | Serpentshrine Cavern, Tempest Keep, Ogri'la, Skyguard, Swift Flight Form | Phase 2 Overlords of Outland | Phase 2 Overlords of Outland |\n| 3 | Mount Hyjal, Black Temple, Netherwing, epic gems | Phase 3 The Black Temple | Phase 3 Black Temple (patch 2.5.6) |\n| 4 | Zul'Aman + catch-up bundle | Phase 4 The Gods of Zul'Aman (2.5.4) | **Phase 3.5** The Gods of Zul'Aman |\n| 5 | Isle of Quel'Danas, Magisters' Terrace, Sunwell Plateau | Phase 5 Fury of the Sunwell (2.5.4a) | **Phase 4** Fury of the Sunwell |\n\nQuestie's own comments in `Database/Corrections/ContentPhases/BurningCrusade.lua` say exactly this: `[4] = { -- Phase 3.5 - Zul'Aman`, `[5] = { -- Phase 4 - Sunwell, Isle of Quel'Danas`. Store Questie numbers internally; render the Blizzard names per era.\n\n## 2. Which phase is live today (2026-10-24) and what is next\n\n- **Live: Questie phase 4** (Blizzard \"Phase 3.5 \u2013 The Gods of Zul'Aman\"), since **22 October 2026 15:00 PDT / 22:00 UTC**. Source: Blizzard post 24310652 \"BCCA: The Gods of Zul'Aman Now Live\", Warcraft Tavern 8 Oct and 22 Oct 2026, Blizzard Watch 9 Oct 2026.\n- **Installed Questie 12.1.0 says `TBC = 3`** (stale). **Upstream Questie 12.2.0, released 2026-10-23T22:41Z, sets `TBC = 4`** (\"Enable Zul'Aman phase for TBC\", commit a1a237a0). Questie bundles typically reach CurseForge within a day, so the addon must not treat Questie's value as a ceiling.\n- **Next: Questie phase 5** (\"Phase 4 \u2013 Fury of the Sunwell\"): on Blizzard's 2026 roadmap as autumn / later in 2026, **no date announced** as of today (BlizzCon 12-13 Sept 2026 announced World of Warcraft: Forever, launching 4 Nov 2026, a separate product; Questie has an `IsForever` flag for it). Third-party estimates (late Nov to Dec 2026) are guesses.\n\n## 3. Timeline A: TBC Classic 2021-2022 (Blizzard numbering P1-P5)\n\n| Date (US) | Event | Facts |\n|---|---|---|\n| 18 May 2021 | Pre-patch 2.5.1 | Draenei / Blood Elves |\n| 1 Jun 2021 | **P1 launch** | Kara, Gruul, Mag open from day one; Arena S1 mid-June (ends 7 Sep 2021); heroic keys Revered; heroic daily (Zhareem) 2 badges; Mah'duun normal daily hotfixed in 7 Jun 2021 |\n| 31 Aug 2021 | Patch 2.5.2 | Guild banks, Group Browser |\n| 14 Sep 2021 | Arena S2 begins | regional reset |\n| 15 Sep 2021 15:00 PDT | **P2 Overlords of Outland** | SSC + TK (attunement required), Ogri'la, Skyguard, Swift Flight Form, goggles, recipes |\n| **14 Dec 2021** (EU 15 Dec) | **SSC/TK attunements lifted + final nerfs** (Kaivax, announced ~9-10 Dec; Wowhead tweet 1470855795604660226 decodes to 2021-12-14) | mid-Phase 2 \u2013 Questie's `< 3` rule is ~6 weeks late for this era |\n| 11 Jan 2022 | Arena S2 ends | |\n| 18 Jan 2022 | Patch 2.5.3; Arena S3 that week | |\n| 27 Jan 2022 15:00 PST | **P3 The Black Temple** | Hyjal (Vials of Eternity) + BT (Medallion chain), both attunements required per character; Netherwing; epic gems (Hyjal mining 375, BT drops, heroic bosses); Indormi designs |\n| 22 Mar 2022 | **Patch 2.5.4 catch-up bundle** | Hyjal/BT attunement removed (Hand of A'dal title for those attuned); heroic keys **Honored**; heroics at final 2.4.3 state; badges from Kazzak, Doomwalker, Kara, Gruul, Mag, SSC, TK, ZA (**not** Hyjal/BT); G'eras new wares + Nether Vortex; Primal Nether/Nether Vortex unbound; Black Sack/Brilliant Glass epic gems; world boss loot BoE; LW recipes on faction vendors |\n| 24 Mar 2022 15:00 PDT | **P4 Zul'Aman opens** | 10-man, 6 bosses, no attunement, 3-day lockout, Amani War Bear |\n| 3 May 2022 | Arena S3 ends | |\n| 10 May 2022 | **P5 Fury of the Sunwell (2.5.4a)**: Isle of Quel'Danas + Arena S4 after maintenance | Shattered Sun Offensive realm-wide progression; Magisters' Terrace; Isle badge vendors unlock as the staging area is reinforced |\n| 12 May 2022 15:00 PDT | Sunwell Plateau opens | all 6 bosses, no attunement |\n| 29 Aug 2022 / 30 Aug 2022 | Arena S4 ends / Wrath pre-patch | Wrath Classic 26 Sep 2022 |\n\n## 4. Timeline B: TBC Classic Anniversary 2026 (Blizzard numbering P1, P2, P3, P3.5, P4)\n\n| Date (US) | Event | Facts |\n|---|---|---|\n| 13 Jan 2026 | Pre-patch 2.5.5 (after regional maintenance) | Dark Portal event; all normal 20th Anniversary realms moved into BCC Anniversary |\n| **5 Feb 2026 15:00 PST** | **P1 launch** | flying at 70 from launch; heroics with Revered keys; account-wide attunements + Communal keys (first char Revered buys a pouch, alt needs Friendly); heroic daily 2 badges |\n| 17 Feb 2026 | Arena S1 begins | ratings start 1500 |\n| 19 Feb 2026 15:00 PST | Kara, Gruul, Mag open | |\n| 15 Apr 2026 | P2 announced (post 24272608) | |\n| 4 May 2026 22:00 PDT (EU 5 May) | Arena S1 ends | |\n| **14 May 2026 15:00 PDT** | **P2 Overlords of Outland** | SSC + TK post-nerf, attunement required; Ogri'la, Skyguard, Swift Flight Form, recipes |\n| 19 May 2026 (EU 20 May) | Arena S2 begins | |\n| 7 Jul 2026 (wiki item date) | Patch 2.5.6 | Communal Time Pouch dated here |\n| 23 Jul 2026 | P3 announced (post 24291476) | |\n| 17 Aug 2026 22:00 PDT (\"Aug 18 with restarts\") | Arena S2 ends | points to Honour 1:10; S2 gear to Area 52, S1 gear to Honour vendors |\n| **27 Aug 2026 15:00 PDT** | **P3 Black Temple** | Hyjal (Vials of Eternity) + BT (attunement required); **SSC/TK attunements removed at phase start**, Vashj/Kael skips enabled; extra tier tokens; Netherwing; epic gems; heroics unchanged (keys still Revered) |\n| 1 Sep 2026 | Arena S3 begins | |\n| 8 Oct 2026 | P3.5 announced | |\n| **22 Oct 2026 15:00 PDT** | **P3.5 The Gods of Zul'Aman** (post 24310652) | identical bundle to 2.5.4: Hyjal/BT attunement removed; heroic keys **Honored**; heroics final difficulty; badges Kazzak, Doomwalker, Kara, Gruul, Mag, SSC, TK, ZA (**not** Hyjal/BT); G'eras + Nether Vortex; nethers unbound; Black Sack/Brilliant Glass epic gems; world boss loot BoE; LW recipes. **Arena S4 did not start.** |\n| TBA (roadmap: autumn / later 2026) | **P4 Fury of the Sunwell** | Isle, MgT, Sunwell, Arena S4, Isle badge vendors |\n\nOriginal-era anchors for context: SSC/TK attunement hotfix 19 Jun 2007; 2.3.0 on 13 Nov 2007 (ZA, heroic keys Honored, Kara/ZA badges, daily dungeon quests); 2.4.0 on 25 Mar 2008 (Isle, MgT, Sunwell, Hyjal/BT attunement removed, Kara attunement removed but key still needed, badges on all remaining raid bosses).\n\n## 5. How Questie gates TBC content by phase (so our numbers match)\n\n- `Questie/Database/Corrections/ContentPhases/ContentPhases.lua`: `ContentPhases.activePhases = { ..., TBC = 3 }` (installed 12.1.0; upstream 12.2.0 = 4).\n- `ContentPhases/BurningCrusade.lua`: `questsToBlacklistByPhase[1..5]`; `BlacklistTbcQuestsByPhase(list, phase)` blacklists every quest in tables `phase+1 .. 5`. [2] = 10445, 10944, 10946, 10984, 11007, Swift Flight Form 10955-11011, Ogri'la/Skyguard 11004-11885, Hyjal ring 10460-10475 + 10947 + 11103-11106, arena reset 95158/95251/95252. [3] = DMF decks 10938-10941, BT chain 10948/10949/10957/10958/10959/10985, Netherwing 11012-11114. [4] = ZA 9524, 9525, 11130, 11132, 11163-11166, 11171, 11178, 11195. [5] = Isle/MgT 9681, 9684, 9721-9736, 11481-11557, 11875, 11877, 11880.\n- Called from `QuestieQuestBlacklist.lua:7052` when `Expansions.Current == Expansions.Tbc`.\n- `QuestiePolicy/tbcPolicyCorrections.lua:112-123` (`LoadContentPhaseFixes`): 10944 The Secret Compromised has `preQuestGroup {10901, 11052}` while `TBC < 3`, else `preQuestSingle {10708, 11052}`; 11007 Kael'thas and the Verdant Sphere has `preQuestSingle {10888}` while `< 3`. Comment: \"SSC + TK attunements removed in P3\".\n- `QuestieNPCBlacklist.lua:24-29`: Lady Liadrin 17076 and M'uru 17544 hidden at `>= 5`; Lord Solanar Bloodwrath 25223 hidden at `< 5`; object 178420 Magister Astalor Bloodsworn hidden at `>= 5`.\n- `QuestieQuestBlacklist.lua:1353-1366`: 8367/8371/8385/8388 enabled at `>= 2`; 63866/64319 only at `== 5`.\n- `Holidays/quests/ChildrensWeek.lua`: 10960 at `>= 5`, 11975 at `< 5`.\n- `Modules/QuestieInit.lua:342`: at `== 5` prints the Isle sub-phase reminder; `Modules/Quest/IsleOfQuelDanas.lua`: `Questie.db.global.isleOfQuelDanasPhase` 1..9 (Sun's Reach Sanctum, Sunwell Portal, 2.1 Armory, 3 Anvil and Forge, 3.1 Harbor, 4 Alchemy Lab, 4.1 Monument, 4.2 Sun's Reach, 5), auto-advanced when a quest from a later sub-phase is accepted.\n- `QuestieDB/src/corrections/enum/phases.lua` is **not** content phases: it is Blizzard Phase.dbc spawn-visibility IDs plus Questie fake IDs (Cataclysm zones). Ignore it for this feature.\n- Reading it at runtime: `local CP = QuestieLoader and QuestieLoader:ImportModule(\"ContentPhases\"); local p = CP and CP.activePhases and CP.activePhases.TBC`.\n\n## 6. Rule table (Anniversary realms; C = confirmed, A = assumed)\n\n```\nphase 1 (2026-02-05 \u2192 2026-05-13): { heroicKeyStanding: 7 (C), sscTkAttunementRequired: true (C), hyjalBtAttunementRequired: true (C), karaBadges: false (C), raid25Badges: false (C), hyjalBtBadges: false (C), dailyHeroicBadges: 2 (C via guides), hauthaaVendor: false (C), magistersTerrace: false (C), zulAman: false (C), sunwell: false (C) }\nphase 2 (2026-05-14 \u2192 2026-08-26): { heroicKeyStanding: 7 (C), sscTkAttunementRequired: true (C), hyjalBtAttunementRequired: true (C), karaBadges: false (C), raid25Badges: false (C), hyjalBtBadges: false (C), dailyHeroicBadges: 2 (C), hauthaaVendor: false (C), magistersTerrace: false (C), zulAman: false (C), sunwell: false (C) }\nphase 3 (2026-08-27 \u2192 2026-10-21): { heroicKeyStanding: 7 (C), sscTkAttunementRequired: false (C), hyjalBtAttunementRequired: true (C), karaBadges: false (C), raid25Badges: false (C), hyjalBtBadges: false (C), dailyHeroicBadges: 2 (C), hauthaaVendor: false (C), magistersTerrace: false (C), zulAman: false (C), sunwell: false (C) }\nphase 4 (2026-10-22 \u2192 open): { heroicKeyStanding: 6 (C), sscTkAttunementRequired: false (C), hyjalBtAttunementRequired: false (C), karaBadges: true (C), raid25Badges: true (C; Gruul, Mag, SSC, TK, plus Kazzak/Doomwalker), hyjalBtBadges: false (C), dailyHeroicBadges: 2 (A, unchanged), hauthaaVendor: false (C), magistersTerrace: false (C), zulAman: true (C), sunwell: false (C) }\nphase 5 (TBA): { heroicKeyStanding: 6 (A), sscTkAttunementRequired: false (A), hyjalBtAttunementRequired: false (A), karaBadges: true (A), raid25Badges: true (A), hyjalBtBadges: true (A, original 2.4.0), dailyHeroicBadges: 2 (A), hauthaaVendor: true (A; gated on Isle progression, Armory retaken then Anvil and Forge rebuilt), magistersTerrace: true (A, roadmap), zulAman: true (A), sunwell: true (A, roadmap) }\n```\n2021-22 era uses the same table with one difference: in phase 2, `sscTkAttunementRequired` flipped to false on 14 Dec 2021 (mid-phase). `hyjalBtBadges` in 2022 phase 5 is unconfirmed. Standing IDs: 6 Honored, 7 Revered. The Communal pouches (Anniversary only) require Revered on the first character and Friendly to use; whether the Honored change applies to them is unconfirmed.\n\n## 7. Phase start timestamps for the addon's dated fallback (UTC)\n\n```\n{ [1] = 1770332400 (2026-02-05 23:00Z), [2] = 1778796000 (2026-05-14 22:00Z), [3] = 1787868000 (2026-08-27 22:00Z), [4] = 1792706400 (2026-10-22 22:00Z), [5] = nil }\nraidsOpen P1 = 1771542000 (2026-02-19 23:00Z)\narena = { S1 2026-02-17 \u2192 2026-05-04, S2 2026-05-19 \u2192 2026-08-17, S3 2026-09-01 \u2192 ?, S4 not started }\n```\n(Verify the epoch numbers with `date -u -j -f \"%Y-%m-%d %H:%M\" ...` before shipping; they were computed by hand.)\n\n## 8. Detection recommendations\n\n1. Resolve `phase = max(userOverride or 0, questiePhase or 0, datedPhase)`; never lower below the dated table.\n2. In-game proofs that raise the floor: `GetSavedInstanceInfo` name == Zul'Aman \u2192 \u22654; Sunwell Plateau / Magisters' Terrace \u2192 \u22655; `C_QuestLog.IsQuestFlaggedCompleted` of any [4] or [5] Questie list quest (11130, 11132, 11481, 11482, 11488) \u2192 \u22654 / \u22655; a `CHAT_MSG_LOOT` of item 29434 while `GetInstanceInfo` mapID is 532 Karazhan, 565 Gruul, 544 Magtheridon, 548 SSC, 550 TK \u2192 \u22654.\n3. Expose the live phase and the rule table to other guides; each step carries `phases {from,to}` and is hidden outside them.\n4. Key items for the other guides: heroic keys 30622 (A, Honor Hold) / 30637 (H, Thrallmar), 30623 Reservoir (Cenarion Expedition), 30633 Auchenai (Lower City), 30634 Warpforged (The Sha'tar), 30635 Key of Time (Keepers of Time), 28395 Shattered Halls Key; Communal keys 265830 (A) / 265826 (H) Flamewrought, 265843 Reservoir, 265845 Auchenai, 265847 Warpforged, 265849 Key of Time (all Binds to account, Requires faction Friendly); pouches 265842 (A) / 265829 (H), 265844, 265846, 265848, 265850 (Requires Revered, BoP, Alurmi 21643 sells the Time Pouch for 80g). Raid: 24490 The Master's Key, 31704 The Tempest Key, 32649 / 32757 Medallion of Karabor; 29434 Badge of Justice; 33809 Amani War Bear. NPCs: G'eras 18525, Zhareem 24369, Mah'duun 24370, Soridormi 19935, A'dal 18481, Khadgar 18166, Smith Hauthaa 25046, Shaani 25950, Mordenai 22113, Andormu 20130. All confirmed by the tooltip endpoint. Faction IDs are from memory (see uncertain).\n\n## 9. Account-wide attunements on Anniversary (Blizzard PTR dev notes, Nov 2025)\n\nRaids: the first character completes the attunement, then the raid unlocks for every character on the Battle.net account. Heroics: the first character reaches Revered (\"fully attuned\"), buys a Communal pouch, mails the Bind-to-Battle.net key to alts who need only Friendly. Since 22 Oct 2026 the normal keys cost Honored. Karazhan's Master's Key is still required at the door; SSC/TK need nothing since 27 Aug 2026; Hyjal/BT need nothing since 22 Oct 2026."
+ },
+ "verify": {
+  "checked": 153,
+  "mismatches": [
+   {
+    "kind": "faction",
+    "id": 990,
+    "claimed": "Scale of the Sands",
+    "actual": "The Scale of the Sands (Faction DB2, Anniversary build 2.5.6.70006 via wago.tools; every other faction id 946, 947, 942, 1011, 935, 989, 1077, 967, 1012, 1015, 1038, 1031 matches)"
+   },
+   {
+    "kind": "object",
+    "id": 178420,
+    "claimed": "object 178420 Magister Astalor Bloodsworn",
+    "actual": "NPC, not object: /tooltip/object/178420 = Entity not found, /tooltip/npc/178420 = Magister Astalor Bloodsworn, Level 60 Humanoid, Silvermoon City; Questie keeps it in QuestieNPCBlacklist.lua:29"
+   },
+   {
+    "kind": "blizzard-post",
+    "id": 24291476,
+    "claimed": "Phase 3 announcement 23 Jul 2026",
+    "actual": "'BCC Anniversary Edition: Black Temple Now Live', published 27 August (states Arena Season 2 ends the week of August 16 at 10 pm local the night before each region's reset, Season 3 starts September 1, Hyjal needs The Vials of Eternity, BT needs its attunement; it does not mention SSC/TK, tier tokens or badges). The 23 July announcement is a different post id."
+   },
+   {
+    "kind": "quest",
+    "id": 10960,
+    "claimed": "Children's Week (phase 5 version)",
+    "actual": "When I Grow Up... (label only; Questie ChildrensWeek.lua:36 shows it at TBC >= 5 as claimed)"
+   },
+   {
+    "kind": "quest",
+    "id": 11975,
+    "claimed": "Children's Week (pre phase 5 version)",
+    "actual": "Now, When I Grow Up... (label only; ChildrensWeek.lua:42 shows it at TBC < 5 as claimed)"
+   },
+   {
+    "kind": "file",
+    "id": "Questie-TBC.toc",
+    "claimed": "Questie-TBC.toc (12.1.0)",
+    "actual": "Questie_TBC.toc (underscore); ## Interface: 20506, ## Version: 12.1.0 confirmed"
+   }
+  ],
+  "corrections": [
+   {
+    "guideKey": "PHASES",
+    "stepKey": "phase_3_t6",
+    "field": "detail",
+    "from": "the Medallion of Karabor 32649 or its Blessed form 32757 from the chain 10946 Ruse of the Ashtongue, 10947 An Artifact From the Past, 10944 The Secret Compromised, 10948 The Hostage Soul, 10949 Entry Into the Black Temple",
+    "to": "the Medallion of Karabor 32649, rewarded by 10985 A Distraction for Akama at the end of the chain 10944 The Secret Compromised (A'dal, needs 10901 The Cudgel of Kar'desh and Akama's Promise 10708/11052; Fathom-Lord Karathress in SSC) -> 10946 Ruse of the Ashtongue (Al'ar, TK) -> 10947 An Artifact From the Past (Rage Winterchill, Hyjal) -> 10948 The Hostage Soul (A'dal) -> 10949 Entry Into the Black Temple (Xi'ri) -> 10985 A Distraction for Akama; the Blessed Medallion 32757 comes later from 10959 The Fall of the Betrayer (kill Illidan) after 10958 Seek Out the Ashtongue and 10957 Redemption of the Ashtongue",
+    "reason": "Order is wrong (10944 is the first raid step, before 10946/10947) and the step omits the quest that actually rewards the Medallion. Sources: warcraft.wiki.gg Black Temple attunement (steps 11-19, 'A Distraction for Akama: the Medallion of Karabor is rewarded here'), Medallion_of_Karabor and Blessed_Medallion_of_Karabor item pages, Questie tbcPolicyCorrections.lua:116 giving 10944 the prerequisites {10901, 11052}, quest tooltips 10946/10947/10959 on the Anniversary endpoint"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "phase_1_t4",
+    "field": "detail",
+    "from": "Karazhan needs The Master's Key 24490 from the Violet Eye chain (9837 Return to Khadgar, 9838 The Violet Eye)",
+    "to": "Karazhan needs The Master's Key 24490 from the Karazhan attunement chain: 9824 Arcane Disturbances + 9825 Restless Activity (Archmage Alturus) -> 9826 Contact from Dalaran -> 9829 Khadgar -> 9831 Entry Into Karazhan (Shadow Labyrinth) -> 9832 The Second and Third Fragments (Steamvault, Arcatraz) -> 9836 The Master's Touch (Black Morass; Medivh turns the Restored Apprentice's Key into The Master's Key) -> 9837 Return to Khadgar -> 9838 The Violet Eye (optional, opens Violet Eye reputation)",
+    "reason": "9837's own objective is 'Return to Khadgar in Shattrath City and show him the Master's Key', so the key is in hand before 9837 (the wiki chain page credits Medivh in The Master's Touch; the wiki item page credits Return to Khadgar as the formal reward); 9838 is not needed for entry. Sources: warcraft.wiki.gg Instance_attunement_(Burning_Crusade), The_Master's_Key, quest tooltips 9824-9838 on the endpoint"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "phase_3_t6",
+    "field": "detail",
+    "from": "Questie's policy rows drop 10901 and 11052 from 10944's prerequisites and 10888 from 11007's at this phase",
+    "to": "Questie's policy rows drop 10901 from 10944's prerequisites (preQuestGroup {10901, 11052} becomes empty) and replace it with preQuestSingle {10708, 11052}, i.e. either version of Akama's Promise is still required; 11007 loses 10888",
+    "reason": "Questie/Database/Corrections/QuestiePolicy/tbcPolicyCorrections.lua:116-117: 11052 stays in the phase >= 3 preQuestSingle row"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "phase_5_sunwell",
+    "field": "detail",
+    "from": "removes Lady Liadrin 17076 and M'uru 17544 from Shattrath, adds Lord Solanar Bloodwrath 25223",
+    "to": "removes Lady Liadrin 17076, M'uru 17544 and Magister Astalor Bloodsworn (NPC 178420) from the Hall of Blood in Silvermoon City, adds Lord Solanar Bloodwrath 25223 (Silvermoon)",
+    "reason": "warcraft.wiki.gg Lady_Liadrin locations table: 'Hall of Blood, Silvermoon City' for The Burning Crusade, next to the subdued M'uru; endpoint npc/178420 lists Silvermoon City; Questie's blacklist comments say 'removed starting with SWP patch' (QuestieNPCBlacklist.lua:24-29). Liadrin only appears in Shattrath after 2.4 as a different spawn"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "phase_5_sunwell",
+    "field": "detail",
+    "from": "new badge vendors on the Isle who unlock as the staging area is reinforced: Smith Hauthaa 25046 ..., Kayri for Veteran PvP pieces, Shaani 25950 for uncut epic gems",
+    "to": "new vendors on the Isle who unlock as the staging area is reinforced: Smith Hauthaa 25046 (badge gear), Shaani 25950 (uncut epic gems for badges); Kayri in the Sun's Reach Armory sells Veteran's belt/bracers/boots for gold (about 45 to 77 gold each) and Vindicator's pieces for Tier 6 tokens, not for badges",
+    "reason": "warcraft.wiki.gg Kayri vendor table lists gold prices for every Veteran's piece and 'Vindicator's PvP gear for Tier 6 loot tokens'; the Badge_of_Justice page lists her only by availability (Isle phase 3)"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "phase_1_t4",
+    "field": "detail",
+    "from": "Expert Riding 800 gold, Artisan Riding 5000 gold",
+    "to": "Expert Riding 800 gold, Artisan Riding 5000 gold (unchanged, confirmed)",
+    "reason": "no change; listed so the reviewer knows it was checked against the wiki's Anniversary page which does not contradict it"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "(sources)",
+    "field": "sources",
+    "from": "https://worldofwarcraft.blizzard.com/en-us/news/24291476 (Phase 3 announcement 23 Jul 2026, read via Warcraft Tavern)",
+    "to": "https://worldofwarcraft.blizzard.com/en-us/news/24291476 (BCC Anniversary Edition: Black Temple Now Live, 27 Aug 2026); the 23 July announcement needs its own post id",
+    "reason": "fetched article title and publication date"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "(sources)",
+    "field": "sources",
+    "from": ".../Questie/Questie-TBC.toc (12.1.0)",
+    "to": ".../Questie/Questie_TBC.toc (Interface 20506, Version 12.1.0)",
+    "reason": "actual filename uses an underscore"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "(notes section 8, detection)",
+    "field": "notes",
+    "from": "GetSavedInstanceInfo name == Zul'Aman -> >=4; Sunwell Plateau / Magisters' Terrace -> >=5",
+    "to": "prefer instance map IDs: 568 Zul'Aman -> >=4; 580 (MapName 'The Sunwell') or 585 (MapName \"Magister's Terrace\", InstanceType 1 = 5-player, so it is only saved on heroic) -> >=5; if names are used, match the Map table's names (548 is 'Coilfang: Serpentshrine Cavern', 534 'The Battle for Mount Hyjal', 580 'The Sunwell', 585 \"Magister's Terrace\")",
+    "reason": "Map DB2 for Anniversary build 2.5.6.70006 (wago.tools): 532 Karazhan, 544 Magtheridon's Lair, 548 Coilfang: Serpentshrine Cavern, 550 Tempest Keep, 565 Gruul's Lair confirmed as claimed; the Sunwell and Magisters' Terrace map names differ from the raid/quest names the guide uses"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "(notes section 8 item 4 and uncertain)",
+    "field": "notes",
+    "from": "Scale of the Sands 990 ... Faction IDs are from memory",
+    "to": "The Scale of the Sands 990; all thirteen faction ids confirmed against the client's Faction table (946 Honor Hold, 947 Thrallmar, 942 Cenarion Expedition, 1011 Lower City, 935 The Sha'tar, 989 Keepers of Time, 1077 Shattered Sun Offensive, 967 The Violet Eye, 1012 Ashtongue Deathsworn, 990 The Scale of the Sands, 1015 Netherwing, 1038 Ogri'la, 1031 Sha'tari Skyguard)",
+    "reason": "wago.tools Faction DB2 CSV, build 2.5.6.70006; the 'from memory' caveat can be dropped"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "(notes section 3 table)",
+    "field": "notes",
+    "from": "Arena S1 mid-June (ends 7 Sep 2021)",
+    "to": "Arena S1 began 15 June 2021 after US maintenance (ends 7 Sep 2021 per Kaivax's 2.5.2 timeline)",
+    "reason": "Warcraft Tavern 'TBC Classic Arena Season 1 Starts Today' (15 Jun 2021) and the Business Wire launch release name 15 June; one French outlet says 16 June; Blizzard's own post was not fetched, so keep as low-confidence"
+   },
+   {
+    "guideKey": "PHASES",
+    "stepKey": "(notes section 7)",
+    "field": "notes",
+    "from": "(Verify the epoch numbers with date -u -j -f ... before shipping; they were computed by hand.)",
+    "to": "Verified: 1770332400 = 2026-02-05 15:00 PST, 1778796000 = 2026-05-14 15:00 PDT, 1787868000 = 2026-08-27 15:00 PDT, 1792706400 = 2026-10-22 15:00 PDT, 1771542000 = 2026-02-19 15:00 PST",
+    "reason": "recomputed with TZ=America/Los_Angeles date -j -f on this machine; all five match"
+   }
+  ],
+  "unverifiable": [
+   "Blizzard forum threads 2294275 (Season 1 ends 4 May 2026), 2332698 (Season 2 ends 17 Aug 2026), 2340643 (raids open 27 Aug 15:00 PDT) and 1221908 (Season 3 ends 3 May 2022) were not fetched; the 27 Aug 2026 Blizzard article independently confirms Season 2 ending the week of August 16 at 10 pm local before each region's reset and Season 3 on 1 September",
+   "Anniversary Arena Season 2 start (19 May 2026 US / 20 May EU) and Season 1 start time; the wiki confirms only the 17 Feb 2026 Season 1 date",
+   "Kaivax's statement that SSC/TK attunements were removed when Anniversary Phase 3 opened: the Blizzard 'Black Temple Now Live' post (24291476) does not mention SSC, TK or Karazhan; only Warcraft Tavern/mmos.com report it",
+   "Extra tier tokens in Anniversary Phase 3 raids: not in the fetched Blizzard article, Warcraft Tavern only",
+   "Hyjal and Black Temple bosses dropping badges in Classic 2022 / Anniversary phase 5: no fetched source states it; the original 2.4.0 notes say badges were added to 'all raid bosses who did not previously have them' and the wiki's Badge table lists Hyjal 10 and BT 18 per clear for the original game",
+   "Whether the 22 Oct 2026 Honored change applies to the Communal pouches: the endpoint still shows 'Requires ... Revered' on 265842/265829/265850 and 'Friendly' on the Communal keys, consistent with the guide's own caveat",
+   "Account-wide raid unlock mechanics for alts without the Master's Key on Anniversary",
+   "Hand of A'dal title on Anniversary (confirmed absent from post 24310652; 2022 only via Warcraft Tavern)",
+   "Zhareem heroic daily (2 badges) and Mah'duun normal daily available from Anniversary launch; the 7 Jun 2021 hotfix for 2021",
+   "Exact times: Anniversary launch 5 Feb 2026 15:00 PST and raids 19 Feb 15:00 PST (wiki gives dates only; 14 May 2026 15:00 PDT is confirmed by post 24272608), Zul'Aman 24 Mar 2022 15:00 PDT (wiki confirms the date only)",
+   "Patch 2.5.4a date: the wiki infobox says 12 May 2022 while the Isle opened 10 May; day-level only",
+   "Patch 2.5.3: the wiki patch page says 18 January 2022 (Season 3 the week of 18 January, BT unlock 27 January 15:00 PST) while the BCC overview page says 17 January; day-level only",
+   "Realm names Dreamscythe / Nightslayer not checked",
+   "Questie's 10944 objective wording ('speak to Akama') versus the Karathress kill: the endpoint tooltip shows no kill requirement, the wiki says Karathress; not resolved here"
+  ],
+  "verdict": "Every id resolves to its claimed name (153 checked; only nits: faction 990 is 'The Scale of the Sands', 178420 is an NPC not an object) and the phase dates, rule table, epoch timestamps and Questie references hold, but the prose has five real errors: the Black Temple chain is in the wrong order and credits the Medallion to the wrong quest (it is 10985 A Distraction for Akama, Blessed form from 10959), the Karazhan key is attributed to 9837/9838 instead of the 9824-9836 chain, Questie does not drop 11052 from 10944, Lady Liadrin/M'uru are removed from Silvermoon not Shattrath, and Kayri is a gold/T6-token vendor not a badge vendor; one source id (24291476) is the 27 Aug 'Black Temple Now Live' post, not the 23 Jul announcement.",
+  "notes": "Method: all 122 ids named in the guide (27 items, 14 NPCs, 67 quests, 1 object, 13 factions) were fetched from https://nether.wowhead.com/tooltip/<kind>/<id>?dataEnv=5&locale=0 in one loop with 0.3 s sleeps; 20 further chain quests (9824-9836 Karazhan, 10884-10886 Trial of the Naaru, 10568-10707 early BT chain) and 2 NPCs (178420, 16802) were fetched to settle the structural questions. The endpoint has no faction route ('Entity type is invalid'), so the 13 faction ids and 10 instance map ids were checked against the client's own Faction and Map DB2 tables for Anniversary build 2.5.6.70006 from wago.tools; all match except the article in 'The Scale of the Sands'. Instance ids 532/544/548/550/565 are as claimed; 568 Zul'Aman, 534 The Battle for Mount Hyjal, 564 Black Temple, 580 The Sunwell, 585 Magister's Terrace (InstanceType 1). Confirmed as claimed: Questie 12.1.0 installed (Questie_TBC.toc, Interface 20506) with ContentPhases.activePhases.TBC = 3; upstream master TBC = 4, release bundle/v12.2.0+v1.0.7 published 2026-10-23T22:41:45Z with 'Enable Zul'Aman phase for TBC' (commit a1a237a0); BurningCrusade.lua tables [2]-[5] contain exactly the ids the guide quotes (the ranges 10955-11011, 11004-11885, 11012-11114, 11496-11557 are shorthand for sparse lists); BlacklistTbcQuestsByPhase is called at QuestieQuestBlacklist.lua:7052; NPC blacklist rows at lines 24-29; LoadContentPhaseFixes at tbcPolicyCorrections.lua:113; Marks of Honor rows 8367/8371/8385/8388 at TBC >= 2; ChildrensWeek 10960 (>= 5) / 11975 (< 5); IsleOfQuelDanas.lua nine sub-phase names; QuestieInit.lua prints the Isle reminder at TBC == 5; Questie.IsForever exists; QuestieDB/src/corrections/enum/phases.lua is Blizzard Phase.dbc ids plus Questie fakes, as the guide says. Dates confirmed by warcraft.wiki.gg: Anniversary pre-patch 13 Jan 2026, launch 5 Feb, Arena S1 17 Feb, raids 19 Feb, Phase 2 14 May, Phase 3 27 Aug, Phase 3.5 22 Oct, Phase 4 'Autumn 2026'; Classic 2021-22: 18 May 2021, 1 Jun 2021, 31 Aug 2021, 15 Sep 2021, 2.5.3 18 Jan 2022, 27 Jan 2022, 2.5.4 22 Mar 2022, ZA 24 Mar 2022, Isle + Season 4 10 May 2022, Sunwell 12 May 2022, Wrath pre-patch 30 Aug 2022. The 22 Oct 2026 Blizzard post (24310652) matches the Phase 3.5 bundle verbatim (Hyjal/BT attunement removed, heroic keys Honored, heroics final difficulty, badges from Kazzak, Doomwalker, Karazhan, Gruul, Magtheridon, SSC, TK, ZA and not Hyjal/BT, G'eras + Nether Vortex, nethers unbound, Black Sack/Brilliant Glass, world boss BoE, LW recipes, ZA 3-day lockout, no Season 4); patch 2.5.4 (22 Mar 2022) carried the identical list. Post 24272608 confirms 14 May 2026 3:00 PM PDT / 23:00 BST. Original-era anchors confirmed: SSC/TK attunement hotfix 2007-06-19, 2.4.0 (25 Mar 2008) removed Hyjal/BT/Karazhan attunement but the gate still needed The Master's Key, badges added to all remaining raid bosses. Communal Time Pouch: Alurmi, 80 gold, Revered, added 2.5.6 on 2026-07-07 (wiki). World of Warcraft: Forever launches 4 Nov 2026, announced at BlizzCon 12-13 Sep 2026; no Fury of the Sunwell date announced. Tooltips: the five heroic keys and the three pouches still read 'Requires <faction> - Revered', the Communal keys 'Binds to account, Requires <faction> - Friendly'; 32649/32757 are tagged Phase 3, 30183 Phase 2, 29434/23572/30623 Phase 1. Item 265850 and friends confirm the pouch wording 'Bind of Battle.net Account key'. 9524/9525 Imprisoned in the Citadel are the heroic Shattered Halls prisoner-rescue quests (Alliance/Horde), a 2.3 addition, so their place in the ZA list is right. Results file: /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/factcheck/out/results.tsv; DB2 CSVs under .../scratchpad/factcheck/out/wago/."
+ }
+}

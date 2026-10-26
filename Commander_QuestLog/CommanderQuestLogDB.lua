@@ -1,7 +1,9 @@
 CommanderQuestLogDB = _G.CommanderQuestLogDB or {}
 -- Per character: the quests this character told the Zones tab to leave out of
 -- its 100% (Ignored), and what the game was seen to pay this character for a
--- turn-in (RepObserved, written by the Questie adapter's calibration). An
+-- turn-in (RepObserved, written by the Questie adapter's calibration), and
+-- the Attunements tab's store (Attune: the guide opened last, the side
+-- pledged, hand marks, and what the engine saw this character do). An
 -- alt's lists are not a main's, which is why they are not in the
 -- account-wide table above -- and why Restore Defaults never touches them.
 CommanderQuestLogChar = _G.CommanderQuestLogChar or {}
@@ -40,9 +42,10 @@ local DefaultSettings = {
     FramePos = false,
 
     -- The tabs. ViewMode is where the player left the window, like Filter
-    -- and Sort: a registered tab's id, "LOG", "ZONE" or "REP" (anything else,
-    -- or a tab since switched off, opens on the Log). ShowZoneTab and
-    -- ShowRepTab are the switches for the two catalogue tabs.
+    -- and Sort: a registered tab's id, "LOG", "ZONE", "REP" or "ATTUNE"
+    -- (anything else, or a tab since switched off, opens on the Log).
+    -- ShowZoneTab, ShowRepTab and ShowAttuneTab are the three tabs' switches
+    -- beside the Log (the Attunements tab's keys are in their own block below).
     ViewMode = "LOG",
     ShowZoneTab = true,
     ZoneFilter = "ALL",
@@ -88,6 +91,28 @@ local DefaultSettings = {
     ZoneRowRep = true,
     RepInQuestDialog = true,
 
+    -- The Attunements tab: every TBC raid attunement, heroic key, dungeon
+    -- key, reputation hub, the flying ranks and a Badge of Justice route,
+    -- each a guide of steps the tab ticks off by itself from the client. Its
+    -- keys follow the Reputations tab's under the "Attune" stem. AttunePhase
+    -- is the content phase the guides are read against: "AUTO" lets the
+    -- calendar, Questie and what this account has seen in game vote, a
+    -- number 1-5 wins outright. AttuneCollapsed is its own fold table, keyed
+    -- by category; AttuneFilter where the player left the toolbar;
+    -- AttuneShowDone whether a guide's page lists its finished steps.
+    -- AttuneAccount is the account ledger (which character finished an
+    -- account-wide raid attunement, written by detection only, D53) and
+    -- AttunePhaseSeen the phase evidence seen in game (a lockout is a realm
+    -- fact, so it is account-wide too, D49): both are things the player or
+    -- the realm authored, not options, and Reset keeps them.
+    ShowAttuneTab = true,
+    AttunePhase = "AUTO",
+    AttuneCollapsed = {},
+    AttuneFilter = "ALL",
+    AttuneShowDone = true,
+    AttuneAccount = {},
+    AttunePhaseSeen = {},
+
     -- The world map: a completion drawer docked inside its right edge, and
     -- pins on the quest givers Questie does not draw
     MapDrawer = true,
@@ -113,24 +138,40 @@ local function Reset()
     -- window losing its place. ResetToDefaults only writes defaulted keys, so
     -- it is lifted out and put back rather than being left out of the table.
     -- The Zones and Reputations tabs' folds and the map drawer's are the same
-    -- kind of thing and get the same treatment.
+    -- kind of thing and get the same treatment, and so do the Attunements
+    -- tab's folds and its two tables the player or the realm wrote rather
+    -- than chose: the account ledger (who finished an account-wide raid
+    -- attunement) and the phase evidence seen in game. Its AttuneFilter goes
+    -- back to ALL and its AttunePhase to AUTO with the rest.
     local collapsed = CommanderQuestLogDB.Collapsed
     local zoneCollapsed = CommanderQuestLogDB.ZoneCollapsed
     local repCollapsed = CommanderQuestLogDB.RepCollapsed
     local mapCollapsed = CommanderQuestLogDB.MapCollapsed
+    local attuneCollapsed = CommanderQuestLogDB.AttuneCollapsed
+    local attuneAccount = CommanderQuestLogDB.AttuneAccount
+    local attunePhaseSeen = CommanderQuestLogDB.AttunePhaseSeen
     Commander.UI.ResetToDefaults(CommanderQuestLogDB, DefaultSettings)
     CommanderQuestLogDB.Collapsed = collapsed or {}
     if type(zoneCollapsed) == "table" then CommanderQuestLogDB.ZoneCollapsed = zoneCollapsed end
     if type(repCollapsed) == "table" then CommanderQuestLogDB.RepCollapsed = repCollapsed end
     if type(mapCollapsed) == "table" then CommanderQuestLogDB.MapCollapsed = mapCollapsed end
+    if type(attuneCollapsed) == "table" then CommanderQuestLogDB.AttuneCollapsed = attuneCollapsed end
+    if type(attuneAccount) == "table" then CommanderQuestLogDB.AttuneAccount = attuneAccount end
+    if type(attunePhaseSeen) == "table" then CommanderQuestLogDB.AttunePhaseSeen = attunePhaseSeen end
     Commander.Notify(COMMANDER_QUESTLOG_EVENTS.UPDATE)
     print("Commander Quest Log: settings restored to defaults")
 end
 
+-- The Attunements tab's per-character store (DECISIONS D53), each sub-table
+-- made whole by EnsureCharDB: the player's hand marks, turn-ins inside the
+-- grace window, the guides touched and when, bosses seen fall, vendors
+-- visited, instances entered, and the phase evidence this character saw.
+local ATTUNE_CHAR_TABLES = { "marks", "seen", "touched", "kills", "talked", "entered", "phaseEvidence" }
+
 -- The per-character table, made whole. Safe to call at any time: the saved
 -- variable arrives just before ADDON_LOADED, and anything that writes to it
--- (the Ignore button, Clear Ignored) calls this first rather than trusting
--- the load order.
+-- (the Ignore button, Clear Ignored, the Attunements engine) calls this
+-- first rather than trusting the load order.
 local function EnsureCharDB()
     if type(CommanderQuestLogChar) ~= "table" then CommanderQuestLogChar = {} end
     if type(CommanderQuestLogChar.Ignored) ~= "table" then CommanderQuestLogChar.Ignored = {} end
@@ -139,6 +180,15 @@ local function EnsureCharDB()
     -- around, so it goes
     if CommanderQuestLogChar.RepObserved ~= nil and type(CommanderQuestLogChar.RepObserved) ~= "table" then
         CommanderQuestLogChar.RepObserved = nil
+    end
+    -- Attune: the guide opened last and the side the player said they
+    -- pledged are strings or nothing; the rest are tables
+    if type(CommanderQuestLogChar.Attune) ~= "table" then CommanderQuestLogChar.Attune = {} end
+    local attune = CommanderQuestLogChar.Attune
+    if attune.guide ~= nil and type(attune.guide) ~= "string" then attune.guide = nil end
+    if attune.side ~= nil and type(attune.side) ~= "string" then attune.side = nil end
+    for _, key in ipairs(ATTUNE_CHAR_TABLES) do
+        if type(attune[key]) ~= "table" then attune[key] = {} end
     end
     return CommanderQuestLogChar
 end
@@ -157,7 +207,19 @@ local function ClearIgnored()
         count, count == 1 and "" or "s"))
 end
 
--- /cql status: what the Questie adapter can see, one line each
+-- The Attunements engine (CommanderQuestLogAttune.lua) and tab
+-- (CommanderQuestLogAttunements.lua) load after this file. Both are reached
+-- through their globals and each call is guarded, so the settings page, the
+-- slash commands and /cql status work when either file is missing.
+local function AttuneEngine()
+    local engine = CommanderQuestLog and CommanderQuestLog.Attune
+    if type(engine) == "table" then return engine end
+    return nil
+end
+
+-- /cql status: what the Questie adapter can see, one line each, then the
+-- Attunements engine's lines (the phase and its votes, the guide totals,
+-- where to continue, marks and the ledger, what it stands on) when loaded
 local function PrintStatus()
     local adapter = CommanderQuestLog and CommanderQuestLog.Questie
     if not (adapter and adapter.StatusLines) then
@@ -167,6 +229,12 @@ local function PrintStatus()
     print("Commander Quest Log status:")
     for _, line in ipairs(adapter.StatusLines() or {}) do
         print("  " .. tostring(line))
+    end
+    local engine = AttuneEngine()
+    if engine and type(engine.StatusLines) == "function" then
+        for _, line in ipairs(engine.StatusLines() or {}) do
+            print("  " .. tostring(line))
+        end
     end
 end
 
@@ -193,6 +261,27 @@ local function OpenReputations(text)
     reps.OpenTo(text)
 end
 
+-- /cql attune [guide]: the Attunements tab on a guide found by name (any
+-- part of it, any case: "kara", "heroic coilfang", "flying"); no name opens
+-- the tab where it was. The tab file does the finding, from the guides'
+-- names, titles and keys.
+local function OpenAttunements(text)
+    if text and text ~= "" then
+        local tab = CommanderQuestLog and CommanderQuestLog.Attunements
+        if not (type(tab) == "table" and type(tab.OpenTo) == "function") then
+            print("Commander Quest Log: the Attunements tab is not loaded.")
+            return
+        end
+        tab.OpenTo(text)
+        return
+    end
+    if type(CommanderQuestLog.OpenToTab) == "function" then
+        CommanderQuestLog.OpenToTab("ATTUNE")
+    else
+        print("Commander Quest Log: the Attunements tab is not loaded.")
+    end
+end
+
 local function PinsEnabled()
     return CommanderQuestLogDB.EnableQuestLog and CommanderQuestLogDB.MapPins ~= false
 end
@@ -212,6 +301,16 @@ local CHANNELS = {
     { text = "Yourself only", value = "SELF" },
 }
 
+-- The content phase the Attunements tab reads the guides against
+local ATTUNE_PHASES = {
+    { text = "Automatic", value = "AUTO" },
+    { text = "Phase 1", value = 1 },
+    { text = "Phase 2", value = 2 },
+    { text = "Phase 3", value = 3 },
+    { text = "Phase 4", value = 4 },
+    { text = "Phase 5", value = 5 },
+}
+
 local function CreateOptionsPanel()
     local panel = Commander.UI.NewPanel({
         key = "QuestLog",
@@ -229,6 +328,9 @@ local function CreateOptionsPanel()
             -- The Reputations tab following the faction you watch; with a
             -- name after it, see the wrapper after Finalize below
             rep = function() OpenReputations(nil) end,
+            -- The Attunements tab where it was; with a guide's name after
+            -- it, the same wrapper
+            attune = function() OpenAttunements(nil) end,
             status = PrintStatus,
         },
     })
@@ -448,6 +550,59 @@ local function CreateOptionsPanel()
         },
     })
 
+    panel:AddSection("Attunements", "Guides for raid attunements, heroic keys, dungeon keys, reputation hubs, flying and Badges of Justice, ticked off by the tab itself.")
+    panel:AddCheckboxPair({
+        label = "Attunements Tab",
+        tooltip = "A tab in the quest log window: every raid attunement, heroic key, dungeon key, reputation hub, the flying ranks and a Badge of Justice route, each a guide of steps the tab ticks off by itself from your quest flags, keyring, standings, spells and lockouts, read against the realm's content phase. Questie is not needed.",
+        get = function() return CommanderQuestLogDB.ShowAttuneTab ~= false end,
+        set = function(value) CommanderQuestLogDB.ShowAttuneTab = value end,
+        isEnabled = Enabled,
+    }, {
+        label = "Show Done Steps",
+        tooltip = "List finished steps on a guide's page; off folds them into one line.",
+        get = function() return CommanderQuestLogDB.AttuneShowDone ~= false end,
+        set = function(value) CommanderQuestLogDB.AttuneShowDone = value end,
+        isEnabled = Enabled,
+    })
+    panel:AddDropdown({
+        label = "Content Phase",
+        tooltip = "Automatic reads the calendar, Questie and what this account has seen in game. Pick a phase to see the guides as they will be.",
+        options = ATTUNE_PHASES,
+        width = 160,
+        get = function() return CommanderQuestLogDB.AttunePhase end,
+        -- The engine's SetPhase writes the key and drops its memoised phase;
+        -- without the engine the key is written here and read at its load
+        set = function(value)
+            local engine = AttuneEngine()
+            if engine and type(engine.SetPhase) == "function" then
+                engine.SetPhase(value)
+            else
+                CommanderQuestLogDB.AttunePhase = value
+            end
+        end,
+        isEnabled = Enabled,
+    })
+    panel:AddButtonRow({
+        {
+            label = "Open Attunements",
+            width = 140,
+            tooltip = "Open the quest log on the Attunements tab where you left it (also: /cql attune, or /cql attune followed by a guide's name).",
+            onClick = function() OpenAttunements(nil) end,
+            isEnabled = Enabled,
+        },
+        {
+            label = "Clear Marks",
+            width = 120,
+            tooltip = "Forget every step this character marked done by hand. Detected progress and the account ledger stay.",
+            onClick = function()
+                local engine = AttuneEngine()
+                if engine and type(engine.ClearMarks) == "function" then engine.ClearMarks() end
+                if type(CommanderQuestLog.QueueRefresh) == "function" then CommanderQuestLog.QueueRefresh() end
+            end,
+            isEnabled = Enabled,
+        },
+    })
+
     panel:AddSection("World Map")
     panel:AddCheckboxPair({
         label = "Completion Drawer",
@@ -499,16 +654,25 @@ local function CreateOptionsPanel()
     panel:Finalize({ onDefaults = Reset })
 
     -- The framework matches a subcommand on the whole line, so "/cql rep
-    -- shatar" would be its usage message. A faction's name after "rep" is
-    -- taken here, ahead of it; every other line goes on to the framework.
+    -- shatar" or "/cql attune kara" would be its usage message. One pattern,
+    -- verb and the rest: a name after "rep" or "attune" is taken here, ahead
+    -- of it; every other line (a verb alone included) goes on to the
+    -- framework.
     local key = "COMMANDERUI_QUESTLOG"
     local framework = SlashCmdList and SlashCmdList[key]
     if type(framework) == "function" then
         SlashCmdList[key] = function(msg)
-            local text = type(msg) == "string" and msg:match("^%s*[Rr][Ee][Pp]%s+(.-)%s*$") or nil
-            if text and text ~= "" then
-                OpenReputations(text)
-                return
+            local verb, text
+            if type(msg) == "string" then verb, text = msg:match("^%s*(%a+)%s+(.-)%s*$") end
+            if verb and text and text ~= "" then
+                verb = verb:lower()
+                if verb == "rep" then
+                    OpenReputations(text)
+                    return
+                elseif verb == "attune" then
+                    OpenAttunements(text)
+                    return
+                end
             end
             return framework(msg)
         end
@@ -536,6 +700,15 @@ local function OnEvent(self, event, addonName)
         end
         if type(CommanderQuestLogDB.MapCollapsed) ~= "table" then
             CommanderQuestLogDB.MapCollapsed = { Done = true }
+        end
+        if type(CommanderQuestLogDB.AttuneCollapsed) ~= "table" then
+            CommanderQuestLogDB.AttuneCollapsed = {}
+        end
+        if type(CommanderQuestLogDB.AttuneAccount) ~= "table" then
+            CommanderQuestLogDB.AttuneAccount = {}
+        end
+        if type(CommanderQuestLogDB.AttunePhaseSeen) ~= "table" then
+            CommanderQuestLogDB.AttunePhaseSeen = {}
         end
         EnsureCharDB()
         self:UnregisterEvent("ADDON_LOADED")

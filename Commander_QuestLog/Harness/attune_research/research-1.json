@@ -1,0 +1,1275 @@
+{
+ "topic": "heroic-keys",
+ "data": {
+  "guides": [
+   {
+    "key": "HEROIC_HELLFIRE",
+    "title": "Heroic Hellfire Citadel: the Flamewrought Key",
+    "category": "HEROIC",
+    "faction": "BOTH",
+    "summary": "Heroic Hellfire Ramparts, The Blood Furnace and The Shattered Halls open with the Flamewrought Key, sold by the Honor Hold or Thrallmar quartermaster once your standing is high enough. Reputation comes from the Hellfire Peninsula quest lines, the Hellfire Citadel dungeons themselves and the daily Hellfire Fortifications PvP quest. On Anniversary realms a main who has reached Revered can also buy a Communal pouch whose account bound key gives alts heroic access at Friendly.",
+    "unlocks": "Heroic difficulty for Hellfire Ramparts, The Blood Furnace and The Shattered Halls, plus the heroic daily quests that send you there.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "The key is required for the whole of TBC (keys were only removed in Cataclysm 4.2). The standing needed to buy it was Revered from launch and dropped to Honored with the Zul'Aman update: original patch 2.3, TBC Classic Phase 4 (patch 2.5.4, 22 March 2022) and Anniversary realms on 22 October 2026 (Blizzard calls it the next content phase, press calls it phase 3.5; it is phase 4 in this guide's numbering). The Anniversary key sold in phases 1 to 3 was Revered; the Wowhead Anniversary tooltip still shows Revered two days after the change, so the endpoint lags live data."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_70",
+      "title": "Reach level 70",
+      "kind": "LEVEL",
+      "level": 70,
+      "detail": "Heroic dungeons admit level 70 characters only, and the Hellfire Peninsula quest lines that pay the bulk of early Honor Hold or Thrallmar reputation run from 58 to 63. Finish the zone's hubs (Honor Hold or Thrallmar, then Expedition Point or Falcon Watch) as you level; the reputation they pay is banked towards the key. Everything else in this guide can be done in any order once you are 70.",
+      "detectedBy": "UnitLevel(\"player\") >= 70.",
+      "optional": false
+     },
+     {
+      "key": "fortifications_daily",
+      "title": "Run the Hellfire Fortifications daily when you pass by",
+      "kind": "QUEST",
+      "quest": {
+       "A": 10106,
+       "H": 10110
+      },
+      "questName": "Hellfire Fortifications",
+      "giver": {
+       "A": {
+        "npcId": 18266,
+        "name": "Warrant Officer Tracy Proudwell",
+        "zone": "Hellfire Peninsula (Honor Hold)",
+        "x": 56.3,
+        "y": 62.8
+       },
+       "H": {
+        "npcId": 18267,
+        "name": "Battlecryer Blackeye",
+        "zone": "Hellfire Peninsula (Thrallmar)",
+        "x": 56,
+        "y": 39.2
+       }
+      },
+      "turnIn": {
+       "A": {
+        "npcId": 18266,
+        "name": "Warrant Officer Tracy Proudwell",
+        "zone": "Hellfire Peninsula (Honor Hold)",
+        "x": 56.3,
+        "y": 62.8
+       },
+       "H": {
+        "npcId": 18267,
+        "name": "Battlecryer Blackeye",
+        "zone": "Hellfire Peninsula (Thrallmar)",
+        "x": 56,
+        "y": 39.2
+       }
+      },
+      "detail": "Capture the Overlook, the Stadium and Broken Hill (the three PvP towers in central Hellfire Peninsula) while your faction holds them and hand in to the warrant officer in your town. It pays 150 reputation, 70 silver and three Marks of Honor Hold (item 24579) or Marks of Thrallmar (item 24581). The marks are PvP currency spent at the same quartermasters on gear and consumables; there is no mark hand in for reputation in TBC. It is a daily, so it is a steady top up rather than a route on its own.",
+      "detectedBy": "IsQuestFlaggedCompleted(10106) for Alliance or IsQuestFlaggedCompleted(10110) for Horde is true only until the next daily reset; show it as a repeatable tip, never as a gate.",
+      "optional": true
+     },
+     {
+      "key": "rep_revered",
+      "title": "Reach Revered with Honor Hold or Thrallmar",
+      "kind": "REP",
+      "factionId": {
+       "A": 946,
+       "H": 947
+      },
+      "standing": 7,
+      "phases": {
+       "from": 1,
+       "to": 3
+      },
+      "detail": "Before the Zul'Aman phase the key needs Revered, 21000 points past Neutral. The Hellfire Peninsula quest hubs carry most characters to Friendly or early Honored; Hellfire Ramparts (map 543) and The Blood Furnace (542) pay on normal only until Honored and then stop. From Honored the grind is The Shattered Halls (540, level 70, its door needs the Shattered Halls Key or a rogue with 350 lockpicking), which keeps paying on normal to Exalted, and Nether-Stalker Mah'duun's normal daily Wanted: Shattered Hand Centurions (250 reputation). Every Hellfire heroic also pays to Exalted, but each member needs the key to zone in, so heroics only help once you hold one. The Hellfire Fortifications daily adds 150 a day.",
+      "detectedBy": "select(3, GetFactionInfoByID(946)) >= 7 for Alliance, or GetFactionInfoByID(947) for Horde (standingID 7 = Revered). Pick the faction by UnitFactionGroup(\"player\").",
+      "optional": false
+     },
+     {
+      "key": "rep_honored",
+      "title": "Reach Honored with Honor Hold or Thrallmar",
+      "kind": "REP",
+      "factionId": {
+       "A": 946,
+       "H": 947
+      },
+      "standing": 6,
+      "phases": {
+       "from": 4,
+       "to": null
+      },
+      "detail": "From the Zul'Aman phase the quartermaster sells the Flamewrought Key at Honored, 9000 points past Neutral. The Hellfire Peninsula quest lines plus a handful of Hellfire Ramparts (map 543) and Blood Furnace (542) runs reach it; those two dungeons stop paying at Honored, which is now exactly the standing you need. If you are short, The Shattered Halls (540) on normal, the Hellfire Fortifications daily (150) and Mah'duun's Wanted: Shattered Hand Centurions daily (250) all count. Anniversary realms switched on 22 October 2026; TBC Classic 2021 switched on 22 March 2022.",
+      "detectedBy": "select(3, GetFactionInfoByID(946)) >= 6 for Alliance, or GetFactionInfoByID(947) for Horde (standingID 6 = Honored).",
+      "optional": false
+     },
+     {
+      "key": "buy_key",
+      "title": "Buy the Flamewrought Key",
+      "kind": "ITEM",
+      "itemId": 30622,
+      "item": {
+       "A": 30622,
+       "H": 30637
+      },
+      "itemName": "Flamewrought Key",
+      "count": 1,
+      "giver": {
+       "A": {
+        "npcId": 17657,
+        "name": "Logistics Officer Ulrike",
+        "zone": "Hellfire Peninsula (Honor Hold)",
+        "x": 56.7,
+        "y": 62.6
+       },
+       "H": {
+        "npcId": 17585,
+        "name": "Quartermaster Urgronn",
+        "zone": "Hellfire Peninsula (Thrallmar)",
+        "x": 54.9,
+        "y": 37.8
+       }
+      },
+      "detail": "Visit Logistics Officer Ulrike in Honor Hold (Alliance) or Quartermaster Urgronn outside the Thrallmar stronghold (Horde) and buy the Flamewrought Key for 10 gold. It binds when picked up, is unique and goes straight to your keyring; you never use it, holding it is the attunement. One key covers all three Hellfire Citadel heroics. The vendor gates the sale on your standing, Revered before phase 4 and Honored from phase 4.",
+      "detectedBy": "GetItemCount(30622) > 0 for Alliance or GetItemCount(30637) > 0 for Horde (the keyring counts as a bag; confirm on the 2.5.6 client).",
+      "optional": false
+     },
+     {
+      "key": "communal_key",
+      "title": "Alts: hold a Communal Flamewrought Key at Friendly",
+      "kind": "ITEM",
+      "itemId": 265830,
+      "item": {
+       "A": 265830,
+       "H": 265826
+      },
+      "itemName": "Communal Flamewrought Key",
+      "count": 1,
+      "pouch": {
+       "A": 265842,
+       "H": 265829,
+       "name": "Communal Flamewrought Pouch",
+       "cost": "80 gold",
+       "requires": "Revered"
+      },
+      "giver": {
+       "A": {
+        "npcId": 17657,
+        "name": "Logistics Officer Ulrike",
+        "zone": "Hellfire Peninsula (Honor Hold)",
+        "x": 56.7,
+        "y": 62.6
+       },
+       "H": {
+        "npcId": 17585,
+        "name": "Quartermaster Urgronn",
+        "zone": "Hellfire Peninsula (Thrallmar)",
+        "x": 54.9,
+        "y": 37.8
+       }
+      },
+      "phases": {
+       "from": 1,
+       "to": null
+      },
+      "detail": "Anniversary realms only. Once a character on your account is Revered the same quartermaster also sells the Communal Flamewrought Pouch for 80 gold (Alliance 265842, Horde 265829); opening it puts a Communal Flamewrought Key (265830 Alliance, 265826 Horde) in the keyring that binds to your Battle.net account and can be mailed between your characters. An alt needs only Friendly with Honor Hold or Thrallmar to hold it and enter heroics, and since the 12 February 2026 hotfix either faction's key works for a character that is Friendly with either faction. It is an item, not an account flag, so it must sit in the alt's keyring; pass it along as each alt earns its own key. Whether the pouch's own purchase requirement dropped to Honored on 22 October 2026 is not confirmed.",
+      "detectedBy": "(GetItemCount(265830) > 0 or GetItemCount(265826) > 0) and standingID >= 5 with faction 946 or 947.",
+      "optional": true
+     },
+     {
+      "key": "set_heroic",
+      "title": "Set the dungeon difficulty to Heroic",
+      "kind": "MANUAL",
+      "detail": "Before anyone zones in, the party leader right clicks their own portrait, opens Dungeon Difficulty and chooses Heroic, or runs /run SetDungeonDifficultyID(2). The difficulty is taken from the leader, but every member who enters needs the key in their own keyring. Heroics require level 70, lock you to one run per dungeon per day and award a Badge of Justice from each boss. Since 22 October 2026 Anniversary heroics run at their final, reduced 2.4.3 difficulty.",
+      "detectedBy": "GetDungeonDifficultyID() == 2 at the moment of checking; it is a setting rather than a completion, so present it as a reminder rather than a tick.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/item/30622?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/30637?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/17657?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/17585?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10106?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265830?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265842?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Heroic_mode",
+     "https://warcraft.wiki.gg/wiki/Logistics_Officer_Ulrike",
+     "https://warcraft.wiki.gg/wiki/Hellfire_Fortifications",
+     "https://warcraft.wiki.gg/wiki/Communal_Flamewrought_Key",
+     "https://warcraft.wiki.gg/wiki/Communal_Flamewrought_Pouch",
+     "https://warcraft.wiki.gg/wiki/Patch_2.3.0",
+     "https://news.blizzard.com/en-us/article/24310652/burning-crusade-classic-anniversary-the-gods-of-zul-aman-now-live",
+     "https://worldofwarcraft.blizzard.com/en-us/news/23783585/burning-crusade-classic-zulaman-is-now-open",
+     "https://warcrafttavern.com/tbc/news/heroic-keys-require-honored-reputation-in-phase-4-tbc-classic",
+     "https://www.warcrafttavern.com/tbc/news/the-burning-crusade-arrives-on-the-ptr-this-week-for-wow-classic-anniversary-edition/",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite (creature, quest_template, creature_questrelation, npc_vendor, item_template)",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/UiMapAssignment.csv",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_Factions/data-tbc.lua"
+    ],
+    "notes": "Marks of Honor Hold and Marks of Thrallmar are PvP tokens from the Fortifications daily and kills near the towers; they are not a repeatable reputation hand in, so the route relies on dungeons and quests. The Shattered Halls Key (item 28395) belongs to the dungeon attunement researcher. Coordinates are map percentages computed from the world DB spawn through the client's UiMapAssignment boxes; they match the wiki where the wiki lists numbers."
+   },
+   {
+    "key": "HEROIC_COILFANG",
+    "title": "Heroic Coilfang Reservoir: the Reservoir Key",
+    "category": "HEROIC",
+    "faction": "BOTH",
+    "summary": "Heroic Slave Pens, Underbog and Steamvault open with the Reservoir Key, sold by Fedryen Swiftspear at Cenarion Refuge once your Cenarion Expedition standing is high enough. Zangarmarsh quests, the Coilfang dungeons and two repeatable hand ins (Unidentified Plant Parts and Coilfang Armaments) feed the faction. On Anniversary realms a Revered main can buy a Communal pouch whose account bound key covers alts at Friendly.",
+    "unlocks": "Heroic difficulty for The Slave Pens, The Underbog and The Steamvault, plus their heroic daily quests.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Key required throughout TBC. Revered from launch; Honored from the Zul'Aman update (original 2.3, TBC Classic Phase 4 on 22 March 2022, Anniversary on 22 October 2026, phase 4 in this numbering)."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_70",
+      "title": "Reach level 70",
+      "kind": "LEVEL",
+      "level": 70,
+      "detail": "Heroics admit level 70 characters only. Quest through Zangarmarsh (Cenarion Refuge, Telredor or Zabra'jin, Orebor Harborage or Swamprat Post) at 60 to 64 and keep every Unidentified Plant Parts you loot from the zone's mobs; the Cenarion Expedition reputation and the plant parts both count towards the key later.",
+      "detectedBy": "UnitLevel(\"player\") >= 70.",
+      "optional": false
+     },
+     {
+      "key": "plants_of_zangarmarsh",
+      "title": "Hand in your first ten Unidentified Plant Parts",
+      "kind": "QUEST",
+      "questId": 9802,
+      "questName": "Plants of Zangarmarsh",
+      "giver": {
+       "npcId": 17909,
+       "name": "Lauranna Thar'well",
+       "zone": "Zangarmarsh (Cenarion Refuge)",
+       "x": 80.3,
+       "y": 64.2
+      },
+      "turnIn": {
+       "npcId": 17909,
+       "name": "Lauranna Thar'well",
+       "zone": "Zangarmarsh (Cenarion Refuge)",
+       "x": 80.3,
+       "y": 64.2
+      },
+      "itemId": 24401,
+      "itemName": "Unidentified Plant Parts",
+      "count": 10,
+      "detail": "Bring ten Unidentified Plant Parts (item 24401, dropped by most Zangarmarsh creatures and cheap on the auction house) to Lauranna Thar'well at Cenarion Refuge for 250 reputation and a Package of Identified Plants (item 24402). This unlocks the repeatable Identify Plant Parts (quest 9784), ten parts for 250 reputation each time, which the wiki records as available until Honored. Each package can contain an Uncatalogued Species (item 24407) that starts its own hand in (quest 9875, 500 reputation) and still works after Honored. A stack of 360 parts is roughly Neutral to Honored on its own.",
+      "detectedBy": "IsQuestFlaggedCompleted(9802). The repeatable 9784 and 9875 do not keep a completed flag.",
+      "optional": true
+     },
+     {
+      "key": "orders_from_lady_vashj",
+      "title": "Deliver Orders from Lady Vashj",
+      "kind": "QUEST",
+      "questId": 9764,
+      "questName": "Orders from Lady Vashj",
+      "giver": {
+       "name": "Started by the item Orders from Lady Vashj (24367), dropped by naga in The Steamvault",
+       "zone": "Coilfang Reservoir: The Steamvault"
+      },
+      "turnIn": {
+       "npcId": 17841,
+       "name": "Ysiel Windsinger",
+       "zone": "Zangarmarsh (Cenarion Refuge)",
+       "x": 78.4,
+       "y": 62
+      },
+      "instance": {
+       "name": "The Steamvault",
+       "instanceMapId": 545,
+       "heroic": false,
+       "boss": null,
+       "npcIds": []
+      },
+      "detail": "The Orders from Lady Vashj (item 24367, level 67) drop from the naga in The Steamvault: Coilfang Myrmidons, Engineers, Sirens, Sorceresses, Warriors, Oracles and Slavemasters. Right click the orders and deliver them to Ysiel Windsinger on the back porch of the Cenarion Refuge inn for 500 reputation. Ysiel then offers Preparing for War (quest 9765, one Coilfang Armament for 250 reputation), which opens the repeatable Coilfang Armaments (quest 9766), 75 reputation per armament (item 24368) all the way to Exalted.",
+      "detectedBy": "IsQuestFlaggedCompleted(9764).",
+      "optional": true
+     },
+     {
+      "key": "preparing_for_war",
+      "title": "Hand in your first Coilfang Armament",
+      "kind": "QUEST",
+      "questId": 9765,
+      "questName": "Preparing for War",
+      "giver": {
+       "npcId": 17841,
+       "name": "Ysiel Windsinger",
+       "zone": "Zangarmarsh (Cenarion Refuge)",
+       "x": 78.4,
+       "y": 62
+      },
+      "turnIn": {
+       "npcId": 17841,
+       "name": "Ysiel Windsinger",
+       "zone": "Zangarmarsh (Cenarion Refuge)",
+       "x": 78.4,
+       "y": 62
+      },
+      "itemId": 24368,
+      "itemName": "Coilfang Armaments",
+      "count": 1,
+      "detail": "Coilfang Armaments (item 24368) drop from the naga throughout Coilfang Reservoir, mostly in The Steamvault, and trade freely so they can be bought. One armament completes Preparing for War for 250 reputation and unlocks the repeatable Coilfang Armaments (quest 9766) at 75 reputation each, which keeps paying through Exalted and is the usual filler between Steamvault runs. Keep every armament you loot from now on.",
+      "detectedBy": "IsQuestFlaggedCompleted(9765).",
+      "optional": true
+     },
+     {
+      "key": "rep_revered",
+      "title": "Reach Revered with the Cenarion Expedition",
+      "kind": "REP",
+      "factionId": 942,
+      "standing": 7,
+      "phases": {
+       "from": 1,
+       "to": 3
+      },
+      "detail": "Before the Zul'Aman phase the key needs Revered, 21000 points past Neutral. The Slave Pens (map 547) and The Underbog (546) pay reputation on normal only until Honored; The Steamvault (545, level 70) keeps paying on normal to Exalted at roughly 1100 to 1660 a full clear and is the main grind. Zangarmarsh quests give a few thousand, and Cenarion Expedition quests also appear at Cenarion Post in Hellfire, Cenarion Thicket in Terokkar and Evergrove in Blade's Edge. Repeatables: Identify Plant Parts (250 per ten parts, to Honored), Uncatalogued Species (500 each, any standing) and Coilfang Armaments (75 each, to Exalted). Nether-Stalker Mah'duun's normal Steamvault daily Wanted: Coilfang Myrmidons pays 250, and Wind Trader Zhareem's heroic dailies pay 350 once you hold the key.",
+      "detectedBy": "select(3, GetFactionInfoByID(942)) >= 7.",
+      "optional": false
+     },
+     {
+      "key": "rep_honored",
+      "title": "Reach Honored with the Cenarion Expedition",
+      "kind": "REP",
+      "factionId": 942,
+      "standing": 6,
+      "phases": {
+       "from": 4,
+       "to": null
+      },
+      "detail": "From the Zul'Aman phase the key is sold at Honored, 9000 points past Neutral. Zangarmarsh quests plus Slave Pens (map 547) and Underbog (546) runs reach it, and those two dungeons stop paying at exactly Honored. Identify Plant Parts (250 per ten Unidentified Plant Parts) is the quickest filler, since parts are cheap and the quest is available precisely until Honored. The Steamvault (545), Coilfang Armaments (75 each) and Mah'duun's Wanted: Coilfang Myrmidons daily (250) also count.",
+      "detectedBy": "select(3, GetFactionInfoByID(942)) >= 6.",
+      "optional": false
+     },
+     {
+      "key": "buy_key",
+      "title": "Buy the Reservoir Key",
+      "kind": "ITEM",
+      "itemId": 30623,
+      "itemName": "Reservoir Key",
+      "count": 1,
+      "giver": {
+       "npcId": 17904,
+       "name": "Fedryen Swiftspear",
+       "zone": "Zangarmarsh (Cenarion Refuge)",
+       "x": 79.3,
+       "y": 63.7
+      },
+      "detail": "Fedryen Swiftspear, the Cenarion Expedition quartermaster at Cenarion Refuge, sells the Reservoir Key for 10 gold. It binds when picked up, is unique and sits in your keyring; holding it is the attunement for all three Coilfang heroics. The sale is gated on your standing, Revered before phase 4 and Honored from phase 4.",
+      "detectedBy": "GetItemCount(30623) > 0.",
+      "optional": false
+     },
+     {
+      "key": "communal_key",
+      "title": "Alts: hold a Communal Reservoir Key at Friendly",
+      "kind": "ITEM",
+      "itemId": 265843,
+      "itemName": "Communal Reservoir Key",
+      "count": 1,
+      "pouch": {
+       "itemId": 265844,
+       "name": "Communal Reservoir Pouch",
+       "cost": "80 gold",
+       "requires": "Revered"
+      },
+      "giver": {
+       "npcId": 17904,
+       "name": "Fedryen Swiftspear",
+       "zone": "Zangarmarsh (Cenarion Refuge)",
+       "x": 79.3,
+       "y": 63.7
+      },
+      "phases": {
+       "from": 1,
+       "to": null
+      },
+      "detail": "Anniversary realms only. Once a character on the account is Revered, Fedryen also sells the Communal Reservoir Pouch (item 265844) for 80 gold; opening it yields a Communal Reservoir Key (item 265843) that binds to your Battle.net account and can be mailed between your characters. An alt needs only Friendly with the Cenarion Expedition to hold it and enter Coilfang heroics. It is an item, not an account flag, so it must sit in the alt's keyring. Whether the pouch's purchase requirement also dropped to Honored on 22 October 2026 is not confirmed.",
+      "detectedBy": "GetItemCount(265843) > 0 and select(3, GetFactionInfoByID(942)) >= 5.",
+      "optional": true
+     },
+     {
+      "key": "set_heroic",
+      "title": "Set the dungeon difficulty to Heroic",
+      "kind": "MANUAL",
+      "detail": "Before anyone zones in, the party leader right clicks their own portrait, opens Dungeon Difficulty and chooses Heroic, or runs /run SetDungeonDifficultyID(2). The difficulty is taken from the leader, but every member who enters needs the key in their own keyring. Heroics require level 70, lock you to one run per dungeon per day and award a Badge of Justice from each boss. Since 22 October 2026 Anniversary heroics run at their final, reduced 2.4.3 difficulty.",
+      "detectedBy": "GetDungeonDifficultyID() == 2 at the moment of checking; a setting, not a completion.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/item/30623?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/17904?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/9802?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/9784?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/9764?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/9765?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/9766?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/9875?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/24401?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/24368?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265843?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265844?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Cenarion_Expedition",
+     "https://warcraft.wiki.gg/wiki/Identify_Plant_Parts",
+     "https://warcraft.wiki.gg/wiki/Orders_from_Lady_Vashj_(quest)",
+     "https://warcraft.wiki.gg/wiki/Coilfang_Armaments_(quest)",
+     "https://warcraft.wiki.gg/wiki/Communal_Reservoir_Pouch",
+     "https://warcraft.wiki.gg/wiki/Communal_Reservoir_Key",
+     "https://warcraft.wiki.gg/wiki/Fedryen_Swiftspear",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite"
+    ],
+    "notes": "The repeatable quests 9784, 9766 and 9875 carry SpecialFlags 1 in the world DB and do not keep a completed flag; their standing caps (Identify Plant Parts until Honored) come from the wiki, the DB rows themselves show RewMaxRepValue 42999."
+   },
+   {
+    "key": "HEROIC_AUCHINDOUN",
+    "title": "Heroic Auchindoun: the Auchenai Key",
+    "category": "HEROIC",
+    "faction": "BOTH",
+    "summary": "Heroic Mana-Tombs, Auchenai Crypts, Sethekk Halls and Shadow Labyrinth open with the Auchenai Key, sold by Nakodu in Shattrath's Lower City once your Lower City standing is high enough. Terokkar Forest and Lower City quests, the Auchindoun dungeons and the repeatable Arakkoa Feather hand in feed the faction; Mana-Tombs pays the Consortium instead. On Anniversary realms a Revered main can buy a Communal pouch whose account bound key covers alts at Friendly.",
+    "unlocks": "Heroic difficulty for Mana-Tombs, Auchenai Crypts, Sethekk Halls and Shadow Labyrinth, plus their heroic daily quests.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Key required throughout TBC. Revered from launch; Honored from the Zul'Aman update (original 2.3, TBC Classic Phase 4 on 22 March 2022, Anniversary on 22 October 2026, phase 4 in this numbering)."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_70",
+      "title": "Reach level 70",
+      "kind": "LEVEL",
+      "level": 70,
+      "detail": "Heroics admit level 70 characters only. Quest through Terokkar Forest and Shattrath's Lower City at 62 to 65 and keep every Arakkoa Feather you loot from the arakkoa camps; both the quest reputation and the feathers count towards the key.",
+      "detectedBy": "UnitLevel(\"player\") >= 70.",
+      "optional": false
+     },
+     {
+      "key": "outcasts_plight",
+      "title": "Hand in thirty Arakkoa Feathers to Vekax",
+      "kind": "QUEST",
+      "questId": 10917,
+      "questName": "The Outcast's Plight",
+      "giver": {
+       "npcId": 22429,
+       "name": "Vekax",
+       "zone": "Shattrath City (Lower City)",
+       "x": 46.2,
+       "y": 22.4
+      },
+      "turnIn": {
+       "npcId": 22429,
+       "name": "Vekax",
+       "zone": "Shattrath City (Lower City)",
+       "x": 46.2,
+       "y": 22.4
+      },
+      "itemId": 25719,
+      "itemName": "Arakkoa Feather",
+      "count": 30,
+      "detail": "Arakkoa Feathers (item 25719) drop from the arakkoa of Terokkar Forest (Veil Shienor, Veil Skith, Veil Reskk, Veil Rhaze and the Skettis outskirts) and trade freely. Thirty of them to Vekax, the arakkoa outcast in Lower City, complete The Outcast's Plight for 250 reputation, 3 gold 30 silver and an Outcast's Cache (item 31800). That unlocks the repeatable More Feathers (quest 10918), another 250 reputation per thirty feathers, which the wiki records as available until Honored; the cache holds a random green, blue or occasionally better item. Roughly 1080 feathers take a fresh character to Honored with no dungeons at all.",
+      "detectedBy": "IsQuestFlaggedCompleted(10917). The repeatable 10918 keeps no flag.",
+      "optional": true
+     },
+     {
+      "key": "rep_revered",
+      "title": "Reach Revered with Lower City",
+      "kind": "REP",
+      "factionId": 1011,
+      "standing": 7,
+      "phases": {
+       "from": 1,
+       "to": 3
+      },
+      "detail": "Before the Zul'Aman phase the key needs Revered, 21000 points past Neutral. Auchenai Crypts (map 558) and Sethekk Halls (556) pay on normal to Honored (since patch 2.3 Sethekk mobs keep paying into Exalted, and Anniversary now runs the final dungeon rules); Shadow Labyrinth (555, level 70, its door needs the Shadow Labyrinth Key from Talon King Ikiss or a rogue) pays on normal to Exalted and is the main grind. Mana-Tombs (557) pays the Consortium on both difficulties, not Lower City, although the Auchenai Key still opens its heroic. Terokkar and Lower City quests total about 8200 reputation, More Feathers adds 250 per thirty feathers, Nether-Stalker Mah'duun's normal daily Wanted: Malicious Instructors (Shadow Labyrinth) pays 250, and Wind Trader Zhareem's heroic dailies pay 350 once you hold the key.",
+      "detectedBy": "select(3, GetFactionInfoByID(1011)) >= 7.",
+      "optional": false
+     },
+     {
+      "key": "rep_honored",
+      "title": "Reach Honored with Lower City",
+      "kind": "REP",
+      "factionId": 1011,
+      "standing": 6,
+      "phases": {
+       "from": 4,
+       "to": null
+      },
+      "detail": "From the Zul'Aman phase Nakodu sells the key at Honored, 9000 points past Neutral. Terokkar Forest and Lower City quests plus a few Auchenai Crypts (map 558) and Sethekk Halls (556) runs reach it, and feathers fill any gap: The Outcast's Plight then More Feathers pay 250 per thirty Arakkoa Feathers until Honored. Shadow Labyrinth (555) and Mah'duun's Wanted: Malicious Instructors daily (250) also count. Mana-Tombs pays the Consortium, so it does not help here.",
+      "detectedBy": "select(3, GetFactionInfoByID(1011)) >= 6.",
+      "optional": false
+     },
+     {
+      "key": "buy_key",
+      "title": "Buy the Auchenai Key",
+      "kind": "ITEM",
+      "itemId": 30633,
+      "itemName": "Auchenai Key",
+      "count": 1,
+      "giver": {
+       "npcId": 21655,
+       "name": "Nakodu",
+       "zone": "Shattrath City (Lower City)",
+       "x": 62,
+       "y": 68.8
+      },
+      "detail": "Nakodu, the Lower City quartermaster in the Lower City market of Shattrath, sells the Auchenai Key for 10 gold. It binds when picked up, is unique and sits in your keyring; holding it is the attunement for all four Auchindoun heroics, Mana-Tombs included. The sale is gated on your standing, Revered before phase 4 and Honored from phase 4.",
+      "detectedBy": "GetItemCount(30633) > 0.",
+      "optional": false
+     },
+     {
+      "key": "communal_key",
+      "title": "Alts: hold a Communal Auchenai Key at Friendly",
+      "kind": "ITEM",
+      "itemId": 265845,
+      "itemName": "Communal Auchenai Key",
+      "count": 1,
+      "pouch": {
+       "itemId": 265846,
+       "name": "Communal Auchenai Pouch",
+       "cost": "80 gold",
+       "requires": "Revered"
+      },
+      "giver": {
+       "npcId": 21655,
+       "name": "Nakodu",
+       "zone": "Shattrath City (Lower City)",
+       "x": 62,
+       "y": 68.8
+      },
+      "phases": {
+       "from": 1,
+       "to": null
+      },
+      "detail": "Anniversary realms only. Once a character on the account is Revered, Nakodu also sells the Communal Auchenai Pouch (item 265846) for 80 gold; opening it yields a Communal Auchenai Key (item 265845) that binds to your Battle.net account and can be mailed between your characters. An alt needs only Friendly with Lower City to hold it and enter Auchindoun heroics. It is an item, not an account flag, so it must sit in the alt's keyring. Whether the pouch's purchase requirement also dropped to Honored on 22 October 2026 is not confirmed.",
+      "detectedBy": "GetItemCount(265845) > 0 and select(3, GetFactionInfoByID(1011)) >= 5.",
+      "optional": true
+     },
+     {
+      "key": "set_heroic",
+      "title": "Set the dungeon difficulty to Heroic",
+      "kind": "MANUAL",
+      "detail": "Before anyone zones in, the party leader right clicks their own portrait, opens Dungeon Difficulty and chooses Heroic, or runs /run SetDungeonDifficultyID(2). The difficulty is taken from the leader, but every member who enters needs the key in their own keyring. Heroics require level 70, lock you to one run per dungeon per day and award a Badge of Justice from each boss. Since 22 October 2026 Anniversary heroics run at their final, reduced 2.4.3 difficulty.",
+      "detectedBy": "GetDungeonDifficultyID() == 2 at the moment of checking; a setting, not a completion.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/item/30633?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/21655?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22429?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10917?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10918?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/25719?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31800?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265845?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265846?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Lower_City",
+     "https://warcraft.wiki.gg/wiki/Nakodu",
+     "https://warcraft.wiki.gg/wiki/Vekax",
+     "https://warcraft.wiki.gg/wiki/The_Outcast%27s_Plight",
+     "https://warcraft.wiki.gg/wiki/Arakkoa_Feather",
+     "https://warcraft.wiki.gg/wiki/Communal_Auchenai_Key",
+     "https://warcraft.wiki.gg/wiki/Communal_Auchenai_Pouch",
+     "https://warcraft.wiki.gg/wiki/Patch_2.3.0",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite"
+    ],
+    "notes": "The Shadow Labyrinth Key belongs to the dungeon attunement researcher. Lower City has no faction dailies of its own; the only dailies paying Lower City are the Shattrath dungeon dailies (Mah'duun normal 250, Zhareem heroic 350)."
+   },
+   {
+    "key": "HEROIC_TEMPEST_KEEP",
+    "title": "Heroic Tempest Keep: the Warpforged Key",
+    "category": "HEROIC",
+    "faction": "BOTH",
+    "summary": "Heroic Mechanar, Botanica and Arcatraz open with the Warpforged Key, sold by Almaador on Shattrath's Terrace of Light once your standing with The Sha'tar is high enough. The Tempest Keep dungeons are the main source, while every Aldor or Scryers quest spills half its reputation into The Sha'tar until Friendly is full. On Anniversary realms a Revered main can buy a Communal pouch whose account bound key covers alts at Friendly.",
+    "unlocks": "Heroic difficulty for The Mechanar, The Botanica and The Arcatraz, plus their heroic daily quests.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Key required throughout TBC. Revered from launch; Honored from the Zul'Aman update (original 2.3, TBC Classic Phase 4 on 22 March 2022, Anniversary on 22 October 2026, phase 4 in this numbering)."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_70",
+      "title": "Reach level 70",
+      "kind": "LEVEL",
+      "level": 70,
+      "detail": "Heroics admit level 70 characters only, and the Tempest Keep dungeons are 67 to 70 content. Pick Aldor or Scryers when you reach Shattrath and quest for them through Nagrand, Shadowmoon Valley and Netherstorm; every one of those quests also pays half its reputation to The Sha'tar until you are at the top of Friendly.",
+      "detectedBy": "UnitLevel(\"player\") >= 70.",
+      "optional": false
+     },
+     {
+      "key": "rep_revered",
+      "title": "Reach Revered with The Sha'tar",
+      "kind": "REP",
+      "factionId": 935,
+      "standing": 7,
+      "phases": {
+       "from": 1,
+       "to": 3
+      },
+      "detail": "Before the Zul'Aman phase the key needs Revered, 21000 points past Neutral. The Mechanar (map 554) and The Botanica (553) pay on normal until Honored (about 1600 and 2200 a full clear); The Arcatraz (552, level 70, needs the Key to the Arcatraz or a rogue) pays on normal to Exalted (about 1800 a clear) and is the main grind, with heroics paying about 2100, 3250 and 2600 once you hold the key. Aldor and Scryers hand ins (Marks of Sargeras or Firewing Signets, Fel Armaments or Arcane Tomes) spill half their reputation into The Sha'tar but only until 5999 into Friendly, so they get you to the doorstep of Honored and no further. Shattrath's own Sha'tar quests (the Arcatraz key chain How to Break Into the Arcatraz, Harbinger of Doom, Special Delivery to Shattrath City, the four Trial of the Naaru quests) add about 5000. Nether-Stalker Mah'duun's normal dailies Wanted: Sunseeker Channelers, Tempest-Forge Destroyers and Arcatraz Sentinels pay 250 each, and Wind Trader Zhareem's heroic dailies 350.",
+      "detectedBy": "select(3, GetFactionInfoByID(935)) >= 7.",
+      "optional": false
+     },
+     {
+      "key": "rep_honored",
+      "title": "Reach Honored with The Sha'tar",
+      "kind": "REP",
+      "factionId": 935,
+      "standing": 6,
+      "phases": {
+       "from": 4,
+       "to": null
+      },
+      "detail": "From the Zul'Aman phase Almaador sells the key at Honored, 9000 points past Neutral. The Aldor or Scryers spillover carries you to the end of Friendly on its own, so one or two Mechanar (map 554) or Botanica (553) clears, which pay until exactly Honored, finish the job. The Arcatraz (552), the Shattrath Sha'tar quests and Mah'duun's Tempest Keep dailies (250) also count.",
+      "detectedBy": "select(3, GetFactionInfoByID(935)) >= 6.",
+      "optional": false
+     },
+     {
+      "key": "buy_key",
+      "title": "Buy the Warpforged Key",
+      "kind": "ITEM",
+      "itemId": 30634,
+      "itemName": "Warpforged Key",
+      "count": 1,
+      "giver": {
+       "npcId": 21432,
+       "name": "Almaador",
+       "zone": "Shattrath City (Terrace of Light)",
+       "x": 51,
+       "y": 41.7
+      },
+      "detail": "Almaador, the Sha'tari quartermaster under the central dome of Shattrath, sells the Warpforged Key for 10 gold. It binds when picked up, is unique and sits in your keyring; holding it is the attunement for all three Tempest Keep heroics. The sale is gated on your standing, Revered before phase 4 and Honored from phase 4.",
+      "detectedBy": "GetItemCount(30634) > 0.",
+      "optional": false
+     },
+     {
+      "key": "communal_key",
+      "title": "Alts: hold a Communal Warpforged Key at Friendly",
+      "kind": "ITEM",
+      "itemId": 265847,
+      "itemName": "Communal Warpforged Key",
+      "count": 1,
+      "pouch": {
+       "itemId": 265848,
+       "name": "Communal Warpforged Pouch",
+       "cost": "80 gold",
+       "requires": "Revered"
+      },
+      "giver": {
+       "npcId": 21432,
+       "name": "Almaador",
+       "zone": "Shattrath City (Terrace of Light)",
+       "x": 51,
+       "y": 41.7
+      },
+      "phases": {
+       "from": 1,
+       "to": null
+      },
+      "detail": "Anniversary realms only. Once a character on the account is Revered, Almaador also sells the Communal Warpforged Pouch (item 265848) for 80 gold; opening it yields a Communal Warpforged Key (item 265847) that binds to your Battle.net account and can be mailed between your characters. An alt needs only Friendly with The Sha'tar, which the Aldor or Scryers spillover reaches quickly, to hold it and enter Tempest Keep heroics. It is an item, not an account flag, so it must sit in the alt's keyring. Whether the pouch's purchase requirement also dropped to Honored on 22 October 2026 is not confirmed.",
+      "detectedBy": "GetItemCount(265847) > 0 and select(3, GetFactionInfoByID(935)) >= 5.",
+      "optional": true
+     },
+     {
+      "key": "set_heroic",
+      "title": "Set the dungeon difficulty to Heroic",
+      "kind": "MANUAL",
+      "detail": "Before anyone zones in, the party leader right clicks their own portrait, opens Dungeon Difficulty and chooses Heroic, or runs /run SetDungeonDifficultyID(2). The difficulty is taken from the leader, but every member who enters needs the key in their own keyring. Heroics require level 70, lock you to one run per dungeon per day and award a Badge of Justice from each boss. Since 22 October 2026 Anniversary heroics run at their final, reduced 2.4.3 difficulty.",
+      "detectedBy": "GetDungeonDifficultyID() == 2 at the moment of checking; a setting, not a completion.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/item/30634?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/21432?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11385?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265847?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265848?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/The_Sha%27tar",
+     "https://warcraft.wiki.gg/wiki/Almaador",
+     "https://warcraft.wiki.gg/wiki/Communal_Warpforged_Pouch",
+     "https://warcraft.wiki.gg/wiki/Communal_Warpforged_Key",
+     "https://warcraft.wiki.gg/wiki/Nether-Stalker_Mah%27duun",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_Factions/data-tbc.lua"
+    ],
+    "notes": "The Key to the Arcatraz chain and the Trial of the Naaru quests belong to the dungeon and raid attunement researchers; they are mentioned only as Sha'tar reputation. Per clear reputation figures are the wiki's estimates."
+   },
+   {
+    "key": "HEROIC_CAVERNS_OF_TIME",
+    "title": "Heroic Caverns of Time: the Key of Time",
+    "category": "HEROIC",
+    "faction": "BOTH",
+    "summary": "Heroic Old Hillsbrad Foothills and The Black Morass open with the Key of Time, sold by Alurmi inside the Caverns of Time once your Keepers of Time standing is high enough. Almost all of that reputation comes from the two dungeons and their quest chain, which also gates entry to each of them. On Anniversary realms a Revered main can buy a Communal pouch whose account bound key covers alts at Friendly.",
+    "unlocks": "Heroic difficulty for Old Hillsbrad Foothills (Escape from Durnholde Keep) and The Black Morass, plus their heroic daily quests.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Key required throughout TBC. Revered from launch; Honored from the Zul'Aman update (original 2.3, TBC Classic Phase 4 on 22 March 2022, Anniversary on 22 October 2026, phase 4 in this numbering)."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_70",
+      "title": "Reach level 70",
+      "kind": "LEVEL",
+      "level": 70,
+      "detail": "Heroics admit level 70 characters only. The Caverns of Time chain opens at 66, so most characters do Old Hillsbrad while levelling and the Black Morass at 70; both pay Keepers of Time reputation that counts towards the key.",
+      "detectedBy": "UnitLevel(\"player\") >= 70.",
+      "optional": false
+     },
+     {
+      "key": "caverns_of_time",
+      "title": "Take the Custodian's tour of the Caverns",
+      "kind": "QUEST",
+      "questId": 10277,
+      "questName": "The Caverns of Time",
+      "giver": {
+       "npcId": 20130,
+       "name": "Andormu (child)",
+       "zone": "Tanaris (Caverns of Time)",
+       "x": 58.4,
+       "y": 54.3
+      },
+      "turnIn": {
+       "npcId": 20130,
+       "name": "Andormu (child)",
+       "zone": "Tanaris (Caverns of Time)",
+       "x": 58.4,
+       "y": 54.3
+      },
+      "detail": "At the cavern mouth in eastern Tanaris the Steward of Time (npc 20142, 66.0, 49.7) offers To The Master's Lair (quest 10279), which sends you down to the child Andormu at the bottom of the spiral. Andormu then gives The Caverns of Time (quest 10277): follow the Custodian of Time on a slow circuit of the cavern while it explains each portal, then speak to Andormu again for 250 reputation. Completing this tour is what lets you enter Old Hillsbrad Foothills, so do it before you queue for the dungeon.",
+      "detectedBy": "IsQuestFlaggedCompleted(10277).",
+      "optional": false
+     },
+     {
+      "key": "return_to_andormu",
+      "title": "Finish the Old Hillsbrad chain",
+      "kind": "QUEST",
+      "questId": 10285,
+      "questName": "Return to Andormu",
+      "giver": {
+       "npcId": 18723,
+       "name": "Erozion",
+       "zone": "Old Hillsbrad Foothills (inside the instance)"
+      },
+      "turnIn": {
+       "npcId": 20130,
+       "name": "Andormu (child)",
+       "zone": "Tanaris (Caverns of Time)",
+       "x": 58.4,
+       "y": 54.3
+      },
+      "instance": {
+       "name": "Old Hillsbrad Foothills",
+       "instanceMapId": 560,
+       "heroic": false,
+       "boss": "Epoch Hunter",
+       "npcIds": []
+      },
+      "detail": "Andormu's Old Hillsbrad (quest 10282) sends you to Erozion just inside the Escape from Durnholde Keep instance (map 560). Erozion gives Taretha's Diversion (10283, plant five incendiary charges in the internment lodges) and then Escape from Durnholde (10284, escort Thrall out of the keep, through Tarren Mill and kill the Epoch Hunter). Hand in to Erozion, then take Return to Andormu back to the Caverns for 3000 reputation and a choice of rings. A full normal clear pays about 1045 reputation (1199 if you clear Durnholde and Tarren Mill before starting the event); finishing this chain is also what lets you enter The Black Morass.",
+      "detectedBy": "IsQuestFlaggedCompleted(10285).",
+      "optional": false
+     },
+     {
+      "key": "hero_of_the_brood",
+      "title": "Defend Medivh in the Black Morass",
+      "kind": "QUEST",
+      "questId": 10298,
+      "questName": "Hero of the Brood",
+      "giver": {
+       "npcId": 20201,
+       "name": "Sa'at",
+       "zone": "The Black Morass (inside the instance)"
+      },
+      "turnIn": {
+       "npcId": 20130,
+       "name": "Andormu (child)",
+       "zone": "Tanaris (Caverns of Time)",
+       "x": 58.4,
+       "y": 54.3
+      },
+      "instance": {
+       "name": "The Black Morass",
+       "instanceMapId": 269,
+       "heroic": false,
+       "boss": "Aeonus",
+       "npcIds": []
+      },
+      "detail": "The adult Andormu (npc 19932, 57.6, 59.0) gives The Black Morass (quest 10296, 250 reputation) which sends you to Sa'at inside the Opening of the Dark Portal instance (map 269). Sa'at's The Opening of the Dark Portal (10297) is the whole dungeon: close eighteen time rifts, keep Medivh alive and kill Chrono Lord Deja, Temporus and Aeonus. Return to the child Andormu for Hero of the Brood, worth 8000 reputation, by far the largest single chunk towards the key, plus a choice of items. A full Black Morass clear pays about 1110 on normal and keeps paying to Exalted.",
+      "detectedBy": "IsQuestFlaggedCompleted(10298).",
+      "optional": true
+     },
+     {
+      "key": "rep_revered",
+      "title": "Reach Revered with the Keepers of Time",
+      "kind": "REP",
+      "factionId": 989,
+      "standing": 7,
+      "phases": {
+       "from": 1,
+       "to": 3
+      },
+      "detail": "Before the Zul'Aman phase the key needs Revered, 21000 points past Neutral. The quest chain alone pays over 11500 (250 tour, 3000 Return to Andormu, 250 The Black Morass, 8000 Hero of the Brood), which is Honored already. Old Hillsbrad Foothills (map 560) pays on normal until Honored at about 1045 a clear; The Black Morass (269) pays on normal to Exalted at about 1110 a clear and is the grind to Revered, with heroics paying about 2300 and 1725 once you hold the key. Nether-Stalker Mah'duun's normal daily Wanted: Rift Lords (Black Morass) pays 250 and Wind Trader Zhareem's heroic dailies (Epoch Hunter's Head, Aeonus's Hourglass) pay 350. Revered also lets Zephyr in Shattrath teleport you straight to the Caverns.",
+      "detectedBy": "select(3, GetFactionInfoByID(989)) >= 7.",
+      "optional": false
+     },
+     {
+      "key": "rep_honored",
+      "title": "Reach Honored with the Keepers of Time",
+      "kind": "REP",
+      "factionId": 989,
+      "standing": 6,
+      "phases": {
+       "from": 4,
+       "to": null
+      },
+      "detail": "From the Zul'Aman phase Alurmi sells the key at Honored, 9000 points past Neutral. Simply completing the chain, the Custodian's tour, the Old Hillsbrad escape with Return to Andormu and one Black Morass with Hero of the Brood, pays over 11500 and takes you past Honored in a single evening. If you stop short of the Black Morass, a couple of Old Hillsbrad clears (about 1045 each, paying until Honored) finish it.",
+      "detectedBy": "select(3, GetFactionInfoByID(989)) >= 6.",
+      "optional": false
+     },
+     {
+      "key": "buy_key",
+      "title": "Buy the Key of Time",
+      "kind": "ITEM",
+      "itemId": 30635,
+      "itemName": "Key of Time",
+      "count": 1,
+      "giver": {
+       "npcId": 21643,
+       "name": "Alurmi",
+       "zone": "Tanaris (inside the Caverns of Time)",
+       "x": 63.6,
+       "y": 57.6
+      },
+      "detail": "Alurmi, the Keepers of Time quartermaster, stands inside the Caverns of Time near the Old Hillsbrad passage and sells the Key of Time for 10 gold. It binds when picked up, is unique and sits in your keyring; holding it is the attunement for both Caverns of Time heroics. The sale is gated on your standing, Revered before phase 4 and Honored from phase 4. The Caverns have no map of their own on this client, so the coordinates are on the Tanaris map.",
+      "detectedBy": "GetItemCount(30635) > 0.",
+      "optional": false
+     },
+     {
+      "key": "communal_key",
+      "title": "Alts: hold a Communal Key of Time at Friendly",
+      "kind": "ITEM",
+      "itemId": 265849,
+      "itemName": "Communal Key of Time",
+      "count": 1,
+      "pouch": {
+       "itemId": 265850,
+       "name": "Communal Time Pouch",
+       "cost": "80 gold",
+       "requires": "Revered"
+      },
+      "giver": {
+       "npcId": 21643,
+       "name": "Alurmi",
+       "zone": "Tanaris (inside the Caverns of Time)",
+       "x": 63.6,
+       "y": 57.6
+      },
+      "phases": {
+       "from": 1,
+       "to": null
+      },
+      "detail": "Anniversary realms only. Once a character on the account is Revered, Alurmi also sells the Communal Time Pouch (item 265850) for 80 gold; opening it yields a Communal Key of Time (item 265849) that binds to your Battle.net account and can be mailed between your characters. An alt needs only Friendly with the Keepers of Time, which the Custodian's tour and the Old Hillsbrad chain give, to hold it and enter Caverns of Time heroics. It is an item, not an account flag, so it must sit in the alt's keyring. Whether the pouch's purchase requirement also dropped to Honored on 22 October 2026 is not confirmed.",
+      "detectedBy": "GetItemCount(265849) > 0 and select(3, GetFactionInfoByID(989)) >= 5.",
+      "optional": true
+     },
+     {
+      "key": "set_heroic",
+      "title": "Set the dungeon difficulty to Heroic",
+      "kind": "MANUAL",
+      "detail": "Before anyone zones in, the party leader right clicks their own portrait, opens Dungeon Difficulty and chooses Heroic, or runs /run SetDungeonDifficultyID(2). The difficulty is taken from the leader, but every member who enters needs the key in their own keyring. Heroics require level 70, lock you to one run per dungeon per day and award a Badge of Justice from each boss. Since 22 October 2026 Anniversary heroics run at their final, reduced 2.4.3 difficulty.",
+      "detectedBy": "GetDungeonDifficultyID() == 2 at the moment of checking; a setting, not a completion.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/item/30635?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/21643?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10277?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10279?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10282?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10285?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10296?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10298?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11378?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265849?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/265850?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Keepers_of_Time",
+     "https://warcraft.wiki.gg/wiki/Alurmi",
+     "https://warcraft.wiki.gg/wiki/Communal_Time_Pouch",
+     "https://warcraft.wiki.gg/wiki/Communal_Key_of_Time",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/Map.csv"
+    ],
+    "notes": "Quest reputation values (10 for the lead ins, 250, 3000, 8000) are the world DB's raw rewards. The entry gates (10277 for Old Hillsbrad, the escape chain for the Black Morass) are included because they are the only practical reputation source; if the dungeon attunement researcher emits CAVERNS_OF_TIME guides, point prerequisites at them instead."
+   },
+   {
+    "key": "HEROIC_MAGISTERS_TERRACE",
+    "title": "Heroic Magisters' Terrace: Hard to Kill",
+    "category": "HEROIC",
+    "faction": "BOTH",
+    "summary": "Magisters' Terrace on the Isle of Quel'Danas has no key. Heroic access is granted by finishing the Hard to Kill chain, which starts in Shattrath with the Aldor or the Scryers, runs through the Shattered Sun Staging Area and ends with Kael'thas Sunstrider's head from the normal dungeon. It arrives with the Sunwell phase and gives the only heroic in TBC whose attunement is a quest flag rather than an item.",
+    "unlocks": "Heroic difficulty for Magisters' Terrace, its heroic daily quest, and the chance at Kael'thas' heroic only drops (Phoenix Hatchling, Swift White Hawkstrider).",
+    "phase": {
+     "introduced": 5,
+     "requiredUntil": null,
+     "notes": "Original patch 2.4 (25 March 2008); TBC Classic Phase 5 (May 2022); Anniversary Phase 5 is listed as autumn 2026 with no date yet, so nothing in this guide exists on the live Anniversary realms today. The requirement was only lifted in Cataclysm 4.2."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "level_70",
+      "title": "Reach level 70",
+      "kind": "LEVEL",
+      "level": 70,
+      "phases": {
+       "from": 5,
+       "to": null
+      },
+      "detail": "Every quest in the chain requires level 70 and the dungeon is tuned for raid ready characters. Nothing else is needed to start: no reputation, no earlier attunement and no key.",
+      "detectedBy": "UnitLevel(\"player\") >= 70.",
+      "optional": false
+     },
+     {
+      "key": "sunwell_summons",
+      "title": "Answer the call to the Sunwell",
+      "kind": "QUEST",
+      "questId": 11481,
+      "altQuestIds": [
+       11482
+      ],
+      "questName": "Crisis at the Sunwell (Aldor) or Duty Calls (Scryers)",
+      "giver": {
+       "ALDOR": {
+        "npcId": 18537,
+        "name": "Adyen the Lightwarden",
+        "zone": "Shattrath City (Aldor Rise)",
+        "x": 30.7,
+        "y": 34.6
+       },
+       "SCRYERS": {
+        "npcId": 18594,
+        "name": "Dathris Sunstriker",
+        "zone": "Shattrath City (Scryer's Tier)",
+        "x": 54.6,
+        "y": 80.7
+       }
+      },
+      "turnIn": {
+       "npcId": 24813,
+       "name": "Exarch Larethor",
+       "zone": "Isle of Quel'Danas (Shattered Sun Staging Area)",
+       "x": 47.4,
+       "y": 30.7
+      },
+      "phases": {
+       "from": 5,
+       "to": null
+      },
+      "detail": "Take whichever version matches your Shattrath faction: Adyen the Lightwarden on the Aldor Rise offers Crisis at the Sunwell (quest 11481), Dathris Sunstriker outside the inn on the Scryer's Tier offers Duty Calls (11482). Both simply send you to Exarch Larethor at the Shattered Sun Staging Area on the Isle of Quel'Danas, reached by the portal in the middle of Shattrath or the flight from Silvermoon or Ironforge, and both pay 10 Shattered Sun Offensive reputation. Either one leads into the same chain.",
+      "detectedBy": "IsQuestFlaggedCompleted(11481) or IsQuestFlaggedCompleted(11482).",
+      "optional": false
+     },
+     {
+      "key": "find_tyrith",
+      "title": "Find Tyrith inside Magisters' Terrace",
+      "kind": "QUEST",
+      "questId": 11488,
+      "questName": "Magisters' Terrace",
+      "giver": {
+       "npcId": 24813,
+       "name": "Exarch Larethor",
+       "zone": "Isle of Quel'Danas (Shattered Sun Staging Area)",
+       "x": 47.4,
+       "y": 30.7
+      },
+      "turnIn": {
+       "npcId": 24822,
+       "name": "Tyrith",
+       "zone": "Magisters' Terrace (inside the instance)"
+      },
+      "instance": {
+       "name": "Magisters' Terrace",
+       "instanceMapId": 585,
+       "heroic": false,
+       "boss": null,
+       "npcIds": [
+        24822
+       ]
+      },
+      "phases": {
+       "from": 5,
+       "to": null
+      },
+      "detail": "Larethor asks you to search Magisters' Terrace for Tyrith, a blood elf spy. Enter the dungeon on normal difficulty (the entrance is on the north east of the Isle, at the far end of the Terrace from the staging area) and fight through to Tyrith, who waits inside past the first boss Selin Fireheart. Hand in to him for 250 reputation; he immediately offers the next step.",
+      "detectedBy": "IsQuestFlaggedCompleted(11488).",
+      "optional": false
+     },
+     {
+      "key": "scryers_scryer",
+      "title": "Use the Scrying Orb and speak with Kalecgos",
+      "kind": "QUEST",
+      "questId": 11490,
+      "questName": "The Scryer's Scryer",
+      "giver": {
+       "npcId": 24822,
+       "name": "Tyrith",
+       "zone": "Magisters' Terrace (inside the instance)"
+      },
+      "turnIn": {
+       "npcId": 24848,
+       "name": "Kalecgos",
+       "zone": "Magisters' Terrace (inside the instance, at the Scrying Orb)"
+      },
+      "instance": {
+       "name": "Magisters' Terrace",
+       "instanceMapId": 585,
+       "heroic": false,
+       "boss": null,
+       "npcIds": [
+        24848
+       ]
+      },
+      "phases": {
+       "from": 5,
+       "to": null
+      },
+      "detail": "Tyrith wants you to activate the Scrying Orb on the open balcony further into the dungeon, past Vexallus. Clear to the orb and use it; an image of Kalecgos appears in his half elven form and shows Kael'thas scheming at the top of the Terrace. Speak to Kalecgos to complete the quest for 250 reputation and take Hard to Kill from him before the image fades.",
+      "detectedBy": "IsQuestFlaggedCompleted(11490).",
+      "optional": false
+     },
+     {
+      "key": "hard_to_kill",
+      "title": "Kill Kael'thas and bring his head to Larethor",
+      "kind": "QUEST",
+      "questId": 11492,
+      "questName": "Hard to Kill",
+      "giver": {
+       "npcId": 24848,
+       "name": "Kalecgos",
+       "zone": "Magisters' Terrace (inside the instance)"
+      },
+      "turnIn": {
+       "npcId": 24813,
+       "name": "Exarch Larethor",
+       "zone": "Isle of Quel'Danas (Shattered Sun Staging Area)",
+       "x": 47.4,
+       "y": 30.7
+      },
+      "itemId": 34157,
+      "itemName": "Head of Kael'thas",
+      "count": 1,
+      "instance": {
+       "name": "Magisters' Terrace",
+       "instanceMapId": 585,
+       "heroic": false,
+       "boss": "Kael'thas Sunstrider",
+       "npcIds": [
+        24664
+       ]
+      },
+      "phases": {
+       "from": 5,
+       "to": null
+      },
+      "detail": "Kill Kael'thas Sunstrider (npc 24664) at the top of Magisters' Terrace on normal difficulty, after Priestess Delrissa's party, and loot the Head of Kael'thas (item 34157). Kael'thas casts Flame Strike, summons a Phoenix that must be killed and its egg destroyed, and at low health begins Gravity Lapse, lifting everyone into the air; swim away from his Arcane Spheres and keep damage going. Take the head back to Exarch Larethor at the Shattered Sun Staging Area for 250 reputation, 4 gold 40 silver and a choice of a Bright Crimson Spinel (35487) or a Runed Crimson Spinel (35488). Completing this quest is the heroic attunement itself; no key item exists.",
+      "detectedBy": "IsQuestFlaggedCompleted(11492). GetItemCount(34157) > 0 shows the head in hand before the hand in.",
+      "optional": false
+     },
+     {
+      "key": "set_heroic",
+      "title": "Set the dungeon difficulty to Heroic",
+      "kind": "MANUAL",
+      "phases": {
+       "from": 5,
+       "to": null
+      },
+      "detail": "With Hard to Kill complete, the party leader right clicks their portrait, opens Dungeon Difficulty and chooses Heroic, or runs /run SetDungeonDifficultyID(2). Every member must have completed Hard to Kill themselves; the flag is per character and is not account wide on Anniversary. Heroic Magisters' Terrace locks you to one run per day, awards a Badge of Justice per boss, and is the dungeon behind Wind Trader Zhareem's heroic daily Wanted: The Signet Ring of Prince Kael'thas (Nether-Stalker Mah'duun's normal daily Wanted: Sisters of Torment needs no attunement).",
+      "detectedBy": "GetDungeonDifficultyID() == 2 at the moment of checking; a setting, not a completion.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/11481?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11482?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11488?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11490?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11492?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/34157?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/35487?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24813?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24822?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24848?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/24664?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18537?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18594?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Hard_to_Kill",
+     "https://warcraft.wiki.gg/wiki/Heroic_mode",
+     "https://warcraft.wiki.gg/wiki/Crisis_at_the_Sunwell",
+     "https://warcraft.wiki.gg/wiki/Exarch_Larethor",
+     "https://warcraft.wiki.gg/wiki/Tyrith",
+     "https://warcraft.wiki.gg/wiki/Dathris_Sunstriker",
+     "https://warcraft.wiki.gg/wiki/Head_of_Kael%27thas",
+     "https://www.warcrafttavern.com/tbc/news/2026-roadmap-for-tbc-anniversary-shows-all-phases-this-year/",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/QuestieQuestBlacklist.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/questTagInfoCorrections.lua"
+    ],
+    "notes": "Chain order and NPC roles come from the world DB's creature_questrelation and creature_involvedrelation tables (11481 Adyen to Larethor, 11482 Dathris to Larethor, 11488 Larethor to Tyrith, 11490 Tyrith to Kalecgos, 11492 Kalecgos to Larethor) and match the Anniversary tooltips. The giver object uses ALDOR and SCRYERS keys because the split is by Shattrath faction, not by Alliance and Horde. Questie's TBC database hides these quests until phase 5."
+   }
+  ],
+  "uncertain": [
+   "Whether the Communal pouches' own purchase requirement dropped from Revered to Honored on 22 October 2026: Blizzard's note says only that the reputation requirement to purchase Heroic dungeon keys has been reduced to Honored, and the Wowhead Anniversary endpoint still shows Revered for both the plain keys and the pouches two days later, so the endpoint lags live data and the in game vendor should be checked.",
+   "The Wowhead Anniversary tooltips for the five keys still read Requires Revered; the live realms should read Honored since 22 October 2026. Treat the tooltip text as stale, not as a contradiction.",
+   "GetItemCount counting the keyring (bag -2) on the 2.5.6 client is assumed; Devin's API notes do not record it. If it does not, scan GetContainerItemID for KEYRING_CONTAINER.",
+   "Normal dungeon reputation caps at Honored for Hellfire Ramparts, Blood Furnace, Auchenai Crypts, Old Hillsbrad, Mechanar and Botanica are the standard TBC rule; only the Coilfang (Slave Pens and Underbog to Honored, Steamvault to Exalted) and Lower City routes were re-confirmed from the wiki, and the Honor Hold faction wiki page returned 404. Patch 2.3.0 raised Sethekk Halls to Exalted; since Anniversary heroics now run the final 2.4.3 state, 2.3 era reputation rules are assumed to apply too.",
+   "Arakkoa Feathers dropping inside Sethekk Halls was not confirmed by the wiki item page (it names Terokkar arakkoa and Skettis); the step text only names the outdoor camps.",
+   "The Honored caps on Identify Plant Parts (9784) and More Feathers (10918) are the wiki's statements; the world DB rows carry RewMaxRepValue 42999, so the cap was enforced by quest availability rather than a reward clamp and may behave differently on Classic servers.",
+   "Coordinates are map percentages computed from CMaNGOS creature spawns through the cached UiMapAssignment boxes. Where the wiki gave numbers they agree within a point (Ulrike 56.7, 62.6 exact; Nakodu 62.0, 68.8 exact; Almaador 51.0, 41.7 vs wiki 51.6, 41.6; Alurmi 63.6, 57.6 vs wiki 63, 57; Fedryen 79.3, 63.7 vs wiki 79, 64; Larethor 47.4, 30.7 vs wiki 47.1, 30). Alurmi and Andormu are placed on the Tanaris map because the cached assignment table has no separate Caverns of Time UiMap for this client.",
+   "Magisters' Terrace: the Anniversary Phase 5 date is unannounced (roadmap says autumn 2026), so whether Anniversary keeps Hard to Kill as the heroic gate, or makes it account wide like raid attunements, is unverified. The world DB shows no RequiredCondition on 11481 or 11482, so Aldor or Scryers alignment gating of the two starters is inferred from their givers' locations and the wiki, not from data.",
+   "Hard to Kill reward names: the Anniversary endpoint says Bright Crimson Spinel (35487) and Runed Crimson Spinel (35488); the wiki's retail era page says Delicate and Brilliant. The endpoint names are used.",
+   "Per clear reputation figures (Steamvault 1100 to 1660, Old Hillsbrad 1045, Black Morass 1110, Botanica 2200, Mechanar 1620, Arcatraz 1800, heroic figures) are wiki estimates, not measured on Anniversary.",
+   "Tyrith's exact position inside Magisters' Terrace (wiki: Halls of Theory) and the Scrying Orb's balcony were not re-verified; instance coordinates are not needed for detection.",
+   "The Hellfire Fortifications quest ids 13408 to 13411 listed on the wiki are Wrath era non daily variants; the TBC daily ids 10106 (Alliance) and 10110 (Horde) are confirmed by the Anniversary endpoint and carry the daily flag in the world DB.",
+   "RXPGuides in this AddOns folder contains no attunement or heroic key guide text (grep for attune, Flamewrought, Master's Key, Karazhan found nothing), and QuestieDB's tbcQuestFixes.lua has no corrections for any id used here."
+  ],
+  "notes": "Conventions: where a value differs by side the field is an object with A and H keys (quest, item, factionId, giver, turnIn), matching the quest {A,H} convention the task set; the Magisters' Terrace starter uses ALDOR and SCRYERS keys instead. Standing ids follow the client (5 Friendly, 6 Honored, 7 Revered). Each hub guide carries two REP steps with phases: Revered for phases 1 to 3 and Honored from phase 4, because the key purchase requirement dropped with the Zul'Aman update on both timelines (TBC Classic Phase 4, patch 2.5.4, 22 March 2022, Blizzard: Heroic dungeon keys now require Honored reputation, down from Revered; Anniversary 22 October 2026, Blizzard: The reputation requirement to purchase Heroic dungeon keys has been reduced to Honored). The key item itself is required for all of TBC, so phase.requiredUntil is null everywhere. Phase mapping verified: TBC Classic P1 Karazhan/Gruul/Magtheridon, P2 SSC/TK, P3 Hyjal/BT, P4 Zul'Aman, P5 Sunwell; Anniversary launched 5 February 2026, P3 raids opened 27 August 2026, Zul'Aman opened 22 October 2026 (Blizzard calls it the next content phase, Blizzard Watch calls it 3.5; it is phase 4 here, and it also removed Hyjal and Black Temple attunement), Sunwell is TBA autumn 2026. Questie hard codes TBC phase 3, so the addon should not read the phase from Questie. Anniversary specific: all five quartermasters also sell a Communal pouch (80 gold, Revered: Flamewrought 265842 A / 265829 H, Reservoir 265844, Auchenai 265846, Warpforged 265848, Time 265850) containing a Bind to Battle.net account key (Flamewrought 265830 A / 265826 H, Reservoir 265843, Auchenai 265845, Warpforged 265847, Key of Time 265849) usable by any character at Friendly; it is an item that must sit in the alt's keyring, so detection for heroic access is GetItemCount(plain key) > 0 or (GetItemCount(communal key) > 0 and standing >= 5). The plain keys cost 10 gold, bind when picked up and are unique. Daily dungeon givers, both in Shattrath Lower City outside the World's End Tavern: Wind Trader Zhareem (npc 24369, 75.1, 36.6) gives the HEROIC daily (Wanted: a boss item, text says it may only be completed on Heroic difficulty; 2 Badges of Justice, 13 gold 20 silver, 350 Consortium plus 350 with the dungeon's faction, e.g. 11378 Wanted: The Epoch Hunter's Head) and Nether-Stalker Mah'duun (npc 24370, 75.5, 37.2) gives the NORMAL daily (Wanted: kill N trash mobs in a level 70 dungeon; an Ethereum Prison Key, 8 gold 80 silver, 250 Consortium plus 250 with the dungeon's faction, e.g. 11385 Wanted: Sunseeker Channelers). The task text had these two reversed. Also corrected from the task text: Nakodu is npc 21655 (Almaador is 21432; 19321 is Quartermaster Endarin of the Aldor), Mah'duun is 24370 (24932 is Exarch Nasuun), and Marks of Honor Hold / Thrallmar (items 24579 / 24581) are PvP tokens from the Hellfire Fortifications daily (10106 A / 10110 H, 150 reputation) rather than a repeatable reputation hand in. Instance map ids from the client's Map table: 543 Ramparts, 542 Blood Furnace, 540 Shattered Halls, 547 Slave Pens, 546 Underbog, 545 Steamvault, 557 Mana-Tombs, 558 Auchenai Crypts, 556 Sethekk Halls, 555 Shadow Labyrinth, 554 Mechanar, 553 Botanica, 552 Arcatraz, 560 Old Hillsbrad (The Escape From Durnholde), 269 Black Morass (Opening of the Dark Portal), 585 Magisters' Terrace. Local sources: the cached CMaNGOS TBC world DB at /Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Quartermaster/Harness/.cache/tbcdb.sqlite (already on disk, nothing downloaded) supplied spawn positions, quest rewards, giver and turn in relations and vendor rows; the helper script is at /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/heroic_lookup.py. Every quest, item and npc id emitted was confirmed by name on the Wowhead Anniversary tooltip endpoint except the Caverns of Time chain npcs 20130, 19932, 20142, 18723 and 20201 (world DB names only) and the reward items 29434, 29460 and 31800 which were confirmed by name but not used as steps."
+ },
+ "verify": {
+  "checked": 86,
+  "mismatches": [],
+  "corrections": [
+   {
+    "guideKey": "HEROIC_CAVERNS_OF_TIME",
+    "stepKey": "return_to_andormu",
+    "field": "detail",
+    "from": "Erozion gives Taretha's Diversion (10283, plant five incendiary charges in the internment lodges) and then Escape from Durnholde (10284, escort Thrall out of the keep, through Tarren Mill and kill the Epoch Hunter). Hand in to Erozion, then take Return to Andormu",
+    "to": "Erozion gives Taretha's Diversion (10283, 1000 reputation), which is handed in to Thrall (npc 17876) in the Durnholde basement; Thrall then gives Escape from Durnholde (10284, 1000 reputation), handed in to Erozion, who offers Return to Andormu",
+    "reason": "World DB creature_involvedrelation: 10283 ends at Thrall 17876; creature_questrelation: 10284 is given by Thrall 17876 and ends at Erozion 18723. Both quests pay 1000 Keepers of Time each, which the step omits."
+   },
+   {
+    "guideKey": "HEROIC_CAVERNS_OF_TIME",
+    "stepKey": "return_to_andormu",
+    "field": "detail",
+    "from": "for 3000 reputation and a choice of rings",
+    "to": "for 3000 reputation and a choice of gloves (Tempest's Touch 29317), boots (Southshore Sneakers 29318), belt (Tarren Mill Defender's Cinch 29319) or shoulders (Warchief's Mantle)",
+    "reason": "DB RewChoiceItemId 29317/29318/29319 have InventoryType 10/8/6 (hands/feet/waist); the wiki page lists the same three plus Warchief's Mantle; no ring is offered. The rings (Band of the Guardian, Keeper's Ring of Piety, Time-bending Gem) are Hero of the Brood's choices."
+   },
+   {
+    "guideKey": "HEROIC_CAVERNS_OF_TIME",
+    "stepKey": "rep_revered",
+    "field": "detail",
+    "from": "The quest chain alone pays over 11500 (250 tour, 3000 Return to Andormu, 250 The Black Morass, 8000 Hero of the Brood), which is Honored already.",
+    "to": "The quest chain alone pays 14020 (10 To The Master's Lair, 250 tour, 10 Old Hillsbrad, 1000 Taretha's Diversion, 1000 Escape from Durnholde, 3000 Return to Andormu, 250 The Black Morass, 500 The Opening of the Dark Portal, 8000 Hero of the Brood), which is Honored already.",
+    "reason": "DB quest_template RewRepValue1 for the nine chain quests sums to 14020; the guide's figure drops 10283, 10284 and 10297."
+   },
+   {
+    "guideKey": "HEROIC_CAVERNS_OF_TIME",
+    "stepKey": "rep_honored",
+    "field": "detail",
+    "from": "pays over 11500 and takes you past Honored in a single evening",
+    "to": "pays about 14000 (Taretha's Diversion and Escape from Durnholde are 1000 each, The Opening of the Dark Portal 500, on top of the four quests already counted) and takes you past Honored in a single evening",
+    "reason": "Same DB totals as above."
+   },
+   {
+    "guideKey": "HEROIC_CAVERNS_OF_TIME",
+    "stepKey": "(guide notes)",
+    "field": "notes",
+    "from": "Quest reputation values (10 for the lead ins, 250, 3000, 8000) are the world DB's raw rewards.",
+    "to": "Quest reputation values (10 for the lead ins, 250, 1000, 1000, 3000, 250, 500, 8000) are the world DB's raw rewards.",
+    "reason": "The DB rows for 10283, 10284 and 10297 carry 1000, 1000 and 500."
+   },
+   {
+    "guideKey": "HEROIC_MAGISTERS_TERRACE",
+    "stepKey": "hard_to_kill",
+    "field": "detail",
+    "from": "a choice of a Bright Crimson Spinel (35487) or a Runed Crimson Spinel (35488)",
+    "to": "a choice of a Bright Crimson Spinel (35487), a Runed Crimson Spinel (35488) or a Teardrop Crimson Spinel (35489)",
+    "reason": "DB RewChoiceItemId3 = 35489; the Anniversary endpoint names item 35489 Teardrop Crimson Spinel."
+   },
+   {
+    "guideKey": "HEROIC_MAGISTERS_TERRACE",
+    "stepKey": "hard_to_kill",
+    "field": "detail",
+    "from": "for 250 reputation, 4 gold 40 silver",
+    "to": "for 250 reputation and 19 gold 58 silver (4g40s base plus the 15g18s level-70 conversion; the quest is level 70 only, so the player always receives the full amount)",
+    "reason": "DB RewOrReqMoney 44000 + RewMoneyMaxLevel 151800 copper; MinLevel 70 means the max-level bonus always applies. Low priority."
+   },
+   {
+    "guideKey": "HEROIC_MAGISTERS_TERRACE",
+    "stepKey": "sunwell_summons",
+    "field": "optional",
+    "from": "false",
+    "to": "true (or extend detectedBy so the step also counts as done when 11488, 11490 or 11492 is complete)",
+    "reason": "DB quest 11488 Magisters' Terrace has PrevQuestId 0, no RequiredCondition and no rep gate; 11481/11482 only point at it via NextQuestInChain, i.e. they are breadcrumbs, not prerequisites. A level 70 who flies to the staging area can take Magisters' Terrace from Larethor directly, and a non-optional step keyed on IsQuestFlaggedCompleted(11481/11482) would show that player as stuck. Not confirmable on Wowhead comments (page did not render), so DB-based."
+   },
+   {
+    "guideKey": "HEROIC_AUCHINDOUN",
+    "stepKey": "outcasts_plight",
+    "field": "detail",
+    "from": "drop from the arakkoa of Terokkar Forest (Veil Shienor, Veil Skith, Veil Reskk, Veil Rhaze and the Skettis outskirts)",
+    "to": "drop from the arakkoa of Terokkar Forest (Veil Shienor, Veil Reskk, Veil Skith, Veil Shalas, Veil Lithic and the Skettis outskirts)",
+    "reason": "DB creature_loot_template for 25719 lists Shienor, Skithian, Shalassi and Lithic mobs plus the named arakkoa Ashkaz, Ayit, Okrek and Urdak; Veil Reskk is populated by Shienor mobs and Ashkaz (wiki), Veil Rhaze holds only arakkoa spirits (wiki) and no feather dropper spawns there; Veil Shalas and Veil Lithic are missing from the list."
+   },
+   {
+    "guideKey": "HEROIC_TEMPEST_KEEP",
+    "stepKey": "communal_key",
+    "field": "phases.from",
+    "from": "1",
+    "to": "2",
+    "reason": "warcraft.wiki.gg Communal Warpforged Pouch: added in patch 2.5.6 on 7 July 2026, which falls in Anniversary phase 2 (14 May to 27 Aug 2026); it did not exist in phase 1."
+   },
+   {
+    "guideKey": "HEROIC_CAVERNS_OF_TIME",
+    "stepKey": "communal_key",
+    "field": "phases.from",
+    "from": "1",
+    "to": "2",
+    "reason": "warcraft.wiki.gg Communal Time Pouch: added in patch 2.5.6 on 7 July 2026 (Anniversary phase 2)."
+   },
+   {
+    "guideKey": "HEROIC_HELLFIRE",
+    "stepKey": "communal_key",
+    "field": "detail",
+    "from": "the same quartermaster also sells the Communal Flamewrought Pouch for 80 gold (Alliance 265842, Horde 265829)",
+    "to": "the same quartermaster also sells the Communal Flamewrought Pouch for 80 gold (Horde 265829 since patch 2.5.5, 13 Jan 2026; Alliance 265842 only since patch 2.5.6, 7 July 2026; before that the 12 Feb 2026 hotfix let the Horde key be used by either faction)",
+    "reason": "warcraft.wiki.gg Communal Flamewrought Pouch patch history: 2.5.5 added the item, 2.5.6 added the Honor Hold variant; Communal Flamewrought Key page records the 2026-02-12 either-faction hotfix. The Alliance-side pouch/key ids did not exist in phase 1."
+   },
+   {
+    "guideKey": "HEROIC_COILFANG",
+    "stepKey": "preparing_for_war",
+    "field": "detail",
+    "from": "(no prerequisite stated)",
+    "to": "add: Ysiel only offers Preparing for War after Orders from Lady Vashj (9764) is complete",
+    "reason": "DB quest_template 9765 PrevQuestId = 9764; 9766 PrevQuestId = 9765. Step order is already right, but the gate should be explicit for detection."
+   },
+   {
+    "guideKey": "HEROIC_HELLFIRE",
+    "stepKey": "fortifications_daily",
+    "field": "detail",
+    "from": "It pays 150 reputation, 70 silver and three Marks",
+    "to": "It pays 150 reputation, 70 silver (1 gold 13 silver 50 copper at level 70) and three Marks",
+    "reason": "DB RewOrReqMoney 7000 + RewMoneyMaxLevel 4350 copper. Low priority; base figure is not wrong."
+   }
+  ],
+  "unverifiable": [
+   "Whether the Communal pouches' own purchase requirement dropped from Revered to Honored on 22 October 2026: Blizzard's Gods of Zul'Aman note (news.blizzard.com 24310652) says only that heroic dungeon KEYS now need Honored; all five wiki pouch pages still say Revered and record no later change; the Anniversary tooltips for pouches and plain keys still read Revered.",
+   "That the live Anniversary vendors now gate the five plain keys at Honored: Blizzard's article confirms the change text; the CMaNGOS DB (2.4.3 state) carries RequiredReputationRank 5 = Honored for all six key items, consistent with the post-2.3 rule, but no in-game check from here.",
+   "Hellfire-side dungeon dailies paying Honor Hold/Thrallmar reputation (Wanted: Shattered Hand Centurions 250, Zhareem's three Hellfire heroic dailies 350): the wiki says so, but the DB rows 11354/11362/11363/11364 carry only Consortium (933) because CMaNGOS cannot encode a side-dependent reward. Every other hub's dailies are confirmed in the DB to pay the hub faction (942/1011/989/935/1077) AND 250/350 Consortium, which the guide does not mention but is not wrong.",
+   "Exact day the TBC Classic 2021 key change took effect: Wowhead's 2.5.4 patch notes are dated 22 March 2022, Blizzard's 'Zul'Aman is Now Open' article that lists the Honored change is dated 24 March; which day the vendor flipped is not determinable here.",
+   "Anniversary Phase 5 (Sunwell) timing: roadmap sources say TBA; a January 2026 estimate said December 2026, the guide says autumn 2026.",
+   "Whether Magisters' Terrace (11488) is offered on live without the Shattrath breadcrumb: DB says no gate; Wowhead/warcraftdb comment pages did not render.",
+   "Map-percentage coordinates were not recomputed; every NPC has a world spawn in the DB on the expected map (530 Outland, 1 Tanaris for Andormu/Alurmi/Steward, 560 Erozion, 269 Sa'at, 585 Tyrith), so ids and zones are right even if the percentages are not re-checked.",
+   "GetItemCount counting the keyring (BagFamily 256 on all six keys) on the 2.5.6 client.",
+   "Per-clear reputation estimates (Steamvault 1100-1662, Old Hillsbrad 1045/1199, Black Morass 1110, Mechanar 1620, Botanica 2200, Arcatraz 1800, heroic figures) match the wiki tables but are wiki estimates.",
+   "Honored cut-offs for Identify Plant Parts (9784) and More Feathers (10918): wiki statements; DB rows carry RewMaxRepValue 42999 and SpecialFlags 1 (repeatable), so the cut-off is availability-based and may behave differently on Classic servers."
+  ],
+  "verdict": "No id/name mismatches in 86 Anniversary tooltip lookups and the chain structure, faction ids, standing ids and all 16 instance ids are right; the data needs a handful of detail fixes (Durnholde hand-ins and the Caverns chain total, Return to Andormu reward slots, the third Hard to Kill gem, Veil Rhaze, communal pouch phases, the Magisters' Terrace breadcrumb being optional).",
+  "notes": "Method: curl loop (0.3s sleep) against nether.wowhead.com/tooltip/<kind>/<id>?dataEnv=5&locale=0 for the 40 unique ids in the list (58 rows including duplicates) plus 46 further ids the guide data cites (Horde key/pouches, all five pouches, marks, Shattered Halls Key, hand-in items, Hard to Kill rewards, every chain quest 9784/9766/9875/10918/10279/10282-10284/10296/10297/11482, the two daily givers, the six quartermasters, Steward of Time, adult Andormu 19932, Kael'thas 24664, Adyen 18537, Dathris 18594, reward items 29317-29322/35489). All 86 return the claimed names; 'Andormu (child)' is the guide's annotation (both 20130 and 19932 are named Andormu, DB subname Keepers of Time). Raw outputs: /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/factcheck/results.txt, extra_results.txt, item_tooltips.txt, quest_tooltips.txt. Structure confirmed from the cached CMaNGOS DB (read-only) and the wiki: 10106 RequiredRaces 1101 (Alliance) / 10110 690 (Horde), both daily (QuestFlags & 4096), 150 rep, 70s, 3 marks, givers 18266/18267; Plants of Zangarmarsh 250 + 24402, Identify Plant Parts 250 after 9802, Uncatalogued Species 500, Orders from Lady Vashj 500 (item 24367 drops at 2% from exactly the seven Steamvault naga types the guide names, map 545), Preparing for War 250 for 1 armament after 9764, Coilfang Armaments 75; Outcast's Plight 250 + 3g30s + 31800, More Feathers 250 after 10917, 30 feathers each; Caverns chain givers/enders exactly as the guide says (10277 child 20130 both ends, 10282 child to Erozion, 10285 Erozion to child, 10296 ADULT 19932 to Sa'at, 10297 Sa'at, 10298 Sa'at to child), 10282 requires 10277 and 10296 requires 10285 (so the entry gates described are consistent); Magisters chain 11481 Adyen/11482 Dathris to Larethor (10 rep, 44s), 11488 Larethor to Tyrith 250, 11490 Tyrith to Kalecgos 250, 11492 Kalecgos to Larethor 250 + 3 gems; Tyrith's spawn (240.7,-97.1) lies between Selin Fireheart (242.1,0.3) and Vexallus (231.4,-214.3) and the Scrying Orb gameobject 187578 (231.2,-274.9) is past Vexallus, matching the guide and the wiki (orb on the balcony after the second boss). Keys: BuyPrice 100000 (10g), SellPrice 2g50s, BoP, unique, BagFamily 256 (keyring), sold by Ulrike 17657 / Urgronn 17585 / Fedryen 17904 / Nakodu 21655 / Almaador 21432 / Alurmi 21643, RequiredReputationRank 5 = Honored in the 2.4.3-state DB. Faction ids verified by reward-faction samples: 946 Honor Hold, 947 Thrallmar, 942 Cenarion Expedition, 1011 Lower City, 935 Sha'tar (the seven Shattrath Sha'tar quests sum to 4750, matching 'about 5000'), 989 Keepers of Time, 1077 Shattered Sun, 933 Consortium. Standing ids 5/6/7 and the 9000/21000 thresholds are right. Instance ids verified by boss spawns: 540/542/543/545/546/547/552/553/554/555/556/557/558/560/269/585. Wiki confirms: keys Revered at launch and Honored since 2.3, key and Hard to Kill requirements removed in 4.2, Sethekk normal to Exalted since 2.3, Ramparts/Blood Furnace/Slave Pens/Underbog normal stop at 5999/6000 Friendly, Sha'tar spillover stops at 5999/6000 Friendly, Zephyr at Revered, Identify Plant Parts until Honored, Uncatalogued Species past Honored, More Feathers until Honored and 1080 feathers to Honored, communal pouches 80g at Revered with keys usable at Friendly, Anniversary P1 5 Feb 2026 / P3 27 Aug 2026 / Zul'Aman 22 Oct 2026 (press 'phase 3.5'), Blizzard's Zul'Aman article listing keys to Honored, final heroic difficulty and Hyjal/BT attunement removal. Nits not raised as corrections: The Outcast's Plight pays 9g90s at level 70 (3g30s base + 6g60s), and the guide never mentions that every dungeon daily also pays the Consortium (250 normal / 350 heroic)."
+ }
+}

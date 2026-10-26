@@ -1,0 +1,1988 @@
+{
+ "topic": "raid-attunements",
+ "data": {
+  "guides": [
+   {
+    "key": "GRUUL_MAGTHERIDON",
+    "title": "Gruul's Lair and Magtheridon's Lair",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "The two Phase 1 twenty-five player raids have never had an attunement in any version of The Burning Crusade. Any level 70 character can walk into Gruul's Lair in Blade's Edge Mountains or Magtheridon's Lair under Hellfire Citadel. Both bosses still matter later: Gruul drops the Earthen Signet for the Serpentshrine Cavern attunement and Magtheridon is the final trial for The Tempest Key.",
+    "unlocks": "Reaching level 70 is the only requirement; it opens both doors and lets you start every other raid attunement in this section.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "No gate at any phase, on original TBC, TBC Classic 2021 or Anniversary 2026 (Phase 1 opened 5 February 2026). Since the 22 October 2026 update (Blizzard post BCCA: The Gods of Zul'Aman Now Live) every boss in both raids can also drop Badges of Justice."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "reach_70",
+      "title": "Reach level 70",
+      "kind": "LEVEL",
+      "level": 70,
+      "detail": "Both raids are tuned for level 70 characters and every raid quest in this section requires level 70 to accept. The wiki text for Gruul's Lair says level 65 may enter while its infobox says 70, so treat 70 as the practical requirement. Once you are 70, pick up the heroic dungeon keys as you go, because the Serpentshrine and Tempest Keep chains both send you into heroics.",
+      "detectedBy": "UnitLevel('player') >= 70.",
+      "optional": false
+     },
+     {
+      "key": "gruul_door",
+      "title": "Find the Gruul's Lair entrance",
+      "kind": "MANUAL",
+      "instance": {
+       "name": "Gruul's Lair",
+       "instanceMapId": 565,
+       "heroic": false,
+       "boss": "Gruul the Dragonkiller",
+       "npcIds": [
+        18831,
+        19044
+       ]
+      },
+      "entrance": {
+       "zone": "Blade's Edge Mountains",
+       "uiMapId": 1949,
+       "x": 68.7,
+       "y": 24.3
+      },
+      "detail": "Gruul's Lair sits in the north east of Blade's Edge Mountains at roughly 68.7, 24.3, north of Ruuan Weald; fly or ride up the ramp into the cave. It is a two boss raid: High King Maulgar and his council, then Gruul the Dragonkiller. There is no door check at all, so simply zone in. The raid resets weekly.",
+      "detectedBy": "Manual tick, or auto-tick the first time GetInstanceInfo() reports instanceID 565.",
+      "optional": false
+     },
+     {
+      "key": "magtheridon_door",
+      "title": "Find the Magtheridon's Lair entrance",
+      "kind": "MANUAL",
+      "instance": {
+       "name": "Magtheridon's Lair",
+       "instanceMapId": 544,
+       "heroic": false,
+       "boss": "Magtheridon",
+       "npcIds": [
+        17257
+       ]
+      },
+      "entrance": {
+       "zone": "Hellfire Peninsula",
+       "uiMapId": 1944,
+       "x": 46.6,
+       "y": 52.8
+      },
+      "detail": "Magtheridon's Lair is inside Hellfire Citadel in Hellfire Peninsula at roughly 46.6, 52.8. Enter the citadel courtyard where the three dungeon portals are and go down to the bottom level on the western side; the raid portal is the one opposite the other three. It is a single boss raid with a weekly reset and no attunement of any kind. Magtheridon's Head (item 32385) drops for The Fall of Magtheridon, a separate Honor Hold or Thrallmar quest, and the kill itself is what Trial of the Naaru: Magtheridon counts.",
+      "detectedBy": "Manual tick, or auto-tick the first time GetInstanceInfo() reports instanceID 544.",
+      "optional": false
+     },
+     {
+      "key": "kill_gruul",
+      "title": "Kill Gruul the Dragonkiller",
+      "kind": "KILL",
+      "instance": {
+       "name": "Gruul's Lair",
+       "instanceMapId": 565,
+       "heroic": false,
+       "boss": "Gruul the Dragonkiller",
+       "npcIds": [
+        19044
+       ]
+      },
+      "detail": "Optional here, but if you are working on Serpentshrine Cavern pick up The Cudgel of Kar'desh first so you can loot the Earthen Signet from Gruul on the same kill. Gruul is the second boss, after High King Maulgar. The signet is a quest item that every raid member on the quest can loot. See the SSC_ATTUNEMENT guide.",
+      "detectedBy": "Boss kill via ENCOUNTER_END or BOSS_KILL for Gruul the Dragonkiller (npc 19044) in instance 565, or the Earthen Signet (31750) in bags.",
+      "optional": true
+     },
+     {
+      "key": "kill_magtheridon",
+      "title": "Kill Magtheridon",
+      "kind": "KILL",
+      "instance": {
+       "name": "Magtheridon's Lair",
+       "instanceMapId": 544,
+       "heroic": false,
+       "boss": "Magtheridon",
+       "npcIds": [
+        17257
+       ]
+      },
+      "detail": "Optional here, but Trial of the Naaru: Magtheridon (10888) requires you to be on the quest when Magtheridon dies, so do the three heroic trials first if you want the Tempest Key from this kill. The fight needs five players on the Manticron Cubes to interrupt Blast Nova. See the TK_ATTUNEMENT guide.",
+      "detectedBy": "Boss kill via ENCOUNTER_END or BOSS_KILL for Magtheridon (npc 17257) in instance 544.",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://warcraft.wiki.gg/wiki/Gruul%27s_Lair",
+     "https://warcraft.wiki.gg/wiki/Magtheridon%27s_Lair",
+     "https://warcraft.wiki.gg/wiki/Attunement",
+     "https://worldofwarcraft.blizzard.com/en-us/news/24310652",
+     "https://nether.wowhead.com/tooltip/npc/19044?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/17257?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18831?dataEnv=5&locale=0",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Guide/CommanderGuideData.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Guide/Harness/guide_engine_smoke.lua"
+    ],
+    "notes": "Entrance coordinates come from the suite's own Commander_Guide D.ENTRANCES table (which the harness checks against Questie). Instance ids 565 and 544 confirmed there too."
+   },
+   {
+    "key": "NIGHTBANE_SUMMON",
+    "title": "Nightbane and the Blackened Urn",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "Nightbane does not appear in Karazhan until someone uses the Blackened Urn on the Master's Terrace, and the urn is only handed out at the end of a nine quest Violet Eye chain that runs through Karazhan, Deadwind Pass, Area 52 and two heroic dungeons. Only one raid member needs the urn and it is kept after the quest, so most raids rely on a single urn holder. The Blazing Signet that Nightbane drops is half of the Serpentshrine Cavern attunement.",
+    "unlocks": "The Blackened Urn, which summons Nightbane in Karazhan as often as the lockout allows, plus three thousand Violet Eye reputation and an amethyst gem.",
+    "phase": {
+     "introduced": 1,
+     "requiredUntil": null,
+     "notes": "Available from Phase 1 (Karazhan). Never removed in TBC; on retail the urn was removed in 3.0.8 and the chain in 7.1.0, but the wiki confirms the urn and every quest remain in the Anniversary Edition. Needs Karazhan access (The Master's Key chain, which is the Karazhan researcher's guide)."
+    },
+    "prerequisites": [
+     "KARAZHAN_ATTUNEMENT"
+    ],
+    "steps": [
+     {
+      "key": "medivhs_journal",
+      "title": "Take Medivh's Journal to Wravien in Karazhan",
+      "kind": "QUEST",
+      "questId": 9630,
+      "questName": "Medivh's Journal",
+      "giver": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.6
+      },
+      "turnIn": {
+       "npcId": 16813,
+       "name": "Wravien",
+       "zone": "Karazhan (Guardian's Library)"
+      },
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "The Curator",
+       "npcIds": [
+        16813
+       ]
+      },
+      "detail": "Archmage Alturus stands outside Karazhan at the Master's Cellar entrance in Deadwind Pass (47.0, 75.6); he offers this once you hold The Master's Key. Wravien is a friendly ghost in the Guardian's Library, the large hall after The Curator, so you need a Karazhan raid that has cleared that far. The mobs around him auto-clear about half an hour after the Shade of Aran dies, but a raid will normally just clear to him. Steps one to three are pure talking and can all be done in one visit.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(9630).",
+      "optional": false
+     },
+     {
+      "key": "in_good_hands",
+      "title": "Speak to Gradav in the Guardian's Library",
+      "kind": "QUEST",
+      "questId": 9638,
+      "questName": "In Good Hands",
+      "giver": {
+       "npcId": 16813,
+       "name": "Wravien",
+       "zone": "Karazhan (Guardian's Library)"
+      },
+      "turnIn": {
+       "npcId": 16814,
+       "name": "Gradav",
+       "zone": "Karazhan (Guardian's Library)"
+      },
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "The Curator",
+       "npcIds": [
+        16814
+       ]
+      },
+      "detail": "Wravien sends you a few steps along the library to Gradav, another ghostly scholar. Hand in and accept the next quest immediately.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(9638).",
+      "optional": false
+     },
+     {
+      "key": "kamsis",
+      "title": "Speak to Kamsis in the Guardian's Library",
+      "kind": "QUEST",
+      "questId": 9639,
+      "questName": "Kamsis",
+      "giver": {
+       "npcId": 16814,
+       "name": "Gradav",
+       "zone": "Karazhan (Guardian's Library)"
+      },
+      "turnIn": {
+       "npcId": 16815,
+       "name": "Kamsis",
+       "zone": "Karazhan (Guardian's Library)"
+      },
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "The Curator",
+       "npcIds": [
+        16815
+       ]
+      },
+      "detail": "Gradav passes you to Kamsis, who stands in the same library hall. She is the one who actually sends you after the Shade of Aran, so accept her follow up before the raid pulls him.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(9639).",
+      "optional": false
+     },
+     {
+      "key": "shade_of_aran",
+      "title": "Loot Medivh's Journal from the Shade of Aran",
+      "kind": "QUEST",
+      "questId": 9640,
+      "questName": "The Shade of Aran",
+      "giver": {
+       "npcId": 16815,
+       "name": "Kamsis",
+       "zone": "Karazhan (Guardian's Library)"
+      },
+      "turnIn": {
+       "npcId": 16815,
+       "name": "Kamsis",
+       "zone": "Karazhan (Guardian's Library)"
+      },
+      "itemId": 23933,
+      "itemName": "Medivh's Journal",
+      "count": 1,
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "Shade of Aran",
+       "npcIds": [
+        16524
+       ]
+      },
+      "detail": "Kill the Shade of Aran in the library above Kamsis and loot Medivh's Journal from his corpse; it is a quest item so everyone on the quest can take one. Stand still during Flame Wreath, run out of Arcane Explosion, and have the raid stack and drink during his mana drain phase. Return the journal to Kamsis.",
+      "detectedBy": "Medivh's Journal (23933) in bags, or C_QuestLog.IsQuestFlaggedCompleted(9640).",
+      "optional": false
+     },
+     {
+      "key": "masters_terrace",
+      "title": "Read the journal on the Master's Terrace",
+      "kind": "QUEST",
+      "questId": 9645,
+      "questName": "The Master's Terrace",
+      "giver": {
+       "npcId": 16815,
+       "name": "Kamsis",
+       "zone": "Karazhan (Guardian's Library)"
+      },
+      "turnIn": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.6
+      },
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "Shade of Aran",
+       "npcIds": [
+        16815
+       ]
+      },
+      "detail": "Kamsis gives the journal back to you. Take it to the Master's Terrace, the open balcony on the third level of Karazhan reached through the side door after the Shade of Aran, walk to the southern end and use the journal to read the entry (objective Journal Entry Read). Then leave the raid and hand the journal to Archmage Alturus outside.",
+      "detectedBy": "Objective 1 of quest 9645 complete, or C_QuestLog.IsQuestFlaggedCompleted(9645).",
+      "optional": false
+     },
+     {
+      "key": "digging_up_the_past",
+      "title": "Retrieve the Charred Bone Fragment",
+      "kind": "QUEST",
+      "questId": 9680,
+      "questName": "Digging Up the Past",
+      "giver": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.6
+      },
+      "turnIn": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.6
+      },
+      "detail": "A solo errand: go to the mountains just south of Karazhan in Deadwind Pass and pick up the Charred Bone Fragment from the ground. It sits against the mountainside directly behind the Karazhan meeting stone. Bring it straight back to Alturus.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(9680).",
+      "optional": false
+     },
+     {
+      "key": "colleagues_aid",
+      "title": "Take the fragment to Kalynna Lathred in Area 52",
+      "kind": "QUEST",
+      "questId": 9631,
+      "questName": "A Colleague's Aid",
+      "giver": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.6
+      },
+      "turnIn": {
+       "npcId": 17636,
+       "name": "Kalynna Lathred",
+       "zone": "Netherstorm",
+       "x": 32.2,
+       "y": 63.6
+      },
+      "detail": "Fly to Area 52 in Netherstorm. Kalynna Lathred stands at 32.2, 63.6 inside the town. Hand in and take her heroic request.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(9631).",
+      "optional": false
+     },
+     {
+      "key": "kalynnas_request",
+      "title": "Loot the two books from heroic Nethekurse and Syth",
+      "kind": "QUEST",
+      "questId": 9637,
+      "questName": "Kalynna's Request",
+      "giver": {
+       "npcId": 17636,
+       "name": "Kalynna Lathred",
+       "zone": "Netherstorm",
+       "x": 32.2,
+       "y": 63.6
+      },
+      "turnIn": {
+       "npcId": 17636,
+       "name": "Kalynna Lathred",
+       "zone": "Netherstorm",
+       "x": 32.2,
+       "y": 63.6
+      },
+      "itemId": 25462,
+      "itemName": "Tome of Dusk",
+      "count": 1,
+      "items": [
+       {
+        "itemId": 25462,
+        "itemName": "Tome of Dusk",
+        "instance": {
+         "name": "The Shattered Halls",
+         "instanceMapId": 540,
+         "heroic": true,
+         "boss": "Grand Warlock Nethekurse",
+         "npcIds": [
+          16807
+         ]
+        }
+       },
+       {
+        "itemId": 25461,
+        "itemName": "Book of Forgotten Names",
+        "instance": {
+         "name": "Sethekk Halls",
+         "instanceMapId": 556,
+         "heroic": true,
+         "boss": "Darkweaver Syth",
+         "npcIds": [
+          18472
+         ]
+        }
+       }
+      ],
+      "instance": {
+       "name": "The Shattered Halls",
+       "instanceMapId": 540,
+       "heroic": true,
+       "boss": "Grand Warlock Nethekurse",
+       "npcIds": [
+        16807,
+        18472
+       ]
+      },
+      "detail": "Two heroic dungeon drops, in either order: the Tome of Dusk from Grand Warlock Nethekurse, first boss of heroic Shattered Halls (Flamewrought Key, Honor Hold or Thrallmar), and the Book of Forgotten Names from Darkweaver Syth, first boss of heroic Sethekk Halls (Auchenai Key, Lower City). Both are quest items that every group member on the quest can loot. On Anniversary the heroic keys cost Honored since 22 October 2026 (Revered before that), and a Revered character can buy a Communal key for alts.",
+      "detectedBy": "Both items (25462 and 25461) in bags, or C_QuestLog.IsQuestFlaggedCompleted(9637).",
+      "optional": false
+     },
+     {
+      "key": "nightbane",
+      "title": "Summon and kill Nightbane with the urn",
+      "kind": "QUEST",
+      "questId": 9644,
+      "questName": "Nightbane",
+      "giver": {
+       "npcId": 17636,
+       "name": "Kalynna Lathred",
+       "zone": "Netherstorm",
+       "x": 32.2,
+       "y": 63.6
+      },
+      "turnIn": {
+       "npcId": 17613,
+       "name": "Archmage Alturus",
+       "zone": "Deadwind Pass",
+       "x": 47,
+       "y": 75.6
+      },
+      "itemId": 24140,
+      "itemName": "Blackened Urn",
+      "count": 1,
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "Nightbane",
+       "npcIds": [
+        17225
+       ]
+      },
+      "detail": "Accepting this quest puts the Blackened Urn in your bags; from now on you are the raid's urn holder. In Karazhan go to the Master's Terrace (after the Shade of Aran, through the side door), stand at the southern end and use the urn to summon Nightbane. He drops the Blazing Signet for the Serpentshrine attunement and the Faint Arcane Essence this quest wants. If the raid wipes and leaves combat he despawns and can be re-summoned, but once he is dead he is locked for that reset. Hand the essence to Alturus; the urn stays with you afterwards.",
+      "detectedBy": "Blackened Urn (24140) in bags means the holder can summon; C_QuestLog.IsQuestFlaggedCompleted(9644) means the chain is finished (the urn is kept either way).",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://warcraft.wiki.gg/wiki/Quest:Medivh%27s_Journal",
+     "https://warcraft.wiki.gg/wiki/Quest:In_Good_Hands",
+     "https://warcraft.wiki.gg/wiki/Quest:Kamsis",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Shade_of_Aran",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Master%27s_Terrace",
+     "https://warcraft.wiki.gg/wiki/Quest:Digging_Up_the_Past",
+     "https://warcraft.wiki.gg/wiki/Quest:Kalynna%27s_Request",
+     "https://warcraft.wiki.gg/wiki/Quest:Nightbane",
+     "https://warcraft.wiki.gg/wiki/Blackened_Urn",
+     "https://warcraft.wiki.gg/wiki/Book_of_Forgotten_Names",
+     "https://warcraft.wiki.gg/wiki/Tome_of_Dusk",
+     "https://warcraft.wiki.gg/wiki/Archmage_Alturus",
+     "https://warcraft.wiki.gg/wiki/Kalynna_Lathred",
+     "https://warcraft.wiki.gg/wiki/Wravien",
+     "https://warcraft.wiki.gg/wiki/Gradav",
+     "https://warcraft.wiki.gg/wiki/Kamsis",
+     "https://nether.wowhead.com/tooltip/quest/9630?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/9644?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/24140?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/23933?dataEnv=5&locale=0",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_DungeonsAndRaids/data-tbc.lua"
+    ],
+    "notes": "The brief named A Demonic Presence and The New Directive (9860) as part of this chain; they are not. Those belong to the Violet Eye chain (Keanna's Log etc.). The urn chain is Medivh's Journal 9630, In Good Hands 9638, Kamsis 9639, The Shade of Aran 9640, The Master's Terrace 9645, Digging Up the Past 9680, A Colleague's Aid 9631, Kalynna's Request 9637, Nightbane 9644; every id and name confirmed on the Anniversary tooltip endpoint. Quest 9644 calls the urn Kalynna's Urn; the item is Blackened Urn 24140 (AtlasLoot and tooltip agree)."
+   },
+   {
+    "key": "SSC_ATTUNEMENT",
+    "title": "Serpentshrine Cavern: The Cudgel of Kar'desh",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "Serpentshrine Cavern was gated by a single quest from Skar'this the Heretic, a caged naga inside heroic Slave Pens. He wants the Earthen Signet from Gruul the Dragonkiller and the Blazing Signet from Nightbane in Karazhan, so the chain needs a heroic key, a Gruul raid and a raid with an urn holder. On Anniversary the gate came down at the start of Phase 3, but the quest still exists and is half of the Champion of the Naaru title.",
+    "unlocks": "Entry to Serpentshrine Cavern while the gate exists, and together with Trial of the Naaru: Magtheridon the title Champion of the Naaru.",
+    "phase": {
+     "introduced": 2,
+     "requiredUntil": 3,
+     "notes": "The quest is available from Phase 1 (heroic Slave Pens, Gruul and Nightbane are all Phase 1 content) and many players pre-attuned. The raid opened with Phase 2 on 14 May 2026. Anniversary removed the SSC and TK attunement requirement at the start of Phase 3 on 27 August 2026 (Warcraft Tavern, Phase 3 is Now Live). TBC Classic 2021 removed it mid Phase 2, at the weekly reset after Kaivax's 10 December 2021 post; original TBC removed it in patch 2.1.2 (June 2007). The quest remains after removal and still counts towards Champion of the Naaru (title id 53)."
+    },
+    "prerequisites": [
+     "GRUUL_MAGTHERIDON",
+     "NIGHTBANE_SUMMON"
+    ],
+    "steps": [
+     {
+      "key": "reservoir_key",
+      "title": "Get the Reservoir Key for heroic Coilfang",
+      "kind": "ITEM",
+      "itemId": 30623,
+      "itemName": "Reservoir Key",
+      "count": 1,
+      "factionId": 942,
+      "standing": 6,
+      "detail": "Skar'this only exists in the heroic version of the Slave Pens, so you need the Reservoir Key from the Cenarion Expedition quartermaster at the Cenarion Refuge in Zangarmarsh. On Anniversary it costs Honored since the 22 October 2026 update (Revered from Phase 1 until then). A Revered character can also buy a Communal Reservoir Key for alts, which works from Friendly. One keyed player opens the heroic for the whole group.",
+      "detectedBy": "Reservoir Key (30623) or a Communal Reservoir Key in the keyring or bags, or Cenarion Expedition (faction 942) standing >= 6 as a hint that it can be bought.",
+      "optional": false
+     },
+     {
+      "key": "mark_of_vashj",
+      "title": "Accept and hand in The Mark of Vashj to Skar'this",
+      "kind": "QUEST",
+      "questId": 10900,
+      "questName": "The Mark of Vashj",
+      "giver": {
+       "npcId": 22421,
+       "name": "Skar'this the Heretic",
+       "zone": "The Slave Pens (heroic)"
+      },
+      "turnIn": {
+       "npcId": 22421,
+       "name": "Skar'this the Heretic",
+       "zone": "The Slave Pens (heroic)"
+      },
+      "instance": {
+       "name": "The Slave Pens",
+       "instanceMapId": 547,
+       "heroic": true,
+       "boss": "Mennu the Betrayer",
+       "npcIds": [
+        22421,
+        17941
+       ]
+      },
+      "detail": "Inside heroic Slave Pens clear past Mennu the Betrayer; Skar'this is chained in a cage shortly before Rokmar the Crackler. Guides describe The Mark of Vashj as an instant hand in that unlocks The Cudgel of Kar'desh, so accept it and turn it straight back in. If the Cudgel is already offered to you, skip this.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10900); treat a completed 10901 as implying this step.",
+      "optional": true
+     },
+     {
+      "key": "accept_cudgel",
+      "title": "Accept The Cudgel of Kar'desh from Skar'this",
+      "kind": "QUEST",
+      "questId": 10901,
+      "questName": "The Cudgel of Kar'desh",
+      "giver": {
+       "npcId": 22421,
+       "name": "Skar'this the Heretic",
+       "zone": "The Slave Pens (heroic)"
+      },
+      "turnIn": {
+       "npcId": 22421,
+       "name": "Skar'this the Heretic",
+       "zone": "The Slave Pens (heroic)"
+      },
+      "instance": {
+       "name": "The Slave Pens",
+       "instanceMapId": 547,
+       "heroic": true,
+       "boss": "Mennu the Betrayer",
+       "npcIds": [
+        22421
+       ]
+      },
+      "detail": "Pick up the quest before your Gruul and Karazhan raids, because both signets only drop for players who have it in their log. The quest text says Skar'this in the heroic Slave Pens wants the Earthen Signet and the Blazing Signet. Both signets can be collected in either order.",
+      "detectedBy": "C_QuestLog.IsOnQuest(10901) or C_QuestLog.IsQuestFlaggedCompleted(10901).",
+      "optional": false
+     },
+     {
+      "key": "earthen_signet",
+      "title": "Loot the Earthen Signet from Gruul",
+      "kind": "ITEM",
+      "itemId": 31750,
+      "itemName": "Earthen Signet",
+      "count": 1,
+      "instance": {
+       "name": "Gruul's Lair",
+       "instanceMapId": 565,
+       "heroic": false,
+       "boss": "Gruul the Dragonkiller",
+       "npcIds": [
+        19044
+       ]
+      },
+      "detail": "Kill Gruul the Dragonkiller, the second boss of Gruul's Lair in Blade's Edge Mountains. The Earthen Signet is a quest item: every raid member on The Cudgel of Kar'desh can loot one from the corpse. Ask the raid leader to leave the corpse open until everyone has looted.",
+      "detectedBy": "Earthen Signet (31750) in bags, or objective 1 of quest 10901 complete.",
+      "optional": false
+     },
+     {
+      "key": "blazing_signet",
+      "title": "Loot the Blazing Signet from Nightbane",
+      "kind": "ITEM",
+      "itemId": 31751,
+      "itemName": "Blazing Signet",
+      "count": 1,
+      "instance": {
+       "name": "Karazhan",
+       "instanceMapId": 532,
+       "heroic": false,
+       "boss": "Nightbane",
+       "npcIds": [
+        17225
+       ]
+      },
+      "detail": "Nightbane must be summoned on the Master's Terrace by a raid member holding the Blackened Urn (see NIGHTBANE_SUMMON). He is an optional Karazhan boss with a ground phase and a flying phase of Rain of Bones and Smoking Blast; tanks pick up the skeletons during the air phase. The Blazing Signet is a quest item lootable by everyone on the quest.",
+      "detectedBy": "Blazing Signet (31751) in bags, or objective 2 of quest 10901 complete.",
+      "optional": false
+     },
+     {
+      "key": "turn_in_cudgel",
+      "title": "Return both signets to Skar'this in heroic Slave Pens",
+      "kind": "QUEST",
+      "questId": 10901,
+      "questName": "The Cudgel of Kar'desh",
+      "giver": {
+       "npcId": 22421,
+       "name": "Skar'this the Heretic",
+       "zone": "The Slave Pens (heroic)"
+      },
+      "turnIn": {
+       "npcId": 22421,
+       "name": "Skar'this the Heretic",
+       "zone": "The Slave Pens (heroic)"
+      },
+      "instance": {
+       "name": "The Slave Pens",
+       "instanceMapId": 547,
+       "heroic": true,
+       "boss": "Mennu the Betrayer",
+       "npcIds": [
+        22421
+       ]
+      },
+      "detail": "Go back into heroic Slave Pens, clear to the cage again and hand in. Completing this quest is the Serpentshrine Cavern attunement flag; there is no key item. If you have also finished Trial of the Naaru: Magtheridon you receive the title Champion of the Naaru. The raid entrance is in Coilfang Reservoir, Zangarmarsh, around 50.4, 40.9: swim down the central drain and take the lift up to the Serpentshrine portal.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10901).",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10901?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10900?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31750?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31751?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22421?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Skar%27this",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Mark_of_Vashj",
+     "https://warcraft.wiki.gg/wiki/Attunement",
+     "https://warcraft.wiki.gg/wiki/Champion_of_the_Naaru",
+     "https://www.warcrafttavern.com/tbc/news/phase-3-is-now-live-for-tbc-anniversary/",
+     "https://www.gfinityesports.com/article/serpentshrine-cavern-and-tempest-keep-attunements-removed-alongside-nerfs-next-week",
+     "https://support.blizzard.com/en/article/13254",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_DungeonsAndRaids/data-tbc.lua"
+    ],
+    "notes": "Signet item ids came from AtlasLoot (Gruul table 31750, Nightbane table 31751) and were confirmed on the tooltip endpoint. Skar'this npc 22421 confirmed. Instance id 548 for SSC confirmed in Commander_Guide data; 547 for Slave Pens is from memory."
+   },
+   {
+    "key": "TK_ATTUNEMENT",
+    "title": "Tempest Keep: The Tempest Key",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "The Eye was gated by The Tempest Key, a key item A'dal awards after four Trials of the Naaru: a timed run of heroic Shattered Halls, trophies from heroic Steamvault and heroic Shadow Labyrinth, rescuing Millhouse Manastorm in heroic Arcatraz, and finally killing Magtheridon. Before Khadgar will even give you the opening quest you must finish the long Cipher of Damnation chain in Shadowmoon Valley. On Anniversary the gate was lifted at the start of Phase 3, but the chain still awards the key and counts towards Champion of the Naaru.",
+    "unlocks": "The Tempest Key item that opens The Eye while the gate exists, and together with The Cudgel of Kar'desh the title Champion of the Naaru.",
+    "phase": {
+     "introduced": 2,
+     "requiredUntil": 3,
+     "notes": "Every quest in this chain is Phase 1 content, so it can be completed before the raid opens. The Eye opened with Phase 2 on 14 May 2026. Anniversary removed the requirement at the start of Phase 3 on 27 August 2026; TBC Classic 2021 lifted it at the weekly reset after 10 December 2021 (Kaivax); original TBC removed it in patch 2.1.2. The four trial quests and the title (id 53, requires both 10888 and 10901 per Blizzard support) remain after removal."
+    },
+    "prerequisites": [
+     "GRUUL_MAGTHERIDON"
+    ],
+    "steps": [
+     {
+      "key": "hand_of_guldan",
+      "title": "Start the Cipher of Damnation: The Hand of Gul'dan",
+      "kind": "QUEST",
+      "quest": {
+       "A": 10680,
+       "H": 10681
+      },
+      "questName": "The Hand of Gul'dan",
+      "giver": {
+       "npcId": 21937,
+       "name": "Earthmender Sophurus (Alliance) / Earthmender Splinthoof 21938 (Horde)",
+       "zone": "Shadowmoon Valley",
+       "x": 36.4,
+       "y": 57
+      },
+      "turnIn": {
+       "npcId": 21024,
+       "name": "Earthmender Torlok",
+       "zone": "Shadowmoon Valley",
+       "x": 42.2,
+       "y": 45.1
+      },
+      "detail": "Alliance take The Hand of Gul'dan (10680) from Earthmender Sophurus at Wildhammer Stronghold (36.4, 57.0); Horde take 10681 from Earthmender Splinthoof in Shadowmoon Village (28.5, 26.6). Both send you to Earthmender Torlok at the Altar of Damnation (42.2, 45.1), who runs the first part of the chain. From here the chain is identical for both factions.",
+      "detectedBy": "Either 10680 or 10681 flagged complete (check both, faction decides which can exist).",
+      "optional": false
+     },
+     {
+      "key": "enraged_spirits",
+      "title": "Capture the enraged fire, earth, water and air spirits",
+      "kind": "QUEST",
+      "questId": 10481,
+      "questName": "Enraged Spirits of Air",
+      "questIds": [
+       10458,
+       10480,
+       10481
+      ],
+      "giver": {
+       "npcId": 21024,
+       "name": "Earthmender Torlok",
+       "zone": "Shadowmoon Valley",
+       "x": 42.2,
+       "y": 45.1
+      },
+      "turnIn": {
+       "npcId": 21024,
+       "name": "Earthmender Torlok",
+       "zone": "Shadowmoon Valley",
+       "x": 42.2,
+       "y": 45.1
+      },
+      "detail": "Three quests in a row from Torlok: Enraged Spirits of Fire and Earth (10458), Enraged Spirits of Water (10480) and Enraged Spirits of Air (10481). Drop the Totem of Spirits and kill the enraged elementals next to it so their souls are captured: fire and earth spirits around 46 to 52, 42 to 54; water spirits in the north around 45 to 52, 24 to 34; air spirits in the south east around 59 to 65, 54 to 70. Only kills made beside the totem count.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10481) (10458 and 10480 precede it).",
+      "optional": false
+     },
+     {
+      "key": "oronok_lessons",
+      "title": "Help Oronok Torn-heart and learn the Cipher's history",
+      "kind": "QUEST",
+      "questId": 10519,
+      "questName": "The Cipher of Damnation - Truth and History",
+      "questIds": [
+       10513,
+       10514,
+       10515,
+       10519
+      ],
+      "giver": {
+       "npcId": 21024,
+       "name": "Earthmender Torlok",
+       "zone": "Shadowmoon Valley",
+       "x": 42.2,
+       "y": 45.1
+      },
+      "turnIn": {
+       "npcId": 21183,
+       "name": "Oronok Torn-heart",
+       "zone": "Shadowmoon Valley",
+       "x": 53.9,
+       "y": 23.5
+      },
+      "detail": "Torlok sends you to Oronok Torn-heart at his farm (53.9, 23.5) with Oronok Torn-heart (10513). Oronok then has you dig up ten Shadowmoon Tubers with his boar whistle without killing the felboars (I Was A Lot Of Things, 10514), smash ten Ravenous Flayer Eggs nearby while avoiding the elite matriarch (A Lesson Learned, 10515) and listen to his story (Truth and History, 10519). After that he gives three quests at once, one for each of his sons.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10519).",
+      "optional": false
+     },
+     {
+      "key": "gromtor_charge",
+      "title": "Recover the first Cipher fragment with Grom'tor",
+      "kind": "QUEST",
+      "questId": 10523,
+      "questName": "The Cipher of Damnation - The First Fragment Recovered",
+      "questIds": [
+       10521,
+       10522,
+       10523
+      ],
+      "giver": {
+       "npcId": 21183,
+       "name": "Oronok Torn-heart",
+       "zone": "Shadowmoon Valley",
+       "x": 53.9,
+       "y": 23.5
+      },
+      "turnIn": {
+       "npcId": 21183,
+       "name": "Oronok Torn-heart",
+       "zone": "Shadowmoon Valley",
+       "x": 53.9,
+       "y": 23.5
+      },
+      "detail": "Grom'tor, Son of Oronok (10521) waits at 44.6, 23.6. His charge (10522) is to kill Shadowmoon Darkweavers and Burning Legion mobs around 45 to 48, 26 to 32 until the First Fragment of the Cipher drops. Return it to Oronok with The First Fragment Recovered (10523). The three sons' sub chains can be done in any order.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10523).",
+      "optional": false
+     },
+     {
+      "key": "artor_charge",
+      "title": "Recover the second Cipher fragment with Ar'tor's spirit",
+      "kind": "QUEST",
+      "questId": 10541,
+      "questName": "The Cipher of Damnation - The Second Fragment Recovered",
+      "questIds": [
+       10527,
+       10528,
+       10537,
+       10540,
+       10541
+      ],
+      "giver": {
+       "npcId": 21183,
+       "name": "Oronok Torn-heart",
+       "zone": "Shadowmoon Valley",
+       "x": 53.9,
+       "y": 23.5
+      },
+      "turnIn": {
+       "npcId": 21183,
+       "name": "Oronok Torn-heart",
+       "zone": "Shadowmoon Valley",
+       "x": 53.9,
+       "y": 23.5
+      },
+      "detail": "Ar'tor, Son of Oronok (10527) is at 29.6, 50.4 on the western side of the valley. Free him with a Crystalline Key (Demonic Crystal Prisons, 10528), then talk to the Spirit of Ar'tor for Lohn'goron, Bow of the Torn-heart (10537), a drop from the mobs around 27 to 32, 50 to 57. Ar'tor's Charge (10540) has the spirit follow you south east until it summons Veneratus the Many, who carries the Second Fragment; bring it back to Oronok with 10541.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10541).",
+      "optional": false
+     },
+     {
+      "key": "borak_charge",
+      "title": "Recover the third Cipher fragment with Borak",
+      "kind": "QUEST",
+      "questId": 10579,
+      "questName": "The Cipher of Damnation - The Third Fragment Recovered",
+      "questIds": [
+       10546,
+       10547,
+       10550,
+       10570,
+       10576,
+       10577,
+       10578,
+       10579
+      ],
+      "giver": {
+       "npcId": 21183,
+       "name": "Oronok Torn-heart",
+       "zone": "Shadowmoon Valley",
+       "x": 53.9,
+       "y": 23.5
+      },
+      "turnIn": {
+       "npcId": 21183,
+       "name": "Oronok Torn-heart",
+       "zone": "Shadowmoon Valley",
+       "x": 53.9,
+       "y": 23.5
+      },
+      "detail": "Borak, Son of Oronok (10546) sits at 47.6, 57.2. His part is the longest: a Rotten Arakkoa Egg (10547) taken to Tobias the Filth Gorger in Shattrath's Lower City (63.9, 70.0), The Bundle of Bloodthistle (10550), To Catch A Thistlehead at the bridge (10570), six Eclipsion Armor pieces (The Shadowmoon Shuffle, 10576), delivering Illidan's message in disguise to Grand Commander Ruusk (10577), and finally Borak's Charge (10578) against Ruul the Darkener, a hard hitting elite best done with a group. Return the Third Fragment to Oronok with 10579.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10579).",
+      "optional": false
+     },
+     {
+      "key": "cipher_of_damnation",
+      "title": "Summon and defeat Cyrukh the Firelord",
+      "kind": "QUEST",
+      "questId": 10588,
+      "questName": "The Cipher of Damnation",
+      "giver": {
+       "npcId": 21183,
+       "name": "Oronok Torn-heart",
+       "zone": "Shadowmoon Valley",
+       "x": 53.9,
+       "y": 23.5
+      },
+      "turnIn": {
+       "npcId": 21024,
+       "name": "Earthmender Torlok",
+       "zone": "Shadowmoon Valley",
+       "x": 42.2,
+       "y": 45.1
+      },
+      "detail": "With all three fragments handed in, Oronok gives The Cipher of Damnation. Go to the Altar of Damnation (43.2, 44.8) and channel the Cipher for twenty seconds to summon Cyrukh the Firelord, a 369k health elemental; Oronok's sons and the earthmenders fight beside you, but bring a full group with a tank and healer. Hand in to Torlok next to the altar. Khadgar in Shattrath will only offer The Tempest Key once this is complete.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10588).",
+      "optional": false
+     },
+     {
+      "key": "tempest_key_quest",
+      "title": "Take The Tempest Key from Khadgar to A'dal",
+      "kind": "QUEST",
+      "questId": 10883,
+      "questName": "The Tempest Key",
+      "giver": {
+       "npcId": 18166,
+       "name": "Khadgar",
+       "zone": "Shattrath City",
+       "x": 54.8,
+       "y": 44.3
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "detail": "Khadgar stands beside A'dal on the Terrace of Light in Shattrath (54.8, 44.3). Accept The Tempest Key and walk it over to A'dal (54.0, 44.7). A'dal then offers the three heroic trials at once: Mercy, Strength and Tenacity. They can be done in any order and all three must be handed in before the Magtheridon trial appears.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10883).",
+      "optional": false
+     },
+     {
+      "key": "trial_mercy",
+      "title": "Trial of Mercy: beat the heroic Shattered Halls timer",
+      "kind": "ITEM",
+      "questId": 10884,
+      "questName": "Trial of the Naaru: Mercy",
+      "itemId": 31716,
+      "itemName": "Unused Axe of the Executioner",
+      "count": 1,
+      "giver": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "instance": {
+       "name": "The Shattered Halls",
+       "instanceMapId": 540,
+       "heroic": true,
+       "boss": "Shattered Hand Executioner",
+       "npcIds": [
+        17301,
+        16807,
+        16808
+       ]
+      },
+      "detail": "Heroic Shattered Halls needs the Flamewrought Key (Honor Hold or Thrallmar). When Grand Warlock Nethekurse dies the group gains the Kargath's Executioner debuff, a 55 minute timer (RXP; one wiki page says 80), and Kargath yells as he executes the three prisoners one by one as it runs down. The Shattered Hand Executioner appears only on heroic, standing with the prisoners in the Hall of Blades just before Warchief Kargath Bladefist; kill him before the timer ends and loot the Unused Axe of the Executioner (one per player on the quest). You can still get the axe if a prisoner or two have already died, so keep going even if the pace slips. Skip Warbringer O'mrogg's trash where you can and use crowd control on the legionnaire packs.",
+      "detectedBy": "Unused Axe of the Executioner (31716) in bags, objective 1 of 10884, or C_QuestLog.IsQuestFlaggedCompleted(10884).",
+      "optional": false
+     },
+     {
+      "key": "trial_strength_trident",
+      "title": "Trial of Strength: Kalithresh's Trident from heroic Steamvault",
+      "kind": "ITEM",
+      "questId": 10885,
+      "questName": "Trial of the Naaru: Strength",
+      "itemId": 31721,
+      "itemName": "Kalithresh's Trident",
+      "count": 1,
+      "giver": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "instance": {
+       "name": "The Steamvault",
+       "instanceMapId": 545,
+       "heroic": true,
+       "boss": "Warlord Kalithresh",
+       "npcIds": [
+        17798
+       ]
+      },
+      "detail": "Trial of the Naaru: Strength wants two trophies, collected in either order; this is the first. Heroic Steamvault (Reservoir Key, Cenarion Expedition) ends with Warlord Kalithresh. Break the distillers he channels on, or he gains Warlord's Rage; on heroic the spite waves hit hard, so the group should stand spread. The trident is a quest item every group member on the quest can loot.",
+      "detectedBy": "Kalithresh's Trident (31721) in bags, objective 1 of 10885, or C_QuestLog.IsQuestFlaggedCompleted(10885).",
+      "optional": false
+     },
+     {
+      "key": "trial_strength_essence",
+      "title": "Trial of Strength: Murmur's Essence from heroic Shadow Labyrinth",
+      "kind": "ITEM",
+      "questId": 10885,
+      "questName": "Trial of the Naaru: Strength",
+      "itemId": 31722,
+      "itemName": "Murmur's Essence",
+      "count": 1,
+      "giver": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "instance": {
+       "name": "Shadow Labyrinth",
+       "instanceMapId": 555,
+       "heroic": true,
+       "boss": "Murmur",
+       "npcIds": [
+        18708
+       ]
+      },
+      "detail": "The second Strength trophy comes from Murmur, the final boss of heroic Shadow Labyrinth in Auchindoun (Auchenai Key, Lower City). Run out when Sonic Boom is cast and keep the player with Murmur's Touch away from the group. Loot Murmur's Essence, then hand Strength in to A'dal once you have both items.",
+      "detectedBy": "Murmur's Essence (31722) in bags, objective 2 of 10885, or C_QuestLog.IsQuestFlaggedCompleted(10885).",
+      "optional": false
+     },
+     {
+      "key": "trial_tenacity",
+      "title": "Trial of Tenacity: keep Millhouse Manastorm alive",
+      "kind": "QUEST",
+      "questId": 10886,
+      "questName": "Trial of the Naaru: Tenacity",
+      "giver": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "instance": {
+       "name": "The Arcatraz",
+       "instanceMapId": 552,
+       "heroic": true,
+       "boss": "Harbinger Skyriss",
+       "npcIds": [
+        20912,
+        20977
+       ]
+      },
+      "detail": "Heroic Arcatraz needs the Warpforged Key (The Sha'tar). In the final encounter Warden Mellichar opens the cells one by one; Millhouse Manastorm is released from the second cell and fights beside you against the remaining prisoners and Harbinger Skyriss. The objective Millhouse Manastorm Rescued is credited when Skyriss dies with Millhouse still alive, so a healer should keep him topped up and tanks should peel adds that turn on him. If he dies you must reset the instance and try again.",
+      "detectedBy": "Objective 1 of 10886 complete, or C_QuestLog.IsQuestFlaggedCompleted(10886).",
+      "optional": false
+     },
+     {
+      "key": "trial_magtheridon",
+      "title": "Trial of Magtheridon: slay Magtheridon and claim the key",
+      "kind": "KILL",
+      "questId": 10888,
+      "questName": "Trial of the Naaru: Magtheridon",
+      "itemId": 31704,
+      "itemName": "The Tempest Key",
+      "count": 1,
+      "giver": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "instance": {
+       "name": "Magtheridon's Lair",
+       "instanceMapId": 544,
+       "heroic": false,
+       "boss": "Magtheridon",
+       "npcIds": [
+        17257
+       ]
+      },
+      "detail": "After Mercy, Strength and Tenacity are all handed in, A'dal offers Trial of the Naaru: Magtheridon; the objective is simply Magtheridon slain, so you must be on the quest when he dies. Kill him in Magtheridon's Lair under Hellfire Citadel (five players click the Manticron Cubes to stop each Blast Nova). Return to A'dal for The Tempest Key item, which goes in your keyring and opens The Eye in Netherstorm (entrance about 73.7, 63.7). If you have also completed The Cudgel of Kar'desh you receive the title Champion of the Naaru.",
+      "detectedBy": "The Tempest Key (31704) in the keyring, or C_QuestLog.IsQuestFlaggedCompleted(10888); the kill itself via ENCOUNTER_END for Magtheridon (17257) while 10888 is in the log.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10883?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10884?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10885?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10886?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10888?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10588?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31704?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31716?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31721?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31722?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Tempest_Key",
+     "https://warcraft.wiki.gg/wiki/Quest:Trial_of_the_Naaru:_Mercy",
+     "https://warcraft.wiki.gg/wiki/Quest:Trial_of_the_Naaru:_Strength",
+     "https://warcraft.wiki.gg/wiki/Quest:Trial_of_the_Naaru:_Tenacity",
+     "https://warcraft.wiki.gg/wiki/Harbinger_Skyriss",
+     "https://warcraft.wiki.gg/wiki/Shattered_Hand_Executioner",
+     "https://warcraft.wiki.gg/wiki/Earthmender_Torlok",
+     "https://warcraft.wiki.gg/wiki/Oronok_Torn-heart",
+     "https://warcraft.wiki.gg/wiki/Earthmender_Sophurus",
+     "https://warcraft.wiki.gg/wiki/Earthmender_Splinthoof",
+     "https://warcraft.wiki.gg/wiki/Champion_of_the_Naaru",
+     "https://support.blizzard.com/en/article/13254",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua"
+    ],
+    "notes": "The Cipher of Damnation chain is compressed into six milestone steps; the questIds arrays list every intermediate quest (all 23 confirmed by name on the tooltip endpoint) so the addon can show finer progress if it wants. The Tempest Key is both quest 10883 and item 31704. Instance ids 540, 545, 555 and 552 are from memory (not locally confirmed); 544 and 550 are confirmed in Commander_Guide data."
+   },
+   {
+    "key": "HYJAL_ATTUNEMENT",
+    "title": "Mount Hyjal: The Vials of Eternity",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "The Battle for Mount Hyjal was gated by one quest from Soridormi in the Caverns of Time: bring back the vial remnants carried by Lady Vashj, last boss of Serpentshrine Cavern, and Kael'thas Sunstrider, last boss of The Eye. In practice this means your guild must have cleared both Phase 2 raids. On Anniversary the gate was removed with the 22 October 2026 update, but the quest still opens the Scale of the Sands reputation and its Band of Eternity rings, and it is half of the Hand of A'dal title.",
+    "unlocks": "Entry to Hyjal Summit while the gate exists, three thousand Scale of the Sands reputation, access to the Band of Eternity ring line from Soridormi, and together with A Distraction for Akama the title Hand of A'dal.",
+    "phase": {
+     "introduced": 3,
+     "requiredUntil": 4,
+     "notes": "Vashj and Kael'thas are Phase 2 bosses, so the quest could be finished before Hyjal opened on 27 August 2026 (Phase 3). Blizzard's 22 October 2026 post BCCA: The Gods of Zul'Aman Now Live states that The Battle for Mount Hyjal and The Black Temple will no longer require attunement to enter; that update is Phase 4 by TBC Classic naming (Warcraft Tavern files it as Phase 3.5 / Phase 4). TBC Classic 2021 did the same in patch 2.5.4 on 22 March 2022 (Phase 4, Zul'Aman); original TBC removed it in 2.4.0 (March 2008). The quest and its rewards remain afterwards."
+    },
+    "prerequisites": [
+     "SSC_ATTUNEMENT",
+     "TK_ATTUNEMENT"
+    ],
+    "steps": [
+     {
+      "key": "accept_vials",
+      "title": "Accept The Vials of Eternity from Soridormi",
+      "kind": "QUEST",
+      "questId": 10445,
+      "questName": "The Vials of Eternity",
+      "giver": {
+       "npcId": 19935,
+       "name": "Soridormi",
+       "zone": "Tanaris (Caverns of Time)",
+       "x": 58.9,
+       "y": 54.2
+      },
+      "turnIn": {
+       "npcId": 19935,
+       "name": "Soridormi",
+       "zone": "Tanaris (Caverns of Time)",
+       "x": 58.9,
+       "y": 54.2
+      },
+      "detail": "Enter the Caverns of Time in eastern Tanaris (cave mouth around 65.7, 49.8) and follow the tunnel down to the main cavern. Soridormi, the bronze dragon consort, patrols a short loop near 58.9, 54.2 on the Tanaris map; Arazmodu can also start the quest. The quest requires level 70 and no reputation. Take it before your raids kill Vashj or Kael'thas, since the remnants only drop for players with the quest.",
+      "detectedBy": "C_QuestLog.IsOnQuest(10445) or C_QuestLog.IsQuestFlaggedCompleted(10445).",
+      "optional": false
+     },
+     {
+      "key": "vashj_remnant",
+      "title": "Loot Vashj's Vial Remnant from Lady Vashj",
+      "kind": "ITEM",
+      "itemId": 29906,
+      "itemName": "Vashj's Vial Remnant",
+      "count": 1,
+      "instance": {
+       "name": "Serpentshrine Cavern",
+       "instanceMapId": 548,
+       "heroic": false,
+       "boss": "Lady Vashj",
+       "npcIds": [
+        21212
+       ]
+      },
+      "detail": "Lady Vashj is the sixth and final boss of Serpentshrine Cavern, reachable after Hydross, Lurker, Leotheras, Karathress and Morogrim (since Phase 3 on Anniversary you may skip straight to her). The remnant is a quest item that every raid member on The Vials of Eternity can loot. Either remnant can be collected first.",
+      "detectedBy": "Vashj's Vial Remnant (29906) in bags, or objective 1 of 10445 complete.",
+      "optional": false
+     },
+     {
+      "key": "kael_remnant",
+      "title": "Loot Kael's Vial Remnant from Kael'thas Sunstrider",
+      "kind": "ITEM",
+      "itemId": 29905,
+      "itemName": "Kael's Vial Remnant",
+      "count": 1,
+      "instance": {
+       "name": "Tempest Keep: The Eye",
+       "instanceMapId": 550,
+       "heroic": false,
+       "boss": "Kael'thas Sunstrider",
+       "npcIds": [
+        19622
+       ]
+      },
+      "detail": "Kael'thas Sunstrider is the last boss of The Eye in Netherstorm, after Al'ar, Void Reaver and High Astromancer Solarian (skippable on Anniversary since Phase 3). The remnant is a quest item lootable by everyone on the quest. With both remnants in hand, return to the Caverns of Time.",
+      "detectedBy": "Kael's Vial Remnant (29905) in bags, or objective 2 of 10445 complete.",
+      "optional": false
+     },
+     {
+      "key": "turn_in_vials",
+      "title": "Return both remnants to Soridormi",
+      "kind": "QUEST",
+      "questId": 10445,
+      "questName": "The Vials of Eternity",
+      "giver": {
+       "npcId": 19935,
+       "name": "Soridormi",
+       "zone": "Tanaris (Caverns of Time)",
+       "x": 58.9,
+       "y": 54.2
+      },
+      "turnIn": {
+       "npcId": 19935,
+       "name": "Soridormi",
+       "zone": "Tanaris (Caverns of Time)",
+       "x": 58.9,
+       "y": 54.2
+      },
+      "factionId": 990,
+      "standing": 5,
+      "detail": "Handing in grants 13 gold 20 silver and three thousand Scale of the Sands reputation, which takes a fresh character to Friendly. From Friendly onwards Soridormi offers the Band of Eternity rings (Defender, Champion, Sage and Restorer lines; the Exalted versions are Band of the Eternal Defender 29297, Champion 29301, Sage 29305 and Restorer 29309), each upgraded as your Hyjal reputation rises. The Hyjal Summit portal is inside the Caverns of Time. If you have also completed A Distraction for Akama you are granted the title Hand of A'dal.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10445); Scale of the Sands (faction 990) standing >= 5 is a secondary hint.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10445?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/29906?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/29905?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/19935?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/29297?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Vials_of_Eternity",
+     "https://warcraft.wiki.gg/wiki/Hand_of_A%27dal",
+     "https://worldofwarcraft.blizzard.com/en-us/news/24310652",
+     "https://us.forums.blizzard.com/en/wow/t/burning-crusade-classic-patch-notes-version-254/1205431",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/AtlasLootClassic_DungeonsAndRaids/data-tbc.lua"
+    ],
+    "notes": "The brief said the reward is the Scale of the Sands ring; the quest's own reward is reputation (and gold), and the rings come from Soridormi afterwards. Remnant item ids from AtlasLoot (Vashj 29906, Kael 29905) confirmed on the endpoint."
+   },
+   {
+    "key": "BLACK_TEMPLE_ATTUNEMENT",
+    "title": "Black Temple: the Ashtongue chain and the Medallion of Karabor",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "The longest attunement in the expansion. It starts with four Shadowmoon Valley quests from your Aldor or Scryer contact, moves to Akama in the Warden's Cage, detours into the Arcatraz and up the Ata'mal Terrace, and then sends you through Serpentshrine Cavern, The Eye and Mount Hyjal before Xi'ri opens the temple gates. The reward is the Medallion of Karabor, a teleport to the Black Temple, and together with the Hyjal attunement the title Hand of A'dal. On Anniversary the gate was removed on 22 October 2026 but the chain still gives everything else.",
+    "unlocks": "Entry to the Black Temple while the gate exists, the Medallion of Karabor, Ashtongue Deathsworn and Sha'tar reputation, and together with The Vials of Eternity the title Hand of A'dal.",
+    "phase": {
+     "introduced": 3,
+     "requiredUntil": 4,
+     "notes": "Steps up to Akama's Promise are Phase 1 content; The Secret Compromised and Ruse of the Ashtongue need Phase 2 raids; An Artifact From the Past needs Hyjal (Phase 3, 27 August 2026). Blizzard's 22 October 2026 post BCCA: The Gods of Zul'Aman Now Live states that The Battle for Mount Hyjal and The Black Temple will no longer require attunement to enter (Phase 4 by TBC Classic naming). TBC Classic 2021 removed it in patch 2.5.4 on 22 March 2022 (Phase 4); original TBC in 2.4.0. The chain, the medallion and the title (id 64) remain after removal."
+    },
+    "prerequisites": [
+     "HYJAL_ATTUNEMENT",
+     "SSC_ATTUNEMENT",
+     "TK_ATTUNEMENT"
+    ],
+    "steps": [
+     {
+      "key": "tablets_of_baari",
+      "title": "Collect twelve Baa'ri Tablet Fragments",
+      "kind": "QUEST",
+      "quest": {
+       "ALDOR": 10568,
+       "SCRYER": 10683
+      },
+      "questName": "Tablets of Baa'ri",
+      "giver": {
+       "npcId": 21402,
+       "name": "Anchorite Ceyla (Aldor, Altar of Sha'tar) / Arcanist Thelis 21955 (Scryers, Sanctum of the Stars)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.6,
+       "y": 28.4
+      },
+      "turnIn": {
+       "npcId": 21402,
+       "name": "Anchorite Ceyla (Aldor) / Arcanist Thelis 21955 (Scryers)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.6,
+       "y": 28.4
+      },
+      "detail": "You must have pledged to the Aldor or the Scryers in Shattrath. Aldor take 10568 from Anchorite Ceyla at the Altar of Sha'tar (62.6, 28.4); Scryers take 10683 from Arcanist Thelis at the Sanctum of the Stars (56.3, 59.6). Both send you to the Ruins of Baa'ri (around 55 to 60, 34 to 39) to pick twelve Baa'ri Tablet Fragments off the ground or from Ashtongue Workers. The first four quests exist in two copies, one per faction; from Proof of Allegiance onwards the chain is shared. Doing Aldor quests lowers Scryer reputation and vice versa.",
+      "detectedBy": "Either 10568 or 10683 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "oronu_the_elder",
+      "title": "Take the Orders From Akama off Oronu the Elder",
+      "kind": "QUEST",
+      "quest": {
+       "ALDOR": 10571,
+       "SCRYER": 10684
+      },
+      "questName": "Oronu the Elder",
+      "giver": {
+       "npcId": 21402,
+       "name": "Anchorite Ceyla (Aldor) / Arcanist Thelis 21955 (Scryers)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.6,
+       "y": 28.4
+      },
+      "turnIn": {
+       "npcId": 21402,
+       "name": "Anchorite Ceyla (Aldor) / Arcanist Thelis 21955 (Scryers)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.6,
+       "y": 28.4
+      },
+      "detail": "Oronu the Elder (npc 21663) stands on the balcony of the ruined building at the Ruins of Baa'ri, about 57.2, 32.9. Kill him and loot the Orders From Akama, then return to your Aldor or Scryer contact.",
+      "detectedBy": "Either 10571 or 10684 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "ashtongue_corruptors",
+      "title": "Kill the four Ashtongue Corruptors for their medallion fragments",
+      "kind": "QUEST",
+      "quest": {
+       "ALDOR": 10574,
+       "SCRYER": 10685
+      },
+      "questName": "The Ashtongue Corruptors",
+      "giver": {
+       "npcId": 21402,
+       "name": "Anchorite Ceyla (Aldor) / Arcanist Thelis 21955 (Scryers)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.6,
+       "y": 28.4
+      },
+      "turnIn": {
+       "npcId": 21402,
+       "name": "Anchorite Ceyla (Aldor) / Arcanist Thelis 21955 (Scryers)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.6,
+       "y": 28.4
+      },
+      "detail": "Four named Ashtongue shaman across the valley, any order: Lakaan (npc 21416) east of Coilskar Point at 49.9, 23.0; Uylaru (21710) in the Fel Pits at 48.3, 39.6; Eykenen (21709) also in the Fel Pits at 51.2, 52.8; and Haalum (21711) at Netherwing Pass at 57.1, 73.7. Each is protected by totems; destroy the totems first or they heal and buff him. Loot each medallion fragment and return to your contact.",
+      "detectedBy": "Either 10574 or 10685 flagged complete (objectives 1 to 4 track Eykenen, Haalum, Lakaan and Uylaru).",
+      "optional": false
+     },
+     {
+      "key": "wardens_cage",
+      "title": "Report to Sanoru at the Warden's Cage",
+      "kind": "QUEST",
+      "quest": {
+       "ALDOR": 10575,
+       "SCRYER": 10686
+      },
+      "questName": "The Warden's Cage",
+      "giver": {
+       "npcId": 21402,
+       "name": "Anchorite Ceyla (Aldor) / Arcanist Thelis 21955 (Scryers)",
+       "zone": "Shadowmoon Valley",
+       "x": 62.6,
+       "y": 28.4
+      },
+      "turnIn": {
+       "npcId": 21826,
+       "name": "Sanoru",
+       "zone": "Shadowmoon Valley",
+       "x": 57.3,
+       "y": 49.6
+      },
+      "detail": "Your contact sends you to the Warden's Cage south of the Ruins of Baa'ri. Sanoru, an Ashtongue Deathsworn, waits at 57.3, 49.6 near the entrance. Hand in; from here both Aldor and Scryer players follow the same quests.",
+      "detectedBy": "Either 10575 or 10686 flagged complete.",
+      "optional": false
+     },
+     {
+      "key": "proof_of_allegiance",
+      "title": "Slay Zandras on the Warden's Cage rooftop",
+      "kind": "QUEST",
+      "questId": 10622,
+      "questName": "Proof of Allegiance",
+      "giver": {
+       "npcId": 21826,
+       "name": "Sanoru",
+       "zone": "Shadowmoon Valley",
+       "x": 57.3,
+       "y": 49.6
+      },
+      "turnIn": {
+       "npcId": 21826,
+       "name": "Sanoru",
+       "zone": "Shadowmoon Valley",
+       "x": 57.3,
+       "y": 49.6
+      },
+      "detail": "Zandras (npc 21827) is a satyr who patrols the upper walls and rooftop of the Warden's Cage, roughly between 56.4, 50.0 and 58.1, 49.8. Go up the ramps, kill him and come back down to Sanoru. He is a normal elite-free mob and soloable at 70.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10622).",
+      "optional": false
+     },
+     {
+      "key": "akama",
+      "title": "Find Akama in the hidden chamber",
+      "kind": "QUEST",
+      "questId": 10628,
+      "questName": "Akama",
+      "giver": {
+       "npcId": 21826,
+       "name": "Sanoru",
+       "zone": "Shadowmoon Valley",
+       "x": 57.3,
+       "y": 49.6
+      },
+      "turnIn": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "detail": "Akama hides in a chamber beneath the Warden's Cage, in front of Maiev's cell. From Sanoru go inside, swim through the short passage under the pool (around 57.4, 47.8 then 57.7, 48.5) and up into the chamber at 58.1, 48.2. Akama is the hub for the rest of the chain, so remember the route.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10628).",
+      "optional": false
+     },
+     {
+      "key": "seer_udalo",
+      "title": "Find Seer Udalo inside the Arcatraz",
+      "kind": "QUEST",
+      "questId": 10705,
+      "questName": "Seer Udalo",
+      "giver": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "turnIn": {
+       "npcId": 21962,
+       "name": "Udalo",
+       "zone": "The Arcatraz"
+      },
+      "instance": {
+       "name": "The Arcatraz",
+       "instanceMapId": 552,
+       "heroic": false,
+       "boss": "Harbinger Skyriss",
+       "npcIds": [
+        21962,
+        20912
+       ]
+      },
+      "detail": "Udalo's body lies in the Arcatraz in Tempest Keep, in the last room before Harbinger Skyriss, so the group must clear the first three bosses. Normal difficulty is enough, but normal Arcatraz is locked: you need the Key to the Arcatraz (item 31084, from the Netherstorm chain ending in How to Break Into the Arcatraz, 10704), a rogue with 350 lockpicking, or a heroic Warpforged Key holder opening heroic. Talk to Udalo to hand in and accept the follow up.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10705).",
+      "optional": false
+     },
+     {
+      "key": "mysterious_portent",
+      "title": "Return to Akama with Udalo's warning",
+      "kind": "QUEST",
+      "questId": 10706,
+      "questName": "A Mysterious Portent",
+      "giver": {
+       "npcId": 21962,
+       "name": "Udalo",
+       "zone": "The Arcatraz"
+      },
+      "turnIn": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "detail": "Accept from Udalo inside the Arcatraz, then hearth or fly back to the Warden's Cage and swim through to Akama's chamber. Pure travel.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10706).",
+      "optional": false
+     },
+     {
+      "key": "atamal_terrace",
+      "title": "Take the Heart of Fury from Shadowlord Deathwail",
+      "kind": "QUEST",
+      "questId": 10707,
+      "questName": "The Ata'mal Terrace",
+      "giver": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "turnIn": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "detail": "The Ata'mal Terrace is the northern battlement of the Black Temple complex, at about 71.6, 35.5; you can fly up to it. Shadowlord Deathwail (npc 22006) hovers above three Shadowmoon Soulstealers; kill all three to bring him down, then kill him and loot the Heart of Fury. He and his guards are elites, so bring a full group with a tank and healer. Return the heart to Akama.",
+      "detectedBy": "Objective 1 of 10707 complete, or C_QuestLog.IsQuestFlaggedCompleted(10707).",
+      "optional": false
+     },
+     {
+      "key": "akamas_promise",
+      "title": "Bring Akama's Medallion of Karabor to A'dal",
+      "kind": "QUEST",
+      "questId": 11052,
+      "questName": "Akama's Promise",
+      "questIdAlt": 10708,
+      "giver": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "detail": "Akama hands you his medallion to show A'dal in Shattrath. Hand in on the Terrace of Light (54.0, 44.7) for one thousand Ashtongue Deathsworn and one thousand Sha'tar reputation plus a choice of blue items such as Akama's Sash or the Staff of the Ashtongue Deathsworn. This is the end of the solo part; the next quest only appears inside Serpentshrine Cavern. Two copies of this quest exist in the data (10708 and 11052); Questie blacklists 10708 as a duplicate of 11052 and RXP uses 11052, so accept either as done.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(11052) or C_QuestLog.IsQuestFlaggedCompleted(10708).",
+      "optional": false
+     },
+     {
+      "key": "secret_compromised",
+      "title": "Speak to Seer Olum after Fathom-Lord Karathress",
+      "kind": "QUEST",
+      "questId": 10944,
+      "questName": "The Secret Compromised",
+      "giver": {
+       "npcId": 22820,
+       "name": "Seer Olum",
+       "zone": "Serpentshrine Cavern"
+      },
+      "turnIn": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "instance": {
+       "name": "Serpentshrine Cavern",
+       "instanceMapId": 548,
+       "heroic": false,
+       "boss": "Fathom-Lord Karathress",
+       "npcIds": [
+        21214,
+        22820
+       ]
+      },
+      "detail": "In Serpentshrine Cavern kill Fathom-Lord Karathress and his three advisers (fourth boss). Seer Olum, a captive Broken, then appears caged behind Karathress's platform; talk to him to accept The Secret Compromised (you must have finished Akama's Promise). Leave the raid and report to Akama in the Warden's Cage.",
+      "detectedBy": "C_QuestLog.IsOnQuest(10944) once picked up; C_QuestLog.IsQuestFlaggedCompleted(10944) when handed to Akama.",
+      "optional": false
+     },
+     {
+      "key": "ruse_of_the_ashtongue",
+      "title": "Kill Al'ar while wearing the Ashtongue Cowl",
+      "kind": "QUEST",
+      "questId": 10946,
+      "questName": "Ruse of the Ashtongue",
+      "itemId": 31946,
+      "itemName": "Ashtongue Cowl",
+      "count": 1,
+      "giver": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "turnIn": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "instance": {
+       "name": "Tempest Keep: The Eye",
+       "instanceMapId": 550,
+       "heroic": false,
+       "boss": "Al'ar",
+       "npcIds": [
+        19514
+       ]
+      },
+      "detail": "Akama gives you the Ashtongue Cowl (item 31946). In The Eye, equip the cowl in your head slot before Al'ar dies; the objective credits on the kill only if the cowl is worn at that moment, so swap it on during the second phase and swap back afterwards. Al'ar is the first boss, so this can be done on any Eye night. Return to Akama.",
+      "detectedBy": "Objective 1 of 10946 complete, or C_QuestLog.IsQuestFlaggedCompleted(10946); the Ashtongue Cowl (31946) in bags shows the quest is in progress.",
+      "optional": false
+     },
+     {
+      "key": "artifact_from_the_past",
+      "title": "Loot the Time-Phased Phylactery from Rage Winterchill",
+      "kind": "QUEST",
+      "questId": 10947,
+      "questName": "An Artifact From the Past",
+      "itemId": 32459,
+      "itemName": "Time-Phased Phylactery",
+      "count": 1,
+      "giver": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "turnIn": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "instance": {
+       "name": "Hyjal Summit",
+       "instanceMapId": 534,
+       "heroic": false,
+       "boss": "Rage Winterchill",
+       "npcIds": [
+        17767
+       ]
+      },
+      "detail": "Enter the Battle for Mount Hyjal through the Caverns of Time (before 22 October 2026 that needed The Vials of Eternity complete). Survive the eight waves at Jaina's base and kill Rage Winterchill, the first boss; the phylactery is a quest item everyone on the quest can loot. Bring it to Akama.",
+      "detectedBy": "Time-Phased Phylactery (32459) in bags, objective 1 of 10947, or C_QuestLog.IsQuestFlaggedCompleted(10947).",
+      "optional": false
+     },
+     {
+      "key": "hostage_soul",
+      "title": "Tell A'dal about Akama's request",
+      "kind": "QUEST",
+      "questId": 10948,
+      "questName": "The Hostage Soul",
+      "giver": {
+       "npcId": 22990,
+       "name": "Akama",
+       "zone": "Shadowmoon Valley",
+       "x": 58.1,
+       "y": 48.2
+      },
+      "turnIn": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "detail": "Travel to Shattrath and speak to A'dal on the Terrace of Light. Pure travel; A'dal immediately offers the next quest.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10948).",
+      "optional": false
+     },
+     {
+      "key": "entry_into_black_temple",
+      "title": "Meet Xi'ri at the Black Temple gates",
+      "kind": "QUEST",
+      "questId": 10949,
+      "questName": "Entry Into the Black Temple",
+      "giver": {
+       "npcId": 18481,
+       "name": "A'dal",
+       "zone": "Shattrath City",
+       "x": 54,
+       "y": 44.7
+      },
+      "turnIn": {
+       "npcId": 18528,
+       "name": "Xi'ri",
+       "zone": "Shadowmoon Valley",
+       "x": 65.2,
+       "y": 44
+      },
+      "detail": "Xi'ri, a naaru, floats with the Sha'tar forces at the start of the road to the Black Temple, about 65.2, 44.0 in Shadowmoon Valley. Hand in for a little Ashtongue and Sha'tar reputation. If you are in a group, make sure everyone has handed this in before anyone accepts the next quest, because the next step is a scripted event.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10949).",
+      "optional": false
+     },
+     {
+      "key": "distraction_for_akama",
+      "title": "Escort Akama and Maiev into the Black Temple",
+      "kind": "QUEST",
+      "questId": 10985,
+      "questName": "A Distraction for Akama",
+      "itemId": 32649,
+      "itemName": "Medallion of Karabor",
+      "count": 1,
+      "giver": {
+       "npcId": 18528,
+       "name": "Xi'ri",
+       "zone": "Shadowmoon Valley",
+       "x": 65.2,
+       "y": 44
+      },
+      "turnIn": {
+       "npcId": 18528,
+       "name": "Xi'ri",
+       "zone": "Shadowmoon Valley",
+       "x": 65.2,
+       "y": 44
+      },
+      "detail": "Accept from Xi'ri, then talk to him again to start the event; wait a minute or two for Akama to arrive, follow him and the Sha'tar assault up the road, and watch Akama and Maiev slip through the temple gate while Xi'ri's forces fight. The objective Help Akama and Maiev enter the Black Temple credits for everyone who stays with the event. Hand in to Xi'ri for the Medallion of Karabor, a trinket that teleports you to the Black Temple entrance (around 71.0, 46.4). Completing this quest is the Black Temple attunement flag; if The Vials of Eternity is also complete you are granted the title Hand of A'dal.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10985); the Medallion of Karabor (32649) in bags is a strong secondary signal.",
+      "optional": false
+     },
+     {
+      "key": "seek_out_the_ashtongue",
+      "title": "Optional: Seek Out the Ashtongue inside the temple",
+      "kind": "QUEST",
+      "questId": 10958,
+      "questName": "Seek Out the Ashtongue",
+      "giver": {
+       "npcId": 18528,
+       "name": "Xi'ri",
+       "zone": "Shadowmoon Valley",
+       "x": 65.2,
+       "y": 44
+      },
+      "instance": {
+       "name": "Black Temple",
+       "instanceMapId": 564,
+       "heroic": false,
+       "boss": "Shade of Akama",
+       "npcIds": [
+        22841
+       ]
+      },
+      "detail": "Not part of the attunement, but Xi'ri offers it straight after. It leads to Akama's Deathsworn inside the Black Temple and on to Redemption of the Ashtongue (Shade of Akama) and The Fall of the Betrayer (Illidan), which upgrade the medallion to the Blessed Medallion of Karabor.",
+      "detectedBy": "C_QuestLog.IsQuestFlaggedCompleted(10958).",
+      "optional": true
+     }
+    ],
+    "sources": [
+     "https://nether.wowhead.com/tooltip/quest/10568?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10683?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10705?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10707?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/11052?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10944?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10946?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10947?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10949?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/quest/10985?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32649?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/31946?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/item/32459?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/18528?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/22820?dataEnv=5&locale=0",
+     "https://warcraft.wiki.gg/wiki/Black_Temple_attunement",
+     "https://warcraft.wiki.gg/wiki/Tablets_of_Baa%27ri_(Aldor)",
+     "https://warcraft.wiki.gg/wiki/Tablets_of_Baa%27ri_(Scryers)",
+     "https://warcraft.wiki.gg/wiki/Quest:Akama%27s_Promise",
+     "https://warcraft.wiki.gg/wiki/Quest:The_Secret_Compromised",
+     "https://warcraft.wiki.gg/wiki/Quest:Entry_Into_the_Black_Temple",
+     "https://warcraft.wiki.gg/wiki/Xi%27ri",
+     "https://warcraft.wiki.gg/wiki/Sanoru",
+     "https://warcraft.wiki.gg/wiki/Zandras",
+     "https://warcraft.wiki.gg/wiki/Oronu_the_Elder",
+     "https://warcraft.wiki.gg/wiki/Anchorite_Ceyla",
+     "https://warcraft.wiki.gg/wiki/Arcanist_Thelis",
+     "https://warcraft.wiki.gg/wiki/Udalo",
+     "https://warcraft.wiki.gg/wiki/Seer_Udalo",
+     "https://warcraft.wiki.gg/wiki/Haalum",
+     "https://warcraft.wiki.gg/wiki/Eykenen",
+     "https://warcraft.wiki.gg/wiki/Uylaru",
+     "https://warcraft.wiki.gg/wiki/Lakaan",
+     "https://warcraft.wiki.gg/wiki/Hand_of_A%27dal",
+     "https://us.forums.blizzard.com/en/wow/t/hand-of-adal-achievement/1605099",
+     "https://worldofwarcraft.blizzard.com/en-us/news/24310652",
+     "https://us.forums.blizzard.com/en/wow/t/burning-crusade-classic-patch-notes-version-254/1205431",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/RXPGuides/Guides/tbc/Attunements.lua",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Questie/Database/Corrections/QuestieQuestBlacklist.lua"
+    ],
+    "notes": "The brief's ids were shifted by one from The Secret Compromised onward; the confirmed mapping is 10944 The Secret Compromised, 10946 Ruse of the Ashtongue, 10947 An Artifact From the Past, 10948 The Hostage Soul, 10949 Entry Into the Black Temple, 10985 A Distraction for Akama, and Seer Udalo / A Mysterious Portent / The Ata'mal Terrace / Akama's Promise are 10705 / 10706 / 10707 / 11052 (10708 duplicate). The Aldor/Scryer split covers only the first four quests (Aldor 10568, 10571, 10574, 10575; Scryers 10683, 10684, 10685, 10686); the step field quest {ALDOR, SCRYER} carries both. Akama npc 22990 is the Warden's Cage quest giver (23191 is the Black Temple copy); both tooltips read identically. Coordinates from the RXP guide."
+   },
+   {
+    "key": "ZUL_AMAN",
+    "title": "Zul'Aman",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "Zul'Aman is the ten player troll raid in the Ghostlands added with Phase 4. It has never had an attunement; Blizzard's own announcement says no attunement is required to enter the instance. The only thing that gates you is the three day lockout and finding nine friends.",
+    "unlocks": "Nothing to unlock: any level 70 character may enter from the day the raid opens.",
+    "phase": {
+     "introduced": 4,
+     "requiredUntil": null,
+     "notes": "Opened on Anniversary on 22 October 2026 at 3:00 pm PDT (Blizzard post BCCA: The Gods of Zul'Aman Now Live), the update Warcraft Tavern lists as Phase 3.5 / Phase 4; TBC Classic 2021 opened it with patch 2.5.4 on 22 March 2022; original TBC in 2.3.0. The installed Questie hard-codes Phase 3, so as of 24 October 2026 it under-reports the realm's phase. All Zul'Aman bosses drop Badges of Justice."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "enter_zulaman",
+      "title": "Enter Zul'Aman and ring Harrison Jones's gong",
+      "kind": "MANUAL",
+      "instance": {
+       "name": "Zul'Aman",
+       "instanceMapId": 568,
+       "heroic": false,
+       "boss": "Zul'jin",
+       "npcIds": [
+        24358,
+        23576,
+        24239,
+        23863
+       ]
+      },
+      "entrance": {
+       "zone": "Ghostlands",
+       "uiMapId": 1942,
+       "x": 82.3,
+       "y": 64.3
+      },
+      "detail": "The entrance is in the far east of the Ghostlands at about 82.3, 64.3; Horde fly to Tranquillien, Alliance come up through Zul'Aman's road from the Eastern Plaguelands or take the Thrallmar-free route via the Ghostlands. Inside, speak to Harrison Jones and help him strike the gong to open the gate, which also starts the timed hostage event: Nalorakk, Akil'zon, Jan'alai and Halazzi each hold a prisoner and rescuing all four within the timer awards the Amani War Bear mount. Hex Lord Malacrass and Zul'jin wait at the end. Ten players, level 70, three day reset, no attunement.",
+      "detectedBy": "Manual tick, or auto-tick the first time GetInstanceInfo() reports instanceID 568.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://worldofwarcraft.blizzard.com/en-us/news/24310652",
+     "https://www.warcrafttavern.com/tbc/news/zulaman-arrives-october-22nd-for-tbc-anniversary/",
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://timesaver.gg/blog/tbc-anniversary-october-22-patch-changes",
+     "https://nether.wowhead.com/tooltip/npc/24358?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/23863?dataEnv=5&locale=0",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Guide/CommanderGuideData.lua"
+    ],
+    "notes": "Instance id 568 and entrance coordinates confirmed in Commander_Guide data. Harrison Jones npc 24358 confirmed."
+   },
+   {
+    "key": "SUNWELL_PLATEAU",
+    "title": "Sunwell Plateau",
+    "category": "RAID",
+    "faction": "BOTH",
+    "summary": "Sunwell Plateau is the final twenty-five player raid, on the Isle of Quel'Danas, and it has never required an attunement. In original TBC and TBC Classic the later bosses were time gated for a few weeks after the raid opened rather than locked behind quests. On Anniversary it belongs to Phase 5, which Blizzard has not yet dated.",
+    "unlocks": "Nothing to unlock: any level 70 character may enter once Phase 5 opens the raid.",
+    "phase": {
+     "introduced": 5,
+     "requiredUntil": null,
+     "notes": "Phase 5 (Fury of the Sunwell) is listed as autumn 2026 with no date as of 24 October 2026. TBC Classic 2021 opened the Isle on 10 May 2022 and the raid on 12 May 2022 with the final bosses gated by time; original TBC was patch 2.4.0 with the Isle's own progression unlocking Magisters' Terrace and the Sunwell over weeks. Expect the same no-attunement rule; the Shattered Sun Offensive daily hub and Magisters' Terrace (Heroic Countenance from Hard to Kill) are separate from raid access."
+    },
+    "prerequisites": [],
+    "steps": [
+     {
+      "key": "enter_sunwell",
+      "title": "Enter Sunwell Plateau on the Isle of Quel'Danas",
+      "kind": "MANUAL",
+      "instance": {
+       "name": "Sunwell Plateau",
+       "instanceMapId": 580,
+       "heroic": false,
+       "boss": "Kil'jaeden",
+       "npcIds": [
+        24850,
+        25315
+       ]
+      },
+      "entrance": {
+       "zone": "Isle of Quel'Danas",
+       "uiMapId": 1957,
+       "x": 44.3,
+       "y": 45.5
+      },
+      "detail": "Reach the Isle of Quel'Danas by the portal in Shattrath (once the Shattered Sun Offensive opens it) or by boat from Silvermoon's Sunsail Anchorage. The raid portal is in the middle of the island at about 44.3, 45.5, inside the plateau walls. Six bosses from Kalecgos to Kil'jaeden, twenty-five players, weekly reset, no attunement; Blizzard may stagger the later bosses by time as in 2008 and 2022, so check the news when Phase 5 lands.",
+      "detectedBy": "Manual tick, or auto-tick the first time GetInstanceInfo() reports instanceID 580.",
+      "optional": false
+     }
+    ],
+    "sources": [
+     "https://www.warcrafttavern.com/tbc/guides/phases/",
+     "https://warcraft.wiki.gg/wiki/Burning_Crusade_Classic",
+     "https://www.magicgameworld.com/?p=126361",
+     "https://nether.wowhead.com/tooltip/npc/24850?dataEnv=5&locale=0",
+     "https://nether.wowhead.com/tooltip/npc/25315?dataEnv=5&locale=0",
+     "/Applications/World of Warcraft/_anniversary_/Interface/AddOns/Commander_Guide/CommanderGuideData.lua"
+    ],
+    "notes": "Instance id 580 and entrance coordinates confirmed in Commander_Guide data. Phase 5 date for Anniversary unknown at research time."
+   }
+  ],
+  "uncertain": [
+   "Heroic Shattered Halls timer length: RXP's guide says 55 minutes after Grand Warlock Nethekurse dies and that is my step text, but the warcraft.wiki.gg quest page for Trial of the Naaru: Mercy says 80 minutes; the exact minutes at which each prisoner is executed were not found in any fetched source.",
+   "The Mark of Vashj (10900): Icy Veins and the wiki progression list it before The Cudgel of Kar'desh and describe it as an accept-and-hand-in, but no source states outright that 10901 is unavailable without it; the step is marked optional and a completed 10901 should imply it.",
+   "Akama's Promise has two ids on the Anniversary endpoint, 10708 and 11052, both with identical text. Questie's blacklist says 10708 is a duplicate of 11052 and RXP uses 11052; warcraft.wiki.gg lists 10708 as current and 11052 as removed (probably retail data). Treat either as completion.",
+   "Five-man instance map ids (Slave Pens 547, Shattered Halls 540, Steamvault 545, Shadow Labyrinth 555, Arcatraz 552, Sethekk Halls 556) are from memory; Questie's dungeons.lua is keyed differently and I did not confirm them locally. The raid ids (532, 565, 544, 548, 550, 534, 564, 568, 580) are confirmed in Commander_Guide/CommanderGuideData.lua.",
+   "Akama npc id: 22990 and 23191 both resolve to Akama with identical tooltips; 22990 is given as the Warden's Cage quest giver based on id ordering and the Black Temple copy being the later id, not on a source that labels them.",
+   "Hand of A'dal (title id 64) and Champion of the Naaru (title id 53): ids come from the warcraft.wiki.gg TitleId table and a search snippet of TrinityCore's table, not from the Anniversary client. The grant rule (both chains complete, awarded on whichever is finished last) is from original 2.4.0 patch notes, Blizzard support article 13254 and player reports from TBC Classic; I found no Anniversary-specific statement, and no statement on whether the titles stay obtainable after the 22 October 2026 gate removal (they did in original 2.4 until 3.0.2, so I assume they do).",
+   "Gruul's Lair minimum level: the wiki text says level 65 may enter while its infobox says 70; the LEVEL step uses 70.",
+   "Loot rules for the quest items (signets, vial remnants, the axe, the phylactery) being lootable by every raid member on the quest are from TBC Classic experience and the items being flagged quest items, not from a fetched source.",
+   "Soridormi's coordinates (58.9, 54.2) are RXP's Tanaris-map coordinates for the inside of the Caverns of Time; the cave mouth is 65.7, 49.8. Whether the 2.5.6 client places the cavern interior on the Tanaris uiMap (1446) was not checked.",
+   "Heroic key reputation on Anniversary: Blizzard's development notes (November 2025) made the first character need Revered and the 22 October 2026 post reduced it to Honored; the step text assumes no further change. This is the heroic researcher's topic and is only mentioned in passing.",
+   "TBC Classic 2021 removal date for SSC/TK: Kaivax's 10 December 2021 post said the requirement would lift at the following week's weekly reset (14 or 15 December 2021 by region); I did not find the exact per-region date.",
+   "Phase label for the 22 October 2026 Anniversary update: Blizzard's post is titled BCCA: The Gods of Zul'Aman Now Live and names no phase number; Warcraft Tavern files it as Phase 3.5 and also as Phase 4 (The Gods of Zul'Aman). I treated it as Phase 4 in the harness's five-phase mapping. The installed Questie hard-codes Phase 3 (per the project's own memory notes) and is therefore stale."
+  ],
+  "notes": "Phase mapping verified for Anniversary 2026: pre-patch 13 January 2026; Phase 1 (Karazhan, Gruul, Magtheridon) 5 February 2026; Phase 2 (SSC, The Eye) 14 May 2026; Phase 3 (Hyjal, Black Temple) 27 August 2026 with the SSC/TK attunement requirement removed at its start; 22 October 2026 update (Zul'Aman, Hyjal/BT attunement removed, heroic keys to Honored, heroics at final reduced difficulty, Badges from all Phase 1-2 raid bosses and Kazzak/Doomwalker) which is Phase 4 by TBC Classic naming; Phase 5 (Sunwell) undated. So requiredUntil is 3 for SSC/TK and 4 for Hyjal/BT. For reference, original TBC removed SSC/TK gates in 2.1.2 (June 2007) and Hyjal/BT in 2.4.0 (March 2008); TBC Classic 2021 removed SSC/TK at the mid-December 2021 reset (late Phase 2) and Hyjal/BT in patch 2.5.4 on 22 March 2022 (Phase 4), the exact wording Anniversary reused. Two corrections to the brief: the Black Temple quest ids were shifted by one (confirmed list in the BT guide notes) and the Nightbane urn chain is Medivh's Journal through Nightbane (9630, 9638, 9639, 9640, 9645, 9680, 9631, 9637, 9644), not A Demonic Presence / The New Directive, which belong to the Violet Eye chain. Every questId, itemId and npcId emitted was resolved by name on https://nether.wowhead.com/tooltip/<type>/<id>?dataEnv=5&locale=0; item ids were sourced from AtlasLoot's TBC loot tables and RXP's guide before confirmation, NPC ids from warcraft.wiki.gg NPC pages, coordinates from RXPGuides/Guides/tbc/Attunements.lua and the suite's own Commander_Guide entrance table. Detection notes for the addon: (1) Blizzard made raid attunements account-wide on Anniversary (first character attunes, every character on the Battle.net account is unlocked), so an alt can be raid-eligible with none of these quest flags; keep an account-wide saved variable that any character sets when it completes a chain's final step, and treat it as attuned. (2) Since 27 August 2026 and 22 October 2026 the gates are gone, so present these guides as progress toward rings, reputation, the medallion and the two titles rather than as blockers. (3) Quest items are removed at turn-in, so an ITEM step should count as done when the item is in bags OR the quest objective reads complete OR the quest is flagged complete; later steps completing should imply earlier ones. (4) Aldor/Scryer alternatives are carried as quest {ALDOR, SCRYER}; faction alternatives as quest {A, H}; the Cipher milestones carry questIds arrays for finer progress. (5) Titles can be checked with IsTitleKnown(53) and IsTitleKnown(64), or by scanning GetTitleName for the strings in case the ids differ on this client. Heroic key ids for the step text: Flamewrought 30622, Reservoir 30623, Auchenai 30633, Warpforged 30634, Key of Time 30635; faction ids used: Cenarion Expedition 942, Scale of the Sands 990 (Ashtongue Deathsworn 1012, The Sha'tar 935, The Violet Eye 967 mentioned in prose). Scratch helper used for confirmations: /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/tools/wh.sh. No files outside the scratchpad were written."
+ },
+ "verify": {
+  "checked": 134,
+  "mismatches": [],
+  "corrections": [
+   {
+    "guideKey": "NIGHTBANE_SUMMON",
+    "stepKey": "masters_terrace",
+    "field": "detail",
+    "from": "Take it to the Master's Terrace, the open balcony on the third level of Karazhan reached through the side door after the Shade of Aran, walk to the southern end and use the journal",
+    "to": "The Master's Terrace is NOT in the Aran wing. It is reached from Karazhan's SIDE ENTRANCE (the back door near the main gate): go in the side entrance, through the door directly ahead, turn left and follow the passage without climbing any stairs, at the staircase take the opening to its right, and the door immediately inside that passage on the left leads outside onto the terrace (the other path goes into the ballroom). No boss has to be killed to reach it. Read the journal at the southern end (objective 'Journal Entry Read'), then leave and hand the journal to Alturus.",
+    "reason": "warcraft.wiki.gg 'Nightbane quest chain' gives this exact five-step route from the side entrance; Quest:The Master's Terrace says the terrace is 'very near Karazhan's side entrance' and on level 3. The guide's 'side door after the Shade of Aran' conflates the Library route with the terrace route."
+   },
+   {
+    "guideKey": "NIGHTBANE_SUMMON",
+    "stepKey": "nightbane",
+    "field": "detail",
+    "from": "In Karazhan go to the Master's Terrace (after the Shade of Aran, through the side door), stand at the southern end and use the urn",
+    "to": "In Karazhan go to the Master's Terrace via the side entrance (see the masters_terrace step for the route; no boss needs to be dead, so raids commonly open the night with Nightbane), stand at the southern end and use the urn (item text: 'Summon Nightbane at the southern end of the Master's Terrace', 30 s cooldown)",
+    "reason": "Same route error as masters_terrace; Blackened Urn 24140 tooltip on the Anniversary endpoint confirms the southern-end wording."
+   },
+   {
+    "guideKey": "NIGHTBANE_SUMMON",
+    "stepKey": "digging_up_the_past",
+    "field": "detail",
+    "from": "A solo errand: go to the mountains just south of Karazhan in Deadwind Pass and pick up the Charred Bone Fragment from the ground. It sits against the mountainside directly behind the Karazhan meeting stone.",
+    "to": "A solo errand that cannot be completed while in a raid group, so leave the raid first. The Charred Bone Fragment lies on the ground against the mountainside directly behind the Karazhan meeting stone (about 45, 79 in Deadwind Pass); it respawns in roughly seven minutes if someone else just took it.",
+    "reason": "warcraft.wiki.gg Quest:Digging Up the Past ('cannot be completed in a raid group', 'behind the summoning stone up against the mountain') and the Nightbane quest chain page (45,79; 7-minute respawn). Item name 'Charred Bone Fragment' confirmed by the 9680 tooltip."
+   },
+   {
+    "guideKey": "NIGHTBANE_SUMMON",
+    "stepKey": "kalynnas_request",
+    "field": "instance.npcIds",
+    "from": "[16807,18472] under The Shattered Halls (540)",
+    "to": "[16807] only; Darkweaver Syth 18472 belongs to Sethekk Halls (556), which the items[] array already carries",
+    "reason": "Data nit: the top-level instance block mixes a Sethekk Halls boss into the Shattered Halls record, which would mis-attribute an ENCOUNTER_END in instance 540."
+   },
+   {
+    "guideKey": "TK_ATTUNEMENT",
+    "stepKey": "hand_of_guldan",
+    "field": "giver",
+    "from": "{npcId:21937, name:'Earthmender Sophurus (Alliance) / Earthmender Splinthoof 21938 (Horde)', x:36.4, y:57}",
+    "to": "Faction-keyed like the quest field: {A:{npcId:21937,name:'Earthmender Sophurus',zone:'Shadowmoon Valley (Wildhammer Stronghold)',x:36.4,y:57.0}, H:{npcId:21938,name:'Earthmender Splinthoof',zone:'Shadowmoon Valley (Shadowmoon Village)',x:28.5,y:26.6}}",
+    "reason": "The single giver record carries only the Alliance npcId and coordinates, so a Horde player is pointed at Wildhammer Stronghold. Both names/ids confirmed on the endpoint; coordinates match RXP Attunements.lua (.goto 36.368,56.953 / 28.489,26.573) and the wiki infoboxes (36,57 / 28.5,26.5)."
+   },
+   {
+    "guideKey": "BLACK_TEMPLE_ATTUNEMENT",
+    "stepKey": "tablets_of_baari",
+    "field": "giver / turnIn",
+    "from": "{npcId:21402, name:'Anchorite Ceyla (Aldor, Altar of Sha'tar) / Arcanist Thelis 21955 (Scryers, Sanctum of the Stars)', x:62.6, y:28.4}",
+    "to": "Faction-keyed like the quest field: {ALDOR:{npcId:21402,name:'Anchorite Ceyla',zone:'Shadowmoon Valley (Altar of Sha'tar)',x:62.6,y:28.4}, SCRYER:{npcId:21955,name:'Arcanist Thelis',zone:'Shadowmoon Valley (Sanctum of the Stars)',x:56.3,y:59.6}}",
+    "reason": "Only the Aldor npcId/coordinates are machine-readable, so a Scryer is routed to the Aldor altar for four consecutive steps. Thelis coordinates from RXP (.goto 56.258,59.586); both NPC names confirmed on the endpoint; wiki Tablets of Baa'ri (Aldor)/(Scryers) confirm the split."
+   },
+   {
+    "guideKey": "BLACK_TEMPLE_ATTUNEMENT",
+    "stepKey": "oronu_the_elder",
+    "field": "giver / turnIn",
+    "from": "npcId 21402 with both names in one string, Aldor coordinates only",
+    "to": "Same faction-keyed giver/turnIn structure as tablets_of_baari (ALDOR 21402 @ 62.6,28.4; SCRYER 21955 @ 56.3,59.6)",
+    "reason": "Same defect as tablets_of_baari."
+   },
+   {
+    "guideKey": "BLACK_TEMPLE_ATTUNEMENT",
+    "stepKey": "ashtongue_corruptors",
+    "field": "giver / turnIn",
+    "from": "npcId 21402 with both names in one string, Aldor coordinates only",
+    "to": "Same faction-keyed giver/turnIn structure (ALDOR 21402 @ 62.6,28.4; SCRYER 21955 @ 56.3,59.6)",
+    "reason": "Same defect as tablets_of_baari."
+   },
+   {
+    "guideKey": "BLACK_TEMPLE_ATTUNEMENT",
+    "stepKey": "wardens_cage",
+    "field": "giver",
+    "from": "npcId 21402 with both names in one string, Aldor coordinates only",
+    "to": "Same faction-keyed giver structure (ALDOR 21402 @ 62.6,28.4; SCRYER 21955 @ 56.3,59.6); turnIn Sanoru 21826 @ 57.3,49.6 is correct for both",
+    "reason": "Same defect as tablets_of_baari. Sanoru coordinates confirmed by RXP (.goto 57.328,49.577)."
+   },
+   {
+    "guideKey": "HYJAL_ATTUNEMENT",
+    "stepKey": "(guide)",
+    "field": "prerequisites",
+    "from": "[\"SSC_ATTUNEMENT\",\"TK_ATTUNEMENT\"] as hard prerequisites",
+    "to": "Mark them soft/recommended (or move to a 'helpful' list): the only hard requirements are level 70 and the two boss kills. The Vials of Eternity has no prerequisite quest, and since Phase 3 (27 Aug 2026) neither SSC nor The Eye needs attunement to enter.",
+    "reason": "warcraft.wiki.gg Quest:The Vials of Eternity lists no prerequisite and no reputation; Questie has no preQuest on 10445; Warcraft Tavern's 27 Aug 2026 Phase 3 article: 'Phase 2 raids are now easier to farm, with attunements removed'. A gate on an attunement the player can never be asked for would block progress display for anyone who skipped the Cudgel/Tempest Key."
+   },
+   {
+    "guideKey": "BLACK_TEMPLE_ATTUNEMENT",
+    "stepKey": "(guide)",
+    "field": "prerequisites",
+    "from": "[\"HYJAL_ATTUNEMENT\",\"SSC_ATTUNEMENT\",\"TK_ATTUNEMENT\"] as hard prerequisites",
+    "to": "Soft/recommended only. Hard requirements: level 70 plus an Aldor or Scryer pledge. Questie's own TBC policy drops the SSC/TK attunement prerequisite on The Secret Compromised (10944) from Phase 3 (preQuestGroup {10901,11052} becomes preQuestSingle {10708,11052}), and since 22 Oct 2026 Hyjal needs no Vials to enter, so An Artifact From the Past no longer depends on HYJAL_ATTUNEMENT.",
+    "reason": "Questie/Database/Corrections/QuestiePolicy/tbcPolicyCorrections.lua lines 116-118; Blizzard post 'BCCA: The Gods of Zul'Aman Now Live' (22 Oct): 'The Battle for Mount Hyjal and The Black Temple will no longer require attunement to enter'."
+   },
+   {
+    "guideKey": "SSC_ATTUNEMENT",
+    "stepKey": "reservoir_key",
+    "field": "detail",
+    "from": "On Anniversary it costs Honored since the 22 October 2026 update (Revered from Phase 1 until then).",
+    "to": "On Anniversary the quartermaster sells it at Honored since the 22 October 2026 update (Blizzard: 'The reputation requirement to purchase Heroic dungeon keys has been reduced to Honored'); note the item's own tooltip in the Anniversary data still reads 'Requires Cenarion Expedition - Revered', so do not treat a Revered tooltip as proof the vendor requirement is unchanged.",
+    "reason": "nether.wowhead.com item/30623?dataEnv=5 still shows the Revered line two days after the change; the detectedBy hint (standing >= 6) is right but the text should not promise the tooltip will agree."
+   },
+   {
+    "guideKey": "BLACK_TEMPLE_ATTUNEMENT",
+    "stepKey": "entry_into_black_temple",
+    "field": "detail",
+    "from": "Hand in for a little Ashtongue and Sha'tar reputation.",
+    "to": "Hand in for +150 Ashtongue Deathsworn and +150 Sha'tar reputation.",
+    "reason": "warcraft.wiki.gg Quest:Entry Into the Black Temple reward table."
+   }
+  ],
+  "unverifiable": [
+   "medivhs_journal: 'he offers this once you hold The Master's Key' \u2014 the wiki lists no prerequisite quest for 9630 (practically you still need Karazhan access); Questie's prerequisite data is in its compressed DB and was not decoded.",
+   "nightbane: that accepting 9644 places the Blackened Urn (24140) in bags \u2014 the quest text only says 'use Kalynna's Urn'; no fetched source lists provided items (consistent with memory of Wowhead's 'Provided item' for this quest).",
+   "nightbane: despawn-and-resummon-after-wipe behaviour \u2014 no source states it for TBC Classic.",
+   "trial_mercy: total Kargath's Executioner length \u2014 RXP says 55 minutes, the wiki quest page's Notes say 80 but its quoted hotfix says 55; spells 39288/39289/39290 ('time until first/second/last prisoner is killed') carry no duration in the tooltip.",
+   "trial_tenacity: Millhouse being released from the second cell \u2014 wiki does not say which cell.",
+   "cipher_of_damnation: Cyrukh the Firelord's 369k health.",
+   "TK/SSC notes: Blizzard support article 13254 (Champion of the Naaru requires both 10888 and 10901) \u2014 redirects to a Battle.net login; title ids 53 and 64 were confirmed from the CharTitles DB2 export instead, and the wiki names both quests.",
+   "phase notes: calling the 22 Oct 2026 update 'Phase 4' / 'Warcraft Tavern files it as Phase 3.5' \u2014 Blizzard's post names no phase number.",
+   "Entrance coordinates for Gruul's Lair (68.7,24.3), Magtheridon's Lair (46.6,52.8) and The Eye (73.7,63.7) rest only on Commander_Guide's own table; SSC (50.4,40.9) and Caverns of Time (65.7,49.8) do match RXP.",
+   "'Revered from Phase 1 until then' for Anniversary heroic keys \u2014 consistent with the item tooltip and the wiki's 'communal keys at Revered', but no source states the pre-October purchase requirement outright.",
+   "Zandras 'elite-free' and Gruul's Lair 'level 65 may enter' asides were not checked."
+  ],
+  "verdict": "Every id resolves to the claimed name on the Anniversary endpoint and the chains are in the right order; refuted: the Master's Terrace route (side entrance, not after Aran), Alliance/Aldor-only giver records on the faction-split steps, and Hyjal/BT prerequisites hard-coded on gates that no longer exist.",
+  "notes": "Method: one bash loop over 134 kind/id rows (the 73 unique ids in the list plus 61 more the JSON references: intermediate Cipher/BT quests, bosses, corruptors, rings, keys) against nether.wowhead.com/tooltip/<kind>/<id>?dataEnv=5&locale=0 with 0.3 s sleeps; every guide-claimed name matched (the only label differences were my own long-form labels, e.g. 10547 is 'Of Thistleheads and Eggs...', 10577 is 'What Illidan Wants, Illidan Gets...', 10514 ends in '...'; the corruptors are plain 'Lakaan/Uylaru/Eykenen/Haalum' as the guide says). Wowhead's HTML pages block curl (Cloudflare), so coordinates were checked against RXPGuides/Guides/tbc/Attunements.lua .goto waypoints and warcraft.wiki.gg infoboxes: Sophurus, Splinthoof, Torlok, Oronok, the three sons, Tobias, Altar of Damnation, Khadgar, A'dal, Soridormi's two-point loop (58.86,54.22 / 58.21,54.79), Ceyla, Thelis, Oronu, all four corruptors, Sanoru, Zandras' patrol, Akama's swim route, Deathwail (71.597,35.508), Xi'ri (65.233,43.956), Alturus (wiki 46,75), Kalynna (wiki 32.2,63.6) all agree with the guide to one decimal. Confirmed structure: Nightbane chain order (wiki); Wravien/Gradav/Kamsis all in the room beyond the Curator and the half-hour auto-clear after Aran (wiki); Kalynna's Request heroic-only (tooltip); Cipher chain of 23 quests in the guide's order including Borak's sub-chain (wiki); The Tempest Key gated on The Cipher of Damnation (wiki), objectives of 10884/10885/10886/10888 (tooltips); Vials: Soridormi or Arazmodu, 13g20s, +3000 Scale of the Sands from Neutral, lower rings are 'Band of Eternity (X)' quest rewards and Exalted rings are Band of the Eternal X (wiki Scale of the Sands); BT chain split for four quests then merged at Proof of Allegiance (wiki), Udalo in the last room before Skyriss with no heroic requirement (wiki + tooltip), Akama's Promise +1000/+1000 (wiki), Seer Olum after Karathress (wiki + RXP), Ruse objective 'slay Al'ar while wearing the Ashtongue Cowl' (tooltip), Distraction rewards Medallion + 250 Sha'tar (wiki), Seek Out the Ashtongue turns in to Seer Kanai in the Black Temple's Sanctuary of Shadows (62.0,50.2 inside the instance; teleport via Spirit of Olum after Naj'entus and Supremus) \u2014 the Distraction/Seek Out steps were truncated in the data I received, so check them against this. Mark of Vashj: wiki lists it before the Cudgel, but RXP's SSC guide goes straight to accepting 10901, so 'optional' is right. Akama's Promise ids: Questie/Database/Corrections/QuestieQuestBlacklist.lua line 18 blacklists 10708 as 'Duplicate of 11052' and RXP accepts/turns in 11052, exactly as the guide's note says; warcraft.wiki.gg labels them the other way round (10708 'Current', 11052 'Removed'), so keep detecting both. The Questie blacklist rows for 9630/9637/9640/9644/9645 (lines 8524-8528) live inside LoadAutoBlacklistIsTitanReforged(), a different season, so they do not contradict 'remains in Anniversary'. Ids/standings: instance ids 532,534,540,544,545,547,548,550,552,555,556,565 all present in QuestieDB/support/Zones/instanceIdToAreaId.lua with the right names; faction 942 = CenarionExpedition and 990 = TheScaleOfTheSands in AtlasLootClassic_Factions/data-tbc.lua; uiMapIds 1944 Hellfire and 1949 Blade's Edge in Questie's areaIdToUiMapId; standing 5 = Friendly, 6 = Honored; CharTitles.db2 (wago.tools CSV) has 53 '%s, Champion of the Naaru' and 64 '%s, Hand of A'dal'. Dates: Phase 1 5 Feb 2026 and Phase 2 14 May 2026 (Warcraft Tavern/Blizzard launch notice via search), Phase 3 27 Aug 2026 with Phase 2 attunements removed (Warcraft Tavern), 22 Oct post confirms Hyjal/BT attunement removal, keys to Honored, and badges from all Karazhan/Gruul/Magtheridon/SSC/TK/ZA bosses plus Kazzak and Doomwalker; TBC Classic 2021: SSC/TK removal announced 10 Dec 2021 for the next weekly reset (gfinity) and Hyjal/BT in patch 2.5.4 on 22 Mar 2022 (Blizzard forums); original TBC 2.1.2 (19 Jun 2007 hotfix) and 2.4.0 (wiki Attunement). Scratch files: /private/tmp/claude-501/-Applications-World-of-Warcraft--anniversary--Interface-AddOns/105233e8-fb20-4d89-9f2e-abe18c8d8218/scratchpad/factcheck/results.tsv (every id, claimed vs returned name)."
+ }
+}

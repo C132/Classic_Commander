@@ -1111,3 +1111,201 @@ Test: `/corder off`, hover Go to Turn-in on a quest Questie knows: no "a
 press says so" line, the red "Commander Orders is turned off (/corder)"
 under it; Ctrl+Right-click the quest's row: one chat line with the place
 and its [Go] link. `/corder on` after.
+
+## A66 — "Not needed" and "200 badges" fit the 60-px state column (D50)
+
+Not load bearing. GameFontNormalSmall at Devin's UI scale; the navigator
+title keeps 178 px (LEFT +14 to RIGHT -70 on the 262-px child). Widths from
+the mock's string metrics, not seen in game.
+
+Symptom if wrong: the state column's longest words end in an ellipsis, or
+run into the guide's title.
+
+Test: open the Attunements tab at Phase 4 with SSC unfinished and 100+
+badges; the words end flush at the column's right edge with no ellipsis. If
+not, STATE_W goes to 66 and the title RIGHT reserve with it.
+
+## A67 — `C_Item.GetItemCount(id, true)` may or may not count the keyring; either way the key is found (D48)
+
+Load bearing for every ITEM step that is a key. Both the keyring scan
+(container -2) and the count are read and either counts; the reason names
+where the key was found.
+
+Symptom if wrong: a key sitting in the keyring reads To do "Not in your
+bags" on its guide's page.
+
+Test: `/dump C_Item.GetItemCount(30622, true)` with the Flamewrought Key in
+the keyring; `/dump
+CommanderQuestLog.Attune.Context().items.keyring[30622]`. Record which
+answered.
+
+## A68 — ENCOUNTER_END and BOSS_KILL may never fire on Anniversary; lockouts and CLEU carry KILL steps (D55)
+
+Not load bearing. The two events are registered under pcall as a bonus; a
+KILL step is carried by the saved lockout, and by a UNIT_DIED seen over the
+combat log while the player is inside a map a KILL step names.
+
+Symptom if wrong: nothing visible; a boss kill reaches its step by the
+lockout after the next RequestRaidInfo, or by the combat log at once.
+
+Test: kill Gruul; `/dump CommanderQuestLogChar.Attune.kills[19044]` after
+the kill and `/dump CommanderQuestLog.Attune.Context().locks[565]` after
+`RequestRaidInfo()`.
+
+## A69 — `GetSavedInstanceEncounterInfo(i, j)` answers bossName and isKilled on 2.5.6, in encounter order, localised (D48)
+
+Load bearing for KILL steps keyed on one boss of a lockout. The English name
+match falls back to encounter ids and the end-boss index.
+
+Symptom if wrong: a boss killed this lockout reads To do "Not this lockout"
+(or Unchecked on a one-off step) while the lockout row lists it.
+
+Test: with a Karazhan lockout, `/dump GetSavedInstanceEncounterInfo(1, 1)`.
+
+## A70 — The Aldor or Scryers side is readable from the two bars when neither pledge is flagged (D48)
+
+Load bearing for every side-split step. Aldor at Friendly or better with
+Scryers at Unfriendly or worse (and the mirror); racial bases (Draenei,
+Blood Elf) never put the rival below Neutral.
+
+Symptom if wrong: an unpledged Draenei reads as Aldor and the Scryers' steps
+vanish before the choice is made, or a character who swapped sides by
+turn-ins keeps the old side's steps.
+
+Test: on an unpledged Draenei `/dump CommanderQuestLog.Attune.Side()`
+answers nil; after Allegiance to the Aldor it answers "ALDOR", "pledged".
+
+## A71 — The five epoch starts and Questie's numbering (D49)
+
+Load bearing for the phase. 1770332400, 1778796000, 1787868000, 1792706400
+and no Phase 5 date; Blizzard's "Phase 3.5" is our 4.
+
+Symptom if wrong: the phase button and `/cql status` name a phase the realm
+is not in, and guides read Not needed or Phase 5 a phase early or late.
+
+Test: `/cql status` on 2026-10-24 reads Phase 4 from the calendar; when
+Phase 5 is announced, the date goes into `D.PHASES[5].since` through the
+generator.
+
+## A72 — `UnitGUID("npc")` at GOSSIP_SHOW and MERCHANT_SHOW carries the creature id (D48)
+
+Not load bearing. The Badges guide's vendor lines are ticked from it;
+nothing counts on them.
+
+Symptom if wrong: a badge vendor's line never reads Done after a visit.
+
+Test: open G'eras; `/dump CommanderQuestLogChar.Attune.talked[18525]`.
+
+## A73 — Learning to Fly (11497/11498) exists from Phase 4 on Anniversary (D54)
+
+Not load bearing. The quest is 2.3.0 content; whether the 22 Oct update
+enabled it is unverified.
+
+Symptom if wrong: the FLYING guide lists a quest no trainer in Shattrath
+offers, To do for a phase.
+
+Test: a level-70 character without Expert Riding talks to Nutral in
+Shattrath; if the quest is absent, the step's `phases.from` becomes 5 in the
+generator.
+
+## A74 — Zone uiMapIds in MAPS (D52)
+
+Load bearing for every outdoor Go. 1944, 1946, 1952, 1951, 1949, 1953, 1948,
+1955, 1430, 1446, 1942, 1957, 1416. Ten match Orders' door table; Shattrath
+1955, Nagrand 1951 and Alterac 1416 are from memory.
+
+Symptom if wrong: a Go on a Shattrath, Nagrand or Alterac Mountains place
+sends the arrow to the right coordinates on the wrong map.
+
+Test: `/dump C_Map.GetBestMapForUnit("player")` standing in Shattrath,
+Nagrand and the Alterac Mountains.
+
+## A75 — Heroic key vendors sell at Honored since 22 Oct 2026 (D54)
+
+Load bearing for the five HEROIC guides' REP steps. Wowhead's Anniversary
+tooltip still reads Revered.
+
+Symptom if wrong: at Honored the REP step reads Done and the key's ITEM step
+To do with a vendor who will not sell; or the guide was a standing short of
+Done while the vendor would have sold.
+
+Test: at Honored with Honor Hold, open Logistics Officer Ulrike's window and
+buy the key; the REP step reads Done and the ITEM step turns Done on
+BAG_UPDATE_DELAYED.
+
+## A76 — The completed flag lags QUEST_TURNED_IN by under 10 seconds (D53)
+
+Not load bearing. The grace window covers the lag: a step inside it reads
+Done "Just handed in", and the rechecks at 1 s and 11 s read the flag.
+
+Symptom if wrong: a step flickers from Done back to To do about eleven
+seconds after a hand-in, then to Done once the flag lands.
+
+Test: hand in any attunement quest with the tab open; the lesson reads Done
+at once ("Just handed in") and still reads Done after the 11 s recheck
+("Flagged complete").
+
+## A77 — `C_RaidLocks.IsEncounterComplete(mapID, encounterID)` answers for the current lock on 2.5.6 (D48)
+
+Not load bearing. Used only as the second KILL fallback, after the English
+boss name and before the end-boss index.
+
+Symptom if wrong: nothing on an English client; a localised client with a
+boss other than the last one killed reads the step To do until the combat
+log sees a kill.
+
+Test: inside Karazhan after Attumen, `/dump
+C_RaidLocks.IsEncounterComplete(532, 652)`.
+
+## A78 — Weekly badge KILL steps revert when the lockout row vanishes (D53)
+
+Not load bearing. The step's Done is the lockout's; a manual mark expires
+with the lockout's own reset.
+
+Symptom if wrong: the BADGES guide's Karazhan line stays Done into the next
+lockout until a reload.
+
+Test: the Monday after a Karazhan clear, the BADGES guide's Karazhan line
+reads To do again without a reload.
+
+## A79 — The phase menu's row tooltips show (tooltipOnButton) (D49)
+
+Not load bearing. The same rule sentences are on the overview's THIS PHASE
+block.
+
+Symptom if wrong: hovering a phase in the phase button's menu shows nothing.
+
+Test: open the phase button's menu and hover Phase 4; the rule sentences
+appear.
+
+## A80 — Three 280 percent mount item ids come from memory, not the research: 33999 Cenarion War Hippogryph, 32458 Ashes of Al'ar, 34061 Turbo-Charged Flying Machine Control (D54)
+
+Not load bearing. The drakes 32857-32862 and the nether rays 32314,
+32316-32319 are in research-5. The generator asks Wowhead's tooltip
+endpoint about the three only when it is run with the opt-in `--verify-ids`
+flag, which reports each as ok, MISMATCH or unreachable; an ordinary run and
+`--check` say the ids shipped unasked (the lead's call of 2026-10-24).
+
+Symptom if wrong: a character on one of the three mounts reads the FLYING
+guide's mount step To do and the guide short of Done.
+
+Test: the generator's `--verify-ids` run (or a hand `/dump
+C_Item.GetItemInfo(33999)` on the Anniversary client) answers the right name;
+a MISMATCH is reported, and the id is then removed from the generator's
+MOUNTS table by hand and the data regenerated.
+
+## A81 — Only raid attunements are account-wide on Anniversary; heroic keys are per character (D53)
+
+Load bearing for the account ledger and the account-wide notice. research-0
+quotes Blizzard's November 2025 note for the Karazhan attunement and "raid
+and heroic attunements account-wide" in one breath; the heroic half is not
+tied to a mechanism the client shows (the Communal key is the visible one),
+so `accountWide` is stamped on the five raid gates only.
+
+Symptom if wrong: an alt whose main holds the Flamewrought Key sees heroic
+Hellfire Citadel's guide at 0/3 with no account-wide notice and no ledger
+row, though the door opens for it.
+
+Test: an alt with no Flamewrought Key on an account whose main holds one
+zones into heroic Hellfire Ramparts; if the door opens, the HEROIC guides
+gain `accountWide = true` in the generator's ACCOUNT_WIDE table.
