@@ -249,6 +249,12 @@ WidgetMT.__index = function(self, key)
         local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
         rawset(self, key, fn); return fn
     end
+    -- ...and for a sweep: a radial ring is a Cooldown, so what colour the
+    -- health ring is lives here and nowhere else
+    if key == "SetSwipeColor" then
+        local fn = function(s, r, g, b, a) s.__color = { r, g, b, a } end
+        rawset(self, key, fn); return fn
+    end
     -- ...and the same field again for text. Urgency on this board is carried
     -- as much by what colour a number is as by what the number says — a red
     -- countdown and a green one are different instructions — and until this
@@ -1407,6 +1413,27 @@ CHECK(w.centerText.__text == "2", "in an arena the middle is the arena number", 
 CHECK(w.nameText.__text == "2", "...and the name follows ArenaNumbers = REPLACE", w.nameText.__text)
 arena["arena2"] = nil
 Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+
+-- An enemy player's ring is the class, whatever the colour dropdown says
+local function RingRGB(disc) local c = disc.healthArc.cd.__color or {}; return c[1], c[2], c[3] end
+CommanderPlatesDB.RadialHealthColor = "REACTION_RG"
+CommanderPlatesDB.EnemyClassColor = false
+local ally = Spawn("nameplate7", { guid = "Player-F1", name = "Leafheal", class = "PRIEST", player = true, friend = true, hp = 80, maxhp = 100 })
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+local r1, g1, b1 = RingRGB(w)
+CHECK(Near(r1, 0.41) and Near(g1, 0.8) and Near(b1, 0.94), "under a red / green ring colour an enemy mage's ring is still mage blue", tostring(r1) .. "," .. tostring(g1))
+r1, g1, b1 = RingRGB(Radial(ally))
+CHECK(Near(r1, 0.30) and Near(g1, 0.90), "...a friend's ring keeps the dropdown's green", tostring(r1) .. "," .. tostring(g1))
+CommanderPlatesDB.RadialEnemyClassColor = false
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+r1, g1, b1 = RingRGB(w)
+CHECK(Near(r1, 0.95) and Near(g1, 0.20), "switch off: the enemy mage's ring is the dropdown's hostile red", tostring(r1) .. "," .. tostring(g1))
+CommanderPlatesDB.RadialEnemyClassColor = true
+CommanderPlatesDB.RadialHealthColor = "AUTO"
+CommanderPlatesDB.EnemyClassColor = true
+Despawn("nameplate7")
+Commander.Notify(COMMANDER_PLATES_EVENTS.UPDATE)
+NoErrors("enemy class ring clean")
 
 -- Health drops: low-health colour and the damage trail
 units.nameplate4.hp = 30

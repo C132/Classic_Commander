@@ -5,7 +5,7 @@ runs without it, which is the point.
 
 ```
 luajit  Harness/plates_engine_smoke.lua       the rules (1312 checks)
-luajit  Harness/plates_board_smoke.lua        the runtime over a widget mock (397 checks)
+luajit  Harness/plates_board_smoke.lua        the runtime over a widget mock (401 checks)
 python3 Harness/order_lint.py                 use-before-declaration
 python3 Harness/settings_reach.py             every setting has a control
 python3 Harness/make_cc_table.py              regenerate the CC block (after a patch)
@@ -92,7 +92,9 @@ follows a mid-cast swap; plate stacking is sized to the disc, deferred out of
 combat, and handed back through Blizzard's own sizing pass; an enemy player
 targeting you wears a red ring that goes when they look away; an arena
 seat's trinket sits on the rim, green when ready, greyed and sweeping once
-used; a corpse's face goes grey with "Dead" in the middle. The
+used; a corpse's face goes grey with "Dead" in the middle; under a red /
+green ring colour an enemy mage's ring stays mage blue while a friend's keeps
+the green, and goes red with Enemy Players: Class Colour Ring off. The
 preview repaints as discs under every scope, name place, face and icon shape.
 Three mutations (fill direction, flash length, the totem exemption) were run
 against it and each turned it red.

@@ -696,6 +696,12 @@ local function HealthRGB(rec, fraction)
     if not rec.isPlayer and UnitIsTapDenied and UnitIsTapDenied(unit) then
         return 0.55, 0.55, 0.55
     end
+    -- An enemy player is the class before anything the colour dropdown says,
+    -- so a red / green friend-or-foe ring still tells the warlock at a glance
+    if cfg.enemyClass and rec.isPlayer and not rec.isFriend then
+        local r, g, b = ClassColor(unit)
+        if r then return r, g, b end
+    end
     local key = cfg.healthColor
     if key == "AUTO" then
         if rec.isPlayer and WantClassBar(rec) then

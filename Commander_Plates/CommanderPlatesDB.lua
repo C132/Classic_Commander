@@ -32,6 +32,7 @@ local DefaultSettings = {
     RadialOffsetY = 0,
     RadialHealthThickness = 5,
     RadialHealthColor = "AUTO",         -- AUTO (class on players, reaction on NPCs) | CLASS | REACTION | palette
+    RadialEnemyClassColor = true,       -- an enemy player's ring is the class, whatever RadialHealthColor says
     RadialLowHealth = 35,               -- percent; the ring turns RadialLowHealthColor below it. 0 = off
     RadialLowHealthColor = "RED",
     RadialTrackAlpha = 0.35,
@@ -669,6 +670,7 @@ local function PaintRadialMock(m, now)
     local key = cfg.healthColor
     local classOn = isFriend and db.FriendlyClassColor or db.EnemyClassColor
     if key == "AUTO" then key = classOn and "CLASS" or (db.ReactionScheme or "REACTION") end
+    if cfg.enemyClass and not isFriend then key = "CLASS" end
     local r, g, b = Draw.ResolveColor(key, ctx)
     if cfg.lowHealth > 0 and spec.health * 100 < cfg.lowHealth then r, g, b = Draw.ResolveColor(cfg.lowColor, ctx) end
     w.trailValue = nil
@@ -1853,7 +1855,7 @@ local function AddRadialRingsSection(panel)
     })
     panel:AddDropdownPair({
         label = "Health Ring Colour",
-        tooltip = "'Automatic' is the class on players (following the class-colour settings above) and hostile red / neutral yellow / friendly blue on NPCs. An NPC someone else has tagged is always grey.",
+        tooltip = "'Automatic' is the class on players (following the class-colour settings above) and hostile red / neutral yellow / friendly blue on NPCs. An NPC someone else has tagged is always grey. Enemy players follow Enemy Players: Class Colour Ring below while it is on.",
         options = Draw.ColorOptions({ { text = "Automatic", value = "AUTO" } }),
         get = function() return CommanderPlatesDB.RadialHealthColor end,
         set = function(v) CommanderPlatesDB.RadialHealthColor = v end,
@@ -1865,6 +1867,13 @@ local function AddRadialRingsSection(panel)
         get = function() return CommanderPlatesDB.RadialLowHealthColor end,
         set = function(v) CommanderPlatesDB.RadialLowHealthColor = v end,
         isEnabled = function() return RadialOn() and (CommanderPlatesDB.RadialLowHealth or 0) > 0 end,
+    })
+    panel:AddCheckbox({
+        label = "Enemy Players: Class Colour Ring",
+        tooltip = "An enemy player's health ring in their class colour, whatever Health Ring Colour is set to -- so a red / green friend-or-foe ring still says warlock before the name is read. Friends and NPCs keep Health Ring Colour. The Low Health colour still takes over below its threshold.",
+        get = function() return CommanderPlatesDB.RadialEnemyClassColor end,
+        set = function(v) CommanderPlatesDB.RadialEnemyClassColor = v end,
+        isEnabled = RadialOn,
     })
     panel:AddSliderPair({
         label = "Low Health Threshold",

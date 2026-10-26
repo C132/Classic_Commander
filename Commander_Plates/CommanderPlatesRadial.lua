@@ -102,6 +102,7 @@ function R.Config(get)
         offsetY = G("RadialOffsetY", 0),
         healthThick = G("RadialHealthThickness", 5),
         healthColor = G("RadialHealthColor", "AUTO"),
+        enemyClass = G("RadialEnemyClassColor", true),
         lowHealth = G("RadialLowHealth", 35),
         lowColor = G("RadialLowHealthColor", "RED"),
         trackAlpha = G("RadialTrackAlpha", 0.35),
