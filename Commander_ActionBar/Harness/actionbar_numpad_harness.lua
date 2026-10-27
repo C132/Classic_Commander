@@ -558,6 +558,9 @@ CHECK(db.numpadEnabled == false and db.numpadBindKeys == true and db.numpadLayou
     and db.numpadAnchor == "RIGHT" and db.numpadDigitsBar == "BOTTOMRIGHT"
     and db.numpadOpsBar == "LEFT" and db.numpadNumLock == false, "numpad defaults applied")
 CHECK(_G.CommanderActionBarNumpad == nil, "numpad card not built while off")
+CHECK(db.fkeyEnabled == false and db.fkeyBindKeys == true and db.fkeyAnchor == "ABOVE"
+    and db.fkeyBar == "RIGHT" and db.fkeyScale == 1, "function-key row defaults applied")
+CHECK(_G.CommanderActionBarFKeys == nil and _G.CommanderFKeyButtonF1 == nil, "function-key row not built while off")
 CHECK(_G.CommanderNumpadButton7 == nil, "no numpad buttons while off")
 CHECK(#BoundKeys() == 0, "no override bindings while off")
 CHECK(MultiBarBottomRight:GetParent() == UIParent, "bottom-right bar left alone while numpad off")
@@ -994,6 +997,314 @@ do  -- the numpad page resets only numpad options
     CHECK(db.cardStyle == "DARK", "the card's own options untouched")
     CHECK(card.__backdrop == backdrop.__backdrop, "numpad picks up the dark panel with the grid")
     CHECK(db.numpadEnabled == false and not card:IsShown(), "reset turns the numpad back off (its default)")
+end
+
+-- ===========================================================================
+-- I. The function-key row (2.4.0): built out of combat, ` F1-F5 on top of
+-- the grid, each key over a grid column, bound beside the numpad's keys
+-- ===========================================================================
+local fkeyPanel = panelsByTitle["Action Bar Function Keys"]
+CHECK(fkeyPanel ~= nil, "function-key page found")
+do
+    local titles = {}
+    for _, info in ipairs(Commander.GetModules()) do titles[info.key] = info.title end
+    CHECK(titles.ActionBarFKeys == "Action Bar Function Keys", "fourth settings page registered")
+end
+-- The numpad back on beside it: the row has to share the console with it
+ClickCheckbox(showBox)
+Tick()
+CHECK(card:IsShown() and #BoundKeys() == 16, "numpad back up for the row's checks", #BoundKeys())
+
+local fShowBox = FindCheckbox(fkeyPanel, "Show Function Key Bar")
+CHECK(fShowBox ~= nil, "Show Function Key Bar checkbox")
+EnterCombat()
+ClickCheckbox(fShowBox)
+Tick(3)
+CHECK(db.fkeyEnabled == true, "row checkbox wrote the setting")
+CHECK(_G.CommanderActionBarFKeys == nil, "row not built in combat")
+CHECK(#BoundKeys() == 16, "nothing new bound in combat", #BoundKeys())
+CHECK(#violations == 0, "row enabled in combat: no protected calls", violations[1])
+LeaveCombat()
+Tick()
+
+local row = _G.CommanderActionBarFKeys
+CHECK(row ~= nil and row:IsShown(), "row built and shown when combat drops")
+CHECK(#violations == 0 and #luaErrors == 0, "row build clean", violations[1] or luaErrors[1])
+
+local ROW_KEYS = { "`", "F1", "F2", "F3", "F4", "F5" }
+local ROW_NAMES = { ["`"] = "Grave", F1 = "F1", F2 = "F2", F3 = "F3", F4 = "F4", F5 = "F5" }
+local function FFace(key) return _G["CommanderFKeyButton" .. ROW_NAMES[key]] end
+local function FSlot(key) return FFace(key):GetAttribute("action") end
+
+-- Shape: one row of six grid keys at grid pitch, as wide as the six-column grid
+CHECK(row.__w == 6 * 42 - 10 + 28 and row.__h == 32 + 28, "one row of six keys at grid pitch",
+    row.__w .. "x" .. row.__h)
+CHECK(row.__w == backdrop.__w, "as wide as the grid card", backdrop.__w)
+for i, key in ipairs(ROW_KEYS) do
+    local f = FFace(key)
+    local p = Point(f)
+    CHECK(f and f:IsShown() and p.rel == row and p.point == "TOPLEFT"
+        and NEAR(p.x, 14 + (i - 1) * 42) and NEAR(p.y, -14),
+        key .. " over grid column " .. i, tostring(p.x) .. "," .. tostring(p.y))
+    CHECK(f.__w == 32 and f.__normal.__w > 32 and f.__normal.__w < 66, key .. " is a grid-sized key", f.__w)
+    local slot = 24 + i
+    CHECK(f:GetAttribute("action") == slot and f.__cmdProxy:GetAttribute("action") == slot and f.action == slot,
+        key .. " -> slot " .. slot, tostring(f:GetAttribute("action")))
+end
+
+-- Docked on top: left edges lined up, a 2px gap, stacked and framed with the grid
+do
+    local p = Point(row)
+    CHECK(p.point == "BOTTOMLEFT" and p.rel == backdrop and p.relPoint == "TOPLEFT" and NEAR(p.x, 0) and NEAR(p.y, 2),
+        "docked on the grid's top edge", tostring(p.point) .. " " .. tostring(p.relPoint))
+    CHECK(row:GetFrameStrata() == backdrop:GetFrameStrata() and row:GetFrameLevel() == backdrop:GetFrameLevel(),
+        "row stacks with the grid card")
+    CHECK(row.__backdrop ~= nil and row.__backdrop == backdrop.__backdrop, "row wears the grid's framing")
+    CHECK(row.__mouse == false, "docked row does not take the mouse")
+    CHECK(Point(card).rel == backdrop and Point(card).relPoint == "BOTTOMRIGHT", "numpad still docked beside the grid")
+end
+CHECK(MultiBarRight:GetParent() == UIParent, "the row's bar is not parked: it uses six of its twelve slots")
+
+-- Binds: six more on top of the numpad's sixteen, each to its own proxy
+do
+    CHECK(#BoundKeys() == 22, "row adds six binds", #BoundKeys())
+    local grave = overrideBindings["`"]
+    CHECK(grave and grave.button == "CommanderFKeyButtonGraveKey" and grave.mouse == "LeftButton",
+        "` clicks its proxy", grave and grave.button)
+    CHECK(overrideBindings.F1 and overrideBindings.F1.button == "CommanderFKeyButtonF1Key"
+        and overrideBindings.F5 and overrideBindings.F5.button == "CommanderFKeyButtonF5Key", "F1 and F5 click theirs")
+    CHECK(overrideBindings.F6 == nil and overrideBindings["SHIFT-F1"] == nil and overrideBindings["SHIFT-`"] == nil,
+        "only the six bare keys are taken")
+    CHECK(overrideBindings.NUMPAD7 and overrideBindings.NUMPAD7.button == "CommanderNumpadButton7Key",
+        "the numpad's binds untouched")
+    CHECK(grave and overrideBindings.NUMPAD7 and grave.owner ~= overrideBindings.NUMPAD7.owner,
+        "each card owns its own binds")
+    local proxy = _G.CommanderFKeyButtonF1Key
+    CHECK(proxy and proxy.__secure and proxy:GetAttribute("type") == "action" and proxy.__mouse == false
+        and proxy.__clicks[1] == "AnyDown" and proxy.__clicks[2] == "AnyUp", "row proxies built like the numpad's")
+end
+
+-- Caps, and they survive Blizzard re-running UpdateHotkeys
+Tick()
+CHECK(FFace("`").HotKey.__text == "`" and FFace("`").HotKey.__shown, "` wears its cap")
+CHECK(FFace("F3").HotKey.__text == "F3" and FFace("F5").HotKey.__text == "F5", "F-key caps")
+FFace("F1"):UpdateHotkeys()
+CHECK(FFace("F1").HotKey.__text == "F1" and FFace("F1").HotKey.__shown, "F1 cap restored after UPDATE_BINDINGS")
+
+-- The numpad's own F16-F19 row binds alongside without a clash
+ClickCheckbox(fRowBox)
+Tick()
+CHECK(#BoundKeys() == 26 and overrideBindings.F16 and overrideBindings.F1
+    and overrideBindings.F1.button == "CommanderFKeyButtonF1Key", "F16-F19 and F1-F5 bound side by side", #BoundKeys())
+ClickCheckbox(fRowBox)
+Tick()
+CHECK(#BoundKeys() == 22 and overrideBindings.F1 ~= nil, "F16-F19 off: the row's binds stay", #BoundKeys())
+
+-- Presses go through the proxy in both key modes
+for i = #usedActions, 1, -1 do usedActions[i] = nil end
+cvars.ActionButtonUseKeyDown = "1"
+PressKey("`", true)
+CHECK(#usedActions == 1 and usedActions[1] == 25, "key-down mode: ` fires slot 25 on press", usedActions[1])
+CHECK(FFace("`").__cmdPress and FFace("`").__cmdPress.__shown, "row press overlay lit while held")
+PressKey("`", false)
+CHECK(#usedActions == 1 and not FFace("`").__cmdPress.__shown, "release: no second fire, overlay off")
+cvars.ActionButtonUseKeyDown = "0"
+PressKey("F2", true)
+CHECK(#usedActions == 1, "key-up mode: press does not fire", #usedActions)
+PressKey("F2", false)
+CHECK(#usedActions == 2 and usedActions[2] == 27, "key-up mode: F2 fires slot 27 on release", usedActions[2])
+cvars.ActionButtonUseKeyDown = "1"
+
+-- Mid-fight: presses, polls and a fade stay legal
+EnterCombat()
+PressKey("F4", true); PressKey("F4", false)
+db.oocFade = true
+Tick(3)
+CHECK(usedActions[#usedActions] == 29, "F4 fires in combat", usedActions[#usedActions])
+CHECK(#violations == 0, "row in combat: no violations", violations[1])
+LeaveCombat()
+db.oocFade = false
+Tick()
+
+-- The pet bar, above the card, steps up past the docked row
+do
+    local pet = Point(PetActionBar)
+    CHECK(pet.point == "BOTTOM" and pet.rel == row and pet.relPoint == "TOP", "pet bar above the row, not under it",
+        pet.rel and pet.rel.__name)
+end
+
+-- One console for the fade: the row fades with the rest, and hovering it wakes all three
+db.oocFade = true; db.fadeOpacity = 0.4
+Tick()
+CHECK(NEAR(row.__alpha, 0.4) and NEAR(backdrop.__alpha, 0.4) and NEAR(card.__alpha, 0.4),
+    "row fades with the grid and the numpad", row.__alpha)
+do
+    local realMouseIsOver = MouseIsOver
+    MouseIsOver = function(f) return f == row end
+    Tick()
+    CHECK(NEAR(row.__alpha, 1) and NEAR(backdrop.__alpha, 1) and NEAR(card.__alpha, 1),
+        "hovering the row wakes the whole console", backdrop.__alpha)
+    MouseIsOver = realMouseIsOver
+end
+db.hideEmptySlots = true
+actionSlots[25] = true
+Tick()
+CHECK(NEAR(FFace("`").__alpha, 1), "a filled row key stays at the card's alpha")
+CHECK(NEAR(row.__alpha * FFace("F1").__alpha, 0.15), "an empty row key dims to where a grid slot does",
+    row.__alpha * FFace("F1").__alpha)
+db.oocFade = false; db.hideEmptySlots = false
+Tick()
+
+-- ===========================================================================
+-- J. Bars: the row and the numpad's two blocks never share one
+-- ===========================================================================
+local fBarDrop = FindDropdowns(fkeyPanel, "PAGE2")[1]
+CHECK(fBarDrop ~= nil, "row bar dropdown found")
+do
+    local before = bindWrites
+    PickOption(fBarDrop, "LEFT")   -- the numpad's operator bar
+    Tick()
+    CHECK(db.fkeyBar == "LEFT" and db.numpadOpsBar == "RIGHT" and db.numpadDigitsBar == "BOTTOMRIGHT",
+        "row takes the operator bar, operators take the row's", db.numpadOpsBar)
+    CHECK(FSlot("`") == 37 and FSlot("F5") == 42, "row slots follow", FSlot("`"))
+    CHECK(select(1, SlotOf("NUMPADDIVIDE")) == 25 and select(1, SlotOf("NUMPADEQUALS")) == 28, "operator slots follow")
+    CHECK(bindWrites == before, "a bar change moves slots, not binds", bindWrites - before)
+end
+PickOption(digitsDrop, "LEFT")     -- from the numpad page, onto the row's bar
+Tick()
+CHECK(db.numpadDigitsBar == "LEFT" and db.fkeyBar == "BOTTOMRIGHT" and db.numpadOpsBar == "RIGHT",
+    "the numpad page trades with the row too", db.fkeyBar)
+CHECK(FSlot("`") == 49 and select(1, SlotOf("NUMPAD1")) == 37, "slots follow the trade")
+CHECK(MultiBarLeft:GetParent() ~= UIParent and MultiBarBottomRight:GetParent() == UIParent,
+    "the parked bar follows the number block, never the row")
+-- The numpad page's Restore Defaults takes its bars back; the row gives way
+do
+    local reset = FindButton(numpadPanel, "Restore Defaults")
+    reset.__scripts.OnClick(reset)
+    Tick()
+    CHECK(db.numpadDigitsBar == "BOTTOMRIGHT" and db.numpadOpsBar == "LEFT" and db.fkeyBar == "RIGHT",
+        "numpad reset: the row moves to the first free bar", db.fkeyBar)
+    CHECK(db.fkeyEnabled == true and row:IsShown() and FSlot("`") == 25, "the row itself is left up", FSlot("`"))
+end
+ClickCheckbox(showBox)
+Tick()
+CHECK(card:IsShown() and #BoundKeys() == 22, "numpad back on", #BoundKeys())
+
+-- ===========================================================================
+-- K. Free and docked, and Function Key Scale
+-- ===========================================================================
+local fPosDrop = FindDropdowns(fkeyPanel, "FREE")[1]
+CHECK(fPosDrop ~= nil, "row position dropdown found")
+PickOption(fPosDrop, "FREE")
+db.locked = false
+Notify(); Tick()
+do
+    local p = Point(row)
+    CHECK(p.rel == UIParent and p.point == "CENTER" and NEAR(p.x, 0) and NEAR(p.y, 160), "free row at its own position")
+    CHECK(row.__mouse == true, "free + unlocked: row drags")
+    CHECK(Point(PetActionBar).rel == backdrop, "pet bar back on the grid once the row is not on top")
+    row.__scripts.OnDragStart(row)
+    CHECK(row.__moving == true, "row drag starts")
+    row.__points = { { "TOPLEFT", UIParent, "TOPLEFT", 500, -300 } }
+    row.__scripts.OnDragStop(row)
+    CHECK(db.fkeyPosition.point == "TOPLEFT" and db.fkeyPosition.xOfs == 500 and db.fkeyPosition.scale == 1,
+        "drag saves the row's position and scale")
+    CHECK(db.numpadPosition.xOfs ~= 500, "and not the numpad's")
+    Tick()
+    local q = Point(row)
+    CHECK(q.point == "TOPLEFT" and NEAR(q.x, 500) and NEAR(q.y, -300), "saved row position re-applied")
+    CHECK(card.__mouse == false, "the docked numpad stays put while the row is free")
+end
+EnterCombat()
+row.__moving = false
+row.__scripts.OnDragStart(row)
+CHECK(row.__moving == false and #violations == 0, "no row drag in combat", violations[1])
+LeaveCombat()
+db.locked = true
+PickOption(fPosDrop, "ABOVE")
+Notify(); Tick()
+CHECK(row.__mouse == false and Point(row).rel == backdrop and Point(PetActionBar).rel == row,
+    "docked on top again, mouse off, pet bar above it")
+
+local fScaleSlider = FindSlider(fkeyPanel)
+CHECK(fScaleSlider ~= nil, "Function Key Scale slider")
+local function FSlide(value)
+    fScaleSlider.__scripts.OnValueChanged(fScaleSlider, value)
+    RunTimers()
+    Tick()
+end
+db.cardScale = 1.2
+Notify(); Tick()
+CHECK(NEAR(row.__scale, 1.2), "row follows Card Scale", row.__scale)
+FSlide(0.8)
+CHECK(db.fkeyScale == 0.8 and NEAR(row.__scale, 0.96), "row = Card Scale x Function Key Scale", row.__scale)
+CHECK(NEAR(backdrop.__scale, 1.2) and NEAR(card.__scale, 1.2), "grid and numpad keep their own scale")
+CHECK(Point(row).rel == backdrop and Point(row).relPoint == "TOPLEFT", "still on the grid's top edge")
+EnterCombat()
+FSlide(1.3)
+CHECK(db.fkeyScale == 1.3 and NEAR(row.__scale, 0.96), "row scale waits out combat", row.__scale)
+CHECK(#violations == 0, "row scale in combat: no violations", violations[1])
+LeaveCombat()
+Tick()
+CHECK(NEAR(row.__scale, 1.56), "row scale applied when combat drops", row.__scale)
+db.cardScale = 1.0
+FSlide(1.0)
+CHECK(NEAR(row.__scale, 1), "back to matched", row.__scale)
+
+-- ===========================================================================
+-- L. Binding off, the row off, /cab fkeys, the page's own reset
+-- ===========================================================================
+local fBindBox = FindCheckbox(fkeyPanel, "Bind Function Keys")
+ClickCheckbox(fBindBox)
+Tick()
+CHECK(#BoundKeys() == 16 and overrideBindings.F1 == nil and overrideBindings["`"] == nil,
+    "Bind Function Keys off: the six keys given back", #BoundKeys())
+CHECK(overrideBindings.NUMPAD7 ~= nil, "the numpad keeps its keys")
+CHECK(FFace("F1").HotKey.__text ~= "F1", "no cap on a row key that is not bound", FFace("F1").HotKey.__text)
+CHECK(Face("NUMPAD7").HotKey.__text == "7", "the numpad keeps its caps")
+ClickCheckbox(fBindBox)
+Tick()
+CHECK(#BoundKeys() == 22 and FFace("F1").HotKey.__text == "F1", "binding back on: keys and caps return")
+do
+    local before = bindWrites
+    Notify(); Notify(); Tick(4)
+    CHECK(bindWrites == before, "unchanged settings do not rebind either card", bindWrites - before)
+end
+
+EnterCombat()
+SlashCmdList.COMMANDERUI_ACTIONBAR("fkeys")
+Tick()
+CHECK(db.fkeyEnabled == false, "/cab fkeys toggles off")
+CHECK(row:IsShown() and #BoundKeys() == 22, "row up and bound until combat drops")
+CHECK(#violations == 0, "row toggle in combat: no violations", violations[1])
+LeaveCombat()
+Tick()
+CHECK(not row:IsShown(), "row hidden after combat")
+CHECK(#BoundKeys() == 16 and overrideBindings.F1 == nil, "row off: its keys given back, the numpad's kept", #BoundKeys())
+CHECK(Point(PetActionBar).rel == backdrop, "pet bar back on the grid")
+SlashCmdList.COMMANDERUI_ACTIONBAR("fkeys")
+Tick()
+CHECK(row:IsShown() and #BoundKeys() == 22, "/cab fkeys toggles back on")
+CHECK(_G.CommanderActionBarFKeys == row, "row reused, not rebuilt")
+
+do  -- the row's page resets only row options, and gives way on a held bar
+    PickOption(digitsDrop, "RIGHT")    -- the numpad takes the row's default bar
+    Tick()
+    CHECK(db.numpadDigitsBar == "RIGHT" and db.fkeyBar == "BOTTOMRIGHT", "numpad on the row's bar, row traded")
+    db.fkeyScale = 0.7
+    db.fkeyAnchor = "FREE"
+    db.fkeyBindKeys = false
+    local reset = FindButton(fkeyPanel, "Restore Defaults")
+    CHECK(reset ~= nil, "row page has Restore Defaults")
+    if reset then reset.__scripts.OnClick(reset) end
+    Tick()
+    CHECK(db.fkeyScale == 1 and db.fkeyAnchor == "ABOVE" and db.fkeyBindKeys == true, "row options reset")
+    CHECK(db.fkeyBar == "PAGE2" and db.numpadDigitsBar == "RIGHT",
+        "the numpad keeps its bar; the row takes the first free one", db.fkeyBar)
+    CHECK(db.numpadEnabled == true and db.cardStyle == "DARK", "numpad and card options untouched")
+    CHECK(db.fkeyEnabled == false and not row:IsShown() and overrideBindings.F1 == nil,
+        "reset turns the row back off (its default)")
+    CHECK(card:IsShown() and overrideBindings.NUMPAD7 ~= nil, "the numpad stays up")
 end
 
 CHECK(#luaErrors == 0, "no Lua errors", luaErrors[1])

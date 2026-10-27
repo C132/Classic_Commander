@@ -17,6 +17,13 @@ local backdrop
 local numpadCard
 local numpadButtons = {}   -- every numpad button ever created, in NUMPAD_KEY_ORDER
 local numpadByKey = {}     -- binding key name -> button
+-- The function-key row on top of the grid (see "Function-key row" below):
+-- the same three pieces, read by the same passes
+local fkeyCard
+local fkeyButtons = {}     -- in FKEY_ROW order
+local fkeyByKey = {}
+-- Both keyed cards once built, for the passes that treat them alike
+local keyCards = {}
 -- Set when a layout pass is skipped due to combat lockdown; applied on PLAYER_REGEN_ENABLED
 local pendingUpdate = false
 
@@ -239,10 +246,11 @@ local NUMPAD_KEY_ORDER = {
     "F16", "F17", "F18", "F19",
 }
 
--- The Blizzard bars a numpad block can take: whole bars only, and never the
--- grid's own (the main bar and the bottom-left bar). Action Page 2 is the main
--- bar's second page, which only shows when the main bar is paged.
-local NUMPAD_BARS = {
+-- The Blizzard bars a numpad block (or the function-key row) can take: whole
+-- bars only, and never the grid's own (the main bar and the bottom-left bar).
+-- Action Page 2 is the main bar's second page, which only shows when the main
+-- bar is paged. The settings keep the three blocks on three different bars.
+local SPARE_BARS = {
     BOTTOMRIGHT = { first = 49, frame = "MultiBarBottomRight" },
     RIGHT = { first = 25, frame = "MultiBarRight" },
     LEFT = { first = 37, frame = "MultiBarLeft" },
@@ -252,7 +260,7 @@ local NUMPAD_BAR_DEFAULTS = { digits = "BOTTOMRIGHT", ops = "LEFT" }
 
 local function NumpadBar(block)
     local key = (block == "digits") and DB().numpadDigitsBar or DB().numpadOpsBar
-    return NUMPAD_BARS[key] or NUMPAD_BARS[NUMPAD_BAR_DEFAULTS[block]]
+    return SPARE_BARS[key] or SPARE_BARS[NUMPAD_BAR_DEFAULTS[block]]
 end
 
 local function NumpadSlot(key)
@@ -279,6 +287,38 @@ end
 local function NumpadAttached(side)
     return numpadCard ~= nil and numpadCard:IsShown() and DB().numpadEnabled
         and (DB().numpadAnchor or "RIGHT") == side
+end
+
+-- ---------------------------------------------------------------------------
+-- Function-key row: the data
+--
+-- An optional third card, one row of keys on top of the grid: the ` key
+-- first, then F1 to F5. Six keys, so on the grid's default six columns each
+-- one sits over a column. Same mechanics as the numpad: its buttons draw on
+-- slots the grid does not page, and while it is shown each one is bound to
+-- the key it mirrors.
+--
+-- The slots are the first six of one spare bar, in row order. `name` is the
+-- button-name suffix where the key itself would make a poor global name.
+-- ---------------------------------------------------------------------------
+local FKEY_ROW = {
+    { key = "`", label = "`", name = "Grave" },
+    { key = "F1", label = "F1" },
+    { key = "F2", label = "F2" },
+    { key = "F3", label = "F3" },
+    { key = "F4", label = "F4" },
+    { key = "F5", label = "F5" },
+}
+
+local function FKeySlot(index)
+    return (SPARE_BARS[DB().fkeyBar] or SPARE_BARS.RIGHT).first + index - 1
+end
+
+-- Is the row up and docked on top of the grid? The pet bar, which sits above
+-- the card, moves up past it.
+local function FKeysAttached()
+    return fkeyCard ~= nil and fkeyCard:IsShown() and DB().fkeyEnabled
+        and (DB().fkeyAnchor or "ABOVE") == "ABOVE"
 end
 
 local function ApplyMicroMenu()
@@ -379,7 +419,8 @@ local function BarIsGridOwned(name)
 end
 -- The bar whose twelve slots the numpad's number keys took. Its actions now
 -- live on the numpad, so its own buttons would only show them a second time.
--- The operator bar is NOT folded: the numpad uses five of its twelve slots.
+-- The operator bar is NOT folded: the numpad uses at most nine of its twelve
+-- slots. Nor is the function-key row's, which uses six.
 local function BarIsNumpadOwned(name)
     if not DB().numpadEnabled then return false end
     return NumpadBar("digits").frame == name
@@ -469,7 +510,8 @@ local function BorderColor()
     return rgb[1], rgb[2], rgb[3]
 end
 
--- One framing for both cards, so the numpad reads as the grid's other half
+-- One framing for every card, so the numpad and the function-key row read as
+-- parts of the grid
 local function StyleCard(card)
     if not card then return end
     local key = DB().cardStyle or "CLASSIC"
@@ -493,6 +535,7 @@ end
 local function ApplyCardStyle()
     StyleCard(backdrop)
     StyleCard(numpadCard)
+    StyleCard(fkeyCard)
 end
 
 -- Is the cursor carrying something a slot could take? Placing an icon is a
@@ -758,16 +801,17 @@ local function ApplyLayering()
     if backdrop:GetFrameLevel() ~= level then
         backdrop:SetFrameLevel(level)
     end
-    -- The numpad stacks with the grid card. Its buttons are its own children,
-    -- so they ride one level above it with no floor to clear; the console
-    -- clearance above is the part it needs. Same combat rule: the card parents
-    -- secure buttons, so restacking it is protected (deferred at the top).
-    if numpadCard then
-        if numpadCard:GetFrameStrata() ~= stratumName then
-            numpadCard:SetFrameStrata(stratumName)
+    -- The numpad and the function-key row stack with the grid card. Their
+    -- buttons are their own children, so they ride one level above with no
+    -- floor to clear; the console clearance above is the part they need. Same
+    -- combat rule: each parents secure buttons, so restacking it is protected
+    -- (deferred at the top).
+    for _, card in ipairs(keyCards) do
+        if card:GetFrameStrata() ~= stratumName then
+            card:SetFrameStrata(stratumName)
         end
-        if numpadCard:GetFrameLevel() ~= level then
-            numpadCard:SetFrameLevel(level)
+        if card:GetFrameLevel() ~= level then
+            card:SetFrameLevel(level)
         end
     end
 end
@@ -866,7 +910,9 @@ local function MovePetBar()
         local card = NumpadAttached("LEFT") and numpadCard or backdrop
         SetAnchor(PetActionBar, "RIGHT", card, "LEFT", -6, 0)
     else
-        SetAnchor(PetActionBar, "BOTTOM", backdrop, "TOP", 10, 5)
+        -- Above the whole console: over the function-key row when it is docked on top
+        local card = FKeysAttached() and fkeyCard or backdrop
+        SetAnchor(PetActionBar, "BOTTOM", card, "TOP", 10, 5)
     end
 end
 
@@ -927,18 +973,21 @@ local function AbbreviateHotkey(text)
     return text
 end
 
--- The numpad's key-cap label for one of its buttons, or nil while the keys are
--- not bound -- then the button keeps whatever Blizzard's own hotkey logic shows,
--- because a "7" on a button the 7 key does not press is a lie.
-local function NumpadLabel(button)
-    if not (DB().numpadBindKeys and DB().numpadEnabled) then return nil end
+-- A keyed card's key-cap label for one of its buttons, or nil while its keys
+-- are not bound -- then the button keeps whatever Blizzard's own hotkey logic
+-- shows, because a "7" on a button the 7 key does not press is a lie. Each
+-- button carries its card's two switches (see KEY_SWITCHES).
+local function KeyCapLabel(button)
+    local switches = button.__cmdSwitches
+    local db = DB()
+    if not (switches and db[switches.bind] and db[switches.enabled]) then return nil end
     return button.__cmdLabel
 end
 
--- One button's per-tick cosmetics. The grid's buttons and the numpad's share
--- every rule; the numpad's hotkey shows its key cap rather than the binding
--- text, since the cap IS the binding there.
-local function StyleButton(button, db, now, placing, isNumpad)
+-- One button's per-tick cosmetics. The grid's buttons and the keyed cards'
+-- share every rule; a keyed button's hotkey shows its key cap rather than the
+-- binding text, since the cap IS the binding there.
+local function StyleButton(button, db, now, placing, isKeyed)
     local name = button:GetName()
     -- Macro name and hotkey text
     local macroText = button.Name or (name and _G[name .. "Name"])
@@ -946,7 +995,7 @@ local function StyleButton(button, db, now, placing, isNumpad)
         macroText:SetShown(not db.hideMacroText)
     end
     local hotkey = button.HotKey or (name and _G[name .. "HotKey"])
-    local keyLabel = isNumpad and NumpadLabel(button)
+    local keyLabel = isKeyed and KeyCapLabel(button)
     if hotkey then
         if db.hideHotkeys then
             hotkey:Hide()
@@ -955,8 +1004,8 @@ local function StyleButton(button, db, now, placing, isNumpad)
                 hotkey:SetText(keyLabel)
             end
             hotkey:Show()
-        elseif not isNumpad then
-            -- An unbound numpad key is left to Blizzard, which shows its
+        elseif not isKeyed then
+            -- An unbound keyed button is left to Blizzard, which shows its
             -- hotkey only as the range dot, and only when range applies
             hotkey:Show()
             if db.abbrevHotkeys then
@@ -1065,6 +1114,26 @@ local function ApplyButtonCosmetics()
             if button:IsShown() then StyleButton(button, db, now, placing, true) end
         end
     end
+    if fkeyCard and fkeyCard:IsShown() then
+        for _, button in ipairs(fkeyButtons) do
+            StyleButton(button, db, now, placing, true)
+        end
+    end
+end
+
+-- A keyed card fades with the grid. Its buttons are its children, so its
+-- alpha already reaches them; theirs is relative. Dimmed, a slot lands where
+-- a grid slot does.
+local function FadeKeyCard(card, buttons, alpha, db, placing)
+    card:SetAlpha(alpha)
+    local dim = alpha > 0 and math.min(1, 0.15 / alpha) or 1
+    for _, button in ipairs(buttons) do
+        if button:IsShown() then
+            button:SetAlpha((db.hideEmptySlots and not placing
+                and button.action and HasAction and not HasAction(button.action))
+                and dim or 1)
+        end
+    end
 end
 
 -- Out-of-combat fade: alpha is not a protected attribute, so the whole
@@ -1072,14 +1141,21 @@ end
 local function ApplyFade()
     if not backdrop then return end
     local db = DB()
-    local numpadUp = numpadCard ~= nil and numpadCard:IsShown()
     local alpha = 1
     if db.oocFade and not inCombat then
         alpha = db.fadeOpacity or 0.4
-        -- The two cards are one console: hovering either one wakes both
-        if db.mouseoverReveal and MouseIsOver
-            and (MouseIsOver(backdrop) or (numpadUp and MouseIsOver(numpadCard))) then
-            alpha = 1
+        -- The cards are one console: hovering any one of them wakes them all
+        if db.mouseoverReveal and MouseIsOver then
+            if MouseIsOver(backdrop) then
+                alpha = 1
+            else
+                for _, card in ipairs(keyCards) do
+                    if card:IsShown() and MouseIsOver(card) then
+                        alpha = 1
+                        break
+                    end
+                end
+            end
         end
     end
     backdrop:SetAlpha(alpha)
@@ -1093,25 +1169,20 @@ local function ApplyFade()
                 and math.min(alpha, 0.15) or alpha)
         end
     end
-    if numpadUp then
-        -- The numpad's buttons are its children, so its alpha already reaches
-        -- them; theirs is relative. Dimmed, a slot lands where a grid slot does.
-        numpadCard:SetAlpha(alpha)
-        local dim = alpha > 0 and math.min(1, 0.15 / alpha) or 1
-        for _, button in ipairs(numpadButtons) do
-            if button:IsShown() then
-                button:SetAlpha((db.hideEmptySlots and not placing
-                    and button.action and HasAction and not HasAction(button.action))
-                    and dim or 1)
-            end
-        end
+    if numpadCard and numpadCard:IsShown() then
+        FadeKeyCard(numpadCard, numpadButtons, alpha, db, placing)
+    end
+    if fkeyCard and fkeyCard:IsShown() then
+        FadeKeyCard(fkeyCard, fkeyButtons, alpha, db, placing)
     end
 end
 
 -- ---------------------------------------------------------------------------
--- Numpad card: the frames (data at "Numpad card: the data" up top)
+-- Keyed cards: the frames (data at "Numpad card: the data" and "Function-key
+-- row: the data" up top)
 --
--- Each key is TWO secure buttons, because one cannot do both jobs:
+-- The numpad and the function-key row are built alike. Each key is TWO
+-- secure buttons, because one cannot do both jobs:
 --
 --   * the face is an ActionBarButtonTemplate button -- Blizzard's own action
 --     button, so icon, cooldown, count, usable/range tint, checked state,
@@ -1127,22 +1198,32 @@ end
 --
 -- Everything here is protected once the buttons exist (the card parents
 -- them), so it is all built, moved and bound out of combat only, deferring
--- through pendingUpdate like the grid. The card is only created the first
--- time the numpad is switched on: nobody who never uses it carries 42 secure
+-- through pendingUpdate like the grid. A card is only created the first
+-- time it is switched on: nobody who never uses the numpad carries 42 secure
 -- buttons around.
 -- ---------------------------------------------------------------------------
-local NUMPAD_GAP = 2   -- between the docked numpad and the grid card
+local CARD_GAP = 2   -- between a docked keyed card and the grid card
 
--- A plain frame owns the override bindings: never protected, never hidden
+-- Which settings switch each keyed card on and bind its keys. Every button
+-- carries its card's pair, so the shared button code reads the right one.
+local KEY_SWITCHES = {
+    numpad = { enabled = "numpadEnabled", bind = "numpadBindKeys" },
+    fkey = { enabled = "fkeyEnabled", bind = "fkeyBindKeys" },
+}
+
+-- A plain frame per card owns its override bindings: never protected, never
+-- hidden, and clearing one card's binds never touches the other's
 local numpadBindOwner = CreateFrame("Frame")
 local appliedNumpadBinds = ""   -- signature of the keys bound right now
+local fkeyBindOwner = CreateFrame("Frame")
+local appliedFKeyBinds = ""
 
--- The numpad's hotkey shows its cap. Blizzard's UpdateHotkeys runs on every
--- UPDATE_BINDINGS and blanks it -- an ID-0 button has no binding command of
--- its own to find -- so put the cap straight back. A post-hook on our own
--- button: Blizzard's code runs untouched first.
-local function RelabelNumpadButton(button)
-    local label = NumpadLabel(button)
+-- A keyed button's hotkey shows its cap. Blizzard's UpdateHotkeys runs on
+-- every UPDATE_BINDINGS and blanks it -- an ID-0 button has no binding
+-- command of its own to find -- so put the cap straight back. A post-hook on
+-- our own button: Blizzard's code runs untouched first.
+local function RelabelKeyButton(button)
+    local label = KeyCapLabel(button)
     local hotkey = button.HotKey
     if not (label and hotkey) or DB().hideHotkeys then return end
     if hotkey:GetText() ~= label then hotkey:SetText(label) end
@@ -1152,7 +1233,7 @@ end
 -- The face's own pushed state only answers the mouse; this overlay answers
 -- the key, lit by the proxy's PostClick (down = pressed, up = released).
 -- A texture, so it is free to show and hide mid-fight.
-local function NumpadPressFor(button)
+local function KeyPressFor(button)
     local press = button.__cmdPress
     if not press then
         press = button:CreateTexture(nil, "OVERLAY")
@@ -1163,10 +1244,10 @@ local function NumpadPressFor(button)
     return press
 end
 
-local function CreateNumpadButton(key)
-    local name = "CommanderNumpadButton" .. (key:gsub("^NUMPAD", ""))
-    local button = CreateFrame("CheckButton", name, numpadCard, "ActionBarButtonTemplate")
+local function CreateKeyButton(card, name, key, switches, buttons, byKey)
+    local button = CreateFrame("CheckButton", name, card, "ActionBarButtonTemplate")
     button.__cmdKey = key
+    button.__cmdSwitches = switches
     -- Same attributes Blizzard puts on its action buttons, so self-cast,
     -- focus-cast and mouseover modifiers behave identically from the key.
     -- Not its "typerelease": that is retail press-and-hold, and the
@@ -1183,23 +1264,136 @@ local function CreateNumpadButton(key)
     proxy:SetSize(1, 1)
     proxy:SetPoint("CENTER", button, "CENTER", 0, 0)
     proxy:HookScript("PostClick", function(_, _, down)
-        NumpadPressFor(button):SetShown(down and true or false)
+        KeyPressFor(button):SetShown(down and true or false)
     end)
     button.__cmdProxy = proxy
-    hooksecurefunc(button, "UpdateHotkeys", RelabelNumpadButton)
-    numpadButtons[#numpadButtons + 1] = button
-    numpadByKey[key] = button
+    hooksecurefunc(button, "UpdateHotkeys", RelabelKeyButton)
+    buttons[#buttons + 1] = button
+    byKey[key] = button
     return button
 end
 
-local function SetNumpadLockState()
+-- A keyed card's plate. Docked, it moves with the grid; free (its anchor
+-- setting is "FREE"), it drags on its own while the bar is unlocked and keeps
+-- its place in its position setting.
+local function CreateKeyCard(frameName, anchorKey, positionKey)
+    local card = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
+    card:SetSize(1, 1)
+    card:SetClampedToScreen(true)
+    card:SetMovable(true)
+    card:EnableMouse(false)
+    card:RegisterForDrag("LeftButton")
+    -- Same drop guard as the grid card: with an icon on the cursor the drag is
+    -- a drop in progress, not a move
+    card:SetScript("OnDragStart", function(self)
+        if DB().locked or DB()[anchorKey] ~= "FREE"
+            or CursorHoldsAction() or InCombatLockdown() then return end
+        self.__cmdMoving = true
+        self:StartMoving()
+    end)
+    card:SetScript("OnDragStop", function(self)
+        if not self.__cmdMoving then return end
+        self.__cmdMoving = nil
+        self:StopMovingOrSizing()
+        local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
+        -- Offsets are in the card's own scaled units, so the scale they were
+        -- taken at travels with them (see AnchorFree)
+        DB()[positionKey] = { point = point, relativePoint = relativePoint,
+            xOfs = xOfs, yOfs = yOfs, scale = self:GetScale() }
+        Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    end)
+    keyCards[#keyCards + 1] = card
+    return card
+end
+
+local function SetKeyCardLockState(card, anchorKey)
     -- Draggable only when it is free-standing; docked, it moves with the grid
-    local free = not DB().locked and DB().numpadAnchor == "FREE"
-    if numpadCard:IsMouseEnabled() ~= free then
-        numpadCard:EnableMouse(free)
+    local free = not DB().locked and DB()[anchorKey] == "FREE"
+    if card:IsMouseEnabled() ~= free then
+        card:EnableMouse(free)
     end
 end
 
+-- A keyed card's own scale is relative: it follows Card Scale, so by default
+-- its keys are the grid's keys and the cards stay matched
+local function KeyCardScale(scaleKey)
+    return (DB().cardScale or 1) * (DB()[scaleKey] or 1)
+end
+
+-- A free-standing card at its saved position, or CENTER offset by (x, y)
+-- before it has one. A point's offsets are multiplied by the frame's own
+-- scale on screen. Re-express them at today's scale so a free card grows and
+-- shrinks about its anchor instead of sliding across the screen. A position
+-- saved without its scale is taken as already at this one.
+local function AnchorFree(card, pos, x, y)
+    local current = card:GetScale()
+    local factor = (pos and pos.scale and current > 0) and (pos.scale / current) or 1
+    if pos and pos.point then
+        SetAnchor(card, pos.point, UIParent, pos.relativePoint or pos.point,
+            (pos.xOfs or 0) * factor, (pos.yOfs or 0) * factor)
+    else
+        SetAnchor(card, "CENTER", UIParent, "CENTER", x * factor, y * factor)
+    end
+end
+
+-- One key's face and proxy onto its slot, and onto its spot on the card
+-- (x, y down from the card's top-left corner)
+local function PlaceKeyButton(button, card, slot, size, x, y)
+    if button:GetAttribute("action") ~= slot then
+        button:SetAttribute("action", slot)
+    end
+    local proxy = button.__cmdProxy
+    if proxy:GetAttribute("action") ~= slot then
+        proxy:SetAttribute("action", slot)
+    end
+    if button.__cmdNativeSize == nil then
+        local w = (button.GetWidth and button:GetWidth()) or 0
+        button.__cmdNativeSize = (w > 0) and w or 36
+    end
+    button:SetSize(size, size)
+    NormalizeButtonArt(button, size)
+    SetAnchor(button, "TOPLEFT", card, "TOPLEFT", x, -y)
+    local r, g, b, a = PushedColor()
+    local pushed = button:GetPushedTexture()
+    local press = KeyPressFor(button)
+    if r then
+        if pushed then pushed:SetColorTexture(r, g, b, a) end
+        press:SetColorTexture(r, g, b, a)
+    end
+    press:Hide()
+    if not button:IsShown() then button:Show() end
+    RelabelKeyButton(button)
+end
+
+-- Bind each of `keys` to its button's proxy, and give back every key the
+-- owner held that is no longer listed. Override bindings sit on top of the
+-- saved set without touching it: switching a card off restores whatever its
+-- keys did before (movement, autorun, raid marks, your own binds), with
+-- nothing to undo. Protected in combat, so deferred. Returns the signature
+-- now bound, for the caller to keep: an unchanged one skips the rebind --
+-- and the UPDATE_BINDINGS it fires.
+local function BindKeys(owner, keys, byKey, buttons, applied)
+    local signature = table.concat(keys, " ")
+    if signature == applied then return applied end
+    if InCombatLockdown() then
+        pendingUpdate = true
+        return applied
+    end
+    ClearOverrideBindings(owner)
+    for _, key in ipairs(keys) do
+        SetOverrideBindingClick(owner, false, key, byKey[key].__cmdProxy:GetName(), "LeftButton")
+    end
+    -- Let Blizzard recompute every face's hotkey (blank on an unbound one),
+    -- then the post-hook lays the cap back on the bound ones
+    for _, button in ipairs(buttons) do
+        button:UpdateHotkeys(button.buttonType)
+    end
+    return signature
+end
+
+-- ---------------------------------------------------------------------------
+-- Numpad card: layout and binds
+-- ---------------------------------------------------------------------------
 local function EnsureNumpad()
     if numpadCard then return numpadCard end
     -- CreateFrame from a secure template runs its OnLoad under our taint, and
@@ -1208,65 +1402,24 @@ local function EnsureNumpad()
         pendingUpdate = true
         return nil
     end
-    numpadCard = CreateFrame("Frame", "CommanderActionBarNumpad", UIParent, "BackdropTemplate")
-    numpadCard:SetSize(1, 1)
-    numpadCard:SetClampedToScreen(true)
-    numpadCard:SetMovable(true)
-    numpadCard:EnableMouse(false)
-    numpadCard:RegisterForDrag("LeftButton")
-    -- Same drop guard as the grid card: with an icon on the cursor the drag is
-    -- a drop in progress, not a move
-    numpadCard:SetScript("OnDragStart", function(self)
-        if DB().locked or DB().numpadAnchor ~= "FREE"
-            or CursorHoldsAction() or InCombatLockdown() then return end
-        self.__cmdMoving = true
-        self:StartMoving()
-    end)
-    numpadCard:SetScript("OnDragStop", function(self)
-        if not self.__cmdMoving then return end
-        self.__cmdMoving = nil
-        self:StopMovingOrSizing()
-        local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
-        -- Offsets are in the card's own scaled units, so the scale they were
-        -- taken at travels with them (see AnchorNumpad)
-        DB().numpadPosition = { point = point, relativePoint = relativePoint,
-            xOfs = xOfs, yOfs = yOfs, scale = self:GetScale() }
-        Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
-    end)
+    numpadCard = CreateKeyCard("CommanderActionBarNumpad", "numpadAnchor", "numpadPosition")
     for _, key in ipairs(NUMPAD_KEY_ORDER) do
-        CreateNumpadButton(key)
+        CreateKeyButton(numpadCard, "CommanderNumpadButton" .. (key:gsub("^NUMPAD", "")),
+            key, KEY_SWITCHES.numpad, numpadButtons, numpadByKey)
     end
     return numpadCard
-end
-
--- Numpad Scale is relative: the numpad follows Card Scale, so by default its
--- keys are the grid's keys and the pair stays matched
-local function NumpadScale()
-    return (DB().cardScale or 1) * (DB().numpadScale or 1)
 end
 
 local function AnchorNumpad()
     local mode = DB().numpadAnchor or "RIGHT"
     if mode == "FREE" or not backdrop then
-        local pos = DB().numpadPosition
-        -- A point's offsets are multiplied by the frame's own scale on screen.
-        -- Re-express them at today's scale so a free numpad grows and shrinks
-        -- about its anchor instead of sliding across the screen. A position
-        -- saved without its scale is taken as already at this one.
-        local current = numpadCard:GetScale()
-        local factor = (pos and pos.scale and current > 0) and (pos.scale / current) or 1
-        if pos and pos.point then
-            SetAnchor(numpadCard, pos.point, UIParent, pos.relativePoint or pos.point,
-                (pos.xOfs or 0) * factor, (pos.yOfs or 0) * factor)
-        else
-            SetAnchor(numpadCard, "CENTER", UIParent, "CENTER", 320 * factor, 0)
-        end
+        AnchorFree(numpadCard, DB().numpadPosition, 320, 0)
     elseif mode == "LEFT" then
         -- Bottoms level with the grid's: the numpad is a row taller, and the
         -- two read as one console when they share a baseline
-        SetAnchor(numpadCard, "BOTTOMRIGHT", backdrop, "BOTTOMLEFT", -NUMPAD_GAP, 0)
+        SetAnchor(numpadCard, "BOTTOMRIGHT", backdrop, "BOTTOMLEFT", -CARD_GAP, 0)
     else
-        SetAnchor(numpadCard, "BOTTOMLEFT", backdrop, "BOTTOMRIGHT", NUMPAD_GAP, 0)
+        SetAnchor(numpadCard, "BOTTOMLEFT", backdrop, "BOTTOMRIGHT", CARD_GAP, 0)
     end
 end
 
@@ -1295,7 +1448,7 @@ local function LayoutNumpad()
     local pad = db.gridPadding or 14
     local cell = size + spacing
     -- Before AnchorNumpad below: a free position is converted at this scale
-    SetScaleIfNeeded(numpadCard, NumpadScale())
+    SetScaleIfNeeded(numpadCard, KeyCardScale("numpadScale"))
 
     -- Only the rows something sits in: a pad with its top row switched off
     -- loses the row rather than wearing a gap
@@ -1312,39 +1465,15 @@ local function LayoutNumpad()
     numpadCard:SetSize(
         NUMPAD_COLS * cell - spacing + pad * 2,
         rows * cell - spacing + pad * 2)
-    local r, g, b, a = PushedColor()
     for _, button in ipairs(numpadButtons) do
         local key = button.__cmdKey
         local entry = placed[key]
         if entry then
             button.__cmdLabel = entry.label or NUMPAD_KEYS[key].label
-            local slot = NumpadSlot(key)
-            if button:GetAttribute("action") ~= slot then
-                button:SetAttribute("action", slot)
-            end
-            local proxy = button.__cmdProxy
-            if proxy:GetAttribute("action") ~= slot then
-                proxy:SetAttribute("action", slot)
-            end
-            if button.__cmdNativeSize == nil then
-                local w = (button.GetWidth and button:GetWidth()) or 0
-                button.__cmdNativeSize = (w > 0) and w or 36
-            end
-            button:SetSize(size, size)
-            NormalizeButtonArt(button, size)
             -- A spanning key sits centered in its span, like the keycap
             local x = pad + (entry.col - 1) * cell + ((entry.w or 1) - 1) * cell / 2
             local y = pad + (entry.row - topRow) * cell + ((entry.h or 1) - 1) * cell / 2
-            SetAnchor(button, "TOPLEFT", numpadCard, "TOPLEFT", x, -y)
-            local pushed = button:GetPushedTexture()
-            local press = NumpadPressFor(button)
-            if r then
-                if pushed then pushed:SetColorTexture(r, g, b, a) end
-                press:SetColorTexture(r, g, b, a)
-            end
-            press:Hide()
-            if not button:IsShown() then button:Show() end
-            RelabelNumpadButton(button)
+            PlaceKeyButton(button, numpadCard, NumpadSlot(key), size, x, y)
         elseif button:IsShown() then
             button:Hide()
         end
@@ -1353,17 +1482,12 @@ local function LayoutNumpad()
     AnchorNumpad()
     if not numpadCard:IsShown() then numpadCard:Show() end
     StyleCard(numpadCard)
-    SetNumpadLockState()
+    SetKeyCardLockState(numpadCard, "numpadAnchor")
     -- A card built just now has never been stacked
     ApplyLayering()
 end
 
--- Bind each shown key to its proxy while the numpad is up, and give every key
--- back the moment it is not. Override bindings sit on top of the saved set
--- without touching it: switching the numpad off restores whatever those keys
--- did before (movement, autorun, your own binds), with nothing to undo.
--- Protected in combat, so deferred; the signature keeps it from rebinding --
--- and firing UPDATE_BINDINGS -- when nothing changed.
+-- Every shown key bound while the numpad is up, none while it is not
 local function ApplyNumpadBindings()
     local db = DB()
     local keys = {}
@@ -1372,23 +1496,85 @@ local function ApplyNumpadBindings()
             if NumpadKeyUsed(entry.key) then keys[#keys + 1] = entry.key end
         end
     end
-    local signature = table.concat(keys, " ")
-    if signature == appliedNumpadBinds then return end
+    appliedNumpadBinds = BindKeys(numpadBindOwner, keys, numpadByKey, numpadButtons, appliedNumpadBinds)
+end
+
+-- ---------------------------------------------------------------------------
+-- Function-key row: layout and binds
+-- ---------------------------------------------------------------------------
+local function EnsureFKeys()
+    if fkeyCard then return fkeyCard end
+    -- Secure templates, so built out of combat only (see EnsureNumpad)
+    if InCombatLockdown() then
+        pendingUpdate = true
+        return nil
+    end
+    fkeyCard = CreateKeyCard("CommanderActionBarFKeys", "fkeyAnchor", "fkeyPosition")
+    for _, entry in ipairs(FKEY_ROW) do
+        CreateKeyButton(fkeyCard, "CommanderFKeyButton" .. (entry.name or entry.key),
+            entry.key, KEY_SWITCHES.fkey, fkeyButtons, fkeyByKey)
+    end
+    return fkeyCard
+end
+
+local function AnchorFKeys()
+    if DB().fkeyAnchor == "FREE" or not backdrop then
+        AnchorFree(fkeyCard, DB().fkeyPosition, 0, 160)
+    else
+        -- On the grid's top edge with the left edges lined up: at the grid's
+        -- own scale each key sits straight over a grid column
+        SetAnchor(fkeyCard, "BOTTOMLEFT", backdrop, "TOPLEFT", 0, CARD_GAP)
+    end
+end
+
+local function LayoutFKeys()
+    local db = DB()
+    if not db.fkeyEnabled then
+        if fkeyCard and fkeyCard:IsShown() then
+            if InCombatLockdown() then
+                pendingUpdate = true
+                return
+            end
+            fkeyCard:Hide()
+        end
+        return
+    end
     if InCombatLockdown() then
         pendingUpdate = true
         return
     end
-    ClearOverrideBindings(numpadBindOwner)
-    for _, key in ipairs(keys) do
-        SetOverrideBindingClick(numpadBindOwner, false, key,
-            numpadByKey[key].__cmdProxy:GetName(), "LeftButton")
+    if not EnsureFKeys() then return end
+
+    -- The grid's measurements, so the row's keys are grid keys on its pitch
+    local size = db.buttonSize or 32
+    local spacing = db.buttonSpacing or 10
+    local pad = db.gridPadding or 14
+    local cell = size + spacing
+    -- Before AnchorFKeys below: a free position is converted at this scale
+    SetScaleIfNeeded(fkeyCard, KeyCardScale("fkeyScale"))
+    fkeyCard:SetSize(#FKEY_ROW * cell - spacing + pad * 2, size + pad * 2)
+    for i, entry in ipairs(FKEY_ROW) do
+        local button = fkeyByKey[entry.key]
+        button.__cmdLabel = entry.label
+        PlaceKeyButton(button, fkeyCard, FKeySlot(i), size, pad + (i - 1) * cell, pad)
     end
-    appliedNumpadBinds = signature
-    -- Let Blizzard recompute every face's hotkey (blank on an unbound one),
-    -- then the post-hook lays the cap back on the bound ones
-    for _, button in ipairs(numpadButtons) do
-        button:UpdateHotkeys(button.buttonType)
+
+    AnchorFKeys()
+    if not fkeyCard:IsShown() then fkeyCard:Show() end
+    StyleCard(fkeyCard)
+    SetKeyCardLockState(fkeyCard, "fkeyAnchor")
+    -- A card built just now has never been stacked
+    ApplyLayering()
+end
+
+-- All six keys bound while the row is up, none while it is not
+local function ApplyFKeyBindings()
+    local db = DB()
+    local keys = {}
+    if db.fkeyEnabled and db.fkeyBindKeys and fkeyCard then
+        for _, entry in ipairs(FKEY_ROW) do keys[#keys + 1] = entry.key end
     end
+    appliedFKeyBinds = BindKeys(fkeyBindOwner, keys, fkeyByKey, fkeyButtons, appliedFKeyBinds)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1440,6 +1626,8 @@ local function OnSettingsUpdate()
     MoveActionButtons()
     LayoutNumpad()
     ApplyNumpadBindings()
+    LayoutFKeys()
+    ApplyFKeyBindings()
     ApplyCardStyle()
     OnUpdate()
 end
@@ -1449,6 +1637,8 @@ local function OnAwake()
     MoveActionButtons()
     LayoutNumpad()
     ApplyNumpadBindings()
+    LayoutFKeys()
+    ApplyFKeyBindings()
     frame:SetScript("OnUpdate", OnUpdateThrottled)
     Commander.AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, OnSettingsUpdate)
 end
@@ -1474,6 +1664,8 @@ local function OnEvent(self, event)
             MoveActionButtons()
             LayoutNumpad()
             ApplyNumpadBindings()
+            LayoutFKeys()
+            ApplyFKeyBindings()
             OnUpdate()
         end
     elseif loaded then
@@ -1515,6 +1707,8 @@ do
         "ActionButton1", "MultiBarBottomLeftButton1",
         -- The numpad card and one of its keys, when it has been switched on
         "CommanderActionBarNumpad", "CommanderNumpadButton7",
+        -- The function-key row and its F1, likewise
+        "CommanderActionBarFKeys", "CommanderFKeyButtonF1",
     }
     local HOOK_METHODS = {
         "SetPoint", "ClearAllPoints", "SetParent", "SetScale",

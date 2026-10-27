@@ -69,7 +69,49 @@ local DefaultSettings = {
     numpadOpsBar = "LEFT",             -- operators + F16-F19: first 9 slots of a bar
     numpadNumLock = false,             -- Clear on the Mac pad
     numpadFunctionRow = false,         -- the Mac pad's F16-F19 row
+    -- Function-key row (` then F1-F5, one row on top of the grid). Every key
+    -- here starts with "fkey": its page's Restore Defaults resets by that.
+    fkeyEnabled = false,
+    fkeyBindKeys = true,
+    fkeyAnchor = "ABOVE",          -- ABOVE the grid card, or FREE
+    fkeyScale = 1.0,               -- times Card Scale: 1 = the grid's own key size
+    fkeyPosition = {               -- only used while FREE
+        point = "CENTER",
+        relativePoint = "CENTER",
+        xOfs = 0,
+        yOfs = 160,
+        scale = 1,                 -- the card's scale when saved (offsets are in its units)
+    },
+    fkeyBar = "RIGHT",             -- the first six slots of a spare bar, ` first
 }
+
+-- The spare bars are shared out: the numpad's number keys, its operator keys
+-- and the function-key row each hold a different one, so no two blocks ever
+-- draw the same slots. Choosing a bar another block holds trades with it.
+local BAR_FIELDS = { "numpadDigitsBar", "numpadOpsBar", "fkeyBar" }
+local function ClaimBar(field, value)
+    for _, other in ipairs(BAR_FIELDS) do
+        if other ~= field and CommanderActionBarDB[other] == value then
+            CommanderActionBarDB[other] = CommanderActionBarDB[field]
+        end
+    end
+    CommanderActionBarDB[field] = value
+end
+
+-- When the row lands on a bar the numpad holds (a save from before the row
+-- existed, or a page's Restore Defaults), the row is the one that moves: to
+-- the first bar neither numpad block holds
+local SPARE_BAR_ORDER = { "RIGHT", "PAGE2", "LEFT", "BOTTOMRIGHT" }
+local function SettleBars()
+    local db = CommanderActionBarDB
+    if db.fkeyBar ~= db.numpadDigitsBar and db.fkeyBar ~= db.numpadOpsBar then return end
+    for _, bar in ipairs(SPARE_BAR_ORDER) do
+        if bar ~= db.numpadDigitsBar and bar ~= db.numpadOpsBar then
+            db.fkeyBar = bar
+            return
+        end
+    end
+end
 
 local frame = CreateFrame("FRAME");
 frame:RegisterEvent("ADDON_LOADED")
@@ -99,6 +141,7 @@ local function ResetNumpad()
             CommanderActionBarDB[key] = Commander.UI.CopyValue(value)
         end
     end
+    SettleBars()
     Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
     print("Commander Action Bar: numpad settings restored to defaults")
 end
@@ -109,6 +152,24 @@ local function ToggleNumpad()
     print("Commander Action Bar: numpad " .. (CommanderActionBarDB.numpadEnabled and "on" or "off"))
 end
 
+-- The function-key page resets only its own options, like the numpad's
+local function ResetFKeys()
+    for key, value in pairs(DefaultSettings) do
+        if key:match("^fkey") then
+            CommanderActionBarDB[key] = Commander.UI.CopyValue(value)
+        end
+    end
+    SettleBars()
+    Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    print("Commander Action Bar: function key settings restored to defaults")
+end
+
+local function ToggleFKeys()
+    CommanderActionBarDB.fkeyEnabled = not CommanderActionBarDB.fkeyEnabled
+    Commander.Notify(COMMANDER_ACTIONBAR_EVENTS.UPDATE)
+    print("Commander Action Bar: function key bar " .. (CommanderActionBarDB.fkeyEnabled and "on" or "off"))
+end
+
 local db = function() return CommanderActionBarDB end
 
 local function CreateOptionsPanel()
@@ -116,7 +177,7 @@ local function CreateOptionsPanel()
         key = "ActionBar",
         title = "Action Bar",
         addonName = "Commander_ActionBar",
-        description = "Replaces the sprawling default action bars with a single compact command card: an RTS-style grid of your actions on a movable armored plate. This page shapes the card itself; button behavior, bags, and the satellite bars live on the Action Bar Buttons page, and the optional numpad card beside it on Action Bar Numpad.",
+        description = "Replaces the sprawling default action bars with a single compact command card: an RTS-style grid of your actions on a movable armored plate. This page shapes the card itself; button behavior, bags, and the satellite bars live on the Action Bar Buttons page, the optional numpad card beside it on Action Bar Numpad, and the optional ` F1-F5 row above it on Action Bar Function Keys.",
         event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
         slash = { "/cab" },
         slashHandlers = {
@@ -124,6 +185,7 @@ local function CreateOptionsPanel()
             unlock = function() SetLocked(false) end,
             center = ResetPosition,
             numpad = ToggleNumpad,
+            fkeys = ToggleFKeys,
         },
     })
 
@@ -170,7 +232,7 @@ local function CreateOptionsPanel()
     })
     panel:AddSliderPair({
         label = "Card Scale",
-        tooltip = "Overall size of the card and its buttons. The numpad card follows it; Numpad Scale on the numpad page sizes it against this.",
+        tooltip = "Overall size of the card and its buttons. The numpad card and the function-key row follow it; the scale on each of their pages sizes them against this.",
         min = 0.6, max = 1.5, step = 0.05,
         format = Commander.UI.FormatPercent,
         get = function() return db().cardScale end,
@@ -366,7 +428,7 @@ local function CreateButtonsPanel()
     })
     panel:AddDropdownPair({
         label = "Pet Bar",
-        tooltip = "Where the pet bar sits relative to the card, or hide it entirely.",
+        tooltip = "Where the pet bar sits relative to the card, or hide it entirely. Above the Card moves up past the function-key row when that is docked on top.",
         options = {
             { text = "Above the Card", value = "ABOVE" },
             { text = "Left of the Card", value = "LEFT" },
@@ -406,7 +468,7 @@ local function CreateButtonsPanel()
 end
 
 -- Third subcategory: the numpad card
-local NUMPAD_BAR_OPTIONS = {
+local SPARE_BAR_OPTIONS = {
     { text = "Bottom Right Bar", value = "BOTTOMRIGHT" },
     { text = "Right Bar", value = "RIGHT" },
     { text = "Right Bar 2", value = "LEFT" },
@@ -469,23 +531,17 @@ local function CreateNumpadPanel()
     })
     panel:AddDropdownPair({
         label = "Number Keys",
-        tooltip = "Which bar's twelve action slots the number block uses: 1-9 are its first nine, 0 the tenth, . the eleventh, + the twelfth. That bar's own buttons are hidden while the numpad is up, since its actions live here now (unless the grid already folds that bar in). Bottom Right Bar is slots 49-60, Right Bar 25-36, Right Bar 2 37-48, Action Page 2 13-24 (the main bar's second page). Choosing the operator keys' bar swaps the two.",
-        options = NUMPAD_BAR_OPTIONS,
+        tooltip = "Which bar's twelve action slots the number block uses: 1-9 are its first nine, 0 the tenth, . the eleventh, + the twelfth. That bar's own buttons are hidden while the numpad is up, since its actions live here now (unless the grid already folds that bar in). Bottom Right Bar is slots 49-60, Right Bar 25-36, Right Bar 2 37-48, Action Page 2 13-24 (the main bar's second page). Choosing the bar the operator keys or the function-key row use swaps the two.",
+        options = SPARE_BAR_OPTIONS,
         get = function() return db().numpadDigitsBar end,
-        set = function(value)
-            if value == db().numpadOpsBar then db().numpadOpsBar = db().numpadDigitsBar end
-            db().numpadDigitsBar = value
-        end,
+        set = function(value) ClaimBar("numpadDigitsBar", value) end,
         isEnabled = NumpadOn,
     }, {
         label = "Operator Keys",
-        tooltip = "Which bar's first nine action slots the other keys use: / first, then *, -, =, Clear (Num Lock), and F16 to F19 as slots six to nine. The rest of that bar is left alone and its buttons stay where they are. Choosing the number keys' bar swaps the two.",
-        options = NUMPAD_BAR_OPTIONS,
+        tooltip = "Which bar's first nine action slots the other keys use: / first, then *, -, =, Clear (Num Lock), and F16 to F19 as slots six to nine. The rest of that bar is left alone and its buttons stay where they are. Choosing the bar the number keys or the function-key row use swaps the two.",
+        options = SPARE_BAR_OPTIONS,
         get = function() return db().numpadOpsBar end,
-        set = function(value)
-            if value == db().numpadDigitsBar then db().numpadDigitsBar = db().numpadOpsBar end
-            db().numpadOpsBar = value
-        end,
+        set = function(value) ClaimBar("numpadOpsBar", value) end,
         isEnabled = NumpadOn,
     })
     panel:AddCheckboxPair({
@@ -505,6 +561,64 @@ local function CreateNumpadPanel()
     panel:Finalize({
         onDefaults = ResetNumpad,
         defaultsTooltip = "Reset the numpad options on this page. The command card's own options are left alone.",
+    })
+end
+
+-- Fourth subcategory: the function-key row
+local function FKeysOn() return db().fkeyEnabled end
+
+local function CreateFKeysPanel()
+    local panel = Commander.UI.NewPanel({
+        key = "ActionBarFKeys",
+        title = "Action Bar Function Keys",
+        addonName = "Commander_ActionBar",
+        description = "An optional row of keys on top of the command card: the ` key first, then F1 to F5. Six keys, so on the grid's default six columns each one sits over a column. While it is up each key is bound to the button it mirrors, the way the numpad's are, so the top-left corner of the keyboard becomes another bank of binds. Spacing, framing, fade and every button option follow the main card, and so does its size unless Function Key Scale says otherwise. A pet bar placed Above the Card moves up past the row.",
+        event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
+    })
+
+    panel:AddCheckboxPair({
+        label = "Show Function Key Bar",
+        tooltip = "Add the ` F1-F5 row on top of the command card. /cab fkeys toggles it.",
+        get = function() return db().fkeyEnabled end,
+        set = function(value) db().fkeyEnabled = value end,
+    }, {
+        label = "Bind Function Keys",
+        tooltip = "While the row is shown, ` and F1 to F5 press the buttons they mirror, and each button wears its key's cap. These are override bindings: your saved key bindings are not touched, and switching this or the row off gives every key straight back to whatever it did before (target self and party members by default, raid marks for some). Only the bare keys are taken; Shift-F1 and the like keep what they do. Off, the row is click-only.",
+        get = function() return db().fkeyBindKeys end,
+        set = function(value) db().fkeyBindKeys = value end,
+        isEnabled = FKeysOn,
+    })
+    panel:AddDropdownPair({
+        label = "Function Key Position",
+        tooltip = "Docked on top of the command card, its left edge on the card's and moving with it; or free-standing, when it drags on its own while Lock Action Bar is off.",
+        options = {
+            { text = "Above the Card", value = "ABOVE" },
+            { text = "Free", value = "FREE" },
+        },
+        get = function() return db().fkeyAnchor end,
+        set = function(value) db().fkeyAnchor = value end,
+        isEnabled = FKeysOn,
+    }, {
+        label = "Function Key Slots",
+        tooltip = "Which bar's first six action slots the row uses: ` the first, then F1 to F5. The rest of that bar is left alone and its buttons stay where they are. Right Bar is slots 25-30, Right Bar 2 37-42, Bottom Right Bar 49-54, Action Page 2 13-18. Choosing a bar the numpad uses swaps the two.",
+        options = SPARE_BAR_OPTIONS,
+        get = function() return db().fkeyBar end,
+        set = function(value) ClaimBar("fkeyBar", value) end,
+        isEnabled = FKeysOn,
+    })
+    panel:AddSlider({
+        label = "Function Key Scale",
+        tooltip = "Size of the row against the command card: 100% gives it the grid's own key size, so each key sits over a grid column, and it follows Card Scale either way. Docked, it stays on the card's top edge; free-standing, it keeps its place.",
+        min = 0.5, max = 1.5, step = 0.05,
+        format = Commander.UI.FormatPercent,
+        get = function() return db().fkeyScale end,
+        set = function(value) db().fkeyScale = value end,
+        isEnabled = FKeysOn,
+    })
+
+    panel:Finalize({
+        onDefaults = ResetFKeys,
+        defaultsTooltip = "Reset the function-key options on this page. The command card's own options and the numpad's are left alone; if the row's default bar is one the numpad holds, the row takes the first free one instead.",
     })
 end
 
@@ -536,6 +650,7 @@ local function OnAwake()
     CreateOptionsPanel()
     CreateButtonsPanel()
     CreateNumpadPanel()
+    CreateFKeysPanel()
     Commander.AddListener(COMMANDER_ACTIONBAR_EVENTS.UPDATE, OnUpdate)
 end
 
@@ -547,6 +662,8 @@ local function OnEvent(self, event, addonName)
             Commander.UI.ApplyDefaults(CommanderActionBarDB, DefaultSettings)
             -- Retired option: the stance bar is Blizzard's again
             CommanderActionBarDB.showStanceBar = nil
+            -- A save from before the row may have the numpad on its default bar
+            SettleBars()
             self:UnregisterEvent("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then

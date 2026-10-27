@@ -3,7 +3,7 @@
 Two luajit checks, both in-addon. Run **both** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit actionbar_numpad_harness.lua   # numpad card + grid wiring under a WoW mock — 177 checks
+/opt/homebrew/bin/luajit actionbar_numpad_harness.lua   # numpad card, function-key row + grid wiring under a WoW mock — 291 checks
 /opt/homebrew/bin/luajit globals_lint.lua               # 2 files, 0 undeclared globals
 ```
 
@@ -54,6 +54,35 @@ What it cannot tell you: anything about taint. The numpad faces are
 addon-created `ActionBarButtonTemplate` buttons (the template Blizzard's own
 bars use), and only the client can say whether that ever trips an
 `ADDON_ACTION_BLOCKED`. Watch for one naming a `CommanderNumpad` frame.
+
+## The function-key row (2.4.0), same harness
+
+Sections I-L drive the ` F1-F5 row through the same mock, with the numpad up
+beside it the whole time so the two cards have to share the console: the row
+switched on mid-fight (nothing built or bound until combat drops); its shape
+(one row of six grid keys at grid pitch, exactly as wide as the six-column
+grid, docked on the grid's top edge with the left edges lined up so each key
+sits over a column); its slots (Right Bar 25-30, ` first); its six binds on
+an owner of its own, beside the numpad's sixteen and never Shift-F1 or
+Shift-`, and beside the numpad's F16-F19 when that row is on; the caps
+surviving UpdateHotkeys; presses in both key modes and mid-fight; the pet bar
+stepping up past it; one fade for all three cards, hovering the row waking
+them all; the three bar choices trading instead of colliding, from either
+page, and the row giving way to the first free bar when a page reset (either
+page's) lands it on a bar the numpad holds; free and docked, dragging and
+saving its own position; Function Key Scale (relative, deferred in combat);
+binding off and on without touching the numpad's keys; `/cab fkeys` in and
+out of combat; and its page's Restore Defaults leaving the card's and the
+numpad's options alone.
+
+Mutation-checked when written: pinning the pet bar to the grid, sharing the
+numpad's bind owner, dropping the settle on the row's reset, skipping the
+row in the fade or the hover, a one-way bar choice, and centring the row
+instead of lining it up each fail it. The row's own combat guards in
+`LayoutFKeys`/`EnsureFKeys` are NOT exercised: every settings change already
+defers in `OnSettingsUpdate` (removing that fails 14 checks), so those guards
+only matter for a login or `/reload` mid-fight, which this harness does not
+drive. The same holds for the numpad's.
 
 ## `globals_lint.lua` — scoping
 
