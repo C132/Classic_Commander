@@ -24,6 +24,10 @@ local fkeyButtons = {}     -- in FKEY_ROW order
 local fkeyByKey = {}
 local fkeyMarkFaces = {}   -- F key -> its raid-mark face (fkeyMode MARKS)
 local fkeyPartyFaces = {}  -- F key -> its party-seat face (fkeyMode PARTY)
+-- The F1-F5 mode the row's faces show now. LayoutFKeys sets it, out of
+-- combat only, so a mode chosen mid-fight is not drawn (or seated) until
+-- the faces have actually swapped.
+local fkeyShownMode
 -- Both keyed cards once built, for the passes that treat them alike
 local keyCards = {}
 -- Set when a layout pass is skipped due to combat lockdown; applied on PLAYER_REGEN_ENABLED
@@ -582,10 +586,16 @@ local function SetLockState()
         -- drag is a drop in progress, and grabbing the card yanks the whole
         -- grid out from under it mid-gesture.
         backdrop:SetScript("OnDragStart", function(self)
-            if CursorHoldsAction() then return end
+            -- Nor mid-fight: Blizzard's protected buttons are anchored to
+            -- the card, so StartMoving on it is blocked (the keyed cards
+            -- carry the same guard)
+            if CursorHoldsAction() or InCombatLockdown() then return end
+            self.__cmdMoving = true
             self:StartMoving()
         end)
         backdrop:SetScript("OnDragStop", function(self)
+            if not self.__cmdMoving then return end
+            self.__cmdMoving = nil
             self:StopMovingOrSizing()
             local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
             DB().position = {point = point, relativePoint = relativePoint, xOfs = xOfs, yOfs = yOfs}
@@ -993,14 +1003,14 @@ local function AbbreviateHotkey(text)
     return text
 end
 
--- A keyed card's key-cap label for one of its buttons, or nil while its keys
--- are not bound -- then the button keeps whatever Blizzard's own hotkey logic
--- shows, because a "7" on a button the 7 key does not press is a lie. Each
--- button carries its card's two switches (see KEY_SWITCHES).
+-- A keyed card's key-cap label for one of its buttons, or nil while its key
+-- is not bound -- then the button keeps whatever Blizzard's own hotkey logic
+-- shows, because a "7" on a button the 7 key does not press is a lie. Bound
+-- means the binding that is live (BindKeys marks what it bound: an action
+-- face's proxy, or a mode face itself), not the setting: switched off
+-- mid-fight, a key stays bound until combat drops, and so does its cap.
 local function KeyCapLabel(button)
-    local switches = button.__cmdSwitches
-    local db = DB()
-    if not (switches and db[switches.bind] and db[switches.enabled]) then return nil end
+    if not (button.__cmdProxy or button).__cmdBound then return nil end
     return button.__cmdLabel
 end
 
@@ -1124,7 +1134,7 @@ end
 -- the target's mark and the party roster change under them, so they are
 -- drawn on the poll. Textures, text and alpha only, so it runs mid-fight.
 local function StyleModeFaces(db)
-    local mode = db.fkeyMode
+    local mode = fkeyShownMode
     local faces = (mode == "MARKS" and fkeyMarkFaces) or (mode == "PARTY" and fkeyPartyFaces)
     if not faces then return end
     local targetMark = mode == "MARKS" and GetRaidTargetIndex("target")
@@ -1159,6 +1169,17 @@ local function StyleModeFaces(db)
                 end
                 icon:SetShown(face.__cmdClass ~= nil)
                 icon:SetDesaturated((UnitIsDeadOrGhost(unit) or not UnitIsConnected(unit)) and true or false)
+                -- Out-of-Range Tint, as on the action buttons: a partner out
+                -- of range goes red. UnitInRange (40 yards) answers for group
+                -- members only, so your own seat never tints; it is also the
+                -- one range check addons may call here (CheckInteractDistance
+                -- is protected on this client, see Commander_PartyFrames).
+                local r, g, b = 1, 1, 1
+                if db.rangeTint and UnitInRange then
+                    local inRange, checked = UnitInRange(unit)
+                    if checked and not inRange then r, g, b = 1, 0.3, 0.25 end
+                end
+                icon:SetVertexColor(r, g, b)
                 local name = UnitName(unit)
                 if face.__cmdName ~= name then
                     face.__cmdName = name
@@ -1287,13 +1308,6 @@ end
 -- ---------------------------------------------------------------------------
 local CARD_GAP = 2   -- between a docked keyed card and the grid card
 
--- Which settings switch each keyed card on and bind its keys. Every button
--- carries its card's pair, so the shared button code reads the right one.
-local KEY_SWITCHES = {
-    numpad = { enabled = "numpadEnabled", bind = "numpadBindKeys" },
-    fkey = { enabled = "fkeyEnabled", bind = "fkeyBindKeys" },
-}
-
 -- A plain frame per card owns its override bindings: never protected, never
 -- hidden, and clearing one card's binds never touches the other's
 local numpadBindOwner = CreateFrame("Frame")
@@ -1327,10 +1341,136 @@ local function KeyPressFor(button)
     return press
 end
 
-local function CreateKeyButton(card, name, key, switches, buttons, byKey)
+-- Keeping our faces out of Blizzard's button lists. The template's OnLoad
+-- appends every ActionBarButtonTemplate button to
+-- ActionBarButtonEventsFrame.frames, and Update() keys one holding an action
+-- into ActionBarActionEventsFrame.frames. Both are walked in plain loops,
+-- and an entry an addon wrote is tainted: reading it taints the rest of the
+-- walk. ActionBarController walks the first on every zone-in and page or
+-- stance change and then, in the same pass, shows MainActionBar and the
+-- MultiBars (ValidateActionBarTransition), so the bars' isShownExternal
+-- would be written tainted -- the hiddenHolder trap noted up top, blocked
+-- at the next combat change. The second is a hash, so whichever of
+-- Blizzard's grid buttons come after ours would run tainted. So each face
+-- leaves both lists the moment it is made, and gets the same events from
+-- our own frame instead, handed to the same OnEvent with nothing of
+-- Blizzard's after them. (Blizzard_ActionBar/Shared/ActionButton.lua and
+-- Blizzard_ActionBarController/ActionBarController.lua, classic_anniversary.)
+-- The per-slot range and usable watchers keep ours: they only ever reach
+-- buttons on the same slot, and only with texture updates.
+local keyFaces = {}   -- every ActionBarButtonTemplate face, both cards
+
+-- ActionBarButtonEventsFrame's events go to every face; the rest are
+-- ActionBarActionEventsFrame's, which only faces holding an action hear
+-- (Blizzard's own eventsRegistered flag says which), the spellcasts only
+-- for the face whose spell it is
+local FACE_EVENTS = {
+    "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "UPDATE_BINDINGS",
+    "GAME_PAD_ACTIVE_CHANGED", "UPDATE_SHAPESHIFT_FORM", "ACTIONBAR_UPDATE_COOLDOWN",
+    "PET_BAR_UPDATE", "PLAYER_MOUNT_DISPLAY_CHANGED",
+}
+local FACE_PET_EVENTS = { "UNIT_FLAGS", "UNIT_AURA" }
+local FACE_ACTION_EVENTS = {
+    "SPELL_UPDATE_CHARGES", "UPDATE_INVENTORY_ALERTS", "TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE",
+    "ARCHAEOLOGY_CLOSED", "PLAYER_ENTER_COMBAT", "PLAYER_LEAVE_COMBAT", "START_AUTOREPEAT_SPELL",
+    "STOP_AUTOREPEAT_SPELL", "UNIT_ENTERED_VEHICLE", "UNIT_EXITED_VEHICLE", "COMPANION_UPDATE",
+    "UNIT_INVENTORY_CHANGED", "UNIT_SPELLCAST_SENT", "LEARNED_SPELL_IN_SKILL_LINE",
+    "PET_STABLE_UPDATE", "PET_STABLE_SHOW", "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",
+    "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", "UPDATE_SUMMONPETS_ACTION", "SPELL_UPDATE_ICON",
+}
+local FACE_PLAYER_EVENTS = {
+    "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED",
+    "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_CHANNEL_START",
+    "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_RETICLE_TARGET", "UNIT_SPELLCAST_RETICLE_CLEAR",
+    "UNIT_SPELLCAST_EMPOWER_START", "UNIT_SPELLCAST_EMPOWER_STOP",
+    "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE",
+}
+local ACTION_EVENT = {}
+for _, event in ipairs(FACE_ACTION_EVENTS) do ACTION_EVENT[event] = true end
+for _, event in ipairs(FACE_PLAYER_EVENTS) do ACTION_EVENT[event] = true end
+
+local faceEvents   -- built with the first face, so a bar without cards listens to nothing
+
+local function DispatchFaceEvent(_, event, ...)
+    if not ACTION_EVENT[event] then
+        for _, face in ipairs(keyFaces) do face:OnEvent(event, ...) end
+        return
+    end
+    -- Blizzard's own filter for the spellcasts: the player's, on this spell
+    local spellID
+    if event:match("^UNIT_SPELLCAST_") then
+        local unit = ...
+        if unit ~= "player" then return end
+        spellID = select(event == "UNIT_SPELLCAST_SENT" and 4 or 3, ...)
+    end
+    for _, face in ipairs(keyFaces) do
+        if face.eventsRegistered and (not spellID or face:MatchesActiveButtonSpellID(spellID)) then
+            face:OnEvent(event, ...)
+        end
+    end
+end
+
+local function EnsureFaceEvents()
+    if faceEvents then return end
+    faceEvents = CreateFrame("Frame")
+    -- pcall: an event this build has dropped must not stop the rest
+    for _, event in ipairs(FACE_EVENTS) do pcall(faceEvents.RegisterEvent, faceEvents, event) end
+    for _, event in ipairs(FACE_ACTION_EVENTS) do pcall(faceEvents.RegisterEvent, faceEvents, event) end
+    for _, event in ipairs(FACE_PET_EVENTS) do
+        pcall(faceEvents.RegisterUnitEvent, faceEvents, event, "pet")
+    end
+    for _, event in ipairs(FACE_PLAYER_EVENTS) do
+        pcall(faceEvents.RegisterUnitEvent, faceEvents, event, "player")
+    end
+    faceEvents:SetScript("OnEvent", DispatchFaceEvent)
+end
+
+-- Out of ActionBarActionEventsFrame's list, wherever Blizzard's Update put it
+local function LeaveActionList(face)
+    local list = ActionBarActionEventsFrame and ActionBarActionEventsFrame.frames
+    if list and list[face] then list[face] = nil end
+end
+
+-- A face just made: out of both lists. OnLoad's RegisterFrame was the last
+-- append to ActionBarButtonEventsFrame, so clearing the end of that array
+-- moves no Blizzard entry. Update() is wrapped so a face that gains an
+-- action never rejoins the other; eventsRegistered keeps meaning what it
+-- does to Blizzard, which is how the dispatcher reads it.
+local function DetachFace(face)
+    local list = ActionBarButtonEventsFrame and ActionBarButtonEventsFrame.frames
+    if list and list[#list] == face then list[#list] = nil end
+    LeaveActionList(face)
+    local blizzardUpdate = face.Update
+    face.Update = function(self, ...)
+        blizzardUpdate(self, ...)
+        LeaveActionList(self)
+    end
+    keyFaces[#keyFaces + 1] = face
+    EnsureFaceEvents()
+end
+
+-- Stands in for the template's UpdatePressAndHoldAction on our faces
+local function KeepPressAndHold() end
+
+local function CreateKeyButton(card, name, key, buttons, byKey)
     local button = CreateFrame("CheckButton", name, card, "ActionBarButtonTemplate")
     button.__cmdKey = key
-    button.__cmdSwitches = switches
+    DetachFace(button)
+    -- The template's Update() ends in UpdatePressAndHoldAction, which writes
+    -- the face's "pressAndHoldAction" attribute every time. Blizzard's own
+    -- buttons run that secure; ours run it as us, so an ACTIONBAR_SLOT_CHANGED
+    -- for one of our slots mid-fight (a conditional macro flipping its icon,
+    -- a spell dragged on) would make it a blocked SetAttribute. Nothing on
+    -- this client presses and holds, and OnLoad has already written false
+    -- out of combat, so ours never write it again. It is the only protected
+    -- call on the face's event paths (Blizzard_ActionBar/Shared/ActionButton.lua;
+    -- grid changes are issecure()-guarded).
+    button.UpdatePressAndHoldAction = KeepPressAndHold
+    -- Left button only. The template's OnClick reads self.action before it
+    -- casts when the click is a right one, and on our faces that field was
+    -- written by us, so a right-click cast was always a blocked UseAction.
+    -- Keys never click the face, so this costs them nothing.
+    button:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
     -- Same attributes Blizzard puts on its action buttons, so self-cast,
     -- focus-cast and mouseover modifiers behave identically from the key.
     -- Not its "typerelease": that is retail press-and-hold, and the
@@ -1475,9 +1615,16 @@ local function BindKeys(owner, keys, targets, buttons, applied)
         return applied
     end
     ClearOverrideBindings(owner)
+    -- What is bound now is what the caps follow (KeyCapLabel)
+    for _, target in ipairs(owner.__cmdBound or {}) do target.__cmdBound = nil end
+    local bound = {}
     for _, key in ipairs(keys) do
-        SetOverrideBindingClick(owner, false, key, targets[key]:GetName(), "LeftButton")
+        local target = targets[key]
+        SetOverrideBindingClick(owner, false, key, target:GetName(), "LeftButton")
+        target.__cmdBound = true
+        bound[#bound + 1] = target
     end
+    owner.__cmdBound = bound
     -- Let Blizzard recompute every face's hotkey (blank on an unbound one),
     -- then the post-hook lays the cap back on the bound ones
     for _, button in ipairs(buttons) do
@@ -1500,7 +1647,7 @@ local function EnsureNumpad()
     numpadCard = CreateKeyCard("CommanderActionBarNumpad", "numpadAnchor", "numpadPosition")
     for _, key in ipairs(NUMPAD_KEY_ORDER) do
         CreateKeyButton(numpadCard, "CommanderNumpadButton" .. (key:gsub("^NUMPAD", "")),
-            key, KEY_SWITCHES.numpad, numpadButtons, numpadByKey)
+            key, numpadButtons, numpadByKey)
     end
     return numpadCard
 end
@@ -1618,7 +1765,6 @@ end
 local function DressModeFace(face, entry)
     face.__cmdKey = entry.key
     face.__cmdLabel = entry.label
-    face.__cmdSwitches = KEY_SWITCHES.fkey
     local bg = face:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(face)
     bg:SetColorTexture(0, 0, 0, 0.5)
@@ -1695,7 +1841,7 @@ local function EnsureFKeys()
     fkeyCard = CreateKeyCard("CommanderActionBarFKeys", "fkeyAnchor", "fkeyPosition")
     for _, entry in ipairs(FKEY_ROW) do
         local button = CreateKeyButton(fkeyCard, "CommanderFKeyButton" .. (entry.name or entry.key),
-            entry.key, KEY_SWITCHES.fkey, fkeyButtons, fkeyByKey)
+            entry.key, fkeyButtons, fkeyByKey)
         button.__cmdLabel = entry.label
         if entry.mark then CreateMarkFace(entry) end
         if entry.seat then CreatePartyFace(entry) end
@@ -1720,7 +1866,7 @@ end
 -- change, and one that happens mid-fight waits for combat to drop -- the
 -- faces show the seats as they really stand until then.
 local function SeatPartyFaces()
-    if DB().fkeyMode ~= "PARTY" or InCombatLockdown() then return end
+    if fkeyShownMode ~= "PARTY" or InCombatLockdown() then return end
     for _, face in pairs(fkeyPartyFaces) do
         local unit = PartySeatUnit(face.__cmdSeat)
         if face:GetAttribute("unit") ~= unit then
@@ -1777,6 +1923,7 @@ local function LayoutFKeys()
         HideUnlessLive(fkeyMarkFaces[entry.key], live)
         HideUnlessLive(fkeyPartyFaces[entry.key], live)
     end
+    fkeyShownMode = db.fkeyMode
     SeatPartyFaces()
 
     AnchorFKeys()
@@ -1877,6 +2024,10 @@ end
 
 local function OnEvent(self, event)
     if event == "PLAYER_LOGIN" then
+        -- A /reload mid-fight fires no PLAYER_REGEN_DISABLED: without this
+        -- the bar took the fight for peace and faded, and dropped its combat
+        -- border, until the next fight
+        inCombat = InCombatLockdown() and true or false
         OnAwake()
         loaded = true
     elseif event == "PLAYER_LOGOUT" then

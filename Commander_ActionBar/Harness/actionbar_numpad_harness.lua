@@ -64,8 +64,11 @@ local function MarkUp(f, field)
         p = p.__parent
     end
 end
+-- True while Blizzard's own code runs a Blizzard frame: secure execution,
+-- where protected calls are allowed even in combat
+local secureExecution = false
 local function Guard(f, method)
-    if combat and IsProtected(f) then
+    if combat and IsProtected(f) and not secureExecution then
         Violation((f.__name or f.__kind or "?") .. ":" .. method)
     end
 end
@@ -263,9 +266,52 @@ function W.SetDesaturated(self, v) self.__desat = v and true or false end
 -- Templates ---------------------------------------------------------------
 RANGE_INDICATOR = "\226\151\143"
 
+-- Blizzard's two action-button lists. The template's OnLoad appends every
+-- button to ActionBarButtonEventsFrame.frames; Update() keys one holding an
+-- action into ActionBarActionEventsFrame.frames. Both are walked in plain
+-- loops, and an entry an addon wrote taints the REST of the walk: every
+-- protected call after it counts as the addon's, Blizzard's own included.
+-- (Addon frames are the ones named Commander*.)
+ActionBarButtonEventsFrame = { frames = {} }
+ActionBarActionEventsFrame = { frames = {} }
+local function AddonMade(f) return (f.__name or ""):match("^Commander") ~= nil end
+local function Walk(list, fn)
+    local tainted = false
+    for _, f in pairs(list) do
+        tainted = tainted or AddonMade(f)
+        secureExecution = not tainted
+        fn(f)
+    end
+    secureExecution = false
+    return tainted
+end
+-- An event as ActionBarButtonEventsFrame hands it out
+local function FireActionButtonEvent(event, arg1)
+    return Walk(ActionBarButtonEventsFrame.frames, function(f)
+        if event == "ACTIONBAR_SLOT_CHANGED" and (arg1 == 0 or arg1 == f.action) then f:UpdateAction(true) end
+    end)
+end
+-- One as ActionBarActionEventsFrame hands it out (SPELL_UPDATE_ICON: Update)
+local function FireActionEvent()
+    return Walk(ActionBarActionEventsFrame.frames, function(f) f:Update() end)
+end
+-- ActionBarController_UpdateAll on a zone-in or a page or stance change: the
+-- walk, then ValidateActionBarTransition showing MainActionBar in the same
+-- execution (writing its isShownExternal, tainted if the walk was)
+local function ActionBarControllerUpdateAll()
+    local tainted = Walk(ActionBarButtonEventsFrame.frames, function(f) f:UpdateAction(true) end)
+    secureExecution = not tainted
+    MainActionBar.__shownExternalTainted = tainted
+    MainActionBar:Show()
+    secureExecution = false
+    return tainted
+end
+
 -- Blizzard's ActionBarButtonTemplate, as far as this addon touches it: an
 -- ID-0 button reads its slot from the "action" attribute; UpdateHotkeys on a
--- button with no binding command blanks the hotkey to the range dot
+-- button with no binding command blanks the hotkey to the range dot; and
+-- Update() ends by writing the "pressAndHoldAction" attribute
+-- (ActionBarActionButtonMixin:UpdatePressAndHoldAction)
 local function MakeActionButton(f)
     f.__w, f.__h = 36, 36
     f.icon = NewRegion("Texture", f)
@@ -285,8 +331,42 @@ local function MakeActionButton(f)
         self.HotKey:Hide()
     end
     f.__scripts.OnAttributeChanged = function(self, name, value)
-        if name == "action" then self.action = value end
+        if name == "action" then
+            self.action = value
+            self:UpdateAction()
+        end
     end
+    f.UpdatePressAndHoldAction = function(self) self:SetAttribute("pressAndHoldAction", false) end
+    -- Update's bookkeeping: holding an action joins ActionBarActionEventsFrame's
+    -- list, holding none leaves it
+    f.Update = function(self)
+        if HasAction(self.action) then
+            if not self.eventsRegistered then
+                ActionBarActionEventsFrame.frames[self] = self
+                self.eventsRegistered = true
+            end
+        elseif self.eventsRegistered then
+            ActionBarActionEventsFrame.frames[self] = nil
+            self.eventsRegistered = nil
+        end
+        self:UpdatePressAndHoldAction()
+    end
+    f.UpdateAction = function(self) self:Update() end
+    f.OnEvent = function(self, event, arg1)
+        if event == "ACTIONBAR_SLOT_CHANGED" then
+            if arg1 == 0 or arg1 == self.action then self:UpdateAction(true) end
+        elseif event == "ACTIONBAR_UPDATE_COOLDOWN" then
+            self.__cooldownUpdates = (self.__cooldownUpdates or 0) + 1
+        elseif event == "SPELL_UPDATE_ICON" then
+            self:Update()
+        elseif event == "UPDATE_BINDINGS" then
+            self:UpdateHotkeys(self.buttonType)
+        end
+    end
+    f.MatchesActiveButtonSpellID = function() return false end
+    -- OnLoad: RegisterFrame, then UpdateAction
+    table.insert(ActionBarButtonEventsFrame.frames, f)
+    f:UpdateAction()
 end
 
 -- The bare SecureActionButtonTemplate OnClick: SecureActionButton_OnClick with
@@ -411,6 +491,12 @@ function UnitExists(unit) return roster[unit] ~= nil end
 function UnitName(unit) local u = roster[unit] return u and u.name end
 function UnitIsDeadOrGhost(unit) local u = roster[unit] return u and u.dead or false end
 function UnitIsConnected(unit) local u = roster[unit] return u ~= nil and not u.offline end
+-- Group members only, as on the client: your own unit is never checked
+function UnitInRange(unit)
+    local u = roster[unit]
+    if not u or unit == "player" then return false, false end
+    return not u.far, true
+end
 local raidMarks, markCalls = {}, {}
 function GetRaidTargetIndex(unit) return raidMarks[unit] end
 function SetRaidTarget(unit, mark)
@@ -423,7 +509,7 @@ RAID_CLASS_COLORS = { PRIEST = { r = 1, g = 1, b = 1 } }
 CLASS_ICON_TCOORDS = { PRIEST = { 0.5, 0.75, 0.25, 0.5 }, WARRIOR = { 0, 0.25, 0, 0.25 },
     MAGE = { 0.25, 0.5, 0, 0.25 }, ROGUE = { 0.5, 0.75, 0, 0.25 }, PALADIN = { 0, 0.25, 0.5, 0.75 } }
 
-local actionSlots = {}   -- slot -> true when something is on it
+local actionSlots = { [1] = true }   -- slot -> true when something is on it
 function HasAction(slot) return actionSlots[slot] and true or false end
 function GetActionCooldown() return 0, 0 end
 function IsUsableAction() return true, false end
@@ -518,6 +604,18 @@ local function Fire(event, ...)
     end
 end
 
+-- `luajit actionbar_numpad_harness.lua combatboot`: a /reload mid-fight,
+-- with the numpad (and its F16-F19 row), the function-key row in party mode
+-- and the out-of-combat fade all saved on. It runs section Z and exits; the
+-- plain run is an ordinary login, which every section from A on assumes.
+local COMBAT_BOOT = arg and arg[1] == "combatboot"
+if COMBAT_BOOT then
+    -- SavedVariables land after the file runs and before ADDON_LOADED
+    CommanderActionBarDB = { numpadEnabled = true, numpadFunctionRow = true,
+        fkeyEnabled = true, fkeyMode = "PARTY", oocFade = true, fadeOpacity = 0.4 }
+    combat = true
+end
+
 Fire("ADDON_LOADED", "Commander_ActionBar")
 Fire("PLAYER_LOGIN")
 Fire("PLAYER_ENTERING_WORLD")
@@ -578,6 +676,33 @@ local function Point(f, i)
     local p = f.__points[i or 1]
     if not p then return {} end
     return { point = p[1], rel = p[2], relPoint = p[3], x = p[4], y = p[5] }
+end
+
+-- ===========================================================================
+-- Z. (combatboot only) A /reload mid-fight: nothing secure is built, moved
+-- or bound until combat drops, and the bar knows it is in a fight
+-- ===========================================================================
+if COMBAT_BOOT then
+    Tick(3)
+    CHECK(#luaErrors == 0, "combat boot clean", luaErrors[1])
+    CHECK(#violations == 0, "combat boot: no protected calls", violations[1])
+    CHECK(_G.CommanderActionBarNumpad == nil and _G.CommanderActionBarFKeys == nil,
+        "neither keyed card built mid-fight")
+    CHECK(#BoundKeys() == 0, "nothing bound mid-fight", #BoundKeys())
+    CHECK(NEAR(backdrop.__alpha, 1), "no out-of-combat fade in the fight it reloaded into", backdrop.__alpha)
+    LeaveCombat()
+    Tick()
+    local np, row = _G.CommanderActionBarNumpad, _G.CommanderActionBarFKeys
+    CHECK(np and np:IsShown() and row and row:IsShown(), "both cards built when combat drops")
+    CHECK(#BoundKeys() == 26, "the numpad (with F16-F19) and the row bound", #BoundKeys())
+    CHECK(_G.CommanderFKeyPartyF1 and _G.CommanderFKeyPartyF1:GetAttribute("unit") == "player"
+        and overrideBindings.F1 and overrideBindings.F1.button == "CommanderFKeyPartyF1", "party seats taken after combat")
+    CHECK(Point(ActionButton1).rel == backdrop, "the grid laid out after combat")
+    CHECK(NEAR(backdrop.__alpha, 0.4), "the fade arrives once the fight is over", backdrop.__alpha)
+    EnterCombat(); Tick(2); LeaveCombat(); Tick()
+    CHECK(#violations == 0 and #luaErrors == 0, "a second fight after the reload: clean", violations[1] or luaErrors[1])
+    io.write(string.format("%d checks, %d failures (combatboot)\n", checks, fails))
+    os.exit(fails == 0 and 0 or 1)
 end
 
 -- ===========================================================================
@@ -1465,6 +1590,24 @@ Tick()
 CHECK(Seat("F1").icon.__desat == false and Seat("F2").icon.__desat == true, "back to colour; offline greys too")
 roster.party2.offline = nil
 
+-- Out-of-Range Tint reaches the seats: a partner out of range goes red
+db.rangeTint = true
+roster.party2.far = true
+Tick()
+CHECK(Seat("F2").icon.__vertex and Seat("F2").icon.__vertex[2] < 0.5 and Seat("F1").icon.__vertex[2] == 1,
+    "a partner out of range goes red, one in range does not", Seat("F2").icon.__vertex and Seat("F2").icon.__vertex[2])
+CHECK(Seat("F5").icon.__vertex and Seat("F5").icon.__vertex[2] == 1, "your own seat never tints")
+EnterCombat()
+roster.party2.far = nil
+Tick()
+CHECK(Seat("F2").icon.__vertex[2] == 1 and #violations == 0, "back in range mid-fight: the red clears", violations[1])
+roster.party2.far = true
+LeaveCombat()
+db.rangeTint = false
+Tick()
+CHECK(Seat("F2").icon.__vertex[2] == 1, "Out-of-Range Tint off: no red")
+roster.party2.far = nil
+
 -- Binding off in a mode: the keys go back and the caps come off our faces
 ClickCheckbox(fBindBox)
 Tick()
@@ -1487,6 +1630,121 @@ CHECK(FFace("F1"):IsShown() and not Seat("F1"):IsShown() and not Mark("F1"):IsSh
     and FSlot("F1") == 26 and overrideBindings.F1.button == "CommanderFKeyButtonF1Key", "row actions back")
 roster.party1, roster.party2, roster.party3, roster.party4 = nil, nil, nil, nil
 Tick()
+
+-- ===========================================================================
+-- N. Blizzard's action-button events reach our faces as us (2.5.1): a slot
+-- changing mid-fight must not end in a blocked SetAttribute
+-- ===========================================================================
+CHECK(Face("NUMPAD7").UpdatePressAndHoldAction ~= ActionButton1.UpdatePressAndHoldAction,
+    "our faces never rewrite pressAndHoldAction; Blizzard's are untouched")
+EnterCombat()
+Fire("ACTIONBAR_SLOT_CHANGED", 55)    -- the numpad's 7, through our own dispatcher (section O)
+Fire("ACTIONBAR_SLOT_CHANGED", 25)    -- the row's `
+Fire("ACTIONBAR_SLOT_CHANGED", 0)     -- every face at once
+FireActionButtonEvent("ACTIONBAR_SLOT_CHANGED", 0)   -- and Blizzard's own walk
+CHECK(#violations == 0, "slot changes mid-fight: no blocked call on our faces", violations[1])
+LeaveCombat()
+FireActionButtonEvent("ACTIONBAR_SLOT_CHANGED", 0)
+CHECK(ActionButton1:GetAttribute("pressAndHoldAction") == false, "Blizzard's own buttons still update theirs")
+CHECK(#violations == 0, "and out of combat nothing is blocked either", violations[1])
+
+-- ===========================================================================
+-- O. Our faces stay out of Blizzard's button lists (2.6.0, round 4), so no
+-- Blizzard walk runs tainted, and our own frame hands them their events
+-- ===========================================================================
+do
+    local function OursIn(list)
+        for _, f in pairs(list) do if AddonMade(f) then return f.__name end end
+    end
+    CHECK(OursIn(ActionBarButtonEventsFrame.frames) == nil, "no face of ours in ActionBarButtonEventsFrame",
+        OursIn(ActionBarButtonEventsFrame.frames))
+    CHECK(OursIn(ActionBarActionEventsFrame.frames) == nil, "none in ActionBarActionEventsFrame",
+        OursIn(ActionBarActionEventsFrame.frames))
+    CHECK(#ActionBarButtonEventsFrame.frames == 60, "Blizzard's own 60 buttons all still listed",
+        #ActionBarButtonEventsFrame.frames)
+    -- A face that holds an action is flagged as Blizzard flags it, yet stays out
+    CHECK(Face("NUMPAD7").eventsRegistered == true and ActionBarActionEventsFrame.frames[Face("NUMPAD7")] == nil,
+        "a face holding an action keeps Blizzard's flag but not the list")
+    -- Blizzard's own grid buttons holding actions are in it, as they should be
+    actionSlots[2] = true
+    secureExecution = true; ActionButton2:Update(); secureExecution = false
+    CHECK(ActionBarActionEventsFrame.frames[ActionButton2] == ActionButton2, "Blizzard's buttons still in their list")
+
+    -- A stance or page change mid-fight: Blizzard's walks and the bar shown after
+    EnterCombat()
+    CHECK(ActionBarControllerUpdateAll() == false and MainActionBar.__shownExternalTainted == false,
+        "page change: the controller's walk and MainActionBar's show stay secure")
+    CHECK(FireActionEvent() == false, "SPELL_UPDATE_ICON: Blizzard's action walk stays secure")
+    CHECK(#violations == 0, "no blocked call from either walk mid-fight", violations[1])
+
+    -- Our dispatcher hands the faces the same events
+    local np, gr = Face("NUMPAD7").__cooldownUpdates or 0, FFace("`").__cooldownUpdates or 0
+    Fire("ACTIONBAR_UPDATE_COOLDOWN")
+    CHECK((Face("NUMPAD7").__cooldownUpdates or 0) == np + 1 and (FFace("`").__cooldownUpdates or 0) == gr + 1,
+        "cooldown updates reach both cards' faces")
+    Fire("SPELL_UPDATE_ICON")
+    Fire("PLAYER_ENTERING_WORLD")
+    CHECK(#violations == 0 and #luaErrors == 0, "our dispatch mid-fight: clean", violations[1] or luaErrors[1])
+    LeaveCombat()
+    -- Right-clicks never reach a face: the template's right-click path reads
+    -- self.action, which we wrote, before casting
+    local clicks = table.concat(Face("NUMPAD7").__clicks, " ")
+    CHECK(not clicks:find("Right") and not clicks:find("Any"), "faces take the left button only", clicks)
+    -- The grid card does not start moving mid-fight
+    db.locked = false
+    Notify(); Tick()
+    EnterCombat()
+    backdrop.__moving = false
+    backdrop.__scripts.OnDragStart(backdrop)
+    CHECK(backdrop.__moving == false and #violations == 0, "no grid drag mid-fight", violations[1])
+    backdrop.__scripts.OnDragStop(backdrop)
+    LeaveCombat()
+    db.locked = true
+    Notify(); Tick()
+end
+
+-- ===========================================================================
+-- P. Settings changed mid-fight: binds wait for combat to drop, and the caps
+-- and faces keep showing what the keys really do until then (2.6.0)
+-- ===========================================================================
+EnterCombat()
+ClickCheckbox(bindBox)                      -- Bind Numpad Keys off
+Tick()
+CHECK(overrideBindings.NUMPAD7 ~= nil and Face("NUMPAD7").HotKey.__text == "7" and Face("NUMPAD7").HotKey.__shown,
+    "numpad binds off mid-fight: 7 still bound, and still capped", Face("NUMPAD7").HotKey.__text)
+LeaveCombat()
+Tick()
+CHECK(overrideBindings.NUMPAD7 == nil and Face("NUMPAD7").HotKey.__text ~= "7", "after combat: unbound, cap gone")
+ClickCheckbox(bindBox)
+Tick()
+CHECK(overrideBindings.NUMPAD7 ~= nil and Face("NUMPAD7").HotKey.__text == "7", "numpad binds back")
+
+PickOption(modeDrop, "MARKS")
+Tick()
+roster.target = { name = "Boss", class = "WARRIOR" }
+raidMarks.target = 8
+EnterCombat()
+PickOption(modeDrop, "PARTY")               -- chosen mid-fight
+Tick()
+CHECK(Mark("F1"):IsShown() and not Seat("F1"):IsShown() and overrideBindings.F1.button == "CommanderFKeyMarkF1",
+    "Party Targets chosen mid-fight: the marks stay up and bound")
+CHECK(Mark("F1").__cmdLit.__shown and Mark("F1").HotKey.__shown and Mark("F1").HotKey.__text == "F1",
+    "and keep their lit skull and their caps")
+ClickCheckbox(fBindBox)                     -- Bind Function Keys off, still mid-fight
+Tick()
+CHECK(overrideBindings.F2 ~= nil and Mark("F2").HotKey.__shown, "row binds off mid-fight: F2 still bound and capped")
+CHECK(#violations == 0, "mid-fight setting changes: no violations", violations[1])
+LeaveCombat()
+Tick()
+CHECK(Seat("F1"):IsShown() and not Mark("F1"):IsShown() and overrideBindings.F1 == nil
+    and not Seat("F1").HotKey.__shown, "after combat: party faces, unbound, no caps")
+ClickCheckbox(fBindBox)
+Tick()
+CHECK(overrideBindings.F1 and overrideBindings.F1.button == "CommanderFKeyPartyF1" and Seat("F1").HotKey.__shown,
+    "row binds back, on the party faces")
+PickOption(modeDrop, "ACTIONS")
+Tick()
+roster.target, raidMarks.target = nil, nil
 
 do  -- the row's page resets only row options, and gives way on a held bar
     PickOption(digitsDrop, "RIGHT")    -- the numpad takes the row's default bar

@@ -341,7 +341,7 @@ local function CreateButtonsPanel()
         isEnabled = function() return not db().hideHotkeys end,
     }, {
         label = "Out-of-Range Tint",
-        tooltip = "Tint a button's icon red while its target is out of range.",
+        tooltip = "Tint a button's icon red while its target is out of range. On the function-key row's Party Targets, a party member out of range (40 yards) goes red too.",
         get = function() return db().rangeTint end,
         set = function(value) db().rangeTint = value end,
     })

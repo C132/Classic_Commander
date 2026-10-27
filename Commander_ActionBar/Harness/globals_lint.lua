@@ -55,6 +55,12 @@ MainActionBar PetActionBar
 HasAction GetActionCooldown IsUsableAction IsActionInRange
 ]]
 
+-- Blizzard's two action-button lists our faces leave (CommanderActionBar.lua:
+-- DetachFace, LeaveActionList)
+allow [[
+ActionBarButtonEventsFrame ActionBarActionEventsFrame
+]]
+
 -- The numpad card's key binds (CommanderActionBar.lua: ApplyNumpadBindings)
 allow [[
 SetOverrideBindingClick ClearOverrideBindings
@@ -64,7 +70,7 @@ SetOverrideBindingClick ClearOverrideBindings
 -- ToggleRaidMark, CreateMarkFace, PartySeatUnit, StyleModeFaces)
 allow [[
 GetRaidTargetIndex SetRaidTarget GetCVarBool
-UnitExists UnitName UnitIsDeadOrGhost UnitIsConnected
+UnitExists UnitName UnitIsDeadOrGhost UnitIsConnected UnitInRange
 ]]
 
 local problems, scanned = 0, 0
