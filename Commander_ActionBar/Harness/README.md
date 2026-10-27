@@ -3,7 +3,7 @@
 Two luajit checks, both in-addon. Run **both** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit actionbar_numpad_harness.lua   # numpad card, function-key row + grid wiring under a WoW mock — 291 checks
+/opt/homebrew/bin/luajit actionbar_numpad_harness.lua   # numpad card, function-key row + grid wiring under a WoW mock — 357 checks
 /opt/homebrew/bin/luajit globals_lint.lua               # 2 files, 0 undeclared globals
 ```
 
@@ -83,6 +83,35 @@ instead of lining it up each fail it. The row's own combat guards in
 defers in `OnSettingsUpdate` (removing that fails 14 checks), so those guards
 only matter for a login or `/reload` mid-fight, which this harness does not
 drive. The same holds for the numpad's.
+
+## The row's F1-F5 modes (2.5.0), same harness
+
+Section M: the F1-F5 Keys dropdown (Row Actions, Raid Marks, Party Targets),
+a mode chosen mid-fight swapping nothing and rebinding nothing until combat
+drops, ` keeping its action in every mode.
+
+Raid Marks: a mark face in each action face's place, skull to triangle in
+Blizzard's RAIDTARGET order, F1-F5 bound to those faces; a press marks the
+target on the phase `ActionButtonUseKeyDown` picks, the same key again takes
+the mark off (Blizzard's `SetRaidTargetIcon` toggle), the face wearing the
+target's mark is lit, mouse clicks mark too, no target marks nothing, and
+marking works mid-fight.
+
+Party Targets: secure "target" faces seated party1..partyN then you (solo F1
+is you, a 3v3 F3, a full party F5), keys past you targeting nobody (an empty
+unit does nothing in `SECURE_ACTIONS.target`); names and class icons on the
+seats, empty seats dimmed, dead or offline greyed; a join mid-fight holding
+every seat, and the face still naming who the key really hits, until combat
+drops; binding off taking the caps off our own faces; back to Row Actions
+restoring the action faces, slots and proxies. The mock gained a roster, a
+target that wears marks, slot textures, and the secure "target" action as
+Blizzard's source defines it.
+
+Mutation-checked when written: self seated first, seating mid-fight, a mark
+that never toggles off, a mark on both phases, a bind signature blind to its
+targets, seats drawn from the live roster instead of the button's unit, the
+action face left up under a mode, marks bound to the action proxy, and an
+undimmed empty seat each fail it.
 
 ## `globals_lint.lua` — scoping
 

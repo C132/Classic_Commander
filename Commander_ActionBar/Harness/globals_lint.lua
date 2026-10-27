@@ -60,6 +60,13 @@ allow [[
 SetOverrideBindingClick ClearOverrideBindings
 ]]
 
+-- The function-key row's raid-mark and party modes (CommanderActionBar.lua:
+-- ToggleRaidMark, CreateMarkFace, PartySeatUnit, StyleModeFaces)
+allow [[
+GetRaidTargetIndex SetRaidTarget GetCVarBool
+UnitExists UnitName UnitIsDeadOrGhost UnitIsConnected
+]]
+
 local problems, scanned = 0, 0
 
 for _, file in ipairs(FILES) do

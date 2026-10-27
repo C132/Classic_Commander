@@ -249,6 +249,16 @@ function W.GetPushedTexture(self) return self.__pushed end
 function W.GetHighlightTexture(self) return self.__highlight end
 function W.GetCheckedTexture(self) return self.__checkedTex end
 function W.GetThumbTexture() return NewRegion("Texture") end
+-- A button's own slot textures, as SetNormalTexture and friends make them
+local function SlotTexture(self, field, file)
+    self[field] = self[field] or NewRegion("Texture", self)
+    self[field].__texture = file
+end
+function W.SetNormalTexture(self, file) SlotTexture(self, "__normal", file) end
+function W.SetPushedTexture(self, file) SlotTexture(self, "__pushed", file) end
+function W.SetHighlightTexture(self, file) SlotTexture(self, "__highlight", file) end
+function W.SetTexCoord(self, ...) self.__coords = { ... } end
+function W.SetDesaturated(self, v) self.__desat = v and true or false end
 
 -- Templates ---------------------------------------------------------------
 RANGE_INDICATOR = "\226\151\143"
@@ -285,11 +295,16 @@ local cvars = { ActionButtonUseKeyDown = "1" }
 function GetCVarBool(name) return cvars[name] == "1" end
 function GetCVar(name) return cvars[name] end
 local usedActions = {}
+local targetedUnits = {}
 local function SecureOnClick(self, button, down)
     local useDown = GetCVarBool("ActionButtonUseKeyDown")
     if (down and useDown) or (not down and not useDown) then
         if self:GetAttribute("type") == "action" then
             usedActions[#usedActions + 1] = self:GetAttribute("action")
+        elseif self:GetAttribute("type") == "target" then
+            -- SECURE_ACTIONS.target: no unit, no action at all
+            local unit = self:GetAttribute("unit")
+            if unit then targetedUnits[#targetedUnits + 1] = unit end
         end
     end
 end
@@ -384,11 +399,29 @@ C_AddOns = { GetAddOnMetadata = function() return "2.2.0" end }
 function GetCursorPosition() return 0, 0 end
 function GetCursorInfo() return nil end
 function MouseIsOver() return false end
-function UnitClass() return "Priest", "PRIEST" end
+-- Who is around: you, a party the tests fill in, and a target that can
+-- wear a raid mark
+local roster = { player = { name = "Devin", class = "PRIEST" } }
+function UnitClass(unit)
+    local u = roster[unit or "player"]
+    if not u then return nil end
+    return u.class:sub(1, 1) .. u.class:sub(2):lower(), u.class
+end
+function UnitExists(unit) return roster[unit] ~= nil end
+function UnitName(unit) local u = roster[unit] return u and u.name end
+function UnitIsDeadOrGhost(unit) local u = roster[unit] return u and u.dead or false end
+function UnitIsConnected(unit) local u = roster[unit] return u ~= nil and not u.offline end
+local raidMarks, markCalls = {}, {}
+function GetRaidTargetIndex(unit) return raidMarks[unit] end
+function SetRaidTarget(unit, mark)
+    markCalls[#markCalls + 1] = mark
+    raidMarks[unit] = (mark ~= 0) and mark or nil
+end
 function UnitFactionGroup() return "Alliance" end
 function UnitRace() return "Human", "Human" end
 RAID_CLASS_COLORS = { PRIEST = { r = 1, g = 1, b = 1 } }
-CLASS_ICON_TCOORDS = { PRIEST = { 0.5, 0.75, 0.25, 0.5 } }
+CLASS_ICON_TCOORDS = { PRIEST = { 0.5, 0.75, 0.25, 0.5 }, WARRIOR = { 0, 0.25, 0, 0.25 },
+    MAGE = { 0.25, 0.5, 0, 0.25 }, ROGUE = { 0.5, 0.75, 0, 0.25 }, PALADIN = { 0, 0.25, 0.5, 0.75 } }
 
 local actionSlots = {}   -- slot -> true when something is on it
 function HasAction(slot) return actionSlots[slot] and true or false end
@@ -559,7 +592,7 @@ CHECK(db.numpadEnabled == false and db.numpadBindKeys == true and db.numpadLayou
     and db.numpadOpsBar == "LEFT" and db.numpadNumLock == false, "numpad defaults applied")
 CHECK(_G.CommanderActionBarNumpad == nil, "numpad card not built while off")
 CHECK(db.fkeyEnabled == false and db.fkeyBindKeys == true and db.fkeyAnchor == "ABOVE"
-    and db.fkeyBar == "RIGHT" and db.fkeyScale == 1, "function-key row defaults applied")
+    and db.fkeyBar == "RIGHT" and db.fkeyScale == 1 and db.fkeyMode == "ACTIONS", "function-key row defaults applied")
 CHECK(_G.CommanderActionBarFKeys == nil and _G.CommanderFKeyButtonF1 == nil, "function-key row not built while off")
 CHECK(_G.CommanderNumpadButton7 == nil, "no numpad buttons while off")
 CHECK(#BoundKeys() == 0, "no override bindings while off")
@@ -1287,6 +1320,174 @@ Tick()
 CHECK(row:IsShown() and #BoundKeys() == 22, "/cab fkeys toggles back on")
 CHECK(_G.CommanderActionBarFKeys == row, "row reused, not rebuilt")
 
+-- ===========================================================================
+-- M. F1-F5 modes (2.5.0): raid marks on the target, then the party with you
+-- last; ` presses its action throughout
+-- ===========================================================================
+local modeDrop = FindDropdowns(fkeyPanel, "MARKS")[1]
+CHECK(modeDrop ~= nil, "F1-F5 Keys dropdown found")
+do
+    local opts = OpenDropdown(modeDrop)
+    CHECK(#opts == 3 and opts[1].value == "ACTIONS" and opts[2].value == "MARKS" and opts[3].value == "PARTY",
+        "Row Actions, Raid Marks, Party Targets", #opts)
+end
+CHECK(db.fkeyMode == "ACTIONS", "row actions by default")
+local function Mark(key) return _G["CommanderFKeyMark" .. key] end
+local function Seat(key) return _G["CommanderFKeyParty" .. key] end
+local MARK_OF = { F1 = 8, F2 = 7, F3 = 6, F4 = 5, F5 = 4 }
+CHECK(Mark("F1") and not Mark("F1"):IsShown() and Seat("F5") and not Seat("F5"):IsShown(),
+    "mode faces built with the row, hidden in Row Actions")
+CHECK(Mark("`") == nil and Seat("`") == nil, "` has no mode faces")
+CHECK(Seat("F1").__secure and not Mark("F1").__secure, "party faces secure, mark faces not")
+
+-- Raid marks, chosen mid-fight: nothing swaps or rebinds until combat drops
+EnterCombat()
+PickOption(modeDrop, "MARKS")
+Tick()
+CHECK(db.fkeyMode == "MARKS", "mode written")
+CHECK(FFace("F1"):IsShown() and not Mark("F1"):IsShown()
+    and overrideBindings.F1.button == "CommanderFKeyButtonF1Key", "nothing swaps in combat")
+CHECK(#violations == 0, "mode change in combat: no violations", violations[1])
+LeaveCombat()
+Tick()
+for i, key in ipairs(ROW_KEYS) do
+    if key == "`" then
+        CHECK(FFace(key):IsShown() and FSlot(key) == 25 and overrideBindings[key].button == "CommanderFKeyButtonGraveKey",
+            "` keeps its action in Raid Marks")
+    else
+        local f, p = Mark(key), Point(Mark(key))
+        CHECK(f:IsShown() and not FFace(key):IsShown() and p.rel == row and NEAR(p.x, 14 + (i - 1) * 42) and NEAR(p.y, -14),
+            key .. " mark face in the action face's place", tostring(p.x))
+        CHECK(f.icon.__texture == "Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. MARK_OF[key],
+            key .. " shows mark " .. MARK_OF[key], f.icon.__texture)
+        CHECK(overrideBindings[key] and overrideBindings[key].button == "CommanderFKeyMark" .. key,
+            key .. " bound to its mark face")
+    end
+end
+CHECK(Mark("F1").__w == 32 and NEAR(Mark("F1").__normal.__w, 32 * 66 / 36), "mark faces are grid keys, border to scale",
+    Mark("F1").__normal.__w)
+CHECK(#BoundKeys() == 22 and overrideBindings.NUMPAD7 ~= nil, "same 22 keys held, the numpad's untouched", #BoundKeys())
+CHECK(Mark("F1").HotKey.__text == "F1" and Mark("F1").HotKey.__shown, "mark faces wear their caps")
+
+-- Marking: the press the key-down setting picks, toggled like Blizzard's bind
+roster.target = { name = "Boss", class = "WARRIOR" }
+for i = #markCalls, 1, -1 do markCalls[i] = nil end
+cvars.ActionButtonUseKeyDown = "1"
+PressKey("F1", true)
+CHECK(#markCalls == 1 and raidMarks.target == 8, "F1 puts the skull on the target on press", raidMarks.target)
+CHECK(Mark("F1").__cmdPress and Mark("F1").__cmdPress.__shown, "mark face lit while held")
+PressKey("F1", false)
+CHECK(#markCalls == 1 and not Mark("F1").__cmdPress.__shown, "release does not mark again")
+Tick()
+CHECK(Mark("F1").__cmdLit.__shown and not Mark("F2").__cmdLit.__shown, "the skull lit while the target wears it")
+PressKey("F1", true); PressKey("F1", false)
+CHECK(raidMarks.target == nil and markCalls[#markCalls] == 0, "F1 again takes the skull off")
+Tick()
+CHECK(not Mark("F1").__cmdLit.__shown, "and the skull goes dark")
+cvars.ActionButtonUseKeyDown = "0"
+PressKey("F2", true)
+CHECK(raidMarks.target == nil, "key-up mode: no mark on press")
+PressKey("F2", false)
+CHECK(raidMarks.target == 7, "key-up mode: the cross lands on release", raidMarks.target)
+cvars.ActionButtonUseKeyDown = "1"
+EnterCombat()
+PressKey("F5", true); PressKey("F5", false)
+Tick(2)
+CHECK(raidMarks.target == 4 and Mark("F5").__cmdLit.__shown, "marking mid-fight: the triangle", raidMarks.target)
+CHECK(#violations == 0, "marks in combat: no violations", violations[1])
+LeaveCombat()
+Mark("F3").__scripts.OnClick(Mark("F3"), "LeftButton", true)
+CHECK(raidMarks.target == 6, "clicking a mark face marks too", raidMarks.target)
+roster.target, raidMarks.target = nil, nil
+do
+    local n = #markCalls
+    PressKey("F4", true); PressKey("F4", false)
+    CHECK(#markCalls == n, "no target: nothing marked")
+end
+
+-- Party targets: your party in order, you after the last of them
+PickOption(modeDrop, "PARTY")
+Tick()
+CHECK(Seat("F1"):IsShown() and not Mark("F1"):IsShown() and not FFace("F1"):IsShown(), "party faces swap in")
+CHECK(overrideBindings.F1 and overrideBindings.F1.button == "CommanderFKeyPartyF1"
+    and overrideBindings.F5.button == "CommanderFKeyPartyF5", "F1-F5 bound to the party faces")
+CHECK(overrideBindings["`"].button == "CommanderFKeyButtonGraveKey" and FFace("`"):IsShown(), "` keeps its action")
+local function Units()
+    local out = {}
+    for i, key in ipairs({ "F1", "F2", "F3", "F4", "F5" }) do out[i] = Seat(key):GetAttribute("unit") or "-" end
+    return table.concat(out, " ")
+end
+CHECK(Seat("F1"):GetAttribute("type") == "target" and Units() == "player - - - -", "solo: F1 is you", Units())
+CHECK(Seat("F1").Name.__text == "Devin" and NEAR(Seat("F1").__alpha, 1) and NEAR(Seat("F2").__alpha, 0.35),
+    "your seat named, empty seats dimmed")
+
+roster.party1 = { name = "Alpha", class = "WARRIOR" }
+roster.party2 = { name = "Bravo", class = "MAGE" }
+Tick()
+CHECK(Units() == "party1 party2 player - -", "3v3: two partners, then you", Units())
+CHECK(Seat("F1").Name.__text == "Alpha" and Seat("F2").Name.__text == "Bravo" and Seat("F3").Name.__text == "Devin",
+    "the seats show who they target")
+CHECK(Seat("F1").icon.__coords and Seat("F1").icon.__coords[1] == 0 and Seat("F2").icon.__coords[1] == 0.25
+    and Seat("F1").icon.__shown, "class icons on the seats")
+CHECK(not Seat("F4").icon.__shown and (Seat("F4").Name.__text or "") == "", "an empty seat shows nobody")
+for i = #targetedUnits, 1, -1 do targetedUnits[i] = nil end
+PressKey("F3", true)
+CHECK(#targetedUnits == 1 and targetedUnits[1] == "player", "F3 targets you on press", targetedUnits[1])
+CHECK(Seat("F3").__cmdPress and Seat("F3").__cmdPress.__shown, "party face lit while held")
+PressKey("F3", false)
+CHECK(#targetedUnits == 1 and not Seat("F3").__cmdPress.__shown, "release does not target again")
+PressKey("F1", true); PressKey("F1", false)
+CHECK(targetedUnits[2] == "party1", "F1 targets the first partner", targetedUnits[2])
+PressKey("F4", true); PressKey("F4", false)
+CHECK(#targetedUnits == 2, "an empty seat targets nobody", #targetedUnits)
+
+-- Someone joins mid-fight: the seats hold, and say so, until combat drops
+EnterCombat()
+roster.party3 = { name = "Charlie", class = "ROGUE" }
+Tick(2)
+CHECK(Units() == "party1 party2 player - -" and Seat("F3").Name.__text == "Devin",
+    "a join mid-fight waits: F3 still targets you and says so", Units())
+PressKey("F2", true); PressKey("F2", false)
+CHECK(targetedUnits[#targetedUnits] == "party2", "party keys work mid-fight")
+CHECK(#violations == 0, "roster change in combat: no violations", violations[1])
+LeaveCombat()
+Tick()
+CHECK(Units() == "party1 party2 party3 player -" and Seat("F4").Name.__text == "Devin", "re-seated when combat drops", Units())
+roster.party4 = { name = "Delta", class = "PALADIN" }
+Tick()
+CHECK(Units() == "party1 party2 party3 party4 player", "full party: F5 is you", Units())
+roster.party1.dead = true
+Tick()
+CHECK(Seat("F1").icon.__desat == true, "a dead partner greys out")
+roster.party1.dead = nil
+roster.party2.offline = true
+Tick()
+CHECK(Seat("F1").icon.__desat == false and Seat("F2").icon.__desat == true, "back to colour; offline greys too")
+roster.party2.offline = nil
+
+-- Binding off in a mode: the keys go back and the caps come off our faces
+ClickCheckbox(fBindBox)
+Tick()
+CHECK(overrideBindings.F1 == nil and #BoundKeys() == 16, "bind off: F1-F5 given back", #BoundKeys())
+CHECK(not Seat("F1").HotKey.__shown, "no cap on an unbound party face")
+ClickCheckbox(fBindBox)
+Tick()
+CHECK(overrideBindings.F1 and overrideBindings.F1.button == "CommanderFKeyPartyF1" and Seat("F1").HotKey.__shown,
+    "bind on: back on the party faces")
+do
+    local before = bindWrites
+    Notify(); Notify(); Tick(4)
+    CHECK(bindWrites == before, "unchanged mode does not rebind", bindWrites - before)
+end
+
+-- Back to row actions: the action faces, their slots and their proxies
+PickOption(modeDrop, "ACTIONS")
+Tick()
+CHECK(FFace("F1"):IsShown() and not Seat("F1"):IsShown() and not Mark("F1"):IsShown()
+    and FSlot("F1") == 26 and overrideBindings.F1.button == "CommanderFKeyButtonF1Key", "row actions back")
+roster.party1, roster.party2, roster.party3, roster.party4 = nil, nil, nil, nil
+Tick()
+
 do  -- the row's page resets only row options, and gives way on a held bar
     PickOption(digitsDrop, "RIGHT")    -- the numpad takes the row's default bar
     Tick()
@@ -1294,11 +1495,13 @@ do  -- the row's page resets only row options, and gives way on a held bar
     db.fkeyScale = 0.7
     db.fkeyAnchor = "FREE"
     db.fkeyBindKeys = false
+    db.fkeyMode = "PARTY"
     local reset = FindButton(fkeyPanel, "Restore Defaults")
     CHECK(reset ~= nil, "row page has Restore Defaults")
     if reset then reset.__scripts.OnClick(reset) end
     Tick()
-    CHECK(db.fkeyScale == 1 and db.fkeyAnchor == "ABOVE" and db.fkeyBindKeys == true, "row options reset")
+    CHECK(db.fkeyScale == 1 and db.fkeyAnchor == "ABOVE" and db.fkeyBindKeys == true
+        and db.fkeyMode == "ACTIONS", "row options reset")
     CHECK(db.fkeyBar == "PAGE2" and db.numpadDigitsBar == "RIGHT",
         "the numpad keeps its bar; the row takes the first free one", db.fkeyBar)
     CHECK(db.numpadEnabled == true and db.cardStyle == "DARK", "numpad and card options untouched")

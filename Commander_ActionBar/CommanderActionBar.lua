@@ -22,6 +22,8 @@ local numpadByKey = {}     -- binding key name -> button
 local fkeyCard
 local fkeyButtons = {}     -- in FKEY_ROW order
 local fkeyByKey = {}
+local fkeyMarkFaces = {}   -- F key -> its raid-mark face (fkeyMode MARKS)
+local fkeyPartyFaces = {}  -- F key -> its party-seat face (fkeyMode PARTY)
 -- Both keyed cards once built, for the passes that treat them alike
 local keyCards = {}
 -- Set when a layout pass is skipped due to combat lockdown; applied on PLAYER_REGEN_ENABLED
@@ -300,18 +302,36 @@ end
 --
 -- The slots are the first six of one spare bar, in row order. `name` is the
 -- button-name suffix where the key itself would make a poor global name.
+--
+-- F1-F5 can do something other than press an action (fkeyMode): put a raid
+-- mark on the target (`mark`, the order Blizzard's own RAIDTARGET binds run,
+-- skull first), or target a party member (`seat`). ` always presses its
+-- action.
 -- ---------------------------------------------------------------------------
 local FKEY_ROW = {
     { key = "`", label = "`", name = "Grave" },
-    { key = "F1", label = "F1" },
-    { key = "F2", label = "F2" },
-    { key = "F3", label = "F3" },
-    { key = "F4", label = "F4" },
-    { key = "F5", label = "F5" },
+    { key = "F1", label = "F1", mark = 8, seat = 1 },   -- skull
+    { key = "F2", label = "F2", mark = 7, seat = 2 },   -- cross
+    { key = "F3", label = "F3", mark = 6, seat = 3 },   -- square
+    { key = "F4", label = "F4", mark = 5, seat = 4 },   -- moon
+    { key = "F5", label = "F5", mark = 4, seat = 5 },   -- triangle
 }
 
 local function FKeySlot(index)
     return (SPARE_BARS[DB().fkeyBar] or SPARE_BARS.RIGHT).first + index - 1
+end
+
+-- Who a party seat targets: your party in the client's order (party1-4,
+-- which never has gaps) with you last, so the seat right after the last
+-- member is you and any seat past that targets nobody. Solo, F1 is you; in
+-- a 3v3, F1 and F2 are your partners and F3 is you. Read on the poll, so
+-- the unit names are built once.
+local PARTY_UNITS = { "party1", "party2", "party3", "party4" }
+local function PartySeatUnit(seat)
+    local unit = PARTY_UNITS[seat]
+    if unit and UnitExists(unit) then return unit end
+    if seat == 1 or UnitExists(PARTY_UNITS[seat - 1]) then return "player" end
+    return nil
 end
 
 -- Is the row up and docked on top of the grid? The pet bar, which sits above
@@ -984,6 +1004,26 @@ local function KeyCapLabel(button)
     return button.__cmdLabel
 end
 
+-- Icon recess, from the suite's shared art. On an action button these are
+-- BLIZZARD's icon textures, so the shading is created in manual mode -- its
+-- visibility is driven from here rather than by wrapping a Blizzard
+-- texture's Show/Hide, which would put addon code inside an action button's
+-- own paths. Re-created only when the setting actually changes; the callers
+-- run on a throttle, not once.
+local function RecessIcon(button, icon, db)
+    if not (icon and Commander.DebossIcon) then return end
+    local recess = db.iconRecess or "SOFT"
+    if button.__cmdRecess ~= recess then
+        button.__cmdRecess = recess
+        button.__cmdShade = Commander.DebossIcon(
+            icon, recess ~= "OFF" and recess or nil, false, true)
+    end
+    local shade = button.__cmdShade
+    if shade then
+        shade:SetShown(recess ~= "OFF" and icon:IsShown() and true or false)
+    end
+end
+
 -- One button's per-tick cosmetics. The grid's buttons and the keyed cards'
 -- share every rule; a keyed button's hotkey shows its key cap rather than the
 -- binding text, since the cap IS the binding there.
@@ -1045,24 +1085,7 @@ local function StyleButton(button, db, now, placing, isKeyed)
         icon:SetVertexColor(r, g, b)
     end
 
-    -- Icon recess, from the suite's shared art. These are BLIZZARD's
-    -- icon textures, so the shading is created in manual mode -- its
-    -- visibility is driven from here rather than by wrapping a
-    -- Blizzard texture's Show/Hide, which would put addon code inside
-    -- an action button's own paths. Re-created only when the setting
-    -- actually changes; this loop runs on a throttle, not once.
-    if icon and Commander.DebossIcon then
-        local recess = db.iconRecess or "SOFT"
-        if button.__cmdRecess ~= recess then
-            button.__cmdRecess = recess
-            button.__cmdShade = Commander.DebossIcon(
-                icon, recess ~= "OFF" and recess or nil, false, true)
-        end
-        local shade = button.__cmdShade
-        if shade then
-            shade:SetShown(recess ~= "OFF" and icon:IsShown() and true or false)
-        end
-    end
+    RecessIcon(button, icon, db)
 
     -- Cooldown countdown text + ready flash
     if slot and GetActionCooldown then
@@ -1097,6 +1120,65 @@ local function StyleButton(button, db, now, placing, isKeyed)
     end
 end
 
+-- The row's raid-mark and party faces, which say what F1-F5 do right now:
+-- the target's mark and the party roster change under them, so they are
+-- drawn on the poll. Textures, text and alpha only, so it runs mid-fight.
+local function StyleModeFaces(db)
+    local mode = db.fkeyMode
+    local faces = (mode == "MARKS" and fkeyMarkFaces) or (mode == "PARTY" and fkeyPartyFaces)
+    if not faces then return end
+    local targetMark = mode == "MARKS" and GetRaidTargetIndex("target")
+    for _, face in pairs(faces) do
+        -- Our own faces have no Blizzard hotkey logic to fall back on: no
+        -- cap means no text at all
+        local label = KeyCapLabel(face)
+        if label and not db.hideHotkeys then
+            if face.HotKey:GetText() ~= label then face.HotKey:SetText(label) end
+            face.HotKey:Show()
+        else
+            face.HotKey:Hide()
+        end
+        if mode == "MARKS" then
+            face.__cmdLit:SetShown(targetMark == face.__cmdMark)
+        else
+            -- Who the key targets is the button's own unit, not a fresh read
+            -- of the roster: a change mid-fight only reaches the button when
+            -- combat drops, and until then the face shows who it really hits
+            local unit = face:GetAttribute("unit")
+            local icon = face.icon
+            if unit and UnitExists(unit) then
+                local _, token = UnitClass(unit)
+                if face.__cmdClass ~= token then
+                    face.__cmdClass = token
+                    local info = token and Commander.GetClassInfo and Commander.GetClassInfo(token)
+                    local coords = info and info.iconCoords
+                    if coords then
+                        icon:SetTexture(info.icon)
+                        icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                    end
+                end
+                icon:SetShown(face.__cmdClass ~= nil)
+                icon:SetDesaturated((UnitIsDeadOrGhost(unit) or not UnitIsConnected(unit)) and true or false)
+                local name = UnitName(unit)
+                if face.__cmdName ~= name then
+                    face.__cmdName = name
+                    face.Name:SetText(name or "")
+                end
+                face:SetAlpha(1)
+            else
+                icon:Hide()
+                if face.__cmdName then
+                    face.__cmdName = nil
+                    face.Name:SetText("")
+                end
+                -- An empty seat dims like an empty slot does
+                face:SetAlpha(0.35)
+            end
+            RecessIcon(face, icon, db)
+        end
+    end
+end
+
 local function ApplyButtonCosmetics()
     local db = DB()
     local now = GetTime()
@@ -1116,8 +1198,9 @@ local function ApplyButtonCosmetics()
     end
     if fkeyCard and fkeyCard:IsShown() then
         for _, button in ipairs(fkeyButtons) do
-            StyleButton(button, db, now, placing, true)
+            if button:IsShown() then StyleButton(button, db, now, placing, true) end
         end
+        StyleModeFaces(db)
     end
 end
 
@@ -1336,16 +1419,9 @@ local function AnchorFree(card, pos, x, y)
     end
 end
 
--- One key's face and proxy onto its slot, and onto its spot on the card
--- (x, y down from the card's top-left corner)
-local function PlaceKeyButton(button, card, slot, size, x, y)
-    if button:GetAttribute("action") ~= slot then
-        button:SetAttribute("action", slot)
-    end
-    local proxy = button.__cmdProxy
-    if proxy:GetAttribute("action") ~= slot then
-        proxy:SetAttribute("action", slot)
-    end
+-- A face onto its spot on the card (x, y down from the card's top-left
+-- corner), sized and dressed like a grid key
+local function PlaceFace(button, card, size, x, y)
     if button.__cmdNativeSize == nil then
         local w = (button.GetWidth and button:GetWidth()) or 0
         button.__cmdNativeSize = (w > 0) and w or 36
@@ -1365,15 +1441,34 @@ local function PlaceKeyButton(button, card, slot, size, x, y)
     RelabelKeyButton(button)
 end
 
--- Bind each of `keys` to its button's proxy, and give back every key the
+-- One key's action face and proxy onto its slot, and onto its spot
+local function PlaceKeyButton(button, card, slot, size, x, y)
+    if button:GetAttribute("action") ~= slot then
+        button:SetAttribute("action", slot)
+    end
+    local proxy = button.__cmdProxy
+    if proxy:GetAttribute("action") ~= slot then
+        proxy:SetAttribute("action", slot)
+    end
+    PlaceFace(button, card, size, x, y)
+end
+
+-- Bind each of `keys` to the button `targets` names for it (an action
+-- face's proxy, or a face that is its own key), and give back every key the
 -- owner held that is no longer listed. Override bindings sit on top of the
 -- saved set without touching it: switching a card off restores whatever its
 -- keys did before (movement, autorun, raid marks, your own binds), with
 -- nothing to undo. Protected in combat, so deferred. Returns the signature
 -- now bound, for the caller to keep: an unchanged one skips the rebind --
 -- and the UPDATE_BINDINGS it fires.
-local function BindKeys(owner, keys, byKey, buttons, applied)
-    local signature = table.concat(keys, " ")
+local function BindKeys(owner, keys, targets, buttons, applied)
+    -- Each key's target is in the signature too: switching the row's mode
+    -- moves keys onto other buttons without changing which keys are held
+    local parts = {}
+    for i, key in ipairs(keys) do
+        parts[i] = key .. "=" .. targets[key]:GetName()
+    end
+    local signature = table.concat(parts, " ")
     if signature == applied then return applied end
     if InCombatLockdown() then
         pendingUpdate = true
@@ -1381,7 +1476,7 @@ local function BindKeys(owner, keys, byKey, buttons, applied)
     end
     ClearOverrideBindings(owner)
     for _, key in ipairs(keys) do
-        SetOverrideBindingClick(owner, false, key, byKey[key].__cmdProxy:GetName(), "LeftButton")
+        SetOverrideBindingClick(owner, false, key, targets[key]:GetName(), "LeftButton")
     end
     -- Let Blizzard recompute every face's hotkey (blank on an unbound one),
     -- then the post-hook lays the cap back on the bound ones
@@ -1490,18 +1585,106 @@ end
 -- Every shown key bound while the numpad is up, none while it is not
 local function ApplyNumpadBindings()
     local db = DB()
-    local keys = {}
+    local keys, targets = {}, {}
     if db.numpadEnabled and db.numpadBindKeys and numpadCard then
         for _, entry in ipairs(NumpadLayout()) do
-            if NumpadKeyUsed(entry.key) then keys[#keys + 1] = entry.key end
+            if NumpadKeyUsed(entry.key) then
+                keys[#keys + 1] = entry.key
+                targets[entry.key] = numpadByKey[entry.key].__cmdProxy
+            end
         end
     end
-    appliedNumpadBinds = BindKeys(numpadBindOwner, keys, numpadByKey, numpadButtons, appliedNumpadBinds)
+    appliedNumpadBinds = BindKeys(numpadBindOwner, keys, targets, numpadButtons, appliedNumpadBinds)
 end
 
 -- ---------------------------------------------------------------------------
 -- Function-key row: layout and binds
 -- ---------------------------------------------------------------------------
+
+-- Blizzard's own RAIDTARGETn binding, as a button: the mark onto the target,
+-- or off it when the target already wears that one
+local function ToggleRaidMark(mark)
+    if not UnitExists("target") then return end
+    if GetRaidTargetIndex("target") == mark then
+        SetRaidTarget("target", 0)
+    else
+        SetRaidTarget("target", mark)
+    end
+end
+
+-- A face of our own, for the modes where an F key does something other than
+-- press an action: Blizzard's slot art round an icon, so the row reads the
+-- same in every mode, with a HotKey for the cap and a Name along the bottom
+local function DressModeFace(face, entry)
+    face.__cmdKey = entry.key
+    face.__cmdLabel = entry.label
+    face.__cmdSwitches = KEY_SWITCHES.fkey
+    local bg = face:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(face)
+    bg:SetColorTexture(0, 0, 0, 0.5)
+    local icon = face:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("TOPLEFT", face, "TOPLEFT", 2, -2)
+    icon:SetPoint("BOTTOMRIGHT", face, "BOTTOMRIGHT", -2, 2)
+    face.icon = icon
+    -- The action button's border, drawn larger than the button and centred
+    -- the way the template draws it; NormalizeButtonArt keeps the ratio
+    face:SetNormalTexture("Interface\\Buttons\\UI-Quickslot2")
+    local normal = face:GetNormalTexture()
+    normal:ClearAllPoints()
+    normal:SetPoint("CENTER", face, "CENTER", 0, -1)
+    face.__cmdBorderRatio = BORDER_RATIO_FALLBACK
+    face:SetPushedTexture("Interface\\Buttons\\UI-Quickslot-Depress")
+    face:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    face.HotKey = face:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmallGray")
+    face.HotKey:SetPoint("TOPRIGHT", face, "TOPRIGHT", -2, -3)
+    face.Name = face:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmallOutline")
+    face.Name:SetPoint("BOTTOMLEFT", face, "BOTTOMLEFT", 1, 2)
+    face.Name:SetPoint("BOTTOMRIGHT", face, "BOTTOMRIGHT", -1, 2)
+    face.Name:SetWordWrap(false)
+    face:Hide()
+    return face
+end
+
+-- A raid-mark face: an insecure button, since marking is not protected. It
+-- hears both phases and acts on the one ActionButtonUseKeyDown picks, like
+-- the secure keys, so a mark lands when a spell on the next key would.
+local function CreateMarkFace(entry)
+    local face = DressModeFace(CreateFrame("Button", "CommanderFKeyMark" .. entry.key, fkeyCard), entry)
+    face.__cmdMark = entry.mark
+    face.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. entry.mark)
+    -- Lit while the target wears this mark
+    local lit = face:CreateTexture(nil, "OVERLAY")
+    lit:SetTexture("Interface\\Buttons\\CheckButtonHilight")
+    lit:SetBlendMode("ADD")
+    lit:SetAllPoints(face)
+    lit:Hide()
+    face.__cmdLit = lit
+    face:RegisterForClicks("AnyDown", "AnyUp")
+    face:SetScript("OnClick", function(self, _, down)
+        KeyPressFor(self):SetShown(down and true or false)
+        if (down and true or false) == GetCVarBool("ActionButtonUseKeyDown") then
+            ToggleRaidMark(self.__cmdMark)
+        end
+    end)
+    fkeyMarkFaces[entry.key] = face
+end
+
+-- A party-seat face: the secure "target" action, so it works mid-fight, with
+-- the unit SeatPartyFaces gives it (none: it does nothing at all). The bare
+-- template's OnClick honours ActionButtonUseKeyDown, so the face is its own
+-- key and needs no proxy (see the keyed-card note).
+local function CreatePartyFace(entry)
+    local face = DressModeFace(CreateFrame("Button", "CommanderFKeyParty" .. entry.key, fkeyCard,
+        "SecureActionButtonTemplate"), entry)
+    face.__cmdSeat = entry.seat
+    face:SetAttribute("type", "target")
+    face:RegisterForClicks("AnyDown", "AnyUp")
+    face:HookScript("PostClick", function(self, _, down)
+        KeyPressFor(self):SetShown(down and true or false)
+    end)
+    fkeyPartyFaces[entry.key] = face
+end
+
 local function EnsureFKeys()
     if fkeyCard then return fkeyCard end
     -- Secure templates, so built out of combat only (see EnsureNumpad)
@@ -1511,10 +1694,39 @@ local function EnsureFKeys()
     end
     fkeyCard = CreateKeyCard("CommanderActionBarFKeys", "fkeyAnchor", "fkeyPosition")
     for _, entry in ipairs(FKEY_ROW) do
-        CreateKeyButton(fkeyCard, "CommanderFKeyButton" .. (entry.name or entry.key),
+        local button = CreateKeyButton(fkeyCard, "CommanderFKeyButton" .. (entry.name or entry.key),
             entry.key, KEY_SWITCHES.fkey, fkeyButtons, fkeyByKey)
+        button.__cmdLabel = entry.label
+        if entry.mark then CreateMarkFace(entry) end
+        if entry.seat then CreatePartyFace(entry) end
     end
     return fkeyCard
+end
+
+-- The face a key shows, and its binding clicks, in the row's mode: its
+-- action button, or for F1-F5 its raid-mark or party face
+local function FKeyFace(entry, mode)
+    if mode == "MARKS" and entry.mark then return fkeyMarkFaces[entry.key] end
+    if mode == "PARTY" and entry.seat then return fkeyPartyFaces[entry.key] end
+    return fkeyByKey[entry.key]
+end
+
+local function HideUnlessLive(face, live)
+    if face and face ~= live and face:IsShown() then face:Hide() end
+end
+
+-- Each party face onto the unit its seat holds now. An attribute on a
+-- secure button, so out of combat only: the poll re-seats after a roster
+-- change, and one that happens mid-fight waits for combat to drop -- the
+-- faces show the seats as they really stand until then.
+local function SeatPartyFaces()
+    if DB().fkeyMode ~= "PARTY" or InCombatLockdown() then return end
+    for _, face in pairs(fkeyPartyFaces) do
+        local unit = PartySeatUnit(face.__cmdSeat)
+        if face:GetAttribute("unit") ~= unit then
+            face:SetAttribute("unit", unit)
+        end
+    end
 end
 
 local function AnchorFKeys()
@@ -1554,10 +1766,18 @@ local function LayoutFKeys()
     SetScaleIfNeeded(fkeyCard, KeyCardScale("fkeyScale"))
     fkeyCard:SetSize(#FKEY_ROW * cell - spacing + pad * 2, size + pad * 2)
     for i, entry in ipairs(FKEY_ROW) do
-        local button = fkeyByKey[entry.key]
-        button.__cmdLabel = entry.label
-        PlaceKeyButton(button, fkeyCard, FKeySlot(i), size, pad + (i - 1) * cell, pad)
+        local x = pad + (i - 1) * cell
+        local live = FKeyFace(entry, db.fkeyMode)
+        if live.__cmdProxy then
+            PlaceKeyButton(live, fkeyCard, FKeySlot(i), size, x, pad)
+        else
+            PlaceFace(live, fkeyCard, size, x, pad)
+        end
+        HideUnlessLive(fkeyByKey[entry.key], live)
+        HideUnlessLive(fkeyMarkFaces[entry.key], live)
+        HideUnlessLive(fkeyPartyFaces[entry.key], live)
     end
+    SeatPartyFaces()
 
     AnchorFKeys()
     if not fkeyCard:IsShown() then fkeyCard:Show() end
@@ -1567,20 +1787,29 @@ local function LayoutFKeys()
     ApplyLayering()
 end
 
--- All six keys bound while the row is up, none while it is not
+-- All six keys bound while the row is up, each to the face its mode shows
+-- (an action face's proxy, or a mark or party face itself); none while the
+-- row is down
 local function ApplyFKeyBindings()
     local db = DB()
-    local keys = {}
+    local keys, targets = {}, {}
     if db.fkeyEnabled and db.fkeyBindKeys and fkeyCard then
-        for _, entry in ipairs(FKEY_ROW) do keys[#keys + 1] = entry.key end
+        for _, entry in ipairs(FKEY_ROW) do
+            local face = FKeyFace(entry, db.fkeyMode)
+            keys[#keys + 1] = entry.key
+            targets[entry.key] = face.__cmdProxy or face
+        end
     end
-    appliedFKeyBinds = BindKeys(fkeyBindOwner, keys, fkeyByKey, fkeyButtons, appliedFKeyBinds)
+    appliedFKeyBinds = BindKeys(fkeyBindOwner, keys, targets, fkeyButtons, appliedFKeyBinds)
 end
 
 -- ---------------------------------------------------------------------------
 -- Update loop
 -- ---------------------------------------------------------------------------
 local function OnUpdate()
+    -- A roster change re-seats the party faces (it waits out combat on its
+    -- own), ahead of the cosmetics so they draw the seats as they now stand
+    SeatPartyFaces()
     -- Cosmetics are combat-safe and always run
     ApplyButtonCosmetics()
     ApplyFade()
