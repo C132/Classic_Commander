@@ -158,6 +158,13 @@ for w in widgets:
                    % (x, y, ww, hh))
         svg.append('<text x="%.1f" y="%.1f" font-size="%.1f" font-family="Helvetica" fill="#ccc">(the rank\'s own tooltip)</text>'
                    % (x + 8, y + 14 * SCALE / 2 + 6, 10 * SCALE))
+    elif w["kind"] == "Cooldown":
+        # The swipe: a dark sector over the icon, two thirds of the way round
+        cx, cy, r = x + ww / 2, y + hh / 2, max(ww, hh) * 0.75
+        svg.append('<g%s><clipPath id="cd%d"><rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"/></clipPath>'
+                   '<path clip-path="url(#cd%d)" d="M%.1f %.1f L%.1f %.1f A%.1f %.1f 0 1 1 %.1f %.1f Z" '
+                   'fill="#000" fill-opacity="0.65"/></g>'
+                   % (clip, w["i"], x, y, ww, hh, w["i"], cx, cy, cx, cy - r, r, r, cx - r * 0.866, cy + r * 0.5))
     elif w["kind"] == "EditBox":
         svg.append('<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="#000" fill-opacity="0.5" stroke="#777" '
                    'stroke-width="1" rx="2"/>' % (x, y, ww, hh))

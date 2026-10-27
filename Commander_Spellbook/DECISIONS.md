@@ -1,6 +1,6 @@
 # Commander_Spellbook — decisions
 
-Numbered so code comments and future sessions can cite them. 1.0.0, 2026-10-26.
+Numbered so code comments and future sessions can cite them. 1.0.0, 2026-10-26; 1.1.0 to 1.3.0, 2026-10-27.
 
 ## D1 — One window, the Quest Log's shape, no tabs
 
@@ -234,3 +234,118 @@ straight after Ignore. So the selection holds while its spell, trainer row or re
 folded or not, and only a search that hides it re-picks (typing to find a spell briefs the first one
 it finds).
 
+
+## D13 — Cooldowns on the icons, the real ones only (1.1.0, 2026-10-27)
+
+The stock book draws a cooldown swipe on every spell button; 1.0.0 drew none, so a spell on its
+cooldown looked ready. Now the swipe sits on a spell's row icon, on the big icon at the top of the
+briefing (with countdown numbers, where the client draws them) and on the chip of every rank you know.
+It differs from the stock book in one way: the global cooldown is never drawn (a cooldown of 1.5 s or
+less). The stock book has twelve buttons a page; this list has sixty rows, and a sweep down every one
+of them at each cast is noise, not news.
+
+A player spell is read with `C_Spell.GetSpellCooldown(id)` (falling back to the old global), a pet
+ability with `GetSpellCooldown(slot, "pet")`, as the stock pet book reads it. SPELL_UPDATE_COOLDOWN
+and PET_BAR_UPDATE_COOLDOWN repaint the swipes and nothing else: they come with every cast, and a
+whole Refresh rescans the book.
+
+## D14 — The arrow keys walk the list from the search box (1.1.0, 2026-10-27)
+
+Searching was half of what the redesign was for, and finding a spell then meant leaving the keyboard
+for the mouse. Now Down and Up, while the search box has the focus, step the selection through the
+list it shows (spells, ranks to train or references, whatever the view lists), the briefing following
+and the list scrolling to keep the selected row in view. Left and Right stay the caret's. The box sets
+`SetAltArrowKeyMode(false)` so the arrows reach it rather than the character, as the chat box's
+autocomplete does (Blizzard_AutoComplete). A key never casts: a cast is a click on a secure button.
+
+## D15 — At the trainer: Train, Train All, and the trainer's own prices (1.2.0, 2026-10-27)
+
+WhatsTraining only listed; standing at the trainer, the player still clicked through the stock
+window rank by rank. Now, while a trainer's window is open (CommanderSpellbookTrainer.lua):
+
+- **Train All** buys all of Train Now, one rank at a time: a purchase, then the trainer's own
+  TRAINER_UPDATE, then the next. That order is what makes a chained rank work (Flash Heal 4 turns
+  available only once 3 is bought); a fixed list bought in one go would be refused halfway. It asks
+  first in a confirmation that names the count and the trainer's price. It leaves alone Ignored ranks,
+  ranks further off, and anything the trainer lists that no Training row is (a gap in the data, a pet
+  trainer's lines). It stops, and says why, when the money runs short, the trainer closes, or a
+  purchase goes unanswered for 3 s, and when done it prints what it bought and for how much.
+- **Train** buys the selected rank or weapon skill when this trainer has it for you now, as the
+  stock Train button does.
+- **Prices** at a trainer are its own (a trainer of a faction you are Honored with asks less): the
+  rows, the Train Now total, the toolbar and the rank ladder all show them.
+- **Opening**: speaking to a class trainer opens the Training view (Open at the Trainer, on by
+  default), and leaving the trainer closes it again if that is how it opened and it is still on
+  Training. A view the player opened stays open. A weapon master or pet trainer opens nothing and gets
+  no Train All, but Train still buys a weapon skill.
+- **Go to Trainer** is hidden for a rank the trainer you are speaking to lists.
+
+Blizzard's trainer window is not touched: there is no room for a button on it (its money readout ends
+4 px from its Train button), and its list is the player's. The one change made to its state is by Train
+All, and only when that list hides lines: ticking Available in its filter and unfolding its headers,
+so that the plan and the confirmation see everything. The stock window re-ticks Available itself every
+time it opens.
+
+The 2026-10-27 review of 1.1.0 and 1.2.0 (a second reader, with the code and Blizzard's source, not
+these notes' conclusions) found five things wrong with the trainer half, all fixed before release:
+
+- The confirmation stayed up after the trainer closed, and accepting it later bought whatever the
+  list had become (8 ranks after it had said 7). Now it is put away when the trainer closes, and it
+  carries the count and price it showed: if the list differs at Accept, nothing is bought and the
+  chat says to press Train All again.
+- Opening at the trainer left the window's saved view on Training for good. Now the view it was left
+  on comes back when the trainer closes it.
+- Train All counted and priced every Train Now rank, including ones the trainer does not list (a
+  portal trainer, a partial list). Now it takes the ranks the trainer lists and the next rank of each
+  (a filter can hide a chained rank until the one before is bought), and nothing else.
+- A purchase was counted when it was asked for, so one never answered was reported as bought. Now it
+  counts when the trainer answers it: the rank is known, or its line is no longer on offer.
+- Any TRAINER_UPDATE was taken as the answer, so a stray one (a second update, the player clicking
+  the filter) started the next purchase before the last had landed, or ended the run before a chained
+  rank turned available. Now an update that is not the answer is ignored, and the 3 s timeout runs from
+  the purchase.
+
+Also, a weapon master whose list hides lines no longer offers Train All when a line in view shows it is
+a weapon master. When nothing at all is in view there is no telling: Train All opens the list and says
+it found nothing to train.
+
+## D16 — Each rank's cost and cast time on the ladder (1.3.0, 2026-10-27)
+
+Down-ranking is choosing a rank by what it costs and how long it takes, and the ladder showed neither:
+the numbers lived only in the embedded tooltip, one rank at a time. Now every ladder line carries the
+rank's cost ("450 mana", "15 rage", "40 energy", or a share of base mana where that is how the spell
+is costed) and its cast time ("2.5 sec"), known ranks in the secondary ink and ranks still to train in
+the faint one. Both are the client's own figures for that rank (`C_Spell.GetSpellPowerCost`,
+`C_Spell.GetSpellInfo().castTime`), so they include whatever the client folds in (talents, haste)
+for a rank you know.
+
+An instant and a channel both report a cast time of 0, so a 0 is left blank rather than written
+"Instant": a channel called instant would be wrong, and the tooltip below says which it is. A spell's
+effect (how much a rank heals) is not shown per rank: it comes only as tooltip prose, worded
+differently for every spell, and a guess read out of the wrong number would be worse than none.
+
+## D17 — Two spells of one name are told apart (1.3.0, 2026-10-27)
+
+Rendering all nine classes on the client's real spell names (Harness/make_render_spells.py) showed a
+mage's Crowd Control foldout listing "Polymorph" three times: Polymorph, Polymorph: Pig and
+Polymorph: Turtle are three spells, all named "Polymorph" by the client, told apart only by rank text
+("Rank 1: Pig"). Now when two families that can be listed together share a name, each gets what its
+rank text says after the rank number as a suffix: "Polymorph", "Polymorph (Pig)", "Polymorph
+(Turtle)", the plain one first. A namesake another race would have does not count (it is never
+listed), and a suffix every namesake would share ("Summon") is left off, since it tells nothing apart.
+The suffix is on the row, the briefing's title and the search; `family.name` stays the client's own,
+which is what Rank Check and the trainer match on.
+
+The same pass looked at the rest of every class's grouping. Two things were left as they are: a
+shaman's totems stay filed by what each does rather than in a Totems foldout (the generator's
+MANUAL_ROLE places each one on purpose), and a hunter's eight Track spells stay under Utility.
+
+## D18 — Weapon Skills starts folded (1.3.0, 2026-10-27)
+
+Training on real data for all nine classes at level 40, last trained at 34 (the renderer's TRAINED
+setting), filed every rank where it belongs. The one thing out of proportion was Weapon Skills: every
+weapon the class could still learn, fourteen for a warrior, open between Train Now and Coming Up and
+pushing Coming Up off the pane. Few players want most of them, and none of it is the trip's shopping
+list (Train All never buys a weapon skill). So the foldout starts folded, like Later and Needs a
+Talent; its header still shows the count and the price, and a player who opens it keeps it open (the
+fold is the player's from then on).

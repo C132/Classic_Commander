@@ -318,6 +318,8 @@ local METHODS = {
     end,
     SetScrollChild = function(s, child) s.__child = child child.__scroller = s end,
     IsProtected = function(s) return rawget(s, "__protected") and true or false, false end,
+    SetCooldown = function(s, start, duration) s.__cdStart, s.__cdDuration = start, duration end,
+    SetHideCountdownNumbers = function(s, v) s.__cdNoNumbers = v end,
     LockHighlight = function(s) s.__lockedHighlight = true end,
     UnlockHighlight = function(s) s.__lockedHighlight = false end,
     Click = function(s, button) RunScript(s, "OnClick", button or "LeftButton") end,

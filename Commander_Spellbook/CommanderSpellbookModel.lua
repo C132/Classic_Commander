@@ -229,6 +229,43 @@ function S.SpellIcon(id)
     return nil
 end
 
+-- What one rank costs to cast, as the ladder writes it ("450 mana", "15
+-- rage"): the client's own figure for that rank (D16). Nil for a spell that
+-- costs nothing, or one the client does not know.
+function S.CostText(id)
+    if not id then return nil end
+    local costs
+    if C_Spell and C_Spell.GetSpellPowerCost then
+        costs = C_Spell.GetSpellPowerCost(id)
+    elseif GetSpellPowerCost then
+        costs = GetSpellPowerCost(id)
+    end
+    if type(costs) ~= "table" then return nil end
+    for _, cost in ipairs(costs) do
+        local power = tostring(cost.name or "mana"):lower()
+        if (cost.cost or 0) > 0 then return string.format("%d %s", cost.cost, power) end
+        if (cost.costPercent or 0) > 0 then return string.format("%d%% %s", cost.costPercent, power) end
+    end
+    return nil
+end
+
+-- One rank's cast time ("2.5 sec"). Nil for an instant AND for a channel:
+-- both read 0, and calling a channel instant would be wrong.
+function S.CastText(id)
+    if not id then return nil end
+    local ms
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(id)
+        ms = type(info) == "table" and info.castTime or nil
+    elseif GetSpellInfo then
+        ms = select(4, GetSpellInfo(id))
+    end
+    ms = tonumber(ms)
+    if not ms or ms <= 0 then return nil end
+    local text = string.format("%.1f", ms / 1000):gsub("%.0$", "")
+    return text .. " sec"
+end
+
 -- The subtext, for a spell the class data does not chain. Empty until the
 -- client has the spell's text; a load is asked for once per spell and the
 -- window repaints when it lands (S.onTextLoaded).
@@ -526,7 +563,55 @@ function S.Scan(opts)
             end
         end
     end
+
+    -- Two spells of one name (a mage's Polymorph beside Polymorph: Pig and
+    -- Polymorph: Turtle, each its own spell) are told apart by what the rank
+    -- text says after the rank, "Rank 1: Pig" (D17). family.name stays the
+    -- client's, which Rank Check and the trainer match on.
+    -- Only namesakes that can be listed together count (another race's
+    -- version of a spell never is), and a suffix every one of them would
+    -- share tells nothing apart
+    local named = {}
+    for _, family in ipairs(book.list) do
+        family.display = nil
+        local first = family.ranks[1]
+        if not (first and first.allowed == false) then
+            local name = family.name or ""
+            named[name] = named[name] or {}
+            table.insert(named[name], family)
+        end
+    end
+    for _, list in pairs(named) do
+        if #list > 1 then
+            local variants, distinct, seen = {}, 0, {}
+            for index, family in ipairs(list) do
+                local entry = family.highest or family.ranks[1]
+                local text = entry and Subtext(entry.id)
+                -- Whatever follows the rank number, in any language ("Rang
+                -- 1: Schwein"); text with no number at all is the variant
+                local variant = text and (text:match("^%D*%d+%s*:%s*(.-)%s*$") or (not text:find("%d") and text) or nil)
+                if variant == "" then variant = nil end
+                variants[index] = variant
+                local key = variant or ""
+                if not seen[key] then
+                    seen[key] = true
+                    distinct = distinct + 1
+                end
+            end
+            if distinct > 1 then
+                for index, family in ipairs(list) do
+                    if variants[index] then family.display = family.name .. " (" .. variants[index] .. ")" end
+                end
+            end
+        end
+    end
     return book
+end
+
+-- The name a row and the briefing show: the client's, told apart from a
+-- namesake where there is one
+function S.DisplayName(family)
+    return family and (family.display or family.name) or ""
 end
 
 -- A family's chain, built on its own when the book does not list it — for
@@ -552,7 +637,7 @@ local function Lower(text) return (text or ""):lower() end
 
 local function Matches(family, query, groupLabel)
     if query == "" then return true end
-    if Lower(family.name):find(query, 1, true) then return true end
+    if Lower(family.display or family.name):find(query, 1, true) then return true end
     return groupLabel and Lower(groupLabel):find(query, 1, true) and true or false
 end
 
@@ -570,6 +655,10 @@ end
 -- explicit "open", which is why the table holds booleans, not just trues.
 S.DEFAULT_FOLDED = {
     ["ROLE:PASSIVE"] = true,
+    -- Every weapon a class could still learn (fourteen for a warrior) is
+    -- not the trip's shopping list; its header keeps the count and the
+    -- price (D18)
+    ["TRAIN:WEAPON"] = true,
     ["TRAIN:LATER"] = true,
     ["TRAIN:TALENT"] = true,
     ["TRAIN:IGNORED"] = true,
@@ -649,7 +738,9 @@ function S.BuildBookRows(book, opts)
             if (a.unlearnedFamily or false) ~= (b.unlearnedFamily or false) then
                 return not a.unlearnedFamily
             end
-            return a.name < b.name
+            -- The plain name ahead of its variants: Polymorph, then
+            -- Polymorph (Pig)
+            return S.DisplayName(a) < S.DisplayName(b)
         end)
         local foldKey = view .. ":" .. group.key
         -- A search opens every group it found something in: a match

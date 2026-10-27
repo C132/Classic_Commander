@@ -2,8 +2,8 @@
 ## Category: Commander
 ## Title: Commander Spellbook
 ## Author: Devin
-## Version: 1.0.0
-## Notes: The spellbook as one clean window: every spell you know in one searchable list, one row per spell however many ranks it has, filed into foldouts by what it does (Healing, Damage, Crowd Control, Defensive, Buffs, Forms, Utility, Travel, Pet, Racial, Professions) or by talent tree. Select a spell for its ranks laid out side by side — known, trainable now, or the level and gold each comes at — with the selected rank's own tooltip and where your bars and macros cast it. Click an icon to cast, drag any rank to a bar. A Training view is the suite's own What's Training: what your class trainer teaches you now, in the next levels and later, with the cost, plus weapon skills and a Go button to the trainer. A Rank Check view lists the bars and macros still on an old rank, with Update and Keep. Replaces the stock spellbook.
+## Version: 1.3.0
+## Notes: The spellbook as one clean window: every spell you know in one searchable list, one row per spell however many ranks it has, filed into foldouts by what it does (Healing, Damage, Crowd Control, Defensive, Buffs, Forms, Utility, Travel, Pet, Racial, Professions) or by talent tree. Select a spell for its ranks laid out side by side — what each costs and how long it casts, known, trainable now, or the level and gold each comes at — with the selected rank's own tooltip and where your bars and macros cast it. Click an icon to cast, drag any rank to a bar. A Training view is the suite's own What's Training: what your class trainer teaches you now, in the next levels and later, with the cost, plus weapon skills and a Go button to the trainer; at a class trainer it opens by itself and Train All buys the lot. A Rank Check view lists the bars and macros still on an old rank, with Update and Keep. Replaces the stock spellbook.
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 ## SavedVariables: CommanderSpellbookDB
 ## SavedVariablesPerCharacter: CommanderSpellbookChar
@@ -14,5 +14,6 @@ CommanderSpellbookData.lua
 CommanderSpellbookDB.lua
 CommanderSpellbookModel.lua
 CommanderSpellbookTraining.lua
+CommanderSpellbookTrainer.lua
 CommanderSpellbookSecure.lua
 CommanderSpellbookUI.lua

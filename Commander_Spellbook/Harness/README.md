@@ -3,9 +3,9 @@
 Run from the AddOns folder. Every one must exit 0 before a change ships.
 
 ```bash
-/opt/homebrew/bin/luajit Commander_Spellbook/Harness/spellbook_harness.lua    # 101 checks
+/opt/homebrew/bin/luajit Commander_Spellbook/Harness/spellbook_harness.lua    # 165 checks
 /opt/homebrew/bin/luajit Commander_Spellbook/Harness/data_smoke.lua           # 124 checks
-/opt/homebrew/bin/luajit Commander_Spellbook/Harness/globals_lint.lua         # 6 files
+/opt/homebrew/bin/luajit Commander_Spellbook/Harness/globals_lint.lua         # 7 files
 /opt/homebrew/bin/luajit Commander_RankCheck/Harness/rankcheck_harness.lua    # 50 checks
 ```
 
@@ -24,7 +24,8 @@ not move when the generator does). Sections:
   tabs as the other grouping; search (unlearned spells, folded groups opened, another race's spell
   never offered, group names matched); a spell the data does not chain joining the chain of its name.
 - **C** Training: Train Now (chained ranks, the total), Weapon Skills, Coming Up, Needs a Talent,
-  another race's ranks never listed, Ignore, the folded far end.
+  another race's ranks never listed, Ignore, the folded far end (and, since 1.3.0, Weapon Skills
+  folded too, D18).
 - **D** the window: rows painted, selection, cast buttons placed over the icons on screen, parented to
   UIParent, none over a row scrolled out of view, the exact rank's id, the up-stroke attribute,
   nothing on right-click or on a passive, the ladder's chips casting their own rank, drag picking up
@@ -42,6 +43,32 @@ not move when the generator does). Sections:
   Go to every weapon master of your faction.
 - **I** the pet: the pet book key, autocast on right-click, drag from the pet book slot, no cast
   button on a pet command.
+- **J** (1.1.0) cooldowns and the keyboard: a spell on its cooldown wears the swipe on its row (no
+  numbers), on the big icon (numbers) and on its rank's chip; the global cooldown alone draws nothing;
+  SPELL_UPDATE_COOLDOWN clears it without rescanning the book; Down and Up in the search box walk the
+  list, stop at either end, leave Left and Right to the caret, scroll the selected row into view with
+  the cast buttons following, and on the Training view step through the ranks to train.
+- **L** (1.3.0) the ladder's cost and cast columns: each rank's own cost and cast time, an instant
+  left blank, a rank with no cost left blank, rage / energy / a share of base mana written as such,
+  whole seconds without the ".0".
+- **M** (1.3.0) namesakes: three Polymorphs told apart by their rank text with the plain one first,
+  two Summon Chargers whose shared suffix is left off, a search finding the variant by its suffix,
+  the client's own name kept underneath.
+- **K** (1.2.0) at the trainer, against a mocked class trainer whose chained ranks turn available
+  only once the one before is bought, at 90% of the data's prices: the Training view opening with the
+  trainer and closing with it; the toolbar, rows and Train Now total at the trainer's prices; Train for
+  the selected rank (not for one the trainer will not teach yet) and no Go; each row's tooltip saying
+  what this trainer will do; Train All asking first, then buying all of Train Now in level order, one
+  purchase per TRAINER_UPDATE, never an ignored rank, a later rank or an unknown line, spending exactly
+  the trainer's prices and saying so; a folded, filtered list opened up before the question; Train
+  alone; stopping short of money and when the trainer closes; Open at the Trainer off; a weapon master
+  opening nothing and offering no Train All, but Train for its weapon skill. `RENDER_TRAINER=<json>`
+  draws the view at the trainer. After the 2026-10-27 review the mock trainer answers each purchase
+  0.1 s later, and can send a stray update before the answer (`early`) or never answer (`silent`),
+  with time run in 0.01 s steps so the stray update lands in between: K16-K19 check a stale
+  confirmation buying nothing, a partial list offering only its part, a stray update starting nothing,
+  and an unanswered purchase going uncounted; K9 checks the saved view coming back. J3 gives every rank
+  of Fade the same cooldown, as in game, and expects the swipe on all four known ranks' chips.
 
 The 2026-10-26 review added: the Cast button's own secure button (D11), shift-click linking instead
 of casting (D12), the selection holding through a fold (D13) and an Ignore (H4), the micro button
@@ -70,7 +97,24 @@ The painted window drawn from the layout code's own rectangles (not the game's a
 ladder, the briefing, the toolbar and actions, text clipped to its scroll viewport, the embedded
 tooltip as a placeholder box, and every placed cast button as a dashed cyan outline over what it
 casts for. The 1.0.0 pictures (2026-10-26) showed the Spells and Training views clean, with every
-cast outline sitting exactly on its icon.
+cast outline sitting exactly on its icon. Since 1.1.0 the picture briefs Fade on a 30 s cooldown, and a
+Cooldown frame is drawn as a dark sector over its icon (row, big icon, the known rank's chip).
+
+## Real classes: spellbook_render_real.lua + make_render_spells.py
+
+```bash
+python3 Commander_Spellbook/Harness/make_render_spells.py Commander_Quartermaster/Harness/.cache /tmp/render_spells.lua
+DUMP=1 SPELLS=/tmp/render_spells.lua CLASS=MAGE LEVEL=70 OUT=/tmp/mage.json \
+  /opt/homebrew/bin/luajit Commander_Spellbook/Harness/spellbook_render_real.lua
+```
+
+The shipped data for a whole class at a level, every rank due trained. `SPELLS` gives it the client's
+own names, rank text, cast times and costs (from the DB2 exports; not shipped), `DUMP=1` lists every
+row under its foldout, `BRIEF=<name>` briefs a spell, `VIEW=TRAIN` draws Training, `TRAINED=<level>` stops the training there
+(a trip's worth for Training to list). The renderer counts
+every quest-taught first rank as known whatever the race, so a paladin shows both races' Summon
+Charger; in game there is one. The 2026-10-27 pass over all nine classes found the three Polymorphs
+(D17); the same at level 40, trained to 34, found Weapon Skills crowding Training (D18).
 
 ## data_smoke.lua
 

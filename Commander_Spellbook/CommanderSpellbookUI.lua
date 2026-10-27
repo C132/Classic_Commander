@@ -42,6 +42,7 @@ local FRAME_W, FRAME_H = 800, 540
 local frame, navScroll, navChild, detailScroll, detailChild
 local navRows = {}
 local book, rows, training, checkResult
+local trainerPlan
 local nameIndex = {}
 local selectedKey, selectedRankId, selectedIssueKey
 local selectedFamily, selectedItem, selectedRef
@@ -332,6 +333,60 @@ end
 S.RequestCheck = RequestCheck
 
 -- ---------------------------------------------------------------------------
+-- Cooldowns
+--
+-- The stock book's swipe, on a spell's row, on the big icon and on the chip
+-- of every rank you know (D13). A real cooldown only: the global cooldown
+-- would sweep down every row of the list at each cast. A pet ability is read
+-- from its pet book slot, as the stock pet book reads it.
+-- ---------------------------------------------------------------------------
+
+local GCD = 1.5
+
+local function SpellCooldown(family, entry)
+    if not (family and entry) then return nil end
+    if family.bookType == "pet" then
+        if entry.slot and GetSpellCooldown then
+            return GetSpellCooldown(entry.slot, BOOKTYPE_PET or "pet")
+        end
+        return nil
+    end
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local info = C_Spell.GetSpellCooldown(entry.id)
+        if type(info) == "table" then
+            return info.startTime, info.duration, info.isEnabled, info.modRate
+        end
+    end
+    if GetSpellCooldown then return GetSpellCooldown(entry.id) end
+    return nil
+end
+
+-- The swipe on one icon holder, made the first time a cooldown needs it.
+-- Countdown numbers only where there is room for them (the big icon).
+local function PaintCooldown(holder, family, entry, numbers)
+    local start, duration, enabled, modRate = SpellCooldown(family, entry)
+    local on = start and duration and start > 0 and duration > GCD and (enabled == true or enabled == 1)
+    local cooldown = holder.cooldown
+    if not on then
+        if cooldown then cooldown:Hide() end
+        return
+    end
+    if not cooldown then
+        cooldown = CreateFrame("Cooldown", nil, holder, "CooldownFrameTemplate")
+        cooldown:SetAllPoints()
+        if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
+        holder.cooldown = cooldown
+    end
+    if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(not numbers) end
+    cooldown:Show()
+    cooldown:SetCooldown(start, duration, modRate)
+end
+
+local function HideCooldown(holder)
+    if holder and holder.cooldown then holder.cooldown:Hide() end
+end
+
+-- ---------------------------------------------------------------------------
 -- The navigator
 -- ---------------------------------------------------------------------------
 
@@ -359,7 +414,7 @@ local function RowTooltip(row, owner)
         tip:SetSpellByID(entry.id)
         shown = true
     end
-    if not shown then tip:SetText(family.name or "", 1, 1, 1) end
+    if not shown then tip:SetText(S.DisplayName(family), 1, 1, 1) end
     if row.item then
         local item = row.item
         tip:AddLine(" ")
@@ -372,6 +427,12 @@ local function RowTooltip(row, owner)
             tip:AddLine("Costs " .. S.Money(item.cost) .. " (less from a trainer of a faction you are Honored or better with).", 0.85, 0.85, 0.85, true)
         end
         if item.note then tip:AddLine(item.note, 1, 0.7, 0.2) end
+        local service = S.Trainer and S.Trainer.ServiceFor(item)
+        if service and service.kind == "available" then
+            tip:AddLine("This trainer teaches it now, for " .. S.Money(service.cost) .. ".", 0.25, 0.82, 0.25, true)
+        elseif service then
+            tip:AddLine("This trainer lists it, but not for you yet.", 0.42, 0.72, 1, true)
+        end
     elseif row.ref then
         local ref = row.ref
         tip:AddLine(" ")
@@ -508,6 +569,7 @@ local function ResetRow(row)
     row.icon:SetDesaturated(false)
     row.icon:SetAlpha(1)
     row.iconFrame:Hide()
+    HideCooldown(row.iconFrame)
     if row.chevron then for _, bar in ipairs(row.chevron) do bar:Hide() end end
 end
 
@@ -531,8 +593,11 @@ local function PaintHeader(row, item, ar, ag, ab)
     local count = item.count or #group.items
     if View() == "TRAIN" and (group.cost or 0) > 0 and (group.key == "NOW" or group.key == "WEAPON") then
         row.badge:SetText(Hex(InkHex("secondary")) .. count .. "|r")
-        local money = S.Money(group.cost)
-        if GetMoney and GetMoney() < group.cost then money = Hex(RED) .. money .. "|r" end
+        -- At a trainer, its own total (D15)
+        local cost = group.cost
+        if group.key == "NOW" and trainerPlan and trainerPlan.offer and trainerPlan.count > 0 then cost = trainerPlan.cost end
+        local money = S.Money(cost)
+        if GetMoney and GetMoney() < cost then money = Hex(RED) .. money .. "|r" end
         row.right:SetText(money)
     else
         row.right:SetText(tostring(count))
@@ -559,7 +624,7 @@ local function PaintFamily(row, family)
     row:SetHeight(ROW_H)
     local dim = family.unlearned or family.passive
     PaintIcon(row, family, family.unlearned)
-    row.title:SetText(family.name)
+    row.title:SetText(S.DisplayName(family))
     if family.unlearned then
         row.title:SetTextColor(Ink("faint"))
         local nextRank = family.nextRank
@@ -571,6 +636,7 @@ local function PaintFamily(row, family)
         return
     end
     row.title:SetTextColor(Ink(dim and "faint" or "primary"))
+    if not family.passive then PaintCooldown(row.iconFrame, family, family.highest, false) end
     local highest = family.highest
     if family.passive then
         row.right:SetText(Hex(InkHex("faint")) .. "Passive|r")
@@ -614,7 +680,7 @@ local function PaintTrainItem(row, item)
     row:SetHeight(ROW_H)
     PaintIcon(row, family, false)
     local rank = item.entry and item.entry.rank
-    local name = family.name or ""
+    local name = S.DisplayName(family)
     if rank then name = name .. "  " .. Hex(InkHex("faint")) .. "Rank " .. rank .. "|r" end
     row.title:SetText(name)
     local status = item.status
@@ -628,7 +694,8 @@ local function PaintTrainItem(row, item)
     elseif status == "NEEDS" or status == "TALENT" then
         row.badge:SetText(Hex(AMBER) .. (status == "TALENT" and "talent" or "earlier rank") .. "|r")
     end
-    local cost = item.cost or 0
+    local service = S.Trainer and S.Trainer.ServiceFor(item)
+    local cost = (service and service.cost) or item.cost or 0
     local money = cost > 0 and S.Money(cost) or "free"
     if status == "NOW" and GetMoney and GetMoney() < cost then money = Hex(RED) .. money .. "|r" end
     row.right:SetText(money)
@@ -870,11 +937,23 @@ local function LadderLine()
         NoWrap(line.rankFS)
         line.levelFS = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         line.levelFS:SetPoint("LEFT", line.rankFS, "RIGHT", 2, 0)
-        line.levelFS:SetWidth(64)
+        line.levelFS:SetWidth(54)
         line.levelFS:SetJustifyH("LEFT")
         NoWrap(line.levelFS)
+        -- What the rank costs and how long it casts (D16): the numbers a
+        -- down-ranked heal is chosen by
+        line.costFS = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        line.costFS:SetPoint("LEFT", line.levelFS, "RIGHT", 2, 0)
+        line.costFS:SetWidth(66)
+        line.costFS:SetJustifyH("LEFT")
+        NoWrap(line.costFS)
+        line.castFS = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        line.castFS:SetPoint("LEFT", line.costFS, "RIGHT", 2, 0)
+        line.castFS:SetWidth(46)
+        line.castFS:SetJustifyH("LEFT")
+        NoWrap(line.castFS)
         line.stateFS = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        line.stateFS:SetPoint("LEFT", line.levelFS, "RIGHT", 2, 0)
+        line.stateFS:SetPoint("LEFT", line.castFS, "RIGHT", 2, 0)
         line.stateFS:SetPoint("RIGHT", line, "RIGHT", -4, 0)
         line.stateFS:SetJustifyH("LEFT")
         NoWrap(line.stateFS)
@@ -921,7 +1000,9 @@ local function RankState(family, entry)
         return Hex(AMBER) .. "Quest reward|r"
     end
     if not entry.level then return Hex(InkHex("faint")) .. "Not from a trainer|r" end
-    local cost = (entry.cost or 0) > 0 and ("  " .. S.Money(entry.cost)) or ""
+    local service = S.Trainer and S.Trainer.ServiceFor({ family = family, entry = entry })
+    local price = (service and service.cost) or entry.cost or 0
+    local cost = price > 0 and ("  " .. S.Money(price)) or ""
     if entry.now then return Hex(GREEN) .. "Train now|r" .. cost end
     if entry.level <= (book and book.level or 1) then
         return Hex(AMBER) .. "After the rank before|r" .. cost
@@ -957,7 +1038,16 @@ local function PaintLadder(family, y)
         line.rankFS:SetTextColor(Ink(entry.known and "primary" or "secondary"))
         line.levelFS:SetText(entry.level and ("Level " .. entry.level) or "")
         line.levelFS:SetTextColor(Ink("faint"))
+        line.costFS:SetText(S.CostText(entry.id) or "")
+        line.costFS:SetTextColor(Ink(entry.known and "secondary" or "faint"))
+        line.castFS:SetText(S.CastText(entry.id) or "")
+        line.castFS:SetTextColor(Ink(entry.known and "secondary" or "faint"))
         line.stateFS:SetText(RankState(family, entry))
+        if entry.known and family.bookType ~= "pet" then
+            PaintCooldown(line.chip, family, entry, false)
+        else
+            HideCooldown(line.chip)
+        end
         if entry == selected then
             line.selection:SetVertexColor(ar, ag, ab, 0.18)
             line.selection:Show()
@@ -1172,12 +1262,17 @@ local function LayoutDetail()
     local ar, ag, ab = InkAccent()
     bigIcon.border:SetVertexColor(ar, ag, ab, 0.6)
     bigIcon:Show()
+    if entry and entry.known and not family.passive then
+        PaintCooldown(bigIcon, family, entry, true)
+    else
+        HideCooldown(bigIcon)
+    end
 
     local name = Text("GameFontNormalLarge")
     name:SetPoint("TOPLEFT", bigIcon, "TOPRIGHT", 10, -1)
     name:SetWidth(DetailWidth() - BIG_ICON - 20)
     if name.SetWordWrap then name:SetWordWrap(false) end
-    name:SetText(family.name or "")
+    name:SetText(S.DisplayName(family))
     name:SetTextColor(Ink("title"))
 
     local facts = {}
@@ -1275,7 +1370,9 @@ local function UpdateToolbar()
     StyleFilters()
     local view = View()
     local text
-    if view == "TRAIN" then
+    if view == "TRAIN" and trainerPlan and trainerPlan.offer and trainerPlan.count > 0 then
+        text = string.format("%s%d to train here|r  \194\183  %s", Hex(GREEN), trainerPlan.count, S.Money(trainerPlan.cost))
+    elseif view == "TRAIN" then
         local count = training and training.nowCount or 0
         if count > 0 then
             text = string.format("%s%d now|r  \194\183  %s", Hex(GREEN), count, S.Money(training.nowCost))
@@ -1324,6 +1421,16 @@ local function UpdateActions()
         button:SetShown(show and true or false)
         if show then placed[#placed + 1] = button end
     end
+    -- At a trainer: Train for the selected rank when this trainer has it
+    -- for you now, Train All for the whole of Train Now (D15)
+    local trainer = S.Trainer
+    local running = trainer and trainer.Running()
+    local service = view == "TRAIN" and selectedItem and trainer and trainer.ServiceFor(selectedItem) or nil
+    Place(frame.trainBtn, service ~= nil and service.kind == "available")
+    Place(frame.trainAllBtn, view == "TRAIN" and trainerPlan ~= nil and trainerPlan.offer)
+    frame.trainBtn:SetEnabled(not running and service ~= nil and not (GetMoney and GetMoney() < (service.cost or 0)))
+    frame.trainAllBtn:SetEnabled(not running)
+    frame.trainAllBtn:SetText(running and "Training..." or "Train All")
     Place(frame.castBtn, view ~= "CHECK" and castable)
     Place(frame.linkBtn, view ~= "CHECK" and family and entry ~= nil)
     Place(frame.fixBtn, view == "CHECK" and selectedRef ~= nil and selectedRef.stale and not selectedRef.kept)
@@ -1372,7 +1479,8 @@ local function UpdateActions()
         frame.ignoreBtn:SetText(S.IsIgnored(ignoreId) and "Unignore" or "Ignore")
     end
     local learnable = family and (family.weapon or family.nextRank ~= nil)
-    frame.goBtn:SetShown(view ~= "CHECK" and learnable and true or false)
+    -- No Go to the trainer you are already speaking to
+    frame.goBtn:SetShown(view ~= "CHECK" and learnable and service == nil and true or false)
     if frame.goBtn:IsShown() then
         -- The Go button keeps its own label (it reads "Going to ..." while
         -- the arrow is its); the words are changed there, not on the text
@@ -1415,6 +1523,90 @@ local function UpdateFooter()
     end
     frame.footer.value:SetText(words)
     frame.footer.label:SetTextColor(Ink("secondary"))
+end
+
+-- A cooldown starting or ending repaints the swipes and nothing else: the
+-- event comes with every cast, and a whole Refresh rescans the book
+local function UpdateCooldowns()
+    if not (frame and frame:IsShown()) then return end
+    for position = 1, #(rows or {}) do
+        local row = navRows[position]
+        local family = row and row.family
+        if family and not row.item and not row.ref and not family.unlearned and not family.passive then
+            PaintCooldown(row.iconFrame, family, family.highest, false)
+        end
+    end
+    local bigIcon = detailChild and detailChild.bigIcon
+    if bigIcon and bigIcon:IsShown() and bigIcon.entry and bigIcon.entry.known and not bigIcon.family.passive then
+        PaintCooldown(bigIcon, bigIcon.family, bigIcon.entry, true)
+    end
+    for index = 1, used.ladder do
+        local line = pools.ladder[index]
+        if line.entry and line.entry.known and line.family.bookType ~= "pet" then
+            PaintCooldown(line.chip, line.family, line.entry, false)
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- The keyboard (D14)
+--
+-- The search box is where the keyboard already is: type to narrow the list,
+-- then Down and Up walk what it found, the briefing following, the list
+-- scrolling to keep the selection in view. Nothing is cast from a key: a
+-- cast is the secure buttons' and a click's.
+-- ---------------------------------------------------------------------------
+
+local function SelectItem(item)
+    if item.family then
+        SelectFamily(item.family, nil)
+    elseif item.train then
+        SelectFamily(item.train.family, item.train.id)
+    elseif item.ref then
+        selectedIssueKey = item.ref.key
+        SelectFamily(item.ref.family, item.ref.spellID)
+    end
+end
+
+local function RevealSelected()
+    if not (selectedTop and navScroll and navChild) then return end
+    local viewH = navScroll:GetHeight() or 0
+    local top = navScroll:GetVerticalScroll() or 0
+    local bottom = selectedTop + (selectedHeight or ROW_H)
+    local want = top
+    if selectedTop < top then
+        want = selectedTop - 4
+    elseif bottom > top + viewH then
+        want = bottom - viewH + 4
+    end
+    -- The range the scroll frame knows may be last pass's; the content's
+    -- own height is this one's
+    local most = math.max(navScroll:GetVerticalScrollRange() or 0, (navChild:GetHeight() or 0) - viewH)
+    want = math.max(0, math.min(want, most))
+    if want ~= top then navScroll:SetVerticalScroll(want) end
+end
+
+function S.Step(delta)
+    if not (frame and frame:IsShown()) then return end
+    local items, current = {}, nil
+    for _, item in ipairs(rows or {}) do
+        if not item.header then
+            items[#items + 1] = item
+            if not current and IsSelectedRow(item) then current = #items end
+        end
+    end
+    if #items == 0 then return end
+    local index
+    if current then
+        index = math.max(1, math.min(#items, current + delta))
+    else
+        index = delta > 0 and 1 or #items
+    end
+    if index ~= current then
+        SelectItem(items[index])
+        S.Refresh()
+    end
+    RevealSelected()
 end
 
 -- ---------------------------------------------------------------------------
@@ -1486,6 +1678,7 @@ function S.Refresh()
     book = S.Scan({ unlearned = db.ShowUnlearned or searchText ~= "" })
     RebuildNameIndex()
     training = S.Training(book, { soon = db.SoonLevels })
+    trainerPlan = (S.Trainer and S.Trainer.open) and S.Trainer.Plan(training) or nil
 
     selectedFamily, selectedItem, selectedRef = nil, nil, nil
     local shown
@@ -1836,6 +2029,16 @@ local function EnsureFrame()
         S.Refresh()
     end)
     frame.searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    -- Arrows to the box, not the character, while it has the focus (as the
+    -- chat box's autocomplete takes them); Up and Down step the list
+    if frame.searchBox.SetAltArrowKeyMode then frame.searchBox:SetAltArrowKeyMode(false) end
+    frame.searchBox:SetScript("OnArrowPressed", function(_, key)
+        if key == "DOWN" then
+            S.Step(1)
+        elseif key == "UP" then
+            S.Step(-1)
+        end
+    end)
     local ghost = frame.searchBox:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     ghost:SetPoint("LEFT", frame.searchBox, "LEFT", 4, 0)
     ghost:SetText("Search spells")
@@ -1843,7 +2046,7 @@ local function EnsureFrame()
         ghost:SetShown((self:GetText() or "") == "")
     end)
     Commander.UI.AttachTooltip(frame.searchBox, "Search",
-        "Matches spell names, and the name of a group (\"heal\", \"control\"). A search also finds the class spells you have not learned yet, and opens every foldout it found something in. Escape clears it.",
+        "Matches spell names, and the name of a group (\"heal\", \"control\"). A search also finds the class spells you have not learned yet, and opens every foldout it found something in. Up and Down step through what it found; Escape clears it.",
         "ANCHOR_BOTTOM")
 
     frame.groupDrop = CreateFrame("Frame", "CommanderSpellbookGroupDrop", toolbar, "UIDropDownMenuTemplate")
@@ -1952,6 +2155,27 @@ local function EnsureFrame()
     -- Cast: a plain button for the look; the click is taken by the secure
     -- button pinned over it (CommanderSpellbookSecure.lua). In combat that
     -- one is away and this one is greyed out.
+    ActionButton("trainBtn", "Train", 64, function()
+        local service = selectedItem and S.Trainer and S.Trainer.ServiceFor(selectedItem)
+        local words = "Learn the selected rank from the trainer you are speaking to"
+        if service then words = words .. ", for " .. S.Money(service.cost) end
+        return words .. "."
+    end, function()
+        if selectedItem and S.Trainer and S.Trainer.TrainOne(selectedItem) then QueueRefresh() end
+    end)
+    ActionButton("trainAllBtn", "Train All", 84, function()
+        local plan = trainerPlan
+        if not plan or plan.count == 0 then return "Learn everything on Train Now from the trainer you are speaking to." end
+        local words = string.format("Learn every rank on Train Now from this trainer, one after another: %d for %s. Ignored ranks are left alone; you are asked first.",
+            plan.count, S.Money(plan.cost))
+        if plan.extra > 0 then
+            words = words .. string.format(" It also teaches %d thing%s this list does not show; pick those in its own window.",
+                plan.extra, plan.extra == 1 and "" or "s")
+        end
+        return words
+    end, function()
+        if S.Trainer then S.Trainer.ConfirmTrainAll(training) end
+    end)
     ActionButton("castBtn", "Cast", 64, function()
         if InCombat() then return CombatHint() end
         return "Cast the selected rank. The icon at the top of the briefing, and the icon of each rank, cast too."
@@ -2222,6 +2446,7 @@ end
 
 S.Toggle = CommanderSpellbook_Toggle
 S.Show = CommanderSpellbook_Show
+function S.IsShown() return frame ~= nil and frame:IsShown() and true or false end
 
 -- Drawn state, for the harness: what the window put on screen
 function S._NavRows() return navRows end
@@ -2234,6 +2459,12 @@ function S._SetSearch(text)
     S.Refresh()
 end
 function S._CastTargets() return castTargets end
+function S._BigIcon() return detailChild and detailChild.bigIcon end
+function S._Ladder()
+    local lines = {}
+    for index = 1, used.ladder do lines[index] = pools.ladder[index] end
+    return lines
+end
 function S._Check() return checkResult end
 
 -- ---------------------------------------------------------------------------
@@ -2322,6 +2553,7 @@ local EVENTS = {
     "PLAYER_LOGIN", "SPELLS_CHANGED", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP",
     "SKILL_LINES_CHANGED", "PET_BAR_UPDATE", "UNIT_PET", "PLAYER_MONEY", "UPDATE_BINDINGS",
     "ACTIONBAR_SLOT_CHANGED", "UPDATE_MACROS", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
+    "SPELL_UPDATE_COOLDOWN", "PET_BAR_UPDATE_COOLDOWN",
 }
 for _, event in ipairs(EVENTS) do
     -- One pcall each: a name this client does not know must not take the
@@ -2364,6 +2596,10 @@ events:SetScript("OnEvent", function(_, event, ...)
         -- The Cast and Update buttons grey out; the cast buttons themselves
         -- were put away by the Secure file's own handler
         if frame and frame:IsShown() then UpdateActions() end
+        return
+    end
+    if event == "SPELL_UPDATE_COOLDOWN" or event == "PET_BAR_UPDATE_COOLDOWN" then
+        UpdateCooldowns()
         return
     end
     if event == "UNIT_PET" and ... ~= "player" then return end

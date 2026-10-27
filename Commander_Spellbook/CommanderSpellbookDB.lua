@@ -31,6 +31,9 @@ local DefaultSettings = {
     RowBadges = true,
     -- How many levels ahead the Training view calls "coming up"
     SoonLevels = 2,
+    -- Speaking to a class trainer opens the Training view (and closing the
+    -- trainer closes it again, when that is how it opened)
+    OpenAtTrainer = true,
     -- Folded groups, keyed "<view>:<group>" (ROLE:PASSIVE, TREE:tab2,
     -- TRAIN:LATER). Display state the player authored: Reset keeps it.
     Collapsed = {},
@@ -185,6 +188,13 @@ local function CreateOptionsPanel()
         format = function(value) return string.format("%d level%s", value, value == 1 and "" or "s") end,
         get = function() return CommanderSpellbookDB.SoonLevels end,
         set = function(value) CommanderSpellbookDB.SoonLevels = value end,
+        isEnabled = function() return CommanderSpellbookDB.EnableSpellbook end,
+    })
+    panel:AddCheckbox({
+        label = "Open at the Trainer",
+        tooltip = "Speaking to your class trainer opens the Training view, with Train All for everything on Train Now; leaving the trainer closes it again. Off, the view still offers Train and Train All whenever a trainer is open.",
+        get = function() return CommanderSpellbookDB.OpenAtTrainer end,
+        set = function(value) CommanderSpellbookDB.OpenAtTrainer = value end,
         isEnabled = function() return CommanderSpellbookDB.EnableSpellbook end,
     })
     panel:AddButtonRow({

@@ -235,7 +235,27 @@ function GetSpellInfo(id)
     return s.name, nil, s.icon, 0, 0, 0, id
 end
 function GetSpellLink(id) return SPELLS[id] and ("|cff71d5ff|Hspell:" .. id .. "|h[" .. SPELLS[id].name .. "]|h|r") end
+-- Cooldowns by id: { start, duration }; none unless a check puts one there
+local cooldowns = {}
+-- What each rank costs and how long it casts (ms), where the fixture says
+local powerCosts, castTimes = {}, {}
 C_Spell = {
+    GetSpellPowerCost = function(id)
+        local c = powerCosts[id]
+        if not c then return nil end
+        return { { type = 0, name = c.name or "MANA", cost = c.cost or 0, minCost = c.cost or 0,
+            costPercent = c.percent or 0, costPerSec = 0, requiredAuraID = 0, hasRequiredAura = false } }
+    end,
+    GetSpellInfo = function(id)
+        if not SPELLS[id] and not castTimes[id] then return nil end
+        return { name = SPELLS[id] and SPELLS[id].name or "?", iconID = 1, originalIconID = 1,
+            castTime = castTimes[id] or 0, minRange = 0, maxRange = 40, spellID = id }
+    end,
+    GetSpellCooldown = function(id)
+        local c = cooldowns[id]
+        if c then return { startTime = c[1], duration = c[2], isEnabled = true, modRate = 1 } end
+        return { startTime = 0, duration = 0, isEnabled = true, modRate = 1 }
+    end,
     GetSpellName = function(id) return SPELLS[id] and SPELLS[id].name end,
     GetSpellTexture = function(id) return SPELLS[id] and SPELLS[id].icon end,
     GetSpellSubtext = function(id)
@@ -281,6 +301,12 @@ SpellBookFrame:Hide()
 SpellBookFrame.bookType = "spell"
 local hiddenPanels = {}
 function HideUIPanel(f) hiddenPanels[#hiddenPanels + 1] = f f:Hide() end
+-- Confirmation popups: recorded, accepted by hand
+StaticPopupDialogs = {}
+local popups = {}
+local hiddenPopups = {}
+function StaticPopup_Show(name, a1, a2, data) popups[#popups + 1] = { name = name, text = a1, data = data } end
+function StaticPopup_Hide(name) hiddenPopups[#hiddenPopups + 1] = name end
 function ShowUIPanel(f) f:Show() end
 
 -- ===========================================================================
@@ -301,6 +327,7 @@ Load(ADDONS .. "/Commander_RankCheck/CommanderRankCheck.lua")
 Load(ADDONS .. "/Commander_Spellbook/CommanderSpellbookDB.lua")
 Load(ADDONS .. "/Commander_Spellbook/CommanderSpellbookModel.lua")
 Load(ADDONS .. "/Commander_Spellbook/CommanderSpellbookTraining.lua")
+Load(ADDONS .. "/Commander_Spellbook/CommanderSpellbookTrainer.lua")
 Load(ADDONS .. "/Commander_Spellbook/CommanderSpellbookSecure.lua")
 Load(ADDONS .. "/Commander_Spellbook/CommanderSpellbookUI.lua")
 
@@ -424,7 +451,8 @@ S.SetIgnored(9474, false)
 local trows = S.BuildTrainRows(S.Training(S.Scan(), { soon = 2 }), { collapsed = {} })
 local tkeys = {}
 for _, row in ipairs(trows) do if row.header then tkeys[#tkeys + 1] = row.header.key .. (row.collapsed and "-" or "+") end end
-CHECK(table.concat(tkeys, ",") == "NOW+,WEAPON+,SOON+,TALENT-,LATER-", "C7 Training foldouts, the far end folded", table.concat(tkeys, ","))
+CHECK(table.concat(tkeys, ",") == "NOW+,WEAPON-,SOON+,TALENT-,LATER-",
+    "C7 Training foldouts, Weapon Skills and the far end folded (D18)", table.concat(tkeys, ","))
 
 -- ===========================================================================
 -- D. The window
@@ -675,6 +703,12 @@ CHECK(still and still.id == item.id and frame.ignoreBtn.__text == "Unignore",
     "H4 the ignored rank stays selected, so Unignore is one press away", frame.ignoreBtn.__text)
 frame.ignoreBtn:Click()
 CHECK(not S.IsIgnored(item.id), "H4 Unignore brings it back")
+-- Weapon Skills starts folded (D18): unfold it as a player would
+local weaponHeader, weaponListed = nil, false
+for _, row in ipairs(S._NavRows()) do if row:IsShown() and row.foldKey == "TRAIN:WEAPON" then weaponHeader = row end end
+for _, r in ipairs(S._Rows()) do if r.train and r.train.weapon then weaponListed = true end end
+CHECK(weaponHeader ~= nil and not weaponListed, "H5 Weapon Skills starts folded, its header still there")
+if weaponHeader then M.RunScript(weaponHeader, "OnClick", "LeftButton") end
 local weaponRow
 for _, row in ipairs(S._NavRows()) do if row:IsShown() and row.item and row.item.weapon then weaponRow = row end end
 if weaponRow then M.RunScript(weaponRow, "OnClick", "LeftButton") end
@@ -689,6 +723,563 @@ CHECK(goes[1] and goes[1].target.alternatives and #goes[1].target.alternatives =
 local spec = frame.goBtn._goOpts.spec(frame.goBtn)
 CHECK(spec and spec.map == 1453 and #spec.alternatives == 2, "H5 ...every one of your faction, nearest chosen by Orders",
     spec and #spec.alternatives)
+
+-- ===========================================================================
+-- J. Cooldowns and the keyboard
+-- ===========================================================================
+
+CommanderSpellbook_Open("BOOK")
+CommanderSpellbookDB.GroupBy = "ROLE"
+S._SetSearch("")
+M.Flush(1)
+local function BookRow(name)
+    for _, row in ipairs(S._NavRows()) do
+        if row:IsShown() and row.family and not row.item and not row.ref and row.family.name == name then return row end
+    end
+end
+-- Every rank of a spell shares its cooldown, as in game
+for _, id in ipairs(FADE) do cooldowns[id] = { M.now - 5, 30 } end
+cooldowns[Highest(FLASH_HEAL)] = { M.now - 0.5, 1.5 }
+S.Refresh()
+local fadeRow, flashRow = BookRow("Fade"), BookRow("Flash Heal")
+local fadeCd = fadeRow and fadeRow.iconFrame.cooldown
+CHECK(fadeCd and fadeCd:IsShown() and fadeCd.__cdDuration == 30 and fadeCd.__cdNoNumbers == true,
+    "J1 a spell on its cooldown wears the swipe on its row, without numbers", fadeCd and fadeCd.__cdDuration)
+local flashCd = flashRow and flashRow.iconFrame.cooldown
+CHECK(not (flashCd and flashCd:IsShown()), "J2 the global cooldown alone draws nothing")
+M.RunScript(fadeRow, "OnClick", "LeftButton")
+local big = S._BigIcon()
+CHECK(big and big.cooldown and big.cooldown:IsShown() and big.cooldown.__cdNoNumbers == false,
+    "J3 the big icon wears it too, with its numbers")
+local chips = 0
+for _, target in ipairs(S._CastTargets()) do
+    local region = target.region
+    if region and region ~= big and region.cooldown and region.cooldown:IsShown() and region ~= BookRow("Fade").iconFrame
+        and region ~= frame.castBtn then
+        chips = chips + 1
+    end
+end
+CHECK(chips == 4, "J3 ...and the chip of every rank you know (4 of Fade's 7), not the ones to train", chips)
+M.Flush(1)
+local realScan, scans = S.Scan, 0
+S.Scan = function(...) scans = scans + 1 return realScan(...) end
+for _, id in ipairs(FADE) do cooldowns[id] = nil end
+cooldowns[Highest(FLASH_HEAL)] = nil
+M.Fire("SPELL_UPDATE_COOLDOWN")
+M.Flush(1)
+S.Scan = realScan
+fadeCd = BookRow("Fade").iconFrame.cooldown
+CHECK(not fadeCd:IsShown() and not big.cooldown:IsShown(), "J4 the swipe goes when the cooldown ends")
+CHECK(scans == 0, "J4 ...repainted without rescanning the book", scans)
+
+-- The keyboard: Down and Up in the search box walk the list
+CommanderSpellbookDB.ShowUnlearned = true
+S.Refresh()
+navScroll:SetVerticalScroll(0)
+local box = CommanderSpellbookSearchBox
+local function Press(key) M.RunScript(box, "OnArrowPressed", key) end
+local order = {}
+for _, item in ipairs(S._Rows()) do if item.family then order[#order + 1] = item.family.key end end
+M.RunScript(BookRow(S._Rows()[2].family.name), "OnClick", "LeftButton")
+CHECK(S._Selected().key == order[1], "J5 (the first spell selected)", S._Selected().key)
+Press("DOWN")
+CHECK(S._Selected().key == order[2], "J5 Down in the search box selects the next spell", S._Selected().key)
+Press("UP")
+CHECK(S._Selected().key == order[1], "J5 Up goes back", S._Selected().key)
+Press("UP")
+CHECK(S._Selected().key == order[1], "J5 Up on the first stays there", S._Selected().key)
+Press("LEFT")
+CHECK(S._Selected().key == order[1], "J5 Left and Right are the box's own (the caret)")
+for _ = 1, #order + 3 do Press("DOWN") end
+CHECK(S._Selected().key == order[#order], "J6 Down on the last stays there", S._Selected().key)
+local selRow
+for _, row in ipairs(S._NavRows()) do
+    if row:IsShown() and row.family and row.family.key == order[#order] then selRow = row end
+end
+local rr, vr = M.Resolve(selRow), M.Resolve(navScroll)
+CHECK(rawget(navScroll, "__child"):GetHeight() > vr.h, "J6 (the list is longer than its pane)", rawget(navScroll, "__child"):GetHeight() .. " vs " .. vr.h)
+CHECK(navScroll:GetVerticalScroll() > 0 and rr.b >= vr.b - 0.5 and rr.b + rr.h <= vr.b + vr.h + 0.5,
+    "J6 the list scrolls to keep the selection in view", navScroll:GetVerticalScroll())
+for _ = 1, #order + 3 do Press("UP") end
+rr = M.Resolve(BookRow(S._Rows()[2].family.name))
+CHECK(S._Selected().key == order[1] and rr.b + rr.h <= vr.b + vr.h + 0.5 and rr.b >= vr.b - 0.5,
+    "J6 ...back up as well", navScroll:GetVerticalScroll())
+local placedOk = 0
+for _, b in ipairs(castPool) do
+    local t = b:IsShown() and b.target
+    if t and t.clip == navScroll then
+        local r = M.Resolve(t.region)
+        local pinned = M.Resolve(b)
+        if math.abs(pinned.l - r.l) > 0.01 or math.abs((pinned.b + pinned.h) - (r.b + r.h)) > 0.01 then
+            placedOk = placedOk + 1
+        end
+    end
+end
+CHECK(placedOk == 0, "J6 the cast buttons follow the scroll the keys made", placedOk)
+CommanderSpellbookDB.ShowUnlearned = false
+
+-- On the Training view the keys walk the ranks to train
+CommanderSpellbook_Open("TRAIN")
+M.Flush(1)
+local trainIds = {}
+for _, item in ipairs(S._Rows()) do if item.train then trainIds[#trainIds + 1] = item.train.id end end
+local function TrainIndex()
+    local _, item = S._Selected()
+    for i, id in ipairs(trainIds) do if item and item.id == id then return i end end
+end
+local startAt = TrainIndex()
+Press("DOWN")
+CHECK(startAt and TrainIndex() == math.min(startAt + 1, #trainIds), "J7 on Training, Down steps to the next rank",
+    tostring(startAt) .. " -> " .. tostring(TrainIndex()))
+CommanderSpellbook_Open("BOOK")
+M.Flush(1)
+
+-- ===========================================================================
+-- L. What each rank costs and how long it casts
+-- ===========================================================================
+
+do
+    for i, id in ipairs(LESSER_HEAL) do
+        powerCosts[id] = { cost = ({ 30, 45, 75 })[i] }
+        castTimes[id] = ({ 1500, 2000, 2500 })[i]
+    end
+    for i, id in ipairs(FADE) do powerCosts[id] = { cost = 45 + 15 * i } end
+    CommanderSpellbook_Open("BOOK")
+    S._SetSearch("")
+    M.Flush(1)
+    local function Brief(name)
+        for _, row in ipairs(S._NavRows()) do
+            if row:IsShown() and row.family and not row.item and row.family.name == name then
+                M.RunScript(row, "OnClick", "LeftButton")
+            end
+        end
+        M.Flush(1)
+        local cost, cast = {}, {}
+        for _, line in ipairs(S._Ladder()) do
+            cost[#cost + 1] = line.costFS.__text or ""
+            cast[#cast + 1] = line.castFS.__text or ""
+        end
+        return table.concat(cost, ","), table.concat(cast, ",")
+    end
+    local cost, cast = Brief("Lesser Heal")
+    CHECK(cost == "30 mana,45 mana,75 mana", "L1 the ladder gives each rank's own cost", cost)
+    CHECK(cast == "1.5 sec,2 sec,2.5 sec", "L2 ...and its own cast time", cast)
+    cost, cast = Brief("Fade")
+    CHECK(cost == "60 mana,75 mana,90 mana,105 mana,120 mana,135 mana,150 mana" and cast == ",,,,,,",
+        "L3 an instant shows no cast time (a channel reads 0 too, and is not instant)", cost .. " / " .. cast)
+    cost = Brief("Power Word: Shield")
+    CHECK(cost:gsub(",", "") == "", "L4 a rank the client has no cost for leaves the column empty", cost)
+    powerCosts[999001] = { name = "RAGE", cost = 15 }
+    powerCosts[999002] = { name = "MANA", cost = 0, percent = 8 }
+    powerCosts[999003] = { name = "ENERGY", cost = 40 }
+    CHECK(S.CostText(999001) == "15 rage" and S.CostText(999002) == "8% mana" and S.CostText(999003) == "40 energy"
+        and S.CostText(999004) == nil, "L5 rage, energy and a share of base mana read as such",
+        tostring(S.CostText(999001)) .. "/" .. tostring(S.CostText(999002)))
+    castTimes[999005] = 3000
+    CHECK(S.CastText(999005) == "3 sec" and S.CastText(999004) == nil, "L5 whole seconds lose the .0")
+    for id in pairs(powerCosts) do powerCosts[id] = nil end
+    for id in pairs(castTimes) do castTimes[id] = nil end
+end
+
+-- ===========================================================================
+-- M. Two spells of one name
+-- ===========================================================================
+
+do
+    local SUB = { [990272] = "Rank 1: Pig", [990271] = "Rank 1: Turtle", [990401] = "Summon", [990402] = "Summon" }
+    local realSub = C_Spell.GetSpellSubtext
+    C_Spell.GetSpellSubtext = function(id) return SUB[id] or realSub(id) end
+    local POLY = Def("Polymorph", { 990118, 990119 })
+    Def("Polymorph", { 990272 })
+    Def("Polymorph", { 990271 })
+    Def("Summon Charger", { 990401 })
+    Def("Summon Charger", { 990402 })
+    local chains = CommanderSpellbookData.classes.PRIEST.chains
+    local before = #chains
+    for _, chain in ipairs({
+        { role = "CONTROL", src = "T", ranks = POLY },
+        { role = "CONTROL", src = "Q", ranks = { 990272 } },
+        { role = "CONTROL", src = "Q", ranks = { 990271 } },
+        { role = "TRAVEL", src = "Q", ranks = { 990401 } },
+        { role = "TRAVEL", src = "Q", ranks = { 990402 } },
+    }) do chains[#chains + 1] = chain end
+    S.Reindex()
+    local ids = { 990118, 990119, 990272, 990271, 990401, 990402 }
+    for _, id in ipairs(ids) do known[id] = true end
+    BuildBook()
+    for _, id in ipairs({ 990271, 990119, 990402, 990272, 990401 }) do table.insert(TABS[4].ids, id) end
+    CommanderSpellbook_Open("BOOK")
+    S._SetSearch("")
+    M.Flush(1)
+    local function Titles()
+        local out = {}
+        for _, row in ipairs(S._NavRows()) do
+            if row:IsShown() and row.family and not row.item
+                and (row.family.name == "Polymorph" or row.family.name == "Summon Charger") then
+                out[#out + 1] = row.title.__text
+            end
+        end
+        return table.concat(out, ",")
+    end
+    CHECK(Titles() == "Polymorph,Polymorph (Pig),Polymorph (Turtle),Summon Charger,Summon Charger",
+        "M1 namesakes are told apart by their rank text, the plain one first; a suffix all would share is left off",
+        Titles())
+    S._SetSearch("pig")
+    CHECK(Titles() == "Polymorph (Pig)", "M2 a search finds the variant by its suffix", Titles())
+    local pig
+    for _, row in ipairs(S._NavRows()) do if row:IsShown() and row.family and row.family.display then pig = row.family end end
+    CHECK(pig and pig.name == "Polymorph", "M3 the client's own name stays what Rank Check and the trainer match on",
+        pig and pig.name)
+    S._SetSearch("")
+
+    for _ = 1, #chains - before do table.remove(chains) end
+    S.Reindex()
+    for _, id in ipairs(ids) do known[id] = nil end
+    BuildBook()
+    C_Spell.GetSpellSubtext = realSub
+    S.Refresh()
+    M.Flush(1)
+end
+
+-- ===========================================================================
+-- K. At the trainer
+-- ===========================================================================
+
+do
+    local savedKnown = {}
+    for id, v in pairs(known) do savedKnown[id] = v end
+    local savedMoney = me.money
+    local TRAIN = CommanderSpellbookData.classes.PRIEST.train
+    local trainer
+    -- A class trainer's list for this level 40 priest: what Train Now holds
+    -- (chained ranks listed unavailable until the one before is bought), a
+    -- rank further off, and a line no Training row is. Prices are 90% of
+    -- the data's: a trainer of a friendly faction.
+    local function Line(id, kind)
+        local row = TRAIN[id]
+        return { id = id, name = SPELLS[id].name, rank = SPELLS[id].rank, kind = kind,
+            cost = math.floor(row[2] * 0.9), level = row[1] }
+    end
+    local function ClassTrainer()
+        trainer = { available = true, folded = false, bought = {}, pending = 0, overlap = 0, bad = 0, lines = {
+            { header = true, name = "Priest" },
+            Line(19236, "available"), Line(19238, "unavailable"), Line(19240, "unavailable"),
+            Line(2791, "available"),
+            Line(9473, "available"), Line(9474, "unavailable"), Line(10915, "unavailable"),
+            Line(10888, "available"),
+            Line(10941, "available"),
+            { id = 0, name = "Mystery Rite", kind = "available", cost = 500, level = 1 },
+        } }
+    end
+    local function Listed()
+        local out = {}
+        for _, line in ipairs(trainer.lines) do
+            if line.header then
+                out[#out + 1] = line
+                if trainer.folded then break end
+            elseif line.kind ~= "used" and (line.kind ~= "available" or trainer.available) then
+                out[#out + 1] = line
+            end
+        end
+        return out
+    end
+    local function Later(fn) C_Timer.After(0.05, fn) end
+    function GetNumTrainerServices() return #Listed() end
+    function GetTrainerServiceInfo(i)
+        local line = Listed()[i]
+        if not line then return nil end
+        if line.header then return line.name, nil, "header", not trainer.folded end
+        return line.name, line.rank and ("Rank " .. line.rank) or "", line.kind, nil
+    end
+    function GetTrainerServiceCost(i) local line = Listed()[i] return line and line.cost or 0, false end
+    function IsTradeskillTrainer() return false end
+    function GetTrainerServiceTypeFilter(kind) if kind == "available" then return trainer.available end return true end
+    function SetTrainerServiceTypeFilter(kind, on)
+        if kind == "available" then trainer.available = on and true or false end
+        Later(function() M.Fire("TRAINER_UPDATE") end)
+    end
+    function ExpandTrainerSkillLine(i)
+        trainer.folded, trainer.expanded = false, true
+        Later(function() M.Fire("TRAINER_UPDATE") end)
+    end
+    -- A purchase is answered 0.1 s later; `early` sends a stray update
+    -- first (before the purchase lands), `silent` never answers
+    function BuyTrainerService(i)
+        local line = Listed()[i]
+        if trainer.pending > 0 then trainer.overlap = trainer.overlap + 1 end
+        if not line or line.header or line.kind ~= "available" then trainer.bad = trainer.bad + 1 return end
+        trainer.bought[#trainer.bought + 1] = line.id
+        if trainer.silent then return end
+        trainer.pending = trainer.pending + 1
+        if trainer.early then C_Timer.After(0.02, function() M.Fire("TRAINER_UPDATE") end) end
+        C_Timer.After(0.1, function()
+            trainer.pending = trainer.pending - 1
+            me.money = me.money - line.cost
+            line.kind = "used"
+            if line.id > 0 then known[line.id] = true end
+            for _, other in ipairs(trainer.lines) do
+                if not other.header and other.name == line.name and other.rank == (line.rank or 0) + 1
+                    and other.kind == "unavailable" and other.level <= me.level then
+                    other.kind = "available"
+                end
+            end
+            BuildBook()
+            M.Fire("TRAINER_UPDATE")
+            M.Fire("LEARNED_SPELL_IN_SKILL_LINE", line.id)
+        end)
+    end
+    -- Time in small steps, so a stray update can come between a purchase
+    -- and its answer
+    local function Fine(seconds)
+        for _ = 1, math.ceil((seconds or 1) / 0.2) do M.Flush(0.01) end
+    end
+    local function Accept()
+        local popup = popups[#popups]
+        StaticPopupDialogs.COMMANDER_SPELLBOOK_TRAIN_ALL.OnAccept(nil, popup and popup.data)
+    end
+    local function Bought() return table.concat(trainer.bought, ",") end
+    local function SelectTrain(id)
+        for _, row in ipairs(S._NavRows()) do
+            if row:IsShown() and row.item and row.item.id == id then M.RunScript(row, "OnClick", "LeftButton") return row end
+        end
+    end
+
+    ClassTrainer()
+    CommanderSpellbook_Hide()
+    CommanderSpellbookDB.OpenAtTrainer = true
+    S.SetIgnored(10888, true)
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    CHECK(S.IsShown() and CommanderSpellbookDB.Filter == "TRAIN", "K1 speaking to a class trainer opens the Training view")
+    CHECK((frame.countFS.__text or ""):find("7 to train here") and (frame.countFS.__text or ""):find(S.Money(54900), 1, true),
+        "K2 the toolbar counts Train Now at this trainer's own prices", frame.countFS.__text)
+    SelectTrain(19236)
+    local _, first = S._Selected()
+    CHECK(first and first.id == 19236 and frame.trainBtn:IsShown() and frame.trainAllBtn:IsShown(),
+        "K3 Train (the selected rank) and Train All are offered", first and first.id)
+    CHECK(not frame.goBtn:IsShown(), "K3 ...and no Go to the trainer you are speaking to")
+    local nowHeader, prayerRow
+    for _, r in ipairs(S._NavRows()) do
+        if r:IsShown() and r.headerGroup == "NOW" then nowHeader = r end
+        if r:IsShown() and r.item and r.item.id == 19236 then prayerRow = r end
+    end
+    CHECK(nowHeader and nowHeader.right.__text == S.Money(54900) and prayerRow and prayerRow.right.__text == S.Money(1800),
+        "K3 the rows and Train Now's total wear this trainer's prices", (nowHeader and nowHeader.right.__text) .. " / "
+        .. (prayerRow and prayerRow.right.__text))
+    local row = SelectTrain(9474)
+    CHECK(not frame.trainBtn:IsShown() and frame.trainAllBtn:IsShown(),
+        "K4 no Train for a rank this trainer will not teach yet (the one before first)")
+    M.RunScript(row, "OnEnter")
+    local said = table.concat(GameTooltip.__lines or {}, "|")
+    CHECK(said:find("lists it, but not for you yet", 1, true), "K4 ...its tooltip says why", said)
+    M.RunScript(SelectTrain(19236), "OnEnter")
+    said = table.concat(GameTooltip.__lines or {}, "|")
+    CHECK(said:find("This trainer teaches it now", 1, true), "K4 a rank on offer says so in its tooltip", said)
+
+    if os.getenv("RENDER_TRAINER") then
+        SelectTrain(19236)
+        M.Flush(1)
+        dofile(HERE .. "/spellbook_render.lua")(M, CommanderSpellbookFrame, os.getenv("RENDER_TRAINER"))
+    end
+
+    popups = {}
+    frame.trainAllBtn:Click()
+    CHECK(#popups == 1 and popups[1].name == "COMMANDER_SPELLBOOK_TRAIN_ALL"
+        and (popups[1].text or ""):find("7 ranks for " .. S.Money(54900), 1, true) and #trainer.bought == 0,
+        "K5 Train All asks first, naming the count and the trainer's price", popups[1] and popups[1].text)
+    M.printLog = {}
+    Accept()
+    CHECK(S.Trainer.Running() and frame.trainAllBtn.__text == "Training...", "K6 the button says it is working",
+        frame.trainAllBtn.__text)
+    M.Flush(1)
+    CHECK(Bought() == "19236,19238,9473,19240,2791,9474,10941",
+        "K6 accepted, it buys all of Train Now in level order, each chained rank once the one before is in", Bought())
+    CHECK(trainer.overlap == 0 and trainer.bad == 0, "K7 one purchase at a time, never a line not on offer",
+        trainer.overlap .. " overlapping, " .. trainer.bad .. " refused")
+    CHECK(not Bought():find("10888") and not Bought():find("^0,") and not Bought():find(",0,") and not Bought():find(",0$")
+        and not Bought():find("10915"),
+        "K7 never an ignored rank, a rank further off, or a line no Training row is")
+    CHECK(me.money == savedMoney - 54900, "K8 it spent the trainer's prices", savedMoney - me.money)
+    local log = table.concat(M.printLog, "|")
+    CHECK(log:find("trained 7 ranks for " .. S.Money(54900), 1, true), "K8 ...and says what it did", log)
+    CHECK(not S.Trainer.Running() and not frame.trainAllBtn:IsShown(), "K8 done, nothing left to offer")
+    M.Fire("TRAINER_CLOSED")
+    M.Flush(1)
+    CHECK(not S.IsShown(), "K9 leaving the trainer closes the view it opened")
+    CHECK(CommanderSpellbookDB.Filter == "BOOK", "K9 ...and the window goes back to the view it was left on",
+        CommanderSpellbookDB.Filter)
+
+    -- A list hiding its lines (a folded header, Available unticked) is opened
+    -- up by Train All before it asks
+    for id, v in pairs(savedKnown) do known[id] = v end
+    for id in pairs(known) do if not savedKnown[id] then known[id] = nil end end
+    BuildBook()
+    me.money = savedMoney
+    ClassTrainer()
+    trainer.folded, trainer.available = true, false
+    CommanderSpellbook_Open("TRAIN")
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    CHECK(frame.trainAllBtn:IsShown(), "K10 a list hiding its lines still offers Train All")
+    popups = {}
+    frame.trainAllBtn:Click()
+    CHECK(#popups == 0 and trainer.expanded and trainer.available, "K10 ...which unfolds it and ticks Available first")
+    M.Flush(1)
+    CHECK(#popups == 1 and (popups[1].text or ""):find("7 ranks", 1, true) and #trainer.bought == 0,
+        "K10 ...then asks, with the whole list in view", popups[1] and popups[1].text)
+
+    -- Train buys the one selected
+    SelectTrain(2791)
+    frame.trainBtn:Click()
+    M.Flush(1)
+    CHECK(Bought() == "2791", "K11 Train buys the selected rank only", Bought())
+
+    -- Short of money: it stops there and says so
+    me.money = 2000
+    M.printLog = {}
+    frame.trainAllBtn:Click()
+    Accept()
+    M.Flush(1)
+    log = table.concat(M.printLog, "|")
+    CHECK(Bought() == "2791,19236" and log:find("not enough money", 1, true) and not S.Trainer.Running(),
+        "K12 out of money, Train All stops and says so", Bought() .. " / " .. log)
+
+    -- The trainer closing mid-way stops it
+    me.money = savedMoney
+    frame.trainAllBtn:Click()
+    Accept()
+    M.Fire("TRAINER_CLOSED")
+    M.Flush(1)
+    CHECK(Bought() == "2791,19236,19238" and not S.Trainer.Running(), "K13 leaving the trainer mid-way stops it", Bought())
+    CHECK(S.IsShown(), "K13 a view the player opened stays open when the trainer closes")
+    CHECK(hiddenPopups[#hiddenPopups] == "COMMANDER_SPELLBOOK_TRAIN_ALL",
+        "K13 ...and a confirmation still up for it is put away")
+
+    local function Restore()
+        for id in pairs(known) do known[id] = nil end
+        for id, v in pairs(savedKnown) do known[id] = v end
+        BuildBook()
+        me.money = savedMoney
+    end
+
+    -- A confirmation answered after the list changed buys nothing
+    Restore()
+    ClassTrainer()
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    popups = {}
+    frame.trainAllBtn:Click()
+    S.SetIgnored(10888, false)
+    M.printLog = {}
+    Accept()
+    M.Flush(1)
+    log = table.concat(M.printLog, "|")
+    CHECK(#trainer.bought == 0 and log:find("the list changed", 1, true),
+        "K16 a confirmation answered after the list changed buys nothing", Bought() .. " / " .. log)
+    S.SetIgnored(10888, true)
+    M.Fire("TRAINER_CLOSED")
+
+    -- A trainer that lists only part of Train Now is offered only that part
+    Restore()
+    ClassTrainer()
+    for index = #trainer.lines, 1, -1 do
+        local line = trainer.lines[index]
+        if line.id == 10941 or line.id == 2791 then table.remove(trainer.lines, index) end
+    end
+    CommanderSpellbook_Open("TRAIN")
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    CHECK((frame.countFS.__text or ""):find("5 to train here", 1, true) and (frame.countFS.__text or ""):find(S.Money(33300), 1, true),
+        "K17 a rank the trainer does not list is neither counted nor priced", frame.countFS.__text)
+    popups = {}
+    frame.trainAllBtn:Click()
+    CHECK(popups[1] and (popups[1].text or ""):find("5 ranks for " .. S.Money(33300), 1, true),
+        "K17 ...nor named in the question", popups[1] and popups[1].text)
+    M.Fire("TRAINER_CLOSED")
+
+    -- A stray update before a purchase lands is not its answer
+    Restore()
+    ClassTrainer()
+    trainer.early = true
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    popups = {}
+    frame.trainAllBtn:Click()
+    M.printLog = {}
+    Accept()
+    Fine(4)
+    log = table.concat(M.printLog, "|")
+    CHECK(Bought() == "19236,19238,9473,19240,2791,9474,10941" and trainer.overlap == 0,
+        "K18 a stray update between a purchase and its answer starts nothing", Bought() .. ", " .. trainer.overlap .. " overlapping")
+    CHECK(log:find("trained 7 ranks", 1, true), "K18 ...and the run still finishes", log)
+    M.Fire("TRAINER_CLOSED")
+
+    -- A purchase never answered is not reported as bought
+    Restore()
+    ClassTrainer()
+    trainer.silent = true
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    popups = {}
+    frame.trainAllBtn:Click()
+    M.printLog = {}
+    Accept()
+    Fine(4)
+    log = table.concat(M.printLog, "|")
+    CHECK(#trainer.bought == 1 and not log:find("trained", 1, true) and log:find("did not answer", 1, true)
+        and not S.Trainer.Running(),
+        "K19 a purchase the trainer never answers is not counted, and the run stops saying so", log)
+    M.Fire("TRAINER_CLOSED")
+    M.Flush(1)
+
+    -- A weapon master with Available unticked offers no Train All either,
+    -- when a line still in view says what it is (with nothing in view there
+    -- is no telling; Train All then opens the list and says it found nothing)
+    Restore()
+    trainer = { available = false, folded = false, bought = {}, pending = 0, overlap = 0, bad = 0, lines = {
+        { header = true, name = "Weapons" },
+        { id = 1180, name = "Daggers", kind = "unavailable", cost = 900, level = 1 },
+    } }
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    CHECK(not frame.trainAllBtn:IsShown(), "K15 a weapon master hiding lines still offers no Train All")
+    M.Fire("TRAINER_CLOSED")
+    M.Flush(1)
+
+    -- Off, the trainer opens nothing; a weapon master is not a class trainer
+    CommanderSpellbook_Hide()
+    CommanderSpellbookDB.OpenAtTrainer = false
+    ClassTrainer()
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    CHECK(not S.IsShown(), "K14 with Open at the Trainer off, the trainer opens nothing")
+    M.Fire("TRAINER_CLOSED")
+    CommanderSpellbookDB.OpenAtTrainer = true
+    trainer = { available = true, folded = false, bought = {}, pending = 0, overlap = 0, bad = 0, lines = {
+        { header = true, name = "Weapons" },
+        { id = 1180, name = "Daggers", kind = "available", cost = 900, level = 1 },
+    } }
+    M.Fire("TRAINER_SHOW")
+    M.Flush(1)
+    CHECK(not S.IsShown(), "K15 a weapon master does not open the Training view")
+    CommanderSpellbook_Open("TRAIN")
+    M.Flush(1)
+    CHECK(not frame.trainAllBtn:IsShown(), "K15 ...nor offer Train All")
+    local dagger
+    for _, r in ipairs(S._NavRows()) do if r:IsShown() and r.item and r.item.id == 1180 then dagger = r end end
+    if dagger then M.RunScript(dagger, "OnClick", "LeftButton") end
+    CHECK(dagger and frame.trainBtn:IsShown(), "K15 ...but Train buys the weapon skill it teaches")
+    M.Fire("TRAINER_CLOSED")
+    M.Flush(1)
+
+    for id in pairs(known) do known[id] = nil end
+    for id, v in pairs(savedKnown) do known[id] = v end
+    BuildBook()
+    me.money = savedMoney
+    S.SetIgnored(10888, false)
+    CommanderSpellbook_Open("BOOK")
+    M.Flush(1)
+end
 
 -- ===========================================================================
 -- I. The pet's abilities
@@ -731,8 +1322,12 @@ if os.getenv("RENDER") then
     CommanderSpellbook_Show()
     M.Flush(1)
     navScroll:SetVerticalScroll(0)
+    -- Fade on its cooldown, to show the swipe; its ranks' costs, and a long
+    -- cast time, to show the ladder's columns full
+    cooldowns[Highest(FADE)] = { M.now - 5, 30 }
+    for i, id in ipairs(FADE) do powerCosts[id] = { cost = 45 + 150 * i } castTimes[id] = 2500 end
     for _, row in ipairs(S._NavRows()) do
-        if row:IsShown() and row.family and row.family.name == "Flash Heal" then M.RunScript(row, "OnClick", "LeftButton") end
+        if row:IsShown() and row.family and row.family.name == "Fade" then M.RunScript(row, "OnClick", "LeftButton") end
     end
     M.Flush(1)
     dofile(HERE .. "/spellbook_render.lua")(M, CommanderSpellbookFrame, os.getenv("RENDER"))

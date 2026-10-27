@@ -26,6 +26,7 @@ local FILES = {
     "CommanderSpellbookDB.lua",
     "CommanderSpellbookModel.lua",
     "CommanderSpellbookTraining.lua",
+    "CommanderSpellbookTrainer.lua",
     "CommanderSpellbookSecure.lua",
     "CommanderSpellbookUI.lua",
 }
@@ -68,7 +69,13 @@ allow [[
 GetNumSpellTabs GetSpellTabInfo GetSpellBookItemInfo GetSpellBookItemName IsPassiveSpell
 GetSpellTexture GetSpellAutocast HasPetSpells PetHasSpellbook IsPlayerSpell IsSpellKnown
 GetSpellInfo GetSpellSubtext GetSpellLink C_Spell Spell PickupSpell PickupSpellBookItem
-SpellBookFrame BOOKTYPE_PET C_SpellBook
+SpellBookFrame BOOKTYPE_PET C_SpellBook GetSpellCooldown GetSpellPowerCost
+]]
+
+-- The trainer (Blizzard_TrainerUI.lua, classic_anniversary, calls each of these)
+allow [[
+GetNumTrainerServices GetTrainerServiceInfo GetTrainerServiceCost BuyTrainerService IsTradeskillTrainer
+GetTrainerServiceTypeFilter SetTrainerServiceTypeFilter ExpandTrainerSkillLine StaticPopupDialogs StaticPopup_Show StaticPopup_Hide
 ]]
 
 -- The player

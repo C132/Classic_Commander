@@ -43,4 +43,27 @@ nothing here has been field-verified. When one is confirmed or broken in game, s
   protected and SpellBookFrame is. If a micro-button open of the stock book in combat ever raises
   ADDON_ACTION_BLOCKED naming this addon, `/console taintLog 1` will say whether this hook is why;
   the fallback is to leave the OnShow door off and keep only the override keys.
-
+- **A12 — `C_Spell.GetSpellCooldown(id)` returns the SpellCooldownInfo table** (`startTime`,
+  `duration`, `isEnabled`, `modRate`) on 2.5.6, as the classic_anniversary API documentation lists it,
+  and the legacy `GetSpellCooldown(slot, "pet")` still answers for a pet book slot (Blizzard's
+  Classic SpellBookFrame calls it that way). If the C_Spell form is missing, the old global is asked
+  by id (D13).
+- **A13 — An EditBox with `SetAltArrowKeyMode(false)` gets OnArrowPressed for UP and DOWN** while it
+  has the focus, and the character does not move. Blizzard's autocomplete relies on exactly this
+  (AutoComplete.lua, classic_anniversary); unseen in this window (D14).
+- **A14 — `BuyTrainerService(index)` may be called by an addon on a click, out of combat.** Blizzard's
+  Train button calls it from its OnClick (Blizzard_TrainerUI.lua, classic_anniversary); nothing in
+  that file marks it protected. Train All calls it again from a timer after each TRAINER_UPDATE,
+  not from the click itself: if the client wanted a hardware event per purchase, the first rank would
+  be bought and the rest refused. The 3 s timeout then stops the run and says so (D15).
+- **A15 — Every purchase is answered by TRAINER_UPDATE, and by then the next rank of a chain is
+  listed as available.** The stock window relies on that event to repaint after its own Train button.
+- **A16 — A trainer line's name is the spell's name as GetSpellInfo gives it, and its subtext carries
+  the rank as a number** ("Rank 3"; only the digits are read, so the locale does not matter). A
+  spell of one rank may be listed with no rank or as Rank 1; both match.
+- **A17 — The trainer's list is readable at TRAINER_SHOW** and `IsTradeskillTrainer()` answers for
+  this trainer by then: UIParent opens the stock window on that same event and reads the list at once.
+- **A18 — `C_Spell.GetSpellPowerCost(id)` and `C_Spell.GetSpellInfo(id).castTime` answer for any rank
+  by id, known or not**, from the client's spell data (the classic_anniversary API documentation lists
+  both; the cost table may be nil for a spell with no cost, which leaves the column blank). If they
+  answer only for known spells, ranks still to train show blank columns and nothing else breaks (D16).
