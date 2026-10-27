@@ -170,7 +170,17 @@ end
 local function CreateLeftClickMenu()
     return {
         {text = "Character", func = function() ToggleCharacter("PaperDollFrame") end},
-        {text = "Spellbook", func = function() ToggleSpellBook(BOOKTYPE_SPELL) end},
+        -- Commander Spellbook's window when it has taken the book over: an
+        -- addon calling Blizzard's ToggleSpellBook would only have it put
+        -- straight away again (and taints the stock book's state)
+        {text = "Spellbook", func = function()
+            local book = CommanderSpellbook
+            if type(book) == "table" and book.TakingOver and book.TakingOver() and CommanderSpellbook_Toggle then
+                CommanderSpellbook_Toggle()
+            else
+                ToggleSpellBook(BOOKTYPE_SPELL)
+            end
+        end},
         {text = "Talents", func = function() ToggleTalentFrame() end},
         {text = "Quest Log", func = function() ToggleQuestLog() end},
         {text = "Social", func = function() ToggleFriendsFrame() end},

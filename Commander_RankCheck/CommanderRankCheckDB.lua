@@ -1,7 +1,13 @@
 CommanderRankCheckDB = _G.CommanderRankCheckDB or {}
+-- Per character: the references kept on their rank on purpose (Kept, keyed
+-- "bar:<slot>" or "macro:<name>:<spell>:<rank>"). Bars and macros are a
+-- character's own, so an alt's keeps are not a main's.
+CommanderRankCheckChar = _G.CommanderRankCheckChar or {}
 
 COMMANDER_RANKCHECK_EVENTS = {
-    UPDATE = "COMMANDER_RANKCHECK_UPDATE"
+    UPDATE = "COMMANDER_RANKCHECK_UPDATE",
+    -- Every finished scan, with its result (CommanderRankCheck.Scan)
+    RESULT = "COMMANDER_RANKCHECK_RESULT",
 }
 
 local DefaultSettings = {
@@ -28,7 +34,7 @@ local function CreateOptionsPanel()
         key = "RankCheck",
         title = "Rank Check",
         addonName = "Commander_RankCheck",
-        description = "A unit test for your loadout: it scans every action bar slot and macro for a spell cast at an out-of-date rank, then reports any that a higher rank in your spellbook could replace — the classic chore of re-dragging spells and editing macros after you train. Run it with /crank or the button in the spellbook window.",
+        description = "A unit test for your loadout: it scans every action bar slot and macro for a spell cast at an out-of-date rank, then reports any that a higher rank in your spellbook could replace — the classic chore of re-dragging spells and editing macros after you train. Run it with /crank, or from Commander Spellbook's Rank Check view, which lists every reference with Update (put your best rank there) and Keep (leave a down-ranked spell alone on purpose).",
         event = COMMANDER_RANKCHECK_EVENTS.UPDATE,
         slash = { "/crank" },
         slashHandlers = {
@@ -50,8 +56,8 @@ local function CreateOptionsPanel()
         get = function() return CommanderRankCheckDB.EnableRankCheck end,
         set = function(value) CommanderRankCheckDB.EnableRankCheck = value end,
     }, {
-        label = "Spellbook Button",
-        tooltip = "Show a Rank Check button inside the spellbook window.",
+        label = "Show in Spellbook",
+        tooltip = "Carry the check in the spellbook: Commander Spellbook's Rank Check view and footer, and the marks on its rows (or, when Blizzard's book is the one open, a Rank Check button inside it).",
         get = function() return CommanderRankCheckDB.ShowSpellbookButton end,
         set = function(value) CommanderRankCheckDB.ShowSpellbookButton = value end,
         isEnabled = function() return CommanderRankCheckDB.EnableRankCheck end,
@@ -90,6 +96,16 @@ local function CreateOptionsPanel()
             tooltip = "Scan your bars and macros now (also: /crank).",
             onClick = function()
                 if CommanderRankCheck_Run then CommanderRankCheck_Run() end
+            end,
+        },
+        {
+            label = "Clear Kept",
+            width = 110,
+            tooltip = "Forget every reference this character kept on its rank on purpose: the check calls them out of date again.",
+            onClick = function()
+                local n = CommanderRankCheck and CommanderRankCheck.ClearKept and CommanderRankCheck.ClearKept() or 0
+                print(string.format("Commander Rank Check: %d kept reference%s back in the check for this character.",
+                    n, n == 1 and "" or "s"))
             end,
         },
     })

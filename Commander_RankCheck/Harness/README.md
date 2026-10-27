@@ -2,7 +2,7 @@
 
 Run with the compile-gate luajit:
 
-    /opt/homebrew/bin/luajit rankcheck_harness.lua    # 20 checks
+    /opt/homebrew/bin/luajit rankcheck_harness.lua    # 50 checks
 
 `DUMP=1` prints every chat line the run produced, in order.
 
@@ -35,4 +35,25 @@ Check Action Bars / Check Macros / Announce When Clean toggles, the quiet login
 run (silent when clean, vocal when stale), the disabled-module path, and
 `/crank debug`'s per-slot dump.
 
+3.0 (2026-10-26, for Commander Spellbook's Rank Check view) adds:
+
+- `CommanderRankCheck.Scan` as data: every ranked reference, stale or not, with
+  the best rank's spell id, broadcast as `COMMANDER_RANKCHECK_RESULT`, and no
+  chat of its own (8).
+- **Update** on a bar slot, with its guard rails: nothing in combat, nothing
+  with the cursor holding something, nothing over a slot that changed since the
+  check, and a pickup that failed never reaches `PlaceAction` — the mock's
+  PlaceAction swaps exactly as the client's does, so the case where the old
+  spell would be lifted off the bar and dropped is reproduced, not assumed (9).
+- **Update** on a macro: only that spell at that rank is rewritten, the rest of
+  the body byte for byte, paren-named spells whole, name and icon kept (10).
+- **Keep**: a kept reference stops failing (and the report says how many were
+  kept), Update All leaves it alone, a different rank in the kept slot fails
+  again, Unkeep and Clear Kept (11).
+
 Must exit 0 before any rank check change ships.
+- A `#showtooltip` line's rank moves with the `/cast` line; an account and a
+  character macro of one name keep apart (the key carries the list); a rewrite
+  that would pass 255 characters is refused and said so; a refused Update says
+  why; Update All ends with its tally; macros are saved with
+  `EditMacro(index, nil, nil, body)`, Blizzard's own way (12).

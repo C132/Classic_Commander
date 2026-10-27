@@ -23,7 +23,7 @@ local PILLARS = {
     { title = "Operations",
       keys = { "Economy", "Logistics", "Quartermaster", "Talents", "Objectives", "ObjectivesBoard", "Recovery", "Who", "Guide" } },
     { title = "Interface",
-      keys = { "ActionBar", "ActionBarButtons", "RankCheck", "Armory", "Bags", "Vault", "Inventory", "Chat", "Minimap", "TopBar", "Tooltip", "Console" } },
+      keys = { "ActionBar", "ActionBarButtons", "Spellbook", "RankCheck", "Armory", "Bags", "Vault", "Inventory", "Chat", "Minimap", "TopBar", "Tooltip", "Console" } },
 }
 
 local function AddSectionHeader(panel, anchor, text)

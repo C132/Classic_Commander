@@ -1,0 +1,28 @@
+<Bindings>
+    <!-- Auto loaded from the addon folder. Deliberately NOT listed in the TOC:
+         doing so loads it twice and the second pass silently wins.
+
+         A double hyphen is illegal inside an XML comment and the parser
+         rejects the WHOLE file on one, registering zero bindings with nothing
+         but a LUA_WARNING at load to say so.
+
+         The spellbook and pet book keys reach the first two through override
+         bindings while the window replaces the stock book (see the UI file's
+         takeover notes); they can also be bound on their own. -->
+
+    <Binding name="COMMANDERSPELLBOOK_TOGGLE" runOnUp="false">
+        CommanderSpellbook_Toggle()
+    </Binding>
+
+    <Binding name="COMMANDERSPELLBOOK_PETBOOK" runOnUp="false">
+        CommanderSpellbook_TogglePet()
+    </Binding>
+
+    <Binding name="COMMANDERSPELLBOOK_TRAINING" runOnUp="false">
+        CommanderSpellbook_Open("TRAIN")
+    </Binding>
+
+    <Binding name="COMMANDERSPELLBOOK_SEARCH" runOnUp="false">
+        CommanderSpellbook_FocusSearch()
+    </Binding>
+</Bindings>

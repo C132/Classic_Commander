@@ -2,10 +2,11 @@
 ## Category: Commander
 ## Title: Commander Rank Check
 ## Author: Devin
-## Version: 2.2.0
-## Notes: Unit-test your action bars and macros for out-of-date spell ranks — run it from /crank or the spellbook window.
+## Version: 3.0.0
+## Notes: Unit-test your action bars and macros for out-of-date spell ranks — run it from /crank or Commander Spellbook's Rank Check view, where Update puts your best rank in the slot or macro and Keep leaves a down-ranked spell alone on purpose.
 ## IconTexture: Interface\Icons\Spell_ChargePositive
 ## SavedVariables: CommanderRankCheckDB
+## SavedVariablesPerCharacter: CommanderRankCheckChar
 ## RequiredDeps: Commander_Events
 
 CommanderRankCheckDB.lua
