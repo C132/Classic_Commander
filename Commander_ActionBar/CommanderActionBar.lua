@@ -338,6 +338,21 @@ local function PartySeatUnit(seat)
     return nil
 end
 
+-- Arena Targets: the client's own numbering, arena1-5, the order the arena
+-- frames show the other team. Fixed tokens, never looked up: the other team
+-- arrives as the gates open, too late for a secure button to change, and a
+-- seat whose opponent is not there simply targets nothing.
+local ARENA_UNITS = { "arena1", "arena2", "arena3", "arena4", "arena5" }
+
+-- The modes whose F1-F5 target someone, on the same seat faces
+local TARGET_MODES = { PARTY = true, ARENA = true }
+
+-- Who a seat targets in a targeting mode
+local function SeatUnit(seat, mode)
+    if mode == "ARENA" then return ARENA_UNITS[seat] end
+    return PartySeatUnit(seat)
+end
+
 -- Is the row up and docked on top of the grid? The pet bar, which sits above
 -- the card, moves up past it.
 local function FKeysAttached()
@@ -1135,7 +1150,7 @@ end
 -- drawn on the poll. Textures, text and alpha only, so it runs mid-fight.
 local function StyleModeFaces(db)
     local mode = fkeyShownMode
-    local faces = (mode == "MARKS" and fkeyMarkFaces) or (mode == "PARTY" and fkeyPartyFaces)
+    local faces = (mode == "MARKS" and fkeyMarkFaces) or (TARGET_MODES[mode] and fkeyPartyFaces)
     if not faces then return end
     local targetMark = mode == "MARKS" and GetRaidTargetIndex("target")
     for _, face in pairs(faces) do
@@ -1168,14 +1183,19 @@ local function StyleModeFaces(db)
                     end
                 end
                 icon:SetShown(face.__cmdClass ~= nil)
-                icon:SetDesaturated((UnitIsDeadOrGhost(unit) or not UnitIsConnected(unit)) and true or false)
+                -- Grey when dead; for your own side, offline too (an
+                -- opponent's connection is not ours to read)
+                local party = mode == "PARTY"
+                icon:SetDesaturated((UnitIsDeadOrGhost(unit) or (party and not UnitIsConnected(unit)))
+                    and true or false)
                 -- Out-of-Range Tint, as on the action buttons: a partner out
                 -- of range goes red. UnitInRange (40 yards) answers for group
-                -- members only, so your own seat never tints; it is also the
-                -- one range check addons may call here (CheckInteractDistance
-                -- is protected on this client, see Commander_PartyFrames).
+                -- members only, so your own seat never tints and the arena
+                -- team never does; it is also the one range check addons may
+                -- call here (CheckInteractDistance is protected on this
+                -- client, see Commander_PartyFrames).
                 local r, g, b = 1, 1, 1
-                if db.rangeTint and UnitInRange then
+                if party and db.rangeTint and UnitInRange then
                     local inRange, checked = UnitInRange(unit)
                     if checked and not inRange then r, g, b = 1, 0.3, 0.25 end
                 end
@@ -1815,8 +1835,9 @@ local function CreateMarkFace(entry)
     fkeyMarkFaces[entry.key] = face
 end
 
--- A party-seat face: the secure "target" action, so it works mid-fight, with
--- the unit SeatPartyFaces gives it (none: it does nothing at all). The bare
+-- A seat face, for Party Targets and Arena Targets alike: the secure "target"
+-- action, so it works mid-fight, with the unit SeatTargetFaces gives it
+-- (none: it does nothing at all). The bare
 -- template's OnClick honours ActionButtonUseKeyDown, so the face is its own
 -- key and needs no proxy (see the keyed-card note).
 local function CreatePartyFace(entry)
@@ -1850,10 +1871,11 @@ local function EnsureFKeys()
 end
 
 -- The face a key shows, and its binding clicks, in the row's mode: its
--- action button, or for F1-F5 its raid-mark or party face
+-- action button, or for F1-F5 its raid-mark or seat face. Party and Arena
+-- Targets share the seat faces, so switching between the two moves no key.
 local function FKeyFace(entry, mode)
     if mode == "MARKS" and entry.mark then return fkeyMarkFaces[entry.key] end
-    if mode == "PARTY" and entry.seat then return fkeyPartyFaces[entry.key] end
+    if TARGET_MODES[mode] and entry.seat then return fkeyPartyFaces[entry.key] end
     return fkeyByKey[entry.key]
 end
 
@@ -1861,14 +1883,16 @@ local function HideUnlessLive(face, live)
     if face and face ~= live and face:IsShown() then face:Hide() end
 end
 
--- Each party face onto the unit its seat holds now. An attribute on a
--- secure button, so out of combat only: the poll re-seats after a roster
+-- Each seat face onto the unit its seat holds now. An attribute on a
+-- secure button, so out of combat only: the poll re-seats after a party
 -- change, and one that happens mid-fight waits for combat to drop -- the
--- faces show the seats as they really stand until then.
-local function SeatPartyFaces()
-    if fkeyShownMode ~= "PARTY" or InCombatLockdown() then return end
+-- faces show the seats as they really stand until then. Arena seats never
+-- move once taken.
+local function SeatTargetFaces()
+    local mode = fkeyShownMode
+    if not TARGET_MODES[mode] or InCombatLockdown() then return end
     for _, face in pairs(fkeyPartyFaces) do
-        local unit = PartySeatUnit(face.__cmdSeat)
+        local unit = SeatUnit(face.__cmdSeat, mode)
         if face:GetAttribute("unit") ~= unit then
             face:SetAttribute("unit", unit)
         end
@@ -1924,7 +1948,7 @@ local function LayoutFKeys()
         HideUnlessLive(fkeyPartyFaces[entry.key], live)
     end
     fkeyShownMode = db.fkeyMode
-    SeatPartyFaces()
+    SeatTargetFaces()
 
     AnchorFKeys()
     if not fkeyCard:IsShown() then fkeyCard:Show() end
@@ -1954,9 +1978,9 @@ end
 -- Update loop
 -- ---------------------------------------------------------------------------
 local function OnUpdate()
-    -- A roster change re-seats the party faces (it waits out combat on its
+    -- A party change re-seats the seat faces (it waits out combat on its
     -- own), ahead of the cosmetics so they draw the seats as they now stand
-    SeatPartyFaces()
+    SeatTargetFaces()
     -- Cosmetics are combat-safe and always run
     ApplyButtonCosmetics()
     ApplyFade()

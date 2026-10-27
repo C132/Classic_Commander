@@ -3,7 +3,7 @@
 Two luajit scripts, both in-addon, three runs. Run **all three** before any change.
 
 ```bash
-/opt/homebrew/bin/luajit actionbar_numpad_harness.lua   # numpad card, function-key row + grid wiring under a WoW mock — 386 checks
+/opt/homebrew/bin/luajit actionbar_numpad_harness.lua   # numpad card, function-key row + grid wiring under a WoW mock — 402 checks
 /opt/homebrew/bin/luajit actionbar_numpad_harness.lua combatboot  # a /reload mid-fight — 11 checks
 /opt/homebrew/bin/luajit globals_lint.lua               # 2 files, 0 undeclared globals
 ```
@@ -135,6 +135,21 @@ that never toggles off, a mark on both phases, a bind signature blind to its
 targets, seats drawn from the live roster instead of the button's unit, the
 action face left up under a mode, marks bound to the action proxy, and an
 undimmed empty seat each fail it.
+
+## Arena Targets (2.7.0), same harness
+
+Section Q: the fourth F1-F5 mode puts `arena1`-`arena5` on the same seat
+faces Party Targets uses, so switching between the two moves no key. The
+tokens are fixed: chosen mid-fight it waits for combat to drop like any
+mode, but once seated an opponent who appears mid-fight lights their seat
+and their key targets them at once; one who is not there leaves the key
+doing nothing. A party change never moves an arena seat, opponents are
+named with their class icon as they appear, a dead one greys, and the other
+team is never greyed for "offline" nor tinted for range (`UnitInRange` is
+group-only). Mutation-checked: arena seats that follow the party, arena
+seats taken only while the opponent exists (the mid-fight arrival then has
+no key), arena left out of the target modes, and opponents read for
+offline each fail it.
 
 ## Settings changed mid-fight (2.6.0), same harness
 

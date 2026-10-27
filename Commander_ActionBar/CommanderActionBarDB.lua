@@ -83,7 +83,7 @@ local DefaultSettings = {
         scale = 1,                 -- the card's scale when saved (offsets are in its units)
     },
     fkeyBar = "RIGHT",             -- the first six slots of a spare bar, ` first
-    fkeyMode = "ACTIONS",          -- what F1-F5 do: ACTIONS | MARKS (raid marks) | PARTY (party, you last)
+    fkeyMode = "ACTIONS",          -- what F1-F5 do: ACTIONS | MARKS (raid marks) | PARTY (party, you last) | ARENA (arena1-5)
 }
 
 -- The spare bars are shared out: the numpad's number keys, its operator keys
@@ -573,7 +573,7 @@ local function CreateFKeysPanel()
         key = "ActionBarFKeys",
         title = "Action Bar Function Keys",
         addonName = "Commander_ActionBar",
-        description = "An optional row of keys on top of the command card: the ` key first, then F1 to F5. Six keys, so on the grid's default six columns each one sits over a column. While it is up each key is bound to the button it mirrors, the way the numpad's are, so the top-left corner of the keyboard becomes another bank of binds. F1 to F5 can instead put raid marks on your target or target your party (F1-F5 Keys). Spacing, framing, fade and every button option follow the main card, and so does its size unless Function Key Scale says otherwise. A pet bar placed Above the Card moves up past the row.",
+        description = "An optional row of keys on top of the command card: the ` key first, then F1 to F5. Six keys, so on the grid's default six columns each one sits over a column. While it is up each key is bound to the button it mirrors, the way the numpad's are, so the top-left corner of the keyboard becomes another bank of binds. F1 to F5 can instead put raid marks on your target, or target your party or the other arena team (F1-F5 Keys). Spacing, framing, fade and every button option follow the main card, and so does its size unless Function Key Scale says otherwise. A pet bar placed Above the Card moves up past the row.",
         event = COMMANDER_ACTIONBAR_EVENTS.UPDATE,
     })
 
@@ -591,11 +591,12 @@ local function CreateFKeysPanel()
     })
     panel:AddDropdown({
         label = "F1-F5 Keys",
-        tooltip = "What F1 to F5 do (` always presses its action button). Row Actions: they press the row's action buttons. Raid Marks: F1 skull, F2 cross, F3 square, F4 moon, F5 triangle on your target, and the same key again takes it off, as the game's own raid-mark keys do; the row shows the marks, lights the one your target wears, and clicking one marks too (in a raid you need to be leader or assistant). Party Targets: they target your party in party order with you last, so the key after your last party member is you and the keys past that do nothing: solo F1 is you, in a 3v3 F1 and F2 are your partners and F3 is you, in a full party F5 is you. The row shows who each key targets. A party change mid-fight waits for combat to end before the keys move, and the row shows who they hit until then.",
+        tooltip = "What F1 to F5 do (` always presses its action button). Row Actions: they press the row's action buttons. Raid Marks: F1 skull, F2 cross, F3 square, F4 moon, F5 triangle on your target, and the same key again takes it off, as the game's own raid-mark keys do; the row shows the marks, lights the one your target wears, and clicking one marks too (in a raid you need to be leader or assistant). Party Targets: they target your party in party order with you last, so the key after your last party member is you and the keys past that do nothing: solo F1 is you, in a 3v3 F1 and F2 are your partners and F3 is you, in a full party F5 is you. The row shows who each key targets. A party change mid-fight waits for combat to end before the keys move, and the row shows who they hit until then. Arena Targets: F1 to F5 target the other team, arena 1 to 5, in the order the arena frames show them; the row shows each opponent's class and name once the game reveals them, and a key whose opponent is not there does nothing.",
         options = {
             { text = "Row Actions", value = "ACTIONS" },
             { text = "Raid Marks", value = "MARKS" },
             { text = "Party Targets", value = "PARTY" },
+            { text = "Arena Targets", value = "ARENA" },
         },
         get = function() return db().fkeyMode end,
         set = function(value) db().fkeyMode = value end,

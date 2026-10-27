@@ -1453,8 +1453,9 @@ local modeDrop = FindDropdowns(fkeyPanel, "MARKS")[1]
 CHECK(modeDrop ~= nil, "F1-F5 Keys dropdown found")
 do
     local opts = OpenDropdown(modeDrop)
-    CHECK(#opts == 3 and opts[1].value == "ACTIONS" and opts[2].value == "MARKS" and opts[3].value == "PARTY",
-        "Row Actions, Raid Marks, Party Targets", #opts)
+    CHECK(#opts == 4 and opts[1].value == "ACTIONS" and opts[2].value == "MARKS" and opts[3].value == "PARTY"
+        and opts[4].value == "ARENA" and opts[4].text == "Arena Targets",
+        "Row Actions, Raid Marks, Party Targets, Arena Targets", #opts)
 end
 CHECK(db.fkeyMode == "ACTIONS", "row actions by default")
 local function Mark(key) return _G["CommanderFKeyMark" .. key] end
@@ -1745,6 +1746,63 @@ CHECK(overrideBindings.F1 and overrideBindings.F1.button == "CommanderFKeyPartyF
 PickOption(modeDrop, "ACTIONS")
 Tick()
 roster.target, raidMarks.target = nil, nil
+
+-- ===========================================================================
+-- Q. Arena Targets (2.7.0): F1-F5 target arena1-5 on the same seat faces,
+-- fixed tokens whoever turns up
+-- ===========================================================================
+PickOption(modeDrop, "PARTY")
+Tick()
+do
+    local before = bindWrites
+    EnterCombat()
+    PickOption(modeDrop, "ARENA")               -- chosen mid-fight: the party seats hold
+    Tick()
+    CHECK(Units() == "player - - - -", "Arena Targets chosen mid-fight: the party seats hold", Units())
+    CHECK(#violations == 0, "no violations choosing it mid-fight", violations[1])
+    LeaveCombat()
+    Tick()
+    CHECK(Units() == "arena1 arena2 arena3 arena4 arena5", "F1-F5 are arena1-5", Units())
+    CHECK(bindWrites == before and overrideBindings.F1.button == "CommanderFKeyPartyF1",
+        "same seat faces, so Party to Arena moves no key", bindWrites - before)
+end
+CHECK(Seat("F1"):IsShown() and not Mark("F1"):IsShown() and not FFace("F1"):IsShown(), "seat faces up")
+CHECK(NEAR(Seat("F1").__alpha, 0.35) and (Seat("F1").Name.__text or "") == "",
+    "no opponents yet: every seat dimmed and nameless")
+roster.arena1 = { name = "Sneaky", class = "ROGUE" }
+roster.arena2 = { name = "Frosty", class = "MAGE" }
+roster.party1 = { name = "Alpha", class = "WARRIOR" }   -- your partner must not move an arena seat
+Tick()
+CHECK(Units() == "arena1 arena2 arena3 arena4 arena5", "a party change leaves the arena seats alone", Units())
+CHECK(Seat("F1").Name.__text == "Sneaky" and Seat("F2").Name.__text == "Frosty" and NEAR(Seat("F1").__alpha, 1)
+    and NEAR(Seat("F3").__alpha, 0.35), "opponents named as they appear, the rest dimmed")
+CHECK(Seat("F1").icon.__coords and Seat("F1").icon.__coords[1] == 0.5 and Seat("F1").icon.__shown,
+    "an opponent's class icon")
+for i = #targetedUnits, 1, -1 do targetedUnits[i] = nil end
+PressKey("F2", true); PressKey("F2", false)
+CHECK(targetedUnits[1] == "arena2" and #targetedUnits == 1, "F2 targets arena2", targetedUnits[1])
+EnterCombat()
+roster.arena3 = { name = "Holy", class = "PALADIN" }    -- the third shows up mid-fight
+roster.arena1.dead = true
+Tick()
+CHECK(Seat("F3").Name.__text == "Holy" and NEAR(Seat("F3").__alpha, 1), "an opponent appearing mid-fight lights its seat")
+PressKey("F3", true); PressKey("F3", false)
+CHECK(targetedUnits[#targetedUnits] == "arena3", "and its key targets them at once")
+CHECK(Seat("F1").icon.__desat == true, "a dead opponent greys out")
+CHECK(#violations == 0, "arena seats mid-fight: no violations", violations[1])
+LeaveCombat()
+-- Neither offline nor range is read for the other team
+db.rangeTint = true
+roster.arena2.far, roster.arena2.offline = true, true
+Tick()
+CHECK(Seat("F2").icon.__desat == false and Seat("F2").icon.__vertex[2] == 1,
+    "an opponent is never greyed for 'offline' nor tinted for range")
+db.rangeTint = false
+roster.arena1, roster.arena2, roster.arena3, roster.party1 = nil, nil, nil, nil
+PickOption(modeDrop, "ACTIONS")
+Tick()
+CHECK(FFace("F1"):IsShown() and not Seat("F1"):IsShown() and overrideBindings.F1.button == "CommanderFKeyButtonF1Key",
+    "back to row actions")
 
 do  -- the row's page resets only row options, and gives way on a held bar
     PickOption(digitsDrop, "RIGHT")    -- the numpad takes the row's default bar
